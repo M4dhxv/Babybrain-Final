@@ -66,30 +66,36 @@ export default function SignupPage() {
   return (
     <main className="container">
       <section className="form-card auth-card">
-        <h2>Create your profile</h2>
+        <h2 style={{ marginTop: 0 }}>Create your profile</h2>
+        <p className="hint" style={{ margin: '-6px 0 16px' }}>
+          Tell us about your child and get matched in minutes.
+        </p>
         {error && <p className="notice error">{error}</p>}
         <form onSubmit={signUpWithEmail}>
           <div className="field">
+            <label className="f-label">Full name</label>
             <input
-              placeholder="Full name"
+              placeholder="e.g. Sarah Tan"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
             />
           </div>
           <div className="field">
+            <label className="f-label">Email address</label>
             <input
               type="email"
-              placeholder="Email"
+              placeholder="e.g. sarah@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
           <div className="field">
+            <label className="f-label">Password</label>
             <input
               type="password"
-              placeholder="Password (min 6 characters)"
+              placeholder="Min 6 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={6}
@@ -101,13 +107,13 @@ export default function SignupPage() {
           </button>
         </form>
         <button
-          className="btn ghost"
-          style={{ width: '100%', marginTop: 10 }}
+          className="btn outline block"
+          style={{ marginTop: 10 }}
           onClick={signUpWithGoogle}
         >
-          Continue with Google
+          <span style={{ fontWeight: 900 }}>G</span> Continue with Google
         </button>
-        <p className="muted" style={{ fontSize: 15 }}>
+        <p className="hint center" style={{ marginTop: 14 }}>
           Already have an account? <Link href="/login">Log in</Link>
         </p>
       </section>

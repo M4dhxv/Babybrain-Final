@@ -45,22 +45,27 @@ function LoginForm() {
   return (
     <main className="container">
       <section className="form-card auth-card">
-        <h2>Welcome back</h2>
+        <h2 style={{ marginTop: 0 }}>Welcome back 👋</h2>
+        <p className="hint" style={{ margin: '-6px 0 16px' }}>
+          Log in to see activities matched for your child.
+        </p>
         {error && <p className="notice error">{error}</p>}
         <form onSubmit={signInWithEmail}>
           <div className="field">
+            <label className="f-label">Email address</label>
             <input
               type="email"
-              placeholder="Email"
+              placeholder="e.g. sarah@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
           <div className="field">
+            <label className="f-label">Password</label>
             <input
               type="password"
-              placeholder="Password"
+              placeholder="Your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -71,13 +76,13 @@ function LoginForm() {
           </button>
         </form>
         <button
-          className="btn ghost"
-          style={{ width: '100%', marginTop: 10 }}
+          className="btn outline block"
+          style={{ marginTop: 10 }}
           onClick={signInWithGoogle}
         >
-          Continue with Google
+          <span style={{ fontWeight: 900 }}>G</span> Continue with Google
         </button>
-        <p className="muted" style={{ fontSize: 15 }}>
+        <p className="hint center" style={{ marginTop: 14 }}>
           <Link href="/reset-password">Forgot password?</Link> ·{' '}
           <Link href="/signup">Create an account</Link>
         </p>
