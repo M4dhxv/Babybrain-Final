@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 233 35% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 233 35% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 233 35% 17%;
+    --primary: 340 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 233 35% 17%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 233 35% 17%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 340 95% 53%;
+    --radius: 0.625rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 233 35% 17%;
+    --sidebar-primary: 340 95% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 340 95% 97%;
+    --sidebar-accent-foreground: 340 95% 53%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 340 95% 53%;
+
+    /* BabyBrain Custom Colors */
+    --bb-pink: 340 95% 53%;
+    --bb-pink-light: 340 95% 97%;
+    --bb-orange: 25 100% 60%;
+    --bb-navy: 233 35% 17%;
+    --bb-green: 142 71% 45%;
+    --bb-green-light: 142 71% 97%;
+    --bb-purple: 258 90% 66%;
+    --bb-purple-light: 258 90% 97%;
+    --bb-blue: 217 91% 60%;
+    --bb-blue-light: 217 91% 97%;
+    --bb-yellow: 38 92% 50%;
+    --bb-yellow-light: 38 92% 97%;
+    --bb-teal: 173 80% 40%;
+    --bb-gray: 220 9% 46%;
+    --bb-gray-light: 220 14% 96%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--bb-pink)) 0%, hsl(var(--bb-orange)) 100%);
+  }
+
+  .gradient-primary-hover {
+    background: linear-gradient(135deg, hsl(340 95% 48%) 0%, hsl(25 100% 55%) 100%);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--bb-pink)) 0%, hsl(var(--bb-orange)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .shadow-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+
+  .shadow-card-hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  }
+}

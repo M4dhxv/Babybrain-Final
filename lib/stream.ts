@@ -5,6 +5,13 @@ export const SUPPORT_USER_ID = 'babybrain-support';
 
 export const supportChannelId = (userId: string) => `support-${userId}`;
 
+/** Parent ↔ provider channel id. Deterministic so it's idempotent. */
+export const providerChannelId = (providerId: string, parentId: string) =>
+  `pp-${providerId.slice(0, 8)}-${parentId.slice(0, 8)}`;
+
+/** Stream "team"/member id for a provider (so all staff share the channel). */
+export const providerTeamUserId = (providerId: string) => `provider-${providerId}`;
+
 let serverClient: StreamChat | null = null;
 
 /** Server-side Stream client (holds the API secret — never ship to browser). */

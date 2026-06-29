@@ -27,22 +27,45 @@ export async function POST(request: Request) {
     channel_id?: string;
     user?: { id?: string };
     message?: { text?: string };
+    members?: { user_id?: string; user?: { id?: string } }[];
   };
 
-  if (
-    event.type === 'message.new' &&
-    event.user?.id === SUPPORT_USER_ID &&
-    event.channel_id?.startsWith('support-')
-  ) {
+  if (event.type !== 'message.new') {
+    return NextResponse.json({ ok: true });
+  }
+
+  const admin = createAdminClient();
+  const text = (event.message?.text ?? '').slice(0, 300);
+
+  // ---- BabyBrain Support → parent ----
+  if (event.user?.id === SUPPORT_USER_ID && event.channel_id?.startsWith('support-')) {
     const parentId = event.channel_id.slice('support-'.length);
-    const admin = createAdminClient();
     await admin.from('notifications').insert({
       user_id: parentId,
       type: 'support_message',
       title: 'New message from BabyBrain Support',
-      body: (event.message?.text ?? '').slice(0, 300),
+      body: text,
       data: { url: '/support' },
     });
+  }
+
+  // ---- Parent ↔ provider (pp-*) → notify every member except the sender ----
+  if (event.channel_id?.startsWith('pp-')) {
+    const senderId = event.user?.id;
+    const recipients = (event.members ?? [])
+      .map((m) => m.user_id ?? m.user?.id)
+      .filter((id): id is string => Boolean(id) && id !== senderId);
+    if (recipients.length > 0) {
+      await admin.from('notifications').insert(
+        recipients.map((uid) => ({
+          user_id: uid,
+          type: 'provider_message',
+          title: 'New message',
+          body: text,
+          data: { url: '/messages', channel_id: event.channel_id },
+        }))
+      );
+    }
   }
 
   return NextResponse.json({ ok: true });
