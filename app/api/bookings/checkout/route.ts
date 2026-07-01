@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
+import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
@@ -15,10 +15,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'booking_id required' }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   // RLS ensures the parent can only read their own booking.

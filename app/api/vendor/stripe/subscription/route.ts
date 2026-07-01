@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'provider_id required' }, { status: 400 });
   }
 
-  const auth = await requireProviderRole(providerId, 'owner');
+  const auth = await requireProviderRole(request, providerId, 'owner');
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const admin = createAdminClient();
