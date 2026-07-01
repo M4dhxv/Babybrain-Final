@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getStreamServerClient, SUPPORT_USER_ID, supportChannelId } from '@/lib/stream';
 
@@ -8,11 +8,8 @@ import { getStreamServerClient, SUPPORT_USER_ID, supportChannelId } from '@/lib/
  * their support channel exists. Idempotent — safe to call on every
  * visit to /support.
  */
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function GET(request: Request) {
+  const { supabase, user } = await getAuthedContext(request);
 
   if (!user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

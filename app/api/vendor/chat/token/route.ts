@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getAuthedContext } from '@/lib/api-auth';
 import { getStreamServerClient } from '@/lib/stream';
 
 /**
@@ -7,11 +7,8 @@ import { getStreamServerClient } from '@/lib/stream';
  * The client then queries its channels by membership
  * (filter: { members: { $in: [userId] } }) — no per-channel setup needed.
  */
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function GET(request: Request) {
+  const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const stream = getStreamServerClient();

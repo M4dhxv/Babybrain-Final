@@ -8,7 +8,12 @@ export default defineConfig({
   base: './',
   plugins: [inspectAttr(), react()],
   server: {
-    port: 3000,
+    // 5174 avoids colliding with the Next.js backend on 3000; host +
+    // allowedHosts let it run behind the Claude preview proxy.
+    host: true,
+    port: 5174,
+    strictPort: true,
+    allowedHosts: true,
   },
   resolve: {
     alias: {

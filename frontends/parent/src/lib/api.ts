@@ -1,9 +1,9 @@
-import { supabase } from './supabase';
+import { supabase } from "./supabase";
 
 /**
- * Calls a Next.js backend route (Stripe / chat token / staff invite),
- * attaching the Supabase access token as a Bearer header. The routes
- * accept the Bearer token + send CORS headers, so these work cross-origin.
+ * Calls a Next.js backend route (chat token / enquiry / booking), attaching
+ * the Supabase access token as a Bearer header. The routes accept the Bearer
+ * token and send CORS headers, so these work cross-origin.
  */
 export async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
   const {
@@ -11,9 +11,9 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   } = await supabase.auth.getSession();
   const base = import.meta.env.VITE_API_BASE as string;
   const res = await fetch(`${base}${path}`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
     body: JSON.stringify(body),

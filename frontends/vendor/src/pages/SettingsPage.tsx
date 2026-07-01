@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderLocation } from '@/lib/database.types';
 
@@ -42,6 +43,12 @@ export default function SettingsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const isOwner = role === 'owner';
 
   useEffect(() => {
     if (!provider) return;
@@ -72,6 +79,35 @@ export default function SettingsPage() {
     setSaving(false);
     setSaved(true);
     await refreshProvider();
+  }
+
+  async function inviteMember() {
+    if (!provider || !inviteEmail.trim()) return;
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      const res = await apiPost<{ ok: boolean; linked: boolean }>('/api/vendor/staff/invite', {
+        provider_id: provider.id,
+        email: inviteEmail.trim(),
+        role: inviteRole,
+      });
+      setInviteMsg({
+        ok: true,
+        text: res.linked
+          ? 'Added to your team — they already have an account.'
+          : 'Invite sent. They join automatically when they sign up with this email.',
+      });
+      setInviteEmail('');
+      const { data } = await supabase
+        .from('provider_members')
+        .select('id, user_id, role, invited_email, status')
+        .eq('provider_id', provider.id);
+      setTeam((data as Member[]) ?? []);
+    } catch (e) {
+      setInviteMsg({ ok: false, text: e instanceof Error ? e.message : 'Invite failed' });
+    } finally {
+      setInviting(false);
+    }
   }
 
   const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
@@ -232,12 +268,38 @@ export default function SettingsPage() {
                   );
                 })}
               </div>
-              <button
-                disabled
-                title="Staff invites ship in Phase 2 (needs the secure API route)"
-                className="flex items-center justify-center gap-1 w-full px-3 py-2 border border-green-200 rounded-xl text-xs text-green-700 opacity-50">
-                <Users className="w-3 h-3" /> Invite Team Member (Phase 2)
-              </button>
+              {isOwner ? (
+                <div className="border-t border-gray-100 pt-4">
+                  <label className="text-xs font-medium text-gray-500 mb-2 block">Invite a team member</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="email"
+                      placeholder="name@email.com"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-200"
+                    />
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as 'manager' | 'staff')}
+                      className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white">
+                      <option value="staff">Staff</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                    <button
+                      onClick={inviteMember}
+                      disabled={inviting || !inviteEmail.trim()}
+                      className="flex items-center justify-center gap-1 px-4 py-2 bg-green-600 rounded-xl text-xs font-medium text-white disabled:opacity-50">
+                      <Users className="w-3 h-3" /> {inviting ? 'Inviting…' : 'Invite'}
+                    </button>
+                  </div>
+                  {inviteMsg && (
+                    <p className={cn('text-xs mt-2', inviteMsg.ok ? 'text-green-600' : 'text-red-600')}>{inviteMsg.text}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 text-center">Only the business owner can invite team members.</p>
+              )}
             </div>
           </div>
         )}

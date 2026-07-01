@@ -11,14 +11,14 @@
     {
       "name": "vendor",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/madhavsharma/Downloads/Kimi_Agent_PPTX to Frontend Implementation/app", "run", "dev"],
-      "port": 3000,
+      "runtimeArgs": ["--prefix", "frontends/vendor", "run", "dev"],
+      "port": 5174,
       "autoPort": true
     },
     {
       "name": "parent",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/madhavsharma/Documents/New project 2", "run", "dev", "--", "--host"],
+      "runtimeArgs": ["--prefix", "frontends/parent", "run", "dev", "--", "--host"],
       "port": 5173,
       "autoPort": true
     }

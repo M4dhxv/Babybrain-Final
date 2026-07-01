@@ -22,6 +22,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { formatChildAge } from "./lib/database.types";
+import { EnquiryChat } from "./components/EnquiryChat";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -523,6 +524,8 @@ const sgDateTime = (iso: string) =>
 function ActivityDetailPage() {
   const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
+  const { session } = useAuth();
+  const [enquiring, setEnquiring] = useState(false);
 
   if (loading) {
     return (
@@ -584,10 +587,29 @@ function ActivityDetailPage() {
               <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
             )}
             <Button href="/book" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
-            <Button variant="outline" className="mt-3 w-full"><Icon name="mail" className="h-4 w-4" /> Enquire Now</Button>
+            <Button
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={() => {
+                if (!session) {
+                  window.location.href = "/login";
+                } else if (activity.provider_id) {
+                  setEnquiring(true);
+                }
+              }}
+            >
+              <Icon name="mail" className="h-4 w-4" /> Enquire Now
+            </Button>
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
             </Button>
+            {enquiring && activity.provider_id && (
+              <EnquiryChat
+                providerId={activity.provider_id}
+                providerName={activity.title}
+                onClose={() => setEnquiring(false)}
+              />
+            )}
             <div className="mt-5 space-y-4 border-t border-[#eceff7] pt-4 text-sm font-semibold">
               {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
               {next && <p><strong>Next available session</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
