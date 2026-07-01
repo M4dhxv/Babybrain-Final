@@ -20,7 +20,7 @@ export default function LandingPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <img src="/assets/logo-icon.png" alt="BabyBrain" className="w-10 h-10" />
+          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
           <span className="text-2xl font-bold">
             <span className="text-[#E91E63]">Baby</span>
             <span className="text-[#9C27B0]">Brain</span>
@@ -116,7 +116,7 @@ export default function LandingPage() {
           {/* Right Image */}
           <div className="flex-1 relative">
             <img
-              src="/assets/asset_1.jpg"
+              src={`${import.meta.env.BASE_URL}assets/asset_1.jpg`}
               alt="Children playing in a ball pit"
               className="w-full h-auto rounded-3xl object-cover"
               style={{ maxHeight: '520px' }}

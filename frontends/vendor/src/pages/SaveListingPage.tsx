@@ -56,7 +56,7 @@ export default function SaveListingPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <img src="/assets/logo-icon.png" alt="BabyBrain" className="w-10 h-10" />
+          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
           <span className="text-2xl font-bold">
             <span className="text-[#E91E63]">Baby</span>
             <span className="text-[#9C27B0]">Brain</span>
@@ -80,7 +80,7 @@ export default function SaveListingPage() {
         <div className="flex gap-8">
           {/* Left Sidebar */}
           <div className="w-56 flex-shrink-0">
-            <img src="/assets/asset_1.png" alt="Brain" className="w-32 h-auto mb-4" />
+            <img src={`${import.meta.env.BASE_URL}assets/asset_1.png`} alt="Brain" className="w-32 h-auto mb-4" />
             <h3 className="text-lg font-bold text-[#1B1F3B] mb-2">Almost there! <span className="text-lg">🚀</span></h3>
             <p className="text-sm text-gray-600 mb-6">Review your information before saving. You can edit anything if needed.</p>
 
@@ -211,7 +211,7 @@ export default function SaveListingPage() {
               <div className="bg-white rounded-[1.5rem] overflow-hidden">
                 {/* Image */}
                 <div className="relative">
-                  <img src="/assets/asset_2.jpg" alt="Preview" className="w-full h-36 object-cover" />
+                  <img src={`${import.meta.env.BASE_URL}assets/asset_2.jpg`} alt="Preview" className="w-full h-36 object-cover" />
                   <div className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
                     <Heart className="w-4 h-4 text-gray-600" />
                   </div>

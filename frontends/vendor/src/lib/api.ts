@@ -9,7 +9,7 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const base = import.meta.env.VITE_API_BASE as string;
+  const base = (import.meta.env.VITE_API_BASE as string) || "";
   const res = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: {
@@ -27,7 +27,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const base = import.meta.env.VITE_API_BASE as string;
+  const base = (import.meta.env.VITE_API_BASE as string) || "";
   const res = await fetch(`${base}${path}`, {
     headers: {
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),

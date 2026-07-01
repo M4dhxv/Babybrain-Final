@@ -14,13 +14,6 @@
       "runtimeArgs": ["--prefix", "frontends/vendor", "run", "dev"],
       "port": 5174,
       "autoPort": true
-    },
-    {
-      "name": "parent",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontends/parent", "run", "dev", "--", "--host"],
-      "port": 5173,
-      "autoPort": true
     }
   ]
 }
