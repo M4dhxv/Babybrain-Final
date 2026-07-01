@@ -61,7 +61,7 @@ export default function PlansPage() {
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => navigate('/')}
         >
-          <img src="/assets/logo-icon.png" alt="BabyBrain" className="w-10 h-10" />
+          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
           <span className="text-2xl font-bold">
             <span className="text-[#E91E63]">Baby</span>
             <span className="text-[#9C27B0]">Brain</span>

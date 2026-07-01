@@ -6,3 +6,6 @@ node_modules/
 next-env.d.ts
 supabase/.temp/
 .vercel
+
+# Vendor SPA build output (generated at build time into the Next app)
+/public/vendor

@@ -39,7 +39,7 @@ export default function PortalLayout() {
         {/* Logo */}
         <div className="flex items-center gap-2 px-5 py-4">
           <img
-            src="/assets/logo-icon.png"
+            src={`${import.meta.env.BASE_URL}assets/logo-icon.png`}
             alt="BabyBrain"
             className="w-8 h-8 rounded-full"
           />
