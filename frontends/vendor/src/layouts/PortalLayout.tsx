@@ -17,7 +17,7 @@ const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: CalendarDays, label: 'Activities', path: '/activities' },
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
-  { icon: MessageSquare, label: 'Messages', path: '#', badge: 2 },
+  { icon: MessageSquare, label: 'Messages', path: '/messages' },
   { icon: Settings, label: 'Settings', path: '/settings' },
   { icon: CreditCard, label: 'Billing', path: '/billing' },
 ];
@@ -55,31 +55,20 @@ export default function PortalLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
-            const isMessages = item.label === 'Messages';
             return (
               <button
                 key={item.label}
-                onClick={() => {
-                  if (!isMessages) navigate(item.path);
-                }}
+                onClick={() => navigate(item.path)}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
                     ? 'bg-pink-50 text-pink-600'
-                    : 'text-gray-700 hover:bg-gray-100',
-                  isMessages && 'cursor-default opacity-60'
+                    : 'text-gray-700 hover:bg-gray-100'
                 )}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
                 {!isSidebarCollapsed && (
-                  <>
-                    <span className="flex-1 text-left">{item.label}</span>
-                    {item.badge && (
-                      <span className="flex items-center justify-center w-5 h-5 text-xs font-semibold text-white bg-pink-500 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                  </>
+                  <span className="flex-1 text-left">{item.label}</span>
                 )}
               </button>
             );

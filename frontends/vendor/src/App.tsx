@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ActivitiesPage from './pages/ActivitiesPage';
 import BookingsPage from './pages/BookingsPage';
+import MessagesPage from './pages/MessagesPage';
 import SettingsPage from './pages/SettingsPage';
 import BillingPage from './pages/BillingPage';
 import PortalLayout from './layouts/PortalLayout';
@@ -31,6 +32,7 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/activities" element={<ActivitiesPage />} />
               <Route path="/bookings" element={<BookingsPage />} />
+              <Route path="/messages" element={<MessagesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/billing" element={<BillingPage />} />
             </Route>

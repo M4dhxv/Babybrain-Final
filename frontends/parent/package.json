@@ -12,7 +12,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stream-chat": "^8.60.0",
+    "stream-chat-react": "^12.16.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
