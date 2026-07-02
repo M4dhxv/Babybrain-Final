@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, X, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,13 +37,13 @@ const plans = [
 ];
 
 const features = [
-  { name: 'Edit Profile', free: true, growth: true, pro: true },
-  { name: 'Upload Photos', free: true, growth: true, pro: true },
+  { name: 'Edit Profile & Upload Photos', free: true, growth: true, pro: true },
   { name: 'Website Traffic', free: true, growth: true, pro: true },
   { name: 'Reviews', free: true, growth: true, pro: true },
   { name: 'Messaging', free: false, growth: true, pro: true },
-  { name: 'Booking Management', free: false, growth: true, pro: true },
-  { name: 'Waitlists', free: false, growth: true, pro: true },
+  { name: 'Booking & Waitlist Management', free: false, growth: true, pro: true },
+  { name: 'Stripe Payments', free: false, growth: true, pro: true },
+  { name: 'Package & Make-up Tokens', free: false, growth: true, pro: true },
   { name: 'Attendance Tracking', free: false, growth: true, pro: true },
   { name: 'Featured Placement', free: false, growth: false, pro: true },
   { name: 'Priority Ranking', free: false, growth: false, pro: true },
@@ -52,6 +53,7 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
+  const [optedOut, setOptedOut] = useState(false);
 
   return (
     <div className="min-h-screen bg-white">
@@ -180,6 +182,30 @@ export default function PlansPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Opt out / remove listing */}
+        <div className="mt-10 border-t border-gray-100 pt-6 text-center">
+          {optedOut ? (
+            <p className="text-sm text-gray-600">
+              Request received — our team will remove your listing within 3 working days.
+              You can re-list any time.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500 mb-2">Don't want to be listed on BabyBrain?</p>
+              <button
+                onClick={() => {
+                  if (window.confirm('Opt out and remove your listing from BabyBrain? Parents will no longer see your business.')) {
+                    setOptedOut(true);
+                  }
+                }}
+                className="text-sm font-semibold text-red-500 hover:text-red-600 underline underline-offset-4"
+              >
+                Opt out / remove my listing
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

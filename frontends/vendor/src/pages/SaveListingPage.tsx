@@ -31,11 +31,16 @@ const listingData = [
   { icon: Store, label: 'Business name', value: 'Little Play Studio', color: 'text-purple-600', bg: 'bg-purple-100' },
   { icon: Baby, label: 'Category', value: 'Playspaces', color: 'text-pink-600', bg: 'bg-pink-100' },
   { icon: Baby, label: 'Age range', value: '1 - 8 years', color: 'text-green-600', bg: 'bg-green-100' },
-  { icon: MapPin, label: 'Address', value: '3 Temasek Blvd, #01-120 Suntec City Mall, Singapore 038983', color: 'text-green-600', bg: 'bg-green-100' },
-  { icon: Clock, label: 'Operating hours', value: 'Mon – Fri: 9:00 AM – 6:00 PM\nSat – Sun: 9:00 AM – 7:00 PM', color: 'text-blue-600', bg: 'bg-blue-100' },
   { icon: DollarSign, label: 'Pricing', value: '$60 per session', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   { icon: Link, label: 'Booking link', value: 'https://linktr.ee/littleplaystudio', color: 'text-green-600', bg: 'bg-green-100' },
   { icon: Phone, label: 'Contact', value: 'WhatsApp: +65 8123 4567  •  Email: hello@littleplay.sg', color: 'text-blue-600', bg: 'bg-blue-100' },
+];
+
+// A vendor often runs classes across several venues, each with its own
+// schedule — surface every detected location + hours, not just one.
+const venues = [
+  { name: 'Suntec City', address: '3 Temasek Blvd, #01-120 Suntec City Mall, Singapore 038983', hours: 'Mon – Fri: 9:00 AM – 6:00 PM\nSat – Sun: 9:00 AM – 7:00 PM' },
+  { name: 'East Coast', address: '88 E Coast Rd, #02-06, Singapore 423371', hours: 'Tue – Sun: 9:30 AM – 6:30 PM' },
 ];
 
 const whyMatters = [
@@ -122,6 +127,42 @@ export default function SaveListingPage() {
                   <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600 flex-shrink-0" />
                 </div>
               ))}
+            </div>
+
+            {/* Venues & schedules — supports multiple locations */}
+            <div className="mt-3 p-3 bg-gray-50 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Venues &amp; schedules
+                    {venues.length > 1 && (
+                      <span className="ml-1 text-[#E91E63] font-medium">· {venues.length} locations detected</span>
+                    )}
+                  </div>
+                </div>
+                <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600 flex-shrink-0" />
+              </div>
+              <div className="space-y-2">
+                {venues.map((v, i) => (
+                  <div key={i} className="rounded-lg bg-white border border-gray-100 p-3">
+                    <div className="text-sm font-semibold text-gray-900">{v.name}</div>
+                    <div className="flex items-start gap-1.5 mt-1 text-xs text-gray-600">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <span>{v.address}</span>
+                    </div>
+                    <div className="flex items-start gap-1.5 mt-1 text-xs text-gray-600">
+                      <Clock className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <span className="whitespace-pre-line">{v.hours}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-2">
+                Different classes can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
+              </p>
             </div>
 
             {/* Required to publish */}

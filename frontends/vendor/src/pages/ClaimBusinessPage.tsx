@@ -46,8 +46,8 @@ const venues = [
 const whyVerify = [
   { icon: MapPin, title: 'Claim your venue listing', desc: 'Take ownership of your business on BabyBrain.' },
   { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programs up to date.' },
-  { icon: CalendarDays, title: 'Receive bookings directly', desc: 'Parents can book and pay through BabyBrain.' },
-  { icon: MessageCircle, title: 'Respond to parent enquiries', desc: 'Chat with parents and build lasting relationships.' },
+  { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Growth plan.' },
+  { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Growth plan.' },
   { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your classes, timetable and holidays.' },
 ];
 
