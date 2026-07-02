@@ -9,3 +9,4 @@ supabase/.temp/
 
 # Vendor SPA build output (generated at build time into the Next app)
 /public/vendor
+/public/app

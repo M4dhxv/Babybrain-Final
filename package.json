@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build:vendor": "npm --prefix frontends/vendor install --include=dev --ignore-scripts && npm --prefix frontends/vendor run build",
-    "build": "npm run build:vendor && next build",
+    "build:parent": "npm --prefix frontends/parent install --include=dev --ignore-scripts && npm --prefix frontends/parent run build",
+    "build": "npm run build:parent && npm run build:vendor && next build",
     "start": "next start",
     "seed": "node scripts/seed.mjs",
     "validate": "node scripts/validate.mjs",

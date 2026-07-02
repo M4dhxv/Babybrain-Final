@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background: #fffcf8;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #fffcf8;
+    color: #111a4c;
+    font-family:
+      Nunito,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+    font-size: 15px;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .pixelated-fidelity {
+    image-rendering: auto;
+  }
+
+  .font-black {
+    font-weight: 800;
+  }
+
+  .font-extrabold {
+    font-weight: 750;
+  }
+
+  .font-bold {
+    font-weight: 700;
+  }
+}
