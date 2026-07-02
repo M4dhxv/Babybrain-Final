@@ -5,3 +5,6 @@ vite.config.d.ts
 vite.config.js
 .vercel
 .env*
+
+# committed public Supabase config for the Vercel build
+!.env.production

@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+
+# committed public Supabase config for the Vercel build
+!.env.production
