@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "build:vendor": "npm --prefix frontends/vendor install --ignore-scripts && npm --prefix frontends/vendor run build",
+    "build:vendor": "npm --prefix frontends/vendor install --include=dev --ignore-scripts && npm --prefix frontends/vendor run build",
     "build": "npm run build:vendor && next build",
     "start": "next start",
     "seed": "node scripts/seed.mjs",
