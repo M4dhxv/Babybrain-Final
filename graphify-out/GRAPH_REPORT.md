@@ -1,16 +1,16 @@
 # Graph Report - babybrain-clone  (2026-07-04)
 
 ## Corpus Check
-- 194 files · ~179,834 words
+- 197 files · ~182,548 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1174 nodes · 2056 edges · 83 communities (78 shown, 5 thin omitted)
+- 1186 nodes · 2091 edges · 82 communities (75 shown, 7 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 4 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a375f124`
+- Built from commit: `0552b718`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -73,7 +73,6 @@
 - [[_COMMUNITY_layout.tsx|layout.tsx]]
 - [[_COMMUNITY_input-otp.tsx|input-otp.tsx]]
 - [[_COMMUNITY_enrich-regex.mjs|enrich-regex.mjs]]
-- [[_COMMUNITY_accordion.tsx|accordion.tsx]]
 - [[_COMMUNITY_alert.tsx|alert.tsx]]
 - [[_COMMUNITY_seed.mjs|seed.mjs]]
 - [[_COMMUNITY_vercel.json|vercel.json]]
@@ -90,11 +89,11 @@
 3. `createClient()` - 24 edges
 4. `base()` - 22 edges
 5. `compilerOptions` - 22 edges
-6. `compilerOptions` - 18 edges
-7. `Button()` - 17 edges
-8. `compilerOptions` - 16 edges
+6. `useAuth()` - 21 edges
+7. `Button()` - 19 edges
+8. `compilerOptions` - 18 edges
 9. `compilerOptions` - 16 edges
-10. `useAuth()` - 15 edges
+10. `compilerOptions` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `MyReviewsPage()` --calls--> `createClient()`  [EXTRACTED]
@@ -111,11 +110,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (83 total, 5 thin omitted)
+## Communities (82 total, 7 thin omitted)
 
 ### Community 0 - "cn"
-Cohesion: 0.06
-Nodes (45): Avatar(), AvatarFallback(), AvatarImage(), Card(), CardAction(), CardContent(), CardDescription(), CardFooter() (+37 more)
+Cohesion: 0.05
+Nodes (53): AccordionContent(), AccordionItem(), AccordionTrigger(), Avatar(), AvatarFallback(), AvatarImage(), Badge(), badgeVariants (+45 more)
 
 ### Community 1 - "dependencies"
 Cohesion: 0.04
@@ -139,11 +138,11 @@ Nodes (28): AGE_OPTIONS, DISTANCE_OPTIONS, FavProps, base(), IconArrowLeft(), Ic
 
 ### Community 6 - "App.tsx"
 Cohesion: 0.11
-Nodes (20): ActivityDetailPage(), BookedPage(), BookingPage(), BUDGET_CHIPS, getParam(), LoginPage(), MatchesPage(), OnboardingPage() (+12 more)
+Nodes (22): ActivityDetailPage(), BookedPage(), BookingPage(), BUDGET_CHIPS, ForgotPasswordPage(), getParam(), LoginPage(), MatchesPage() (+14 more)
 
 ### Community 7 - "utils.ts"
-Cohesion: 0.08
-Nodes (15): Badge(), badgeVariants, HoverCardContent(), PopoverContent(), ResizableHandle(), ResizablePanelGroup(), Slider(), Spinner() (+7 more)
+Cohesion: 0.43
+Nodes (5): ToggleGroup(), ToggleGroupContext, ToggleGroupItem(), Toggle(), toggleVariants
 
 ### Community 8 - "database.types.ts"
 Cohesion: 0.06
@@ -171,7 +170,7 @@ Nodes (24): dependencies, react, react-dom, stream-chat, stream-chat-react, @sup
 
 ### Community 14 - "alert-dialog.tsx"
 Cohesion: 0.10
-Nodes (18): AlertDialogAction(), AlertDialogCancel(), AlertDialogContent(), AlertDialogDescription(), AlertDialogFooter(), AlertDialogHeader(), AlertDialogOverlay(), AlertDialogTitle() (+10 more)
+Nodes (16): AlertDialogAction(), AlertDialogCancel(), AlertDialogContent(), AlertDialogDescription(), AlertDialogFooter(), AlertDialogHeader(), AlertDialogOverlay(), AlertDialogTitle() (+8 more)
 
 ### Community 15 - "compilerOptions"
 Cohesion: 0.08
@@ -202,8 +201,8 @@ Cohesion: 0.11
 Nodes (18): aliases, components, hooks, lib, ui, utils, iconLibrary, registries (+10 more)
 
 ### Community 22 - "App.tsx"
-Cohesion: 0.16
-Nodes (11): App(), AuthProvider(), Button(), includedFeatures, ClaimBusinessPage(), venues, whyVerify, LandingPage() (+3 more)
+Cohesion: 0.14
+Nodes (14): Button(), Calendar(), CalendarDayButton(), Input(), Label(), includedFeatures, ClaimBusinessPage(), venues (+6 more)
 
 ### Community 23 - "field.tsx"
 Cohesion: 0.13
@@ -222,16 +221,16 @@ Cohesion: 0.12
 Nodes (11): Menubar(), MenubarCheckboxItem(), MenubarContent(), MenubarItem(), MenubarLabel(), MenubarRadioItem(), MenubarSeparator(), MenubarShortcut() (+3 more)
 
 ### Community 27 - "SettingsPage.tsx"
-Cohesion: 0.17
-Nodes (11): Progress(), apiGet(), apiPost(), Database, ProviderLocation, supabase, completion(), complianceItems (+3 more)
+Cohesion: 0.16
+Nodes (12): apiGet(), apiPost(), getChatClient(), Database, ProviderLocation, supabase, MessagesPage(), completion() (+4 more)
 
 ### Community 28 - "AuthProvider.tsx"
-Cohesion: 0.21
-Nodes (11): AuthState, Ctx, useAuth(), RequireAuth(), Label(), getChatClient(), Provider, ProviderRole (+3 more)
+Cohesion: 0.13
+Nodes (19): App(), RecoveryRedirect(), AuthProvider(), AuthState, Ctx, useAuth(), RequireAuth(), Provider (+11 more)
 
 ### Community 29 - "BookingsPage.tsx"
-Cohesion: 0.17
-Nodes (13): Checkbox(), ageLabel(), BookingsPage(), bookingsTabs, initials(), PALETTE, RosterRow, SessionOpt (+5 more)
+Cohesion: 0.12
+Nodes (16): Checkbox(), Progress(), PortalLayout(), sidebarItems, ageLabel(), BookingsPage(), bookingsTabs, initials() (+8 more)
 
 ### Community 30 - "context-menu.tsx"
 Cohesion: 0.12
@@ -246,12 +245,12 @@ Cohesion: 0.20
 Nodes (13): Carousel(), CarouselApi, CarouselContent(), CarouselContext, CarouselContextProps, CarouselItem(), CarouselNext(), CarouselOptions (+5 more)
 
 ### Community 33 - "BabyBrain Phase 1 — Backend Architecture"
-Cohesion: 0.15
-Nodes (12): 10. TypeScript Types, 11. Folder Structure (Next.js 15 app), 12. Implementation Roadmap (~4 weeks, one founder-engineer), 1. System Architecture Diagram, 2. Database ERD, 3–4. Database Schema & Migrations, 5. RLS Policies, 6. Authentication Architecture (+4 more)
+Cohesion: 0.07
+Nodes (26): 10. TypeScript Types, 11. Folder Structure (Next.js 15 app), 12. Implementation Roadmap (~4 weeks, one founder-engineer), 1. System Architecture Diagram, 2. Database ERD, 3–4. Database Schema & Migrations, 5. RLS Policies, 6. Authentication Architecture (+18 more)
 
 ### Community 34 - "input-group.tsx"
-Cohesion: 0.21
-Nodes (10): InputGroup(), InputGroupAddon(), inputGroupAddonVariants, InputGroupButton(), inputGroupButtonVariants, InputGroupInput(), InputGroupText(), InputGroupTextarea() (+2 more)
+Cohesion: 0.24
+Nodes (9): InputGroup(), InputGroupAddon(), inputGroupAddonVariants, InputGroupButton(), inputGroupButtonVariants, InputGroupInput(), InputGroupText(), InputGroupTextarea() (+1 more)
 
 ### Community 35 - "item.tsx"
 Cohesion: 0.18
@@ -279,7 +278,7 @@ Nodes (10): 1. Google OAuth, 2. Auth URL configuration, 3. Resend domain + SMTP 
 
 ### Community 41 - "BabyBrain Phase 2 — Vendor/Provider Backend Architecture"
 Cohesion: 0.18
-Nodes (10): 1. Screen → backend objects (analysis), 2. Architecture diagram, 3. ERD (new + extended), 4. SQL migrations, 5. RLS model (staff roles), 6. Vendor API design, 7. GetStream expansion (parent ↔ provider), 8. Stripe integration design (+2 more)
+Nodes (7): SelectContent(), SelectItem(), SelectLabel(), SelectScrollDownButton(), SelectScrollUpButton(), SelectSeparator(), SelectTrigger()
 
 ### Community 42 - "useActivities.ts"
 Cohesion: 0.27
@@ -309,17 +308,9 @@ Nodes (7): allowedOrigins(), corsHeaders(), DEFAULT_ORIGINS, PROTECTED_PREFIXES,
 Cohesion: 0.31
 Nodes (8): d, env, extract(), out, pick(), runner(), sleep(), targets
 
-### Community 49 - "breadcrumb.tsx"
-Cohesion: 0.25
-Nodes (6): BreadcrumbEllipsis(), BreadcrumbItem(), BreadcrumbLink(), BreadcrumbList(), BreadcrumbPage(), BreadcrumbSeparator()
-
 ### Community 50 - "empty.tsx"
 Cohesion: 0.29
 Nodes (7): Empty(), EmptyContent(), EmptyDescription(), EmptyHeader(), EmptyMedia(), emptyMediaVariants, EmptyTitle()
-
-### Community 51 - "DashboardPage.tsx"
-Cohesion: 0.25
-Nodes (7): ProviderOverview, barChartData, messages, recentBookings, statsCards, topAgeInsight, upcomingSessions
 
 ### Community 52 - "validate-vendor.mjs"
 Cohesion: 0.25
@@ -345,10 +336,6 @@ Nodes (4): input-otp, InputOTP(), InputOTPGroup(), InputOTPSlot()
 Cohesion: 0.40
 Nodes (4): d, grab(), out, uniq()
 
-### Community 58 - "accordion.tsx"
-Cohesion: 0.40
-Nodes (3): AccordionContent(), AccordionItem(), AccordionTrigger()
-
 ### Community 59 - "alert.tsx"
 Cohesion: 0.50
 Nodes (4): Alert(), AlertDescription(), AlertTitle(), alertVariants
@@ -366,23 +353,23 @@ Cohesion: 0.50
 Nodes (3): Expanding the ESLint configuration, React Compiler, React + TypeScript + Vite
 
 ## Knowledge Gaps
-- **441 isolated node(s):** `AGE_OPTIONS`, `DISTANCE_OPTIONS`, `metadata`, `BRAND_COLORS`, `TIME_CHIPS` (+436 more)
+- **444 isolated node(s):** `AGE_OPTIONS`, `DISTANCE_OPTIONS`, `metadata`, `BRAND_COLORS`, `TIME_CHIPS` (+439 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `cn()` connect `cn` to `sidebar.tsx`, `utils.ts`, `alert-dialog.tsx`, `command.tsx`, `App.tsx`, `field.tsx`, `menubar.tsx`, `SettingsPage.tsx`, `AuthProvider.tsx`, `BookingsPage.tsx`, `context-menu.tsx`, `dropdown-menu.tsx`, `carousel.tsx`, `input-group.tsx`, `item.tsx`, `form.tsx`, `chart.tsx`, `drawer.tsx`, `ActivitiesPage.tsx`, `breadcrumb.tsx`, `empty.tsx`, `DashboardPage.tsx`, `input-otp.tsx`, `accordion.tsx`, `alert.tsx`?**
-  _High betweenness centrality (0.201) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `sidebar.tsx`, `utils.ts`, `alert-dialog.tsx`, `command.tsx`, `App.tsx`, `field.tsx`, `menubar.tsx`, `SettingsPage.tsx`, `AuthProvider.tsx`, `BookingsPage.tsx`, `context-menu.tsx`, `dropdown-menu.tsx`, `carousel.tsx`, `input-group.tsx`, `item.tsx`, `form.tsx`, `BabyBrain Phase 2 — Vendor/Provider Backend Architecture`, `chart.tsx`, `drawer.tsx`, `ActivitiesPage.tsx`, `breadcrumb.tsx`, `empty.tsx`, `DashboardPage.tsx`, `input-otp.tsx`, `alert.tsx`?**
+  _High betweenness centrality (0.199) - this node is a cross-community bridge._
 - **Why does `dependencies` connect `dependencies` to `input-otp.tsx`, `sonner`, `devDependencies`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
 - **Why does `input-otp` connect `input-otp.tsx` to `dependencies`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+  _High betweenness centrality (0.063) - this node is a cross-community bridge._
 - **What connects `AGE_OPTIONS`, `DISTANCE_OPTIONS`, `metadata` to the rest of the system?**
-  _441 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _444 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `cn` be split into smaller, more focused modules?**
-  _Cohesion score 0.06265664160401002 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05010351966873706 - nodes in this community are weakly interconnected._
 - **Should `dependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.04081632653061224 - nodes in this community are weakly interconnected._
 - **Should `sidebar.tsx` be split into smaller, more focused modules?**

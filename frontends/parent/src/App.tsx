@@ -1370,7 +1370,10 @@ function LoginPage() {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-black">Password</label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-black">Password</label>
+                <a href="/forgot-password" className="text-xs font-bold text-baby-blue hover:underline">Forgot password?</a>
+              </div>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log In"}</Button>
@@ -1384,9 +1387,132 @@ function LoginPage() {
   );
 }
 
+function ForgotPasswordPage() {
+  const { resetPassword } = useAuth();
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const { error } = await resetPassword(email);
+    setBusy(false);
+    if (error) return setError(error);
+    setSent(true);
+  }
+  return (
+    <PageShell active="/login">
+      <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
+        <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-6 shadow-card sm:p-8">
+          <h1 className="text-2xl font-black">Reset your password</h1>
+          {sent ? (
+            <div className="mt-3">
+              <p className="rounded-[10px] bg-[#eefbf1] px-3 py-3 text-sm font-semibold text-green-700">
+                If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
+              </p>
+              <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
+                <a href="/login" className="font-black text-baby-blue">← Back to log in</a>
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="mt-1 font-semibold text-[#5a6690]">Enter your email and we'll send you a link to set a new password.</p>
+              {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+              <form onSubmit={submit} className="mt-5 space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-black">Email</label>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                </div>
+                <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
+              </form>
+              <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
+                Remembered it? <a href="/login" className="font-black text-baby-blue">Log in</a>
+              </p>
+            </>
+          )}
+        </div>
+      </main>
+    </PageShell>
+  );
+}
+
+function ResetPasswordPage() {
+  const { updatePassword } = useAuth();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Supabase parses the recovery token from the URL and fires PASSWORD_RECOVERY;
+  // until we have a session the user can't set a new password.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === "PASSWORD_RECOVERY" || s) setReady(true);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (password !== confirm) return setError("Passwords don't match.");
+    if (password.length < 6) return setError("Use at least 6 characters.");
+    setBusy(true);
+    setError(null);
+    const { error } = await updatePassword(password);
+    setBusy(false);
+    if (error) return setError(error);
+    setDone(true);
+    setTimeout(() => (window.location.href = "/profile"), 1500);
+  }
+
+  return (
+    <PageShell active="/login">
+      <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
+        <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-6 shadow-card sm:p-8">
+          <h1 className="text-2xl font-black">Set a new password</h1>
+          {done ? (
+            <p className="mt-3 rounded-[10px] bg-[#eefbf1] px-3 py-3 text-sm font-semibold text-green-700">
+              Password updated. Taking you to your profile…
+            </p>
+          ) : !ready ? (
+            <p className="mt-3 rounded-[10px] bg-[#fff7e6] px-3 py-3 text-sm font-semibold text-[#8a6d1a]">
+              This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-blue">request a new one</a>.
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 font-semibold text-[#5a6690]">Choose a new password for your account.</p>
+              {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+              <form onSubmit={submit} className="mt-5 space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-black">New password</label>
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-black">Confirm password</label>
+                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                </div>
+                <Button type="submit" className="w-full justify-center">{busy ? "Saving…" : "Update password"}</Button>
+              </form>
+            </>
+          )}
+        </div>
+      </main>
+    </PageShell>
+  );
+}
+
 function App() {
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
   if (pathname === "/login") return <LoginPage />;
+  if (pathname === "/forgot-password") return <ForgotPasswordPage />;
+  if (pathname === "/reset-password") return <ResetPasswordPage />;
   if (pathname === "/pricing") return <PricingPage />;
   if (pathname === "/payment") return <PaymentPage />;
   if (pathname === "/book") return <BookingPage />;

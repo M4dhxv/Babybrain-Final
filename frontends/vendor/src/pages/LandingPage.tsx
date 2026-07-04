@@ -16,33 +16,33 @@ export default function LandingPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white overflow-x-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
+      <header className="flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
         <div className="flex items-center gap-2">
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
-          <span className="text-2xl font-bold">
+          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-9 h-9 sm:w-10 sm:h-10" />
+          <span className="text-xl font-bold sm:text-2xl">
             <span className="text-[#E91E63]">Baby</span>
             <span className="text-[#9C27B0]">Brain</span>
             <span className="text-gray-600">.sg</span>
           </span>
         </div>
-        <nav className="flex items-center gap-10">
+        <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#E91E63] border-b-2 border-[#E91E63] pb-1">Home</button>
           <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
           <button className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button
             variant="outline"
             onClick={() => navigate('/login')}
-            className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
+            className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Sign In
           </Button>
           <Button
             onClick={() => navigate('/plans')}
-            className="rounded-full px-6 gradient-primary text-white hover:gradient-primary-hover border-0"
+            className="hidden rounded-full px-6 gradient-primary text-white hover:gradient-primary-hover border-0 sm:inline-flex"
           >
             Upgrade your listing
           </Button>
@@ -50,8 +50,8 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative px-8 pt-10 pb-16">
-        <div className="flex items-start gap-8 max-w-7xl mx-auto">
+      <section className="relative px-4 pt-10 pb-16 sm:px-8">
+        <div className="flex flex-col items-start gap-8 max-w-7xl mx-auto lg:flex-row">
           {/* Left Content */}
           <div className="flex-1 pt-6">
             {/* Trust Badge */}
@@ -63,7 +63,7 @@ export default function LandingPage() {
             </div>
 
             {/* Heading */}
-            <h1 className="text-5xl font-extrabold text-[#1B1F3B] leading-tight mb-4">
+            <h1 className="text-4xl font-extrabold text-[#1B1F3B] leading-tight mb-4 sm:text-5xl">
               Bring More<br />
               <span className="text-[#E91E63]">Families</span><br />
               To You
@@ -98,7 +98,7 @@ export default function LandingPage() {
             </div>
 
             {/* CTAs */}
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <Button
                 onClick={() => navigate('/plans')}
                 className="gradient-primary text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90"
@@ -127,8 +127,8 @@ export default function LandingPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="bg-gray-50 py-10 px-8">
-        <div className="max-w-5xl mx-auto grid grid-cols-3 gap-8">
+      <section className="bg-gray-50 py-10 px-4 sm:px-8">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 gap-8 sm:grid-cols-3">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-pink-100 flex items-center justify-center">
               <Users className="w-7 h-7 text-[#E91E63]" />

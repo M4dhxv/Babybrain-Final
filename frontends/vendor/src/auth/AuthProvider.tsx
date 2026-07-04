@@ -8,7 +8,10 @@ interface AuthState {
   provider: Provider | null;     // the vendor's active business
   role: ProviderRole | null;
   loading: boolean;
+  recovery: boolean;             // true after a password-reset link is opened
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  resetPassword: (email: string) => Promise<{ error?: string }>;
+  updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProvider: () => Promise<void>;
 }
@@ -20,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [provider, setProvider] = useState<Provider | null>(null);
   const [role, setRole] = useState<ProviderRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovery, setRecovery] = useState(false);
 
   async function loadProvider() {
     // Resolve the user's first active membership → its provider (RLS-scoped).
@@ -44,7 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.session) await loadProvider();
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(s);
       if (s) await loadProvider();
       else {
@@ -60,8 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     provider,
     role,
     loading,
+    recovery,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return error ? { error: error.message } : {};
+    },
+    resetPassword: async (email) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+      });
+      return error ? { error: error.message } : {};
+    },
+    updatePassword: async (password) => {
+      const { error } = await supabase.auth.updateUser({ password });
+      setRecovery(false);
       return error ? { error: error.message } : {};
     },
     signOut: async () => {

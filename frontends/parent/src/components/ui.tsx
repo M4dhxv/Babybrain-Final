@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
 import { useActivities } from "../lib/useActivities";
@@ -66,7 +67,9 @@ type IconName =
   | "bottle"
   | "target"
   | "gear"
-  | "clock";
+  | "clock"
+  | "menu"
+  | "close";
 
 const iconPaths: Record<IconName, string> = {
   heart:
@@ -127,6 +130,8 @@ const iconPaths: Record<IconName, string> = {
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3c0-.5 0-1-.1-1.4l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.5-1.4L11.9 2H8l-.5 2.8a7 7 0 0 0-2.5 1.4l-2.4-1-2 3.4 2 1.6c-.1.4-.1.9-.1 1.4s0 1 .1 1.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.5 1.4L8 22h4l.5-2.8a7 7 0 0 0 2.5-1.4l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.4Z",
   clock:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13.5V12l3.5 2",
+  menu: "M4 7h16M4 12h16M4 17h16",
+  close: "M6 6l12 12M18 6 6 18",
 };
 
 export function Icon({
@@ -179,6 +184,7 @@ type HeaderProps = {
 
 export function Header({ active = "/" }: HeaderProps) {
   const { session, profile, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const navItems = [
     routes[0],
     { href: active === "/matches" ? "/matches" : "/explore", label: "Explore Activities" },
@@ -188,9 +194,9 @@ export function Header({ active = "/" }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#edf0fb] bg-baby-paper/95 backdrop-blur">
-      <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between px-6">
+      <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between px-4 sm:px-6">
         <Brand />
-        <nav className="hidden items-center gap-9 text-[13px] font-bold text-baby-ink md:flex">
+        <nav className="hidden items-center gap-6 text-[13px] font-bold text-baby-ink md:flex lg:gap-9">
           {navItems.map((route) => (
             <a
               key={route.href}
@@ -206,8 +212,10 @@ export function Header({ active = "/" }: HeaderProps) {
             </a>
           ))}
         </nav>
+
+        {/* Desktop auth actions */}
         {!session ? (
-          <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-3 md:flex">
             <Button href="/login" variant="outline" size="sm">
               <Icon name="user" className="h-4 w-4" /> Log In
             </Button>
@@ -216,8 +224,8 @@ export function Header({ active = "/" }: HeaderProps) {
             </Button>
           </div>
         ) : (
-          <div className="flex items-center gap-5 text-sm font-bold">
-            <a href="/profile" className="hidden items-center gap-2 text-baby-ink md:flex">
+          <div className="hidden items-center gap-5 text-sm font-bold md:flex">
+            <a href="/profile" className="flex items-center gap-2 text-baby-ink">
               <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
             </a>
             <a
@@ -236,7 +244,59 @@ export function Header({ active = "/" }: HeaderProps) {
             </button>
           </div>
         )}
+
+        {/* Mobile hamburger */}
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#e4e9f6] bg-white text-baby-ink md:hidden"
+        >
+          <Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />
+        </button>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <nav className="border-t border-[#edf0fb] bg-baby-paper px-4 py-3 md:hidden">
+          <div className="flex flex-col gap-1 text-[15px] font-bold text-baby-ink">
+            {navItems.map((route) => (
+              <a
+                key={route.href}
+                href={route.href}
+                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#eaf2ff] text-[#1275ff]" : "hover:bg-white"}`}
+              >
+                {route.label}
+              </a>
+            ))}
+          </div>
+          <div className="mt-3 border-t border-[#e7ebf6] pt-3">
+            {!session ? (
+              <div className="flex flex-col gap-2">
+                <Button href="/login" variant="outline" className="w-full justify-center">
+                  <Icon name="user" className="h-4 w-4" /> Log In
+                </Button>
+                <Button href="/onboarding" className="w-full justify-center">
+                  <Icon name="user" className="h-4 w-4" /> Sign Up
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1 text-[15px] font-bold">
+                <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
+                  <Icon name="user" className="h-5 w-5 text-baby-blue" /> {profile?.full_name?.split(" ")[0] || "My account"}
+                </a>
+                <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
+                  <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
+                </a>
+                <button onClick={() => signOut()} className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[#68718f] hover:bg-white">
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

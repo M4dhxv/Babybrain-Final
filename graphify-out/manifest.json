@@ -235,13 +235,13 @@
     "semantic_hash": ""
   },
   "frontends/parent/src/App.tsx": {
-    "mtime": 1783166064.8358655,
-    "ast_hash": "c09497c2135c0815ccb68af912a0d070",
+    "mtime": 1783167901.6933389,
+    "ast_hash": "6814f0d11ec21c2a1a04c169c0986171",
     "semantic_hash": ""
   },
   "frontends/parent/src/auth/AuthProvider.tsx": {
-    "mtime": 1782975772.1389008,
-    "ast_hash": "7d9a6658f031c4d3c03e199c8fd2d85e",
+    "mtime": 1783167851.8412225,
+    "ast_hash": "e33504a5e392922e6649f81c7b82622e",
     "semantic_hash": ""
   },
   "frontends/parent/src/components/ClassGroupChat.tsx": {
@@ -255,8 +255,8 @@
     "semantic_hash": ""
   },
   "frontends/parent/src/components/ui.tsx": {
-    "mtime": 1783160455.2260294,
-    "ast_hash": "aba21bd7a2a052b000a9a52255de1ef2",
+    "mtime": 1783167970.5762625,
+    "ast_hash": "4238dff01af154ed49088fff1367d2cf",
     "semantic_hash": ""
   },
   "frontends/parent/src/data/content.ts": {
@@ -340,13 +340,13 @@
     "semantic_hash": ""
   },
   "frontends/vendor/src/App.tsx": {
-    "mtime": 1782934311.1390328,
-    "ast_hash": "7ea50cb126a3598c323f8a39f188b42e",
+    "mtime": 1783168250.0343852,
+    "ast_hash": "02041bd6c33a713d41fb736b5ef281ed",
     "semantic_hash": ""
   },
   "frontends/vendor/src/auth/AuthProvider.tsx": {
-    "mtime": 1782374776.0,
-    "ast_hash": "0a3c1d682d9ab5ac35d990da2d434f26",
+    "mtime": 1783168203.4173193,
+    "ast_hash": "3c135c08c2161cc7b712ac06f2c8c7cf",
     "semantic_hash": ""
   },
   "frontends/vendor/src/auth/RequireAuth.tsx": {
@@ -625,8 +625,8 @@
     "semantic_hash": ""
   },
   "frontends/vendor/src/layouts/PortalLayout.tsx": {
-    "mtime": 1782934311.1876628,
-    "ast_hash": "3d1f8022f74e5401ff5c6ad210d8a693",
+    "mtime": 1783168307.6208482,
+    "ast_hash": "b0862d2cd5a5bbf8f6020ca9a3bbe097",
     "semantic_hash": ""
   },
   "frontends/vendor/src/lib/api.ts": {
@@ -690,13 +690,13 @@
     "semantic_hash": ""
   },
   "frontends/vendor/src/pages/LandingPage.tsx": {
-    "mtime": 1783159554.0367546,
-    "ast_hash": "963f15f2c338b09d91ed0dbc1c023a18",
+    "mtime": 1783168571.3775384,
+    "ast_hash": "240476972fc3c814fe9c2e3c33eb2e38",
     "semantic_hash": ""
   },
   "frontends/vendor/src/pages/LoginPage.tsx": {
-    "mtime": 1783159646.2222376,
-    "ast_hash": "be26d35239c1548b596c52085205148d",
+    "mtime": 1783168255.8054569,
+    "ast_hash": "6328e9f7c707eeb0c7e2ba8f54d30934",
     "semantic_hash": ""
   },
   "frontends/vendor/src/pages/MessagesPage.tsx": {
@@ -1007,6 +1007,26 @@
   "profile.html": {
     "mtime": 1780053657.5491595,
     "ast_hash": "18c9fe4235a169a69c42e08b5a39a151",
+    "semantic_hash": ""
+  },
+  "frontends/vendor/src/pages/ForgotPasswordPage.tsx": {
+    "mtime": 1783168217.9545774,
+    "ast_hash": "3b5a553bdf04a72ec90f6a88ebe38e0f",
+    "semantic_hash": ""
+  },
+  "frontends/vendor/src/pages/ResetPasswordPage.tsx": {
+    "mtime": 1783168231.8201025,
+    "ast_hash": "67ea72b56de2a131dd6a65a6d4ac5b3f",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1783166807.5895581,
+    "ast_hash": "44703abdab87f0e92b1e1b8ebf7d3594",
+    "semantic_hash": ""
+  },
+  "docs/messaging-flow.svg": {
+    "mtime": 1783166783.6709466,
+    "ast_hash": "9e6a5288b5db0546f5d61a293e24b942",
     "semantic_hash": ""
   }
 }
