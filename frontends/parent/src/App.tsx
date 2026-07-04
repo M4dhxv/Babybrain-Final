@@ -728,7 +728,21 @@ function ProfilePage() {
             <h3 className="text-lg font-black">Invite a friend</h3>
             <p className="mt-3 text-sm font-semibold leading-6">Get $10 credits when your friend makes their first booking!</p>
             <img src={`${import.meta.env.BASE_URL}assets/crops/invite-gift.png`} alt="" className="mx-auto my-3 h-20 object-contain" />
-            <Button className="w-full">Invite Friends</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const url = `${window.location.origin}/onboarding?ref=friend`;
+                if (navigator.share) {
+                  navigator.share({ title: "BabyBrain.sg", text: "Join me on BabyBrain — find great activities for your little one!", url }).catch(() => {});
+                } else {
+                  navigator.clipboard?.writeText(url);
+                  alert("Referral link copied — share it with a friend!");
+                }
+              }}
+              className="w-full"
+            >
+              Invite Friends
+            </Button>
           </div>
           <div className="rounded-[12px] bg-[#f4f8ff] p-5">
             <h3 className="font-black">Need help?</h3>
@@ -781,7 +795,12 @@ function ProfilePage() {
           <section className="mt-6">
             <h2 className="mb-3 text-[22px] font-black">Quick Access</h2>
             <div className="grid gap-3 md:grid-cols-4">
-              {["My Bookings", "Favorites", "Reviews", "Explore Nearby"].map((label, index) => <CategoryTile key={label} icon={index === 1 ? "heart" : index === 3 ? "pin" : "calendar"} label={label} copy="View your saved items" />)}
+              {[
+                { label: "My Bookings", icon: "calendar", href: "/explore", copy: "Manage your classes" },
+                { label: "Favorites", icon: "heart", href: "/explore", copy: "Activities you've saved" },
+                { label: "Reviews", icon: "calendar", href: "/explore", copy: "Share your experience" },
+                { label: "Explore Nearby", icon: "pin", href: "/explore", copy: "Discover activities near you" },
+              ].map((t) => <CategoryTile key={t.label} icon={t.icon} label={t.label} copy={t.copy} href={t.href} />)}
             </div>
           </section>
         </section>

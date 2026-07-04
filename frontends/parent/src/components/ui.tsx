@@ -1,7 +1,37 @@
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
 import { useActivities } from "../lib/useActivities";
+import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
+
+/** Heart button that saves/unsaves an activity to the parent's favorites.
+ *  Guards its own click so it works inside a card link. */
+export function SaveHeart({
+  activityId,
+  className = "",
+}: {
+  activityId?: string;
+  className?: string;
+}) {
+  const fav = useFavorite(activityId);
+  return (
+    <button
+      type="button"
+      aria-label={fav.saved ? "Saved to favorites" : "Save to favorites"}
+      aria-pressed={fav.saved}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fav.toggle();
+      }}
+      className={`grid place-items-center rounded-full shadow-soft transition ${
+        fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"
+      } ${className}`}
+    >
+      <Icon name="heart" className="h-4.5 w-4.5" />
+    </button>
+  );
+}
 
 type IconName =
   | "heart"
@@ -315,12 +345,7 @@ export function ActivityCard({
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink shadow-soft">
           {activity.category}
         </span>
-        <button
-          aria-label={`Save ${activity.title}`}
-          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-white text-baby-pink shadow-soft"
-        >
-          <Icon name="heart" className="h-4.5 w-4.5" />
-        </button>
+        <SaveHeart activityId={activity.id} className="absolute right-3 top-3 h-8 w-8" />
       </div>
       <div className="p-3.5">
         <h3 className="mb-2 text-[15px] font-black leading-tight text-baby-ink">
@@ -373,9 +398,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         </span>
       </div>
       <div className="relative p-4">
-        <button className="absolute right-4 top-4 text-baby-pink" aria-label="Save">
-          <Icon name="heart" className="h-5 w-5" />
-        </button>
+        <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
         <h3 className="mb-2 text-[16px] font-black">{activity.title}</h3>
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
           <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-baby-pink" /> {activity.age}</p>
@@ -394,13 +417,20 @@ export function CategoryTile({
   icon,
   label,
   copy,
+  href,
+  onClick,
 }: {
   icon: string;
   label: string;
   copy?: string;
+  href?: string;
+  onClick?: () => void;
 }) {
   return (
-    <button className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#e9edf7] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
+    <button
+      type="button"
+      onClick={onClick ?? (href ? () => { window.location.href = href; } : undefined)}
+      className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#e9edf7] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
       <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#fff0f7] to-[#f0f7ff] text-baby-pink">
         <Icon name={icon} className="h-7 w-7" />
       </span>
