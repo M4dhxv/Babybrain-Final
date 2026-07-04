@@ -11,7 +11,7 @@ const nextConfig = {
         { source: '/vendor', destination: '/vendor/index.html' },
         { source: '/vendor/', destination: '/vendor/index.html' },
         {
-          source: '/((?!api|vendor|app/|_next/|assets/|favicon).*)',
+          source: '/((?!api|admin|vendor|app/|_next/|assets/|favicon).*)',
           destination: '/app/index.html',
         },
       ],
