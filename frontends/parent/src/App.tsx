@@ -22,6 +22,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
+import { downloadBookingIcs } from "./lib/ics";
 import { formatChildAge, formatAgeRange } from "./lib/database.types";
 import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
@@ -709,6 +710,7 @@ function ActivityDetailPage() {
 
         <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
           <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
+          <ReviewForm activityId={activity.id} />
           {reviews.map((r) => (
             <div key={r.id} className="mb-3 border-b border-[#eef1f8] pb-3">
               <div className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
@@ -723,6 +725,69 @@ function ActivityDetailPage() {
   );
 }
 
+function ReviewForm({ activityId }: { activityId: string }) {
+  const { session } = useAuth();
+  const [rating, setRating] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!session) {
+    return (
+      <p className="mb-4 rounded-[10px] bg-[#f4f8ff] px-4 py-3 text-sm font-semibold text-[#59658d]">
+        <a href="/login" className="font-black text-baby-blue">Log in</a> to review a class you've attended.
+      </p>
+    );
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (rating === 0) return setError("Pick a star rating first.");
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.from("reviews").upsert(
+      { user_id: session!.user.id, activity_id: activityId, rating, comment: comment.trim() || null },
+      { onConflict: "user_id,activity_id" }
+    );
+    setBusy(false);
+    if (error) {
+      const blocked = error.code === "42501" || /row-level security/i.test(error.message);
+      return setError(blocked ? "You can only review a class you've booked and attended." : error.message);
+    }
+    window.location.reload();
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-5 rounded-[12px] border border-[#e7ebf6] bg-[#f9fbff] p-4">
+      <p className="mb-2 font-black">Write a review</p>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onMouseEnter={() => setHover(n)}
+            onMouseLeave={() => setHover(0)}
+            onClick={() => setRating(n)}
+            aria-label={`${n} star${n > 1 ? "s" : ""}`}
+          >
+            <Icon name="star" className={`h-7 w-7 ${(hover || rating) >= n ? "text-[#ffb71b] fill-current" : "text-[#d5ddef]"}`} />
+          </button>
+        ))}
+      </div>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        rows={3}
+        placeholder="Share how the class went (optional)"
+        className="mt-3 w-full rounded-[10px] border border-[#dbe4f6] px-3 py-2 text-sm font-semibold"
+      />
+      {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      <Button type="submit" className="mt-3">{busy ? "Posting…" : "Post review"}</Button>
+    </form>
+  );
+}
+
 function InfoBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <article>
@@ -734,7 +799,7 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string };
+type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string; startsAt: string | null; endsAt: string | null; venue: string };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null };
@@ -817,24 +882,32 @@ function ProfilePage() {
 
     supabase
       .from("bookings")
-      .select("id, status, created_at, activity_sessions(starts_at, activities(title, slug, image_urls))")
+      .select("id, status, created_at, activity_sessions(starts_at, ends_at, activities(title, slug, image_urls, address))")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string;
           status: string;
-          activity_sessions: { starts_at: string; activities: { title: string; slug: string; image_urls: string[] } | null } | null;
+          activity_sessions: {
+            starts_at: string;
+            ends_at: string | null;
+            activities: { title: string; slug: string; image_urls: string[]; address: string | null } | null;
+          } | null;
         }>;
         setBookings(
           rows.map((r) => {
-            const act = r.activity_sessions?.activities;
+            const s = r.activity_sessions;
+            const act = s?.activities;
             return {
               id: r.id,
               status: r.status,
-              when: r.activity_sessions?.starts_at ? sgDateTime(r.activity_sessions.starts_at) : "",
+              when: s?.starts_at ? sgDateTime(s.starts_at) : "",
               title: act?.title ?? "Class",
               slug: act?.slug ?? "",
               image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`,
+              startsAt: s?.starts_at ?? null,
+              endsAt: s?.ends_at ?? null,
+              venue: act?.address ?? "",
             };
           })
         );
@@ -1227,6 +1300,20 @@ function BookingList({ items, emptyCopy }: { items: BookingItem[]; emptyCopy: st
             <h3 className="truncate font-black">{b.title}</h3>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
+          {b.startsAt && b.status !== "cancelled" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
+              }}
+              className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff] sm:flex"
+              title="Add to calendar"
+            >
+              <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
+            </button>
+          )}
           <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
         </a>
       ))}
@@ -1696,6 +1783,9 @@ function BookingPage() {
       title: activity?.title ?? "your class",
       when: selected ? sgDateTime(selected.starts_at) : "",
       status: data?.status ?? "pending",
+      start: selected?.starts_at ?? "",
+      end: selected?.ends_at ?? "",
+      venue: activity?.address ?? "",
     });
     window.location.href = `/booked?${q.toString()}`;
   }
@@ -1815,6 +1905,9 @@ function BookedPage() {
   const title = getParam("title") || "Tiny Tunes: Music & Movement";
   const when = getParam("when") || "";
   const status = getParam("status") || "confirmed";
+  const start = getParam("start");
+  const end = getParam("end");
+  const venue = getParam("venue") || "";
   const waitlisted = status === "waitlisted";
   return (
     <PageShell active="/booked" auth="public">
@@ -1847,8 +1940,17 @@ function BookedPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-amber-600" : "text-green-600"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#eefbf1] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
-              <Button href="/profile" className="mt-5 w-full">View My Bookings</Button>
-              <Button variant="outline" className="mt-3 w-full"><Icon name="calendar" className="h-4 w-4" /> Add to Calendar</Button>
+              <Button href="/profile?tab=bookings" className="mt-5 w-full">View My Bookings</Button>
+              {start && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="mt-3 w-full"
+                  onClick={() => downloadBookingIcs({ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue })}
+                >
+                  <Icon name="calendar" className="h-4 w-4" /> Add to Calendar
+                </Button>
+              )}
             </article>
             <article className="rounded-[16px] bg-[#f4ecff] p-6"><h2 className="text-xl font-black text-baby-lilac">Need help?</h2><p className="mt-4 font-semibold">Contact Support if you have any questions.</p></article>
           </aside>
