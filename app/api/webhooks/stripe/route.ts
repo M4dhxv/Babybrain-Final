@@ -140,6 +140,24 @@ export async function POST(request: Request) {
           })
           .eq('id', session.metadata.booking_id);
       }
+
+      if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {
+        const { data: pkg } = await admin
+          .from('packages')
+          .select('id, provider_id, credits')
+          .eq('id', session.metadata.package_id)
+          .maybeSingle();
+        if (pkg) {
+          await admin.from('package_purchases').insert({
+            user_id: session.metadata.user_id,
+            package_id: pkg.id,
+            provider_id: pkg.provider_id,
+            credits_total: pkg.credits,
+            credits_remaining: pkg.credits,
+            stripe_payment_intent: (session.payment_intent as string) ?? null,
+          });
+        }
+      }
       break;
     }
 

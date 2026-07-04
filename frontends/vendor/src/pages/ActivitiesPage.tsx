@@ -54,17 +54,46 @@ export default function ActivitiesPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Class packs (multi-session packages sold to parents)
+  type Pack = { id: string; name: string; credits: number; price_cents: number; active: boolean };
+  const [packs, setPacks] = useState<Pack[]>([]);
+  const [packForm, setPackForm] = useState({ name: '', credits: '', price: '' });
+  const [savingPack, setSavingPack] = useState(false);
+
+  async function createPack() {
+    if (!provider) return;
+    const credits = Number(packForm.credits);
+    const price = Number(packForm.price);
+    if (!packForm.name.trim() || !credits || credits < 1) return;
+    setSavingPack(true);
+    await supabase.from('packages').insert({
+      provider_id: provider.id,
+      name: packForm.name.trim(),
+      credits,
+      price_cents: Math.round((price || 0) * 100),
+    });
+    setPackForm({ name: '', credits: '', price: '' });
+    setSavingPack(false);
+    load();
+  }
+  async function togglePack(p: Pack) {
+    await supabase.from('packages').update({ active: !p.active }).eq('id', p.id);
+    load();
+  }
+
   async function load() {
     if (!provider) return;
     setLoading(true);
-    const [{ data: acts }, { data: cats }, { data: locs }] = await Promise.all([
+    const [{ data: acts }, { data: cats }, { data: locs }, { data: pks }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
       supabase.from('provider_locations').select('id').eq('provider_id', provider.id),
+      supabase.from('packages').select('id, name, credits, price_cents, active').eq('provider_id', provider.id).order('created_at', { ascending: false }),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
     setLocationCount((locs ?? []).length);
+    setPacks((pks ?? []) as Pack[]);
 
     // Upcoming session counts per activity (single query, grouped client-side).
     const ids = (acts ?? []).map((a) => a.id);
@@ -299,6 +328,48 @@ export default function ActivitiesPage() {
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200">
             <span className="text-sm text-gray-500">Showing {visible.length} of {activities.length} activities</span>
           </div>
+        </div>
+
+        {/* Class Packs */}
+        <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="font-semibold text-gray-900">Class packs</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Multi-session packs parents can buy; each booking uses one credit.</p>
+          {packs.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {packs.map((p) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+                  <div>
+                    <span className="font-medium text-gray-900">{p.name}</span>
+                    <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
+                  </div>
+                  {canManage && (
+                    <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
+                      {p.active ? 'Active' : 'Inactive'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {canManage && (
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
+                <input value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
+                <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
+                <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+              </div>
+              <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
+                {savingPack ? 'Adding…' : 'Add pack'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

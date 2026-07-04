@@ -586,6 +586,35 @@ function ActivityDetailPage() {
   const { session } = useAuth();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
+  const [buyingPack, setBuyingPack] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activity?.provider_id) return;
+    supabase
+      .from("packages")
+      .select("id, name, credits, price_cents, activity_id")
+      .eq("provider_id", activity.provider_id)
+      .eq("active", true)
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
+        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+      });
+  }, [activity?.provider_id, activity?.id]);
+
+  async function buyPack(packageId: string) {
+    if (!session) {
+      window.location.href = "/login";
+      return;
+    }
+    setBuyingPack(packageId);
+    try {
+      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", { package_id: packageId });
+      if (url) window.location.href = url;
+    } finally {
+      setBuyingPack(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -715,6 +744,26 @@ function ActivityDetailPage() {
           </div>
         </section>
 
+        {packs.length > 0 && (
+          <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+            <h2 className="mb-1 text-xl font-black">Class packs</h2>
+            <p className="mb-4 text-sm font-semibold text-[#68718f]">Buy a multi-class pack and save — credits work across this provider's classes.</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {packs.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e7ebf6] p-4">
+                  <div>
+                    <h3 className="font-black">{p.name}</h3>
+                    <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
+                  </div>
+                  <Button type="button" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                    {buyingPack === p.id ? "…" : "Buy pack"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
           <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
           <ReviewForm activityId={activity.id} />
@@ -810,12 +859,14 @@ type BookingItem = { id: string; status: string; when: string; title: string; sl
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
+type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string };
 
 const PROFILE_TABS: [string, string, string][] = [
   ["overview", "Overview", "home"],
   ["children", "My Children", "people"],
   ["bookings", "Bookings", "calendar"],
   ["attended", "Attended Classes", "check"],
+  ["packages", "Packages", "store"],
   ["makeup", "Make-up Tokens", "gift"],
   ["favorites", "Favorites", "heart"],
   ["reviews", "Reviews", "star"],
@@ -846,6 +897,7 @@ function ProfilePage() {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
+  const [packages, setPackages] = useState<PackageItem[]>([]);
   const [savedProviders, setSavedProviders] = useState<{ id: string; name: string }[]>([]);
   const [billingPlan, setBillingPlan] = useState<{
     plan: "free" | "plus";
@@ -948,6 +1000,31 @@ function ProfilePage() {
       .select("id, title, body, read_at, created_at")
       .order("created_at", { ascending: false })
       .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
+
+    supabase
+      .from("package_purchases")
+      .select("id, credits_total, credits_remaining, status, packages(name), providers(business_name)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          credits_total: number;
+          credits_remaining: number;
+          status: string;
+          packages: { name: string } | null;
+          providers: { business_name: string } | null;
+        }>;
+        setPackages(
+          rows.map((r) => ({
+            id: r.id,
+            name: r.packages?.name ?? "Class package",
+            provider: r.providers?.business_name ?? "A provider",
+            total: r.credits_total,
+            remaining: r.credits_remaining,
+            status: r.status,
+          }))
+        );
+      });
 
     supabase
       .from("favorite_providers")
@@ -1156,6 +1233,32 @@ function ProfilePage() {
             <div>
               <h1 className="mb-1 text-[26px] font-black">Attended Classes</h1>
               <BookingList items={attended} emptyCopy="No attended classes yet — they'll appear here after you go." />
+            </div>
+          )}
+
+          {tab === "packages" && (
+            <div>
+              <h1 className="text-[26px] font-black">Packages</h1>
+              <p className="mt-1 text-sm font-semibold text-[#59658d]">Class packs you've purchased — each booking with that provider can use a credit.</p>
+              {packages.length === 0 ? (
+                <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {packages.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#eef5ff] text-baby-blue"><Icon name="store" className="h-6 w-6" /></span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="truncate font-black">{p.name}</h3>
+                        <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-black text-baby-blue">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
+                        <p className="text-xs font-bold text-[#9aa4c2]">credits left</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1790,6 +1893,23 @@ function BookingPage() {
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [packageCredit, setPackageCredit] = useState<{ id: string; remaining: number } | null>(null);
+
+  useEffect(() => {
+    if (!auth || !activity?.provider_id) return;
+    supabase
+      .from("package_purchases")
+      .select("id, credits_remaining")
+      .eq("provider_id", activity.provider_id)
+      .eq("status", "active")
+      .gt("credits_remaining", 0)
+      .order("created_at")
+      .limit(1)
+      .then(({ data }) => {
+        const r = data?.[0];
+        setPackageCredit(r ? { id: r.id, remaining: r.credits_remaining } : null);
+      });
+  }, [auth, activity?.provider_id]);
 
   // Group upcoming sessions by date so the user picks a date, then a time.
   const byDate: Record<string, ActivitySession[]> = {};
@@ -1848,6 +1968,28 @@ function BookingPage() {
       title: activity?.title ?? "your class",
       when: selected ? sgDateTime(selected.starts_at) : "",
       status: status ?? "pending",
+      start: selected?.starts_at ?? "",
+      end: selected?.ends_at ?? "",
+      venue: activity?.address ?? "",
+    });
+    window.location.href = `/booked?${q.toString()}`;
+  }
+
+  async function payWithPackage() {
+    if (!auth) { window.location.href = "/login"; return; }
+    if (!sessionId) { setErr("Please choose a date and time first."); return; }
+    if (!packageCredit) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("redeem_package_credit", {
+      p_purchase_id: packageCredit.id,
+      p_session_id: sessionId,
+    });
+    setBusy(false);
+    if (error) { setErr(error.message.replace(/^.*?:\s*/, "")); return; }
+    const q = new URLSearchParams({
+      title: activity?.title ?? "your class",
+      when: selected ? sgDateTime(selected.starts_at) : "",
+      status: (data as string | null) ?? "confirmed",
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
@@ -1958,6 +2100,11 @@ function BookingPage() {
           </div>
           {redeemToken && (
             <p className="mb-3 rounded-[10px] bg-[#fff4d6] px-4 py-2.5 text-sm font-bold text-[#8a6d1a]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
+          )}
+          {packageCredit && !redeemToken && (
+            <Button type="button" variant="outline" size="lg" onClick={payWithPackage} className={`mb-3 w-full justify-center ${busy || !sessionId ? "opacity-60" : ""}`}>
+              <Icon name="store" className="h-5 w-5" /> Use a package credit ({packageCredit.remaining} left)
+            </Button>
           )}
           <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
             <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : "Confirm Booking"}

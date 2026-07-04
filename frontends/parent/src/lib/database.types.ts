@@ -598,6 +598,26 @@ export type Database = {
         Update: { status?: 'present' | 'absent' | 'late'; note?: string | null };
         Relationships: [];
       };
+      packages: {
+        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string };
+        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean };
+        Relationships: [];
+      };
+      package_purchases: {
+        Row: { id: string; user_id: string; package_id: string; provider_id: string; credits_total: number; credits_remaining: number; status: 'active' | 'used' | 'expired'; stripe_payment_intent: string | null; created_at: string; expires_at: string | null };
+        Insert: { user_id: string; package_id: string; provider_id: string; credits_total: number; credits_remaining: number };
+        Update: { credits_remaining?: number; status?: 'active' | 'used' | 'expired' };
+        Relationships: [
+          {
+            foreignKeyName: 'package_purchases_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       make_up_tokens: {
         Row: {
           id: string;
@@ -691,6 +711,10 @@ export type Database = {
     Functions: {
       redeem_make_up_token: {
         Args: { p_token_id: string; p_session_id: string };
+        Returns: string;
+      };
+      redeem_package_credit: {
+        Args: { p_purchase_id: string; p_session_id: string };
         Returns: string;
       };
       provider_overview: {
