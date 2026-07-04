@@ -10,3 +10,6 @@ supabase/.temp/
 # Vendor SPA build output (generated at build time into the Next app)
 /public/vendor
 /public/app
+
+# Graphify local cache (regenerable via `graphify update .`)
+graphify-out/cache/

@@ -24,6 +24,7 @@ import { supabase } from "./lib/supabase";
 import { formatChildAge, formatAgeRange } from "./lib/database.types";
 import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
+import { ClassGroupChat } from "./components/ClassGroupChat";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -542,6 +543,7 @@ function ActivityDetailPage() {
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const [enquiring, setEnquiring] = useState(false);
+  const [groupChat, setGroupChat] = useState(false);
 
   if (loading) {
     return (
@@ -616,6 +618,16 @@ function ActivityDetailPage() {
             >
               <Icon name="mail" className="h-4 w-4" /> Enquire Now
             </Button>
+            <Button
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={() => {
+                if (!session) window.location.href = "/login";
+                else setGroupChat(true);
+              }}
+            >
+              <Icon name="people" className="h-4 w-4" /> Class Group Chat
+            </Button>
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
             </Button>
@@ -624,6 +636,13 @@ function ActivityDetailPage() {
                 providerId={activity.provider_id}
                 providerName={activity.title}
                 onClose={() => setEnquiring(false)}
+              />
+            )}
+            {groupChat && (
+              <ClassGroupChat
+                activityId={activity.id}
+                activityTitle={activity.title}
+                onClose={() => setGroupChat(false)}
               />
             )}
             <div className="mt-5 space-y-4 border-t border-[#eceff7] pt-4 text-sm font-semibold">

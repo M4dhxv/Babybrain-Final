@@ -1,0 +1,70 @@
+<svg width="680" height="470" viewBox="0 0 680 470" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="BabyBrain messaging architecture">
+  <title>BabyBrain messaging architecture</title>
+  <desc>Three GetStream chat flows: parent-provider 1:1 enquiry, class group chat with the vendor present, and support. The vendor sees 1:1 and group channels in its inbox by membership.</desc>
+  <rect x="0" y="0" width="680" height="470" rx="14" fill="#ffffff"/>
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#1D9E75"/></marker>
+  </defs>
+
+  <text x="20" y="30" font-size="17" font-weight="600" fill="#26215C">BabyBrain messaging — GetStream Chat</text>
+  <text x="20" y="50" font-size="12" fill="#59658d">Parent UI  →  Next.js API route  →  Stream channel · vendor reads its inbox by membership</text>
+
+  <!-- Row 1: enquiry 1:1 -->
+  <rect x="16" y="70" width="170" height="60" rx="10" fill="#E1F5EE" stroke="#5DCAA5"/>
+  <text x="28" y="96" font-size="13" font-weight="600" fill="#0F6E56">EnquiryChat.tsx</text>
+  <text x="28" y="115" font-size="11" fill="#0F6E56">Parent · "Enquire now"</text>
+
+  <rect x="210" y="70" width="200" height="60" rx="10" fill="#EEF6FF" stroke="#8FBEFF"/>
+  <text x="222" y="96" font-size="12.5" font-weight="600" fill="#1F4F9B">/api/vendor/chat/start</text>
+  <text x="222" y="115" font-size="11" fill="#3a63b0">parent + provider staff</text>
+
+  <rect x="436" y="70" width="228" height="60" rx="10" fill="#F1EFE8" stroke="#B8B4A6"/>
+  <text x="448" y="96" font-size="12.5" font-weight="600" fill="#4a4636">1:1 private channel</text>
+  <text x="448" y="115" font-size="11" fill="#6b6656">personal query to the vendor</text>
+
+  <line x1="186" y1="100" x2="208" y2="100" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="410" y1="100" x2="434" y2="100" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- Row 2: class group NEW -->
+  <rect x="16" y="150" width="170" height="76" rx="10" fill="#E1F5EE" stroke="#5DCAA5"/>
+  <text x="28" y="176" font-size="13" font-weight="600" fill="#0F6E56">ClassGroupChat.tsx</text>
+  <text x="28" y="195" font-size="11" fill="#0F6E56">Parent · "Class group chat"</text>
+  <text x="28" y="214" font-size="10.5" font-weight="600" fill="#993C1D">NEW</text>
+
+  <rect x="210" y="150" width="200" height="76" rx="10" fill="#EEF6FF" stroke="#8FBEFF"/>
+  <text x="222" y="176" font-size="12" font-weight="600" fill="#1F4F9B">/api/chat/class-group</text>
+  <text x="222" y="195" font-size="11" fill="#3a63b0">booked parents (pending/</text>
+  <text x="222" y="211" font-size="11" fill="#3a63b0">confirmed/completed) + staff</text>
+
+  <rect x="436" y="150" width="228" height="76" rx="10" fill="#F1EFE8" stroke="#B8B4A6"/>
+  <text x="448" y="176" font-size="12.5" font-weight="600" fill="#4a4636">Group channel</text>
+  <text x="448" y="195" font-size="11" fill="#6b6656">all parents booked in the class</text>
+  <text x="448" y="211" font-size="11" fill="#6b6656">chat together, vendor present</text>
+
+  <line x1="186" y1="188" x2="208" y2="188" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="410" y1="188" x2="434" y2="188" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- Row 3: support -->
+  <rect x="16" y="246" width="170" height="60" rx="10" fill="#E1F5EE" stroke="#5DCAA5"/>
+  <text x="28" y="272" font-size="13" font-weight="600" fill="#0F6E56">Support</text>
+  <text x="28" y="291" font-size="11" fill="#0F6E56">Parent · /support</text>
+
+  <rect x="210" y="246" width="200" height="60" rx="10" fill="#EEF6FF" stroke="#8FBEFF"/>
+  <text x="222" y="272" font-size="12.5" font-weight="600" fill="#1F4F9B">/api/chat/token</text>
+  <text x="222" y="291" font-size="11" fill="#3a63b0">parent + BabyBrain support</text>
+
+  <rect x="436" y="246" width="228" height="60" rx="10" fill="#F1EFE8" stroke="#B8B4A6"/>
+  <text x="448" y="272" font-size="12.5" font-weight="600" fill="#4a4636">Support channel</text>
+  <text x="448" y="291" font-size="11" fill="#6b6656">parent ↔ BabyBrain</text>
+
+  <line x1="186" y1="276" x2="208" y2="276" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="410" y1="276" x2="434" y2="276" stroke="#1D9E75" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- Vendor inbox -->
+  <rect x="16" y="330" width="648" height="56" rx="10" fill="#FBEAF0" stroke="#ED93B1"/>
+  <text x="28" y="356" font-size="13" font-weight="600" fill="#993556">Vendor · MessagesPage.tsx</text>
+  <text x="28" y="375" font-size="11" fill="#8a3a55">Lists channels where the vendor is a member — so both the 1:1 enquiry and the class group show up in the vendor inbox automatically.</text>
+
+  <text x="20" y="416" font-size="11" fill="#59658d">All channels run on GetStream Chat · every client mints its token from /api/vendor/chat/token · access is gated by Supabase auth.</text>
+  <text x="20" y="436" font-size="11" fill="#59658d">Green arrows = data flow. Creation/join is gated to booked parents; the vendor joins the group as a member so it can answer.</text>
+</svg>

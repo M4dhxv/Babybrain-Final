@@ -1,0 +1,24 @@
+# Dependencies & build output (also gitignored, listed for belt-and-suspenders)
+node_modules/
+.next/
+dist/
+public/app/
+public/vendor/
+.vercel/
+
+# Lockfiles & generated type/build artifacts
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts
+
+# Binary design assets (pptx, images) — not code, nothing to extract
+frontends/parent/design-source/
+frontends/parent/design-source-v2/
+**/*.pptx
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+**/*.ico
+assets/
