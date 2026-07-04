@@ -66,7 +66,7 @@ export default function BookingsPage() {
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
 
-  const session = sessions.find((s) => s.id === sessionId);
+  const currentSession = sessions.find((s) => s.id === sessionId);
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
   const visibleBookings = booked.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
@@ -238,7 +238,7 @@ export default function BookingsPage() {
           {activeTab === 'Waitlist' && (
             <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center gap-4 mb-5 text-sm">
-                <span>Capacity <strong className="text-gray-900">{booked.length}/{session?.capacity ?? '∞'}</strong></span>
+                <span>Capacity <strong className="text-gray-900">{booked.length}/{currentSession?.capacity ?? '∞'}</strong></span>
                 <span className="text-gray-300">•</span>
                 <span>Waitlist <strong className="text-gray-900">{waitlisted.length}</strong></span>
               </div>
