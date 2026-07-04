@@ -689,6 +689,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      redeem_make_up_token: {
+        Args: { p_token_id: string; p_session_id: string };
+        Returns: string;
+      };
       provider_overview: {
         Args: { p_provider: string };
         Returns: {

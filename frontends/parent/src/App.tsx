@@ -809,7 +809,7 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string; startsAt: string | null; endsAt: string | null; venue: string };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
-type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null };
+type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
 
 const PROFILE_TABS: [string, string, string][] = [
   ["overview", "Overview", "home"],
@@ -957,28 +957,43 @@ function ProfilePage() {
         setSavedProviders(rows.map((r) => ({ id: r.provider_id, name: r.providers?.business_name ?? "Provider" })));
       });
 
-    supabase
-      .from("make_up_tokens")
-      .select("id, status, created_at, expires_at, providers(business_name)")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          status: string;
-          created_at: string;
-          expires_at: string | null;
-          providers: { business_name: string } | null;
-        }>;
-        setTokens(
-          rows.map((r) => ({
-            id: r.id,
-            status: r.status,
-            created_at: r.created_at,
-            expires_at: r.expires_at,
-            provider: r.providers?.business_name ?? "A provider",
-          }))
-        );
-      });
+    (async () => {
+      const { data } = await supabase
+        .from("make_up_tokens")
+        .select("id, status, created_at, expires_at, origin_booking_id, providers(business_name)")
+        .order("created_at", { ascending: false });
+      const rows = (data ?? []) as unknown as Array<{
+        id: string;
+        status: string;
+        created_at: string;
+        expires_at: string | null;
+        origin_booking_id: string | null;
+        providers: { business_name: string } | null;
+      }>;
+      // Resolve the origin class slug so "Redeem" can link to its booking page.
+      const originIds = [...new Set(rows.map((r) => r.origin_booking_id).filter((x): x is string => !!x))];
+      const slugByBooking = new Map<string, string>();
+      if (originIds.length) {
+        const { data: bks } = await supabase
+          .from("bookings")
+          .select("id, activity_sessions(activities(slug))")
+          .in("id", originIds);
+        for (const b of (bks ?? []) as unknown as Array<{ id: string; activity_sessions: { activities: { slug: string } | null } | null }>) {
+          const slug = b.activity_sessions?.activities?.slug;
+          if (slug) slugByBooking.set(b.id, slug);
+        }
+      }
+      setTokens(
+        rows.map((r) => ({
+          id: r.id,
+          status: r.status,
+          created_at: r.created_at,
+          expires_at: r.expires_at,
+          provider: r.providers?.business_name ?? "A provider",
+          originSlug: r.origin_booking_id ? slugByBooking.get(r.origin_booking_id) ?? null : null,
+        }))
+      );
+    })();
 
     apiGet<{
       plan: "free" | "plus";
@@ -1162,6 +1177,9 @@ function ProfilePage() {
                           {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
                         </p>
                       </div>
+                      {t.status === "issued" && t.originSlug && (
+                        <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+                      )}
                       <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
                     </div>
                   ))}
@@ -1766,6 +1784,7 @@ function PaymentPage() {
 function BookingPage() {
   const { activity, sessions, loading } = useActivityDetail(getParam("slug"));
   const { session: auth, children: kids } = useAuth();
+  const redeemToken = getParam("token");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
   const [count, setCount] = useState(1);
@@ -1799,20 +1818,36 @@ function BookingPage() {
       return;
     }
     setBusy(true);
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({ user_id: auth.user.id, session_id: sessionId, child_id: kids[0]?.id ?? null })
-      .select("status")
-      .single();
-    setBusy(false);
-    if (error) {
-      setErr(error.message);
-      return;
+    let status: string | null = null;
+    if (redeemToken) {
+      // Redeeming a make-up token: books the session and consumes the token atomically.
+      const { data, error } = await supabase.rpc("redeem_make_up_token", {
+        p_token_id: redeemToken,
+        p_session_id: sessionId,
+      });
+      setBusy(false);
+      if (error) {
+        setErr(error.message.replace(/^.*?:\s*/, ""));
+        return;
+      }
+      status = (data as string | null) ?? "confirmed";
+    } else {
+      const { data, error } = await supabase
+        .from("bookings")
+        .insert({ user_id: auth.user.id, session_id: sessionId, child_id: kids[0]?.id ?? null })
+        .select("status")
+        .single();
+      setBusy(false);
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+      status = data?.status ?? "pending";
     }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       when: selected ? sgDateTime(selected.starts_at) : "",
-      status: data?.status ?? "pending",
+      status: status ?? "pending",
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
@@ -1921,8 +1956,11 @@ function BookingPage() {
             <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total Amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
+          {redeemToken && (
+            <p className="mb-3 rounded-[10px] bg-[#fff4d6] px-4 py-2.5 text-sm font-bold text-[#8a6d1a]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
+          )}
           <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
-            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : auth ? "Confirm Booking" : "Log in to book"}
+            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : "Confirm Booking"}
           </Button>
         </section>
       </main>

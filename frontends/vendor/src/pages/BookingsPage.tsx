@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
-  Clock, Baby, Info, Check, X, Save,
+  Clock, Baby, Info, Check, X, Save, Gift,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,8 +25,10 @@ type RosterRow = {
 };
 
 export default function BookingsPage() {
-  const { provider, role } = useAuth();
+  const { provider, role, session } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
+  const [issuing, setIssuing] = useState(false);
+  const [issuedFor, setIssuedFor] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('Bookings');
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
@@ -78,6 +80,24 @@ export default function BookingsPage() {
   async function removeBooking(bookingId: string) {
     await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
     loadRoster(sessionId);
+  }
+  async function issueToken(bookingId: string) {
+    if (!provider) return;
+    setIssuing(true);
+    const { data: bk } = await supabase.from('bookings').select('user_id, child_id').eq('id', bookingId).maybeSingle();
+    if (bk?.user_id) {
+      await supabase.from('make_up_tokens').insert({
+        provider_id: provider.id,
+        user_id: bk.user_id,
+        child_id: bk.child_id,
+        origin_booking_id: bookingId,
+        status: 'issued',
+        issued_by: session?.user.id ?? null,
+        expires_at: new Date(Date.now() + 60 * 864e5).toISOString(),
+      });
+      setIssuedFor(bookingId);
+    }
+    setIssuing(false);
   }
   async function saveRoster() {
     if (!sessionId) return;
@@ -197,6 +217,16 @@ export default function BookingsPage() {
                   <button className="flex items-center gap-2 mt-6 text-sm text-[#E91E63] font-medium hover:underline" title="Live chat ships in Phase 2">
                     <MessageSquare className="w-4 h-4" /> Message parent
                   </button>
+                  {canManage && (
+                    <button
+                      onClick={() => issueToken(sel.booking_id)}
+                      disabled={issuing || issuedFor === sel.booking_id}
+                      className="flex items-center gap-2 mt-3 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-60"
+                    >
+                      <Gift className="w-4 h-4" />
+                      {issuedFor === sel.booking_id ? 'Make-up token issued ✓' : issuing ? 'Issuing…' : 'Issue make-up token'}
+                    </button>
+                  )}
                 </>
               ) : (
                 <div className="text-sm text-gray-400">Select a booking.</div>
