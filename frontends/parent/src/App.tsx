@@ -454,24 +454,64 @@ function MatchesPage() {
   );
 }
 
+const AGE_FILTERS: [string, string][] = [
+  ["", "All ages"],
+  ["6", "0 – 1 year"],
+  ["18", "1 – 2 years"],
+  ["36", "3 – 4 years"],
+  ["60", "5 years +"],
+];
+
 function ExplorePage() {
-  const { activities, loading } = useActivities({ limit: 24 });
+  const [sort, setSort] = useState<"popular" | "rating" | "distance">("popular");
+  const [category, setCategory] = useState("");
+  const [age, setAge] = useState("");
+  const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
+  const { activities, loading } = useActivities({
+    limit: 24,
+    sort,
+    category: category || null,
+    ageMonths: age ? Number(age) : null,
+  });
+
+  useEffect(() => {
+    supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
+  }, []);
+
+  const selectClass = "h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-blue focus:outline-none";
+
   return (
     <PageShell active="/explore">
-      <main className="mx-auto max-w-[1180px] px-6 py-5">
+      <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h1 className="text-[34px] font-black text-baby-lilac">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-blue" /></h1>
-            <p className="mt-1 text-lg font-semibold text-[#4a5680]">Browse activities across Singapore.</p>
+            <h1 className="text-[28px] font-black text-baby-lilac sm:text-[34px]">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-blue" /></h1>
+            <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">Browse activities across Singapore.</p>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/detail-thumb-5.png`} alt="" className="hidden h-20 w-[320px] rounded-t-[30px] object-cover opacity-70 md:block" />
         </div>
-        <div className="mb-4 grid gap-3 md:grid-cols-5">
-          {["Category  All", "Age  All Ages", "Date  Any Date", "Distance  Within 10 km", "Sort by: Most Popular"].map((filter) => (
-            <button key={filter} className="flex h-10 items-center justify-between rounded-[10px] border border-[#e6e6ef] bg-white px-3.5 text-[13px] font-bold shadow-card">
-              {filter} <span>⌄</span>
-            </button>
-          ))}
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-[#68718f]">Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
+              <option value="">All categories</option>
+              {cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-[#68718f]">Age</span>
+            <select value={age} onChange={(e) => setAge(e.target.value)} className={selectClass}>
+              {AGE_FILTERS.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-[#68718f]">Sort by</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as "popular" | "rating" | "distance")} className={selectClass}>
+              <option value="popular">Most popular</option>
+              <option value="rating">Top rated</option>
+              <option value="distance">Nearest</option>
+            </select>
+          </label>
         </div>
         <div className="grid gap-5 lg:grid-cols-[568px_1fr]">
           <section>
@@ -481,11 +521,9 @@ function ExplorePage() {
                 <ActivityRow key={activity.title} activity={activity} />
               ))}
             </div>
-            <div className="mt-4 flex justify-center gap-2">
-              {["‹", "1", "2", "3", "4", "5", "...", "11", "›"].map((item) => (
-                <button key={item} className={`h-9 min-w-9 rounded-[8px] border px-3 text-sm font-bold ${item === "1" ? "bg-[#e9f3ff] text-[#197bff]" : "bg-white"}`}>{item}</button>
-              ))}
-            </div>
+            {!loading && activities.length === 0 && (
+              <p className="mt-6 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+            )}
           </section>
           <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
@@ -695,12 +733,38 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string };
+type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
+type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
+
+const PROFILE_TABS: [string, string, string][] = [
+  ["overview", "Overview", "home"],
+  ["children", "My Children", "people"],
+  ["bookings", "Bookings", "calendar"],
+  ["attended", "Attended Classes", "check"],
+  ["favorites", "Favorites", "heart"],
+  ["reviews", "Reviews", "star"],
+  ["notifications", "Notifications", "bell"],
+  ["settings", "Settings", "gear"],
+];
+
+function bookingStatusStyle(status: string) {
+  if (status === "confirmed" || status === "completed") return "bg-[#eefbf1] text-green-700";
+  if (status === "cancelled") return "bg-[#ffe9ef] text-[#b00040]";
+  if (status === "waitlisted") return "bg-amber-50 text-amber-700";
+  return "bg-[#f3f7ff] text-[#2b7cff]";
+}
+
 function ProfilePage() {
-  const { session, profile, children, loading } = useAuth();
+  const { session, profile, children, loading, signOut } = useAuth();
   const child = children[0];
   const journey = useJourney(child?.id);
   const { data: recsByChild } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [notifications, setNotifications] = useState<NotifItem[]>([]);
+  const tab = getParam("tab") || "overview";
 
   useEffect(() => {
     if (!session) return;
@@ -719,6 +783,59 @@ function ProfilePage() {
             .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
         );
       });
+
+    supabase
+      .from("bookings")
+      .select("id, status, created_at, activity_sessions(starts_at, activities(title, slug, image_urls))")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          status: string;
+          activity_sessions: { starts_at: string; activities: { title: string; slug: string; image_urls: string[] } | null } | null;
+        }>;
+        setBookings(
+          rows.map((r) => {
+            const act = r.activity_sessions?.activities;
+            return {
+              id: r.id,
+              status: r.status,
+              when: r.activity_sessions?.starts_at ? sgDateTime(r.activity_sessions.starts_at) : "",
+              title: act?.title ?? "Class",
+              slug: act?.slug ?? "",
+              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`,
+            };
+          })
+        );
+      });
+
+    supabase
+      .from("reviews")
+      .select("id, rating, comment, activities(title, slug)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          rating: number;
+          comment: string | null;
+          activities: { title: string; slug: string } | null;
+        }>;
+        setReviews(
+          rows.map((r) => ({
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment,
+            title: r.activities?.title ?? "Activity",
+            slug: r.activities?.slug ?? "",
+          }))
+        );
+      });
+
+    supabase
+      .from("notifications")
+      .select("id, title, body, read_at, created_at")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
   }, [session]);
 
   if (!loading && !session) {
@@ -734,28 +851,20 @@ function ProfilePage() {
 
   const recs = recsByChild[0]?.recs ?? [];
   const parentName = profile?.full_name || "Your family";
+  const attended = bookings.filter((b) => b.status === "completed");
 
   return (
     <PageShell active="/profile">
-      <main className="mx-auto grid max-w-[1122px] gap-5 px-6 py-5 lg:grid-cols-[235px_1fr]">
+      <main className="mx-auto grid max-w-[1122px] gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[235px_1fr]">
         <aside className="space-y-4">
           <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-5 shadow-card">
-            <div className="flex items-center gap-4">
-              <img src={`${import.meta.env.BASE_URL}assets/crops/parent-avatar.png`} alt="" className="h-20 w-20 rounded-full object-cover" />
-              <div><h2 className="font-black">{parentName}</h2>{child && <p className="font-semibold">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
+            <div className="flex items-center gap-3">
+              <img src={`${import.meta.env.BASE_URL}assets/crops/parent-avatar.png`} alt="" className="h-14 w-14 rounded-full object-cover" />
+              <div className="min-w-0"><h2 className="truncate font-black">{parentName}</h2>{child && <p className="truncate text-sm font-semibold text-[#59658d]">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
             </div>
             <nav className="mt-5 space-y-1.5">
-              {[
-                ["Overview", "home"],
-                ["My Children", "people"],
-                ["Bookings", "calendar"],
-                ["Attended Classes", "check"],
-                ["Favorites", "heart"],
-                ["Reviews", "star"],
-                ["Notifications", "bell"],
-                ["Settings", "gear"],
-              ].map(([item, icon], index) => (
-                <a key={item} href="/profile" className={`flex items-center gap-2 rounded-[9px] px-4 py-2.5 font-bold ${index === 0 ? "bg-[#eef5ff] text-[#096cff]" : ""}`}><Icon name={icon} className="h-4 w-4" /> {item}</a>
+              {PROFILE_TABS.map(([key, item, icon]) => (
+                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-2 rounded-[9px] px-4 py-2.5 font-bold ${tab === key ? "bg-[#eef5ff] text-[#096cff]" : "text-baby-ink hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-4 w-4" /> {item}</a>
               ))}
             </nav>
           </div>
@@ -786,8 +895,10 @@ function ProfilePage() {
           </div>
         </aside>
         <section>
-          <div className="grid items-center gap-5 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card lg:grid-cols-[155px_1fr_235px]">
-            <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-32 w-32 rounded-full object-cover ring-8 ring-white shadow-soft" />
+          {tab === "overview" && (
+          <>
+          <div className="grid items-center gap-5 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card lg:grid-cols-[120px_1fr_235px]">
+            <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-24 w-24 rounded-full object-cover ring-4 ring-white shadow-soft" />
             <div>
               <h1 className="text-[30px] font-black">{child?.name ?? "Your child"}</h1>
               {child && <p className="mt-1.5 text-base font-semibold">{formatChildAge(child.date_of_birth)}</p>}
@@ -831,16 +942,167 @@ function ProfilePage() {
             <h2 className="mb-3 text-[22px] font-black">Quick Access</h2>
             <div className="grid gap-3 md:grid-cols-4">
               {[
-                { label: "My Bookings", icon: "calendar", href: "/explore", copy: "Manage your classes" },
-                { label: "Favorites", icon: "heart", href: "/explore", copy: "Activities you've saved" },
-                { label: "Reviews", icon: "calendar", href: "/explore", copy: "Share your experience" },
+                { label: "My Bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your classes" },
+                { label: "Favorites", icon: "heart", href: "/profile?tab=favorites", copy: "Activities you've saved" },
+                { label: "Reviews", icon: "star", href: "/profile?tab=reviews", copy: "Share your experience" },
                 { label: "Explore Nearby", icon: "pin", href: "/explore", copy: "Discover activities near you" },
               ].map((t) => <CategoryTile key={t.label} icon={t.icon} label={t.label} copy={t.copy} href={t.href} />)}
             </div>
           </section>
+          </>
+          )}
+
+          {tab === "children" && (
+            <div>
+              <h1 className="text-[26px] font-black">My Children</h1>
+              {children.length === 0 ? (
+                <EmptyPanel icon="people" copy="No child profile yet — add one to get personalised matches." cta="Add a child" href="/onboarding" />
+              ) : (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {children.map((c) => (
+                    <div key={c.id} className="rounded-[14px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+                      <div className="flex items-center gap-4">
+                        <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-16 w-16 rounded-full object-cover ring-4 ring-white shadow-soft" />
+                        <div><h3 className="font-black">{c.name}</h3><p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p></div>
+                      </div>
+                      {c.interests.length > 0 && (
+                        <p className="mt-3 text-sm font-semibold capitalize leading-6 text-[#4a5685]"><span className="font-black text-baby-ink">Interests:</span> {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button href="/onboarding" variant="outline" className="mt-5"><Icon name="pen" className="h-4 w-4" /> Add or edit a child</Button>
+            </div>
+          )}
+
+          {tab === "bookings" && (
+            <div>
+              <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
+              <BookingList items={bookings} emptyCopy="You haven't booked any classes yet." />
+            </div>
+          )}
+
+          {tab === "attended" && (
+            <div>
+              <h1 className="mb-1 text-[26px] font-black">Attended Classes</h1>
+              <BookingList items={attended} emptyCopy="No attended classes yet — they'll appear here after you go." />
+            </div>
+          )}
+
+          {tab === "favorites" && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Favorites</h1>
+              {favs.length === 0 ? (
+                <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
+              ) : (
+                <div className="grid gap-4 md:grid-cols-3">
+                  {favs.map((activity) => <ActivityCard key={activity.id} activity={activity} compact />)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "reviews" && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Reviews</h1>
+              {reviews.length === 0 ? (
+                <EmptyPanel icon="star" copy="You haven't written any reviews yet." cta="Browse activities" href="/explore" />
+              ) : (
+                <div className="space-y-3">
+                  {reviews.map((r) => (
+                    <div key={r.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                      <div className="flex items-center justify-between">
+                        <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-baby-blue">{r.title}</a>
+                        <span className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
+                      </div>
+                      {r.comment && <p className="mt-1.5 font-semibold text-[#34406f]">{r.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "notifications" && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Notifications</h1>
+              {notifications.length === 0 ? (
+                <EmptyPanel icon="bell" copy="No notifications yet — booking updates and reminders will show up here." />
+              ) : (
+                <div className="space-y-2.5">
+                  {notifications.map((n) => (
+                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#e7ebf6] bg-white" : "border-[#cfe2ff] bg-[#f4f9ff]"}`}>
+                      <div className="flex items-start gap-2">
+                        {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-blue" />}
+                        <div>
+                          <p className="font-black">{n.title}</p>
+                          {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
+                          <p className="mt-1 text-xs font-semibold text-[#9aa4c2]">{sgDateTime(n.created_at)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "settings" && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Settings</h1>
+              <div className="space-y-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Name</p>
+                  <p className="font-black">{profile?.full_name || "—"}</p>
+                </div>
+                <div className="border-t border-[#eef1f7] pt-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Email</p>
+                  <p className="font-black">{session?.user.email || "—"}</p>
+                </div>
+                <div className="flex flex-wrap gap-3 border-t border-[#eef1f7] pt-4">
+                  <Button href="/onboarding" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
+                  <Button href="/forgot-password" variant="outline"><Icon name="lock" className="h-4 w-4" /> Change password</Button>
+                  <Button type="button" variant="soft" onClick={() => signOut()}>Sign out</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       </main>
     </PageShell>
+  );
+}
+
+function BookingList({ items, emptyCopy }: { items: BookingItem[]; emptyCopy: string }) {
+  if (items.length === 0) return <EmptyPanel icon="calendar" copy={emptyCopy} cta="Browse activities" href="/explore" />;
+  return (
+    <div className="mt-4 space-y-3">
+      {items.map((b) => (
+        <a
+          key={b.id}
+          href={b.slug ? `/activity?slug=${b.slug}` : "/explore"}
+          className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-blue"
+        >
+          <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate font-black">{b.title}</h3>
+            {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function EmptyPanel({ icon, copy, cta, href }: { icon: string; copy: string; cta?: string; href?: string }) {
+  return (
+    <div className="mt-4 rounded-[14px] border border-dashed border-[#dbe3f4] bg-white p-10 text-center">
+      <Icon name={icon} className="mx-auto h-8 w-8 text-[#b9c3de]" />
+      <p className="mt-3 font-semibold text-[#68718f]">{copy}</p>
+      {cta && href && <Button href={href} variant="outline" className="mt-4">{cta}</Button>}
+    </div>
   );
 }
 
@@ -1509,6 +1771,7 @@ function ResetPasswordPage() {
 }
 
 function App() {
+  const { session, loading } = useAuth();
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
   if (pathname === "/login") return <LoginPage />;
   if (pathname === "/forgot-password") return <ForgotPasswordPage />;
@@ -1524,6 +1787,8 @@ function App() {
   if (pathname === "/activity") return <ActivityDetailPage />;
   if (pathname === "/profile") return <ProfilePage />;
   if (pathname === "/contact") return <ContactPage />;
+  // Home: signed-in parents land on their dashboard, not the marketing page.
+  if (!loading && session) return <ProfilePage />;
   return <HomePage />;
 }
 

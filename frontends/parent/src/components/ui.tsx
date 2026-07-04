@@ -224,20 +224,20 @@ export function Header({ active = "/" }: HeaderProps) {
             </Button>
           </div>
         ) : (
-          <div className="hidden items-center gap-5 text-sm font-bold md:flex">
-            <a href="/profile" className="flex items-center gap-2 text-baby-ink">
+          <div className="hidden items-center gap-4 text-sm font-bold md:flex">
+            <a href="/profile?tab=favorites" className="flex items-center gap-1.5 text-baby-ink hover:text-baby-pink">
               <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
             </a>
             <a
               href="/profile"
-              className="flex items-center gap-3 rounded-full border border-[#e9edf8] bg-white px-3 py-2 shadow-soft"
+              className="flex items-center gap-2 rounded-full border border-[#e9edf8] bg-white py-1 pl-1 pr-3 shadow-soft hover:border-[#d4ddf3]"
             >
               <img
                 src={`${import.meta.env.BASE_URL}assets/crops/mom-avatar.png`}
                 alt=""
-                className="h-10 w-10 rounded-full object-cover"
+                className="h-7 w-7 rounded-full object-cover"
               />
-              <span>{profile?.full_name?.split(" ")[0] || "Account"}</span>
+              <span className="max-w-[110px] truncate">{profile?.full_name?.split(" ")[0] || "Account"}</span>
             </a>
             <button onClick={() => signOut()} className="text-[13px] text-[#68718f] hover:text-baby-ink">
               Sign out
