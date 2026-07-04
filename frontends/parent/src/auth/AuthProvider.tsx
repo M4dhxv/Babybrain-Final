@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { identifyUser, resetUser } from "../lib/posthog";
 import type { ParentProfile, Child } from "../lib/database.types";
 
 interface AuthState {
@@ -44,13 +45,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
-      if (data.session) await load();
+      if (data.session) {
+        identifyUser(data.session.user.id, data.session.user.email);
+        await load();
+      }
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s);
-      if (s) await load();
-      else {
+      if (s) {
+        identifyUser(s.user.id, s.user.email);
+        await load();
+      } else {
+        resetUser();
         setProfile(null);
         setKids([]);
       }

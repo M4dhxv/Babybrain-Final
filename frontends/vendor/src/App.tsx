@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
+import { capturePageview } from './lib/posthog';
 import RequireAuth from './auth/RequireAuth';
 import LandingPage from './pages/LandingPage';
 import PlansPage from './pages/PlansPage';
@@ -31,11 +32,21 @@ function RecoveryRedirect() {
   return null;
 }
 
+/** Captures a PostHog $pageview on every route change (HashRouter SPA). */
+function PageviewTracker() {
+  const location = useLocation();
+  useEffect(() => {
+    capturePageview();
+  }, [location.pathname]);
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider>
       <HashRouter>
         <RecoveryRedirect />
+        <PageviewTracker />
         <Routes>
           {/* Public pages */}
           <Route path="/" element={<LandingPage />} />

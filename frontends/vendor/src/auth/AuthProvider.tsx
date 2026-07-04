@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { identifyUser, resetUser } from '@/lib/posthog';
 import type { Provider, ProviderRole } from '@/lib/database.types';
 
 interface AuthState {
@@ -45,14 +46,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
-      if (data.session) await loadProvider();
+      if (data.session) {
+        identifyUser(data.session.user.id, data.session.user.email);
+        await loadProvider();
+      }
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(s);
-      if (s) await loadProvider();
-      else {
+      if (s) {
+        identifyUser(s.user.id, s.user.email);
+        await loadProvider();
+      } else {
+        resetUser();
         setProvider(null);
         setRole(null);
       }
