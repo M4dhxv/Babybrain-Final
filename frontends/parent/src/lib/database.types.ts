@@ -804,6 +804,7 @@ export interface ActivitySearchResult {
   popularity: number;
   next_session_at: string | null;
   dist_km: number | null;
+  boosted: boolean;
 }
 
 /** Returned by the child_journey_stats RPC (dashboard "Journey" card). */

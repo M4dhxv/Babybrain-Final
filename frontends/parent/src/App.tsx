@@ -737,17 +737,25 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
+type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null };
 
 const PROFILE_TABS: [string, string, string][] = [
   ["overview", "Overview", "home"],
   ["children", "My Children", "people"],
   ["bookings", "Bookings", "calendar"],
   ["attended", "Attended Classes", "check"],
+  ["makeup", "Make-up Tokens", "gift"],
   ["favorites", "Favorites", "heart"],
   ["reviews", "Reviews", "star"],
   ["notifications", "Notifications", "bell"],
   ["settings", "Settings", "gear"],
 ];
+
+function tokenStatusStyle(status: string) {
+  if (status === "issued") return "bg-[#eefbf1] text-green-700";
+  if (status === "redeemed") return "bg-[#f3f7ff] text-[#2b7cff]";
+  return "bg-[#f1efe8] text-[#7a725c]"; // expired
+}
 
 function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#eefbf1] text-green-700";
@@ -765,6 +773,7 @@ function ProfilePage() {
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
+  const [tokens, setTokens] = useState<TokenItem[]>([]);
   const [billingPlan, setBillingPlan] = useState<{
     plan: "free" | "plus";
     status: string | null;
@@ -858,6 +867,29 @@ function ProfilePage() {
       .select("id, title, body, read_at, created_at")
       .order("created_at", { ascending: false })
       .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
+
+    supabase
+      .from("make_up_tokens")
+      .select("id, status, created_at, expires_at, providers(business_name)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          status: string;
+          created_at: string;
+          expires_at: string | null;
+          providers: { business_name: string } | null;
+        }>;
+        setTokens(
+          rows.map((r) => ({
+            id: r.id,
+            status: r.status,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+            provider: r.providers?.business_name ?? "A provider",
+          }))
+        );
+      });
 
     apiGet<{
       plan: "free" | "plus";
@@ -1020,6 +1052,32 @@ function ProfilePage() {
             <div>
               <h1 className="mb-1 text-[26px] font-black">Attended Classes</h1>
               <BookingList items={attended} emptyCopy="No attended classes yet — they'll appear here after you go." />
+            </div>
+          )}
+
+          {tab === "makeup" && (
+            <div>
+              <h1 className="text-[26px] font-black">Make-up Tokens</h1>
+              <p className="mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
+              {tokens.length === 0 ? (
+                <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {tokens.map((t) => (
+                    <div key={t.id} className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#fff4d6] text-[#8a6d1a]"><Icon name="gift" className="h-6 w-6" /></span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="truncate font-black">{t.provider}</h3>
+                        <p className="text-sm font-semibold text-[#59658d]">
+                          Issued {sgDay(t.created_at)}
+                          {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

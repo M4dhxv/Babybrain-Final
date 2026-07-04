@@ -10,6 +10,7 @@ export type Activity = {
   note: string;
   slug?: string;
   id?: string;
+  boosted?: boolean;
 };
 
 export const activities: Activity[] = [

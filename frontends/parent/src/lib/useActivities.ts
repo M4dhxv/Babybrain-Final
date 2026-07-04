@@ -77,6 +77,7 @@ export function useActivities(params: ActivityQuery = {}) {
         time: sgTime(r.next_session_at),
         rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "New",
         note: r.popularity > 2 ? "Popular this week" : "",
+        boosted: r.boosted ?? false,
       }));
 
       if (!cancelled) {

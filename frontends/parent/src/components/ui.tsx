@@ -407,6 +407,11 @@ export function ActivityCard({
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink shadow-soft">
           {activity.category}
         </span>
+        {activity.boosted && (
+          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+            <Icon name="star" className="h-3 w-3 fill-current" /> Featured
+          </span>
+        )}
         <SaveHeart activityId={activity.id} className="absolute right-3 top-3 h-8 w-8" />
       </div>
       <div className="p-3.5">
@@ -458,6 +463,11 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
           {activity.category}
         </span>
+        {activity.boosted && (
+          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+            <Icon name="star" className="h-3 w-3 fill-current" /> Featured
+          </span>
+        )}
       </div>
       <div className="relative p-4">
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
