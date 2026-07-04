@@ -35,6 +35,7 @@ export default function LandingPage() {
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
+            onClick={() => navigate('/login')}
             className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Sign In

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,11 +7,16 @@ import { useAuth } from '@/auth/AuthProvider';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { signIn } = useAuth();
+  const { signIn, session } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Already signed in? Go straight to the dashboard.
+  useEffect(() => {
+    if (session) navigate('/dashboard');
+  }, [session, navigate]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -76,10 +76,10 @@ export default function PlansPage() {
           <button className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
+          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
             Sign In
           </Button>
-          <Button className="rounded-full px-6 gradient-primary text-white hover:opacity-90 border-0">
+          <Button onClick={() => navigate('/login')} className="rounded-full px-6 gradient-primary text-white hover:opacity-90 border-0">
             Upgrade Your Listing
           </Button>
         </div>
@@ -91,7 +91,7 @@ export default function PlansPage() {
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-[#1B1F3B] mb-3">Simple pricing</h1>
           <p className="text-gray-600 mb-6">Choose the plan that fits your business.</p>
-          <Button className="gradient-primary text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90">
+          <Button onClick={() => navigate('/login')} className="gradient-primary text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90">
             Upgrade Your Listing
           </Button>
         </div>
@@ -132,6 +132,7 @@ export default function PlansPage() {
                 {!plan.yearlyPrice && <div className="mb-4" />}
 
                 <Button
+                  onClick={() => navigate(plan.name === 'FREE' ? '/claim-business' : '/login')}
                   className={cn('w-full rounded-xl py-3 font-semibold', plan.buttonClass)}
                   variant={plan.buttonVariant}
                 >
