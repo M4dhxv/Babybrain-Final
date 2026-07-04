@@ -309,6 +309,7 @@ type ButtonProps = {
   type?: "button" | "submit";
   className?: string;
   onClick?: () => void;
+  disabled?: boolean;
 };
 
 export function Button({
@@ -319,6 +320,7 @@ export function Button({
   type = "button",
   className = "",
   onClick,
+  disabled = false,
 }: ButtonProps) {
   const sizeClass =
     size === "sm"
@@ -335,9 +337,9 @@ export function Button({
     pink: "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
     ghost: "bg-transparent text-[#1877ff] hover:bg-[#f3f7ff]",
   }[variant];
-  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}`;
+  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
 
-  if (href) {
+  if (href && !disabled) {
     return (
       <a href={href} className={classes}>
         {children}
@@ -346,7 +348,7 @@ export function Button({
   }
 
   return (
-    <button type={type} className={classes} onClick={onClick}>
+    <button type={type} className={classes} onClick={onClick} disabled={disabled}>
       {children}
     </button>
   );
@@ -518,17 +520,23 @@ export function Footer() {
             child's learning and development.
           </p>
         </div>
-        {[
-          ["Explore", ["Explore Classes", "How it Works", "About Us", "For Partners"]],
-          ["Support", ["Contact Us", "FAQ", "Privacy Policy", "Terms of Use"]],
-          ["Follow Us", ["Instagram", "hello@babybrain.sg"]],
-        ].map(([title, links]) => (
-          <div key={title as string} className="text-sm">
+        {([
+          ["Explore", [["Explore Classes", "/explore"], ["How it Works", "/"], ["About Us", "/about"], ["For Partners", "/contact"]]],
+          ["Support", [["Contact Us", "/contact"], ["FAQ", "/contact"], ["Privacy Policy", "/terms#privacy"], ["Terms of Use", "/terms"]]],
+          ["Follow Us", [["Instagram", null], ["hello@babybrain.sg", "mailto:hello@babybrain.sg"]]],
+        ] as [string, [string, string | null][]][]).map(([title, links]) => (
+          <div key={title} className="text-sm">
             <h3 className="mb-3 font-black">{title}</h3>
             <div className="space-y-1.5 font-semibold text-[#59658d]">
-              {(links as string[]).map((link) => (
-                <p key={link}>{link}</p>
-              ))}
+              {links.map(([label, href]) =>
+                href ? (
+                  <p key={label}>
+                    <a href={href} className="hover:text-baby-blue">{label}</a>
+                  </p>
+                ) : (
+                  <p key={label}>{label}</p>
+                )
+              )}
             </div>
           </div>
         ))}

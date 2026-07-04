@@ -21,6 +21,7 @@ import {
   toCard,
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
+import { apiGet, apiPost } from "./lib/api";
 import { formatChildAge, formatAgeRange } from "./lib/database.types";
 import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
@@ -764,7 +765,28 @@ function ProfilePage() {
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
+  const [billingPlan, setBillingPlan] = useState<{
+    plan: "free" | "plus";
+    status: string | null;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+    terms_accepted_at: string | null;
+    terms_version: string | null;
+  } | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
+
+  async function manageBilling() {
+    setBillingBusy(true);
+    try {
+      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/portal", {});
+      if (url) window.location.href = url;
+    } catch {
+      /* portal unavailable — button stays put */
+    } finally {
+      setBillingBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!session) return;
@@ -836,6 +858,17 @@ function ProfilePage() {
       .select("id, title, body, read_at, created_at")
       .order("created_at", { ascending: false })
       .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
+
+    apiGet<{
+      plan: "free" | "plus";
+      status: string | null;
+      current_period_end: string | null;
+      cancel_at_period_end: boolean;
+      terms_accepted_at: string | null;
+      terms_version: string | null;
+    }>("/api/customer/stripe/subscription")
+      .then(setBillingPlan)
+      .catch(() => {});
   }, [session]);
 
   if (!loading && !session) {
@@ -1051,6 +1084,53 @@ function ProfilePage() {
           {tab === "settings" && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Settings</h1>
+
+              {getParam("billing") === "success" && (
+                <div className="mb-4 rounded-[12px] border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
+                  🎉 Welcome to Plus! Your subscription is active — your first month is free.
+                </div>
+              )}
+
+              {/* Plan & Billing */}
+              <div className="mb-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Plan</p>
+                    <p className="mt-1 flex items-center gap-2 text-lg font-black">
+                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-blue" />
+                      {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
+                      {billingPlan?.status === "trialing" && (
+                        <span className="rounded-full bg-[#eef5ff] px-2 py-0.5 text-xs font-bold text-baby-blue">Free trial</span>
+                      )}
+                      {billingPlan?.cancel_at_period_end && (
+                        <span className="rounded-full bg-[#fff4e5] px-2 py-0.5 text-xs font-bold text-[#8a5a00]">Cancels at period end</span>
+                      )}
+                    </p>
+                    {billingPlan?.plan === "plus" && billingPlan.current_period_end && (
+                      <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                        {billingPlan.cancel_at_period_end ? "Access until" : "Renews on"}{" "}
+                        {sgDay(billingPlan.current_period_end)}
+                      </p>
+                    )}
+                  </div>
+                  {billingPlan?.plan === "plus" ? (
+                    <Button type="button" variant="outline" onClick={manageBilling} disabled={billingBusy}>
+                      {billingBusy ? "Opening…" : "Manage / Cancel"}
+                    </Button>
+                  ) : (
+                    <Button href="/pricing"><Icon name="star" className="h-4 w-4" /> Upgrade to Plus</Button>
+                  )}
+                </div>
+                {billingPlan?.terms_accepted_at && (
+                  <p className="mt-4 border-t border-[#eef1f7] pt-3 text-xs font-semibold text-[#9aa4c2]">
+                    <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-green-500" />
+                    Terms &amp; Conditions accepted on {sgDay(billingPlan.terms_accepted_at)}
+                    {billingPlan.terms_version ? ` (v${billingPlan.terms_version})` : ""} ·{" "}
+                    <a href="/terms" className="text-baby-blue underline">View terms</a>
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Name</p>
@@ -1167,52 +1247,179 @@ function ContactPage() {
   );
 }
 
-function PricingPage() {
-  const plans = [
+function TermsPage() {
+  const sections: { id?: string; title: string; body: React.ReactNode }[] = [
     {
-      name: "Free",
-      price: "0",
-      icon: "heart",
-      cta: "Continue Free",
-      items: [
-        "Browse activities",
-        "Book classes",
-        "Receive confirmations",
-        "Leave reviews",
-        "See messages from other parents and providers",
-      ],
+      title: "1. Acceptance of Terms",
+      body: "By creating an account, browsing, booking, or subscribing on BabyBrain.sg (\"BabyBrain\", \"we\", \"us\"), you agree to these Terms & Conditions and the disclosures below. If you do not agree, please do not use the platform.",
     },
     {
-      name: "Plus",
-      price: "6",
-      icon: "star",
-      cta: "Upgrade to Plus",
-      items: [
-        "Daily curated recommendations",
-        "Calendar reminders & sync",
-        "Message parents & providers",
-        "Save favourites & activity map",
-        "Make-up tokens & package tracking",
-      ],
-      featured: true,
+      title: "2. Accounts & Eligibility",
+      body: "You must be at least 18 and provide accurate information. You are responsible for activity under your account and for keeping your login secure.",
     },
     {
-      name: "Premium",
-      price: "10",
-      icon: "crown",
-      cta: "Upgrade to Premium",
-      items: [
-        "AI activity planner",
-        "Weekly schedule generator",
-        "Schedule export",
-        "Priority support",
-      ],
+      id: "privacy",
+      title: "3. Privacy & PDPA",
+      body: "We collect and process personal data in accordance with Singapore's Personal Data Protection Act (PDPA). We collect what we need to run the service (your profile, your children's ages/interests, bookings, and usage). You consent to this processing when you use BabyBrain. Our full Privacy Policy forms part of these Terms.",
+    },
+    {
+      title: "4. Cookie Consent",
+      body: "We use cookies and similar technologies for authentication, preferences, and basic analytics. By continuing to use the site you consent to essential cookies; non-essential cookies are used only where permitted.",
+    },
+    {
+      title: "5. Children's Data",
+      body: "Child details (name, date of birth, interests) are provided by you as the parent/guardian to personalise recommendations. We process them solely to deliver the service and never sell them. You may edit or delete them at any time.",
+    },
+    {
+      title: "6. Vendor Data Sharing",
+      body: "When you book, enquire, or join a class chat, we share the information necessary to fulfil that booking (e.g. your name and relevant details) with the activity provider. Providers are independent businesses responsible for their own services.",
+    },
+    {
+      title: "7. Bookings & Payments",
+      body: "Bookings are contracts between you and the provider. Payments are processed securely by Stripe; by paying you accept Stripe's payment terms. BabyBrain is not the provider of the classes and is not liable for the conduct or cancellation of a class by a provider.",
+    },
+    {
+      title: "8. BabyBrain Plus — Subscription Terms",
+      body: "BabyBrain Plus costs SGD 9/month or SGD 99/year, plus GST. New subscribers get a 30-day free trial (first month free). Billing and card details are handled by Stripe.",
+    },
+    {
+      title: "9. Auto-Renewal Disclosure",
+      body: "Plus is a recurring subscription. After any free trial, it automatically renews at the end of each billing period (monthly or yearly) and your payment method is charged until you cancel. The renewal date is shown in Profile → Settings.",
+    },
+    {
+      title: "10. Managing & Cancelling Your Subscription",
+      body: "You can view, update your card, or cancel Plus at any time from Profile → Settings → Manage / Cancel, which opens the Stripe billing portal. Cancelling stops future renewals; you keep Plus access until the end of the current paid period. See our refund policy below.",
+    },
+    {
+      title: "11. Refunds & Cancellation Policy",
+      body: "Subscription fees are non-refundable except where required by law; cancelling prevents the next charge. Class booking refunds and reschedules follow the individual provider's cancellation policy shown at booking.",
+    },
+    {
+      title: "12. AI Planner Disclaimer",
+      body: "The AI planning tool provides suggestions to help you organise activities around your schedule. It may be inaccurate or incomplete and is not professional, medical, or developmental advice. Always use your own judgement; you are responsible for decisions made using it.",
+    },
+    {
+      title: "13. Recommendations & Personalisation",
+      body: "We generate recommendations from the preferences and child details you provide and your activity on the platform. Recommendations are suggestions only and are not guarantees of suitability.",
+    },
+    {
+      title: "14. Marketing Consent",
+      body: "With your consent, we send curated-activity emails and updates. You can opt in or out at any time in your settings or via the unsubscribe link in any marketing email. Essential service messages (bookings, billing) are always sent.",
+    },
+    {
+      title: "15. Calendar Integration Consent",
+      body: "If you enable calendar reminders/sync or export, you consent to BabyBrain creating calendar entries for your bookings. You can disable this at any time.",
+    },
+    {
+      title: "16. Reviews & Moderation",
+      body: "You may review classes you have booked. Reviews must be honest and lawful. We may moderate or remove content that is abusive, misleading, or violates these Terms.",
+    },
+    {
+      title: "17. Messaging Rules",
+      body: "All users can read messages on their booked classes. Sending messages to other parents and providers is a Plus feature. Messaging must be respectful and used only for coordinating activities; misuse may lead to suspension.",
+    },
+    {
+      title: "18. Data Retention, Deletion & Account Closure",
+      body: "You have the right to access and delete your personal data. You can delete your account from your settings or by contacting us; we then remove or anonymise your data except where we must retain records (e.g. transaction records) under applicable law.",
+    },
+    {
+      title: "19. Security",
+      body: "We apply reasonable technical and organisational controls (encryption in transit, access controls, RLS) to protect your data. No system is perfectly secure, so please protect your own credentials.",
+    },
+    {
+      title: "20. Changes & Contact",
+      body: "We may update these Terms; material changes will be notified in-app or by email. Questions? Contact hello@babybrain.sg.",
     },
   ];
 
   return (
+    <PageShell active="/terms" auth="public">
+      <main className="mx-auto max-w-[820px] px-6 py-10">
+        <h1 className="text-[36px] font-black leading-tight">Terms &amp; Conditions</h1>
+        <p className="mt-2 text-sm font-bold text-[#9aa4c2]">Last updated: July 2026</p>
+        <p className="mt-4 font-semibold leading-7 text-[#59658d]">
+          These Terms cover your use of BabyBrain, including bookings, the BabyBrain Plus
+          subscription, privacy, and the disclosures we're required to make. Please read them.
+        </p>
+        <div className="mt-8 space-y-7">
+          {sections.map((s) => (
+            <section key={s.title} id={s.id} className="scroll-mt-24">
+              <h2 className="text-lg font-black text-baby-ink">{s.title}</h2>
+              <p className="mt-2 font-semibold leading-7 text-[#59658d]">{s.body}</p>
+            </section>
+          ))}
+        </div>
+      </main>
+    </PageShell>
+  );
+}
+
+function PricingPage() {
+  const { session } = useAuth();
+  const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
+  const [plan, setPlan] = useState<"free" | "plus">("free");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (getParam("billing") === "cancelled") {
+      setError("Checkout cancelled — you have not been charged.");
+    }
+    if (!session) return;
+    apiGet<{ plan: "free" | "plus" }>("/api/customer/stripe/subscription")
+      .then((s) => setPlan(s.plan))
+      .catch(() => {});
+  }, [session]);
+
+  async function upgrade() {
+    if (!session) {
+      window.location.href = "/login";
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      if (plan === "plus") {
+        const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/portal", {});
+        if (url) window.location.href = url;
+        return;
+      }
+      const { url } = await apiPost<{ url?: string }>(
+        "/api/customer/stripe/subscription",
+        { billing }
+      );
+      if (url) window.location.href = url;
+      else setError("Could not start checkout — please try again.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Payments aren't available right now.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const freeItems = [
+    "Browse & book activities",
+    "Leave reviews",
+    "See messages from parents and class providers on booked classes",
+  ];
+  const plusItems = [
+    "Everything in Free",
+    "Saved profile with personalised recommendations",
+    "Packages & make-up tokens for all vendors in one place",
+    "Save favourite providers & places on your own map/list",
+    "Emails with curated activities",
+    "AI planning tool (map against nap schedules & availability)",
+    "Booking reminders & calendar integration",
+    "Calendar schedule view to export to grandparents & helpers",
+    "Message others booked on an activity, and the provider",
+    "Priority support",
+  ];
+  const plusPrice = billing === "monthly" ? "9" : "99";
+  const plusPeriod = billing === "monthly" ? "/mo" : "/yr";
+
+  return (
     <PageShell active="/pricing" auth="public">
-      <main className="mx-auto max-w-[1120px] px-6 py-8">
+      <main className="mx-auto max-w-[960px] px-6 py-8">
         <section className="text-center">
           <Icon name="heart" className="mx-auto h-9 w-9 text-baby-pink" />
           <h1 className="mt-2 text-[36px] font-black leading-tight">
@@ -1222,59 +1429,111 @@ function PricingPage() {
             Discover, book and enjoy the best activities for your little ones.
           </p>
           <div className="mx-auto mt-5 grid h-11 max-w-[360px] grid-cols-2 rounded-full border border-[#e2e7f4] bg-white p-1 font-black">
-            <button className="rounded-full bg-baby-blue text-white">Monthly</button>
-            <button className="text-[#59658d]">Annual <span className="text-baby-pink">(Save 20%)</span></button>
+            <button
+              type="button"
+              onClick={() => setBilling("monthly")}
+              className={billing === "monthly" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBilling("annual")}
+              className={billing === "annual" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+            >
+              Annual <span className="text-baby-pink">(1 month free)</span>
+            </button>
           </div>
         </section>
-        <section className="mt-7 grid gap-5 lg:grid-cols-3">
-          {plans.map((plan) => (
-            <article
-              key={plan.name}
-              className={`relative rounded-[18px] border bg-white p-6 shadow-card ${
-                plan.featured ? "border-baby-blue ring-1 ring-baby-blue/20" : "border-[#e7ebf6]"
-              }`}
-            >
-              {plan.featured && (
-                <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
-                  MOST POPULAR
-                </span>
-              )}
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f4ecff] text-baby-lilac">
-                <Icon name={plan.icon} className="h-8 w-8" />
-              </div>
-              <h2 className="mt-4 text-center text-2xl font-black">{plan.name}</h2>
-              <p className="mt-2 text-center">
-                <span className="text-lg font-black text-[#68718f]">SGD </span>
-                <span className="text-[44px] font-black text-baby-lilac">{plan.price}</span>
-                {plan.name !== "Free" && <span className="font-bold text-[#68718f]"> /mo</span>}
-              </p>
-              <div className="my-5 border-t border-[#eef1f7]" />
-              <div className="space-y-3">
-                {plan.items.map((item) => (
-                  <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
-                      <Icon name="check" className="h-3 w-3" />
-                    </span>
-                    {item}
-                  </p>
-                ))}
-              </div>
-              {plan.name !== "Free" && (
-                <p className="mt-5 rounded-[10px] bg-[#f3f7ff] px-4 py-3 text-center text-sm font-black text-baby-blue">
-                  First month free for first 500 customers
+
+        {error && (
+          <p className="mx-auto mt-5 max-w-[560px] rounded-[10px] bg-[#fff4e5] px-4 py-3 text-center text-sm font-bold text-[#8a5a00]">
+            {error}
+          </p>
+        )}
+
+        <section className="mt-7 grid gap-5 md:grid-cols-2">
+          {/* Free */}
+          <article className="relative rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#eef5ff] text-baby-blue">
+              <Icon name="heart" className="h-8 w-8" />
+            </div>
+            <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
+            <p className="mt-2 text-center">
+              <span className="text-lg font-black text-[#68718f]">SGD </span>
+              <span className="text-[44px] font-black text-baby-lilac">0</span>
+            </p>
+            <div className="my-5 border-t border-[#eef1f7]" />
+            <div className="space-y-3">
+              {freeItems.map((item) => (
+                <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                    <Icon name="check" className="h-3 w-3" />
+                  </span>
+                  {item}
                 </p>
-              )}
-              <Button href={plan.name === "Free" ? "/" : "/payment"} variant={plan.name === "Free" ? "outline" : "primary"} className="mt-5 w-full">
-                {plan.cta}
-              </Button>
-            </article>
-          ))}
+              ))}
+            </div>
+            <Button href="/" variant="outline" className="mt-5 w-full">
+              {plan === "free" ? "Continue Free" : "Included"}
+            </Button>
+          </article>
+
+          {/* Plus */}
+          <article className="relative rounded-[18px] border border-baby-blue bg-white p-6 shadow-card ring-1 ring-baby-blue/20">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
+              MOST POPULAR
+            </span>
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f4ecff] text-baby-lilac">
+              <Icon name="star" className="h-8 w-8" />
+            </div>
+            <h2 className="mt-4 text-center text-2xl font-black">Plus</h2>
+            <p className="mt-2 text-center">
+              <span className="text-lg font-black text-[#68718f]">SGD </span>
+              <span className="text-[44px] font-black text-baby-lilac">{plusPrice}</span>
+              <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
+            </p>
+            <p className="text-center text-xs font-bold text-[#9aa4c2]">+ GST</p>
+            <div className="my-5 border-t border-[#eef1f7]" />
+            <div className="space-y-3">
+              {plusItems.map((item) => (
+                <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                    <Icon name="check" className="h-3 w-3" />
+                  </span>
+                  {item}
+                </p>
+              ))}
+            </div>
+            <p className="mt-5 rounded-[10px] bg-[#f3f7ff] px-4 py-3 text-center text-sm font-black text-baby-blue">
+              First month free — cancel anytime
+            </p>
+            <Button
+              type="button"
+              onClick={upgrade}
+              disabled={busy}
+              variant="primary"
+              className="mt-5 w-full"
+            >
+              {busy
+                ? "Please wait…"
+                : plan === "plus"
+                  ? "Manage subscription"
+                  : "Upgrade to Plus"}
+            </Button>
+            <p className="mt-3 text-center text-xs font-semibold text-[#9aa4c2]">
+              Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
+              {" "}By subscribing you agree to our{" "}
+              <a href="/terms" className="text-baby-blue underline">Terms &amp; Conditions</a>.
+            </p>
+          </article>
         </section>
+
         <section className="mt-5 grid gap-4 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card md:grid-cols-3">
           {[
             ["store", "Corporate discounts", "available for bulk packages"],
             ["calendar", "Monthly or annual billing", "Choose the plan that works for you"],
-            ["shield", "Cancel anytime", "Monthly plans can be cancelled with 14 days notice"],
+            ["shield", "Cancel anytime", "Manage your subscription from your profile"],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
               <Icon name={icon} className="h-8 w-8 text-baby-blue" />
@@ -1288,56 +1547,44 @@ function PricingPage() {
 }
 
 function PaymentPage() {
+  // Card details are collected on Stripe's hosted Checkout, never here. This
+  // page just kicks off (or resumes) that secure flow for anyone landing on
+  // /payment directly, then redirects.
+  const { session, loading } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!session) {
+      window.location.href = "/login";
+      return;
+    }
+    apiPost<{ url?: string }>("/api/customer/stripe/subscription", { billing: "monthly" })
+      .then(({ url }) => {
+        if (url) window.location.href = url;
+        else setError("Could not start checkout — please try again.");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Payments aren't available right now."));
+  }, [session, loading]);
+
   return (
-    <main className="grid min-h-screen bg-baby-paper text-baby-ink lg:grid-cols-[390px_1fr]">
-      <aside className="bg-gradient-to-b from-[#fff0f7] to-white px-8 py-10">
-        <a href="/pricing" className="font-black text-baby-ink">←</a>
-        <div className="mt-6 text-center">
-          <img src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`} alt="" className="mx-auto h-28 w-28" />
-          <div className="text-[40px] font-black"><span className="text-baby-pink">Baby</span><span className="text-baby-blue">Brain</span></div>
-        </div>
-        <h1 className="mt-8 text-2xl font-black">Subscribe to Plus</h1>
-        <p className="mt-3 text-[44px] font-black">SGD 6.00 <span className="text-lg font-bold">per month</span></p>
-        <p className="mt-6 flex gap-3 font-semibold"><Icon name="gift" className="h-6 w-6 text-baby-pink" /> First month free for first 500 customers. Cancel anytime.</p>
-        <section className="mt-8 rounded-[16px] bg-white p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="star" className="h-7 w-7" /></span>
-              <p><strong className="block">Plus Plan</strong><span className="text-[#59658d]">Billed monthly</span></p>
-            </div>
-            <strong>SGD 6.00</strong>
-          </div>
-          <div className="my-5 border-t border-[#eef1f7]" />
-          <p className="flex justify-between font-bold"><span>Subtotal</span><span>SGD 6.00</span></p>
-          <p className="mt-5 flex justify-between font-bold text-green-600"><span>First month free</span><span>- SGD 6.00</span></p>
-          <div className="my-5 border-t border-[#eef1f7]" />
-          <p className="flex justify-between text-xl font-black"><span>Total today</span><span>SGD 0.00</span></p>
-        </section>
-        <div className="mt-8 space-y-4">
-          {["Full access to Plus features", "Cancel anytime with 14 days notice", "Monthly or annual billing"].map((item) => (
-            <p key={item} className="flex gap-3 font-semibold"><Icon name="check" className="h-5 w-5 text-baby-blue" /> {item}</p>
-          ))}
-        </div>
-      </aside>
-      <section className="mx-auto w-full max-w-[620px] px-8 py-24">
-        <h2 className="text-[32px] font-black">Enter payment details</h2>
-        <button className="mt-8 h-16 w-full rounded-[8px] bg-black text-2xl font-black text-white">Apple Pay</button>
-        <div className="my-10 flex items-center gap-6 text-center font-semibold text-[#68718f]"><span className="h-px flex-1 bg-[#dfe5f2]" />Or pay with card<span className="h-px flex-1 bg-[#dfe5f2]" /></div>
-        <form className="space-y-5">
-          {["Email", "Name on card"].map((label) => (
-            <label key={label} className="block font-black">{label}<input className="mt-2 h-14 w-full rounded-[10px] border border-[#dfe5f2] px-5 text-lg font-semibold outline-none focus:border-baby-blue" placeholder={label === "Email" ? "name@example.com" : "Full name on card"} /></label>
-          ))}
-          <label className="block font-black">Card information<input className="mt-2 h-14 w-full rounded-t-[10px] border border-[#dfe5f2] px-5 text-lg font-semibold outline-none focus:border-baby-blue" placeholder="1234 1234 1234 1234" /></label>
-          <div className="grid grid-cols-2">
-            <input className="h-14 rounded-bl-[10px] border border-t-0 border-[#dfe5f2] px-5 text-lg font-semibold" placeholder="MM / YY" />
-            <input className="h-14 rounded-br-[10px] border border-l-0 border-t-0 border-[#dfe5f2] px-5 text-lg font-semibold" placeholder="CVC" />
-          </div>
-          <label className="block font-black">Country or region<input className="mt-2 h-14 w-full rounded-[10px] border border-[#dfe5f2] px-5 text-lg font-semibold" defaultValue="Singapore" /></label>
-          <label className="flex gap-3 rounded-[10px] border border-[#dfe5f2] p-4 font-bold"><input type="checkbox" className="h-5 w-5" /> Securely save my information for 1-click checkout</label>
-          <Button href="/pricing" className="w-full text-lg">Start subscription</Button>
-        </form>
-      </section>
-    </main>
+    <PageShell active="/pricing" auth="public">
+      <main className="mx-auto max-w-[520px] px-6 py-24 text-center">
+        <img src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`} alt="" className="mx-auto h-24 w-24" />
+        {error ? (
+          <>
+            <h1 className="mt-6 text-2xl font-black">We couldn't start checkout</h1>
+            <p className="mt-3 font-semibold text-[#68718f]">{error}</p>
+            <Button href="/pricing" className="mt-6">Back to plans</Button>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-6 text-2xl font-black">Taking you to secure checkout…</h1>
+            <p className="mt-3 font-semibold text-[#68718f]">You'll be redirected to Stripe to start your Plus subscription.</p>
+          </>
+        )}
+      </main>
+    </PageShell>
   );
 }
 
@@ -1787,6 +2034,7 @@ function App() {
   if (pathname === "/activity") return <ActivityDetailPage />;
   if (pathname === "/profile") return <ProfilePage />;
   if (pathname === "/contact") return <ContactPage />;
+  if (pathname === "/terms") return <TermsPage />;
   // Home: signed-in parents land on their personalised dashboard (matched
   // classes for their child), not the marketing page.
   if (!loading && session) return <MatchesPage active="/" />;

@@ -12,7 +12,7 @@ const DEFAULT_ORIGINS = [
   'http://localhost:5174',
 ];
 
-function allowedOrigins(): string[] {
+export function allowedOrigins(): string[] {
   const env = process.env.CORS_ALLOWED_ORIGINS;
   if (env) {
     return env
@@ -21,6 +21,18 @@ function allowedOrigins(): string[] {
       .filter(Boolean);
   }
   return DEFAULT_ORIGINS;
+}
+
+/**
+ * The SPA origin to send a browser back to after a Stripe hosted flow.
+ * Echoes the request Origin when allow-listed (so parent vs vendor SPA each
+ * return to themselves), else pins the first allowed origin. Never trusts an
+ * arbitrary Origin, so it can't be turned into an open redirect.
+ */
+export function appOrigin(request: Request): string {
+  const origin = request.headers.get('origin');
+  const allowed = allowedOrigins();
+  return origin && allowed.includes(origin) ? origin : allowed[0];
 }
 
 /**

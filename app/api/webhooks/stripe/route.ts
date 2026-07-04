@@ -30,22 +30,39 @@ export async function POST(request: Request) {
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted': {
       const sub = event.data.object as Stripe.Subscription;
+      const active = ['active', 'trialing'].includes(sub.status);
+      const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
+      const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+
+      // Vendor "Growth" subscription (unchanged).
       const providerId = sub.metadata?.provider_id;
       if (providerId) {
-        const active = ['active', 'trialing'].includes(sub.status);
-        const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
         await admin
           .from('subscriptions')
           .update({
             plan: active ? 'growth' : 'free',
             stripe_subscription_id: sub.id,
             status: sub.status as never,
-            current_period_end: periodEnd
-              ? new Date(periodEnd * 1000).toISOString()
-              : null,
+            current_period_end: periodEndIso,
             cancel_at_period_end: sub.cancel_at_period_end,
           })
           .eq('provider_id', providerId);
+      }
+
+      // Customer "Plus" subscription.
+      const customerUserId = sub.metadata?.user_id;
+      if (customerUserId) {
+        await admin.from('customer_subscriptions').upsert(
+          {
+            user_id: customerUserId,
+            plan: active ? 'plus' : 'free',
+            stripe_subscription_id: sub.id,
+            status: sub.status as never,
+            current_period_end: periodEndIso,
+            cancel_at_period_end: sub.cancel_at_period_end,
+          },
+          { onConflict: 'user_id' }
+        );
       }
       break;
     }

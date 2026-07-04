@@ -48,6 +48,8 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           onboarding_completed_at: string | null;
+          terms_accepted_at: string | null;
+          terms_version: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -60,6 +62,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           onboarding_completed_at?: string | null;
+          terms_accepted_at?: string | null;
+          terms_version?: string | null;
         };
         Update: {
           full_name?: string;
@@ -68,6 +72,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           onboarding_completed_at?: string | null;
+          terms_accepted_at?: string | null;
+          terms_version?: string | null;
         };
               Relationships: [];
       };
@@ -632,6 +638,40 @@ export type Database = {
           status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
           current_period_end?: string | null;
           cancel_at_period_end?: boolean;
+        };
+        Relationships: [];
+      };
+      customer_subscriptions: {
+        Row: {
+          user_id: string;
+          plan: 'free' | 'plus';
+          billing_interval: 'monthly' | 'annual' | null;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
+          status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
+          current_period_end: string | null;
+          cancel_at_period_end: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          plan?: 'free' | 'plus';
+          billing_interval?: 'monthly' | 'annual' | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
+          current_period_end?: string | null;
+          cancel_at_period_end?: boolean;
+        };
+        Update: {
+          plan?: 'free' | 'plus';
+          billing_interval?: 'monthly' | 'annual' | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
+          current_period_end?: string | null;
+          cancel_at_period_end?: boolean;
+          updated_at?: string;
         };
         Relationships: [];
       };

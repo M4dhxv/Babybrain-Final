@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getStreamServerClient } from '@/lib/stream';
+import { getStreamServerClient, classChannelId } from '@/lib/stream';
 
 /**
  * Group chat for everyone booked into a given class (activity). Only parents
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   }
 
   const stream = getStreamServerClient();
-  const channelId = `class-${activityId.slice(0, 12)}`;
+  const channelId = classChannelId(activityId);
 
   await stream.upsertUsers([
     ...memberIds.map((id) => ({ id, name: nameById[id] || 'Parent' })),
