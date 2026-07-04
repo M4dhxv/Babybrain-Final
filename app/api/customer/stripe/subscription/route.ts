@@ -16,8 +16,9 @@ import { appOrigin } from '@/lib/cors';
 
 const PLUS_TRIAL_DAYS = 30;
 // Bump when the Terms & Conditions materially change; stored alongside the
-// acceptance timestamp so we know which version a user agreed to.
-export const TERMS_VERSION = '2026-07';
+// acceptance timestamp so we know which version a user agreed to. Kept local:
+// App Router route files may only export handlers + Next's config fields.
+const TERMS_VERSION = '2026-07';
 const PLUS_PRICING = {
   monthly: { unit_amount: 900, interval: 'month' as const, label: 'BabyBrain Plus (monthly)' },
   annual: { unit_amount: 9900, interval: 'year' as const, label: 'BabyBrain Plus (annual)' },
