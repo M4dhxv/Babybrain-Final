@@ -355,13 +355,13 @@ function OnboardingPage() {
   );
 }
 
-function MatchesPage() {
+function MatchesPage({ active = "/matches" }: { active?: string }) {
   const { session, profile, children, loading } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
 
   if (!loading && !session) {
     return (
-      <PageShell active="/matches">
+      <PageShell active={active}>
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Log in to see your matches.</p>
           <Button href="/login" className="mt-4">Log In</Button>
@@ -371,7 +371,7 @@ function MatchesPage() {
   }
   if (!loading && children.length === 0) {
     return (
-      <PageShell active="/matches">
+      <PageShell active={active}>
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Tell us about your child to get matches.</p>
           <Button href="/onboarding" className="mt-4">Complete your profile</Button>
@@ -386,7 +386,7 @@ function MatchesPage() {
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
   return (
-    <PageShell active="/matches">
+    <PageShell active={active}>
       <main className="mx-auto max-w-[1180px] px-6 py-6">
         <section className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
           <div className="grid items-center gap-6 lg:grid-cols-[1fr_340px]">
@@ -1787,8 +1787,9 @@ function App() {
   if (pathname === "/activity") return <ActivityDetailPage />;
   if (pathname === "/profile") return <ProfilePage />;
   if (pathname === "/contact") return <ContactPage />;
-  // Home: signed-in parents land on their dashboard, not the marketing page.
-  if (!loading && session) return <ProfilePage />;
+  // Home: signed-in parents land on their personalised dashboard (matched
+  // classes for their child), not the marketing page.
+  if (!loading && session) return <MatchesPage active="/" />;
   return <HomePage />;
 }
 
