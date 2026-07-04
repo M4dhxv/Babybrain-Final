@@ -16,6 +16,7 @@ import { useAuth } from "./auth/AuthProvider";
 import {
   useActivityDetail,
   useFavorite,
+  useFavoriteProvider,
   useRecommendations,
   useJourney,
   toCard,
@@ -581,6 +582,7 @@ const sgTime = (iso: string) =>
 function ActivityDetailPage() {
   const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
+  const favProvider = useFavoriteProvider(activity?.provider_id);
   const { session } = useAuth();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
@@ -671,6 +673,11 @@ function ActivityDetailPage() {
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
             </Button>
+            {activity.provider_id && (
+              <Button variant="ghost" type="button" onClick={favProvider.toggle} className="mt-3 w-full">
+                <Icon name="store" className="h-4 w-4" /> {favProvider.saved ? "Following provider" : "Follow this provider"}
+              </Button>
+            )}
             {enquiring && activity.provider_id && (
               <EnquiryChat
                 providerId={activity.provider_id}
@@ -839,6 +846,7 @@ function ProfilePage() {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
+  const [savedProviders, setSavedProviders] = useState<{ id: string; name: string }[]>([]);
   const [billingPlan, setBillingPlan] = useState<{
     plan: "free" | "plus";
     status: string | null;
@@ -940,6 +948,14 @@ function ProfilePage() {
       .select("id, title, body, read_at, created_at")
       .order("created_at", { ascending: false })
       .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
+
+    supabase
+      .from("favorite_providers")
+      .select("provider_id, providers(business_name)")
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{ provider_id: string; providers: { business_name: string } | null }>;
+        setSavedProviders(rows.map((r) => ({ id: r.provider_id, name: r.providers?.business_name ?? "Provider" })));
+      });
 
     supabase
       .from("make_up_tokens")
@@ -1162,6 +1178,20 @@ function ProfilePage() {
               ) : (
                 <div className="grid gap-4 md:grid-cols-3">
                   {favs.map((activity) => <ActivityCard key={activity.id} activity={activity} compact />)}
+                </div>
+              )}
+
+              {savedProviders.length > 0 && (
+                <div className="mt-8">
+                  <h2 className="mb-3 text-xl font-black">Saved providers</h2>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {savedProviders.map((p) => (
+                      <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#eef5ff] text-baby-blue"><Icon name="store" className="h-5 w-5" /></span>
+                        <h3 className="truncate font-black">{p.name}</h3>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

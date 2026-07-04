@@ -274,6 +274,20 @@ export type Database = {
           },
         ];
       };
+      favorite_providers: {
+        Row: { user_id: string; provider_id: string; created_at: string };
+        Insert: { user_id: string; provider_id: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'favorite_providers_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       reviews: {
         Row: {
           id: string;

@@ -76,6 +76,43 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
   return state;
 }
 
+/** Favourite-provider toggle for the signed-in parent. */
+export function useFavoriteProvider(providerId: string | null | undefined) {
+  const { session } = useAuth();
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!session || !providerId) return;
+    supabase
+      .from("favorite_providers")
+      .select("provider_id")
+      .eq("user_id", session.user.id)
+      .eq("provider_id", providerId)
+      .maybeSingle()
+      .then(({ data }) => setSaved(Boolean(data)));
+  }, [session, providerId]);
+
+  async function toggle() {
+    if (!providerId) return;
+    if (!session) {
+      window.location.href = "/login";
+      return;
+    }
+    setBusy(true);
+    if (saved) {
+      await supabase.from("favorite_providers").delete().eq("user_id", session.user.id).eq("provider_id", providerId);
+      setSaved(false);
+    } else {
+      await supabase.from("favorite_providers").insert({ user_id: session.user.id, provider_id: providerId });
+      setSaved(true);
+    }
+    setBusy(false);
+  }
+
+  return { saved, toggle, busy, authed: Boolean(session) };
+}
+
 /** Favourite toggle for the signed-in parent. */
 export function useFavorite(activityId: string | undefined) {
   const { session } = useAuth();
