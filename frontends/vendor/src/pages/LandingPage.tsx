@@ -30,7 +30,7 @@ export default function LandingPage() {
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#E91E63] border-b-2 border-[#E91E63] pb-1">Home</button>
           <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
-          <button className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
+          <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-2 sm:gap-3">
           <Button
@@ -106,6 +106,7 @@ export default function LandingPage() {
                 Upgrade your listing
               </Button>
               <Button
+                onClick={() => { window.location.href = 'mailto:hello@babybrain.sg?subject=Book%20a%20demo'; }}
                 variant="outline"
                 className="px-8 py-3 rounded-xl text-sm font-semibold border-[#E91E63] text-[#E91E63] hover:bg-pink-50"
               >

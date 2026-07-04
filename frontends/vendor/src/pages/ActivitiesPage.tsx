@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CalendarPlus,
   Package,
@@ -31,6 +32,7 @@ const fmtDate = (iso: string) =>
 export default function ActivitiesPage() {
   const { provider, role } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
+  const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('Activities');
   const [showDrawer, setShowDrawer] = useState(false);
@@ -157,11 +159,11 @@ export default function ActivitiesPage() {
             <CalendarPlus className="w-4 h-4" />
             New Activity
           </button>
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors">
+          <button onClick={() => canManage && setShowDrawer(true)} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
             <Package className="w-4 h-4" />
             New Package
           </button>
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
+          <button onClick={() => navigate('/settings')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
             <MapPin className="w-4 h-4" />
             New Location
           </button>

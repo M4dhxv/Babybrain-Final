@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CalendarDays,
   Crown,
@@ -10,6 +12,8 @@ import {
   CalendarCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { apiPost } from '@/lib/api';
+import { useAuth } from '@/auth/AuthProvider';
 
 const includedFeatures = [
   'Direct-to-user messaging',
@@ -23,12 +27,35 @@ const includedFeatures = [
 ];
 
 export default function BillingPage() {
+  const navigate = useNavigate();
+  const { provider } = useAuth();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  // Redirects to the relevant Stripe hosted flow. Shows a clear message if
+  // payments aren't configured yet (route returns an error) instead of a
+  // dead button.
+  async function stripe(path: string, label: string) {
+    if (!provider) return;
+    setMsg(null);
+    setBusy(label);
+    try {
+      const { url } = await apiPost<{ url?: string }>(path, { provider_id: provider.id });
+      if (url) window.location.href = url;
+      else setMsg('Could not start that just now — please try again.');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="relative">
       {/* Top Bar */}
       <div className="flex items-center justify-between px-8 py-5">
         <div className="flex items-center gap-3">
-          <button className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
           <div>
@@ -37,13 +64,18 @@ export default function BillingPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
+          <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500">
             <CalendarDays className="w-4 h-4" />
-            13 Jun – 19 Jun 2026
-            <ChevronRight className="w-4 h-4 rotate-90" />
-          </button>
+            Current period: 13 Jun – 19 Jun 2026
+          </div>
         </div>
       </div>
+
+      {msg && (
+        <div className="mx-8 mb-4 rounded-xl bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800">
+          {msg}
+        </div>
+      )}
 
       <div className="px-8 pb-8 space-y-6">
         {/* Current Plan Card */}
@@ -128,7 +160,7 @@ export default function BillingPage() {
 
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-500">Need more exposure? Upgrade to Boost.</p>
-                <button className="text-xs text-[#E91E63] font-medium flex items-center gap-1">
+                <button onClick={() => navigate('/plans')} className="text-xs text-[#E91E63] font-medium flex items-center gap-1">
                   Learn more about plans
                   <ChevronRight className="w-3 h-3" />
                 </button>
@@ -151,8 +183,8 @@ export default function BillingPage() {
                     <div className="text-xs text-gray-500">Expires 09/28</div>
                   </div>
                 </div>
-                <Button variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
-                  Update Card
+                <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
+                  {busy === 'card' ? 'Opening…' : 'Update Card'}
                 </Button>
               </div>
             </div>
@@ -174,8 +206,8 @@ export default function BillingPage() {
                     Connected / Pending
                   </span>
                 </div>
-                <Button variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
-                  Manage payouts
+                <Button onClick={() => stripe('/api/vendor/stripe/connect', 'payouts')} disabled={busy === 'payouts'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
+                  {busy === 'payouts' ? 'Opening…' : 'Manage payouts'}
                 </Button>
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -195,7 +227,7 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-500 mb-1">Pay for featured / prime placement</p>
                   <p className="text-xs text-gray-500 mb-3">Get more views and grow faster.</p>
                 </div>
-                <Button variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
+                <Button onClick={() => navigate('/activities')} variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
                   Set up Boost
                 </Button>
               </div>
@@ -216,10 +248,16 @@ export default function BillingPage() {
               </p>
             </div>
             <Button
+              onClick={() => {
+                if (window.confirm('Cancel your Growth subscription? It stays active until the end of the current billing period.')) {
+                  stripe('/api/vendor/stripe/portal', 'cancel');
+                }
+              }}
+              disabled={busy === 'cancel'}
               variant="outline"
               className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
             >
-              Cancel Plan
+              {busy === 'cancel' ? 'Opening…' : 'Cancel Plan'}
             </Button>
           </div>
         </div>

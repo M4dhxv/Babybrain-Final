@@ -68,7 +68,7 @@ export default function SaveListingPage() {
             <span className="text-gray-600">.sg</span>
           </span>
         </div>
-        <Button variant="outline" className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
+        <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
           <ArrowLeft className="w-4 h-4" />
           Save & Exit
         </Button>

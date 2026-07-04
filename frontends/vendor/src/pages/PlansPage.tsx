@@ -73,7 +73,7 @@ export default function PlansPage() {
         <nav className="flex items-center gap-10">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>
           <button className="text-sm font-medium text-[#E91E63] border-b-2 border-[#E91E63] pb-1">Plans</button>
-          <button className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
+          <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
