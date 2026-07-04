@@ -21,7 +21,8 @@ import {
   toCard,
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
-import { formatChildAge } from "./lib/database.types";
+import { formatChildAge, formatAgeRange } from "./lib/database.types";
+import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 
 function getParam(name: string) {
@@ -521,6 +522,21 @@ const sgDateTime = (iso: string) =>
     minute: "2-digit",
   });
 
+const sgDay = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-SG", {
+    timeZone: "Asia/Singapore",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+
+const sgTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString("en-SG", {
+    timeZone: "Asia/Singapore",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 function ActivityDetailPage() {
   const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
@@ -586,7 +602,7 @@ function ActivityDetailPage() {
             ) : (
               <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
             )}
-            <Button href="/book" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
+            <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
             <Button
               variant="outline"
               className="mt-3 w-full"
@@ -1045,10 +1061,83 @@ function PaymentPage() {
 }
 
 function BookingPage() {
+  const { activity, sessions, loading } = useActivityDetail(getParam("slug"));
+  const { session: auth, children: kids } = useAuth();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [dateKey, setDateKey] = useState<string | null>(null);
+  const [count, setCount] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Group upcoming sessions by date so the user picks a date, then a time.
+  const byDate: Record<string, ActivitySession[]> = {};
+  sessions.forEach((s) => {
+    (byDate[sgDay(s.starts_at)] ||= []).push(s);
+  });
+  const dates = Object.keys(byDate);
+
+  useEffect(() => {
+    if (dates.length && !dateKey) setDateKey(dates[0]);
+  }, [dates, dateKey]);
+
+  const times = dateKey ? byDate[dateKey] ?? [] : [];
+  const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  const price = activity?.price != null ? Number(activity.price) : null;
+  const total = price != null ? price * count : null;
+
+  async function pay() {
+    setErr(null);
+    if (!auth) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!sessionId) {
+      setErr("Please choose a date and time first.");
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase
+      .from("bookings")
+      .insert({ user_id: auth.user.id, session_id: sessionId, child_id: kids[0]?.id ?? null })
+      .select("status")
+      .single();
+    setBusy(false);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    const q = new URLSearchParams({
+      title: activity?.title ?? "your class",
+      when: selected ? sgDateTime(selected.starts_at) : "",
+      status: data?.status ?? "pending",
+    });
+    window.location.href = `/booked?${q.toString()}`;
+  }
+
+  if (loading) {
+    return (
+      <PageShell active="/book">
+        <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">Loading…</main>
+      </PageShell>
+    );
+  }
+  if (!activity) {
+    return (
+      <PageShell active="/book">
+        <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">
+          Class not found. <a href="/explore" className="text-baby-blue">Browse activities →</a>
+        </main>
+      </PageShell>
+    );
+  }
+
+  const img = activity.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`;
+  const ageText = formatAgeRange(activity.age_min_months, activity.age_max_months);
+
   return (
     <PageShell active="/book">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Tiny Tunes: Music & Movement</span><span>›</span><span className="text-baby-blue">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-baby-blue">Book</span></div>
         <section className="rounded-[18px] border border-[#e7ebf6] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#eef1f7] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="calendar" className="h-10 w-10" /></span>
@@ -1058,26 +1147,77 @@ function BookingPage() {
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
               <div className="grid gap-5 md:grid-cols-[245px_1fr]">
-                <img src={`${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`} alt="Tiny Tunes" className="h-52 w-full rounded-[12px] object-cover" />
+                <img src={img} alt={activity.title} className="h-52 w-full rounded-[12px] object-cover" />
                 <div>
-                  <h2 className="text-xl font-black">Tiny Tunes: Music & Movement</h2>
-                  <p className="mt-2 font-semibold">6 months - 3 years</p>
+                  <h2 className="text-xl font-black">{activity.title}</h2>
+                  <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
-                    <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> Little Steps Playhouse</p>
-                    <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> 45 minutes per session</p>
-                    <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> Max 12 children per class</p>
-                    <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> Interactive music & movement</p>
+                    {activity.address && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {activity.address}</p>}
+                    {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
+                    <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
                   </div>
                 </div>
               </div>
-              <BookingChooser />
+
+              <div className="mt-6 space-y-6 border-t border-[#eef1f7] pt-5">
+                {sessions.length === 0 ? (
+                  <p className="rounded-[12px] bg-[#f8fbff] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
+                ) : (
+                  <>
+                    <section>
+                      <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                        {dates.map((d) => (
+                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
+                        ))}
+                      </div>
+                    </section>
+                    <section>
+                      <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                        {times.map((s) => (
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                        ))}
+                      </div>
+                    </section>
+                    <section>
+                      <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
+                      <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#dfe5f2] text-xl font-black">
+                        <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
+                        <span className="grid h-12 w-14 place-items-center">{count}</span>
+                        <button type="button" onClick={() => setCount((c) => Math.min(6, c + 1))} className="h-12 w-12">+</button>
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
             </section>
-            <BookingSummary />
+
+            <aside className="rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+              <h2 className="text-xl font-black">Booking Summary</h2>
+              <div className="mt-5 flex gap-4">
+                <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#f3f7ff] px-3 py-1 text-xs font-bold text-baby-blue">{activity.category_name}</span>}</div>
+              </div>
+              <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
+                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
+                {activity.address && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {activity.address}</p>}
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
+              </div>
+              <div className="my-5 border-t border-[#eef1f7]" />
+              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-blue">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <div className="mt-5 rounded-[12px] bg-[#f8fbff] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-blue" /> {item}</p>)}</div>
+            </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
-          <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total Amount</span><strong className="text-3xl">$38.00</strong></p></div>
-          <Button href="/booked" size="lg"><Icon name="lock" className="h-5 w-5" /> Pay Now</Button>
+          <div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total Amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
+          </div>
+          <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
+            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : auth ? "Confirm Booking" : "Log in to book"}
+          </Button>
         </section>
       </main>
       <Footer />
@@ -1085,62 +1225,18 @@ function BookingPage() {
   );
 }
 
-function BookingChooser() {
-  return (
-    <div className="mt-6 space-y-6 border-t border-[#eef1f7] pt-5">
-      <section>
-        <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
-        <div className="grid grid-cols-5 gap-3">
-          {["Fri 23 May", "Sat 24 May", "Sun 25 May", "Mon 26 May", "Tue 27 May"].map((date, index) => (
-            <button key={date} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${index === 2 ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{date}<span className="mt-2 block text-xs">{index === 1 ? "Full" : `${index + 2} spots left`}</span></button>
-          ))}
-        </div>
-      </section>
-      <section>
-        <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
-        <div className="grid grid-cols-5 gap-3">
-          {["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "3:00 PM"].map((time, index) => (
-            <button key={time} className={`rounded-[10px] border px-3 py-4 font-bold ${index === 1 ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{time}<span className="mt-2 block text-xs">{index + 6} spots left</span></button>
-          ))}
-        </div>
-      </section>
-      <section>
-        <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
-        <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#dfe5f2] text-xl font-black"><button className="h-12 w-12">-</button><span className="grid h-12 w-14 place-items-center">1</span><button className="h-12 w-12">+</button></div>
-      </section>
-    </div>
-  );
-}
-
-function BookingSummary() {
-  return (
-    <aside className="rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
-      <h2 className="text-xl font-black">Booking Summary</h2>
-      <div className="mt-5 flex gap-4">
-        <img src={`${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
-        <div><h3 className="font-black">Tiny Tunes: Music & Movement</h3><p className="mt-1 text-sm font-semibold">6 months - 3 years</p><span className="mt-2 inline-block rounded-full bg-[#f3f7ff] px-3 py-1 text-xs font-bold text-baby-blue">Music</span></div>
-      </div>
-      <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
-        <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> Sun, 25 May 2024</p>
-        <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> 10:00 AM - 10:45 AM</p>
-        <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> Little Steps Playhouse, 123 Orchard Road</p>
-        <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> 1 child, ages 6 months - 3 years</p>
-      </div>
-      <div className="my-5 border-t border-[#eef1f7]" />
-      <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-blue">$38.00</span></p>
-      <div className="mt-5 rounded-[12px] bg-[#f8fbff] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-blue" /> {item}</p>)}</div>
-    </aside>
-  );
-}
-
 function BookedPage() {
+  const title = getParam("title") || "Tiny Tunes: Music & Movement";
+  const when = getParam("when") || "";
+  const status = getParam("status") || "confirmed";
+  const waitlisted = status === "waitlisted";
   return (
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
         <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class Details</span><span>›</span><span className="text-baby-blue">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#e7ebf6] bg-gradient-to-r from-[#fff0f7] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="check" className="h-12 w-12" /></span>
-          <div><h1 className="text-[36px] font-black">Your class is booked!</h1><p className="mt-2 text-lg font-semibold">We can't wait to see your little one there.</p></div>
+          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-banner.png`} alt="" className="hidden h-24 object-contain md:block" />
         </section>
         <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
@@ -1149,7 +1245,7 @@ function BookedPage() {
               <h2 className="text-xl font-black">Class details</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
                 <img src={`${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`} alt="" className="h-52 w-full rounded-[12px] object-cover" />
-                <div><h3 className="text-xl font-black">Tiny Tunes: Music & Movement</h3><p className="mt-2 font-semibold">6 months - 3 years</p><div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="pin" className="mr-2 inline h-5 w-5 text-baby-lilac" />Central</p><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />Sat, 25 May 2024</p><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />10:00 AM - 11:00 AM</p><p><Icon name="user" className="mr-2 inline h-5 w-5 text-baby-lilac" />Little Steps Playhouse</p></div></div>
+                <div><h3 className="text-xl font-black">{title}</h3>{when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}</div>
               </div>
               <div className="mt-5 border-t border-[#eef1f7] pt-5"><h3 className="font-black">About this class</h3><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">A fun and interactive music class that helps little ones explore rhythms, sounds, and movement while boosting coordination, listening skills and confidence.</p></div>
             </article>
@@ -1163,8 +1259,8 @@ function BookedPage() {
           <aside className="space-y-5">
             <article className="rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
-              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span>Tiny Tunes: Music & Movement</span></p><p className="flex justify-between"><span>Date</span><span>Sat, 25 May 2024</span></p><p className="flex justify-between"><span>Time</span><span>10:00 AM - 11:00 AM</span></p><p className="flex justify-between"><span>Total Paid</span><strong className="text-baby-blue">$38.00</strong></p></div>
-              <p className="mt-5 rounded-[12px] bg-[#eefbf1] p-4 font-semibold text-green-700"><Icon name="check" className="mr-2 inline h-5 w-5" /> Payment successful</p>
+              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-amber-600" : "text-green-600"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
+              <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#eefbf1] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile" className="mt-5 w-full">View My Bookings</Button>
               <Button variant="outline" className="mt-3 w-full"><Icon name="calendar" className="h-4 w-4" /> Add to Calendar</Button>
             </article>
