@@ -32,7 +32,14 @@ export function allowedOrigins(): string[] {
 export function appOrigin(request: Request): string {
   const origin = request.headers.get('origin');
   const allowed = allowedOrigins();
-  return origin && allowed.includes(origin) ? origin : allowed[0];
+  if (origin && allowed.includes(origin)) return origin;
+  // Same-origin call (in production the SPA is served by this same deployment,
+  // so the browser sends no/off-list Origin). Return where the user actually
+  // is — this deployment's own host — so Stripe redirects back to a real page
+  // instead of the hard-coded fallback domain. Falls back to the app URL.
+  const host = request.headers.get('host');
+  if (host) return `${host.startsWith('localhost') ? 'http' : 'https'}://${host}`;
+  return process.env.NEXT_PUBLIC_APP_URL || allowed[0];
 }
 
 /**

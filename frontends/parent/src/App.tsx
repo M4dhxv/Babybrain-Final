@@ -1108,9 +1108,19 @@ function ProfilePage() {
               <img src={`${import.meta.env.BASE_URL}assets/crops/parent-avatar.png`} alt="" className="h-14 w-14 rounded-full object-cover" />
               <div className="min-w-0"><h2 className="truncate font-black">{parentName}</h2>{child && <p className="truncate text-sm font-semibold text-[#59658d]">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
             </div>
-            <nav className="mt-5 space-y-1.5">
+            <a
+              href={billingPlan?.plan === "plus" ? "/profile?tab=settings" : "/pricing"}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${billingPlan?.plan === "plus" ? "bg-[#eef5ff] text-[#096cff]" : "bg-[#fff4ec] text-[#c2571f]"}`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Icon name={billingPlan?.plan === "plus" ? "star" : "spark"} className="h-4 w-4" />
+                {billingPlan?.plan === "plus" ? "Plus plan" : "Free plan"}
+              </span>
+              <span className="text-xs">{billingPlan?.plan === "plus" ? "Manage" : "Upgrade →"}</span>
+            </a>
+            <nav className="mt-4 space-y-1.5">
               {PROFILE_TABS.map(([key, item, icon]) => (
-                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-2 rounded-[9px] px-4 py-2.5 font-bold ${tab === key ? "bg-[#eef5ff] text-[#096cff]" : "text-baby-ink hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-4 w-4" /> {item}</a>
+                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#eef5ff] text-[#096cff]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}</a>
               ))}
             </nav>
           </div>
@@ -1375,10 +1385,10 @@ function ProfilePage() {
 
               {/* Plan & Billing */}
               <div className="mb-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Plan</p>
-                    <p className="mt-1 flex items-center gap-2 text-lg font-black">
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
                       <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-blue" />
                       {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
                       {billingPlan?.status === "trialing" && (
@@ -1955,13 +1965,29 @@ function BookingPage() {
       const { data, error } = await supabase
         .from("bookings")
         .insert({ user_id: auth.user.id, session_id: sessionId, child_id: kids[0]?.id ?? null })
-        .select("status")
+        .select("id, status")
         .single();
-      setBusy(false);
       if (error) {
+        setBusy(false);
         setErr(error.message);
         return;
       }
+      // Paid class → hand off to Stripe Checkout; the webhook confirms on payment.
+      // Free class (no price) stays a direct confirmed/pending booking.
+      if (activity?.price != null && Number(activity.price) > 0 && data?.status !== "waitlisted") {
+        try {
+          const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", { booking_id: data.id });
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not start payment");
+          return;
+        }
+      }
+      setBusy(false);
       status = data?.status ?? "pending";
     }
     const q = new URLSearchParams({
@@ -2014,7 +2040,7 @@ function BookingPage() {
     );
   }
 
-  const img = activity.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`;
+  const img = activity.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/detail-hero.png`;
   const ageText = formatAgeRange(activity.age_min_months, activity.age_max_months);
 
   return (
@@ -2107,8 +2133,11 @@ function BookingPage() {
             </Button>
           )}
           <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
-            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : "Confirm Booking"}
+            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : total != null && total > 0 ? `Pay $${total.toFixed(2)}` : "Confirm Booking"}
           </Button>
+          {total != null && total > 0 && !redeemToken && (
+            <p className="mt-2 text-center text-xs font-semibold text-[#8a93b2] md:col-span-2">Secure and encrypted payment via Stripe</p>
+          )}
         </section>
       </main>
       <Footer />
