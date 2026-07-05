@@ -98,16 +98,16 @@ function HomePage() {
             </p>
             <div className="mt-5 grid gap-5 md:grid-cols-3">
               {[
-                ["1", "pen", "Tell us about your child", "Share a few details about your child's age, interests and what you're looking for."],
-                ["2", "search", "Explore activities", "Browse curated activities and play spaces that match your preferences."],
-                ["3", "calendar", "Plan and book", "Choose what works for you and book directly with the provider."],
-              ].map(([step, icon, title, copy]) => (
+                ["1", "how-step-1", "Tell us about your child", "Share a few details about your child's age, interests and what you're looking for."],
+                ["2", "how-step-2", "Explore activities", "Browse curated activities and play spaces that match your preferences."],
+                ["3", "how-step-3", "Plan and book", "Choose what works for you and book directly with the provider."],
+              ].map(([step, art, title, copy]) => (
                 <article key={title} className="text-center">
                   <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-baby-pink text-base font-black text-white">
                     {step}
                   </span>
-                  <div className="mx-auto my-2 grid h-16 w-16 place-items-center rounded-[18px] bg-[#f4ecff] text-baby-lilac">
-                    <Icon name={icon} className="h-10 w-10" />
+                  <div className="mx-auto my-2 grid h-20 place-items-center">
+                    <img src={`${import.meta.env.BASE_URL}assets/crops/${art}.png`} alt="" className="h-full object-contain" />
                   </div>
                   <h3 className="text-lg font-black">{title}</h3>
                   <p className="mx-auto mt-2 max-w-[230px] text-sm font-semibold leading-6 text-[#46527d]">
@@ -491,7 +491,7 @@ function ExplorePage() {
             <h1 className="text-[28px] font-black text-baby-lilac sm:text-[34px]">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-blue" /></h1>
             <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">Browse activities across Singapore.</p>
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/detail-thumb-5.png`} alt="" className="hidden h-20 w-[320px] rounded-t-[30px] object-cover opacity-70 md:block" />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1">
@@ -2025,7 +2025,7 @@ function BookingPage() {
           <header className="grid items-center gap-5 border-b border-[#eef1f7] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="calendar" className="h-10 w-10" /></span>
             <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date and time.</p></div>
-            <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-banner.png`} alt="" className="hidden h-24 object-contain md:block" />
+            <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
           </header>
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
@@ -2131,7 +2131,7 @@ function BookedPage() {
         <section className="grid items-center gap-5 rounded-[18px] border border-[#e7ebf6] bg-gradient-to-r from-[#fff0f7] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-banner.png`} alt="" className="hidden h-24 object-contain md:block" />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
         </section>
         <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
           <div className="space-y-5">
