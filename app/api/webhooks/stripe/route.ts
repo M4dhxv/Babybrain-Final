@@ -158,6 +158,27 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      // Record the Plus subscription off the checkout event too, not only off
+      // customer.subscription.created — so the plan flips even if that event
+      // isn't enabled on the webhook endpoint. Retrieve the subscription for
+      // its real status/period.
+      if (kind === 'customer_subscription' && session.metadata?.user_id && session.subscription) {
+        const sub = await getStripe().subscriptions.retrieve(session.subscription as string);
+        const active = ['active', 'trialing'].includes(sub.status);
+        const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
+        await admin.from('customer_subscriptions').upsert(
+          {
+            user_id: session.metadata.user_id,
+            plan: active ? 'plus' : 'free',
+            stripe_subscription_id: sub.id,
+            status: sub.status as never,
+            current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+            cancel_at_period_end: sub.cancel_at_period_end,
+          },
+          { onConflict: 'user_id' }
+        );
+      }
       break;
     }
 

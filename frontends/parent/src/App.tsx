@@ -1072,16 +1072,29 @@ function ProfilePage() {
       );
     })();
 
-    apiGet<{
-      plan: "free" | "plus";
-      status: string | null;
-      current_period_end: string | null;
-      cancel_at_period_end: boolean;
-      terms_accepted_at: string | null;
-      terms_version: string | null;
-    }>("/api/customer/stripe/subscription")
-      .then(setBillingPlan)
-      .catch(() => {});
+    // Just came back from a successful checkout? The webhook is async, so poll
+    // a few times until the plan flips to Plus instead of showing stale "Free".
+    const justUpgraded = getParam("billing") === "success";
+    let tries = 0;
+    const fetchPlan = () => {
+      apiGet<{
+        plan: "free" | "plus";
+        status: string | null;
+        current_period_end: string | null;
+        cancel_at_period_end: boolean;
+        terms_accepted_at: string | null;
+        terms_version: string | null;
+      }>("/api/customer/stripe/subscription")
+        .then((p) => {
+          setBillingPlan(p);
+          if (justUpgraded && p.plan !== "plus" && tries < 5) {
+            tries += 1;
+            setTimeout(fetchPlan, 1500);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchPlan();
   }, [session]);
 
   if (!loading && !session) {
