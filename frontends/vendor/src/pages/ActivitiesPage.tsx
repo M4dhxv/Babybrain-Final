@@ -102,7 +102,9 @@ export default function ActivitiesPage() {
     setSessError(null);
     const durationMins = Math.max(15, Number(sessForm.duration) || 45);
     const weeks = Math.min(12, Math.max(1, Number(sessForm.repeat) || 1));
-    const first = new Date(`${sessForm.date}T${sessForm.time}:00`);
+    // Times are entered as Singapore time (the platform's timezone), not the
+    // browser's — pin the offset so a vendor travelling abroad still gets SGT.
+    const first = new Date(`${sessForm.date}T${sessForm.time}:00+08:00`);
     const rows = Array.from({ length: weeks }).map((_, i) => {
       const starts = new Date(first.getTime() + i * 7 * 864e5);
       const ends = new Date(starts.getTime() + durationMins * 60000);
