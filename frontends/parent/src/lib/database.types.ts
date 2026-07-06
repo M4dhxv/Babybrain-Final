@@ -177,6 +177,7 @@ export type Database = {
           requires_medical_disclosure: boolean;
           archived_at: string | null;
           boosted_until: string | null;
+          external_booking_url: string | null;
           created_at: string;
           updated_at: string;
         };

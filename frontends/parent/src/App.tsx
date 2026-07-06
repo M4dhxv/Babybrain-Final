@@ -675,7 +675,18 @@ function ActivityDetailPage() {
             ) : (
               <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
             )}
-            <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
+            {activity.external_booking_url ? (
+              <a
+                href={activity.external_booking_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#4aa1ff] to-[#5ea6f6] px-6 py-3 text-[15px] font-extrabold text-white shadow-blue transition hover:brightness-105"
+              >
+                <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
+              </a>
+            ) : (
+              <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
+            )}
             <Button
               variant="outline"
               className="mt-3 w-full"
