@@ -13,6 +13,7 @@ const plans = [
     buttonVariant: 'outline' as const,
     buttonClass: 'border-green-500 text-green-600 hover:bg-green-50',
     featured: false,
+    commission: 'Listing only — no booking fees',
   },
   {
     name: 'GROWTH',
@@ -24,6 +25,7 @@ const plans = [
     featured: true,
     badge: 'MOST POPULAR',
     yearlyPrice: '1,089/year (1 month free)',
+    commission: '15% booking commission + Stripe platform costs',
   },
   {
     name: 'PRO',
@@ -33,6 +35,8 @@ const plans = [
     buttonVariant: 'outline' as const,
     buttonClass: 'border-purple-500 text-purple-600 hover:bg-purple-50',
     featured: false,
+    yearlyPrice: '2,189/year (1 month free)',
+    commission: '10% booking commission + Stripe platform costs',
   },
 ];
 
@@ -124,12 +128,16 @@ export default function PlansPage() {
                   <span className={cn('text-5xl font-extrabold', plan.color)}>{plan.price}</span>
                   <span className="text-gray-500 text-sm">/month</span>
                 </div>
-                {plan.yearlyPrice && (
-                  <p className="text-xs text-gray-500 mb-4">
+                {plan.yearlyPrice ? (
+                  <p className="text-xs text-gray-500 mb-1">
                     or SGD <span className="text-[#E91E63] font-medium">{plan.yearlyPrice}</span>
                   </p>
+                ) : (
+                  <div className="mb-1" />
                 )}
-                {!plan.yearlyPrice && <div className="mb-4" />}
+                {plan.commission && (
+                  <p className="text-[11px] text-gray-400 mb-4">{plan.commission}</p>
+                )}
 
                 <Button
                   onClick={() => navigate(plan.name === 'FREE' ? '/claim-business' : '/login')}

@@ -12,6 +12,8 @@ import {
   X,
   Pencil,
   CalendarCheck,
+  Trash2,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -53,6 +55,85 @@ export default function ActivitiesPage() {
   });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Schedule manager (sessions = the bookable dates/times of an activity)
+  type Sess = { id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number };
+  const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
+  const [sessions, setSessions] = useState<Sess[]>([]);
+  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1' });
+  const [savingSess, setSavingSess] = useState(false);
+  const [sessError, setSessError] = useState<string | null>(null);
+
+  async function openSchedule(a: Activity) {
+    setShowMenu(null);
+    setScheduleFor(a);
+    setSessError(null);
+    await loadSessions(a.id);
+  }
+
+  async function loadSessions(activityId: string) {
+    const { data: sess } = await supabase
+      .from('activity_sessions')
+      .select('id, starts_at, ends_at, capacity')
+      .eq('activity_id', activityId)
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at');
+    const rows = sess ?? [];
+    // Booked count per session so deleting a session with bookings warns first.
+    const counts: Record<string, number> = {};
+    if (rows.length) {
+      const { data: bks } = await supabase
+        .from('bookings')
+        .select('session_id, status')
+        .in('session_id', rows.map((s) => s.id));
+      (bks ?? []).forEach((b) => {
+        if (b.status !== 'cancelled') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+      });
+    }
+    setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0 })));
+  }
+
+  async function addSessions() {
+    if (!scheduleFor || !sessForm.date || !sessForm.time) {
+      setSessError('Pick a date and start time.');
+      return;
+    }
+    setSavingSess(true);
+    setSessError(null);
+    const durationMins = Math.max(15, Number(sessForm.duration) || 45);
+    const weeks = Math.min(12, Math.max(1, Number(sessForm.repeat) || 1));
+    const first = new Date(`${sessForm.date}T${sessForm.time}:00`);
+    const rows = Array.from({ length: weeks }).map((_, i) => {
+      const starts = new Date(first.getTime() + i * 7 * 864e5);
+      const ends = new Date(starts.getTime() + durationMins * 60000);
+      return {
+        activity_id: scheduleFor.id,
+        starts_at: starts.toISOString(),
+        ends_at: ends.toISOString(),
+        capacity: sessForm.capacity ? Number(sessForm.capacity) : null,
+      };
+    });
+    const { error } = await supabase.from('activity_sessions').insert(rows);
+    setSavingSess(false);
+    if (error) {
+      setSessError(error.message);
+      return;
+    }
+    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1' });
+    await loadSessions(scheduleFor.id);
+    load(); // refresh the upcoming counts in the table
+  }
+
+  async function removeSession(s: Sess) {
+    if (!scheduleFor) return;
+    const warn = s.booked > 0
+      ? `This session has ${s.booked} booking${s.booked > 1 ? 's' : ''}. Deleting it removes those bookings too. Continue?`
+      : 'Remove this session?';
+    if (!window.confirm(warn)) return;
+    await supabase.from('activity_sessions').delete().eq('id', s.id);
+    await loadSessions(scheduleFor.id);
+    load();
+  }
 
   // Class packs (multi-session packages sold to parents)
   type Pack = { id: string; name: string; credits: number; price_cents: number; active: boolean };
@@ -254,7 +335,7 @@ export default function ActivitiesPage() {
             <div>Activity</div>
             <div>Category</div>
             <div>Age Group</div>
-            <div>Sessions</div>
+            <div>Schedule</div>
             <div>Rating</div>
             <div>Status</div>
             <div>Updated</div>
@@ -310,6 +391,10 @@ export default function ActivitiesPage() {
                   </button>
                   {showMenu === a.id && canManage && (
                     <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
+                      <button onClick={() => openSchedule(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        <Clock className="w-3.5 h-3.5" />
+                        Manage schedule
+                      </button>
                       <button onClick={() => togglePublish(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <CalendarCheck className="w-3.5 h-3.5" />
                         {a.is_published ? 'Unpublish' : 'Publish'}
@@ -334,6 +419,9 @@ export default function ActivitiesPage() {
         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="font-semibold text-gray-900">Class packs</h2>
           <p className="text-sm text-gray-500 mt-0.5">Multi-session packs parents can buy; each booking uses one credit.</p>
+          <p className="text-xs text-gray-500 mt-1.5">
+            Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#E91E63] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token". Parents redeem them when rebooking.
+          </p>
           {packs.length > 0 && (
             <div className="mt-4 space-y-2">
               {packs.map((p) => (
@@ -415,7 +503,7 @@ export default function ActivitiesPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
-                <div className="text-xs text-gray-500">Parents complete a disclosure before booking</div>
+                <div className="text-xs text-gray-500">Parents must complete disclosures and consents before booking</div>
               </div>
               <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#E91E63]" />
             </div>
@@ -426,6 +514,83 @@ export default function ActivitiesPage() {
             <Button onClick={saveActivity} disabled={saving} className="flex-1 gradient-primary text-white rounded-xl hover:opacity-90">
               {saving ? 'Saving…' : 'Save Activity'}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule Drawer — the bookable dates/times for one activity */}
+      {scheduleFor && (
+        <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+          <div className="flex items-center justify-between p-5 border-b border-gray-200">
+            <div>
+              <h3 className="font-semibold text-gray-900">Schedule</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{scheduleFor.title}</p>
+            </div>
+            <button onClick={() => setScheduleFor(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+              <X className="w-4 h-4 text-gray-500" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Add sessions</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+                  <input type="date" className={inputCls} value={sessForm.date} onChange={(e) => setSessForm({ ...sessForm, date: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Start time</label>
+                  <input type="time" className={inputCls} value={sessForm.time} onChange={(e) => setSessForm({ ...sessForm, time: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Duration (mins)</label>
+                  <input type="number" min="15" step="15" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity (blank = unlimited)</label>
+                  <input type="number" min="1" placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat weekly</label>
+                  <select className={inputCls} value={sessForm.repeat} onChange={(e) => setSessForm({ ...sessForm, repeat: e.target.value })}>
+                    {[1, 2, 4, 6, 8, 12].map((n) => (
+                      <option key={n} value={n}>{n === 1 ? 'Just this session' : `${n} weeks (same day & time)`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {sessError && <p className="mt-2 text-xs font-medium text-red-600">{sessError}</p>}
+              <Button onClick={addSessions} disabled={savingSess} className="mt-3 w-full gradient-primary text-white rounded-xl hover:opacity-90">
+                {savingSess ? 'Adding…' : 'Add to schedule'}
+              </Button>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions ({sessions.length})</h4>
+              {sessions.length === 0 && (
+                <p className="text-sm text-gray-400">No upcoming sessions — parents can't book this activity until you add some.</p>
+              )}
+              <div className="space-y-2">
+                {sessions.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {new Date(s.starts_at).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
+                        {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
+                        {' · '}{s.booked} booked
+                      </div>
+                    </div>
+                    <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

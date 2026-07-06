@@ -135,15 +135,6 @@ export default function BillingPage() {
               <p className="text-xs text-gray-500 mb-4">Choose the right plan as you grow.</p>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="p-4 border border-gray-200 rounded-xl">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Star className="w-4 h-4 text-gray-400" />
-                    <span className="font-semibold text-gray-900 text-sm">Free (Listing)</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-1">List your business</p>
-                  <p className="text-xs text-gray-500 mb-3">Basic visibility</p>
-                  <div className="text-sm font-bold text-gray-900">SGD 0 / month</div>
-                </div>
                 <div className="p-4 border-2 border-[#E91E63] rounded-xl relative bg-pink-50/30">
                   <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#E91E63] text-xs font-medium rounded">
                     Current plan
@@ -155,6 +146,23 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-500 mb-1">Manage bookings & grow</p>
                   <p className="text-xs text-gray-500 mb-3">All core features</p>
                   <div className="text-sm font-bold text-[#E91E63]">SGD 99 / month</div>
+                </div>
+                <div className="p-4 border border-purple-200 rounded-xl relative">
+                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                    Next step up
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Star className="w-4 h-4 text-purple-600" />
+                    <span className="font-semibold text-gray-900 text-sm">Pro (Scale)</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-1">Featured placement & priority ranking</p>
+                  <p className="text-xs text-gray-500 mb-3">Advanced analytics & promotions</p>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-bold text-purple-600">SGD 199 / month</div>
+                    <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
+                      Upgrade →
+                    </button>
+                  </div>
                 </div>
               </div>
 
