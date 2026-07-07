@@ -766,6 +766,36 @@ export type Database = {
         Update: { value?: string };
         Relationships: [];
       };
+      vendor_sync_runs: {
+        Row: {
+          id: string;
+          trigger: 'cron' | 'manual';
+          status: 'running' | 'success' | 'error';
+          triggered_by: string | null;
+          checked: number;
+          wp_sites: number;
+          prices_updated: number;
+          results: Json;
+          error: string | null;
+          started_at: string;
+          finished_at: string | null;
+        };
+        Insert: {
+          trigger?: 'cron' | 'manual';
+          status?: 'running' | 'success' | 'error';
+          triggered_by?: string | null;
+        };
+        Update: {
+          status?: 'running' | 'success' | 'error';
+          checked?: number;
+          wp_sites?: number;
+          prices_updated?: number;
+          results?: Json;
+          error?: string | null;
+          finished_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -870,6 +900,7 @@ export type Attendance = Database['public']['Tables']['attendance']['Row'];
 export type MakeUpToken = Database['public']['Tables']['make_up_tokens']['Row'];
 export type Subscription = Database['public']['Tables']['subscriptions']['Row'];
 export type ListingEvent = Database['public']['Tables']['listing_events']['Row'];
+export type VendorSyncRun = Database['public']['Tables']['vendor_sync_runs']['Row'];
 
 /** Returned by the provider_overview RPC (vendor dashboard KPIs). */
 export interface ProviderOverview {

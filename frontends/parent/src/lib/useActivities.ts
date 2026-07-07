@@ -4,8 +4,15 @@ import { formatAgeRange, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
 
 /** Live activity carrying the content `Activity` shape (so ActivityCard /
- *  ActivityRow render unchanged) plus slug/id for linking and favourites. */
-export type LiveActivity = Activity & { slug: string; id: string };
+ *  ActivityRow render unchanged) plus slug/id for linking and favourites, and
+ *  the provider's coordinates (when known) for the Explore map. */
+export type LiveActivity = Activity & {
+  slug: string;
+  id: string;
+  lat?: number;
+  lng?: number;
+  providerName?: string;
+};
 
 const sgDate = (iso: string | null) =>
   iso
@@ -54,15 +61,23 @@ export function useActivities(params: ActivityQuery = {}) {
         p_limit: params.limit ?? 24,
       });
 
-      // search_activities omits the street address; fetch it for the venue line.
+      // search_activities omits the street address and coordinates; fetch them
+      // (coords live on the provider) for the venue line and the map pins.
       const ids = (rows ?? []).map((r) => r.id);
       const addressById = new Map<string, string | null>();
+      const coordsById = new Map<string, { lat: number; lng: number; name: string | null }>();
       if (ids.length) {
         const { data: addrs } = await supabase
           .from("activities")
-          .select("id, address")
+          .select("id, address, providers(latitude, longitude, business_name)")
           .in("id", ids);
-        (addrs ?? []).forEach((a) => addressById.set(a.id, a.address));
+        (addrs ?? []).forEach((a) => {
+          addressById.set(a.id, a.address);
+          const p = (a as unknown as { providers: { latitude: number | null; longitude: number | null; business_name: string | null } | null }).providers;
+          if (p?.latitude != null && p?.longitude != null) {
+            coordsById.set(a.id, { lat: p.latitude, lng: p.longitude, name: p.business_name });
+          }
+        });
       }
 
       const mapped: LiveActivity[] = (rows ?? []).map((r) => ({
@@ -78,6 +93,9 @@ export function useActivities(params: ActivityQuery = {}) {
         rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "New",
         note: r.popularity > 2 ? "Popular this week" : "",
         boosted: r.boosted ?? false,
+        lat: coordsById.get(r.id)?.lat,
+        lng: coordsById.get(r.id)?.lng,
+        providerName: coordsById.get(r.id)?.name ?? undefined,
       }));
 
       if (!cancelled) {

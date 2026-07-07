@@ -20,6 +20,12 @@ type Channel = {
 type Message = {
   id: string; text: string; at: string | null; userId: string; userName: string; isSupport: boolean;
 };
+type VendorResult = { name: string; website: string; outcome: 'price_updated' | 'no_price' | 'no_wp'; price_updated: number };
+type VendorRun = {
+  id: string; trigger: 'cron' | 'manual'; status: 'running' | 'success' | 'error';
+  triggered_by: string | null; checked: number; wp_sites: number; prices_updated: number;
+  results: VendorResult[]; error: string | null; started_at: string; finished_at: string | null;
+};
 
 const C = {
   bg: '#0d1424', panel: '#151d31', panel2: '#1c2740', border: '#26324f',
@@ -44,7 +50,7 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
-  const [tab, setTab] = useState<'metrics' | 'messages'>('metrics');
+  const [tab, setTab] = useState<'metrics' | 'messages' | 'vendors'>('metrics');
 
   const check = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -67,9 +73,9 @@ export default function AdminPage() {
         <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
         {phase === 'ok' && (
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['metrics', 'messages'] as const).map((t) => (
+            {(['metrics', 'messages', 'vendors'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
-                {t === 'metrics' ? 'Metrics' : 'Messages'}
+                {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages' : 'Vendor data'}
               </button>
             ))}
             <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }} style={tabBtn(false)}>
@@ -92,6 +98,7 @@ export default function AdminPage() {
         )}
         {phase === 'ok' && tab === 'metrics' && <MetricsView />}
         {phase === 'ok' && tab === 'messages' && <MessagesView />}
+        {phase === 'ok' && tab === 'vendors' && <VendorsView />}
       </main>
     </div>
   );
@@ -285,6 +292,126 @@ function MessagesView() {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+const sgTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
+
+const OUTCOME: Record<VendorResult['outcome'], { label: string; color: string }> = {
+  price_updated: { label: 'Price updated', color: C.green },
+  no_price: { label: 'Checked · no price', color: C.muted },
+  no_wp: { label: 'No WordPress feed / unreachable', color: C.pink },
+};
+
+function VendorsView() {
+  const [runs, setRuns] = useState<VendorRun[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await adminFetch<{ runs: VendorRun[] }>('/api/admin/vendors/runs');
+      setRuns(r.runs);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function runNow() {
+    setBusy(true); setErr(null); setNote(null);
+    try {
+      const r = await adminFetch<{ checked: number; wp_sites: number; prices_updated: number; no_wp: number }>(
+        '/api/admin/vendors/refresh', { method: 'POST' });
+      setNote(`Done — checked ${r.checked}, ${r.prices_updated} price${r.prices_updated === 1 ? '' : 's'} updated, ${r.no_wp} with no WordPress feed.`);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <div style={{ ...card(), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Vendor directory refresh</div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 4, maxWidth: 640 }}>
+            Pulls the latest info (currently prices from vendors on WordPress) for auto-listed, unclaimed
+            directory vendors. Runs automatically every Monday; you can also run a batch now. Each run
+            processes the 25 least-recently-synced vendors, so click a few times to work through the whole list.
+            Claimed vendors are never touched.
+          </div>
+        </div>
+        <button onClick={runNow} disabled={busy} style={{ ...primaryBtn(), opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+          {busy ? 'Running…' : 'Run refresh now'}
+        </button>
+      </div>
+
+      {note && <div style={{ ...card(), marginTop: 12, borderColor: C.green, color: C.green }}>{note}</div>}
+      {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
+
+      <div style={{ fontWeight: 800, margin: '22px 0 10px' }}>Run history</div>
+      {runs === null && <p style={{ color: C.muted }}>Loading…</p>}
+      {runs?.length === 0 && <p style={{ color: C.muted }}>No runs yet — trigger one above.</p>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {(runs ?? []).map((run) => {
+          const statusColor = run.status === 'success' ? C.green : run.status === 'error' ? C.pink : C.muted;
+          const noWp = Math.max(0, run.checked - run.wp_sites);
+          const isOpen = open === run.id;
+          return (
+            <div key={run.id} style={card()}>
+              <button onClick={() => setOpen(isOpen ? null : run.id)}
+                style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, background: 'none',
+                  border: 'none', color: C.text, cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5,
+                  color: statusColor, border: `1px solid ${statusColor}`, borderRadius: 6, padding: '2px 7px' }}>{run.status}</span>
+                <span style={{ fontSize: 11, color: C.blue }}>{run.trigger === 'manual' ? 'Manual' : 'Weekly cron'}</span>
+                <span style={{ fontWeight: 700 }}>{sgTime(run.started_at)}</span>
+                <span style={{ color: C.muted, fontSize: 13, marginLeft: 'auto' }}>
+                  {run.checked} checked · <span style={{ color: C.green }}>{run.prices_updated} priced</span> · {noWp} no-WP
+                </span>
+                <span style={{ color: C.muted }}>{isOpen ? '▾' : '▸'}</span>
+              </button>
+
+              {isOpen && (
+                <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>
+                    {run.triggered_by ? `Triggered by ${run.triggered_by}. ` : ''}
+                    Finished {sgTime(run.finished_at)} · {run.wp_sites} WordPress sites found.
+                  </div>
+                  {run.error && <div style={{ color: C.pink, fontSize: 13, marginBottom: 10 }}>Error: {run.error}</div>}
+                  {run.results.length === 0 ? (
+                    <p style={{ color: C.muted, fontSize: 13 }}>No vendors in this batch.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {run.results.map((r, i) => {
+                        const o = OUTCOME[r.outcome] ?? OUTCOME.no_price;
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13,
+                            padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
+                            <span style={{ fontWeight: 700, minWidth: 160 }}>{r.name}</span>
+                            <span style={{ color: o.color, minWidth: 210 }}>
+                              {o.label}{r.price_updated ? ` (${r.price_updated})` : ''}
+                            </span>
+                            <a href={r.website} target="_blank" rel="noreferrer"
+                              style={{ color: C.muted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {r.website.replace(/^https?:\/\//, '')}
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

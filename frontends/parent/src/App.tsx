@@ -28,6 +28,7 @@ import { formatChildAge, formatAgeRange } from "./lib/database.types";
 import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
+import { ExploreMap } from "./components/ExploreMap";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -531,21 +532,10 @@ function ExplorePage() {
           <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-lilac">Explore on map</h2>
-              <input className="h-9 rounded-[9px] border border-[#e0e6f3] px-3 text-sm font-semibold" placeholder="Search this area" />
+              <span className="text-xs font-bold text-[#68718f]">{activities.filter((a) => a.lat != null).length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              <img src={`${import.meta.env.BASE_URL}assets/crops/singapore-map.png`} alt="Singapore activity map" className="h-[395px] w-full object-cover" />
-              {activities[0] && (
-                <article className="absolute inset-x-4 bottom-4 grid grid-cols-[180px_1fr_40px] items-center gap-4 rounded-[12px] bg-white p-3 shadow-soft">
-                  <img src={activities[0].image} alt="" className="h-20 rounded-[9px] object-cover" />
-                  <div>
-                    <h3 className="font-black">{activities[0].title}</h3>
-                    <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-[#556089]"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {activities[0].venue}</p>
-                    <p className="mt-1 text-sm font-semibold text-[#556089]">{activities[0].age} · {activities[0].date} · {activities[0].time}</p>
-                  </div>
-                  <a href="/activity" className="text-4xl">›</a>
-                </article>
-              )}
+              <ExploreMap activities={activities} />
             </div>
           </section>
         </div>
