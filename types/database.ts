@@ -493,6 +493,9 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          is_auto_listed: boolean;
+          source_url: string | null;
+          synced_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -515,6 +518,9 @@ export type Database = {
           longitude?: number | null;
           uen?: string | null;
           status?: ProviderStatus;
+          is_auto_listed?: boolean;
+          source_url?: string | null;
+          synced_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;

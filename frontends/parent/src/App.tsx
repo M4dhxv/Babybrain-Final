@@ -673,7 +673,12 @@ function ActivityDetailPage() {
             {activity.price != null ? (
               <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
             ) : (
-              <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
+              <>
+                <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
+                <p className="mt-1 text-sm font-semibold text-[#68718f]">
+                  {activity.external_booking_url ? "See pricing on the provider's booking page." : "Contact the provider for pricing."}
+                </p>
+              </>
             )}
             {activity.external_booking_url ? (
               <a
