@@ -29,6 +29,7 @@ import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
+import { SupportChat } from "./components/SupportChat";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -1511,8 +1512,20 @@ function EmptyPanel({ icon, copy, cta, href }: { icon: string; copy: string; cta
   );
 }
 
+const SUPPORT_EMAIL = "hello@babybrain.sg";
+const SUPPORT_PHONE = "+65 9123 4567"; // TODO: replace with the real BabyBrain support number
+const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
+
 function ContactPage() {
+  const { session } = useAuth();
+  const [support, setSupport] = useState(false);
+  const openSupport = () => {
+    if (!session) { window.location.href = "/login"; return; }
+    setSupport(true);
+  };
   return (
+    <>
+    {support && <SupportChat onClose={() => setSupport(false)} />}
     <PageShell active="/contact">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="grid items-center gap-7 md:grid-cols-[1fr_420px]">
@@ -1531,16 +1544,16 @@ function ContactPage() {
           <SectionTitle>Get in touch</SectionTitle>
           <div className="grid gap-5 md:grid-cols-4">
             {[
-              ["pen", "Send Feedback", "Recommended", "We'd love to hear your thoughts, suggestions or feedback to improve BabyBrain.", "Submit Feedback", "pink"],
-              ["mail", "Email us", "", "Send us an email and we'll get back to you.", "Send Email", "outline"],
-              ["phone", "Call us", "", "Speak with our friendly support team.", "+65 9123 4567", "outline"],
-              ["whatsapp", "WhatsApp us", "", "Message us on WhatsApp for quick help.", "Chat on WhatsApp", "outline"],
-            ].map(([icon, title, tag, copy, action, variant]) => (
-              <article key={title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
-                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#eef8ff] text-baby-pink"><Icon name={icon} className="h-9 w-9" /></div>
-                <h3 className="text-xl font-black">{title} {tag && <span className="rounded-full bg-[#ffe4ef] px-2 py-1 text-[10px] text-baby-pink">{tag}</span>}</h3>
-                <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{copy}</p>
-                <Button variant={variant === "pink" ? "pink" : "outline"} className="w-full">{action}</Button>
+              { icon: "pen", title: "Message us", tag: "Recommended", copy: "Chat with our team in real time — we'd love your questions, thoughts or feedback.", label: "Start a chat", variant: "pink", onClick: openSupport },
+              { icon: "mail", title: "Email us", tag: "", copy: "Send us an email and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
+              { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team.", label: SUPPORT_PHONE, variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
+              { icon: "whatsapp", title: "WhatsApp us", tag: "", copy: "Message us on WhatsApp for quick help.", label: "Chat on WhatsApp", variant: "outline", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
+            ].map((c) => (
+              <article key={c.title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
+                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#eef8ff] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
+                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#ffe4ef] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
+                <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
+                <Button variant={c.variant === "pink" ? "pink" : "outline"} className="w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
                 <p className="mt-4 text-sm font-semibold leading-6">We'll read every message and get back to you.</p>
               </article>
             ))}
@@ -1565,10 +1578,11 @@ function ContactPage() {
             <h2 className="text-2xl font-black">Still need help?</h2>
             <p className="mt-2 text-lg font-semibold leading-8">Can't find what you're looking for? Send us a message and we'll get back to you soon.</p>
           </div>
-          <Button size="lg"><Icon name="mail" className="h-5 w-5" /> Send us a message</Button>
+          <Button size="lg" onClick={openSupport}><Icon name="mail" className="h-5 w-5" /> Send us a message</Button>
         </section>
       </main>
     </PageShell>
+    </>
   );
 }
 
