@@ -21,6 +21,13 @@
       "runtimeArgs": ["--prefix", "frontends/parent", "run", "dev"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "email-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4599", "--directory", "email-previews"],
+      "port": 4599,
+      "autoPort": true
     }
   ]
 }

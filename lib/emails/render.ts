@@ -63,7 +63,7 @@ function layout(ctx: EmailCtx, inner: string): string {
     </div>
     <div style="text-align:left">${inner}</div>
     <div style="text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #eee">
-      <img src="${appUrl}/assets/logo-wordmark.png" alt="BabyBrain" width="150" style="max-width:150px;height:auto;margin-bottom:12px" /><br/>
+      <img src="${appUrl}/assets/logo-full.png" alt="BabyBrain" width="96" style="max-width:96px;height:auto;margin-bottom:12px" /><br/>
       <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram</a>
       <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${appUrl}/profile" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
