@@ -1,6 +1,7 @@
 import {
   ActivityCard,
   ActivityRow,
+  AnimalAvatar,
   Button,
   CategoryTile,
   Footer,
@@ -23,7 +24,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
-import { downloadBookingIcs } from "./lib/ics";
+import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { formatChildAge, formatAgeRange } from "./lib/database.types";
 import type { ActivitySession } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
@@ -159,11 +160,7 @@ function HomePage() {
         <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3">
           {["Joanne Tan", "Marcus Lim", "Sarah Wong"].map((name, index) => (
             <article key={name} className="flex gap-4 rounded-[16px] border border-[#e8ecf6] bg-white p-5 shadow-card">
-              <img
-                src={index === 1 ? `${import.meta.env.BASE_URL}assets/crops/parent-avatar.png` : `${import.meta.env.BASE_URL}assets/crops/mom-avatar.png`}
-                alt={name}
-                className="h-11 w-11 shrink-0 rounded-full object-cover"
-              />
+              <AnimalAvatar seed={name} kind="parent" className="h-11 w-11" />
               <div>
                 <div className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: 5 }).map((_, starIndex) => <Icon key={starIndex} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
                 <p className="mt-2 text-sm font-semibold leading-6">
@@ -405,7 +402,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             </div>
             {child && (
               <article className="flex gap-4 rounded-[18px] border border-[#e7ebf6] bg-white p-4 shadow-card">
-                <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-32 w-32 rounded-full object-cover ring-8 ring-[#fff1f5]" />
+                <AnimalAvatar seed={child.name} kind="child" className="h-32 w-32 ring-8 ring-[#fff1f5]" />
                 <div>
                   <h2 className="text-xl font-black">{child.name}</h2>
                   <p className="mb-3 font-bold">{formatChildAge(child.date_of_birth)}</p>
@@ -1138,7 +1135,7 @@ function ProfilePage() {
         <aside className="space-y-4">
           <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-5 shadow-card">
             <div className="flex items-center gap-3">
-              <img src={`${import.meta.env.BASE_URL}assets/crops/parent-avatar.png`} alt="" className="h-14 w-14 rounded-full object-cover" />
+              <AnimalAvatar seed={parentName} kind="parent" className="h-14 w-14" />
               <div className="min-w-0"><h2 className="truncate font-black">{parentName}</h2>{child && <p className="truncate text-sm font-semibold text-[#59658d]">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
             </div>
             <a
@@ -1187,7 +1184,7 @@ function ProfilePage() {
           {tab === "overview" && (
           <>
           <div className="grid items-center gap-5 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card lg:grid-cols-[120px_1fr_235px]">
-            <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-24 w-24 rounded-full object-cover ring-4 ring-white shadow-soft" />
+            <AnimalAvatar seed={child?.name} kind="child" className="h-24 w-24 ring-4 ring-white shadow-soft" />
             <div>
               <h1 className="text-[30px] font-black">{child?.name ?? "Your child"}</h1>
               {child && <p className="mt-1.5 text-base font-semibold">{formatChildAge(child.date_of_birth)}</p>}
@@ -1251,7 +1248,7 @@ function ProfilePage() {
                   {children.map((c) => (
                     <div key={c.id} className="rounded-[14px] border border-[#e7ebf6] bg-white p-5 shadow-card">
                       <div className="flex items-center gap-4">
-                        <img src={`${import.meta.env.BASE_URL}assets/crops/baby-profile.png`} alt="" className="h-16 w-16 rounded-full object-cover ring-4 ring-white shadow-soft" />
+                        <AnimalAvatar seed={c.name} kind="child" className="h-16 w-16 ring-4 ring-white shadow-soft" />
                         <div><h3 className="font-black">{c.name}</h3><p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p></div>
                       </div>
                       {c.interests.length > 0 && (
@@ -1481,8 +1478,26 @@ function ProfilePage() {
 
 function BookingList({ items, emptyCopy }: { items: BookingItem[]; emptyCopy: string }) {
   if (items.length === 0) return <EmptyPanel icon="calendar" copy={emptyCopy} cta="Browse activities" href="/explore" />;
+  // Non-cancelled classes with a scheduled time can be exported as one calendar.
+  const exportable = items.filter((b) => b.startsAt && b.status !== "cancelled");
   return (
     <div className="mt-4 space-y-3">
+      {exportable.length > 1 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() =>
+              downloadScheduleIcs(
+                exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
+              )
+            }
+            className="flex items-center gap-1.5 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff]"
+            title={`Export all ${exportable.length} classes to your calendar`}
+          >
+            <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
+          </button>
+        </div>
+      )}
       {items.map((b) => (
         <a
           key={b.id}

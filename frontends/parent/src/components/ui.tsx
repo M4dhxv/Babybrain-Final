@@ -1,4 +1,5 @@
 import { useState } from "react";
+import animalAvatar from "animal-avatar-generator";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
 import { useActivities } from "../lib/useActivities";
@@ -160,6 +161,39 @@ export function Icon({
   );
 }
 
+// Cute illustrated animal avatars stand in for photos of parents and kids.
+// Generated with the open-source `animal-avatar-generator` (flat SVG, MIT) —
+// fully offline, no external API, deterministic per seed so a given person is
+// the same animal + colour everywhere. Backgrounds are branded to our pastels.
+const AVATAR_BG = ["#ffe0ec", "#e0ecff", "#ece0ff", "#d9f5e6", "#ffe6d6", "#fff2cf"];
+
+export function AnimalAvatar({
+  seed,
+  kind = "parent",
+  className = "h-11 w-11",
+}: {
+  seed?: string | null;
+  // `kind` salts the seed so a parent and their child never draw the same
+  // animal; the avatar library itself doesn't model age.
+  kind?: "child" | "parent";
+  className?: string;
+}) {
+  const svg = animalAvatar(`${kind}:${(seed && seed.trim()) || "babybrain"}`, {
+    size: 128,
+    blackout: false,
+    backgroundColors: AVATAR_BG,
+  });
+  const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  return (
+    <img
+      src={uri}
+      alt=""
+      aria-hidden="true"
+      className={`shrink-0 rounded-full object-cover ${className}`}
+    />
+  );
+}
+
 export function Brand() {
   return (
     <a href="/" className="flex items-center gap-2" aria-label="BabyBrain.sg home">
@@ -232,11 +266,7 @@ export function Header({ active = "/" }: HeaderProps) {
               href="/profile"
               className="flex items-center gap-2 rounded-full border border-[#e9edf8] bg-white py-1 pl-1 pr-3 shadow-soft hover:border-[#d4ddf3]"
             >
-              <img
-                src={`${import.meta.env.BASE_URL}assets/crops/mom-avatar.png`}
-                alt=""
-                className="h-7 w-7 rounded-full object-cover"
-              />
+              <AnimalAvatar seed={profile?.full_name} kind="parent" className="h-7 w-7" />
               <span className="max-w-[110px] truncate">{profile?.full_name?.split(" ")[0] || "Account"}</span>
             </a>
             <button onClick={() => signOut()} className="text-[13px] text-[#68718f] hover:text-baby-ink">
