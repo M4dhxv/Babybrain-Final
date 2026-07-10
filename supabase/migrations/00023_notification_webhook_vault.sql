@@ -41,5 +41,10 @@ begin
 end;
 $$;
 
--- The on_notification_created trigger from 00004 already calls this function,
--- so redefining the function is enough to activate delivery.
+-- (Re)attach the trigger. 00004 was meant to create it, but on the hosted DB
+-- it is missing, so recreate it here idempotently — without it the function is
+-- never called and notifications stay email_status='pending'.
+drop trigger if exists on_notification_created on public.notifications;
+create trigger on_notification_created
+  after insert on public.notifications
+  for each row execute function public.notify_email_webhook();
