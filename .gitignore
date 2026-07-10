@@ -19,3 +19,6 @@ graphify-out/.graphify_python
 
 # Generated email preview gallery (large, self-contained)
 email-previews/
+
+# Local demo/test credentials — never commit
+.demo-credentials.local.md

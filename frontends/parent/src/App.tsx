@@ -141,8 +141,8 @@ function HomePage() {
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <SectionTitle>Explore activities by category</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-            {categories.map(([icon, label]) => (
-              <CategoryTile key={label} icon={icon} label={label} />
+            {categories.map(([icon, label, , slug]) => (
+              <CategoryTile key={label} icon={icon} label={label} href={`/explore?cat=${slug}`} />
             ))}
           </div>
         </section>
@@ -449,8 +449,8 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
         <section className="mt-6">
           <SectionTitle>Options Based on Preferences</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-            {categories.map(([icon, label, copy]) => (
-              <CategoryTile key={label} icon={icon} label={label} copy={copy} />
+            {categories.map(([icon, label, copy, slug]) => (
+              <CategoryTile key={label} icon={icon} label={label} copy={copy} href={`/explore?cat=${slug}`} />
             ))}
           </div>
         </section>
@@ -469,7 +469,9 @@ const AGE_FILTERS: [string, string][] = [
 
 function ExplorePage() {
   const [sort, setSort] = useState<"popular" | "rating" | "distance">("popular");
-  const [category, setCategory] = useState("");
+  // Seed the category filter from ?cat= so the home-page category tiles land
+  // on a pre-filtered list.
+  const [category, setCategory] = useState(getParam("cat") ?? "");
   const [age, setAge] = useState("");
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
   const { activities, loading } = useActivities({
@@ -523,7 +525,7 @@ function ExplorePage() {
             <p className="mb-3 text-sm font-black">{loading ? "Loading…" : `${activities.length} activities found`}</p>
             <div className="space-y-2.5">
               {activities.map((activity) => (
-                <ActivityRow key={activity.title} activity={activity} />
+                <ActivityRow key={activity.id} activity={activity} />
               ))}
             </div>
             {!loading && activities.length === 0 && (
@@ -689,19 +691,24 @@ function ActivityDetailPage() {
             ) : (
               <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
             )}
-            <Button
-              variant="outline"
-              className="mt-3 w-full"
-              onClick={() => {
-                if (!session) {
-                  window.location.href = "/login";
-                } else if (activity.provider_id) {
-                  setEnquiring(true);
-                }
-              }}
-            >
-              <Icon name="mail" className="h-4 w-4" /> Enquire Now
-            </Button>
+            {/* Enquiry chat needs a provider to message — hide the button
+                for listings without a linked provider, else it dead-clicks
+                for signed-in users. */}
+            {activity.provider_id && (
+              <Button
+                variant="outline"
+                className="mt-3 w-full"
+                onClick={() => {
+                  if (!session) {
+                    window.location.href = "/login";
+                  } else {
+                    setEnquiring(true);
+                  }
+                }}
+              >
+                <Icon name="mail" className="h-4 w-4" /> Enquire Now
+              </Button>
+            )}
             <Button
               variant="outline"
               className="mt-3 w-full"
@@ -2307,7 +2314,10 @@ function LoginPage() {
     const { error } = await signIn(email, password);
     setBusy(false);
     if (error) return setError(error);
-    window.location.href = "/profile";
+    // Honour ?next= for gated pages that bounced here — same-origin
+    // relative paths only ("//host" would be an open redirect).
+    const next = getParam("next");
+    window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile";
   }
   return (
     <PageShell active="/login">

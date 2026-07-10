@@ -1,7 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/matches', '/support'];
+// Only legacy Next pages may be gated here. The parent SPA (served for all
+// user-facing routes via the beforeFiles rewrite) authenticates client-side
+// with supabase-js — it never sets SSR cookies, so gating its routes here
+// locks out even signed-in users. /onboarding is the SPA signup page and
+// /matches its dashboard; both must stay reachable.
+const PROTECTED_PREFIXES = ['/dashboard', '/support'];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });

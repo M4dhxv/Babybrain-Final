@@ -435,11 +435,18 @@ export function ActivityCard({
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
           <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.age}</p>
           <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {activity.venue}</p>
-          <p className="flex items-center gap-1.5"><Icon name="calendar" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.date} · {activity.time}</p>
+          <p className="flex items-center gap-1.5">
+            <Icon name="calendar" className="h-3.5 w-3.5 text-[#4a9cff]" />{" "}
+            {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
+          </p>
           {!compact && (
             <p>
-              <Icon name="star" className="inline h-3.5 w-3.5 text-[#4a9cff]" /> {activity.rating} ·{" "}
-              <Icon name="spark" className="inline h-3.5 w-3.5 text-baby-pink" /> {activity.note}
+              <Icon name="star" className="inline h-3.5 w-3.5 text-[#4a9cff]" /> {activity.rating}
+              {activity.note && (
+                <>
+                  {" "}· <Icon name="spark" className="inline h-3.5 w-3.5 text-baby-pink" /> {activity.note}
+                </>
+              )}
             </p>
           )}
         </div>
@@ -494,7 +501,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
           <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-baby-pink" /> {activity.age}</p>
           <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {activity.venue}</p>
-          <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-baby-pink" /> {activity.date}</p>
+          <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-baby-pink" /> {activity.date || "Schedule TBC"}</p>
           <p>{activity.time}</p>
           <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.rating}</p>
           <p>{activity.note}</p>
