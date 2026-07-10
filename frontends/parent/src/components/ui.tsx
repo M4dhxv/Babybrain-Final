@@ -415,9 +415,14 @@ export function ActivityCard({
         <SaveHeart activityId={activity.id} className="absolute right-3 top-3 h-8 w-8" />
       </div>
       <div className="p-3.5">
-        <h3 className="mb-2 text-[15px] font-black leading-tight text-baby-ink">
+        <h3 className="mb-0.5 text-[15px] font-black leading-tight text-baby-ink">
           {activity.title}
         </h3>
+        {activity.providerName && (
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
+            <Icon name="store" className="h-3.5 w-3.5" /> {activity.providerName}
+          </p>
+        )}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
           <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.age}</p>
           <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {activity.venue}</p>
@@ -471,7 +476,12 @@ export function ActivityRow({ activity }: { activity: Activity }) {
       </div>
       <div className="relative p-4">
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
-        <h3 className="mb-2 text-[16px] font-black">{activity.title}</h3>
+        <h3 className="mb-0.5 text-[16px] font-black">{activity.title}</h3>
+        {activity.providerName && (
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
+            <Icon name="store" className="h-3.5 w-3.5" /> {activity.providerName}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
           <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-baby-pink" /> {activity.age}</p>
           <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {activity.venue}</p>

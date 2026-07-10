@@ -65,17 +65,21 @@ export function useActivities(params: ActivityQuery = {}) {
       // (coords live on the provider) for the venue line and the map pins.
       const ids = (rows ?? []).map((r) => r.id);
       const addressById = new Map<string, string | null>();
+      const nameById = new Map<string, string | null>();
       const coordsById = new Map<string, { lat: number; lng: number; name: string | null }>();
       if (ids.length) {
         const { data: addrs } = await supabase
           .from("activities")
-          .select("id, address, providers(latitude, longitude, business_name)")
+          .select("id, address, provider_name, providers(latitude, longitude, business_name)")
           .in("id", ids);
         (addrs ?? []).forEach((a) => {
           addressById.set(a.id, a.address);
-          const p = (a as unknown as { providers: { latitude: number | null; longitude: number | null; business_name: string | null } | null }).providers;
-          if (p?.latitude != null && p?.longitude != null) {
-            coordsById.set(a.id, { lat: p.latitude, lng: p.longitude, name: p.business_name });
+          const p = (a as unknown as { provider_name: string | null; providers: { latitude: number | null; longitude: number | null; business_name: string | null } | null });
+          // Prefer the provider's live business_name, falling back to the
+          // denormalised provider_name column on the activity.
+          nameById.set(a.id, p.providers?.business_name ?? p.provider_name ?? null);
+          if (p.providers?.latitude != null && p.providers?.longitude != null) {
+            coordsById.set(a.id, { lat: p.providers.latitude, lng: p.providers.longitude, name: p.providers.business_name });
           }
         });
       }
@@ -95,7 +99,7 @@ export function useActivities(params: ActivityQuery = {}) {
         boosted: r.boosted ?? false,
         lat: coordsById.get(r.id)?.lat,
         lng: coordsById.get(r.id)?.lng,
-        providerName: coordsById.get(r.id)?.name ?? undefined,
+        providerName: nameById.get(r.id) ?? undefined,
       }));
 
       if (!cancelled) {

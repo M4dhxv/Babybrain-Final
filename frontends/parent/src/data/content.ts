@@ -11,6 +11,7 @@ export type Activity = {
   slug?: string;
   id?: string;
   boosted?: boolean;
+  providerName?: string;
 };
 
 export const activities: Activity[] = [

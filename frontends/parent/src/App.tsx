@@ -638,6 +638,11 @@ function ActivityDetailPage() {
           <div>
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
             <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
+            {activity.provider_name && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#7a5cc8]">
+                <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
+              </p>
+            )}
             {activity.category_name && (
               <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#fff0f6] px-4 py-1.5 font-bold text-baby-pink"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
             )}
@@ -717,7 +722,7 @@ function ActivityDetailPage() {
             {enquiring && activity.provider_id && (
               <EnquiryChat
                 providerId={activity.provider_id}
-                providerName={activity.title}
+                providerName={activity.provider_name ?? activity.title}
                 onClose={() => setEnquiring(false)}
               />
             )}
