@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  User, MapPin, Users, Shield, Store, ChevronRight, Pencil, FileText,
-  CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle,
+  User, MapPin, Users, Shield, Store, Pencil, FileText,
+  CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -36,7 +36,6 @@ export default function SettingsPage() {
   const canManage = role === 'owner' || role === 'manager';
 
   const [activeTab, setActiveTab] = useState('profile');
-  const [locations, setLocations] = useState<ProviderLocation[]>([]);
   const [team, setTeam] = useState<Member[]>([]);
   const [form, setForm] = useState({
     business_name: '', contact_phone: '', contact_email: '', website: '', description: '',
@@ -59,8 +58,6 @@ export default function SettingsPage() {
       website: provider.website ?? '',
       description: provider.description ?? '',
     });
-    supabase.from('provider_locations').select('*').eq('provider_id', provider.id)
-      .then(({ data }) => setLocations(data ?? []));
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
       .then(({ data }) => setTeam((data as Member[]) ?? []));
   }, [provider]);
@@ -193,26 +190,7 @@ export default function SettingsPage() {
 
             {/* Locations (live) */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><MapPin className="w-5 h-5 text-purple-600" /></div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Locations</h3>
-                  <p className="text-xs text-gray-500">{locations.length} Active Location{locations.length === 1 ? '' : 's'}</p>
-                </div>
-              </div>
-              <div className="space-y-3 mb-5">
-                {locations.map((loc) => (
-                  <div key={loc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#E91E63]"><Store className="w-5 h-5" /></div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
-                      <div className="text-xs text-gray-500">{loc.is_primary ? 'Main Branch' : 'Branch'}</div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  </div>
-                ))}
-                {locations.length === 0 && <div className="text-sm text-gray-400">No locations added yet.</div>}
-              </div>
+              <LocationsManager provider={provider} canManage={canManage} />
             </div>
 
             {/* Compliance (static) */}
@@ -304,15 +282,19 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {activeTab !== 'profile' && (
+        {activeTab === 'locations' && (
+          <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
+            <LocationsManager provider={provider} canManage={canManage} />
+          </div>
+        )}
+
+        {(activeTab === 'team' || activeTab === 'compliance') && (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              {activeTab === 'locations' && <MapPin className="w-8 h-8 text-gray-400" />}
               {activeTab === 'team' && <Users className="w-8 h-8 text-gray-400" />}
               {activeTab === 'compliance' && <Shield className="w-8 h-8 text-gray-400" />}
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {activeTab === 'locations' && 'Locations Management'}
               {activeTab === 'team' && 'Team Management'}
               {activeTab === 'compliance' && 'Compliance Center'}
             </h3>
@@ -327,4 +309,115 @@ export default function SettingsPage() {
 function completion(f: { business_name: string; contact_phone: string; contact_email: string; website: string; description: string }) {
   const fields = [f.business_name, f.contact_phone, f.contact_email, f.website, f.description];
   return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+}
+
+/** Live locations list + add/remove form, shared by the Profile card and Locations tab. */
+function LocationsManager({ provider, canManage }: { provider: { id: string } | null; canManage: boolean }) {
+  const [locations, setLocations] = useState<ProviderLocation[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', postal_code: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    if (!provider) return;
+    const { data } = await supabase
+      .from('provider_locations')
+      .select('*')
+      .eq('provider_id', provider.id)
+      .order('is_primary', { ascending: false });
+    setLocations(data ?? []);
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+
+  async function addLocation() {
+    if (!provider || !form.name.trim()) { setError('A location name is required.'); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await supabase.from('provider_locations').insert({
+      provider_id: provider.id,
+      name: form.name.trim(),
+      address: form.address.trim() || null,
+      postal_code: form.postal_code.trim() || null,
+      is_primary: locations.length === 0, // first location becomes the main branch
+    });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    setForm({ name: '', address: '', postal_code: '' });
+    setShowForm(false);
+    load();
+  }
+
+  async function removeLocation(id: string) {
+    if (!window.confirm('Remove this location?')) return;
+    await supabase.from('provider_locations').delete().eq('id', id);
+    load();
+  }
+
+  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><MapPin className="w-5 h-5 text-purple-600" /></div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Locations</h3>
+            <p className="text-xs text-gray-500">{locations.length} Active Location{locations.length === 1 ? '' : 's'}</p>
+          </div>
+        </div>
+        {canManage && !showForm && (
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#E91E63] rounded-lg text-xs font-medium hover:bg-pink-100">
+            <Plus className="w-3.5 h-3.5" /> Add location
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3 mb-4">
+        {locations.map((loc) => (
+          <div key={loc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#E91E63]"><Store className="w-5 h-5" /></div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
+              <div className="text-xs text-gray-500 truncate">
+                {loc.is_primary ? 'Main Branch' : 'Branch'}{loc.address ? ` · ${loc.address}` : ''}
+              </div>
+            </div>
+            {canManage && (
+              <button onClick={() => removeLocation(loc.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove location">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        ))}
+        {locations.length === 0 && !showForm && <div className="text-sm text-gray-400">No locations added yet.</div>}
+      </div>
+
+      {canManage && showForm && (
+        <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+          {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#E91E63]">*</span></label>
+            <input className={inputCls} placeholder="e.g. Suntec City Studio" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Address</label>
+              <input className={inputCls} placeholder="Street & unit" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Postal code</label>
+              <input className={inputCls} placeholder="e.g. 038983" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={addLocation} disabled={saving || !form.name.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
+              {saving ? 'Saving…' : 'Save location'}
+            </Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

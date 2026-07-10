@@ -34,18 +34,13 @@ const statsCards = [
   { icon: DollarSign, label: 'Revenue', value: '$3,240', sub: 'this month', change: '18%', color: 'text-green-600', bg: 'bg-green-100' },
 ];
 
-const upcomingSessions = [
-  { time: 'Today, 9:00 AM', name: 'Little Movers (18m – 3y)', booked: '12 / 15', icon: Baby, color: 'bg-pink-100 text-pink-600' },
-  { time: 'Today, 10:30 AM', name: 'Music & Movement (2 – 5y)', booked: '10 / 12', icon: CalendarCheck, color: 'bg-purple-100 text-purple-600' },
-  { time: 'Today, 12:00 PM', name: 'Play Explorers (3 – 5y)', booked: '8 / 10', icon: Sun, color: 'bg-yellow-100 text-yellow-600' },
-];
+const sessionIcons = [Baby, CalendarCheck, Sun];
+const sessionColors = ['bg-pink-100 text-pink-600', 'bg-purple-100 text-purple-600', 'bg-yellow-100 text-yellow-600', 'bg-blue-100 text-blue-600'];
+const sgWhen = (iso: string) =>
+  new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
-const recentBookings = [
-  { initials: 'SJ', name: 'Sarah J.', activity: 'Little Movers (18m – 3y)', time: 'Today, 9:00 AM', status: 'Confirmed', color: 'bg-pink-100 text-pink-600' },
-  { initials: 'EJ', name: 'Emma J.', activity: 'Music & Movement (2 – 5y)', time: 'Today, 10:30 AM', status: 'Confirmed', color: 'bg-purple-100 text-purple-600' },
-  { initials: 'MT', name: 'Marcus T.', activity: 'Play Explorers (3 – 5y)', time: 'Tomorrow, 9:00 AM', status: 'Confirmed', color: 'bg-yellow-100 text-yellow-600' },
-  { initials: 'LT', name: 'Liam T.', activity: 'Little Movers (18m – 3y)', time: 'Tomorrow, 10:30 AM', status: 'Pending', color: 'bg-blue-100 text-blue-600' },
-];
+type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null };
+type RecentBooking = { id: string; activity: string; time: string; status: string };
 
 const messages = [
   { initials: 'SJ', name: 'S. J.', message: 'Hi! Is there a makeup class available this week?', time: '9:41 AM', count: 2, color: 'bg-pink-100 text-pink-600' },
@@ -54,15 +49,23 @@ const messages = [
   { initials: 'DK', name: 'D. K.', message: 'Great class! My son loves it.', time: 'Mon', count: 0, color: 'bg-blue-100 text-blue-600' },
 ];
 
-const barChartData = [
-  { day: 'Mon', height: 30 },
-  { day: 'Tue', height: 35 },
-  { day: 'Wed', height: 55 },
-  { day: 'Thu', height: 50 },
-  { day: 'Fri', height: 65 },
-  { day: 'Sat', height: 100 },
-  { day: 'Sun', height: 40 },
-];
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** "Good morning/afternoon/evening" in Singapore time. */
+function sgGreeting() {
+  const hour = Number(new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', hour12: false }).format(new Date()));
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+/** Current week label, e.g. "13 Jun – 19 Jun 2026". */
+function weekLabel() {
+  const now = new Date();
+  const dow = (now.getDay() + 6) % 7; // Monday = 0
+  const mon = new Date(now.getTime() - dow * 864e5);
+  const sun = new Date(mon.getTime() + 6 * 864e5);
+  const f = (d: Date) => d.toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short' });
+  return `${f(mon)} – ${f(sun)} ${sun.getFullYear()}`;
+}
 
 // Drill-down for the top age group: where demand concentrates for these
 // classes, so vendors can see what's working and where to add capacity.
@@ -79,12 +82,107 @@ export default function DashboardPage() {
   const [showAgeDetail, setShowAgeDetail] = useState(false);
   const { provider } = useAuth();
   const [overview, setOverview] = useState<ProviderOverview | null>(null);
+  const [upcoming, setUpcoming] = useState<UpcomingSession[]>([]);
+  const [recent, setRecent] = useState<RecentBooking[]>([]);
+  const [next7Count, setNext7Count] = useState<number | null>(null);
+  const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
+  const [byDay, setByDay] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!provider) return;
     supabase
       .rpc('provider_overview', { p_provider: provider.id })
       .then(({ data }) => setOverview((data?.[0] as ProviderOverview) ?? null));
+
+    (async () => {
+      const { data: acts } = await supabase.from('activities').select('id, title').eq('provider_id', provider.id);
+      const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
+      const ids = [...titleOf.keys()];
+      if (!ids.length) { setLoaded(true); return; }
+
+      const nowIso = new Date().toISOString();
+      const in7dIso = new Date(Date.now() + 7 * 864e5).toISOString();
+      // Ongoing sessions KPI: how many sessions run in the next 7 days.
+      supabase
+        .from('activity_sessions')
+        .select('id', { count: 'exact', head: true })
+        .in('activity_id', ids)
+        .gte('starts_at', nowIso)
+        .lt('starts_at', in7dIso)
+        .then(({ count }) => setNext7Count(count ?? 0));
+
+      // Upcoming sessions (next few) with live booked counts.
+      const { data: sess } = await supabase
+        .from('activity_sessions')
+        .select('id, activity_id, starts_at, capacity')
+        .in('activity_id', ids)
+        .gte('starts_at', nowIso)
+        .order('starts_at')
+        .limit(4);
+      const sessIds = (sess ?? []).map((s) => s.id);
+      const counts: Record<string, number> = {};
+      if (sessIds.length) {
+        const { data: bks } = await supabase
+          .from('bookings')
+          .select('session_id, status')
+          .in('session_id', sessIds);
+        (bks ?? []).forEach((b) => {
+          if (b.status === 'confirmed' || b.status === 'completed') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+        });
+      }
+      setUpcoming((sess ?? []).map((s) => ({
+        id: s.id, when: s.starts_at, name: titleOf.get(s.activity_id) ?? 'Activity',
+        booked: counts[s.id] ?? 0, capacity: s.capacity,
+      })));
+
+      // All non-cancelled bookings feed Recent Bookings, the by-day chart and
+      // the attendance-rate KPI in one fetch.
+      const { data: allBks } = await supabase
+        .from('bookings')
+        .select('id, status, created_at, session_id')
+        .eq('provider_id', provider.id)
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false });
+      const bks = allBks ?? [];
+      const rIds = [...new Set(bks.map((b) => b.session_id))];
+      const sessInfo = new Map<string, { activity_id: string; starts_at: string }>();
+      if (rIds.length) {
+        const { data: rs } = await supabase.from('activity_sessions').select('id, activity_id, starts_at').in('id', rIds);
+        (rs ?? []).forEach((s) => sessInfo.set(s.id, { activity_id: s.activity_id, starts_at: s.starts_at }));
+      }
+      setRecent(bks.slice(0, 4).map((b) => {
+        const info = sessInfo.get(b.session_id);
+        return {
+          id: b.id,
+          activity: info ? (titleOf.get(info.activity_id) ?? 'Activity') : 'Activity',
+          time: info ? sgWhen(info.starts_at) : '',
+          status: b.status,
+        };
+      }));
+
+      // Bookings by weekday (Mon..Sun) of the session they're for.
+      const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+      bks.forEach((b) => {
+        const info = sessInfo.get(b.session_id);
+        if (!info || (b.status !== 'confirmed' && b.status !== 'completed')) return;
+        dayCounts[(new Date(info.starts_at).getDay() + 6) % 7] += 1;
+      });
+      setByDay(dayCounts);
+
+      // Attendance rate = present / marked, across this provider's bookings.
+      if (bks.length) {
+        const { data: att } = await supabase
+          .from('attendance')
+          .select('status')
+          .in('booking_id', bks.map((b) => b.id));
+        const marked = (att ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
+        setAttendanceRate(marked.length
+          ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
+          : null);
+      }
+      setLoaded(true);
+    })();
   }, [provider]);
 
   // Live values mapped onto the existing card config (icons/labels/colours
@@ -93,26 +191,28 @@ export default function DashboardPage() {
   const liveValues: (string | null)[] = overview
     ? [
         String(overview.upcoming_bookings),
-        '—', // attendance rate comes from provider_analytics (wired with that page)
-        '—',
+        attendanceRate ?? '—',
+        next7Count != null ? String(next7Count) : '—',
         String(overview.pending_waitlist),
         `$${Number(overview.revenue).toLocaleString()}`,
       ]
     : [null, null, null, null, null];
   const firstName = provider?.business_name?.split(' ')[0] ?? 'there';
+  const maxDay = Math.max(...byDay, 1);
+  const busiestIdx = byDay.indexOf(Math.max(...byDay));
 
   return (
     <div className="relative">
       {/* Top Bar */}
       <div className="flex items-center justify-between px-8 py-5">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Welcome back, {firstName}. <span className="text-2xl">👋</span></h1>
+          <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
           <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/bookings')} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
             <CalendarDays className="w-4 h-4" />
-            13 Jun – 19 Jun 2026
+            {weekLabel()}
             <ChevronDown className="w-4 h-4" />
           </button>
           <button onClick={() => navigate('/bookings')} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
@@ -193,21 +293,25 @@ export default function DashboardPage() {
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#E91E63] font-medium">View all</button>
             </div>
             <div className="space-y-4">
-              {upcomingSessions.map((session, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', session.color)}>
-                    <session.icon className="w-5 h-5" />
+              {upcoming.map((session, idx) => {
+                const Icon = sessionIcons[idx % sessionIcons.length];
+                return (
+                  <div key={session.id} className="flex items-center gap-3">
+                    <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', sessionColors[idx % sessionColors.length])}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-500">{sgWhen(session.when)}</div>
+                      <div className="text-sm font-medium text-gray-900 truncate">{session.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-gray-900">{session.booked}{session.capacity != null ? ` / ${session.capacity}` : ''}</div>
+                      <div className="text-xs text-gray-500">Booked</div>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <div className="text-xs text-gray-500">{session.time}</div>
-                    <div className="text-sm font-medium text-gray-900">{session.name}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-gray-900">{session.booked}</div>
-                    <div className="text-xs text-gray-500">Booked</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+              {loaded && upcoming.length === 0 && <div className="text-sm text-gray-400">No upcoming sessions.</div>}
             </div>
             <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#E91E63]">
               View full schedule
@@ -222,26 +326,27 @@ export default function DashboardPage() {
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#E91E63] font-medium">View all</button>
             </div>
             <div className="space-y-4">
-              {recentBookings.map((booking, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold', booking.color)}>
-                    {booking.initials}
+              {recent.map((booking, idx) => (
+                <div key={booking.id} className="flex items-center gap-3">
+                  <div className={cn('w-10 h-10 rounded-full flex items-center justify-center', sessionColors[idx % sessionColors.length])}>
+                    <Baby className="w-5 h-5" />
                   </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">{booking.name}</div>
-                    <div className="text-xs text-gray-500">{booking.activity}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">{booking.activity}</div>
+                    <div className="text-xs text-gray-500">{booking.time}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-gray-500">{booking.time}</div>
                     <span className={cn(
-                      'inline-block px-2 py-0.5 text-xs rounded-full mt-1',
-                      booking.status === 'Confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      'inline-block px-2 py-0.5 text-xs rounded-full mt-1 capitalize',
+                      booking.status === 'confirmed' || booking.status === 'completed' ? 'bg-green-100 text-green-700'
+                        : booking.status === 'waitlisted' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
                     )}>
                       {booking.status}
                     </span>
                   </div>
                 </div>
               ))}
+              {loaded && recent.length === 0 && <div className="text-sm text-gray-400">No bookings yet.</div>}
             </div>
             <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#E91E63]">
               View all bookings
@@ -299,23 +404,23 @@ export default function DashboardPage() {
             <div className="mb-4">
               <div className="text-xs text-gray-500 mb-2">Bookings by day</div>
               <div className="flex items-end gap-2 h-24">
-                {barChartData.map((bar) => (
-                  <div key={bar.day} className="flex-1 flex flex-col items-center gap-1">
+                {WEEKDAYS.map((day, i) => (
+                  <div key={day} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
                     <div
                       className={cn(
                         'w-full rounded-t-sm',
-                        bar.day === 'Sat' ? 'bg-purple-500' : 'bg-purple-200'
+                        i === busiestIdx && byDay[i] > 0 ? 'bg-purple-500' : 'bg-purple-200'
                       )}
-                      style={{ height: `${bar.height}%` }}
+                      style={{ height: `${Math.max((byDay[i] / maxDay) * 100, 4)}%` }}
                     />
-                    <span className="text-xs text-gray-500">{bar.day}</span>
+                    <span className="text-xs text-gray-500">{day}</span>
                   </div>
                 ))}
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-700">
               <Sun className="w-4 h-4 text-yellow-500" />
-              <span className="font-medium">Busiest: Sat AM</span>
+              <span className="font-medium">Busiest: {byDay[busiestIdx] > 0 ? WEEKDAYS[busiestIdx] : '—'}</span>
             </div>
           </div>
         </div>

@@ -37,6 +37,7 @@ export default function BookingsPage() {
   const [selected, setSelected] = useState(0);
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
+  const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Load this provider's upcoming sessions (RLS-scoped via activities join).
@@ -60,9 +61,22 @@ export default function BookingsPage() {
   async function loadRoster(id: string) {
     if (!id) return;
     const { data } = await supabase.rpc('provider_session_roster', { p_session_id: id });
-    setRoster((data as RosterRow[]) ?? []);
+    const rows = (data as RosterRow[]) ?? [];
+    setRoster(rows);
     setSelected(0);
     setAttDraft({});
+    // Make-up tokens already issued against these bookings (issued/redeemed).
+    if (rows.length) {
+      const { data: toks } = await supabase
+        .from('make_up_tokens')
+        .select('origin_booking_id, status')
+        .in('origin_booking_id', rows.map((r) => r.booking_id));
+      const map: Record<string, string> = {};
+      (toks ?? []).forEach((t) => { if (t.origin_booking_id) map[t.origin_booking_id] = t.status; });
+      setTokenStatus(map);
+    } else {
+      setTokenStatus({});
+    }
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
 
@@ -96,13 +110,14 @@ export default function BookingsPage() {
         expires_at: new Date(Date.now() + 60 * 864e5).toISOString(),
       });
       setIssuedFor(bookingId);
+      setTokenStatus((m) => ({ ...m, [bookingId]: 'issued' }));
     }
     setIssuing(false);
   }
   async function saveRoster() {
     if (!sessionId) return;
     const rows = booked
-      .map((b) => ({ booking_id: b.booking_id, session_id: sessionId, status: (attDraft[b.booking_id] ?? b.attendance_status ?? 'present') as 'present' | 'absent' }))
+      .map((b) => ({ booking_id: b.booking_id, session_id: sessionId, status: (attDraft[b.booking_id] ?? b.attendance_status ?? 'present') as 'present' | 'absent', marked_by: session?.user.id ?? null, marked_at: new Date().toISOString() }))
       .filter((r) => r.status);
     await supabase.from('attendance').upsert(rows, { onConflict: 'booking_id' });
     loadRoster(sessionId);
@@ -220,11 +235,11 @@ export default function BookingsPage() {
                   {canManage && (
                     <button
                       onClick={() => issueToken(sel.booking_id)}
-                      disabled={issuing || issuedFor === sel.booking_id}
+                      disabled={issuing || issuedFor === sel.booking_id || !!tokenStatus[sel.booking_id]}
                       className="flex items-center gap-2 mt-3 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-60"
                     >
                       <Gift className="w-4 h-4" />
-                      {issuedFor === sel.booking_id ? 'Make-up token issued ✓' : issuing ? 'Issuing…' : 'Issue make-up token'}
+                      {tokenStatus[sel.booking_id] === 'redeemed' ? 'Make-up token redeemed' : tokenStatus[sel.booking_id] || issuedFor === sel.booking_id ? 'Make-up token issued ✓' : issuing ? 'Issuing…' : 'Issue make-up token'}
                     </button>
                   )}
                 </>
@@ -282,13 +297,14 @@ export default function BookingsPage() {
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
               </div>
               <div className="border border-gray-200 rounded-xl overflow-hidden mb-5">
-                <div className="grid grid-cols-[0.5fr_1.5fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
-                  <div>Present</div><div>Child</div><div>Status</div>
+                <div className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
+                  <div>Present</div><div>Child</div><div>Status</div><div>Make-up token</div>
                 </div>
                 {booked.map((c) => {
                   const cur = attDraft[c.booking_id] ?? c.attendance_status;
+                  const tok = tokenStatus[c.booking_id];
                   return (
-                    <div key={c.booking_id} className="grid grid-cols-[0.5fr_1.5fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
+                    <div key={c.booking_id} className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
                       <Checkbox className="data-[state=checked]:bg-[#E91E63]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
                       <div className="flex items-center gap-2">
@@ -301,6 +317,23 @@ export default function BookingsPage() {
                       <span className={cn('text-sm capitalize', cur === 'present' ? 'text-green-600' : cur === 'absent' ? 'text-red-600' : 'text-gray-400')}>
                         {cur ?? 'Not marked'}
                       </span>
+                      <div>
+                        {tok === 'redeemed' ? (
+                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">Redeemed</span>
+                        ) : tok ? (
+                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">Issued ✓</span>
+                        ) : cur === 'absent' && canManage ? (
+                          <button
+                            onClick={() => issueToken(c.booking_id)}
+                            disabled={issuing}
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            Add token
+                          </button>
+                        ) : (
+                          <span className="text-sm text-gray-300">—</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

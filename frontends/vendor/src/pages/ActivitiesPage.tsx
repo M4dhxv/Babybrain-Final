@@ -14,6 +14,7 @@ import {
   CalendarCheck,
   Trash2,
   Clock,
+  ImageUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -38,22 +39,49 @@ export default function ActivitiesPage() {
 
   const [activeTab, setActiveTab] = useState('Activities');
   const [showDrawer, setShowDrawer] = useState(false);
+
+  // "New Package" and the Packages tab both jump to the class-packs form below.
+  function goToPackages() {
+    if (!canManage) return;
+    setActiveTab('Packages');
+    requestAnimationFrame(() => {
+      const el = document.getElementById('class-packs');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el?.querySelector<HTMLInputElement>('input')?.focus();
+    });
+  }
+  function onTab(tab: string) {
+    if (tab === 'Locations') { navigate('/settings'); return; }
+    if (tab === 'Packages') { goToPackages(); return; }
+    setActiveTab(tab);
+  }
   const [showMenu, setShowMenu] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<ActivityCategory[]>([]);
-  const [locationCount, setLocationCount] = useState(0);
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
+  const [bookingTotals, setBookingTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
-  // Create-activity form
+  // Filter bar (mirrors the design: Status / Location / Age / Category / Sort)
+  const [fStatus, setFStatus] = useState('');
+  const [fLocation, setFLocation] = useState('');
+  const [fAge, setFAge] = useState('');
+  const [fCategory, setFCategory] = useState('');
+  const [sortBy, setSortBy] = useState<'updated' | 'name' | 'rating'>('updated');
+
+  // Create/Edit-activity form (editingId set = editing an existing activity)
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '', category_id: '', vendor_category: '' as VendorCategory | '',
     description: '', age_min_months: '', age_max_months: '', price: '',
+    location_id: '', image_url: '',
     requires_medical_disclosure: true,
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Schedule manager (sessions = the bookable dates/times of an activity)
@@ -170,43 +198,84 @@ export default function ActivitiesPage() {
     const [{ data: acts }, { data: cats }, { data: locs }, { data: pks }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
-      supabase.from('provider_locations').select('id').eq('provider_id', provider.id),
+      supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
       supabase.from('packages').select('id, name, credits, price_cents, active').eq('provider_id', provider.id).order('created_at', { ascending: false }),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
-    setLocationCount((locs ?? []).length);
+    setLocations((locs ?? []) as { id: string; name: string }[]);
     setPacks((pks ?? []) as Pack[]);
 
-    // Upcoming session counts per activity (single query, grouped client-side).
+    // Upcoming session counts + total booking counts per activity.
     const ids = (acts ?? []).map((a) => a.id);
     if (ids.length) {
-      const { data: sess } = await supabase
-        .from('activity_sessions')
-        .select('activity_id')
-        .in('activity_id', ids)
-        .gte('starts_at', new Date().toISOString());
+      const [{ data: sess }, { data: allSess }] = await Promise.all([
+        supabase.from('activity_sessions').select('activity_id').in('activity_id', ids).gte('starts_at', new Date().toISOString()),
+        supabase.from('activity_sessions').select('id, activity_id').in('activity_id', ids),
+      ]);
       const counts: Record<string, number> = {};
       (sess ?? []).forEach((s) => { counts[s.activity_id] = (counts[s.activity_id] ?? 0) + 1; });
       setSessionCounts(counts);
+
+      const actOfSession = new Map((allSess ?? []).map((s) => [s.id, s.activity_id]));
+      const sessIds = [...actOfSession.keys()];
+      const totals: Record<string, number> = {};
+      if (sessIds.length) {
+        const { data: bks } = await supabase
+          .from('bookings')
+          .select('session_id, status')
+          .in('session_id', sessIds);
+        (bks ?? []).forEach((b) => {
+          if (b.status === 'cancelled') return;
+          const actId = actOfSession.get(b.session_id);
+          if (actId) totals[actId] = (totals[actId] ?? 0) + 1;
+        });
+      }
+      setBookingTotals(totals);
     } else {
       setSessionCounts({});
+      setBookingTotals({});
     }
     setLoading(false);
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
 
-  const visible = useMemo(
-    () => activities.filter((a) => a.title.toLowerCase().includes(search.toLowerCase())),
-    [activities, search]
-  );
+  const visible = useMemo(() => {
+    let list = activities.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
+    if (fStatus) {
+      list = list.filter((a) => {
+        const s = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+        return s === fStatus;
+      });
+    }
+    if (fLocation) list = list.filter((a) => a.location_id === fLocation);
+    if (fCategory) list = list.filter((a) => String(a.category_id) === fCategory);
+    if (fAge) {
+      const [lo, hi] = fAge.split('-').map(Number); // months
+      list = list.filter((a) => a.age_min_months <= hi && a.age_max_months >= lo);
+    }
+    if (sortBy === 'name') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
+    else if (sortBy === 'rating') list = [...list].sort((a, b) => Number(b.rating_avg) - Number(a.rating_avg));
+    return list;
+  }, [activities, search, fStatus, fLocation, fCategory, fAge, sortBy]);
   const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? '—';
+
+  // Themed placeholder per category so rows without photos still look distinct.
+  const fallbackImage = (a: Activity) => {
+    const name = categoryName(a.category_id).toLowerCase();
+    const img = name.includes('art') ? 'activity-art.jpg'
+      : name.includes('science') || name.includes('learn') || name.includes('stem') ? 'activity-stem.jpg'
+      : name.includes('yoga') || name.includes('mind') ? 'activity-yoga.jpg'
+      : name.includes('play') || name.includes('sensory') || name.includes('move') ? 'activity-play.jpg'
+      : 'activity-music.jpg';
+    return `${import.meta.env.BASE_URL}assets/${img}`;
+  };
 
   const stats = [
     { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
-    { icon: Package, label: 'Packages', value: '—', sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
-    { icon: MapPin, label: 'Locations', value: String(locationCount), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
+    { icon: Package, label: 'Packages', value: String(packs.filter((p) => p.active).length), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
+    { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
     { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
 
@@ -216,29 +285,80 @@ export default function ActivitiesPage() {
     load();
   }
 
+  const emptyForm = {
+    title: '', category_id: '', vendor_category: '' as VendorCategory | '',
+    description: '', age_min_months: '', age_max_months: '', price: '',
+    location_id: '', image_url: '', requires_medical_disclosure: true,
+  };
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFormError(null);
+    setShowDrawer(true);
+  }
+
+  function openEdit(a: Activity) {
+    setShowMenu(null);
+    setEditingId(a.id);
+    setForm({
+      title: a.title,
+      category_id: String(a.category_id ?? ''),
+      vendor_category: (a.vendor_category ?? '') as VendorCategory | '',
+      description: a.description ?? '',
+      age_min_months: String(a.age_min_months ?? ''),
+      age_max_months: String(a.age_max_months ?? ''),
+      price: a.price != null ? String(a.price) : '',
+      location_id: a.location_id ?? '',
+      image_url: a.image_urls?.[0] ?? '',
+      requires_medical_disclosure: a.requires_medical_disclosure ?? true,
+    });
+    setFormError(null);
+    setShowDrawer(true);
+  }
+
+  async function uploadImage(file: File) {
+    if (!provider) return;
+    setUploading(true);
+    setFormError(null);
+    const path = `${provider.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
+    const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
+    setUploading(false);
+    if (error) { setFormError(`Image upload failed: ${error.message}`); return; }
+    const { data } = supabase.storage.from('activity-images').getPublicUrl(path);
+    setForm((f) => ({ ...f, image_url: data.publicUrl }));
+  }
+
   async function saveActivity() {
     if (!provider) return;
     if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
     setSaving(true);
     setFormError(null);
-    const slug = `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
-    const { error } = await supabase.from('activities').insert({
-      slug,
+    const fields = {
       title: form.title,
       description: form.description,
       category_id: Number(form.category_id),
-      provider_id: provider.id,
       vendor_category: (form.vendor_category || provider.vendor_category) as VendorCategory | undefined,
       age_min_months: form.age_min_months ? Number(form.age_min_months) : 0,
       age_max_months: form.age_max_months ? Number(form.age_max_months) : 216,
       price: form.price ? Number(form.price) : null,
+      location_id: form.location_id || null,
+      image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
-      is_published: false, // saved as draft; publish from the row menu
-    });
+    };
+    const { error } = editingId
+      ? await supabase.from('activities').update(fields).eq('id', editingId)
+      : await supabase.from('activities').insert({
+          ...fields,
+          slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
+          provider_id: provider.id,
+          is_published: false, // saved as draft; publish from the row menu
+        });
     setSaving(false);
     if (error) { setFormError(error.message); return; }
     setShowDrawer(false);
-    setForm({ title: '', category_id: '', vendor_category: '', description: '', age_min_months: '', age_max_months: '', price: '', requires_medical_disclosure: true });
+    setEditingId(null);
+    setForm(emptyForm);
     load();
   }
 
@@ -249,6 +369,7 @@ export default function ActivitiesPage() {
   }
 
   const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-200';
 
   return (
     <div className="relative">
@@ -264,14 +385,14 @@ export default function ActivitiesPage() {
         {/* Action Buttons */}
         <div className="flex justify-center gap-4 mb-6">
           <button
-            onClick={() => canManage && setShowDrawer(true)}
+            onClick={() => canManage && openCreate()}
             disabled={!canManage}
             className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#E91E63] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
           >
             <CalendarPlus className="w-4 h-4" />
             New Activity
           </button>
-          <button onClick={() => canManage && setShowDrawer(true)} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
+          <button onClick={goToPackages} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
             <Package className="w-4 h-4" />
             New Package
           </button>
@@ -304,7 +425,7 @@ export default function ActivitiesPage() {
               {tabs.map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => onTab(tab)}
                   className={cn(
                     'text-sm font-medium pb-2 border-b-2 transition-colors',
                     activeTab === tab ? 'text-[#E91E63] border-[#E91E63]' : 'text-gray-500 border-transparent hover:text-gray-700'
@@ -332,12 +453,41 @@ export default function ActivitiesPage() {
             </div>
           </div>
 
+          {/* Filter bar */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
+              <option value="">All Status</option>
+              {['Live', 'Draft', 'Archived'].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={filterCls}>
+              <option value="">All Locations</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={filterCls}>
+              <option value="">All Age Groups</option>
+              <option value="0-18">0 – 18 months</option>
+              <option value="18-36">18m – 3 years</option>
+              <option value="36-60">3 – 5 years</option>
+              <option value="60-216">5+ years</option>
+            </select>
+            <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className={filterCls}>
+              <option value="">All Categories</option>
+              {categories.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'ml-auto')}>
+              <option value="updated">Sort by: Recently updated</option>
+              <option value="name">Sort by: Name</option>
+              <option value="rating">Sort by: Rating</option>
+            </select>
+          </div>
+
           {/* Table Header */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_0.8fr_1fr_0.8fr_1fr_0.5fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="grid grid-cols-[2fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
             <div>Activity</div>
             <div>Category</div>
             <div>Age Group</div>
-            <div>Schedule</div>
+            <div>Sessions</div>
+            <div>Bookings</div>
             <div>Rating</div>
             <div>Status</div>
             <div>Updated</div>
@@ -354,10 +504,10 @@ export default function ActivitiesPage() {
             return (
               <div
                 key={a.id}
-                className="grid grid-cols-[2fr_1fr_1fr_0.8fr_1fr_0.8fr_1fr_0.5fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
+                className="grid grid-cols-[2fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <img src={a.image_urls?.[0] || '/assets/activity-music.jpg'} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
+                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
                   <div>
                     <div className="font-medium text-gray-900 text-sm">{a.title}</div>
                     <div className="text-xs text-gray-500">{a.vendor_category ?? ''}</div>
@@ -366,6 +516,7 @@ export default function ActivitiesPage() {
                 <div className="text-sm text-gray-700">{categoryName(a.category_id)}</div>
                 <div className="text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
                 <div className="text-sm text-gray-700">{sessionCounts[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Upcoming</span></div>
+                <div className="text-sm text-gray-700">{bookingTotals[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Total</span></div>
                 <div>
                   {a.rating_count > 0 ? (
                     <div className="flex items-center gap-1">
@@ -393,6 +544,10 @@ export default function ActivitiesPage() {
                   </button>
                   {showMenu === a.id && canManage && (
                     <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
+                      <button onClick={() => openEdit(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
                       <button onClick={() => openSchedule(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <Clock className="w-3.5 h-3.5" />
                         Manage schedule
@@ -402,7 +557,7 @@ export default function ActivitiesPage() {
                         {a.is_published ? 'Unpublish' : 'Publish'}
                       </button>
                       <button onClick={() => archive(a.id)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                         Archive
                       </button>
                     </div>
@@ -418,7 +573,7 @@ export default function ActivitiesPage() {
         </div>
 
         {/* Class Packs */}
-        <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+        <div id="class-packs" className={cn('mt-6 bg-white rounded-xl border p-5 transition-colors', activeTab === 'Packages' ? 'border-purple-300 ring-2 ring-purple-100' : 'border-gray-200')}>
           <h2 className="font-semibold text-gray-900">Class packs</h2>
           <p className="text-sm text-gray-500 mt-0.5">Multi-session packs parents can buy; each booking uses one credit.</p>
           <p className="text-xs text-gray-500 mt-1.5">
@@ -467,7 +622,7 @@ export default function ActivitiesPage() {
       {showDrawer && (
         <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">Create Activity</h3>
+            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit Activity' : 'Create Activity'}</h3>
             <button onClick={() => setShowDrawer(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-600" />
             </button>
@@ -488,7 +643,8 @@ export default function ActivitiesPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Description</label>
-              <textarea placeholder="Describe this activity..." rows={3} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <textarea placeholder="Describe this activity..." rows={3} maxLength={500} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <div className="text-right text-xs text-gray-400 mt-1">{form.description.length}/500</div>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Age range (months)</label>
@@ -499,8 +655,49 @@ export default function ActivitiesPage() {
               </div>
             </div>
             <div>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Location</label>
+              <select className={inputCls} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+                <option value="">Select a location</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+              {locations.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#E91E63] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
+              )}
+            </div>
+            <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
               <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity Image</label>
+              <label className={cn(
+                'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 px-4 py-6 cursor-pointer hover:border-pink-300 transition-colors',
+                uploading && 'opacity-60 pointer-events-none'
+              )}>
+                {form.image_url ? (
+                  <img src={form.image_url} alt="Activity" className="h-24 w-full rounded-lg object-cover" />
+                ) : (
+                  <>
+                    <ImageUp className="w-6 h-6 text-[#E91E63]" />
+                    <span className="text-sm font-medium text-[#E91E63]">{uploading ? 'Uploading…' : 'Upload image'}</span>
+                    <span className="text-xs text-gray-500">PNG, JPG up to 5MB</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    if (f.size > 5 * 1024 * 1024) { setFormError('Image must be under 5MB.'); return; }
+                    uploadImage(f);
+                  }}
+                />
+              </label>
+              {form.image_url && (
+                <button onClick={() => setForm({ ...form, image_url: '' })} className="mt-1.5 text-xs text-gray-500 hover:text-red-600">Remove image</button>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <div>

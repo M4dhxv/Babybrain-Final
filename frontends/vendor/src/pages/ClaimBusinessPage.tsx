@@ -25,21 +25,21 @@ const venues = [
     name: 'MelodyHaus – Novena',
     address: '12 Thomson Road, Singapore 307606',
     tag: 'Music Classes',
-    image: '/assets/venue-music.jpg',
+    image: `${import.meta.env.BASE_URL}assets/venue-music.jpg`,
   },
   {
     id: 2,
     name: 'MelodyHaus – Katong',
     address: '88 East Coast Road, Singapore 428788',
     tag: 'Music Classes',
-    image: '/assets/venue-music.jpg',
+    image: `${import.meta.env.BASE_URL}assets/venue-play.jpg`,
   },
   {
     id: 3,
     name: 'MelodyHaus – Bukit Timah',
     address: '1 Jalan Anak Bukit, Singapore 588996',
     tag: 'Music Classes',
-    image: '/assets/venue-music.jpg',
+    image: `${import.meta.env.BASE_URL}assets/venue-play.jpg`,
   },
 ];
 
