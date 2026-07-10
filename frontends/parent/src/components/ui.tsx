@@ -388,6 +388,15 @@ export function SectionTitle({
   );
 }
 
+/** The provider line is only worth showing when it adds information — i.e.
+ *  when it differs from the activity title (many single-class providers name
+ *  the activity after themselves, e.g. "Vroomtown" / "Vroomtown"). */
+function providerLabel(activity: Activity): string | null {
+  const name = activity.providerName?.trim();
+  if (!name) return null;
+  return name.toLowerCase() === activity.title.trim().toLowerCase() ? null : name;
+}
+
 export function ActivityCard({
   activity,
   compact = false,
@@ -418,9 +427,9 @@ export function ActivityCard({
         <h3 className="mb-0.5 text-[15px] font-black leading-tight text-baby-ink">
           {activity.title}
         </h3>
-        {activity.providerName && (
+        {providerLabel(activity) && (
           <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
-            <Icon name="store" className="h-3.5 w-3.5" /> {activity.providerName}
+            <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
@@ -477,9 +486,9 @@ export function ActivityRow({ activity }: { activity: Activity }) {
       <div className="relative p-4">
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
         <h3 className="mb-0.5 text-[16px] font-black">{activity.title}</h3>
-        {activity.providerName && (
+        {providerLabel(activity) && (
           <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
-            <Icon name="store" className="h-3.5 w-3.5" /> {activity.providerName}
+            <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
