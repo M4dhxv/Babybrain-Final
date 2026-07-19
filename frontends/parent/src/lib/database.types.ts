@@ -178,6 +178,11 @@ export type Database = {
           archived_at: string | null;
           boosted_until: string | null;
           external_booking_url: string | null;
+          bookings_paused: boolean;
+          allow_cancellation: boolean;
+          allow_rescheduling: boolean;
+          cancellation_cutoff_hours: number;
+          reschedule_cutoff_hours: number;
           created_at: string;
           updated_at: string;
         };
@@ -600,9 +605,9 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string };
-        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean };
+        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
+        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
         Relationships: [];
       };
       package_purchases: {
@@ -716,6 +721,14 @@ export type Database = {
       };
       redeem_package_credit: {
         Args: { p_purchase_id: string; p_session_id: string };
+        Returns: string;
+      };
+      cancel_booking: {
+        Args: { p_booking_id: string };
+        Returns: undefined;
+      };
+      reschedule_booking: {
+        Args: { p_booking_id: string; p_new_session_id: string };
         Returns: string;
       };
       provider_overview: {

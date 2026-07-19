@@ -22,6 +22,8 @@ type RosterRow = {
   booking_id: string; status: string; payment_status: string; child_name: string;
   child_age_months: number | null; has_medical: boolean; waitlist_position: number | null;
   attendance_status: 'present' | 'absent' | 'late' | null;
+  child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
+  is_manual: boolean;
 };
 
 export default function BookingsPage() {
@@ -32,6 +34,7 @@ export default function BookingsPage() {
 
   const [activeTab, setActiveTab] = useState('Bookings');
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
+  const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
   const [sessionId, setSessionId] = useState<string>('');
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [selected, setSelected] = useState(0);
@@ -39,6 +42,48 @@ export default function BookingsPage() {
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+
+  // 2.1: manual booking entry (bookings taken outside BabyBrain)
+  const [showManual, setShowManual] = useState(false);
+  const [manualForm, setManualForm] = useState({ name: '', contact: '', paid: false });
+  const [savingManual, setSavingManual] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+
+  async function addManualBooking() {
+    if (!sessionId || !manualForm.name.trim()) { setManualError('A name is required.'); return; }
+    setSavingManual(true);
+    setManualError(null);
+    const { error } = await supabase.from('bookings').insert({
+      session_id: sessionId,
+      guest_name: manualForm.name.trim(),
+      guest_contact: manualForm.contact.trim() || null,
+      payment_status: manualForm.paid ? 'paid' : 'none',
+    });
+    setSavingManual(false);
+    if (error) { setManualError(error.message); return; }
+    setManualForm({ name: '', contact: '', paid: false });
+    setShowManual(false);
+    loadRoster(sessionId);
+  }
+
+  // 2.4: per-child skill level for this activity, set from the roster.
+  const [savingSkill, setSavingSkill] = useState(false);
+  async function setSkillLevel(row: RosterRow, level: string) {
+    if (!row.child_id || !currentSession) return;
+    const activityId = sessionActivity[currentSession.id];
+    if (!activityId) return;
+    setSavingSkill(true);
+    if (level) {
+      await supabase.from('child_skill_levels').upsert(
+        { child_id: row.child_id, activity_id: activityId, level: level as 'beginner' | 'intermediate' | 'advanced', set_by: session?.user.id ?? null },
+        { onConflict: 'child_id,activity_id' }
+      );
+    } else {
+      await supabase.from('child_skill_levels').delete().eq('child_id', row.child_id).eq('activity_id', activityId);
+    }
+    setSavingSkill(false);
+    loadRoster(sessionId);
+  }
 
   // Load this provider's upcoming sessions (RLS-scoped via activities join).
   useEffect(() => {
@@ -52,6 +97,7 @@ export default function BookingsPage() {
         .from('activity_sessions').select('id, starts_at, capacity, activity_id')
         .in('activity_id', ids).order('starts_at', { ascending: false }).limit(50);
       const opts = (sess ?? []).map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
+      setSessionActivity(Object.fromEntries((sess ?? []).map((s) => [s.id, s.activity_id])));
       setSessions(opts);
       setSessionId((cur) => cur || opts[0]?.id || '');
       setLoading(false);
@@ -136,7 +182,7 @@ export default function BookingsPage() {
 
       <div className="px-8 pb-8">
         {/* Session Selector (real sessions) */}
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
             <Baby className="w-4 h-4 text-[#E91E63]" />
             <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="bg-transparent font-medium focus:outline-none">
@@ -146,7 +192,42 @@ export default function BookingsPage() {
               ))}
             </select>
           </div>
+          {canManage && sessionId && (
+            <button
+              onClick={() => { setShowManual((v) => !v); setManualError(null); }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 text-[#E91E63] rounded-xl text-sm font-medium hover:bg-pink-100"
+            >
+              <UserPlus className="w-4 h-4" /> Add booking
+            </button>
+          )}
         </div>
+
+        {/* 2.1: record a booking taken outside BabyBrain */}
+        {showManual && (
+          <div className="mb-6 max-w-2xl rounded-xl border border-gray-200 bg-white p-4">
+            <div className="text-sm font-semibold text-gray-900 mb-1">Add a booking taken outside BabyBrain</div>
+            <p className="text-xs text-gray-500 mb-3">Recorded against the selected session so your roster and attendance stay complete.</p>
+            {manualError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{manualError}</div>}
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Child / guest name <span className="text-[#E91E63]">*</span></label>
+                <input value={manualForm.name} onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })} placeholder="e.g. Mia Tan" className="h-9 w-48 rounded-lg border border-gray-300 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contact (optional)</label>
+                <input value={manualForm.contact} onChange={(e) => setManualForm({ ...manualForm, contact: e.target.value })} placeholder="Phone or email" className="h-9 w-52 rounded-lg border border-gray-300 px-3 text-sm" />
+              </div>
+              <label className="flex h-9 items-center gap-2 text-sm text-gray-700">
+                <Checkbox checked={manualForm.paid} onCheckedChange={(v) => setManualForm({ ...manualForm, paid: Boolean(v) })} className="data-[state=checked]:bg-[#E91E63]" />
+                Paid outside BabyBrain
+              </label>
+              <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
+                {savingManual ? 'Adding…' : 'Add booking'}
+              </button>
+              <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-6 border-b border-gray-200 mb-6">
@@ -183,7 +264,11 @@ export default function BookingsPage() {
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-gray-900 text-sm">{b.child_name}</span>
                     <div className="text-xs text-gray-500">{ageLabel(b.child_age_months)}</div>
-                    {b.has_medical && <span className="inline-block mt-1 px-1.5 py-0.5 text-xs rounded bg-purple-100 text-purple-700">Medical Disclosure</span>}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-100 text-purple-700">Medical Disclosure</span>}
+                      {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700">Manual</span>}
+                      {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-teal-100 text-teal-700 capitalize">{b.skill_level}</span>}
+                    </div>
                   </div>
                   <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', b.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600')}>
                     {b.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
@@ -228,6 +313,22 @@ export default function BookingsPage() {
                         <span className="text-sm text-gray-700 capitalize">{sel.attendance_status ?? 'Not marked'}</span>
                       </div>
                     </div>
+                    {sel.child_id && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Skill level (this class)</div>
+                        <select
+                          value={sel.skill_level ?? ''}
+                          disabled={!canManage || savingSkill}
+                          onChange={(e) => setSkillLevel(sel, e.target.value)}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-pink-200 disabled:opacity-60"
+                        >
+                          <option value="">Not set</option>
+                          {['beginner', 'intermediate', 'advanced'].map((l) => (
+                            <option key={l} value={l}>{l[0].toUpperCase() + l.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <button className="flex items-center gap-2 mt-6 text-sm text-[#E91E63] font-medium hover:underline" title="Live chat ships in Phase 2">
                     <MessageSquare className="w-4 h-4" /> Message parent

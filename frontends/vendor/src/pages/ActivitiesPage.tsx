@@ -15,6 +15,8 @@ import {
   Trash2,
   Clock,
   ImageUp,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -31,6 +33,14 @@ const ageLabel = (min: number, max: number) => {
 };
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const emptyForm = {
+  title: '', category_id: '', vendor_category: '' as VendorCategory | '',
+  description: '', age_min_months: '', age_max_months: '', price: '',
+  location_id: '', image_url: '', requires_medical_disclosure: true,
+  allow_cancellation: true, allow_rescheduling: true,
+  cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
+};
 
 export default function ActivitiesPage() {
   const { provider, role } = useAuth();
@@ -74,12 +84,7 @@ export default function ActivitiesPage() {
 
   // Create/Edit-activity form (editingId set = editing an existing activity)
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    title: '', category_id: '', vendor_category: '' as VendorCategory | '',
-    description: '', age_min_months: '', age_max_months: '', price: '',
-    location_id: '', image_url: '',
-    requires_medical_disclosure: true,
-  });
+  const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -166,9 +171,16 @@ export default function ActivitiesPage() {
   }
 
   // Class packs (multi-session packages sold to parents)
-  type Pack = { id: string; name: string; credits: number; price_cents: number; active: boolean };
+  type Pack = {
+    id: string; name: string; credits: number; price_cents: number; active: boolean;
+    activity_id: string | null; validity_days: number | null;
+    allowed_weekday: number | null; allowed_start_time: string | null;
+  };
   const [packs, setPacks] = useState<Pack[]>([]);
-  const [packForm, setPackForm] = useState({ name: '', credits: '', price: '' });
+  const [packForm, setPackForm] = useState({
+    name: '', credits: '', price: '', validity_days: '',
+    activity_id: '', allowed_weekday: '', allowed_start_time: '',
+  });
   const [savingPack, setSavingPack] = useState(false);
 
   async function createPack() {
@@ -182,11 +194,30 @@ export default function ActivitiesPage() {
       name: packForm.name.trim(),
       credits,
       price_cents: Math.round((price || 0) * 100),
+      // 1.2: optional expiry window + restriction to one class / weekly slot
+      validity_days: packForm.validity_days ? Number(packForm.validity_days) : null,
+      activity_id: packForm.activity_id || null,
+      allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
+      allowed_start_time: packForm.allowed_start_time || null,
     });
-    setPackForm({ name: '', credits: '', price: '' });
+    setPackForm({ name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' });
     setSavingPack(false);
     load();
   }
+
+  const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const packRestriction = (p: Pack) => {
+    const parts: string[] = [];
+    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One class');
+    if (p.allowed_weekday != null) {
+      const t = p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : '';
+      parts.push(`${WEEKDAY_NAMES[p.allowed_weekday]}${t} only`);
+    } else if (p.allowed_start_time) {
+      parts.push(`${p.allowed_start_time.slice(0, 5)} slot only`);
+    }
+    if (p.validity_days) parts.push(`expires ${p.validity_days}d after purchase`);
+    return parts.join(' · ');
+  };
   async function togglePack(p: Pack) {
     await supabase.from('packages').update({ active: !p.active }).eq('id', p.id);
     load();
@@ -199,7 +230,7 @@ export default function ActivitiesPage() {
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
       supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
-      supabase.from('packages').select('id, name, credits, price_cents, active').eq('provider_id', provider.id).order('created_at', { ascending: false }),
+      supabase.from('packages').select('id, name, credits, price_cents, active, activity_id, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
@@ -285,12 +316,6 @@ export default function ActivitiesPage() {
     load();
   }
 
-  const emptyForm = {
-    title: '', category_id: '', vendor_category: '' as VendorCategory | '',
-    description: '', age_min_months: '', age_max_months: '', price: '',
-    location_id: '', image_url: '', requires_medical_disclosure: true,
-  };
-
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
@@ -312,9 +337,20 @@ export default function ActivitiesPage() {
       location_id: a.location_id ?? '',
       image_url: a.image_urls?.[0] ?? '',
       requires_medical_disclosure: a.requires_medical_disclosure ?? true,
+      allow_cancellation: a.allow_cancellation ?? true,
+      allow_rescheduling: a.allow_rescheduling ?? true,
+      cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
+      reschedule_cutoff_hours: String(a.reschedule_cutoff_hours ?? 24),
     });
     setFormError(null);
     setShowDrawer(true);
+  }
+
+  // 1.1: pause/resume parent bookings for one activity.
+  async function togglePause(a: Activity) {
+    await supabase.from('activities').update({ bookings_paused: !a.bookings_paused }).eq('id', a.id);
+    setShowMenu(null);
+    load();
   }
 
   async function uploadImage(file: File) {
@@ -345,6 +381,10 @@ export default function ActivitiesPage() {
       location_id: form.location_id || null,
       image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
+      allow_cancellation: form.allow_cancellation,
+      allow_rescheduling: form.allow_rescheduling,
+      cancellation_cutoff_hours: Math.max(0, Number(form.cancellation_cutoff_hours) || 24),
+      reschedule_cutoff_hours: Math.max(0, Number(form.reschedule_cutoff_hours) || 24),
     };
     const { error } = editingId
       ? await supabase.from('activities').update(fields).eq('id', editingId)
@@ -528,7 +568,7 @@ export default function ActivitiesPage() {
                     <span className="text-sm text-gray-400">—</span>
                   )}
                 </div>
-                <div>
+                <div className="flex flex-col items-start gap-1">
                   <span className={cn(
                     'inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full',
                     status === 'Live' ? 'bg-green-100 text-green-700' : status === 'Draft' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
@@ -536,6 +576,11 @@ export default function ActivitiesPage() {
                     <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : 'bg-gray-400')} />
                     {status}
                   </span>
+                  {a.bookings_paused && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-700">
+                      <Pause className="w-3 h-3" /> Paused
+                    </span>
+                  )}
                 </div>
                 <div className="text-sm text-gray-500">{fmtDate(a.updated_at)}</div>
                 <div className="relative">
@@ -555,6 +600,10 @@ export default function ActivitiesPage() {
                       <button onClick={() => togglePublish(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <CalendarCheck className="w-3.5 h-3.5" />
                         {a.is_published ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button onClick={() => togglePause(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                        {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
                       </button>
                       <button onClick={() => archive(a.id)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -583,12 +632,15 @@ export default function ActivitiesPage() {
             <div className="mt-4 space-y-2">
               {packs.map((p) => (
                 <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-                  <div>
+                  <div className="min-w-0">
                     <span className="font-medium text-gray-900">{p.name}</span>
                     <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
+                    {packRestriction(p) && (
+                      <div className="mt-0.5 text-xs text-purple-700">{packRestriction(p)}</div>
+                    )}
                   </div>
                   {canManage && (
-                    <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
+                    <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
                       {p.active ? 'Active' : 'Inactive'}
                     </button>
                   )}
@@ -597,23 +649,49 @@ export default function ActivitiesPage() {
             </div>
           )}
           {canManage && (
-            <div className="mt-4 flex flex-wrap items-end gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
-                <input value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
+            <>
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
+                  <input value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
+                  <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
+                  <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
+                  <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                </div>
+                <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
+                  {savingPack ? 'Adding…' : 'Add pack'}
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
-                <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to class (optional)</label>
+                  <select value={packForm.activity_id} onChange={(e) => setPackForm({ ...packForm, activity_id: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                    <option value="">Any of my classes</option>
+                    {activities.filter((a) => !a.archived_at).map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to weekly slot (optional)</label>
+                  <div className="flex gap-2">
+                    <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                      <option value="">Any day</option>
+                      {WEEKDAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                    <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 rounded-lg border border-gray-300 px-3 text-sm" title="Session start time (SGT); leave blank for any time" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
-                <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
-              </div>
-              <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
-                {savingPack ? 'Adding…' : 'Add pack'}
-              </button>
-            </div>
+              <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-class pack limited to the Monday 4:00 pm class.</p>
+            </>
           )}
         </div>
       </div>
@@ -705,6 +783,37 @@ export default function ActivitiesPage() {
                 <div className="text-xs text-gray-500">Parents must complete disclosures and consents before booking</div>
               </div>
               <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#E91E63]" />
+            </div>
+
+            {/* 2.2: cancellation & rescheduling policy for this class */}
+            <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+              <div className="text-sm font-semibold text-gray-900">Booking policies</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
+                  <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
+                </div>
+                <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#E91E63]" />
+              </div>
+              {form.allow_cancellation && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
+                  <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Allow rescheduling</div>
+                  <div className="text-xs text-gray-500">Parents can move their booking to another session</div>
+                </div>
+                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} className="data-[state=checked]:bg-[#E91E63]" />
+              </div>
+              {form.allow_rescheduling && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Rescheduling cut-off (hours before session)</label>
+                  <input type="number" min="0" className={inputCls} value={form.reschedule_cutoff_hours} onChange={(e) => setForm({ ...form, reschedule_cutoff_hours: e.target.value })} />
+                </div>
+              )}
             </div>
           </div>
 

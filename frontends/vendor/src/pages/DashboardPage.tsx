@@ -40,7 +40,7 @@ const sgWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null };
-type RecentBooking = { id: string; activity: string; time: string; status: string };
+type RecentBooking = { id: string; child: string; activity: string; time: string; status: string };
 
 const messages = [
   { initials: 'SJ', name: 'S. J.', message: 'Hi! Is there a makeup class available this week?', time: '9:41 AM', count: 2, color: 'bg-pink-100 text-pink-600' },
@@ -87,6 +87,7 @@ export default function DashboardPage() {
   const [next7Count, setNext7Count] = useState<number | null>(null);
   const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
   const [byDay, setByDay] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [bookings30, setBookings30] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -136,8 +137,21 @@ export default function DashboardPage() {
         booked: counts[s.id] ?? 0, capacity: s.capacity,
       })));
 
-      // All non-cancelled bookings feed Recent Bookings, the by-day chart and
-      // the attendance-rate KPI in one fetch.
+      // 1.3: recent bookings with the booked child's name (security-definer RPC).
+      supabase
+        .rpc('provider_recent_bookings', { p_provider: provider.id, p_limit: 4 })
+        .then(({ data }) => {
+          setRecent((data ?? []).map((r) => ({
+            id: r.booking_id,
+            child: r.child_name,
+            activity: r.activity_title,
+            time: sgWhen(r.starts_at),
+            status: r.status,
+          })));
+        });
+
+      // All non-cancelled bookings feed the by-day chart, the conversion
+      // insight and the attendance-rate KPI in one fetch.
       const { data: allBks } = await supabase
         .from('bookings')
         .select('id, status, created_at, session_id')
@@ -151,15 +165,10 @@ export default function DashboardPage() {
         const { data: rs } = await supabase.from('activity_sessions').select('id, activity_id, starts_at').in('id', rIds);
         (rs ?? []).forEach((s) => sessInfo.set(s.id, { activity_id: s.activity_id, starts_at: s.starts_at }));
       }
-      setRecent(bks.slice(0, 4).map((b) => {
-        const info = sessInfo.get(b.session_id);
-        return {
-          id: b.id,
-          activity: info ? (titleOf.get(info.activity_id) ?? 'Activity') : 'Activity',
-          time: info ? sgWhen(info.starts_at) : '',
-          status: b.status,
-        };
-      }));
+
+      // 2.3: bookings made in the last 30 days, for the conversion insight.
+      const cutoff30 = Date.now() - 30 * 864e5;
+      setBookings30(bks.filter((b) => new Date(b.created_at).getTime() > cutoff30).length);
 
       // Bookings by weekday (Mon..Sun) of the session they're for.
       const dayCounts = [0, 0, 0, 0, 0, 0, 0];
@@ -328,12 +337,12 @@ export default function DashboardPage() {
             <div className="space-y-4">
               {recent.map((booking, idx) => (
                 <div key={booking.id} className="flex items-center gap-3">
-                  <div className={cn('w-10 h-10 rounded-full flex items-center justify-center', sessionColors[idx % sessionColors.length])}>
-                    <Baby className="w-5 h-5" />
+                  <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold', sessionColors[idx % sessionColors.length])}>
+                    {booking.child.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{booking.activity}</div>
-                    <div className="text-xs text-gray-500">{booking.time}</div>
+                    <div className="text-sm font-medium text-gray-900 truncate">{booking.child}</div>
+                    <div className="text-xs text-gray-500 truncate">{booking.activity}{booking.time ? ` · ${booking.time}` : ''}</div>
                   </div>
                   <div className="text-right">
                     <span className={cn(
@@ -357,6 +366,25 @@ export default function DashboardPage() {
           {/* Insights */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-900 mb-4">Insights</h3>
+            {/* 2.3: conversion — listing views vs bookings, last 30 days */}
+            <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-3">
+              <div>
+                <div className="text-lg font-bold text-gray-900">{overview ? overview.profile_views_30d : '—'}</div>
+                <div className="text-[11px] text-gray-500">Listing views (30d)</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-gray-900">{bookings30 ?? '—'}</div>
+                <div className="text-[11px] text-gray-500">Bookings (30d)</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-purple-600">
+                  {overview && bookings30 != null && overview.profile_views_30d > 0
+                    ? `${Math.round((bookings30 / overview.profile_views_30d) * 100)}%`
+                    : '—'}
+                </div>
+                <div className="text-[11px] text-gray-500">Conversion</div>
+              </div>
+            </div>
             <div className="mb-4">
               <button
                 onClick={() => setShowAgeDetail((s) => !s)}

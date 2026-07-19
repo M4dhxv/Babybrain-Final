@@ -10,8 +10,15 @@ import {
   type JourneyStats,
 } from "./database.types";
 
+export interface ProviderContact {
+  whatsapp: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  business_name: string | null;
+}
+
 export interface ActivityDetail {
-  activity: (ActivityRow & { category_name: string | null }) | null;
+  activity: (ActivityRow & { category_name: string | null; provider_contact: ProviderContact | null }) | null;
   sessions: ActivitySession[];
   reviews: Review[];
   loading: boolean;
@@ -34,12 +41,22 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     (async () => {
       const { data: act } = await supabase
         .from("activities")
-        .select("*, activity_categories(name)")
+        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name)")
         .eq("slug", slug)
         .maybeSingle();
       if (!act) {
         if (!cancelled) setState({ activity: null, sessions: [], reviews: [], loading: false });
         return;
+      }
+
+      // 2.3: count this view towards the vendor's conversion insights.
+      if (act.provider_id) {
+        supabase.auth.getUser().then(({ data: u }) =>
+          supabase
+            .from("listing_events")
+            .insert({ provider_id: act.provider_id, activity_id: act.id, type: "listing_view", viewer_id: u.user?.id ?? null })
+            .then(() => undefined)
+        );
       }
       const [{ data: sessions }, { data: reviews }] = await Promise.all([
         supabase
@@ -62,6 +79,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
             ...act,
             category_name:
               (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
+            provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
           },
           sessions: sessions ?? [],
           reviews: reviews ?? [],

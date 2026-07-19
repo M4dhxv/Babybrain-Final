@@ -706,6 +706,29 @@ function ActivityDetailPage() {
                 <Icon name="mail" className="h-4 w-4" /> Enquire Now
               </Button>
             )}
+            {/* 1.4: direct click-through contact — WhatsApp and email */}
+            {(activity.provider_contact?.whatsapp || activity.provider_contact?.contact_phone || activity.provider_contact?.contact_email) && (
+              <div className="mt-3 flex gap-2">
+                {(activity.provider_contact.whatsapp || activity.provider_contact.contact_phone) && (
+                  <a
+                    href={`https://wa.me/${phoneDigits(activity.provider_contact.whatsapp ?? activity.provider_contact.contact_phone ?? "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#3fc36a] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#1f9d4d] transition hover:bg-[#f2fcf5]"
+                  >
+                    <Icon name="whatsapp" className="h-4 w-4" /> WhatsApp
+                  </a>
+                )}
+                {activity.provider_contact.contact_email && (
+                  <a
+                    href={`mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#4194ff] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#1975ff] transition hover:bg-[#f4f9ff]"
+                  >
+                    <Icon name="mail" className="h-4 w-4" /> Email
+                  </a>
+                )}
+              </div>
+            )}
             <Button
               variant="outline"
               className="mt-3 w-full"
@@ -872,11 +895,17 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-type BookingItem = { id: string; status: string; when: string; title: string; slug: string; image: string; startsAt: string | null; endsAt: string | null; venue: string };
+type BookingItem = {
+  id: string; status: string; when: string; title: string; slug: string; image: string;
+  startsAt: string | null; endsAt: string | null; venue: string;
+  activityId: string | null;
+  allowCancel: boolean; allowReschedule: boolean;
+  cancelCutoffH: number; resCutoffH: number;
+};
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
-type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string };
+type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null };
 
 const PROFILE_TABS: [string, string, string][] = [
   ["overview", "Overview", "home"],
@@ -927,6 +956,51 @@ function ProfilePage() {
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
 
+  function loadBookings() {
+    supabase
+      .from("bookings")
+      .select("id, status, created_at, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          status: string;
+          activity_sessions: {
+            starts_at: string;
+            ends_at: string | null;
+            activity_id: string;
+            activities: {
+              title: string; slug: string; image_urls: string[]; address: string | null;
+              allow_cancellation: boolean; allow_rescheduling: boolean;
+              cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
+            } | null;
+          } | null;
+        }>;
+        setBookings(
+          rows.map((r) => {
+            const s = r.activity_sessions;
+            const act = s?.activities;
+            return {
+              id: r.id,
+              status: r.status,
+              when: s?.starts_at ? sgDateTime(s.starts_at) : "",
+              title: act?.title ?? "Class",
+              slug: act?.slug ?? "",
+              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`,
+              startsAt: s?.starts_at ?? null,
+              endsAt: s?.ends_at ?? null,
+              venue: act?.address ?? "",
+              activityId: s?.activity_id ?? null,
+              allowCancel: act?.allow_cancellation ?? true,
+              allowReschedule: act?.allow_rescheduling ?? true,
+              cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
+              resCutoffH: act?.reschedule_cutoff_hours ?? 24,
+            };
+          })
+        );
+      });
+  }
+
   async function manageBilling() {
     setBillingBusy(true);
     try {
@@ -957,38 +1031,7 @@ function ProfilePage() {
         );
       });
 
-    supabase
-      .from("bookings")
-      .select("id, status, created_at, activity_sessions(starts_at, ends_at, activities(title, slug, image_urls, address))")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          status: string;
-          activity_sessions: {
-            starts_at: string;
-            ends_at: string | null;
-            activities: { title: string; slug: string; image_urls: string[]; address: string | null } | null;
-          } | null;
-        }>;
-        setBookings(
-          rows.map((r) => {
-            const s = r.activity_sessions;
-            const act = s?.activities;
-            return {
-              id: r.id,
-              status: r.status,
-              when: s?.starts_at ? sgDateTime(s.starts_at) : "",
-              title: act?.title ?? "Class",
-              slug: act?.slug ?? "",
-              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`,
-              startsAt: s?.starts_at ?? null,
-              endsAt: s?.ends_at ?? null,
-              venue: act?.address ?? "",
-            };
-          })
-        );
-      });
+    loadBookings();
 
     supabase
       .from("reviews")
@@ -1020,7 +1063,7 @@ function ProfilePage() {
 
     supabase
       .from("package_purchases")
-      .select("id, credits_total, credits_remaining, status, packages(name), providers(business_name)")
+      .select("id, credits_total, credits_remaining, status, expires_at, packages(name), providers(business_name)")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
@@ -1028,6 +1071,7 @@ function ProfilePage() {
           credits_total: number;
           credits_remaining: number;
           status: string;
+          expires_at: string | null;
           packages: { name: string } | null;
           providers: { business_name: string } | null;
         }>;
@@ -1038,7 +1082,8 @@ function ProfilePage() {
             provider: r.providers?.business_name ?? "A provider",
             total: r.credits_total,
             remaining: r.credits_remaining,
-            status: r.status,
+            status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
+            expiresAt: r.expires_at,
           }))
         );
       });
@@ -1265,7 +1310,7 @@ function ProfilePage() {
           {tab === "bookings" && (
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
-              <BookingList items={bookings} emptyCopy="You haven't booked any classes yet." />
+              <BookingList items={bookings} emptyCopy="You haven't booked any classes yet." onChanged={loadBookings} />
             </div>
           )}
 
@@ -1285,15 +1330,26 @@ function ProfilePage() {
               ) : (
                 <div className="mt-4 space-y-3">
                   {packages.map((p) => (
-                    <div key={p.id} className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                    <div key={p.id} className={`flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""}`}>
                       <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#eef5ff] text-baby-blue"><Icon name="store" className="h-6 w-6" /></span>
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
+                        {p.expiresAt && (
+                          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#9aa4c2]"}`}>
+                            {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-black text-baby-blue">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
-                        <p className="text-xs font-bold text-[#9aa4c2]">credits left</p>
+                        {p.status === "expired" ? (
+                          <span className="rounded-full bg-[#f1efe8] px-3 py-1 text-xs font-bold text-[#7a725c]">Expired</span>
+                        ) : (
+                          <>
+                            <p className="text-lg font-black text-baby-blue">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
+                            <p className="text-xs font-bold text-[#9aa4c2]">credits left</p>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1476,7 +1532,65 @@ function ProfilePage() {
   );
 }
 
-function BookingList({ items, emptyCopy }: { items: BookingItem[]; emptyCopy: string }) {
+function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void }) {
+  // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
+  // actions grey out and explain themselves in a pop-up.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
+  const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const hoursLabel = (h: number) => (h === 1 ? "1 hour" : `${h} hours`);
+  const upcoming = (b: BookingItem) =>
+    b.startsAt != null && new Date(b.startsAt) > new Date() && ["pending", "confirmed", "waitlisted"].includes(b.status);
+  const cutoffPassed = (b: BookingItem, hours: number) =>
+    b.startsAt != null && new Date(b.startsAt).getTime() - hours * 36e5 < Date.now();
+
+  const cancelBlockReason = (b: BookingItem) =>
+    !b.allowCancel
+      ? "The provider does not allow cancellations for this class. Contact them directly if you need help."
+      : cutoffPassed(b, b.cancelCutoffH)
+        ? `The cancellation window for this class has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
+        : null;
+  const reschedBlockReason = (b: BookingItem) =>
+    !b.allowReschedule
+      ? "The provider does not allow rescheduling for this class. Contact them directly if you need help."
+      : cutoffPassed(b, b.resCutoffH)
+        ? `The rescheduling window for this class has closed — rescheduling closes ${hoursLabel(b.resCutoffH)} before the session.`
+        : null;
+
+  async function doCancel(b: BookingItem) {
+    if (!window.confirm(`Cancel your booking for ${b.title}?`)) return;
+    setBusyId(b.id);
+    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: b.id });
+    setBusyId(null);
+    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    else onChanged?.();
+  }
+
+  async function openReschedule(b: BookingItem) {
+    if (!b.activityId) return;
+    setReschedFor(b);
+    const { data } = await supabase
+      .from("activity_sessions")
+      .select("id, starts_at")
+      .eq("activity_id", b.activityId)
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at")
+      .limit(12);
+    setReschedSessions((data ?? []).filter((s) => s.starts_at !== b.startsAt));
+  }
+
+  async function doReschedule(newSessionId: string) {
+    if (!reschedFor) return;
+    setBusyId(reschedFor.id);
+    const { error } = await supabase.rpc("reschedule_booking", { p_booking_id: reschedFor.id, p_new_session_id: newSessionId });
+    setBusyId(null);
+    setReschedFor(null);
+    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    else onChanged?.();
+  }
+
   if (items.length === 0) return <EmptyPanel icon="calendar" copy={emptyCopy} cta="Browse activities" href="/explore" />;
   // Non-cancelled classes with a scheduled time can be exported as one calendar.
   const exportable = items.filter((b) => b.startsAt && b.status !== "cancelled");
@@ -1498,34 +1612,102 @@ function BookingList({ items, emptyCopy }: { items: BookingItem[]; emptyCopy: st
           </button>
         </div>
       )}
-      {items.map((b) => (
-        <a
-          key={b.id}
-          href={b.slug ? `/activity?slug=${b.slug}` : "/explore"}
-          className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-blue"
-        >
-          <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate font-black">{b.title}</h3>
-            {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
+      {items.map((b) => {
+        const cancelWhy = cancelBlockReason(b);
+        const reschedWhy = reschedBlockReason(b);
+        return (
+          <div key={b.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-blue">
+            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
+              <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate font-black">{b.title}</h3>
+                {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
+              </div>
+              {b.startsAt && b.status !== "cancelled" && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
+                  }}
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff] sm:flex"
+                  title="Add to calendar"
+                >
+                  <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
+                </button>
+              )}
+              <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+            </a>
+            {upcoming(b) && (
+              <div className="mt-2 flex justify-end gap-2 border-t border-[#f2f4fa] pt-2">
+                <button
+                  type="button"
+                  disabled={busyId === b.id}
+                  onClick={() => (reschedWhy ? setNotice(reschedWhy) : openReschedule(b))}
+                  className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
+                    reschedWhy
+                      ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
+                      : "border border-[#dbe4f6] text-[#2b7cff] hover:bg-[#f4f9ff]"
+                  }`}
+                  title={reschedWhy ?? "Move this booking to another session"}
+                >
+                  Reschedule
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === b.id}
+                  onClick={() => (cancelWhy ? setNotice(cancelWhy) : doCancel(b))}
+                  className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
+                    cancelWhy
+                      ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
+                      : "border border-[#ffd2de] text-[#d63964] hover:bg-[#fff5f8]"
+                  }`}
+                  title={cancelWhy ?? "Cancel this booking"}
+                >
+                  {busyId === b.id ? "Working…" : "Cancel booking"}
+                </button>
+              </div>
+            )}
           </div>
-          {b.startsAt && b.status !== "cancelled" && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
-              }}
-              className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff] sm:flex"
-              title="Add to calendar"
-            >
-              <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
-            </button>
-          )}
-          <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
-        </a>
-      ))}
+        );
+      })}
+
+      {/* Explanatory pop-up for unavailable actions / errors */}
+      {notice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setNotice(null)}>
+          <div className="w-full max-w-sm rounded-[16px] bg-white p-6 text-center shadow-card" onClick={(e) => e.stopPropagation()}>
+            <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-amber-500"><Icon name="bell" className="h-6 w-6" /></span>
+            <p className="mt-4 font-semibold text-[#3f4b78]">{notice}</p>
+            <Button type="button" className="mt-5 w-full" onClick={() => setNotice(null)}>Got it</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule picker */}
+      {reschedFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setReschedFor(null)}>
+          <div className="w-full max-w-md rounded-[16px] bg-white p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black">Reschedule {reschedFor.title}</h3>
+            <p className="mt-1 text-sm font-semibold text-[#59658d]">Pick a new session — your booking moves instantly.</p>
+            <div className="mt-4 max-h-64 space-y-2 overflow-auto">
+              {reschedSessions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => doReschedule(s.id)}
+                  className="flex w-full items-center justify-between rounded-[10px] border border-[#e7ebf6] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-blue hover:bg-[#f4f9ff]"
+                >
+                  {sgDateTime(s.starts_at)}
+                  <Icon name="calendar" className="h-4 w-4 text-[#2b7cff]" />
+                </button>
+              ))}
+              {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#8a93b2]">No other upcoming sessions for this class.</p>}
+            </div>
+            <Button type="button" variant="outline" className="mt-4 w-full" onClick={() => setReschedFor(null)}>Close</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1964,23 +2146,62 @@ function BookingPage() {
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [packageCredit, setPackageCredit] = useState<{ id: string; remaining: number } | null>(null);
+  type CreditPurchase = {
+    id: string; remaining: number; expires_at: string | null;
+    activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null;
+  };
+  const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
 
   useEffect(() => {
     if (!auth || !activity?.provider_id) return;
     supabase
       .from("package_purchases")
-      .select("id, credits_remaining")
+      .select("id, credits_remaining, expires_at, packages(activity_id, allowed_weekday, allowed_start_time)")
       .eq("provider_id", activity.provider_id)
       .eq("status", "active")
       .gt("credits_remaining", 0)
       .order("created_at")
-      .limit(1)
       .then(({ data }) => {
-        const r = data?.[0];
-        setPackageCredit(r ? { id: r.id, remaining: r.credits_remaining } : null);
+        const rows = (data ?? []) as unknown as Array<{
+          id: string; credits_remaining: number; expires_at: string | null;
+          packages: { activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
+        }>;
+        setPurchases(
+          rows
+            .filter((r) => !r.expires_at || new Date(r.expires_at) > new Date())
+            .map((r) => ({
+              id: r.id,
+              remaining: r.credits_remaining,
+              expires_at: r.expires_at,
+              activity_id: r.packages?.activity_id ?? null,
+              allowed_weekday: r.packages?.allowed_weekday ?? null,
+              allowed_start_time: r.packages?.allowed_start_time ?? null,
+            }))
+        );
       });
   }, [auth, activity?.provider_id]);
+
+  // 1.2: a credit is only offered when the package's restrictions match the
+  // chosen class and session slot (e.g. "Monday 4:00 pm only").
+  function creditMatches(p: CreditPurchase, sess: ActivitySession | null) {
+    if (p.activity_id && p.activity_id !== activity?.id) return false;
+    if (!sess) return p.allowed_weekday == null && !p.allowed_start_time;
+    const sg = new Date(sess.starts_at);
+    const sgWeekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+      new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Singapore", weekday: "short" }).format(sg)
+    );
+    if (p.allowed_weekday != null && sgWeekday !== p.allowed_weekday) return false;
+    if (p.allowed_start_time) {
+      const t = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", hour: "2-digit", minute: "2-digit", hour12: false }).format(sg);
+      if (t !== p.allowed_start_time.slice(0, 5)) return false;
+    }
+    return true;
+  }
+  const packageCredit = purchases.find((p) => creditMatches(p, selectedForCredit())) ?? null;
+  const restrictedCredit = !packageCredit && purchases.length > 0 ? purchases[0] : null;
+  function selectedForCredit() {
+    return sessions.find((s) => s.id === sessionId) ?? null;
+  }
 
   // Group upcoming sessions by date so the user picks a date, then a time.
   const byDate: Record<string, ActivitySession[]> = {};
@@ -2193,9 +2414,21 @@ function BookingPage() {
               <Icon name="store" className="h-5 w-5" /> Use a package credit ({packageCredit.remaining} left)
             </Button>
           )}
-          <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
-            <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : total != null && total > 0 ? `Pay $${total.toFixed(2)}` : "Confirm Booking"}
-          </Button>
+          {restrictedCredit && !redeemToken && (
+            <p className="mb-3 rounded-[10px] bg-[#f4ecff] p-3 text-center text-xs font-bold text-[#7a5cc8]">
+              You have package credits with this provider, but they can't be used for this {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
+            </p>
+          )}
+          {activity?.bookings_paused ? (
+            /* 1.1: the vendor has paused bookings for this class */
+            <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-amber-700">
+              <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this class are temporarily paused by the provider. Please check back later or enquire with them directly.
+            </div>
+          ) : (
+            <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
+              <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : total != null && total > 0 ? `Pay $${total.toFixed(2)}` : "Confirm Booking"}
+            </Button>
+          )}
           {total != null && total > 0 && !redeemToken && (
             <p className="mt-2 text-center text-xs font-semibold text-[#8a93b2] md:col-span-2">Secure and encrypted payment via Stripe</p>
           )}

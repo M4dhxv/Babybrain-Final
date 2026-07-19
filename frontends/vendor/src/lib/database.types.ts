@@ -177,6 +177,11 @@ export type Database = {
           requires_medical_disclosure: boolean;
           archived_at: string | null;
           boosted_until: string | null;
+          bookings_paused: boolean;
+          allow_cancellation: boolean;
+          allow_rescheduling: boolean;
+          cancellation_cutoff_hours: number;
+          reschedule_cutoff_hours: number;
           created_at: string;
           updated_at: string;
         };
@@ -201,6 +206,11 @@ export type Database = {
           location_id?: string | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
+          bookings_paused?: boolean;
+          allow_cancellation?: boolean;
+          allow_rescheduling?: boolean;
+          cancellation_cutoff_hours?: number;
+          reschedule_cutoff_hours?: number;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -409,7 +419,7 @@ export type Database = {
       bookings: {
         Row: {
           id: string;
-          user_id: string;
+          user_id: string | null;
           child_id: string | null;
           session_id: string;
           provider_id: string | null;
@@ -421,15 +431,20 @@ export type Database = {
           stripe_payment_intent: string | null;
           reminded_at: string | null;
           followed_up_at: string | null;
+          guest_name: string | null;
+          guest_contact: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          user_id: string;
+          user_id?: string | null;
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
+          guest_name?: string | null;
+          guest_contact?: string | null;
+          payment_status?: PaymentStatus;
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {
@@ -585,9 +600,15 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string };
-        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean };
+        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
+        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_id?: string | null; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Relationships: [];
+      };
+      child_skill_levels: {
+        Row: { id: string; child_id: string; activity_id: string; level: 'beginner' | 'intermediate' | 'advanced'; notes: string | null; set_by: string | null; updated_at: string };
+        Insert: { child_id: string; activity_id: string; level: 'beginner' | 'intermediate' | 'advanced'; notes?: string | null; set_by?: string | null };
+        Update: { level?: 'beginner' | 'intermediate' | 'advanced'; notes?: string | null; set_by?: string | null };
         Relationships: [];
       };
       package_purchases: {
@@ -716,6 +737,20 @@ export type Database = {
           has_medical: boolean;
           waitlist_position: number | null;
           attendance_status: 'present' | 'absent' | 'late' | null;
+          child_id: string | null;
+          skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
+          is_manual: boolean;
+        }[];
+      };
+      provider_recent_bookings: {
+        Args: { p_provider: string; p_limit?: number };
+        Returns: {
+          booking_id: string;
+          child_name: string;
+          activity_title: string;
+          starts_at: string;
+          status: BookingStatus;
+          created_at: string;
         }[];
       };
       respond_to_review: {
