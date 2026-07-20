@@ -10,6 +10,16 @@ A marketplace connecting parents with children's activities and classes in Singa
 
 See [docs/backend-architecture.md](docs/backend-architecture.md) and [docs/vendor-architecture.md](docs/vendor-architecture.md) for detail.
 
+### Documentation index
+
+| Doc | Covers |
+| --- | --- |
+| [docs/backend-architecture.md](docs/backend-architecture.md) | Parent/backend data model, RLS, triggers, recommendations |
+| [docs/vendor-architecture.md](docs/vendor-architecture.md) | Vendor portal backend, roles, bookings/waitlist, attendance |
+| [docs/SETUP.md](docs/SETUP.md) · [docs/vendor-setup.md](docs/vendor-setup.md) | First-time setup, env, Stripe/Stream/Resend wiring, API contract |
+| [docs/vendor-scraping.md](docs/vendor-scraping.md) | Apify-based vendor directory refresh (with WordPress fallback) |
+| [**docs/OPERATIONS.md**](docs/OPERATIONS.md) | **Ops runbook, scheduled jobs, maintenance schedule, incident playbooks** |
+
 ## Messaging architecture
 
 Chat runs on [GetStream](https://getstream.io/). There are three flows, all gated by Supabase auth, with every client minting its token from `/api/vendor/chat/token`:

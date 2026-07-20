@@ -12,6 +12,8 @@ export type LiveActivity = Activity & {
   lat?: number;
   lng?: number;
   providerName?: string;
+  price?: number | null;
+  nextSessionAt?: string | null;
 };
 
 const sgDate = (iso: string | null) =>
@@ -97,9 +99,13 @@ export function useActivities(params: ActivityQuery = {}) {
         rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "New",
         note: r.popularity > 2 ? "Popular this week" : "",
         boosted: r.boosted ?? false,
-        lat: coordsById.get(r.id)?.lat,
-        lng: coordsById.get(r.id)?.lng,
+        // Prefer the provider's coordinates; fall back to the activity's own
+        // lat/lng from the RPC so more listings get a map pin.
+        lat: coordsById.get(r.id)?.lat ?? r.latitude ?? undefined,
+        lng: coordsById.get(r.id)?.lng ?? r.longitude ?? undefined,
         providerName: nameById.get(r.id) ?? undefined,
+        price: r.price ?? null,
+        nextSessionAt: r.next_session_at ?? null,
       }));
 
       if (!cancelled) {

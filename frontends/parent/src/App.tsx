@@ -17,7 +17,6 @@ import { useAuth } from "./auth/AuthProvider";
 import {
   useActivityDetail,
   useFavorite,
-  useFavoriteProvider,
   useRecommendations,
   useJourney,
   toCard,
@@ -91,7 +90,7 @@ function HomePage() {
           ))}
         </section>
 
-        <section className="mx-auto max-w-[1120px] px-6 py-3">
+        <section id="how-it-works" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3">
           <div className="rounded-[22px] border border-[#e8ecf6] bg-white/80 p-5 shadow-card">
             <h2 className="text-center text-[26px] font-black text-baby-lilac">
               How it works <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
@@ -136,6 +135,27 @@ function HomePage() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-[1120px] px-6 py-4">
+          <SectionTitle>Explore activities by age</SectionTitle>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {[
+              ["0 – 6 months", "6", "Newborn play & bonding"],
+              ["7 – 18 months", "18", "Curious little movers"],
+              ["19 months – 3 years", "36", "Busy toddlers"],
+              ["Over 3 years", "48", "Confident explorers"],
+            ].map(([label, months, copy]) => (
+              <a
+                key={label}
+                href={`/explore?age=${months}`}
+                className="flex min-h-[92px] flex-col justify-center rounded-[16px] border border-[#e9edf7] bg-gradient-to-br from-[#fff0f7] to-[#f0f7ff] px-4 py-3 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
+              >
+                <span className="text-[15px] font-black leading-tight text-baby-lilac">{label}</span>
+                <span className="mt-1 text-[12px] font-semibold leading-4 text-[#59658d]">{copy}</span>
+              </a>
+            ))}
           </div>
         </section>
 
@@ -464,19 +484,162 @@ const AGE_FILTERS: [string, string][] = [
   ["60", "5 years +"],
 ];
 
+// Singapore regions for the Explore location filter. Classified from a
+// listing's lat/lng by nearest region centroid (Sentosa handled explicitly
+// since it's a small southern island). Approximate but good enough to narrow a
+// browse; a listing with no coordinates simply isn't matched by this filter.
+const REGION_FILTERS: [string, string][] = [
+  ["", "All areas"],
+  ["central", "Central"],
+  ["east", "East"],
+  ["north-east", "North-East"],
+  ["north", "North"],
+  ["west", "West"],
+  ["sentosa", "Sentosa"],
+];
+const REGION_CENTROIDS: [string, number, number][] = [
+  ["central", 1.3, 103.83],
+  ["east", 1.335, 103.94],
+  ["north-east", 1.385, 103.895],
+  ["north", 1.43, 103.82],
+  ["west", 1.335, 103.72],
+];
+function classifyRegion(lat?: number, lng?: number): string | null {
+  if (lat == null || lng == null) return null;
+  if (lat < 1.262 && lng > 103.8 && lng < 103.87) return "sentosa";
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const [name, clat, clng] of REGION_CENTROIDS) {
+    const d = (lat - clat) ** 2 + (lng - clng) ** 2;
+    if (d < bestD) { bestD = d; best = name; }
+  }
+  return best;
+}
+/** Hour of day (0–23) of an ISO timestamp, in Singapore time. */
+function sgHour(iso?: string | null): number | null {
+  if (!iso) return null;
+  const h = new Date(iso).toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour: "2-digit", hour12: false });
+  const n = Number(h);
+  return Number.isFinite(n) ? n % 24 : null;
+}
+const PRICE_MAX = 200; // slider ceiling; at the ceiling the price filter is "Any".
+const timeLabel = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? "am" : "pm"}`;
+
+const LEAD_KEY = "bb_lead_captured";
+
+/** One-time email-capture modal shown when a visitor starts exploring. Skipped
+ *  for signed-in users (we already have their email) and once dismissed or
+ *  submitted (remembered in localStorage). Leads land in the `leads` table. */
+function EmailCapturePopup() {
+  const { session, loading } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (loading || session) return;
+    if (localStorage.getItem(LEAD_KEY)) return;
+    const t = setTimeout(() => setOpen(true), 1200);
+    return () => clearTimeout(t);
+  }, [loading, session]);
+
+  function dismiss() {
+    localStorage.setItem(LEAD_KEY, "dismissed");
+    setOpen(false);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setError("Please enter a valid email."); return; }
+    setBusy(true); setError(null);
+    const { error } = await supabase.from("leads").insert({ email, source: "explore-popup" });
+    setBusy(false);
+    if (error) { setError("Something went wrong — please try again."); return; }
+    localStorage.setItem(LEAD_KEY, "submitted");
+    setDone(true);
+  }
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={dismiss}>
+      <div className="w-full max-w-md rounded-[20px] bg-white p-7 shadow-soft" onClick={(e) => e.stopPropagation()}>
+        <button type="button" onClick={dismiss} aria-label="Close" className="float-right -mr-1 -mt-1 text-[#9aa3c0] hover:text-[#3a4468]">
+          <Icon name="close" className="h-5 w-5" />
+        </button>
+        {done ? (
+          <div className="py-4 text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#eafaf0] text-[#28a765]"><Icon name="check" className="h-8 w-8" /></div>
+            <h2 className="text-xl font-black">You're on the list! 🎉</h2>
+            <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll send you activity ideas matched to your family.</p>
+            <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#eef5ff] px-3 py-1.5 text-xs font-bold text-[#2b7cff]"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
+            <h2 className="text-2xl font-black leading-tight">Get activity ideas for your child</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll send curated classes and play spaces near you — no spam, unsubscribe anytime.</p>
+            <form onSubmit={submit} className="mt-5 space-y-3">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@email.com"
+                autoFocus
+                className="h-12 w-full rounded-[12px] border border-[#e6e6ef] px-4 font-semibold shadow-card focus:border-baby-blue focus:outline-none"
+              />
+              {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Send me ideas"}</Button>
+            </form>
+            <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#8b93b3] hover:text-[#59658d]">Maybe later</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ExplorePage() {
   const [sort, setSort] = useState<"popular" | "rating" | "distance">("popular");
   // Seed the category filter from ?cat= so the home-page category tiles land
   // on a pre-filtered list.
   const [category, setCategory] = useState(getParam("cat") ?? "");
-  const [age, setAge] = useState("");
+  const [age, setAge] = useState(getParam("age") ?? "");
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
+  // Client-side filters (applied to the fetched set): area, date, time window,
+  // and a max price. Kept client-side so they work without a schema change.
+  const [region, setRegion] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [timeRange, setTimeRange] = useState<[number, number]>([0, 23]);
+  const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
   const { activities, loading } = useActivities({
-    limit: 24,
+    limit: 100,
     sort,
     category: category || null,
     ageMonths: age ? Number(age) : null,
   });
+
+  const [minH, maxH] = timeRange;
+  const priceActive = maxPrice < PRICE_MAX;
+  const timeActive = minH > 0 || maxH < 23;
+  const anyFilter = !!region || !!dateFrom || priceActive || timeActive;
+  const shown = activities.filter((a) => {
+    if (region && classifyRegion(a.lat, a.lng) !== region) return false;
+    if (priceActive && a.price != null && a.price > maxPrice) return false;
+    if (dateFrom) {
+      if (!a.nextSessionAt) return false;
+      if (new Date(a.nextSessionAt) < new Date(`${dateFrom}T00:00:00+08:00`)) return false;
+    }
+    if (timeActive) {
+      const h = sgHour(a.nextSessionAt);
+      if (h == null || h < minH || h > maxH) return false;
+    }
+    return true;
+  });
+  function resetFilters() {
+    setRegion(""); setDateFrom(""); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
+  }
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
@@ -486,6 +649,7 @@ function ExplorePage() {
 
   return (
     <PageShell active="/explore">
+      <EmailCapturePopup />
       <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
@@ -494,7 +658,7 @@ function ExplorePage() {
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
-        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <div className="mb-3 grid gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-bold text-[#68718f]">Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
@@ -517,26 +681,54 @@ function ExplorePage() {
             </select>
           </label>
         </div>
-        <div className="grid gap-5 lg:grid-cols-[568px_1fr]">
-          <section>
-            <p className="mb-3 text-sm font-black">{loading ? "Loading…" : `${activities.length} activities found`}</p>
-            <div className="space-y-2.5">
-              {activities.map((activity) => (
-                <ActivityRow key={activity.id} activity={activity} />
-              ))}
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-[#68718f]">Area</span>
+            <select value={region} onChange={(e) => setRegion(e.target.value)} className={selectClass}>
+              {REGION_FILTERS.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-[#68718f]">Date from</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={selectClass} />
+          </label>
+          <label className="flex flex-col justify-center gap-1">
+            <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
+            <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
+          </label>
+          <label className="flex flex-col justify-center gap-1">
+            <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
+            <div className="mt-1 flex items-center gap-2">
+              <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
+              <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
             </div>
-            {!loading && activities.length === 0 && (
-              <p className="mt-6 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
-            )}
-          </section>
+          </label>
+        </div>
+        <div className="space-y-5">
           <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-lilac">Explore on map</h2>
-              <span className="text-xs font-bold text-[#68718f]">{activities.filter((a) => a.lat != null).length} pinned</span>
+              <span className="text-xs font-bold text-[#68718f]">{shown.filter((a) => a.lat != null).length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              <ExploreMap activities={activities} />
+              <ExploreMap activities={shown} />
             </div>
+          </section>
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
+              {anyFilter && (
+                <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-blue hover:underline">Reset filters</button>
+              )}
+            </div>
+            <div className="grid gap-2.5 md:grid-cols-2">
+              {shown.map((activity) => (
+                <ActivityRow key={activity.id} activity={activity} />
+              ))}
+            </div>
+            {!loading && shown.length === 0 && (
+              <p className="mt-6 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+            )}
           </section>
         </div>
       </main>
@@ -572,7 +764,6 @@ const sgTime = (iso: string) =>
 function ActivityDetailPage() {
   const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
-  const favProvider = useFavoriteProvider(activity?.provider_id);
   const { session } = useAuth();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
@@ -742,11 +933,6 @@ function ActivityDetailPage() {
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
             </Button>
-            {activity.provider_id && (
-              <Button variant="ghost" type="button" onClick={favProvider.toggle} className="mt-3 w-full">
-                <Icon name="store" className="h-4 w-4" /> {favProvider.saved ? "Following provider" : "Follow this provider"}
-              </Button>
-            )}
             {enquiring && activity.provider_id && (
               <EnquiryChat
                 providerId={activity.provider_id}
@@ -765,7 +951,7 @@ function ActivityDetailPage() {
               {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
               {next && <p><strong>Next available session</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
               {next?.capacity != null && <p><strong>Spaces left</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
-              <p className="rounded-[12px] bg-[#f8fbff] p-3"><Icon name="shield" className="mr-1 inline h-4 w-4 text-baby-lilac" /> Hosted by a trusted provider<br /><span className="text-[#58648d]">All venues and instructors are verified.</span></p>
+              <p className="rounded-[12px] bg-[#f8fbff] p-3"><Icon name="shield" className="mr-1 inline h-4 w-4 text-baby-lilac" /> Hosted by a trusted provider</p>
             </div>
           </aside>
         </section>
@@ -1723,7 +1909,7 @@ function EmptyPanel({ icon, copy, cta, href }: { icon: string; copy: string; cta
 }
 
 const SUPPORT_EMAIL = "hello@babybrain.sg";
-const SUPPORT_PHONE = "+65 9123 4567"; // TODO: replace with the real BabyBrain support number
+const SUPPORT_PHONE = "+65 8996 6716"; // BabyBrain support line (call + WhatsApp)
 const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
 
 function ContactPage() {
@@ -1754,10 +1940,10 @@ function ContactPage() {
           <SectionTitle>Get in touch</SectionTitle>
           <div className="grid gap-5 md:grid-cols-4">
             {[
-              { icon: "pen", title: "Message us", tag: "Recommended", copy: "Chat with our team in real time — we'd love your questions, thoughts or feedback.", label: "Start a chat", variant: "pink", onClick: openSupport },
+              { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for quick help — no login needed.", label: "Chat on WhatsApp", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
+              { icon: "pen", title: "Message us", tag: "", copy: "Chat with our team in real time — we'd love your questions, thoughts or feedback.", label: "Start a chat", variant: "outline", onClick: openSupport },
               { icon: "mail", title: "Email us", tag: "", copy: "Send us an email and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
               { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team.", label: SUPPORT_PHONE, variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
-              { icon: "whatsapp", title: "WhatsApp us", tag: "", copy: "Message us on WhatsApp for quick help.", label: "Chat on WhatsApp", variant: "outline", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
               <article key={c.title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
                 <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#eef8ff] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
@@ -1770,8 +1956,8 @@ function ContactPage() {
           </div>
         </section>
 
-        <section className="mt-9">
-          <SectionTitle action={<a href="/contact" className="font-bold text-[#1678ff]">View all FAQs →</a>}>Frequently asked questions</SectionTitle>
+        <section id="faq" className="mt-9 scroll-mt-24">
+          <SectionTitle>Frequently asked questions</SectionTitle>
           <div className="overflow-hidden rounded-[16px] border border-[#e8ecf6] bg-white">
             {["How does BabyBrain recommend classes for my child?", "How do I book a class?", "Can I cancel or reschedule a booking?", "Are the classes on BabyBrain safe and suitable for my child?", "How do I know if a class is right for my child's age?", "Is payment made on BabyBrain?"].map((question) => (
               <details key={question} className="border-b border-[#eef1f7] px-6 py-4">

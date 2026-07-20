@@ -213,7 +213,7 @@ export default function DashboardPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
           <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
@@ -231,9 +231,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 pb-8 sm:px-8">
         {/* Quick Actions */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3">
           <button onClick={() => navigate('/activities')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
               <CalendarPlus className="w-6 h-6 text-[#E91E63]" />
@@ -267,7 +267,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6 sm:grid-cols-3 lg:grid-cols-5">
           {statsCards.map((stat, i) => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -294,7 +294,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Bottom Grid */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Upcoming Sessions */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">

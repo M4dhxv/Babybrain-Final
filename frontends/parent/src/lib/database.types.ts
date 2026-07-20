@@ -712,6 +712,12 @@ export type Database = {
         Update: { value?: string };
         Relationships: [];
       };
+      leads: {
+        Row: { id: string; email: string; source: string | null; child_age_months: number | null; created_at: string };
+        Insert: { email: string; source?: string | null; child_age_months?: number | null };
+        Update: { email?: string; source?: string | null; child_age_months?: number | null };
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

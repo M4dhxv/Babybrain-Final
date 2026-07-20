@@ -302,8 +302,8 @@ const sgTime = (iso: string | null) =>
 
 const OUTCOME: Record<VendorResult['outcome'], { label: string; color: string }> = {
   price_updated: { label: 'Price updated', color: C.green },
-  no_price: { label: 'Checked · no price', color: C.muted },
-  no_wp: { label: 'No WordPress feed / unreachable', color: C.pink },
+  no_price: { label: 'Crawled · no price', color: C.muted },
+  no_wp: { label: 'Unreachable / no content', color: C.pink },
 };
 
 function VendorsView() {
@@ -327,7 +327,7 @@ function VendorsView() {
     try {
       const r = await adminFetch<{ checked: number; wp_sites: number; prices_updated: number; no_wp: number }>(
         '/api/admin/vendors/refresh', { method: 'POST' });
-      setNote(`Done — checked ${r.checked}, ${r.prices_updated} price${r.prices_updated === 1 ? '' : 's'} updated, ${r.no_wp} with no WordPress feed.`);
+      setNote(`Done — checked ${r.checked}, ${r.prices_updated} price${r.prices_updated === 1 ? '' : 's'} updated, ${r.no_wp} unreachable.`);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -340,10 +340,11 @@ function VendorsView() {
         <div>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Vendor directory refresh</div>
           <div style={{ color: C.muted, fontSize: 13, marginTop: 4, maxWidth: 640 }}>
-            Pulls the latest info (currently prices from vendors on WordPress) for auto-listed, unclaimed
-            directory vendors. Runs automatically every Monday; you can also run a batch now. Each run
-            processes the 25 least-recently-synced vendors, so click a few times to work through the whole list.
-            Claimed vendors are never touched.
+            Crawls each vendor&rsquo;s public site (via Apify when a key is set, otherwise the WordPress
+            REST API) and fills in a detected price for auto-listed, unclaimed directory vendors. Runs
+            automatically every Monday; you can also run a batch now. Each run processes the
+            least-recently-synced vendors, so click a few times to work through the whole list. Claimed
+            vendors are never touched.
           </div>
         </div>
         <button onClick={runNow} disabled={busy} style={{ ...primaryBtn(), opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }}>
@@ -373,7 +374,7 @@ function VendorsView() {
                 <span style={{ fontSize: 11, color: C.blue }}>{run.trigger === 'manual' ? 'Manual' : 'Weekly cron'}</span>
                 <span style={{ fontWeight: 700 }}>{sgTime(run.started_at)}</span>
                 <span style={{ color: C.muted, fontSize: 13, marginLeft: 'auto' }}>
-                  {run.checked} checked · <span style={{ color: C.green }}>{run.prices_updated} priced</span> · {noWp} no-WP
+                  {run.checked} checked · <span style={{ color: C.green }}>{run.prices_updated} priced</span> · {noWp} unreachable
                 </span>
                 <span style={{ color: C.muted }}>{isOpen ? '▾' : '▸'}</span>
               </button>
@@ -382,7 +383,7 @@ function VendorsView() {
                 <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
                   <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>
                     {run.triggered_by ? `Triggered by ${run.triggered_by}. ` : ''}
-                    Finished {sgTime(run.finished_at)} · {run.wp_sites} WordPress sites found.
+                    Finished {sgTime(run.finished_at)} · {run.wp_sites} site{run.wp_sites === 1 ? '' : 's'} reachable.
                   </div>
                   {run.error && <div style={{ color: C.pink, fontSize: 13, marginBottom: 10 }}>Error: {run.error}</div>}
                   {run.results.length === 0 ? (

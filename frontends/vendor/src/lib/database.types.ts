@@ -595,8 +595,9 @@ export type Database = {
           status: 'present' | 'absent' | 'late';
           note?: string | null;
           marked_by?: string | null;
+          marked_at?: string;
         };
-        Update: { status?: 'present' | 'absent' | 'late'; note?: string | null };
+        Update: { status?: 'present' | 'absent' | 'late'; note?: string | null; marked_by?: string | null; marked_at?: string };
         Relationships: [];
       };
       packages: {

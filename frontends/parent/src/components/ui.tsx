@@ -57,6 +57,7 @@ type IconName =
   | "phone"
   | "pen"
   | "whatsapp"
+  | "instagram"
   | "gift"
   | "chart"
   | "store"
@@ -108,6 +109,8 @@ const iconPaths: Record<IconName, string> = {
   pen: "M5 18.5h14M7 15.5l8.8-8.8 2.5 2.5-8.8 8.8H7v-2.5Z",
   whatsapp:
     "M5.6 18.4A8 8 0 1 1 12 21a8 8 0 0 1-3.8-1l-3.7 1 1.1-2.6Zm4-8.8c.2 3.1 2.6 5 5 5.4l1.3-1.5-2-1-1 1c-1.1-.5-1.9-1.2-2.4-2.3l1-1-1-2-1 .4Z",
+  instagram:
+    "M7.5 3.5h9a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4h-9a4 4 0 0 1-4-4v-9a4 4 0 0 1 4-4Zm4.5 5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm4.6-1.1h.01",
   gift:
     "M4.5 10h15v10h-15V10Zm0 0V7h15v3M12 7v13M8.5 7C6 6.4 6 3.8 8 3.8c1.5 0 2.7 1.4 4 3.2 1.3-1.8 2.5-3.2 4-3.2 2 0 2 2.6-.5 3.2",
   chart:
@@ -508,9 +511,9 @@ export function ActivityCard({
 export function ActivityRow({ activity }: { activity: Activity }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <a href={href} className="grid grid-cols-[240px_1fr] overflow-hidden rounded-[12px] border border-[#e5e9f5] bg-white shadow-card">
+    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#e5e9f5] bg-white shadow-card sm:grid-cols-[240px_1fr]">
       <div className="relative">
-        <img src={activity.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
+        <img src={activity.image} alt="" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
           {activity.category}
         </span>
@@ -587,22 +590,30 @@ export function Footer() {
           </p>
         </div>
         {([
-          ["Explore", [["Explore Classes", "/explore"], ["How it Works", "/"], ["About Us", "/about"], ["For Partners", "/contact"]]],
-          ["Support", [["Contact Us", "/contact"], ["FAQ", "/contact"], ["Privacy Policy", "/terms#privacy"], ["Terms of Use", "/terms"]]],
-          ["Follow Us", [["Instagram", null], ["hello@babybrain.sg", "mailto:hello@babybrain.sg"]]],
-        ] as [string, [string, string | null][]][]).map(([title, links]) => (
+          ["Explore", [["Explore Classes", "/explore"], ["How it Works", "/#how-it-works"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
+          ["Support", [["Contact Us", "/contact"], ["FAQ", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Use", "/terms"]]],
+          ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"], ["hello@babybrain.sg", "mailto:hello@babybrain.sg"]]],
+        ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
           <div key={title} className="text-sm">
             <h3 className="mb-3 font-black">{title}</h3>
             <div className="space-y-1.5 font-semibold text-[#59658d]">
-              {links.map(([label, href]) =>
-                href ? (
+              {links.map(([label, href, icon]) => {
+                const external = !!href && /^https?:\/\//.test(href);
+                return href ? (
                   <p key={label}>
-                    <a href={href} className="hover:text-baby-blue">{label}</a>
+                    <a
+                      href={href}
+                      className="inline-flex items-center gap-1.5 hover:text-baby-blue"
+                      {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+                    >
+                      {icon && <Icon name={icon} className="h-4 w-4" />}
+                      {label}
+                    </a>
                   </p>
                 ) : (
                   <p key={label}>{label}</p>
-                )
-              )}
+                );
+              })}
             </div>
           </div>
         ))}

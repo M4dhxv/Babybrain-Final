@@ -35,7 +35,13 @@ addresses — real parents won't receive emails until a domain is verified:
    host `smtp.resend.com`, port `465`, user `resend`, password = the `re_…` key —
    this moves signup-confirmation/reset emails off Supabase's ~2/hour built-in mailer.
 
-### 4. Rotate keys before launch
+### 4. Vendor scraping (optional, improves directory freshness)
+Set `APIFY_API_TOKEN` (Vercel + `.env.local`) to switch the weekly vendor-directory
+refresh from the WordPress-only fallback to the reliable Apify crawler. Safe to leave
+unset — the refresh still runs, just with lower coverage. See
+[vendor-scraping.md](vendor-scraping.md).
+
+### 5. Rotate keys before launch
 All keys for this project passed through chat during setup: rotate Supabase API
 keys + DB password, Google client secret, Stream secret, and the Resend key,
 then update Vercel env + `.env.local`.
