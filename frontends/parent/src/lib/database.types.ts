@@ -301,6 +301,8 @@ export type Database = {
           activity_id: string;
           rating: number;
           comment: string | null;
+          provider_response: string | null;
+          provider_responded_at: string | null;
           created_at: string;
           updated_at: string;
         };

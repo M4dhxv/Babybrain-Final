@@ -998,6 +998,12 @@ function ActivityDetailPage() {
               <div className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
               {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
               <p className="mt-1 text-xs font-semibold text-[#8a93b2]">A BabyBrain parent</p>
+              {r.provider_response && (
+                <div className="mt-2 rounded-[10px] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-black text-baby-blue">Response from the provider</p>
+                  <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
+                </div>
+              )}
             </div>
           ))}
           {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
@@ -1088,7 +1094,7 @@ type BookingItem = {
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
 };
-type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string };
+type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null };
@@ -1221,13 +1227,14 @@ function ProfilePage() {
 
     supabase
       .from("reviews")
-      .select("id, rating, comment, activities(title, slug)")
+      .select("id, rating, comment, provider_response, activities(title, slug)")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string;
           rating: number;
           comment: string | null;
+          provider_response: string | null;
           activities: { title: string; slug: string } | null;
         }>;
         setReviews(
@@ -1237,6 +1244,7 @@ function ProfilePage() {
             comment: r.comment,
             title: r.activities?.title ?? "Activity",
             slug: r.activities?.slug ?? "",
+            providerResponse: r.provider_response,
           }))
         );
       });
@@ -1623,6 +1631,12 @@ function ProfilePage() {
                         <span className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
                       </div>
                       {r.comment && <p className="mt-1.5 font-semibold text-[#34406f]">{r.comment}</p>}
+                      {r.providerResponse && (
+                        <div className="mt-2 rounded-[10px] bg-[#f8fbff] p-3">
+                          <p className="text-xs font-black text-baby-blue">Response from the provider</p>
+                          <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.providerResponse}</p>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
