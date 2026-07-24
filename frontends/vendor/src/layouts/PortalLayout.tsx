@@ -12,6 +12,7 @@ import {
   HelpCircle,
   Menu,
   X,
+  Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +21,7 @@ const sidebarItems = [
   { icon: CalendarDays, label: 'Activities', path: '/activities' },
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: MessageSquare, label: 'Messages', path: '/messages' },
+  { icon: Star, label: 'Reviews', path: '/reviews' },
   { icon: Settings, label: 'Settings', path: '/settings' },
   { icon: CreditCard, label: 'Billing', path: '/billing' },
 ];
