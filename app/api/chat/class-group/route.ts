@@ -35,7 +35,11 @@ export async function POST(request: Request) {
     .select('user_id')
     .in('session_id', sessionIds)
     .in('status', ['pending', 'confirmed', 'completed']);
-  const memberIds = [...new Set((bookings ?? []).map((b) => b.user_id))];
+  // Manual/guest bookings (vendor-recorded, no parent account) have a null
+  // user_id — they can't be Stream chat members, so exclude them here.
+  const memberIds = [
+    ...new Set((bookings ?? []).map((b) => b.user_id).filter((id): id is string => id !== null)),
+  ];
 
   if (!memberIds.includes(user.id)) {
     return NextResponse.json(
