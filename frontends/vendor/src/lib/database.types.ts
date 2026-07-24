@@ -28,7 +28,7 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' 
 export type PaymentStatus = 'none' | 'paid' | 'refunded';
 export type ProviderRole = 'owner' | 'manager' | 'staff';
 export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
-export type SubscriptionPlan = 'free' | 'growth';
+export type SubscriptionPlan = 'free' | 'growth' | 'pro' | 'premium';
 export type VendorCategory =
   | 'baby-toddler-classes' | 'playspaces' | 'camps-holiday'
   | 'community-events' | 'mum-bub-exercise' | 'other';
