@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { StreamChat } from 'stream-chat';
 import {
   Chat,
@@ -9,11 +10,42 @@ import {
   MessageList,
   MessageInput,
   Thread,
+  useChatContext,
 } from 'stream-chat-react';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import 'stream-chat-react/dist/css/v2/index.css';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
+
+/**
+ * Opens a specific channel when navigated to with ?channel=<id> (e.g. from
+ * a booking's "Message parent" action), then clears the param so it doesn't
+ * re-fire on a later ChannelList selection.
+ */
+function DeepLinkChannel() {
+  const { client, setActiveChannel } = useChatContext();
+  const [params, setParams] = useSearchParams();
+  const channelId = params.get('channel');
+
+  useEffect(() => {
+    if (!channelId) return;
+    let active = true;
+    const channel = client.channel('messaging', channelId);
+    channel.watch().then(() => {
+      if (active) setActiveChannel(channel);
+    });
+    setParams((p) => {
+      p.delete('channel');
+      return p;
+    }, { replace: true });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+
+  return null;
+}
 
 export default function MessagesPage() {
   const { session } = useAuth();
@@ -55,6 +87,7 @@ export default function MessagesPage() {
     <div className="h-full p-6">
       <div className="h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
         <Chat client={client}>
+          <DeepLinkChannel />
           <div className="flex h-full">
             <div className="w-80 border-r border-gray-200 overflow-y-auto">
               <ChannelList

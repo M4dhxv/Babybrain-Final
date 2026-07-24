@@ -741,6 +741,7 @@ export type Database = {
           child_id: string | null;
           skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
           is_manual: boolean;
+          user_id: string | null;
         }[];
       };
       provider_recent_bookings: {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift,
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 
 const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
@@ -23,14 +25,30 @@ type RosterRow = {
   child_age_months: number | null; has_medical: boolean; waitlist_position: number | null;
   attendance_status: 'present' | 'absent' | 'late' | null;
   child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
-  is_manual: boolean;
+  is_manual: boolean; user_id: string | null;
 };
 
 export default function BookingsPage() {
   const { provider, role, session } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
+  const navigate = useNavigate();
   const [issuing, setIssuing] = useState(false);
   const [issuedFor, setIssuedFor] = useState<string | null>(null);
+  const [messaging, setMessaging] = useState(false);
+
+  async function messageParent(parentUserId: string) {
+    if (!provider) return;
+    setMessaging(true);
+    try {
+      const { channelId } = await apiPost<{ channelId: string }>('/api/vendor/chat/open', {
+        provider_id: provider.id,
+        parent_user_id: parentUserId,
+      });
+      navigate(`/messages?channel=${channelId}`);
+    } finally {
+      setMessaging(false);
+    }
+  }
 
   const [activeTab, setActiveTab] = useState('Bookings');
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
@@ -330,9 +348,19 @@ export default function BookingsPage() {
                       </div>
                     )}
                   </div>
-                  <button className="flex items-center gap-2 mt-6 text-sm text-[#E91E63] font-medium hover:underline" title="Live chat ships in Phase 2">
-                    <MessageSquare className="w-4 h-4" /> Message parent
-                  </button>
+                  {sel.user_id ? (
+                    <button
+                      onClick={() => messageParent(sel.user_id!)}
+                      disabled={messaging}
+                      className="flex items-center gap-2 mt-6 text-sm text-[#E91E63] font-medium hover:underline disabled:opacity-60"
+                    >
+                      <MessageSquare className="w-4 h-4" /> {messaging ? 'Opening chat…' : 'Message parent'}
+                    </button>
+                  ) : (
+                    <button disabled className="flex items-center gap-2 mt-6 text-sm text-gray-400 cursor-not-allowed" title="Manual bookings have no parent account to message">
+                      <MessageSquare className="w-4 h-4" /> Message parent
+                    </button>
+                  )}
                   {canManage && (
                     <button
                       onClick={() => issueToken(sel.booking_id)}
