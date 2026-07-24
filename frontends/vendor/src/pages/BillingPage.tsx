@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import { planMeta, nextPlan } from '@/lib/plans';
 
 const includedFeatures = [
   'Direct-to-user messaging',
@@ -26,11 +27,18 @@ const includedFeatures = [
   'Multiple locations & team access',
 ];
 
+const sgDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'long', year: 'numeric' });
+
 export default function BillingPage() {
   const navigate = useNavigate();
-  const { provider } = useAuth();
+  const { provider, subscription } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  const plan = planMeta(subscription?.plan);
+  const upgrade = nextPlan(subscription?.plan);
+  const active = (subscription?.status ?? 'active') === 'active' || subscription?.status === 'trialing';
 
   // Redirects to the relevant Stripe hosted flow. Shows a clear message if
   // payments aren't configured yet (route returns an error) instead of a
@@ -66,7 +74,7 @@ export default function BillingPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500">
             <CalendarDays className="w-4 h-4" />
-            Current period: 13 Jun – 19 Jun 2026
+            {plan.short}
           </div>
         </div>
       </div>
@@ -86,33 +94,32 @@ export default function BillingPage() {
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-xl font-bold text-gray-900">Growth — SGD 99 / month</h2>
-                <span className="flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                  Active
+                <h2 className="text-xl font-bold text-gray-900">{plan.isPaid ? `${plan.short.replace(' Plan', '')} — ${plan.price}` : 'Free plan'}</h2>
+                <span className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                  {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}
                 </span>
               </div>
+              <p className="text-sm text-gray-500">{plan.tagline}</p>
             </div>
-            <div className="flex gap-8">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center">
-                  <CalendarCheck className="w-5 h-5 text-[#E91E63]" />
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500">Next billing date</div>
-                  <div className="text-sm font-semibold text-gray-900">12 July 2026</div>
+            {plan.isPaid && subscription?.current_period_end && (
+              <div className="flex gap-8">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center">
+                    <CalendarCheck className="w-5 h-5 text-[#E91E63]" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}</div>
+                    <div className="text-sm font-semibold text-gray-900">{sgDate(subscription.current_period_end)}</div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center">
-                  <CalendarDays className="w-5 h-5 text-[#E91E63]" />
-                </div>
-                <div>
-                  <div className="text-xs text-gray-500">Started on</div>
-                  <div className="text-sm font-semibold text-gray-900">12 April 2026</div>
-                </div>
-              </div>
-            </div>
+            )}
+            {!plan.isPaid && upgrade && (
+              <Button onClick={() => navigate('/plans')} className="gradient-primary text-white rounded-xl hover:opacity-90">
+                Upgrade to {upgrade.short.replace(' Plan', '')}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -141,29 +148,33 @@ export default function BillingPage() {
                   </div>
                   <div className="flex items-center gap-2 mb-2">
                     <Crown className="w-4 h-4 text-[#E91E63]" />
-                    <span className="font-semibold text-gray-900 text-sm">Growth (Booking Platform)</span>
+                    <span className="font-semibold text-gray-900 text-sm">{plan.label}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mb-1">Manage bookings & grow</p>
-                  <p className="text-xs text-gray-500 mb-3">All core features</p>
-                  <div className="text-sm font-bold text-[#E91E63]">SGD 99 / month</div>
+                  <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
+                  <div className="text-sm font-bold text-[#E91E63]">{plan.price}</div>
                 </div>
-                <div className="p-4 border border-purple-200 rounded-xl relative">
-                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded">
-                    Next step up
+                {upgrade ? (
+                  <div className="p-4 border border-purple-200 rounded-xl relative">
+                    <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                      Next step up
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Star className="w-4 h-4 text-purple-600" />
+                      <span className="font-semibold text-gray-900 text-sm">{upgrade.label}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">{upgrade.tagline}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold text-purple-600">{upgrade.price}</div>
+                      <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
+                        Upgrade →
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Star className="w-4 h-4 text-purple-600" />
-                    <span className="font-semibold text-gray-900 text-sm">Pro (Scale)</span>
+                ) : (
+                  <div className="p-4 border border-gray-200 rounded-xl flex items-center justify-center text-center">
+                    <p className="text-xs text-gray-500">You’re on our top plan 🎉</p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-1">Featured placement & priority ranking</p>
-                  <p className="text-xs text-gray-500 mb-3">Advanced analytics & promotions</p>
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-bold text-purple-600">SGD 199 / month</div>
-                    <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
-                      Upgrade →
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between">
@@ -178,24 +189,18 @@ export default function BillingPage() {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* Payment Method */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-8 bg-white border border-gray-200 rounded flex items-center justify-center">
-                    <span className="text-blue-800 font-bold text-xs italic">VISA</span>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Visa •••• 4242</div>
-                    <div className="text-xs text-gray-500">Expires 09/28</div>
-                  </div>
+            {/* Payment Method — only on a paid plan (a card is on file) */}
+            {plan.isPaid && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">Manage your card and invoices in the Stripe billing portal.</div>
+                  <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm flex-shrink-0">
+                    {busy === 'card' ? 'Opening…' : 'Manage billing'}
+                  </Button>
                 </div>
-                <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
-                  {busy === 'card' ? 'Opening…' : 'Update Card'}
-                </Button>
               </div>
-            </div>
+            )}
 
             {/* Stripe Payouts */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -243,32 +248,34 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Cancel Subscription */}
-        <div className="bg-red-50 rounded-xl border border-red-200 p-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+        {/* Cancel Subscription — only relevant on a paid plan */}
+        {plan.isPaid && (
+          <div className="bg-red-50 rounded-xl border border-red-200 p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-red-600 mb-1">Cancel Subscription</h3>
+                <p className="text-sm text-gray-600">
+                  If you cancel, your subscription will remain active until the end of your current billing period.
+                </p>
+              </div>
+              <Button
+                onClick={() => {
+                  if (window.confirm(`Cancel your ${plan.short.replace(' Plan', '')} subscription? It stays active until the end of the current billing period.`)) {
+                    stripe('/api/vendor/stripe/portal', 'cancel');
+                  }
+                }}
+                disabled={busy === 'cancel'}
+                variant="outline"
+                className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
+              >
+                {busy === 'cancel' ? 'Opening…' : 'Cancel Plan'}
+              </Button>
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-red-600 mb-1">Cancel Subscription</h3>
-              <p className="text-sm text-gray-600">
-                If you cancel, your subscription will remain active until the end of your current billing period.
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                if (window.confirm('Cancel your Growth subscription? It stays active until the end of the current billing period.')) {
-                  stripe('/api/vendor/stripe/portal', 'cancel');
-                }
-              }}
-              disabled={busy === 'cancel'}
-              variant="outline"
-              className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
-            >
-              {busy === 'cancel' ? 'Opening…' : 'Cancel Plan'}
-            </Button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

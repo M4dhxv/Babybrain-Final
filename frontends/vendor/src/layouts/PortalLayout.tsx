@@ -15,6 +15,8 @@ import {
   Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/auth/AuthProvider';
+import { planMeta } from '@/lib/plans';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -29,8 +31,14 @@ const sidebarItems = [
 export default function PortalLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { subscription } = useAuth();
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const plan = planMeta(subscription?.plan);
+  const renewLabel = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
 
   // Close the mobile drawer whenever the route changes.
   const go = (path: string) => {
@@ -129,13 +137,17 @@ export default function PortalLayout() {
               </div>
             </div>
             <div className="text-xs text-gray-500 mb-0.5">Current Plan</div>
-            <div className="text-sm font-bold text-gray-900 mb-1">Growth Plan</div>
-            <div className="text-xs text-gray-500 mb-3">Renews on<br />12 Jul 2026</div>
+            <div className="text-sm font-bold text-gray-900 mb-1">{plan.short}</div>
+            <div className="text-xs text-gray-500 mb-3">
+              {plan.isPaid && subscription?.current_period_end
+                ? <>{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}<br />{renewLabel}</>
+                : plan.price}
+            </div>
             <button
               onClick={() => go('/billing')}
               className="flex items-center justify-center w-full gap-1 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {location.pathname === '/billing' ? 'Manage Subscription' : 'Manage Plan'}
+              {location.pathname === '/billing' ? 'Manage Subscription' : plan.isPaid ? 'Manage Plan' : 'Upgrade Plan'}
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>
