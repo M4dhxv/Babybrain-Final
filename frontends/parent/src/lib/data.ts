@@ -132,7 +132,7 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
 }
 
 /** Favourite toggle for the signed-in parent. */
-export function useFavorite(activityId: string | undefined) {
+export function useFavorite(activityId: string | undefined, onToggled?: (saved: boolean) => void) {
   const { session } = useAuth();
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -158,9 +158,11 @@ export function useFavorite(activityId: string | undefined) {
     if (saved) {
       await supabase.from("favorites").delete().eq("user_id", session.user.id).eq("activity_id", activityId);
       setSaved(false);
+      onToggled?.(false);
     } else {
       await supabase.from("favorites").insert({ user_id: session.user.id, activity_id: activityId });
       setSaved(true);
+      onToggled?.(true);
     }
     setBusy(false);
   }

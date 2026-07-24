@@ -11,11 +11,13 @@ import { useAuth } from "../auth/AuthProvider";
 export function SaveHeart({
   activityId,
   className = "",
+  onToggled,
 }: {
   activityId?: string;
   className?: string;
+  onToggled?: (saved: boolean) => void;
 }) {
-  const fav = useFavorite(activityId);
+  const fav = useFavorite(activityId, onToggled);
   return (
     <button
       type="button"
@@ -433,9 +435,11 @@ function providerLabel(activity: Activity): string | null {
 export function ActivityCard({
   activity,
   compact = false,
+  onFavoriteToggled,
 }: {
   activity: Activity;
   compact?: boolean;
+  onFavoriteToggled?: (activityId: string, saved: boolean) => void;
 }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
@@ -454,7 +458,11 @@ export function ActivityCard({
             <Icon name="star" className="h-3 w-3 fill-current" /> Featured
           </span>
         )}
-        <SaveHeart activityId={activity.id} className="absolute right-3 top-3 h-8 w-8" />
+        <SaveHeart
+          activityId={activity.id}
+          className="absolute right-3 top-3 h-8 w-8"
+          onToggled={onFavoriteToggled && activity.id ? (saved) => onFavoriteToggled(activity.id as string, saved) : undefined}
+        />
       </div>
       <div className="p-3.5">
         <h3 className="mb-0.5 text-[15px] font-black leading-tight text-baby-ink">

@@ -1580,7 +1580,16 @@ function ProfilePage() {
                 <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
               ) : (
                 <div className="grid gap-4 md:grid-cols-3">
-                  {favs.map((activity) => <ActivityCard key={activity.id} activity={activity} compact />)}
+                  {favs.map((activity) => (
+                    <ActivityCard
+                      key={activity.id}
+                      activity={activity}
+                      compact
+                      onFavoriteToggled={(id, saved) => {
+                        if (!saved) setFavs((prev) => prev.filter((a) => a.id !== id));
+                      }}
+                    />
+                  ))}
                 </div>
               )}
 
