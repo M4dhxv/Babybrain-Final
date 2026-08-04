@@ -75,12 +75,17 @@ export const activities: Activity[] = [
 // [icon, label, copy, slug] — slug is the activity_categories.slug the tile
 // filters by on /explore (labels are marketing copy; slugs must match the DB).
 export const categories = [
-  ["music", "Music", "Make learning fun with rhythm & songs", "music"],
+  ["music", "Music", "Rhythm, songs and instruments", "music"],
   ["hand", "Sensory Play", "Explore, touch and discover", "sensory-play"],
   ["palette", "Art & Creativity", "Inspire imagination through art", "art-creativity"],
-  ["movement", "Movement & Dance", "Active play for strong bodies", "movement"],
-  ["flask", "STEM & Learning", "Curiosity today, smarter tomorrow", "early-learning"],
-  ["people", "Social & Emotional", "Build confidence and friendships", "parent-baby"],
+  ["movement", "Swimming", "Water confidence and lessons", "swimming"],
+  ["star", "Gymnastics", "Tumbling, balance and strength", "gymnastics"],
+  ["flask", "Early Learning", "Curiosity today, ready for more", "early-learning"],
+  ["people", "Baby & Me Exercise", "Move and bond together", "parent-baby"],
+  ["home", "Playspaces", "Open, come-anytime play", "playspaces"],
+  ["calendar", "Community Events", "Family days and meet-ups", "community-events"],
+  ["spark", "Holiday Camps", "School-break adventures", "holiday-camps"],
+  ["shoe", "Movement & Dance", "Active play for strong bodies", "movement"],
 ];
 
 export const routes = [
