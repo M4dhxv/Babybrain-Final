@@ -268,7 +268,7 @@ function OnboardingPage() {
 
   const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  const input = "h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
 
   async function submit() {
     if (password !== confirmPassword) {
@@ -1071,7 +1071,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         onChange={(e) => setComment(e.target.value)}
         rows={3}
         placeholder="Share how the class went (optional)"
-        className="mt-3 w-full rounded-[10px] border border-[#dbe4f6] px-3 py-2 text-sm font-semibold"
+        className="mt-3 w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
       <Button type="submit" className="mt-3">{busy ? "Posting…" : "Post review"}</Button>
@@ -1157,7 +1157,7 @@ function ChildForm({
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
-  const input = "h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
   const toggle = (v: string) => setInterests((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]));
 
   async function save() {
@@ -2029,7 +2029,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                 exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
               )
             }
-            className="flex items-center gap-1.5 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
+            className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
             title={`Export all ${exportable.length} classes to your calendar`}
           >
             <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
@@ -2055,7 +2055,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                     e.stopPropagation();
                     downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
                   }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8] sm:flex"
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8] sm:flex"
                   title="Add to calendar"
                 >
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
@@ -2072,7 +2072,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     reschedWhy
                       ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
-                      : "border border-[#dbe4f6] text-[#FA5D93] hover:bg-[#fff4f8]"
+                      : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"
                   }`}
                   title={reschedWhy ?? "Move this booking to another session"}
                 >
@@ -2235,7 +2235,7 @@ function ContactPage() {
               { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team if urgent.", label: "Call us", variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
               <article key={c.title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
-                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#eef8ff] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
+                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#ffe9f2] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
                 <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#ffe4ef] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
                 <Button variant={c.variant === "pink" ? "pink" : "outline"} className="w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
@@ -3032,7 +3032,7 @@ function AboutPage() {
             {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-pink" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
           </div>
         </section>
-        <section className="mt-7 rounded-[18px] bg-[#eef8ff] p-7">
+        <section className="mt-7 rounded-[18px] bg-[#ffe9f2] p-7">
           <div className="grid items-center gap-6 md:grid-cols-[180px_1fr_320px]">
             <BrandBlock />
             <div><h2 className="text-[28px] font-black">Ready to discover activities your child will love?</h2><p className="mt-2 font-semibold text-[#3f4b78]">Join parents using BabyBrain to find classes, events and play experiences across Singapore.</p></div>
@@ -3074,21 +3074,21 @@ function LoginPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-6 py-12">
-        <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-8 shadow-card">
+        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
           {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
                 <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log In"}</Button>
           </form>
@@ -3119,7 +3119,7 @@ function ForgotPasswordPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
-        <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-6 shadow-card sm:p-8">
+        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-6 shadow-card sm:p-8">
           <h1 className="text-2xl font-black">Reset your password</h1>
           {sent ? (
             <div className="mt-3">
@@ -3137,7 +3137,7 @@ function ForgotPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
               </form>
@@ -3189,7 +3189,7 @@ function ResetPasswordPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
-        <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-6 shadow-card sm:p-8">
+        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-6 shadow-card sm:p-8">
           <h1 className="text-2xl font-black">Set a new password</h1>
           {done ? (
             <p className="mt-3 rounded-[10px] bg-[#eefbf1] px-3 py-3 text-sm font-semibold text-green-700">
@@ -3206,11 +3206,11 @@ function ResetPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-black">Confirm password</label>
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
+                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Saving…" : "Update password"}</Button>
               </form>
