@@ -209,7 +209,7 @@ export function Brand() {
       />
       <span className="text-[25px] font-extrabold leading-none">
         <span className="text-baby-pink">Baby</span>
-        <span className="text-baby-blue">Brain</span>
+        <span className="text-baby-pink">Brain</span>
         <span className="text-sm font-black text-baby-ink">.sg</span>
       </span>
     </a>
@@ -319,7 +319,7 @@ export function Header({ active = "/" }: HeaderProps) {
             ) : (
               <div className="flex flex-col gap-1 text-[15px] font-bold">
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
-                  <Icon name="user" className="h-5 w-5 text-baby-blue" /> {profile?.full_name?.split(" ")[0] || "My account"}
+                  <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
                 </a>
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
@@ -474,15 +474,15 @@ export function ActivityCard({
           </p>
         )}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
-          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.age}</p>
+          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.age}</p>
           <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {activity.venue}</p>
           <p className="flex items-center gap-1.5">
-            <Icon name="calendar" className="h-3.5 w-3.5 text-[#4a9cff]" />{" "}
+            <Icon name="calendar" className="h-3.5 w-3.5 text-[#FA5D93]" />{" "}
             {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
           </p>
           {!compact && (
             <p>
-              <Icon name="star" className="inline h-3.5 w-3.5 text-[#4a9cff]" /> {activity.rating}
+              <Icon name="star" className="inline h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}
               {activity.note && (
                 <>
                   {" "}· <Icon name="spark" className="inline h-3.5 w-3.5 text-baby-pink" /> {activity.note}
@@ -543,7 +543,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
           <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {activity.venue}</p>
           <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-baby-pink" /> {activity.date || "Schedule TBC"}</p>
           <p>{activity.time}</p>
-          <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#4a9cff]" /> {activity.rating}</p>
+          <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}</p>
           <p>{activity.note}</p>
         </div>
       </div>
@@ -609,7 +609,7 @@ export function Footer() {
                   <p key={label}>
                     <a
                       href={href}
-                      className="inline-flex items-center gap-1.5 hover:text-baby-blue"
+                      className="inline-flex items-center gap-1.5 hover:text-baby-pink"
                       {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
                     >
                       {icon && <Icon name={icon} className="h-4 w-4" />}

@@ -218,7 +218,7 @@ function Field({ label, placeholder }: { label: string; placeholder: string }) {
     <label className="block text-xs font-black">
       {label}
       <input
-        className="mt-2 h-10 w-full rounded-[8px] border border-[#dfe5f2] bg-white px-3 text-sm font-semibold outline-none focus:border-baby-blue"
+        className="mt-2 h-10 w-full rounded-[8px] border border-[#dfe5f2] bg-white px-3 text-sm font-semibold outline-none focus:border-baby-pink"
         placeholder={placeholder}
       />
     </label>
@@ -235,7 +235,7 @@ const BUDGET_CHIPS: [string, string, number | null, number | null][] = [
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-blue bg-[#eef5ff] text-[#1275ff]" : "border-[#e2e7f4] bg-white"}`}>
+    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#ffe9f2] text-[#FA5D93]" : "border-[#e2e7f4] bg-white"}`}>
       {children}
     </button>
   );
@@ -453,7 +453,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
         </section>
 
         <section className="mt-6">
-          <SectionTitle action={<a href="/explore" className="font-bold text-[#2182ff]">See activity options →</a>}>Matching Activities</SectionTitle>
+          <SectionTitle action={<a href="/explore" className="font-bold text-[#FA5D93]">See activity options →</a>}>Matching Activities</SectionTitle>
           {recsLoading ? (
             <p className="font-bold text-[#5a6690]">Loading matches…</p>
           ) : (
@@ -590,7 +590,7 @@ function EmailCapturePopup() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
                 autoFocus
-                className="h-12 w-full rounded-[12px] border border-[#e6e6ef] px-4 font-semibold shadow-card focus:border-baby-blue focus:outline-none"
+                className="h-12 w-full rounded-[12px] border border-[#e6e6ef] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
               <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Send me ideas"}</Button>
@@ -648,7 +648,7 @@ function ExplorePage() {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
-  const selectClass = "h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-blue focus:outline-none";
+  const selectClass = "h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
 
   return (
     <PageShell active="/explore">
@@ -721,7 +721,7 @@ function ExplorePage() {
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
               {anyFilter && (
-                <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-blue hover:underline">Reset filters</button>
+                <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-pink hover:underline">Reset filters</button>
               )}
             </div>
             <div className="grid gap-2.5 md:grid-cols-2">
@@ -730,7 +730,7 @@ function ExplorePage() {
               ))}
             </div>
             {!loading && shown.length === 0 && (
-              <p className="mt-6 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+              <p className="mt-6 rounded-[12px] bg-[#fff7fb] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
             )}
           </section>
         </div>
@@ -812,7 +812,7 @@ function ActivityDetailPage() {
       <PageShell active="/explore">
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Activity not found.</p>
-          <a href="/explore" className="font-bold text-baby-blue">← Back to results</a>
+          <a href="/explore" className="font-bold text-baby-pink">← Back to results</a>
         </main>
       </PageShell>
     );
@@ -875,7 +875,7 @@ function ActivityDetailPage() {
                 href={activity.external_booking_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#4aa1ff] to-[#5ea6f6] px-6 py-3 text-[15px] font-extrabold text-white shadow-blue transition hover:brightness-105"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white shadow-pink transition hover:brightness-105"
               >
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
@@ -916,7 +916,7 @@ function ActivityDetailPage() {
                 {activity.provider_contact.contact_email && (
                   <a
                     href={`mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#4194ff] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#1975ff] transition hover:bg-[#f4f9ff]"
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#fa5d93] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#e5487f] transition hover:bg-[#fff4f8]"
                   >
                     <Icon name="mail" className="h-4 w-4" /> Email
                   </a>
@@ -954,7 +954,7 @@ function ActivityDetailPage() {
               {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
               {next && <p><strong>Next available session</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
               {next?.capacity != null && <p><strong>Spaces left</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
-              <p className="rounded-[12px] bg-[#f8fbff] p-3"><Icon name="shield" className="mr-1 inline h-4 w-4 text-baby-lilac" /> Hosted by a trusted provider</p>
+              <p className="rounded-[12px] bg-[#fff7fb] p-3"><Icon name="shield" className="mr-1 inline h-4 w-4 text-baby-lilac" /> Hosted by a trusted provider</p>
             </div>
           </aside>
         </section>
@@ -1002,8 +1002,8 @@ function ActivityDetailPage() {
               {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
               <p className="mt-1 text-xs font-semibold text-[#8a93b2]">A BabyBrain parent</p>
               {r.provider_response && (
-                <div className="mt-2 rounded-[10px] bg-[#f8fbff] p-3">
-                  <p className="text-xs font-black text-baby-blue">Response from the provider</p>
+                <div className="mt-2 rounded-[10px] bg-[#fff7fb] p-3">
+                  <p className="text-xs font-black text-baby-pink">Response from the provider</p>
                   <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
                 </div>
               )}
@@ -1027,7 +1027,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
   if (!session) {
     return (
       <p className="mb-4 rounded-[10px] bg-[#f4f8ff] px-4 py-3 text-sm font-semibold text-[#59658d]">
-        <a href="/login" className="font-black text-baby-blue">Log in</a> to review a class you've attended.
+        <a href="/login" className="font-black text-baby-pink">Log in</a> to review a class you've attended.
       </p>
     );
   }
@@ -1117,7 +1117,7 @@ const PROFILE_TABS: [string, string, string][] = [
 
 function tokenStatusStyle(status: string) {
   if (status === "issued") return "bg-[#eefbf1] text-green-700";
-  if (status === "redeemed") return "bg-[#f3f7ff] text-[#2b7cff]";
+  if (status === "redeemed") return "bg-[#fff0f5] text-[#FA5D93]";
   return "bg-[#f1efe8] text-[#7a725c]"; // expired
 }
 
@@ -1125,7 +1125,7 @@ function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#eefbf1] text-green-700";
   if (status === "cancelled") return "bg-[#ffe9ef] text-[#b00040]";
   if (status === "waitlisted") return "bg-amber-50 text-amber-700";
-  return "bg-[#f3f7ff] text-[#2b7cff]";
+  return "bg-[#fff0f5] text-[#FA5D93]";
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -1309,7 +1309,7 @@ function ChildrenTab({
       {!form && (
         <>
           {kids.length === 0 ? (
-            <p className="mt-4 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">
+            <p className="mt-4 rounded-[12px] bg-[#fff7fb] p-5 text-center font-semibold text-[#68718f]">
               No child profiles yet — add one to get personalised matches and track their classes.
             </p>
           ) : (
@@ -1609,7 +1609,7 @@ function ProfilePage() {
             </div>
             <a
               href={billingPlan?.plan === "plus" ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${billingPlan?.plan === "plus" ? "bg-[#eef5ff] text-[#096cff]" : "bg-[#fff4ec] text-[#c2571f]"}`}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${billingPlan?.plan === "plus" ? "bg-[#ffe9f2] text-[#e5487f]" : "bg-[#fff4ec] text-[#c2571f]"}`}
             >
               <span className="flex items-center gap-1.5">
                 <Icon name={billingPlan?.plan === "plus" ? "star" : "spark"} className="h-4 w-4" />
@@ -1619,7 +1619,7 @@ function ProfilePage() {
             </a>
             <nav className="mt-4 space-y-1.5">
               {PROFILE_TABS.map(([key, item, icon]) => (
-                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#eef5ff] text-[#096cff]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}</a>
+                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#ffe9f2] text-[#e5487f]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}</a>
               ))}
             </nav>
           </div>
@@ -1646,7 +1646,7 @@ function ProfilePage() {
           <div className="rounded-[12px] bg-[#f4f8ff] p-5">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#1678ff]">Contact Support →</a>
+            <a href="/contact" className="mt-4 block font-black text-[#FA5D93]">Contact Support →</a>
           </div>
         </aside>
         <section>
@@ -1659,13 +1659,13 @@ function ProfilePage() {
               {child && <p className="mt-1.5 text-base font-semibold">{formatChildAge(child.date_of_birth)}</p>}
               {child && child.interests.length > 0 && (
                 <>
-                  <p className="mt-4 flex items-center gap-2 font-bold"><Icon name="heart" className="h-4 w-4 text-[#1678ff]" /> Interests</p>
+                  <p className="mt-4 flex items-center gap-2 font-bold"><Icon name="heart" className="h-4 w-4 text-[#FA5D93]" /> Interests</p>
                   <p className="mt-2 max-w-[200px] text-sm font-semibold capitalize leading-6">{child.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
                 </>
               )}
               <Button href="/onboarding" variant="outline" className="mt-6"><Icon name="pen" className="h-4 w-4" /> Edit Profile</Button>
             </div>
-            <div className="rounded-[10px] bg-[#f3f7ff] p-5">
+            <div className="rounded-[10px] bg-[#fff0f5] p-5">
               <h2 className="mb-4 text-lg font-black">{child ? `${child.name}'s Journey` : "Journey"}</h2>
               {[
                 [`${journey?.classes_attended ?? 0} Classes Attended`, "calendar"],
@@ -1678,7 +1678,7 @@ function ProfilePage() {
           </div>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#1678ff]">View all →</a>}>Saved Activities</SectionTitle>
+            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#FA5D93]">View all →</a>}>Saved Activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
               {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
@@ -1686,7 +1686,7 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#1678ff]">See all matches →</a>}>Recommended for you</SectionTitle>
+            <SectionTitle action={<a href="/matches" className="font-bold text-[#FA5D93]">See all matches →</a>}>Recommended for you</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -1741,7 +1741,7 @@ function ProfilePage() {
                 <div className="mt-4 space-y-3">
                   {packages.map((p) => (
                     <div key={p.id} className={`flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""}`}>
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#eef5ff] text-baby-blue"><Icon name="store" className="h-6 w-6" /></span>
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
@@ -1756,7 +1756,7 @@ function ProfilePage() {
                           <span className="rounded-full bg-[#f1efe8] px-3 py-1 text-xs font-bold text-[#7a725c]">Expired</span>
                         ) : (
                           <>
-                            <p className="text-lg font-black text-baby-blue">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
+                            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
                             <p className="text-xs font-bold text-[#9aa4c2]">credits left</p>
                           </>
                         )}
@@ -1822,7 +1822,7 @@ function ProfilePage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {savedProviders.map((p) => (
                       <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
-                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#eef5ff] text-baby-blue"><Icon name="store" className="h-5 w-5" /></span>
+                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink"><Icon name="store" className="h-5 w-5" /></span>
                         <h3 className="truncate font-black">{p.name}</h3>
                       </div>
                     ))}
@@ -1842,13 +1842,13 @@ function ProfilePage() {
                   {reviews.map((r) => (
                     <div key={r.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
                       <div className="flex items-center justify-between">
-                        <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-baby-blue">{r.title}</a>
+                        <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-baby-pink">{r.title}</a>
                         <span className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
                       </div>
                       {r.comment && <p className="mt-1.5 font-semibold text-[#34406f]">{r.comment}</p>}
                       {r.providerResponse && (
-                        <div className="mt-2 rounded-[10px] bg-[#f8fbff] p-3">
-                          <p className="text-xs font-black text-baby-blue">Response from the provider</p>
+                        <div className="mt-2 rounded-[10px] bg-[#fff7fb] p-3">
+                          <p className="text-xs font-black text-baby-pink">Response from the provider</p>
                           <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.providerResponse}</p>
                         </div>
                       )}
@@ -1867,9 +1867,9 @@ function ProfilePage() {
               ) : (
                 <div className="space-y-2.5">
                   {notifications.map((n) => (
-                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#e7ebf6] bg-white" : "border-[#cfe2ff] bg-[#f4f9ff]"}`}>
+                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#e7ebf6] bg-white" : "border-[#cfe2ff] bg-[#fff4f8]"}`}>
                       <div className="flex items-start gap-2">
-                        {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-blue" />}
+                        {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-pink" />}
                         <div>
                           <p className="font-black">{n.title}</p>
                           {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
@@ -1899,10 +1899,10 @@ function ProfilePage() {
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Plan</p>
                     <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
-                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-blue" />
+                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
                       {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
                       {billingPlan?.status === "trialing" && (
-                        <span className="rounded-full bg-[#eef5ff] px-2 py-0.5 text-xs font-bold text-baby-blue">Free trial</span>
+                        <span className="rounded-full bg-[#ffe9f2] px-2 py-0.5 text-xs font-bold text-baby-pink">Free trial</span>
                       )}
                       {billingPlan?.cancel_at_period_end && (
                         <span className="rounded-full bg-[#fff4e5] px-2 py-0.5 text-xs font-bold text-[#8a5a00]">Cancels at period end</span>
@@ -1928,7 +1928,7 @@ function ProfilePage() {
                     <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-green-500" />
                     Terms &amp; Conditions accepted on {sgDay(billingPlan.terms_accepted_at)}
                     {billingPlan.terms_version ? ` (v${billingPlan.terms_version})` : ""} ·{" "}
-                    <a href="/terms" className="text-baby-blue underline">View terms</a>
+                    <a href="/terms" className="text-baby-pink underline">View terms</a>
                   </p>
                 )}
               </div>
@@ -2029,7 +2029,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                 exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
               )
             }
-            className="flex items-center gap-1.5 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff]"
+            className="flex items-center gap-1.5 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
             title={`Export all ${exportable.length} classes to your calendar`}
           >
             <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
@@ -2040,7 +2040,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
         const cancelWhy = cancelBlockReason(b);
         const reschedWhy = reschedBlockReason(b);
         return (
-          <div key={b.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-blue">
+          <div key={b.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-pink">
             <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
               <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
               <div className="min-w-0 flex-1">
@@ -2055,7 +2055,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                     e.stopPropagation();
                     downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
                   }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#2b7cff] hover:bg-[#f4f9ff] sm:flex"
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#dbe4f6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8] sm:flex"
                   title="Add to calendar"
                 >
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
@@ -2072,7 +2072,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     reschedWhy
                       ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
-                      : "border border-[#dbe4f6] text-[#2b7cff] hover:bg-[#f4f9ff]"
+                      : "border border-[#dbe4f6] text-[#FA5D93] hover:bg-[#fff4f8]"
                   }`}
                   title={reschedWhy ?? "Move this booking to another session"}
                 >
@@ -2120,10 +2120,10 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                   key={s.id}
                   type="button"
                   onClick={() => doReschedule(s.id)}
-                  className="flex w-full items-center justify-between rounded-[10px] border border-[#e7ebf6] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-blue hover:bg-[#f4f9ff]"
+                  className="flex w-full items-center justify-between rounded-[10px] border border-[#e7ebf6] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#fff4f8]"
                 >
                   {sgDateTime(s.starts_at)}
-                  <Icon name="calendar" className="h-4 w-4 text-[#2b7cff]" />
+                  <Icon name="calendar" className="h-4 w-4 text-[#FA5D93]" />
                 </button>
               ))}
               {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#8a93b2]">No other upcoming sessions for this class.</p>}
@@ -2215,12 +2215,12 @@ function ContactPage() {
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="grid items-center gap-7 md:grid-cols-[1fr_420px]">
           <div>
-            <p className="mb-5 flex items-center gap-2 text-lg font-black text-baby-blue">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current" /></p>
+            <p className="mb-5 flex items-center gap-2 text-lg font-black text-baby-pink">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current" /></p>
             <h1 className="text-[40px] font-black leading-tight">How can our team support you today?</h1>
             <p className="mt-5 text-lg font-semibold leading-8 text-[#68718f]">Have a question, feedback, or need assistance? Our team is happy to help.</p>
           </div>
           <div className="relative">
-            <div className="absolute left-4 top-16 rounded-[16px] bg-white p-5 font-semibold leading-7 shadow-soft">We endeavor to<br />respond within 3 days.<br />If more urgent,<br />please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-baby-blue" /></div>
+            <div className="absolute left-4 top-16 rounded-[16px] bg-white p-5 font-semibold leading-7 shadow-soft">We endeavor to<br />respond within 3 days.<br />If more urgent,<br />please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-baby-pink" /></div>
             <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="ml-auto h-[280px] object-contain" />
           </div>
         </section>
@@ -2462,14 +2462,14 @@ function PricingPage() {
             <button
               type="button"
               onClick={() => setBilling("monthly")}
-              className={billing === "monthly" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "monthly" ? "rounded-full bg-baby-pink text-white" : "text-[#59658d]"}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setBilling("annual")}
-              className={billing === "annual" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "annual" ? "rounded-full bg-baby-pink text-white" : "text-[#59658d]"}
             >
               Annual <span className="text-baby-pink">(1 month free)</span>
             </button>
@@ -2485,7 +2485,7 @@ function PricingPage() {
         <section className="mt-7 grid gap-5 md:grid-cols-2">
           {/* Free */}
           <article className="relative rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#eef5ff] text-baby-blue">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink">
               <Icon name="heart" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
@@ -2497,7 +2497,7 @@ function PricingPage() {
             <div className="space-y-3">
               {freeItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-pink text-baby-pink">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
@@ -2510,8 +2510,8 @@ function PricingPage() {
           </article>
 
           {/* Plus */}
-          <article className="relative rounded-[18px] border border-baby-blue bg-white p-6 shadow-card ring-1 ring-baby-blue/20">
-            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
+          <article className="relative rounded-[18px] border border-baby-pink bg-white p-6 shadow-card ring-1 ring-baby-pink/20">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-pink px-8 py-2 text-sm font-black text-white">
               MOST POPULAR
             </span>
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f4ecff] text-baby-lilac">
@@ -2528,14 +2528,14 @@ function PricingPage() {
             <div className="space-y-3">
               {plusItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-pink text-baby-pink">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
                 </p>
               ))}
             </div>
-            <p className="mt-5 rounded-[10px] bg-[#f3f7ff] px-4 py-3 text-center text-sm font-black text-baby-blue">
+            <p className="mt-5 rounded-[10px] bg-[#fff0f5] px-4 py-3 text-center text-sm font-black text-baby-pink">
               First month free — cancel anytime
             </p>
             <Button
@@ -2554,7 +2554,7 @@ function PricingPage() {
             <p className="mt-3 text-center text-xs font-semibold text-[#9aa4c2]">
               Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
               {" "}By subscribing you agree to our{" "}
-              <a href="/terms" className="text-baby-blue underline">Terms &amp; Conditions</a>.
+              <a href="/terms" className="text-baby-pink underline">Terms &amp; Conditions</a>.
             </p>
           </article>
         </section>
@@ -2566,7 +2566,7 @@ function PricingPage() {
             ["shield", "Cancel anytime", "Manage your subscription from your profile"],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <Icon name={icon} className="h-8 w-8 text-baby-blue" />
+              <Icon name={icon} className="h-8 w-8 text-baby-pink" />
               <p><strong className="block">{title}</strong><span className="text-sm font-semibold text-[#59658d]">{copy}</span></p>
             </div>
           ))}
@@ -2799,7 +2799,7 @@ function BookingPage() {
     return (
       <PageShell active="/book">
         <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">
-          Class not found. <a href="/explore" className="text-baby-blue">Browse activities →</a>
+          Class not found. <a href="/explore" className="text-baby-pink">Browse activities →</a>
         </main>
       </PageShell>
     );
@@ -2811,10 +2811,10 @@ function BookingPage() {
   return (
     <PageShell active="/book">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-baby-blue">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="rounded-[18px] border border-[#e7ebf6] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#eef1f7] p-6 md:grid-cols-[90px_1fr_240px]">
-            <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="calendar" className="h-10 w-10" /></span>
+            <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
             <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date and time.</p></div>
             <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
           </header>
@@ -2835,14 +2835,14 @@ function BookingPage() {
 
               <div className="mt-6 space-y-6 border-t border-[#eef1f7] pt-5">
                 {sessions.length === 0 ? (
-                  <p className="rounded-[12px] bg-[#f8fbff] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
+                  <p className="rounded-[12px] bg-[#fff7fb] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
                 ) : (
                   <>
                     <section>
                       <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
+                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -2850,7 +2850,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-blue bg-[#f3f7ff] text-baby-blue" : "border-[#dfe5f2] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -2888,7 +2888,7 @@ function BookingPage() {
               <h2 className="text-xl font-black">Booking Summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
-                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#f3f7ff] px-3 py-1 text-xs font-bold text-baby-blue">{activity.category_name}</span>}</div>
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#fff0f5] px-3 py-1 text-xs font-bold text-baby-pink">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
@@ -2896,8 +2896,8 @@ function BookingPage() {
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#eef1f7]" />
-              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-blue">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
-              <div className="mt-5 rounded-[12px] bg-[#f8fbff] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-blue" /> {item}</p>)}</div>
+              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <div className="mt-5 rounded-[12px] bg-[#fff7fb] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-pink" /> {item}</p>)}</div>
             </aside>
           </div>
         </section>
@@ -2950,9 +2950,9 @@ function BookedPage() {
   return (
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class Details</span><span>›</span><span className="text-baby-blue">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class Details</span><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#e7ebf6] bg-gradient-to-r from-[#fff0f7] to-white p-8 md:grid-cols-[120px_1fr_220px]">
-          <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-blue text-white"><Icon name="check" className="h-12 w-12" /></span>
+          <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
         </section>
@@ -2969,7 +2969,7 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-blue"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
               </div>
             </article>
           </div>
@@ -3029,7 +3029,7 @@ function AboutPage() {
           <h2 className="text-2xl font-black">Why We Built BabyBrain</h2>
           <p className="font-semibold text-[#59658d]">Parents told us they faced the same challenges:</p>
           <div className="mt-5 grid gap-4 md:grid-cols-5">
-            {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-blue" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
+            {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-pink" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
           </div>
         </section>
         <section className="mt-7 rounded-[18px] bg-[#eef8ff] p-7">
@@ -3048,7 +3048,7 @@ function BrandBlock() {
   return (
     <div className="flex items-center gap-2">
       <img src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`} alt="" className="h-14 w-14" />
-      <div className="text-2xl font-black"><span className="text-baby-pink">Baby</span><span className="text-baby-blue">Brain</span></div>
+      <div className="text-2xl font-black"><span className="text-baby-pink">Baby</span><span className="text-baby-pink">Brain</span></div>
     </div>
   );
 }
@@ -3127,7 +3127,7 @@ function ForgotPasswordPage() {
                 If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
               </p>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-                <a href="/login" className="font-black text-baby-blue">← Back to log in</a>
+                <a href="/login" className="font-black text-baby-pink">← Back to log in</a>
               </p>
             </div>
           ) : (
@@ -3142,7 +3142,7 @@ function ForgotPasswordPage() {
                 <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
               </form>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-                Remembered it? <a href="/login" className="font-black text-baby-blue">Log in</a>
+                Remembered it? <a href="/login" className="font-black text-baby-pink">Log in</a>
               </p>
             </>
           )}
@@ -3197,7 +3197,7 @@ function ResetPasswordPage() {
             </p>
           ) : !ready ? (
             <p className="mt-3 rounded-[10px] bg-[#fff7e6] px-3 py-3 text-sm font-semibold text-[#8a6d1a]">
-              This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-blue">request a new one</a>.
+              This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-pink">request a new one</a>.
             </p>
           ) : (
             <>
