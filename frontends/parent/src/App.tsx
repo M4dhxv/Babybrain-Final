@@ -25,7 +25,7 @@ import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { formatChildAge, formatAgeRange } from "./lib/database.types";
-import type { ActivitySession } from "./lib/database.types";
+import type { ActivitySession, Child, Gender } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
@@ -41,20 +41,20 @@ function HomePage() {
       <main>
         <section className="mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
           <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#eef5ff] px-4 py-2.5 text-[13px] font-bold text-[#2b7cff]">
-              <Icon name="heart" className="h-4 w-4" /> Made for you. Designed to save time.
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#ffe9f2] px-4 py-2.5 text-[13px] font-bold text-baby-pink">
+              <Icon name="heart" className="h-4 w-4" /> Made by a parent, for parents.
             </div>
             <h1 className="max-w-[520px] text-[40px] font-black leading-[1.04] md:text-[52px]">
-              Curated activities that fit{" "}
-              <span className="text-baby-blue">your child</span>
+              Curated activities for{" "}
+              <span className="text-baby-pink">your child</span>
             </h1>
             <p className="mt-5 max-w-[460px] text-[17px] font-semibold leading-7 text-[#27325f]">
-              Discover activities and play spaces that match your child's age,
-              interests and stage of growth.
+              Discover &amp; book classes, play spaces and events tailored to
+              your little one and convenient for you.
             </p>
             <div className="mt-6 flex flex-wrap gap-4">
               <Button href="/explore" size="lg">
-                Explore Activities <span>›</span>
+                Start Searching <span>›</span>
               </Button>
               <Button href="/onboarding" variant="outline" size="lg">
                 Create Profile <Icon name="user" className="h-[18px] w-[18px]" />
@@ -74,12 +74,12 @@ function HomePage() {
 
         <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-4 md:grid-cols-3">
           {[
-            ["search", "Curated activities", "Picked to match your child's needs."],
-            ["shield", "Trusted providers", "We partner with verified providers"],
-            ["calendar", "Planned with ease", "Find activities that fit your day"],
+            ["search", "Find activities", "Selected to meet a range of kid's needs."],
+            ["shield", "Trusted providers", "We partner with verified providers."],
+            ["calendar", "Plan with ease", "Book activities that suit you."],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#f2e8ff] to-[#eef8ff] text-baby-lilac">
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#ffe4ef] to-[#fff0f5] text-baby-pink">
                 <Icon name={icon} className="h-8 w-8" />
               </span>
               <p>
@@ -92,20 +92,20 @@ function HomePage() {
 
         <section id="how-it-works" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3">
           <div className="rounded-[22px] border border-[#e8ecf6] bg-white/80 p-5 shadow-card">
-            <h2 className="text-center text-[26px] font-black text-baby-lilac">
+            <h2 className="text-center text-[26px] font-black text-baby-orange">
               How it works <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
             </h2>
             <p className="text-center text-sm font-semibold text-[#46527d]">
-              Three simple steps to help you discover activities that suit your child.
+              Three simple steps to help you identify &amp; book activities ideal for your child.
             </p>
             <div className="mt-5 grid gap-5 md:grid-cols-3">
               {[
-                ["1", "how-step-1", "Tell us about your child", "Share a few details about your child's age, interests and what you're looking for."],
-                ["2", "how-step-2", "Explore activities", "Browse curated activities and play spaces that match your preferences."],
-                ["3", "how-step-3", "Plan and book", "Choose what works for you and book directly with the provider."],
+                ["1", "how-step-1", "Tell us what you're looking for", "Share details about your child's age, interests and the location you're looking for."],
+                ["2", "how-step-2", "Discover activities", "Browse curated activities that match your preferences."],
+                ["3", "how-step-3", "Plan and book", "Choose what works for you and book direct or via the provider's website."],
               ].map(([step, art, title, copy]) => (
                 <article key={title} className="text-center">
-                  <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-baby-pink text-base font-black text-white">
+                  <span className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-baby-lilac text-base font-black text-white">
                     {step}
                   </span>
                   <div className="mx-auto my-2 grid h-20 place-items-center">
@@ -120,9 +120,9 @@ function HomePage() {
             </div>
             <div className="mt-5 grid gap-3 rounded-[18px] border border-[#e8ecf6] bg-white p-3 md:grid-cols-3">
               {[
-                ["people", "500+", "Curated activities"],
+                ["people", "1000+", "Curated activities"],
                 ["store", "100+", "Verified providers"],
-                ["chart", "Thousands", "Happy families"],
+                ["chart", "200+", "Locations"],
               ].map(([icon, stat, label]) => (
                 <div key={stat} className="flex items-center justify-center gap-3">
                   <span className="grid h-12 w-12 place-items-center rounded-full bg-[#fff0f7] text-baby-pink">
@@ -142,7 +142,7 @@ function HomePage() {
           <SectionTitle>Explore activities by age</SectionTitle>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
-              ["0 – 6 months", "6", "Newborn play & bonding"],
+              ["0 – 6 months", "6", "Social awakening"],
               ["7 – 18 months", "18", "Curious little movers"],
               ["19 months – 3 years", "36", "Busy toddlers"],
               ["Over 3 years", "48", "Confident explorers"],
@@ -160,7 +160,7 @@ function HomePage() {
         </section>
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
-          <SectionTitle>Explore activities by category</SectionTitle>
+          <SectionTitle>Explore activities by type</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {categories.map(([icon, label, , slug]) => (
               <CategoryTile key={label} icon={icon} label={label} href={`/explore?cat=${slug}`} />
@@ -170,7 +170,7 @@ function HomePage() {
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <SectionTitle
-            action={<a href="/explore" className="font-bold text-[#2182ff]">View all activities ›</a>}
+            action={<a href="/explore" className="font-bold text-baby-pink">View all activities ›</a>}
           >
             Activities near you
           </SectionTitle>
@@ -178,7 +178,7 @@ function HomePage() {
         </section>
 
         <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3">
-          {["Joanne Tan", "Marcus Lim", "Sarah Wong"].map((name, index) => (
+          {["Joanne", "Marcus", "Sarah"].map((name, index) => (
             <article key={name} className="flex gap-4 rounded-[16px] border border-[#e8ecf6] bg-white p-5 shadow-card">
               <AnimalAvatar seed={name} kind="parent" className="h-11 w-11" />
               <div>
@@ -201,10 +201,10 @@ function HomePage() {
           <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#eadcf8] bg-gradient-to-r from-[#fff0f7] via-white to-[#f2edff] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
             <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="h-28 object-contain object-left" />
             <div>
-              <h2 className="text-2xl font-black">Curated activities. Reduced mental load.</h2>
-              <p className="mt-1 font-semibold text-[#4e5982]">Let us help you find what's right for your child.</p>
+              <h2 className="text-2xl font-black">Reduce your mental load</h2>
+              <p className="mt-1 font-semibold text-[#4e5982]">We make it quicker &amp; easier to plan activities for your little ones.</p>
             </div>
-            <Button href="/onboarding" size="lg">Create your profile ›</Button>
+            <Button href="/onboarding" size="lg">Get Started ›</Button>
           </div>
         </section>
       </main>
@@ -247,18 +247,17 @@ function OnboardingPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [postcode, setPostcode] = useState("");
   const [weekdays, setWeekdays] = useState(false);
   const [weekend, setWeekend] = useState(false);
   const [times, setTimes] = useState<string[]>([]);
-  const [budget, setBudget] = useState<string | null>(null);
-  const [interests, setInterests] = useState<string[]>([]);
+  const [budgets, setBudgets] = useState<string[]>([]);
   const [childName, setChildName] = useState("");
   const [childDob, setChildDob] = useState("");
   const [childGender, setChildGender] = useState("unspecified");
   const [childInterests, setChildInterests] = useState<string[]>([]);
-  const [childNotes, setChildNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
@@ -272,6 +271,10 @@ function OnboardingPage() {
   const input = "h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 text-sm font-semibold";
 
   async function submit() {
+    if (password !== confirmPassword) {
+      setError("Passwords don't match — please re-enter them.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const { error: signErr } = await signUp(email, password, fullName);
@@ -286,14 +289,18 @@ function OnboardingPage() {
     }
     const uid = session.user.id;
     const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
-    const b = BUDGET_CHIPS.find(([k]) => k === budget);
+    const chosenBudgets = BUDGET_CHIPS.filter(([k]) => budgets.includes(k));
+    const budgetMin = chosenBudgets.length ? Math.min(...chosenBudgets.map(([, , lo]) => lo ?? 0)) : null;
+    const budgetMax = chosenBudgets.length && chosenBudgets.every(([, , , hi]) => hi != null)
+      ? Math.max(...chosenBudgets.map(([, , , hi]) => hi as number))
+      : null;
     await supabase.from("parent_profiles").update({ full_name: fullName, phone: phone || null, postal_code: postcode || null }).eq("id", uid);
     await supabase.from("user_preferences").update({
       preferred_days: days as never,
       preferred_times: times as never,
-      budget_min: b ? b[2] : null,
-      budget_max: b ? b[3] : null,
-      interests,
+      budget_min: budgetMin,
+      budget_max: budgetMax,
+      interests: childInterests,
     }).eq("user_id", uid);
     if (childName && childDob) {
       await supabase.from("children").insert({
@@ -302,7 +309,7 @@ function OnboardingPage() {
         date_of_birth: childDob,
         gender: childGender as never,
         interests: childInterests,
-        notes: childNotes || null,
+        notes: null,
       });
     }
     window.location.href = "/matches";
@@ -327,11 +334,12 @@ function OnboardingPage() {
 
         <section className="rounded-[14px] border border-[#eadfd2] bg-white p-5">
           <h1 className="text-[26px] font-black">Let's get to know you</h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">This helps us show options for your family.</p>
+          <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
             <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
             <div><label className="mb-1 block text-sm font-black">Password</label><input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" /></div>
+            <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
               <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="307591" /></div>
@@ -342,16 +350,12 @@ function OnboardingPage() {
             <Chip on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Chip>
             <Chip on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Chip>
             {TIME_CHIPS.map(([v, l]) => <Chip key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Chip>)}
-            {BUDGET_CHIPS.map(([k, l]) => <Chip key={k} on={budget === k} onClick={() => setBudget(budget === k ? null : k)}>{l}</Chip>)}
-          </div>
-          <p className="mt-3 mb-1 text-sm font-black">Interests</p>
-          <div className="flex flex-wrap gap-2">
-            {cats.map((c) => <Chip key={c.slug} on={interests.includes(c.slug)} onClick={() => toggle(interests, c.slug, setInterests)}>{c.name}</Chip>)}
+            {BUDGET_CHIPS.map(([k, l]) => <Chip key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Chip>)}
           </div>
         </section>
 
         <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
-          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-blue">child</span></h1>
+          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">child</span></h1>
           <div className="mt-4 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="e.g. Emma" /></div>
             <div><label className="mb-1 block text-sm font-black">Date of birth</label><input type="date" max={new Date().toISOString().slice(0, 10)} className={input} value={childDob} onChange={(e) => setChildDob(e.target.value)} /></div>
@@ -366,12 +370,11 @@ function OnboardingPage() {
                 {cats.map((c) => <Chip key={c.slug} on={childInterests.includes(c.slug)} onClick={() => toggle(childInterests, c.slug, setChildInterests)}>{c.name}</Chip>)}
               </div>
             </div>
-            <div><label className="mb-1 block text-sm font-black">Any other notes?</label><input className={input} value={childNotes} onChange={(e) => setChildNotes(e.target.value)} placeholder="e.g. loves dancing…" /></div>
           </div>
         </section>
 
         <Button type="button" onClick={submit} className="mt-5 w-full justify-center">{busy ? "Setting up…" : "Show me options →"}</Button>
-        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-blue">Log in</a></p>
+        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
       </main>
     </PageShell>
   );
@@ -478,10 +481,10 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
 
 const AGE_FILTERS: [string, string][] = [
   ["", "All ages"],
-  ["6", "0 – 1 year"],
-  ["18", "1 – 2 years"],
-  ["36", "3 – 4 years"],
-  ["60", "5 years +"],
+  ["6", "0 – 6 months"],
+  ["18", "7 – 18 months"],
+  ["36", "19 months – 3 years"],
+  ["48", "Over 3 years"],
 ];
 
 // Singapore regions for the Explore location filter. Classified from a
@@ -577,7 +580,7 @@ function EmailCapturePopup() {
           </div>
         ) : (
           <>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#eef5ff] px-3 py-1.5 text-xs font-bold text-[#2b7cff]"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#ffe9f2] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
             <h2 className="text-2xl font-black leading-tight">Get activity ideas for your child</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll send curated classes and play spaces near you — no spam, unsubscribe anytime.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
@@ -653,14 +656,14 @@ function ExplorePage() {
       <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h1 className="text-[28px] font-black text-baby-lilac sm:text-[34px]">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-blue" /></h1>
+            <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-green" /></h1>
             <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">Browse activities across Singapore.</p>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
         <div className="mb-3 grid gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Category</span>
+            <span className="text-xs font-bold text-[#68718f]">Type of activity</span>
             <select value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
               <option value="">All categories</option>
               {cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
@@ -707,7 +710,7 @@ function ExplorePage() {
         <div className="space-y-5">
           <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xl font-black text-baby-lilac">Explore on map</h2>
+              <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
               <span className="text-xs font-bold text-[#68718f]">{shown.filter((a) => a.lat != null).length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
@@ -1090,7 +1093,7 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
   startsAt: string | null; endsAt: string | null; venue: string;
-  activityId: string | null;
+  activityId: string | null; childId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
 };
@@ -1125,8 +1128,233 @@ function bookingStatusStyle(status: string) {
   return "bg-[#f3f7ff] text-[#2b7cff]";
 }
 
+type ChildRecs = ReturnType<typeof useRecommendations>["data"];
+
+/** Add / edit a child directly against the `children` table (RLS-scoped to the
+ *  signed-in parent). Used from the profile so parents can manage kids after
+ *  onboarding, without going back through the signup flow. */
+function ChildForm({
+  parentId,
+  initial,
+  onSaved,
+  onCancel,
+}: {
+  parentId: string;
+  initial?: Child;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [dob, setDob] = useState(initial?.date_of_birth ?? "");
+  const [gender, setGender] = useState<string>(initial?.gender ?? "unspecified");
+  const [interests, setInterests] = useState<string[]>(initial?.interests ?? []);
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
+  }, []);
+
+  const input = "h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 text-sm font-semibold";
+  const toggle = (v: string) => setInterests((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]));
+
+  async function save() {
+    if (!name.trim() || !dob) {
+      setError("Please add a name and date of birth.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const payload = { name: name.trim(), date_of_birth: dob, gender: gender as Gender, interests, notes: notes.trim() || null };
+    const { error: err } = initial
+      ? await supabase.from("children").update(payload).eq("id", initial.id)
+      : await supabase.from("children").insert({ parent_id: parentId, ...payload });
+    setBusy(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="mt-4 rounded-[14px] border border-[#f0d9e6] bg-white p-5 shadow-card">
+      <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
+      {error && <p className="mt-2 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      <div className="mt-3 space-y-3">
+        <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emma" /></div>
+        <div><label className="mb-1 block text-sm font-black">Date of birth</label><input type="date" max={new Date().toISOString().slice(0, 10)} className={input} value={dob} onChange={(e) => setDob(e.target.value)} /></div>
+        <div className="grid grid-cols-3 gap-3">
+          {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
+            <Chip key={v} on={gender === v} onClick={() => setGender(v)}>{l}</Chip>
+          ))}
+        </div>
+        <div>
+          <p className="mb-1 text-sm font-black">Interests</p>
+          <div className="flex flex-wrap gap-2">
+            {cats.map((c) => <Chip key={c.slug} on={interests.includes(c.slug)} onClick={() => toggle(c.slug)}>{c.name}</Chip>)}
+          </div>
+        </div>
+        <div><label className="mb-1 block text-sm font-black">Any other notes?</label><input className={input} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. loves dancing…" /></div>
+      </div>
+      <div className="mt-4 flex gap-3">
+        <Button type="button" onClick={save} disabled={busy}>{busy ? "Saving…" : initial ? "Save changes" : "Add child"}</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function ChildClassRow({ b }: { b: BookingItem }) {
+  return (
+    <a href={b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#eef1f7] bg-white p-3 shadow-card transition hover:border-baby-pink">
+      <img src={b.image} alt="" className="h-14 w-14 rounded-[10px] object-cover" />
+      <div className="min-w-0 flex-1">
+        <h4 className="truncate font-black">{b.title}</h4>
+        <p className="text-xs font-semibold text-[#59658d]">{b.when || "Schedule TBC"}</p>
+      </div>
+      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+    </a>
+  );
+}
+
+/** The per-child panel shown when a parent taps a child: their booked classes
+ *  (split upcoming vs. past) plus matched suggestions for that child. */
+function ChildClasses({ child, bookings, recs }: { child: Child; bookings: BookingItem[]; recs: ChildRecs[number]["recs"] }) {
+  const now = Date.now();
+  const isUpcoming = (b: BookingItem) => !!b.startsAt && new Date(b.startsAt).getTime() >= now && b.status !== "cancelled";
+  const upcoming = bookings.filter(isUpcoming);
+  const past = bookings.filter((b) => !isUpcoming(b));
+  const suggestions = recs.filter((r) => r.activity);
+
+  return (
+    <section className="mt-5 rounded-[16px] border border-[#f0d9e6] bg-[#fff7fb] p-5">
+      <h2 className="text-xl font-black">{child.name}'s classes</h2>
+      {bookings.length === 0 ? (
+        <p className="mt-3 rounded-[12px] bg-white p-4 text-sm font-semibold text-[#68718f]">
+          No classes booked for {child.name} yet. <a href="/explore" className="font-black text-baby-pink">Explore activities →</a>
+        </p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {upcoming.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-black text-[#46527d]">Upcoming</h3>
+              <div className="space-y-2">{upcoming.map((b) => <ChildClassRow key={b.id} b={b} />)}</div>
+            </div>
+          )}
+          {past.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-black text-[#46527d]">Past &amp; cancelled</h3>
+              <div className="space-y-2">{past.map((b) => <ChildClassRow key={b.id} b={b} />)}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-black text-[#46527d]">Suggested for {child.name}</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {suggestions.slice(0, 3).map((r) => <ActivityCard key={r.id} activity={toCard(r.activity as Parameters<typeof toCard>[0])} />)}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** "My Children" tab: list + add/edit/remove, and tap a child to see their classes. */
+function ChildrenTab({
+  parentId,
+  kids,
+  refresh,
+  bookings,
+  recsByChild,
+}: {
+  parentId: string;
+  kids: Child[];
+  refresh: () => Promise<void>;
+  bookings: BookingItem[];
+  recsByChild: ChildRecs;
+}) {
+  const [form, setForm] = useState<null | { child?: Child }>(null);
+  const [viewId, setViewId] = useState<string | null>(null);
+
+  async function remove(c: Child) {
+    if (!window.confirm(`Remove ${c.name}'s profile? This can't be undone.`)) return;
+    await supabase.from("children").delete().eq("id", c.id);
+    if (viewId === c.id) setViewId(null);
+    await refresh();
+  }
+
+  const viewChild = kids.find((c) => c.id === viewId) ?? null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-[26px] font-black">My Children</h1>
+        {!form && <Button type="button" onClick={() => { setForm({}); }}><Icon name="user" className="h-4 w-4" /> Add a child</Button>}
+      </div>
+
+      {form && (
+        <ChildForm
+          parentId={parentId}
+          initial={form.child}
+          onCancel={() => setForm(null)}
+          onSaved={async () => { setForm(null); await refresh(); }}
+        />
+      )}
+
+      {!form && (
+        <>
+          {kids.length === 0 ? (
+            <p className="mt-4 rounded-[12px] bg-[#f8fbff] p-5 text-center font-semibold text-[#68718f]">
+              No child profiles yet — add one to get personalised matches and track their classes.
+            </p>
+          ) : (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {kids.map((c) => {
+                const booked = bookings.filter((b) => b.childId === c.id).length;
+                const open = viewId === c.id;
+                return (
+                  <div key={c.id} className={`rounded-[14px] border bg-white p-5 shadow-card transition ${open ? "border-baby-pink ring-1 ring-baby-pink/30" : "border-[#e7ebf6] hover:border-baby-pink"}`}>
+                    <button type="button" onClick={() => setViewId(open ? null : c.id)} className="flex w-full items-center gap-4 text-left">
+                      <AnimalAvatar seed={c.name} kind="child" className="h-16 w-16 ring-4 ring-white shadow-soft" />
+                      <div>
+                        <h3 className="font-black">{c.name}</h3>
+                        <p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p>
+                        <p className="mt-0.5 text-xs font-bold text-baby-pink">{open ? "Hide classes ▲" : `View classes ▾${booked ? ` · ${booked} booked` : ""}`}</p>
+                      </div>
+                    </button>
+                    {c.interests.length > 0 && (
+                      <p className="mt-3 text-sm font-semibold capitalize leading-6 text-[#4a5685]"><span className="font-black text-baby-ink">Interests:</span> {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
+                    )}
+                    <div className="mt-3 flex items-center gap-3">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setForm({ child: c })}><Icon name="pen" className="h-4 w-4" /> Edit</Button>
+                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#b00040] hover:underline">Remove</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {viewChild && (
+            <ChildClasses
+              child={viewChild}
+              bookings={bookings.filter((b) => b.childId === viewChild.id)}
+              recs={recsByChild.find((r) => r.child.id === viewChild.id)?.recs ?? []}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ProfilePage() {
-  const { session, profile, children, loading, signOut } = useAuth();
+  const { session, profile, children, loading, signOut, refresh } = useAuth();
   const child = children[0];
   const journey = useJourney(child?.id);
   const { data: recsByChild } = useRecommendations(children);
@@ -1151,12 +1379,13 @@ function ProfilePage() {
   function loadBookings() {
     supabase
       .from("bookings")
-      .select("id, status, created_at, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
+      .select("id, status, created_at, child_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string;
           status: string;
+          child_id: string | null;
           activity_sessions: {
             starts_at: string;
             ends_at: string | null;
@@ -1183,6 +1412,7 @@ function ProfilePage() {
               endsAt: s?.ends_at ?? null,
               venue: act?.address ?? "",
               activityId: s?.activity_id ?? null,
+              childId: r.child_id ?? null,
               allowCancel: act?.allow_cancellation ?? true,
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
@@ -1448,9 +1678,9 @@ function ProfilePage() {
           </div>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/explore" className="font-bold text-[#1678ff]">View all →</a>}>Saved Activities</SectionTitle>
+            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#1678ff]">View all →</a>}>Saved Activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
-              {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} compact />)}
+              {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
               {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
             </div>
           </section>
@@ -1458,7 +1688,7 @@ function ProfilePage() {
           <section className="mt-6">
             <SectionTitle action={<a href="/matches" className="font-bold text-[#1678ff]">See all matches →</a>}>Recommended for you</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
-              {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} compact />)}
+              {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
             </div>
           </section>
@@ -1470,35 +1700,21 @@ function ProfilePage() {
                 { label: "My Bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your classes" },
                 { label: "Favorites", icon: "heart", href: "/profile?tab=favorites", copy: "Activities you've saved" },
                 { label: "Reviews", icon: "star", href: "/profile?tab=reviews", copy: "Share your experience" },
-                { label: "Explore Nearby", icon: "pin", href: "/explore", copy: "Discover activities near you" },
+                { label: "Explore", icon: "pin", href: "/explore", copy: "Find activities that suit you" },
               ].map((t) => <CategoryTile key={t.label} icon={t.icon} label={t.label} copy={t.copy} href={t.href} />)}
             </div>
           </section>
           </>
           )}
 
-          {tab === "children" && (
-            <div>
-              <h1 className="text-[26px] font-black">My Children</h1>
-              {children.length === 0 ? (
-                <EmptyPanel icon="people" copy="No child profile yet — add one to get personalised matches." cta="Add a child" href="/onboarding" />
-              ) : (
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {children.map((c) => (
-                    <div key={c.id} className="rounded-[14px] border border-[#e7ebf6] bg-white p-5 shadow-card">
-                      <div className="flex items-center gap-4">
-                        <AnimalAvatar seed={c.name} kind="child" className="h-16 w-16 ring-4 ring-white shadow-soft" />
-                        <div><h3 className="font-black">{c.name}</h3><p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p></div>
-                      </div>
-                      {c.interests.length > 0 && (
-                        <p className="mt-3 text-sm font-semibold capitalize leading-6 text-[#4a5685]"><span className="font-black text-baby-ink">Interests:</span> {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <Button href="/onboarding" variant="outline" className="mt-5"><Icon name="pen" className="h-4 w-4" /> Add or edit a child</Button>
-            </div>
+          {tab === "children" && session && (
+            <ChildrenTab
+              parentId={session.user.id}
+              kids={children}
+              refresh={refresh}
+              bookings={bookings}
+              recsByChild={recsByChild}
+            />
           )}
 
           {tab === "bookings" && (
@@ -1592,7 +1808,6 @@ function ProfilePage() {
                     <ActivityCard
                       key={activity.id}
                       activity={activity}
-                      compact
                       onFavoriteToggled={(id, saved) => {
                         if (!saved) setFavs((prev) => prev.filter((a) => a.id !== id));
                       }}
@@ -1935,6 +2150,57 @@ const SUPPORT_EMAIL = "hello@babybrain.sg";
 const SUPPORT_PHONE = "+65 8996 6716"; // BabyBrain support line (call + WhatsApp)
 const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
 
+const FAQ_LINK = "font-black text-baby-pink hover:underline";
+const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
+  {
+    group: "Booking & getting started",
+    items: [
+      ["How does booking work?", "For providers integrated with BabyBrain, you find a class you like, select your package and session, and book directly through us — no contact forms, no waiting for a reply. For providers who aren't integrated, we'll redirect you to their site to book."],
+      ["Why can I book some providers on BabyBrain but get sent to others' websites?", "It depends on the plan each provider is on. Some are fully set up to book directly through BabyBrain; others aren't there yet or have decided not to integrate, so we send you to their site to book. We're working on getting more providers fully integrated to make the process smoother for you."],
+      ["What happens after I book?", "You'll get a booking confirmation by email, along with reminders before your class so nothing slips."],
+      ["What if I need to cancel or reschedule?", "Cancellation and rescheduling policies are set by each provider and vary, so check the provider's page for the details before you book."],
+      ["Can I get a refund?", "Whether a refund is issued is decided by each provider, under the policy on their page. Have a look there before booking so you know where you stand."],
+      ["What happens if a provider cancels a class?", "You'll get an email letting you know. What happens next — a make-up token, a refund, or something else — depends on that provider's policy."],
+      ["Do I have to create an account?", "Yes — you'll need a free account to book and to receive your confirmations and reminders. It only takes a minute."],
+    ],
+  },
+  {
+    group: "Cost & payment",
+    items: [
+      ["Does BabyBrain cost anything to use?", "BabyBrain is free to browse and book — you just pay the price of the activity. If you'd like extras like saved profiles, pass tracking and calendar sync, our Plus plan is SGD 9/month or SGD 99/year on top of activity prices."],
+      ["How do I pay?", "PayNow, Apple Pay, Google Pay or card — whatever's easiest for you."],
+      ["Is my payment secure?", "Payments are handled by Stripe, a global provider trusted by millions of businesses. Your card details are never stored by BabyBrain."],
+    ],
+  },
+  {
+    group: "Managing your account",
+    items: [
+      ["Can I manage passes I've already bought?", "Yes — with Plus, your packages and make-up tokens across every provider live in one place on your profile, so you never lose track of what you've paid for. Just click through to use them. On the free plan, these are sent to you by email to use from there."],
+      ["How do make-up classes work?", "Make-up tokens follow each provider's own rules. With Plus, they're gathered on your profile and you click through to book one. On the free plan, they come to you by email and you book from the link there."],
+      ["What if I have more than one child?", "With Plus, your saved profile holds all your children, and you'll see recommendations based on their ages and your preferences — with every booking, for all of them, in one place."],
+      ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book. Plus (SGD 9/month or SGD 99/year) makes planning and managing your bookings seamless: saved profiles for multiple children, all your passes and make-up tokens in one place, saved favourites, curated activity emails, calendar sync and an exportable schedule for grandparents and helpers, messaging, and priority support."],
+      ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
+      ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
+      ["How do I refer a friend?", "Refer a friend to Plus, and when they sign up for a paid subscription, you get a free month."],
+    ],
+  },
+  {
+    group: "Providers & activities",
+    items: [
+      ["Are the providers on BabyBrain vetted or endorsed?", "Every provider here has been tried and tested by the parent community behind BabyBrain. That's not formal vetting, and we don't take liability for the activities — but it does mean real parents have used them."],
+      ["There's an activity I love that I can't find here — can I ask for it to be added?", <>Yes, please do — we're always growing our list, just drop us a message via our <a href="/contact" className={FAQ_LINK}>Contact Us page</a>.</>],
+      ["I'm an activity provider — how do I join?", <>We'd love to have a conversation with you. Head to our <a href="/vendor/" className={FAQ_LINK}>For Partners page</a> and send us an enquiry.</>],
+    ],
+  },
+  {
+    group: "Privacy & safety",
+    items: [
+      ["How is my data — and my children's information — handled?", <>We take your family's privacy seriously and only collect what we need to run your account and bookings — like your details, your children's ages and preferences, and payment through Stripe (we never store your card). Full details are in our <a href="/terms#privacy" className={FAQ_LINK}>Privacy Policy</a>.</>],
+      ["Does BabyBrain advise on what's right for my child's development?", "We share recommendations to make finding activities easier, but we do not provide professional advice. For anything to do with your child's health or development, always speak to a qualified professional."],
+    ],
+  },
+];
+
 function ContactPage() {
   const { session } = useAuth();
   const [support, setSupport] = useState(false);
@@ -1954,7 +2220,7 @@ function ContactPage() {
             <p className="mt-5 text-lg font-semibold leading-8 text-[#68718f]">Have a question, feedback, or need assistance? Our team is happy to help.</p>
           </div>
           <div className="relative">
-            <div className="absolute left-4 top-16 rounded-[16px] bg-white p-5 font-semibold leading-7 shadow-soft">We typically<br />respond within<br />our working hours. <Icon name="heart" className="inline h-4 w-4 fill-current text-baby-blue" /></div>
+            <div className="absolute left-4 top-16 rounded-[16px] bg-white p-5 font-semibold leading-7 shadow-soft">We endeavor to<br />respond within 3 days.<br />If more urgent,<br />please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-baby-blue" /></div>
             <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="ml-auto h-[280px] object-contain" />
           </div>
         </section>
@@ -1963,17 +2229,16 @@ function ContactPage() {
           <SectionTitle>Get in touch</SectionTitle>
           <div className="grid gap-5 md:grid-cols-4">
             {[
-              { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for quick help — no login needed.", label: "Chat on WhatsApp", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
-              { icon: "pen", title: "Message us", tag: "", copy: "Chat with our team in real time — we'd love your questions, thoughts or feedback.", label: "Start a chat", variant: "outline", onClick: openSupport },
-              { icon: "mail", title: "Email us", tag: "", copy: "Send us an email and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
-              { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team.", label: SUPPORT_PHONE, variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
+              { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for the quickest response.", label: "Chat on WhatsApp", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
+              { icon: "pen", title: "Message us", tag: "", copy: "Plus subscribers can chat with our team in real time.", label: "Message us", variant: "outline", onClick: openSupport },
+              { icon: "mail", title: "Email us", tag: "", copy: "For more complex enquiries, send us an e-mail and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
+              { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team if urgent.", label: "Call us", variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
               <article key={c.title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
                 <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#eef8ff] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
                 <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#ffe4ef] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
                 <Button variant={c.variant === "pink" ? "pink" : "outline"} className="w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
-                <p className="mt-4 text-sm font-semibold leading-6">We'll read every message and get back to you.</p>
               </article>
             ))}
           </div>
@@ -1981,12 +2246,19 @@ function ContactPage() {
 
         <section id="faq" className="mt-9 scroll-mt-24">
           <SectionTitle>Frequently asked questions</SectionTitle>
-          <div className="overflow-hidden rounded-[16px] border border-[#e8ecf6] bg-white">
-            {["How does BabyBrain recommend classes for my child?", "How do I book a class?", "Can I cancel or reschedule a booking?", "Are the classes on BabyBrain safe and suitable for my child?", "How do I know if a class is right for my child's age?", "Is payment made on BabyBrain?"].map((question) => (
-              <details key={question} className="border-b border-[#eef1f7] px-6 py-4">
-                <summary className="cursor-pointer list-none font-bold">Q&nbsp;&nbsp; {question} <span className="float-right">⌄</span></summary>
-                <p className="mt-3 text-sm font-semibold text-[#59658b]">BabyBrain keeps recommendations simple, clear and parent-friendly.</p>
-              </details>
+          <div className="space-y-5">
+            {FAQ_GROUPS.map(({ group, items }) => (
+              <div key={group}>
+                <h3 className="mb-2 px-1 text-lg font-black text-baby-lilac">{group}</h3>
+                <div className="overflow-hidden rounded-[16px] border border-[#e8ecf6] bg-white">
+                  {items.map(([question, answer]) => (
+                    <details key={question} className="border-b border-[#eef1f7] px-6 py-4 last:border-b-0">
+                      <summary className="cursor-pointer list-none font-bold">Q&nbsp;&nbsp; {question} <span className="float-right">⌄</span></summary>
+                      <p className="mt-3 text-sm font-semibold leading-6 text-[#59658b]">{answer}</p>
+                    </details>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>
@@ -2353,6 +2625,7 @@ function BookingPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
   const [count, setCount] = useState(1);
+  const [childId, setChildId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   type CreditPurchase = {
@@ -2425,6 +2698,7 @@ function BookingPage() {
 
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  const bookChildId = childId ?? kids[0]?.id ?? null;
   const price = activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
 
@@ -2455,7 +2729,7 @@ function BookingPage() {
     } else {
       const { data, error } = await supabase
         .from("bookings")
-        .insert({ user_id: auth.user.id, session_id: sessionId, child_id: kids[0]?.id ?? null })
+        .insert({ user_id: auth.user.id, session_id: sessionId, child_id: bookChildId })
         .select("id, status")
         .single();
       if (error) {
@@ -2580,6 +2854,23 @@ function BookingPage() {
                         ))}
                       </div>
                     </section>
+                    {kids.length > 1 && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">Who's this class for?</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {kids.map((k) => (
+                            <button
+                              key={k.id}
+                              type="button"
+                              onClick={() => setChildId(k.id)}
+                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}
+                            >
+                              <AnimalAvatar seed={k.name} kind="child" className="h-6 w-6" /> {k.name}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     <section>
                       <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#dfe5f2] text-xl font-black">
@@ -2714,21 +3005,25 @@ function AboutPage() {
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="grid items-center gap-8 md:grid-cols-[1fr_520px]">
           <div>
-            <h1 className="text-[54px] font-black leading-tight">About <span className="text-baby-blue">BabyBrain</span></h1>
-            <p className="mt-5 text-2xl font-black leading-tight">Making it easier for parents to find activities that help children learn, play and grow.</p>
-            <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">BabyBrain was created to take the guesswork out of finding the right classes and experiences for your child. We bring everything together in one place, so you can spend less time searching and more time making memories.</p>
-            <Button href="/explore" className="mt-6">Explore Activities →</Button>
+            <h1 className="text-[54px] font-black leading-tight text-baby-lilac">About</h1>
+            <p className="mt-5 text-2xl font-black leading-tight">BabyBrain helps parents to discover &amp; book amazing activities for their little ones.</p>
+            <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">We curate options based on your children's age, interests and your location, making it quicker and easier to find great activities and less overwhelming to adjust plans when the schedule changes.</p>
+            <Button href="/explore" className="mt-6">Explore →</Button>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/about-family.png`} alt="Founder with children" className="h-[380px] w-full object-contain" />
         </section>
         <section className="mt-6 grid items-center gap-6 rounded-[18px] bg-gradient-to-r from-[#fff0f7] to-white p-7 md:grid-cols-[360px_1fr]">
           <img src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.png`} alt="Katie Crowson" className="h-72 object-contain" />
-          <div><p className="font-black text-baby-blue">Meet Our Founder</p><h2 className="text-[34px] font-black">Katie Crowson</h2><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mom, entrepreneur and the founder of BabyBrain. After becoming a mom, I quickly realized how overwhelming it can be to find the right activities for my child. BabyBrain makes that journey easier for families like mine.</p><p className="mt-4 flex gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-blue" /> Made by a mom, for parents like you.</p></div>
+          <div><p className="font-black text-baby-lilac">Meet Our Founder</p><h2 className="text-[34px] font-black">Katie Crowson</h2><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mum, and the founder of BabyBrain. After having our son, I realised how unnecessarily difficult it was to find out what activities are on offer and book, only to have to start afresh when the schedule changes. BabyBrain was created to make that journey quicker and easier.</p><p className="mt-4 flex gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p></div>
         </section>
-        <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#fffaf0] p-7 md:grid-cols-[220px_1fr_160px]">
-          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.png`} alt="" className="h-32 object-contain" />
-          <div><p className="font-black text-baby-blue">Our Mission</p><h2 className="mt-2 text-xl font-black">To make it easier for parents to find meaningful experiences that help children learn, play and grow.</h2><p className="mt-3 font-semibold text-[#3f4b78]">We believe every child deserves the opportunity to explore their interests and develop new skills in a safe and supportive environment.</p></div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-brain.png`} alt="" className="h-28 object-contain" />
+        <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#fffaf0] p-8 md:grid-cols-[1fr_320px]">
+          <div>
+            <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our Mission</h2>
+            <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>
+            <p className="mt-4 max-w-[440px] font-semibold leading-7 text-[#3f4b78]">We want to help you spend less time on administration and more time having meaningful experiences.</p>
+            <Button href="/onboarding" size="lg" className="mt-6">Join Today →</Button>
+          </div>
+          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.png`} alt="" className="mx-auto h-48 object-contain" />
         </section>
         <section className="mt-7 text-center">
           <h2 className="text-2xl font-black">Why We Built BabyBrain</h2>
@@ -2781,7 +3076,7 @@ function LoginPage() {
       <main className="mx-auto max-w-[440px] px-6 py-12">
         <div className="rounded-[18px] border border-[#e8ecf8] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
-          <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activities matched for your child.</p>
+          <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
           {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
@@ -2791,14 +3086,14 @@ function LoginPage() {
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
-                <a href="/forgot-password" className="text-xs font-bold text-baby-blue hover:underline">Forgot password?</a>
+                <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#dbe4f6] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log In"}</Button>
           </form>
           <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-            New here? <a href="/onboarding" className="font-black text-baby-blue">Create a profile</a>
+            New here? <a href="/onboarding" className="font-black text-baby-pink">Create a profile</a>
           </p>
         </div>
       </main>

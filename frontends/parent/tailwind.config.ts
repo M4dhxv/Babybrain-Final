@@ -10,6 +10,8 @@ export default {
           blue: "#4597F7",
           pink: "#FA5D93",
           lilac: "#9568DF",
+          green: "#2FAE6A",
+          orange: "#F2921D",
           paper: "#FFFCF8",
         },
       },

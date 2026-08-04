@@ -226,7 +226,7 @@ export function Header({ active = "/" }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const navItems = [
     routes[0],
-    { href: active === "/matches" ? "/matches" : "/explore", label: "Explore Activities" },
+    { href: active === "/matches" ? "/matches" : "/explore", label: "Explore" },
     routes[2],
     routes[3],
   ];
@@ -241,12 +241,12 @@ export function Header({ active = "/" }: HeaderProps) {
               key={route.href}
               href={route.href}
               className={`relative py-5 ${
-                active === route.href ? "text-[#1275ff]" : ""
+                active === route.href ? "text-baby-pink" : ""
               }`}
             >
               {route.label}
               {active === route.href && (
-                <span className="absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-[#4a9cff]" />
+                <span className="absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-baby-pink" />
               )}
             </a>
           ))}
@@ -300,7 +300,7 @@ export function Header({ active = "/" }: HeaderProps) {
               <a
                 key={route.href}
                 href={route.href}
-                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#eaf2ff] text-[#1275ff]" : "hover:bg-white"}`}
+                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#ffe9f2] text-baby-pink" : "hover:bg-white"}`}
               >
                 {route.label}
               </a>
@@ -365,12 +365,12 @@ export function Button({
         : "px-6 py-3 text-[15px]";
   const variantClass = {
     primary:
-      "bg-gradient-to-r from-[#4aa1ff] to-[#5ea6f6] text-white shadow-blue hover:brightness-105",
+      "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink hover:brightness-105",
     outline:
-      "border border-[#4194ff] bg-white text-[#1975ff] hover:bg-[#f4f9ff]",
-    soft: "bg-[#f3f7ff] text-[#2b7cff] hover:bg-[#eaf2ff]",
+      "border border-[#fa5d93] bg-white text-[#e5487f] hover:bg-[#fff4f8]",
+    soft: "bg-[#fff0f5] text-baby-pink hover:bg-[#ffe4ef]",
     pink: "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
-    ghost: "bg-transparent text-[#1877ff] hover:bg-[#f3f7ff]",
+    ghost: "bg-transparent text-baby-pink hover:bg-[#fff0f5]",
   }[variant];
   const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
 
@@ -416,7 +416,7 @@ export function SectionTitle({
   return (
     <div className="mb-3 flex items-end justify-between">
       <h2 className="text-[22px] font-black leading-tight tracking-normal text-baby-ink">
-        {children} <Icon name="spark" className="inline h-5 w-5 text-[#4a9cff]" />
+        {children} <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
       </h2>
       {action}
     </div>
@@ -502,13 +502,12 @@ export function ActivityCard({
           </div>
         ) : (
           <div className="mt-3 flex items-center justify-between border-t border-[#eef1f8] pt-3">
-            <a href={href} className="text-sm font-extrabold text-[#2484ff]">
+            <a href={href} className="text-sm font-extrabold text-baby-pink">
               View Details
             </a>
-            <div className="flex gap-4 text-xl text-[#1c2b61]">
-              <button aria-label="Open"><Icon name="open" className="h-5 w-5" /></button>
-              <button aria-label="Bookmark"><Icon name="bookmark" className="h-5 w-5" /></button>
-            </div>
+            <a href={href} aria-label="Open activity" className="text-[#1c2b61] hover:text-baby-pink">
+              <Icon name="open" className="h-5 w-5" />
+            </a>
           </div>
         )}
       </div>
@@ -570,7 +569,7 @@ export function CategoryTile({
       type="button"
       onClick={onClick ?? (href ? () => { window.location.href = href; } : undefined)}
       className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#e9edf7] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
-      <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#fff0f7] to-[#f0f7ff] text-baby-pink">
+      <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#eaf9f1] to-[#f5fdf9] text-baby-green">
         <Icon name={icon} className="h-7 w-7" />
       </span>
       <span>
@@ -593,14 +592,13 @@ export function Footer() {
         <div>
           <Brand />
           <p className="mt-3 max-w-[230px] text-sm font-semibold leading-5 text-[#59658d]">
-            Helping parents discover and book activities that support their
-            child's learning and development.
+            Helping parents discover and book activities for their children.
           </p>
         </div>
         {([
-          ["Explore", [["Explore Classes", "/explore"], ["How it Works", "/#how-it-works"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
-          ["Support", [["Contact Us", "/contact"], ["FAQ", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Use", "/terms"]]],
-          ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"], ["hello@babybrain.sg", "mailto:hello@babybrain.sg"]]],
+          ["Explore", [["How it works", "/#how-it-works"], ["Activities", "/explore"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
+          ["Support", [["Contact us", "/contact"], ["FAQ", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
+          ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"]]],
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
           <div key={title} className="text-sm">
             <h3 className="mb-3 font-black">{title}</h3>
@@ -627,7 +625,7 @@ export function Footer() {
         ))}
       </div>
       <p className="mt-4 text-center text-xs font-semibold text-[#7b85a7]">
-        © 2024 BabyBrain.sg. All rights reserved.
+        © 2026 BabyBrain.sg. All rights reserved.
       </p>
     </footer>
   );
