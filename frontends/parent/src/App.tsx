@@ -4285,10 +4285,14 @@ function AboutPage() {
             <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">We curate options based on your children's age, interests and your location, making it quicker and easier to find great activities and less overwhelming to adjust plans when the schedule changes.</p>
             <Button href="/explore" className="mt-6">Explore →</Button>
           </div>
+          {/* Square source (see scripts/hide-face.py) — the frame matches so
+              nothing is cropped away. */}
           <img
-            src={`${import.meta.env.BASE_URL}assets/crops/about-family.png`}
-            alt="Katie with her son"
-            className="relative z-10 h-[380px] w-full rounded-[24px] object-cover shadow-soft"
+            src={`${import.meta.env.BASE_URL}assets/crops/about-family.jpg`}
+            alt="Katie, BabyBrain's founder, holding her son"
+            width={1000}
+            height={1000}
+            className="relative z-10 mx-auto aspect-square w-full max-w-[460px] rounded-[24px] object-cover shadow-soft"
           />
         </section>
 
