@@ -1080,6 +1080,77 @@ const sgTime = (iso: string) =>
     minute: "2-digit",
   });
 
+/** Full-screen photo viewer for an activity's gallery. Arrow keys and Escape
+ *  work, and clicking the backdrop closes it. */
+function PhotoLightbox({
+  images,
+  index,
+  onClose,
+  onIndex,
+}: {
+  images: string[];
+  index: number;
+  onClose: () => void;
+  onIndex: (i: number) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") onIndex((index + 1) % images.length);
+      if (e.key === "ArrowLeft") onIndex((index - 1 + images.length) % images.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, images.length, onClose, onIndex]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/85 p-4" onClick={onClose}>
+      <div className="flex items-center justify-between text-white">
+        <span className="text-sm font-bold">{index + 1} / {images.length}</span>
+        <button type="button" onClick={onClose} aria-label="Close photos" className="rounded-full p-2 hover:bg-white/10">
+          <Icon name="close" className="h-6 w-6" />
+        </button>
+      </div>
+      <div className="flex flex-1 items-center justify-center gap-4" onClick={(e) => e.stopPropagation()}>
+        {images.length > 1 && (
+          <button
+            type="button"
+            aria-label="Previous photo"
+            onClick={() => onIndex((index - 1 + images.length) % images.length)}
+            className="shrink-0 rounded-full bg-white/10 p-3 text-white hover:bg-white/20"
+          >
+            ‹
+          </button>
+        )}
+        <img src={images[index]} alt="" className="max-h-[75vh] max-w-full rounded-[14px] object-contain" />
+        {images.length > 1 && (
+          <button
+            type="button"
+            aria-label="Next photo"
+            onClick={() => onIndex((index + 1) % images.length)}
+            className="shrink-0 rounded-full bg-white/10 p-3 text-white hover:bg-white/20"
+          >
+            ›
+          </button>
+        )}
+      </div>
+      <div className="flex justify-center gap-2 overflow-x-auto pb-2" onClick={(e) => e.stopPropagation()}>
+        {images.map((url, i) => (
+          <button
+            key={url}
+            type="button"
+            onClick={() => onIndex(i)}
+            aria-label={`Photo ${i + 1}`}
+            className={`overflow-hidden rounded-[8px] border-2 transition ${i === index ? "border-white" : "border-transparent opacity-60 hover:opacity-100"}`}
+          >
+            <img src={url} alt="" className="h-12 w-20 object-cover" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** A chat CTA that greys out — with the reason on hover — when messaging isn't
  *  available: either the parent is on Free, or the provider isn't integrated
  *  with BabyBrain so there's nothing to open. */
@@ -1105,7 +1176,7 @@ function ChatButton({
     );
   }
   return (
-    <Button variant="outline" className="mt-3 w-full" onClick={onOpen}>
+    <Button variant="blueOutline" className="mt-3 w-full" onClick={onOpen}>
       <Icon name={icon} className="h-4 w-4" /> {label}
     </Button>
   );
@@ -1120,6 +1191,8 @@ function ActivityDetailPage() {
   const [groupChat, setGroupChat] = useState(false);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
+  /** Index of the photo open in the lightbox, or null when it's closed. */
+  const [galleryAt, setGalleryAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (!activity?.provider_id) return;
@@ -1186,6 +1259,14 @@ function ActivityDetailPage() {
 
   return (
     <PageShell active="/explore">
+      {galleryAt !== null && (
+        <PhotoLightbox
+          images={images}
+          index={galleryAt}
+          onClose={() => setGalleryAt(null)}
+          onIndex={setGalleryAt}
+        />
+      )}
       <main className="mx-auto max-w-[1180px] px-6 py-5">
         <section className="grid gap-5 lg:grid-cols-[285px_1fr_295px]">
           <div>
@@ -1208,13 +1289,26 @@ function ActivityDetailPage() {
           <div>
             <div className="relative">
               <img src={images[0]} alt={activity.title} className="h-[305px] w-full rounded-[18px] object-cover" />
+              <button
+                type="button"
+                onClick={() => setGalleryAt(0)}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
+              >
+                <Icon name="open" className="h-3.5 w-3.5" />{" "}
+                {images.length > 1 ? `View photos (${images.length})` : "View photo"}
+              </button>
             </div>
             {images.length > 1 && (
               <div className="mt-3 flex gap-2">
-                {images.slice(1, 6).map((url) => (
-                  <span key={url} className="overflow-hidden rounded-[8px] border-2 border-white shadow-soft">
+                {images.slice(1, 6).map((url, i) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => setGalleryAt(i + 1)}
+                    className="overflow-hidden rounded-[8px] border-2 border-white shadow-soft transition hover:border-baby-blue"
+                  >
                     <img src={url} alt="" className="h-11 w-[76px] object-cover" />
-                  </span>
+                  </button>
                 ))}
               </div>
             )}
@@ -1240,7 +1334,7 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
             ) : (
-              <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              <Button href={`/book?slug=${activity.slug}`} variant="blue" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Enquiry chat needs a provider to message — hide the button
                 for listings without a linked provider, else it dead-clicks
@@ -1271,7 +1365,7 @@ function ActivityDetailPage() {
                 {activity.provider_contact.contact_email && (
                   <a
                     href={`mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#fa5d93] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#e5487f] transition hover:bg-[#fff4f8]"
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-baby-blue bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#2f7fd8] transition hover:bg-[#f2f8ff]"
                   >
                     <Icon name="mail" className="h-4 w-4" /> Email
                   </a>
@@ -1285,7 +1379,7 @@ function ActivityDetailPage() {
               onOpen={requireLogin(() => setGroupChat(true))}
             />
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
-              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
+              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
             </Button>
             {enquiring && activity.provider_id && (
               <EnquiryChat
@@ -1335,7 +1429,7 @@ function ActivityDetailPage() {
                     <h3 className="font-black">{p.name}</h3>
                     <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
                   </div>
-                  <Button type="button" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                  <Button type="button" variant="blue" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
                     {buyingPack === p.id ? "…" : "Buy pack"}
                   </Button>
                 </div>
@@ -1425,7 +1519,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         className="mt-3 w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
-      <Button type="submit" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
+      <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
 }
@@ -2267,6 +2361,7 @@ function ProfilePage() {
                   alert("Referral link copied — share it with a friend!");
                 }
               }}
+              variant="blue"
               className="w-full"
             >
               Invite friends
@@ -3588,42 +3683,63 @@ function PaymentPage() {
 }
 
 /** One selectable row in the booking flow's "Choose your package" step. */
+/** A row in booking step 4 — name and price on the left, the action on the
+ *  right, as in the design. Selecting the row drives the main CTA; pack rows
+ *  additionally offer "Buy pack", which goes straight to Stripe. */
 function PackageOption({
   selected,
   onSelect,
   title,
-  copy,
   price,
   badge,
+  action,
 }: {
   selected: boolean;
   onSelect: () => void;
   title: string;
-  copy: string;
   price: string;
   badge?: string;
+  /** Shown on the right for packs you can buy outright. */
+  action?: { label: string; onClick: () => void; busy?: boolean };
 }) {
   return (
-    <button
-      type="button"
+    <div
       onClick={onSelect}
-      aria-pressed={selected}
-      className={`flex w-full items-center gap-3 rounded-[12px] border-2 p-4 text-left transition ${
-        selected ? "border-baby-pink bg-[#fff0f5]" : "border-[#dfe5f2] bg-white hover:border-[#f0c3d6]"
+      role="radio"
+      aria-checked={selected}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`flex cursor-pointer items-center gap-4 rounded-[12px] border-2 p-4 transition ${
+        selected ? "border-baby-blue bg-[#f2f8ff]" : "border-[#dfe5f2] bg-white hover:border-[#bcd9f8]"
       }`}
     >
-      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${selected ? "border-baby-pink" : "border-[#cfd7e8]"}`}>
-        {selected && <span className="h-2.5 w-2.5 rounded-full bg-baby-pink" />}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-black">{title}</span>
           {badge && <span className="rounded-full bg-[#fff4d6] px-2 py-0.5 text-[10px] font-bold text-[#8a6d1a]">{badge}</span>}
-        </span>
-        <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{copy}</span>
-      </span>
-      <span className="shrink-0 font-black text-baby-pink">{price}</span>
-    </button>
+        </div>
+        <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
+      </div>
+      {action && (
+        <Button
+          type="button"
+          variant="blue"
+          size="sm"
+          className={action.busy ? "shrink-0 opacity-60" : "shrink-0"}
+          onClick={() => {
+            onSelect();
+            action.onClick();
+          }}
+        >
+          {action.busy ? "…" : action.label}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -3962,15 +4078,13 @@ function BookingPage() {
                             selected={payWith === "single"}
                             onSelect={() => setPayWith("single")}
                             title="Single class"
-                            copy="Just this session."
                             price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
                           />
                           {packageCredit && (
                             <PackageOption
                               selected={payWith === "credit"}
                               onSelect={() => setPayWith("credit")}
-                              title="Use a package credit"
-                              copy={`${packageCredit.remaining} ${packageCredit.remaining === 1 ? "credit" : "credits"} left with this provider.`}
+                              title={`Use a package credit — ${packageCredit.remaining} left`}
                               price="No charge"
                             />
                           )}
@@ -3980,9 +4094,9 @@ function BookingPage() {
                               selected={payWith === `pack:${p.id}`}
                               onSelect={() => setPayWith(`pack:${p.id}`)}
                               title={p.name}
-                              copy={`${p.credits} classes · works across this provider's classes`}
                               price={`$${(p.price_cents / 100).toFixed(0)}`}
                               badge={price != null && p.credits > 0 && p.price_cents / 100 / p.credits < price ? "Best value" : undefined}
+                              action={{ label: "Buy pack", onClick: () => buyPack(p.id), busy: busy && payWith === `pack:${p.id}` }}
                             />
                           ))}
                         </div>

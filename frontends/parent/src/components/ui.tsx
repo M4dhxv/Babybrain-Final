@@ -22,7 +22,7 @@ export function SaveHeart({
   return (
     <button
       type="button"
-      aria-label={fav.saved ? "Saved to favorites" : "Save to favorites"}
+      aria-label={fav.saved ? "Saved to favourites" : "Save to favourites"}
       aria-pressed={fav.saved}
       onClick={(e) => {
         e.preventDefault();
@@ -396,7 +396,7 @@ export function Header({ active = "/" }: HeaderProps) {
 type ButtonProps = {
   children: React.ReactNode;
   href?: string;
-  variant?: "primary" | "outline" | "soft" | "pink" | "ghost";
+  variant?: "primary" | "outline" | "soft" | "pink" | "ghost" | "blue" | "blueOutline";
   size?: "sm" | "md" | "lg";
   type?: "button" | "submit";
   className?: string;
@@ -428,6 +428,10 @@ export function Button({
     soft: "bg-[#fff0f5] text-baby-pink hover:bg-[#ffe4ef]",
     pink: "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
     ghost: "bg-transparent text-baby-pink hover:bg-[#fff0f5]",
+    // Blue carries the in-app actions (book, buy, submit, invite); pink stays
+    // for marketing CTAs and the final confirm step.
+    blue: "bg-baby-blue text-white shadow-blue hover:brightness-105",
+    blueOutline: "border border-baby-blue bg-white text-[#2f7fd8] hover:bg-[#f2f8ff]",
   }[variant];
   const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
 
