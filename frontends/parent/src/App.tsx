@@ -155,19 +155,17 @@ function HomePage() {
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <SectionTitle>Explore activities by age</SectionTitle>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {[
-              ["0 – 6 months", "6", "Social awakening"],
-              ["7 – 18 months", "18", "Curious little movers"],
-              ["19 months – 3 years", "36", "Busy toddlers"],
-              ["Over 3 years", "48", "Confident explorers"],
-            ].map(([label, months, copy]) => (
+            {/* Drawn from AGE_BANDS so these tiles can't drift out of step with
+                the Explore filter — they used to say "0 – 6 months" but link to
+                ?age=6, which lands on the 6–17 month band. */}
+            {AGE_BANDS.map((band, i) => (
               <a
-                key={label}
-                href={`/explore?age=${months}`}
+                key={band.key}
+                href={`/explore?age=${band.key}`}
                 className="flex min-h-[92px] flex-col justify-center rounded-[16px] border border-[#e9edf7] bg-gradient-to-br from-[#fff0f7] to-[#f0f7ff] px-4 py-3 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
               >
-                <span className="text-[15px] font-black leading-tight text-baby-lilac">{label}</span>
-                <span className="mt-1 text-[12px] font-semibold leading-4 text-[#59658d]">{copy}</span>
+                <span className="text-[15px] font-black leading-tight text-baby-lilac">{band.label}</span>
+                <span className="mt-1 text-[12px] font-semibold leading-4 text-[#59658d]">{AGE_BAND_COPY[i]}</span>
               </a>
             ))}
           </div>
@@ -596,9 +594,9 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             <div>
               <p className="text-base font-bold">Hi {firstName}!</p>
               <h1 className="mt-2 text-[36px] font-black leading-tight">
-                Here are classes matched for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
+                Here are some suggested activities for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
               </h1>
-              <p className="mt-4 text-[17px] font-semibold text-[#47527d]">Activities matching your profile.</p>
+              <p className="mt-4 text-[17px] font-semibold text-[#47527d]">Based on age, interests and your preferences.</p>
               <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
             {child && (
@@ -634,7 +632,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           {/* On mobile the "See activity options" link sits below the cards
               rather than crowding the heading. */}
           <SectionTitle
-            action={<a href="/explore" className="hidden font-bold text-[#FA5D93] sm:inline">See activity options →</a>}
+            action={<a href="/explore" className="hidden font-bold text-[#FA5D93] sm:inline">Explore more activities →</a>}
           >
             Matching activities
           </SectionTitle>
@@ -648,11 +646,11 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#FA5D93] sm:hidden">See activity options →</a>
+          <a href="/explore" className="mt-4 block text-center font-bold text-[#FA5D93] sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
-          <SectionTitle>Options based on your preferences</SectionTitle>
+          <SectionTitle>Explore activities by type</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {categories.map(([icon, label, copy, slug]) => (
               <CategoryTile key={label} icon={icon} label={label} copy={copy} href={`/explore?cat=${slug}`} />
@@ -674,6 +672,8 @@ const AGE_BANDS: { key: string; label: string; min: number; max: number }[] = [
   { key: "18-35", label: "18 months – 3 years", min: 18, max: 35 },
   { key: "36+", label: "Over 3 years", min: 36, max: 132 },
 ];
+/** Marketing sub-line for each band, used by the home page tiles. */
+const AGE_BAND_COPY = ["Social awakening", "Curious little movers", "Busy toddlers", "Confident explorers"];
 
 // Singapore areas. These now come from the listing itself (derived from its
 // postal sector — see migration 00032), so listings without coordinates are
@@ -822,8 +822,10 @@ function ExplorePage() {
   });
   const [ages, setAges] = useState<string[]>(() => {
     const a = getParam("age");
-    // Legacy ?age=<months> links from older emails still work.
-    const band = a ? AGE_BANDS.find((b) => Number(a) >= b.min && Number(a) <= b.max) : null;
+    if (!a) return [];
+    // Home tiles pass a band key; older emails pass ?age=<months>.
+    if (AGE_BANDS.some((b) => b.key === a)) return [a];
+    const band = AGE_BANDS.find((b) => Number(a) >= b.min && Number(a) <= b.max);
     return band ? [band.key] : [];
   });
   const [regions, setRegions] = useState<string[]>([]);
@@ -1248,7 +1250,7 @@ function ActivityDetailPage() {
             {activity.provider_id && (
               <ChatButton
                 icon="mail"
-                label="Enquire now"
+                label="Chat with provider"
                 disabledReason={chatBlockedReason}
                 onOpen={requireLogin(() => setEnquiring(true))}
               />
@@ -1283,7 +1285,7 @@ function ActivityDetailPage() {
               onOpen={requireLogin(() => setGroupChat(true))}
             />
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
-              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
+              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
             </Button>
             {enquiring && activity.provider_id && (
               <EnquiryChat
@@ -1301,15 +1303,15 @@ function ActivityDetailPage() {
             )}
             <div className="mt-5 space-y-4 border-t border-[#eceff7] pt-4 text-sm font-semibold">
               {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
-              {next && <p><strong>Next available session</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
-              {next?.capacity != null && <p><strong>Spaces left</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
+              {next && <p><strong>Next available class</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
+              {next?.capacity != null && <p><strong>Spaces available</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
               {durationMins != null && <p><strong>Duration</strong><span className="float-right">{formatDuration(durationMins)}</span></p>}
             </div>
           </aside>
         </section>
 
         <section className="mt-5 grid gap-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card lg:grid-cols-[1.4fr_1fr]">
-          <InfoBlock title="About this class" items={[activity.description]} />
+          <InfoBlock title="About" items={[activity.description]} />
           <div>
             <h3 className="mb-2 font-black text-baby-ink">Upcoming sessions</h3>
             <div className="flex flex-wrap gap-2">
@@ -1324,7 +1326,7 @@ function ActivityDetailPage() {
 
         {packs.length > 0 && (
           <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
-            <h2 className="mb-1 text-xl font-black">Class packs</h2>
+            <h2 className="mb-1 text-xl font-black">Packages</h2>
             <p className="mb-4 text-sm font-semibold text-[#68718f]">Buy a multi-class pack and save — credits work across this provider's classes.</p>
             <div className="grid gap-3 md:grid-cols-2">
               {packs.map((p) => (
@@ -1423,7 +1425,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         className="mt-3 w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
-      <Button type="submit" className="mt-3">{busy ? "Posting…" : "Post review"}</Button>
+      <Button type="submit" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
 }
@@ -1455,13 +1457,13 @@ type PackageItem = { id: string; name: string; provider: string; total: number; 
  *  needing to differ between tiers (packages, make-up tokens, favourites). */
 const PROFILE_TABS: [string, string, string, boolean][] = [
   ["overview", "Overview", "home", false],
-  ["children", "My Children", "people", false],
+  ["children", "My children", "people", false],
   ["bookings", "Bookings", "calendar", false],
-  ["past", "Past Activities", "check", false],
-  ["packages", "Packages", "store", true],
-  ["makeup", "Make-up Tokens", "gift", true],
-  ["favorites", "Favorites", "heart", true],
+  ["past", "Past activities", "check", false],
+  ["makeup", "Make-up tokens", "gift", true],
+  ["favorites", "Favourites", "heart", true],
   ["reviews", "Reviews", "star", false],
+  ["packages", "Packages", "store", true],
   ["notifications", "Notifications", "bell", false],
   ["settings", "Settings", "gear", false],
 ];
@@ -1666,7 +1668,7 @@ function ChildrenTab({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-[26px] font-black">My Children</h1>
+        <h1 className="text-[26px] font-black">My children</h1>
         {!form && <Button type="button" onClick={() => { setForm({}); }}><Icon name="user" className="h-4 w-4" /> Add a child</Button>}
       </div>
 
@@ -2293,11 +2295,11 @@ function ProfilePage() {
               <Button href="/edit-profile" variant="outline" className="mt-6"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
             </div>
             <div className="rounded-[10px] bg-[#fff0f5] p-5">
-              <h2 className="mb-4 text-lg font-black">{child ? `${child.name}'s Journey` : "Journey"}</h2>
+              <h2 className="mb-4 text-lg font-black">{child ? `${child.name}'s journey` : "Journey"}</h2>
               {[
-                [`${journey?.classes_attended ?? 0} Classes Attended`, "calendar"],
-                [`${journey?.venues_explored ?? 0} Venues Explored`, "pin"],
-                [`${journey?.hours_of_learning ?? 0} Hours of Learning`, "clock"],
+                [`${journey?.classes_attended ?? 0} activities attended`, "calendar"],
+                [`${journey?.venues_explored ?? 0} venues explored`, "pin"],
+                [`${journey?.hours_of_learning ?? 0} hours completed`, "clock"],
               ].map(([item, icon]) => (
                 <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#0d62e8]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
               ))}
@@ -2313,7 +2315,7 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#FA5D93]">See all matches →</a>}>Recommended for you</SectionTitle>
+            <SectionTitle action={<a href="/matches" className="font-bold text-[#FA5D93]">See all matches →</a>}>Suggested activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -2324,10 +2326,10 @@ function ProfilePage() {
             <h2 className="mb-3 text-[22px] font-black">Quick access</h2>
             <div className="grid gap-3 md:grid-cols-4">
               {[
-                { label: "My bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your classes" },
-                { label: "Favorites", icon: "heart", href: "/profile?tab=favorites", copy: "Activities you've saved" },
-                { label: "Reviews", icon: "star", href: "/profile?tab=reviews", copy: "Share your experience" },
-                { label: "Explore", icon: "pin", href: "/explore", copy: "Find activities that suit you" },
+                { label: "My bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your activities" },
+                { label: "Favourites", icon: "heart", href: "/profile?tab=favorites", copy: "Activities you've saved" },
+                { label: "Packages", icon: "store", href: "/profile?tab=packages", copy: "Use your passes" },
+                { label: "Explore nearby", icon: "pin", href: "/explore", copy: "Discover activities near you" },
               ].map((t) => <CategoryTile key={t.label} icon={t.icon} label={t.label} copy={t.copy} href={t.href} />)}
             </div>
           </section>
@@ -2407,7 +2409,7 @@ function ProfilePage() {
           )}
           {tab === "makeup" && isPlus && (
             <div>
-              <h1 className="text-[26px] font-black">Make-up Tokens</h1>
+              <h1 className="text-[26px] font-black">Make-up tokens</h1>
               <p className="mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
               {tokens.length === 0 ? (
                 <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
@@ -2442,7 +2444,7 @@ function ProfilePage() {
           )}
           {tab === "favorites" && isPlus && (
             <div>
-              <h1 className="mb-4 text-[26px] font-black">Favorites</h1>
+              <h1 className="mb-4 text-[26px] font-black">Favourites</h1>
               {favs.length === 0 ? (
                 <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
               ) : (
@@ -3885,7 +3887,7 @@ function BookingPage() {
         <section className="rounded-[18px] border border-[#e7ebf6] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#eef1f7] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
-            <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date and time.</p></div>
+            <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
             <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
           </header>
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
@@ -3953,7 +3955,7 @@ function BookingPage() {
                         unused credit from a pack, or buying a pack now. */}
                     {!redeemToken && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">4. Choose your package</h3>
+                        <h3 className="mb-2 text-xl font-black">4. Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
                         <div className="space-y-3">
                           <PackageOption
