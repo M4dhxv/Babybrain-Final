@@ -1012,7 +1012,7 @@ function ExplorePage() {
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
             </div>
-            <div className="grid gap-2.5 md:grid-cols-2">
+            <div className="grid gap-2.5 xl:grid-cols-2">
               {shown.map((activity) => (
                 <ActivityRow key={activity.id} activity={activity} />
               ))}

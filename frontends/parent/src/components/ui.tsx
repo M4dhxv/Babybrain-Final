@@ -264,7 +264,7 @@ export function Header({ active = "/" }: HeaderProps) {
     <header className="sticky top-0 z-30 border-b border-[#edf0fb] bg-baby-paper/95 backdrop-blur">
       <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
-        <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink md:flex lg:gap-7">
+        <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">
           {navItems.map((route) => (
             <a
               key={route.href}
@@ -281,11 +281,14 @@ export function Header({ active = "/" }: HeaderProps) {
           ))}
         </nav>
 
-        <SearchBox className="hidden max-w-[150px] flex-1 md:block lg:max-w-[210px]" />
+        {/* Only from lg up: between 768 and 1024 the nav, search and auth
+            buttons together overflow and the brand collides with "Home".
+            Below lg the search lives in the mobile menu instead. */}
+        <SearchBox className="hidden max-w-[210px] flex-1 lg:block" />
 
         {/* Desktop auth actions */}
         {!session ? (
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 lg:flex">
             <Button href="/login" variant="outline" size="sm">
               <Icon name="user" className="h-4 w-4" /> Log in
             </Button>
@@ -294,7 +297,7 @@ export function Header({ active = "/" }: HeaderProps) {
             </Button>
           </div>
         ) : (
-          <div className="hidden items-center gap-4 text-sm font-bold md:flex">
+          <div className="hidden items-center gap-4 text-sm font-bold lg:flex">
             <a href="/profile?tab=favorites" className="flex items-center gap-1.5 text-baby-ink hover:text-baby-pink">
               <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
             </a>
@@ -317,7 +320,7 @@ export function Header({ active = "/" }: HeaderProps) {
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
-          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#e4e9f6] bg-white text-baby-ink md:hidden"
+          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#e4e9f6] bg-white text-baby-ink lg:hidden"
         >
           <Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />
         </button>
@@ -325,7 +328,7 @@ export function Header({ active = "/" }: HeaderProps) {
 
       {/* Mobile dropdown menu */}
       {menuOpen && (
-        <nav className="border-t border-[#edf0fb] bg-baby-paper px-4 py-3 md:hidden">
+        <nav className="border-t border-[#edf0fb] bg-baby-paper px-4 py-3 lg:hidden">
           <SearchBox className="mb-3" />
           <div className="flex flex-col gap-1 text-[15px] font-bold text-baby-ink">
             {navItems.map((route) => (
@@ -669,7 +672,7 @@ export function ActivityCard({
 export function ActivityRow({ activity }: { activity: Activity }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#e5e9f5] bg-white shadow-card sm:grid-cols-[240px_1fr]">
+    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#e5e9f5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
         <img src={activity.image} alt="" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
