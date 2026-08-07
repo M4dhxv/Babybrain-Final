@@ -527,6 +527,55 @@ export function DateInput({
   );
 }
 
+/** Scattered brand confetti — hearts, stars, dots and dashes in the palette
+ *  from the brand guide. Purely decorative, so it's hidden from screen
+ *  readers and never intercepts clicks. Positions are percentages of the
+ *  nearest positioned ancestor. */
+type ConfettiPiece = {
+  kind: "heart" | "star" | "dot" | "dash";
+  top: string;
+  left?: string;
+  right?: string;
+  color: string;
+  size?: number;
+  rotate?: number;
+};
+
+export function Confetti({ pieces, className = "" }: { pieces: ConfettiPiece[]; className?: string }) {
+  return (
+    <div aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
+      {pieces.map((p, i) => {
+        const s = p.size ?? 22;
+        const style: React.CSSProperties = {
+          position: "absolute",
+          top: p.top,
+          left: p.left,
+          right: p.right,
+          transform: p.rotate ? `rotate(${p.rotate}deg)` : undefined,
+        };
+        if (p.kind === "dot") {
+          return <span key={i} style={{ ...style, width: s / 2, height: s / 2, background: p.color, borderRadius: "50%" }} />;
+        }
+        if (p.kind === "dash") {
+          return <span key={i} style={{ ...style, width: s, height: s / 4.5, background: p.color, borderRadius: 999 }} />;
+        }
+        if (p.kind === "star") {
+          return (
+            <svg key={i} style={style} width={s} height={s} viewBox="0 0 24 24" fill={p.color}>
+              <path d="m12 2.6 2.7 5.9 6.4.7-4.8 4.3 1.3 6.3L12 16.7 6.4 19.8l1.3-6.3L2.9 9.2l6.4-.7L12 2.6Z" />
+            </svg>
+          );
+        }
+        return (
+          <svg key={i} style={style} width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={p.color} strokeWidth={2.2} strokeLinejoin="round">
+            <path d="M12 20.2S4.8 15.8 3.1 10.8C1.7 6.7 5.9 3.7 9.1 6.1L12 8.3l2.9-2.2c3.2-2.4 7.4.6 6 4.7-1.7 5-8.9 9.4-8.9 9.4Z" />
+          </svg>
+        );
+      })}
+    </div>
+  );
+}
+
 export function PageShell({
   children,
   active = "/",

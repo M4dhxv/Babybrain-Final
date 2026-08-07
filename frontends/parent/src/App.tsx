@@ -5,6 +5,7 @@ import {
   Button,
   BrandStacked,
   CategoryTile,
+  Confetti,
   DateInput,
   Footer,
   Icon,
@@ -4241,22 +4242,71 @@ function BookedPage() {
   );
 }
 
+// Confetti scatter for the About page, matching the design's placement.
+// Colours come from the brand palette.
+const ABOUT_HERO_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
+  { kind: "heart", top: "4%", left: "47%", color: "#9568DF", size: 30 },
+  { kind: "dot", top: "17%", left: "44%", color: "#A8E59A", size: 18 },
+  { kind: "dot", top: "35%", left: "45%", color: "#FA5D93", size: 16 },
+  { kind: "star", top: "50%", left: "44%", color: "#FFB77A", size: 26 },
+  // Kept in the column gap and the strip above the photo so nothing lands on
+  // top of the image itself.
+  { kind: "dash", top: "0%", right: "16%", color: "#FA5D93", size: 26, rotate: -30 },
+  { kind: "dash", top: "3%", right: "12%", color: "#FA5D93", size: 22, rotate: -30 },
+  { kind: "star", top: "0%", right: "4%", color: "#FFD77A", size: 28 },
+  { kind: "dot", top: "72%", left: "45%", color: "#C7B1E6", size: 16 },
+  { kind: "heart", top: "85%", left: "43%", color: "#FA5D93", size: 30 },
+  { kind: "dot", top: "94%", right: "6%", color: "#A8E59A", size: 18 },
+];
+
+const ABOUT_FOUNDER_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
+  { kind: "heart", top: "8%", left: "3%", color: "#FA5D93", size: 30 },
+  { kind: "star", top: "32%", left: "1%", color: "#FFD77A", size: 28 },
+  { kind: "dash", top: "62%", left: "4%", color: "#C7B1E6", size: 24, rotate: -35 },
+  { kind: "dash", top: "72%", left: "1%", color: "#C7B1E6", size: 24, rotate: -35 },
+  { kind: "dash", top: "22%", left: "36%", color: "#A7D8F8", size: 24, rotate: -40 },
+  { kind: "dash", top: "29%", left: "37%", color: "#FA5D93", size: 24, rotate: -40 },
+  { kind: "dash", top: "48%", left: "36%", color: "#A8E59A", size: 26, rotate: -15 },
+  { kind: "heart", top: "6%", right: "3%", color: "#FA5D93", size: 30 },
+  { kind: "star", top: "30%", right: "2%", color: "#FFD77A", size: 28 },
+  { kind: "dot", top: "58%", right: "1%", color: "#A7D8F8", size: 16 },
+  { kind: "dot", top: "80%", right: "5%", color: "#C7B1E6", size: 16 },
+];
+
 function AboutPage() {
   return (
     <PageShell active="/about" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
-        <section className="grid items-center gap-8 md:grid-cols-[1fr_520px]">
-          <div>
+        <section className="relative grid items-center gap-8 md:grid-cols-[1fr_520px]">
+          <Confetti pieces={ABOUT_HERO_CONFETTI} />
+          <div className="relative z-10">
             <h1 className="text-[54px] font-black leading-tight text-baby-lilac">About</h1>
             <p className="mt-5 text-2xl font-black leading-tight">BabyBrain helps parents to discover &amp; book amazing activities for their little ones.</p>
             <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">We curate options based on your children's age, interests and your location, making it quicker and easier to find great activities and less overwhelming to adjust plans when the schedule changes.</p>
             <Button href="/explore" className="mt-6">Explore →</Button>
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/about-family.png`} alt="Founder with children" className="h-[380px] w-full object-contain" />
+          <img
+            src={`${import.meta.env.BASE_URL}assets/crops/about-family.png`}
+            alt="Katie with her son"
+            className="relative z-10 h-[380px] w-full rounded-[24px] object-cover shadow-soft"
+          />
         </section>
-        <section className="mt-6 grid items-center gap-6 rounded-[18px] bg-gradient-to-r from-[#fff0f7] to-white p-7 md:grid-cols-[360px_1fr]">
-          <img src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.png`} alt="Katie Crowson" className="h-72 object-contain" />
-          <div><p className="font-black text-baby-lilac">Meet our founder</p><h2 className="text-[34px] font-black">Katie Crowson</h2><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mum, and the founder of BabyBrain. After having our son, I realised how unnecessarily difficult it was to find out what activities are on offer and book, only to have to start afresh when the schedule changes. BabyBrain was created to make that journey quicker and easier.</p><p className="mt-4 flex gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p></div>
+
+        <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#fdeef4] to-[#fdf3f7] p-8 md:grid-cols-[300px_1fr]">
+          <Confetti pieces={ABOUT_FOUNDER_CONFETTI} />
+          <img
+            src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.png`}
+            alt="Katie Crowson"
+            className="relative z-10 mx-auto h-[340px] w-full max-w-[290px] rounded-[18px] object-cover shadow-soft"
+          />
+          <div className="relative z-10">
+            <p className="font-black text-baby-lilac">Meet our founder</p>
+            <h2 className="mt-1 text-[38px] font-black leading-tight">Katie Crowson</h2>
+            <p className="mt-4 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mum, and the founder of BabyBrain.</p>
+            <p className="mt-3 font-semibold leading-7 text-[#3f4b78]">After having our son, I realised how unnecessarily difficult it was to find out what activities are on offer and book, only to have to start afresh when the schedule changes.</p>
+            <p className="mt-3 font-semibold leading-7 text-[#3f4b78]">BabyBrain was created to make that journey quicker and easier.</p>
+            <p className="mt-4 flex items-center gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p>
+          </div>
         </section>
         <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#fffaf0] p-8 md:grid-cols-[1fr_320px]">
           <div>
