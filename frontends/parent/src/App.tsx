@@ -3047,7 +3047,7 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
       ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book. Plus (SGD 9/month or SGD 99/year) makes planning and managing your bookings seamless: saved profiles for multiple children, all your passes and make-up tokens in one place, saved favourites, curated activity emails, calendar sync and an exportable schedule for grandparents and helpers, messaging, and priority support."],
       ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
       ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
-      ["How do I refer a friend?", "Refer a friend to Plus, and when they sign up for a paid subscription, you get a free month."],
+      ["How do I refer a friend?", <>Refer a friend to Plus, and when they sign up for a paid subscription, you get a free month. Your referral link lives on your <a href="/profile" className={FAQ_LINK}>account page</a> under “Invite friends”.</>],
     ],
   },
   {
@@ -3125,7 +3125,8 @@ function ContactForm() {
 
   return (
     <form onSubmit={submit} className="rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card sm:p-8">
-      <h2 className="text-2xl font-black">Send us a message</h2>
+      <h2 className="text-[28px] font-black leading-tight text-baby-orange">Still don't have the answer you are looking for?</h2>
+      <h3 className="mt-2 text-2xl font-black">Send us a message</h3>
       <p className="mt-1 font-semibold text-[#68718f]">Fill this in and it comes straight to our inbox.</p>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <div>
