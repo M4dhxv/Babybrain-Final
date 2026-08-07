@@ -5,6 +5,7 @@ import { routes } from "../data/content";
 import { useActivities } from "../lib/useActivities";
 import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
+import { formatDuration, regionLabel } from "../lib/database.types";
 
 /** Heart button that saves/unsaves an activity to the parent's favorites.
  *  Guards its own click so it works inside a card link. */
@@ -221,26 +222,54 @@ type HeaderProps = {
   auth?: "public" | "user";
 };
 
+/** Header search — jumps to Explore with the term applied. Kept as a plain
+ *  form so Enter works and no client router is needed. */
+function SearchBox({ className = "", autoFocus = false }: { className?: string; autoFocus?: boolean }) {
+  const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  return (
+    <form
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const q = term.trim();
+        window.location.href = q ? `/explore?q=${encodeURIComponent(q)}` : "/explore";
+      }}
+      className={`relative ${className}`}
+    >
+      <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3c0]" />
+      <input
+        type="search"
+        value={term}
+        autoFocus={autoFocus}
+        onChange={(e) => setTerm(e.target.value)}
+        aria-label="Search activities"
+        placeholder="Search activities…"
+        className="h-9 w-full rounded-full border border-[#e4e9f6] bg-white pl-9 pr-3 text-[13px] font-semibold text-baby-ink outline-none placeholder:text-[#9aa3c0] focus:border-baby-pink"
+      />
+    </form>
+  );
+}
+
 export function Header({ active = "/" }: HeaderProps) {
   const { session, profile, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const navItems = [
     routes[0],
-    { href: active === "/matches" ? "/matches" : "/explore", label: "Explore" },
+    { href: active === "/matches" ? "/matches" : "/explore", label: "Explore Activities" },
     routes[2],
     routes[3],
   ];
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#edf0fb] bg-baby-paper/95 backdrop-blur">
-      <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
-        <nav className="hidden items-center gap-6 text-[13px] font-bold text-baby-ink md:flex lg:gap-9">
+        <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink md:flex lg:gap-7">
           {navItems.map((route) => (
             <a
               key={route.href}
               href={route.href}
-              className={`relative py-5 ${
+              className={`relative whitespace-nowrap py-5 ${
                 active === route.href ? "text-baby-pink" : ""
               }`}
             >
@@ -252,14 +281,16 @@ export function Header({ active = "/" }: HeaderProps) {
           ))}
         </nav>
 
+        <SearchBox className="hidden max-w-[150px] flex-1 md:block lg:max-w-[210px]" />
+
         {/* Desktop auth actions */}
         {!session ? (
           <div className="hidden items-center gap-3 md:flex">
             <Button href="/login" variant="outline" size="sm">
-              <Icon name="user" className="h-4 w-4" /> Log In
+              <Icon name="user" className="h-4 w-4" /> Log in
             </Button>
             <Button href="/onboarding" size="sm">
-              <Icon name="user" className="h-4 w-4" /> Sign Up
+              <Icon name="user" className="h-4 w-4" /> Sign up
             </Button>
           </div>
         ) : (
@@ -271,7 +302,7 @@ export function Header({ active = "/" }: HeaderProps) {
               href="/profile"
               className="flex items-center gap-2 rounded-full border border-[#e9edf8] bg-white py-1 pl-1 pr-3 shadow-soft hover:border-[#d4ddf3]"
             >
-              <AnimalAvatar seed={profile?.full_name} kind="parent" className="h-7 w-7" />
+              <AnimalAvatar seed={profile?.avatar_seed ?? profile?.full_name} kind="parent" className="h-7 w-7" />
               <span className="max-w-[110px] truncate">{profile?.full_name?.split(" ")[0] || "Account"}</span>
             </a>
             <button onClick={() => signOut()} className="text-[13px] text-[#68718f] hover:text-baby-ink">
@@ -295,6 +326,7 @@ export function Header({ active = "/" }: HeaderProps) {
       {/* Mobile dropdown menu */}
       {menuOpen && (
         <nav className="border-t border-[#edf0fb] bg-baby-paper px-4 py-3 md:hidden">
+          <SearchBox className="mb-3" />
           <div className="flex flex-col gap-1 text-[15px] font-bold text-baby-ink">
             {navItems.map((route) => (
               <a
@@ -310,10 +342,10 @@ export function Header({ active = "/" }: HeaderProps) {
             {!session ? (
               <div className="flex flex-col gap-2">
                 <Button href="/login" variant="outline" className="w-full justify-center">
-                  <Icon name="user" className="h-4 w-4" /> Log In
+                  <Icon name="user" className="h-4 w-4" /> Log in
                 </Button>
                 <Button href="/onboarding" className="w-full justify-center">
-                  <Icon name="user" className="h-4 w-4" /> Sign Up
+                  <Icon name="user" className="h-4 w-4" /> Sign up
                 </Button>
               </div>
             ) : (
@@ -389,6 +421,83 @@ export function Button({
   );
 }
 
+/** Date field that always reads and writes DD/MM/YYYY.
+ *
+ *  `<input type="date">` renders in the browser's locale, which showed
+ *  MM/DD/YYYY for our QA reviewers. This keeps the value in ISO (yyyy-mm-dd)
+ *  for the database while the parent only ever sees day-first, and auto-inserts
+ *  the slashes as they type. */
+export function DateInput({
+  value,
+  onChange,
+  min,
+  max,
+  className = "",
+  id,
+  placeholder = "DD/MM/YYYY",
+}: {
+  /** ISO yyyy-mm-dd, or "" when empty. */
+  value: string;
+  onChange: (iso: string) => void;
+  /** ISO bounds, inclusive. */
+  min?: string;
+  max?: string;
+  className?: string;
+  id?: string;
+  placeholder?: string;
+}) {
+  const isoToUk = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+  };
+  const [text, setText] = useState(() => isoToUk(value));
+
+  // Follow the value when it's changed from outside (e.g. a form reset or a
+  // record loading in), but never fight the user mid-typing.
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    setLastValue(value);
+    setText(isoToUk(value));
+  }
+
+  function handle(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 8);
+    const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+    const pretty = parts.join("/");
+    setText(pretty);
+
+    if (digits.length < 8) {
+      if (value) onChange("");
+      return;
+    }
+    const [dd, mm, yyyy] = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)];
+    const iso = `${yyyy}-${mm}-${dd}`;
+    // Reject impossible dates (31/02) — Date normalises them silently.
+    const d = new Date(`${iso}T00:00:00Z`);
+    const valid =
+      d.getUTCFullYear() === Number(yyyy) &&
+      d.getUTCMonth() + 1 === Number(mm) &&
+      d.getUTCDate() === Number(dd) &&
+      (!min || iso >= min) &&
+      (!max || iso <= max);
+    onChange(valid ? iso : "");
+  }
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      placeholder={placeholder}
+      aria-describedby={id ? `${id}-format` : undefined}
+      onChange={(e) => handle(e.target.value)}
+      className={className}
+    />
+  );
+}
+
 export function PageShell({
   children,
   active = "/",
@@ -413,8 +522,10 @@ export function SectionTitle({
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
+  // On narrow screens the heading and its action were colliding, so the action
+  // drops onto its own line rather than being squeezed alongside the title.
   return (
-    <div className="mb-3 flex items-end justify-between">
+    <div className="mb-3 flex flex-col items-start gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
       <h2 className="text-[22px] font-black leading-tight tracking-normal text-baby-ink">
         {children} <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
       </h2>
@@ -430,6 +541,31 @@ function providerLabel(activity: Activity): string | null {
   const name = activity.providerName?.trim();
   if (!name) return null;
   return name.toLowerCase() === activity.title.trim().toLowerCase() ? null : name;
+}
+
+/** Cards lead with the area ("East") rather than a street address + postcode —
+ *  the exact address is on the listing page. Falls back to the address tail
+ *  for the handful of listings with no region. */
+function placeLabel(activity: Activity): string {
+  return regionLabel(activity.region) || activity.venue || "Singapore";
+}
+
+/** "From $32" — a price the parent can see without opening the listing. */
+function priceLabel(activity: Activity): string | null {
+  const p = activity.price;
+  if (p == null) return null;
+  const n = Number(p);
+  if (!Number.isFinite(n) || n <= 0) return "Free";
+  return `From $${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
+}
+
+/** Badge marking listings bookable on BabyBrain (these also sort first). */
+export function InstantBookBadge({ className = "" }: { className?: string }) {
+  return (
+    <span className={`flex items-center gap-1 rounded-full bg-[#eafaf0] px-2.5 py-1 text-[11px] font-bold text-[#1f9d4d] shadow-soft ${className}`}>
+      <Icon name="spark" className="h-3 w-3" /> Instant book
+    </span>
+  );
 }
 
 export function ActivityCard({
@@ -453,11 +589,14 @@ export function ActivityCard({
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink shadow-soft">
           {activity.category}
         </span>
-        {activity.boosted && (
-          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
-            <Icon name="star" className="h-3 w-3 fill-current" /> Featured
-          </span>
-        )}
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+          {activity.instantBook && <InstantBookBadge />}
+          {activity.boosted && (
+            <span className="flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+              <Icon name="star" className="h-3 w-3 fill-current" /> Featured
+            </span>
+          )}
+        </div>
         <SaveHeart
           activityId={activity.id}
           className="absolute right-3 top-3 h-8 w-8"
@@ -475,11 +614,23 @@ export function ActivityCard({
         )}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
           <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.age}</p>
-          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {activity.venue}</p>
+          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {placeLabel(activity)}</p>
           <p className="flex items-center gap-1.5">
             <Icon name="calendar" className="h-3.5 w-3.5 text-[#FA5D93]" />{" "}
             {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
           </p>
+          {(priceLabel(activity) || formatDuration(activity.durationMins)) && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {priceLabel(activity) && (
+                <span className="font-black text-baby-pink">{priceLabel(activity)}</span>
+              )}
+              {formatDuration(activity.durationMins) && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="clock" className="h-3.5 w-3.5 text-[#a988ee]" /> {formatDuration(activity.durationMins)}
+                </span>
+              )}
+            </p>
+          )}
           {!compact && (
             <p>
               <Icon name="star" className="inline h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}
@@ -494,16 +645,16 @@ export function ActivityCard({
         {compact ? (
           <div className="mt-3 flex gap-2">
             <Button href={href} size="sm" className="flex-1 rounded-[8px] px-3 py-2 text-xs">
-              View Details
+              View details
             </Button>
             <Button variant="outline" size="sm" className="flex-1 rounded-[8px] px-3 py-2 text-xs">
-              Manage Booking
+              Manage booking
             </Button>
           </div>
         ) : (
           <div className="mt-3 flex items-center justify-between border-t border-[#eef1f8] pt-3">
             <a href={href} className="text-sm font-extrabold text-baby-pink">
-              View Details
+              View details
             </a>
             <a href={href} aria-label="Open activity" className="text-[#1c2b61] hover:text-baby-pink">
               <Icon name="open" className="h-5 w-5" />
@@ -524,11 +675,14 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
           {activity.category}
         </span>
-        {activity.boosted && (
-          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
-            <Icon name="star" className="h-3 w-3 fill-current" /> Featured
-          </span>
-        )}
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+          {activity.instantBook && <InstantBookBadge />}
+          {activity.boosted && (
+            <span className="flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+              <Icon name="star" className="h-3 w-3 fill-current" /> Featured
+            </span>
+          )}
+        </div>
       </div>
       <div className="relative p-4">
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
@@ -540,9 +694,13 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         )}
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
           <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-baby-pink" /> {activity.age}</p>
-          <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {activity.venue}</p>
+          <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {placeLabel(activity)}</p>
           <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-baby-pink" /> {activity.date || "Schedule TBC"}</p>
           <p>{activity.time}</p>
+          {formatDuration(activity.durationMins) && (
+            <p className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5 text-baby-pink" /> {formatDuration(activity.durationMins)}</p>
+          )}
+          {priceLabel(activity) && <p className="font-black text-baby-pink">{priceLabel(activity)}</p>}
           <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}</p>
           <p>{activity.note}</p>
         </div>
@@ -596,8 +754,8 @@ export function Footer() {
           </p>
         </div>
         {([
-          ["Explore", [["How it works", "/#how-it-works"], ["Activities", "/explore"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
-          ["Support", [["Contact us", "/contact"], ["FAQ", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
+          ["Explore", [["How It Works", "/#how-it-works"], ["Activities", "/explore"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
+          ["Support", [["Contact Us", "/contact"], ["FAQs", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
           ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"]]],
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
           <div key={title} className="text-sm">

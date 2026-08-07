@@ -48,6 +48,9 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           onboarding_completed_at: string | null;
+          avatar_seed: string | null;
+          terms_accepted_at: string | null;
+          terms_version: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -68,6 +71,9 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           onboarding_completed_at?: string | null;
+          avatar_seed?: string | null;
+          terms_accepted_at?: string | null;
+          terms_version?: string | null;
         };
               Relationships: [];
       };
@@ -76,6 +82,7 @@ export type Database = {
           user_id: string;
           preferred_days: PreferredDay[];
           preferred_times: PreferredTime[];
+          preferred_regions: string[];
           budget_min: number | null;
           budget_max: number | null;
           interests: string[];
@@ -85,6 +92,7 @@ export type Database = {
           user_id: string;
           preferred_days?: PreferredDay[];
           preferred_times?: PreferredTime[];
+          preferred_regions?: string[];
           budget_min?: number | null;
           budget_max?: number | null;
           interests?: string[];
@@ -92,6 +100,7 @@ export type Database = {
         Update: {
           preferred_days?: PreferredDay[];
           preferred_times?: PreferredTime[];
+          preferred_regions?: string[];
           budget_min?: number | null;
           budget_max?: number | null;
           interests?: string[];
@@ -735,6 +744,10 @@ export type Database = {
         Args: { p_booking_id: string };
         Returns: undefined;
       };
+      mark_own_attendance: {
+        Args: { p_booking_id: string; p_status: 'present' | 'absent' };
+        Returns: string;
+      };
       reschedule_booking: {
         Args: { p_booking_id: string; p_new_session_id: string };
         Returns: string;
@@ -869,6 +882,37 @@ export interface ActivitySearchResult {
   next_session_at: string | null;
   dist_km: number | null;
   boosted: boolean;
+  provider_id: string | null;
+  provider_name: string | null;
+  address: string | null;
+  region: SgRegion | null;
+  duration_mins: number | null;
+  /** True when the class can be booked on BabyBrain (no external booking URL). */
+  instant_book: boolean;
+}
+
+/** Singapore areas used by the Explore "Area" filter and shown on cards. */
+export type SgRegion = 'central' | 'east' | 'north-east' | 'north' | 'west' | 'sentosa';
+
+export const REGION_LABELS: Record<SgRegion, string> = {
+  central: 'Central',
+  east: 'East',
+  'north-east': 'North-East',
+  north: 'North',
+  west: 'West',
+  sentosa: 'Sentosa',
+};
+
+export const regionLabel = (r: string | null | undefined) =>
+  (r && REGION_LABELS[r as SgRegion]) || '';
+
+/** "45 min" / "1h 30m" from a duration in minutes. */
+export function formatDuration(mins: number | null | undefined): string {
+  if (!mins || mins <= 0) return '';
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 /** Returned by the child_journey_stats RPC (dashboard "Journey" card). */

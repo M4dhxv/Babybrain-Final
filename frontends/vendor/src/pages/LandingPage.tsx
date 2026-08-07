@@ -11,6 +11,7 @@ import {
   Cloud,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import SiteFooter from '@/components/SiteFooter';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -106,11 +107,11 @@ export default function LandingPage() {
                 Upgrade your listing
               </Button>
               <Button
-                onClick={() => { window.location.href = 'mailto:hello@babybrain.sg?subject=Book%20a%20demo'; }}
+                onClick={() => navigate('/contact')}
                 variant="outline"
                 className="px-8 py-3 rounded-xl text-sm font-semibold border-[#E91E63] text-[#E91E63] hover:bg-pink-50"
               >
-                Book a demo
+                Enquire
               </Button>
             </div>
           </div>
@@ -173,6 +174,7 @@ export default function LandingPage() {
           <Sparkles className="w-4 h-4 text-purple-400" />
         </div>
       </section>
+      <SiteFooter />
     </div>
   );
 }

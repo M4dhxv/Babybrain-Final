@@ -4,6 +4,7 @@ import {
   AnimalAvatar,
   Button,
   CategoryTile,
+  DateInput,
   Footer,
   Icon,
   MiniActivityGrid,
@@ -17,14 +18,26 @@ import { useAuth } from "./auth/AuthProvider";
 import {
   useActivityDetail,
   useFavorite,
+  usePlan,
   useRecommendations,
   useJourney,
+  invalidatePlan,
   toCard,
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
-import { formatChildAge, formatAgeRange } from "./lib/database.types";
+import { downloadSchedulePdf } from "./lib/schedule-pdf";
+import { formatChildAge, formatAgeRange, formatDuration, regionLabel } from "./lib/database.types";
+import {
+  MIN_CHILD_DOB,
+  PASSWORD_RULES,
+  dobError,
+  emailError,
+  passwordError,
+  postcodeError,
+  todayIso,
+} from "./lib/validation";
 import type { ActivitySession, Child, Gender } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
@@ -54,10 +67,10 @@ function HomePage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-4">
               <Button href="/explore" size="lg">
-                Start Searching <span>›</span>
+                Start searching <span>›</span>
               </Button>
               <Button href="/onboarding" variant="outline" size="lg">
-                Create Profile <Icon name="user" className="h-[18px] w-[18px]" />
+                Create profile <Icon name="user" className="h-[18px] w-[18px]" />
               </Button>
             </div>
           </div>
@@ -204,7 +217,7 @@ function HomePage() {
               <h2 className="text-2xl font-black">Reduce your mental load</h2>
               <p className="mt-1 font-semibold text-[#4e5982]">We make it quicker &amp; easier to plan activities for your little ones.</p>
             </div>
-            <Button href="/onboarding" size="lg">Get Started ›</Button>
+            <Button href="/onboarding" size="lg">Get started ›</Button>
           </div>
         </section>
       </main>
@@ -241,6 +254,85 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
+type ChildDraft = { key: number; name: string; dob: string; gender: string; interests: string[] };
+
+const newChildDraft = (): ChildDraft => ({
+  key: Date.now() + Math.random(),
+  name: "",
+  dob: "",
+  gender: "unspecified",
+  interests: [],
+});
+
+/** One child's fields inside the sign-up form (repeated per child). */
+function ChildDraftFields({
+  draft,
+  index,
+  total,
+  cats,
+  onChange,
+  onRemove,
+}: {
+  draft: ChildDraft;
+  index: number;
+  total: number;
+  cats: { slug: string; name: string }[];
+  onChange: (next: ChildDraft) => void;
+  onRemove: () => void;
+}) {
+  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const toggle = (v: string) =>
+    onChange({
+      ...draft,
+      interests: draft.interests.includes(v)
+        ? draft.interests.filter((x) => x !== v)
+        : [...draft.interests, v],
+    });
+
+  return (
+    <div className={index > 0 ? "mt-5 border-t border-[#f0e6ec] pt-5" : ""}>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
+        {total > 1 && (
+          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#b00040] hover:underline">
+            Remove
+          </button>
+        )}
+      </div>
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-black">Child's name</label>
+          <input className={input} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} placeholder="e.g. Emma" />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-black">Date of birth</label>
+          <DateInput
+            value={draft.dob}
+            onChange={(iso) => onChange({ ...draft, dob: iso })}
+            min={MIN_CHILD_DOB}
+            max={todayIso()}
+            className={input}
+          />
+          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Day first, e.g. 14/03/2024.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
+            <Chip key={v} on={draft.gender === v} onClick={() => onChange({ ...draft, gender: v })}>{l}</Chip>
+          ))}
+        </div>
+        <div>
+          <p className="mb-1 text-sm font-black">Interests</p>
+          <div className="flex flex-wrap gap-2">
+            {cats.map((c) => (
+              <Chip key={c.slug} on={draft.interests.includes(c.slug)} onClick={() => toggle(c.slug)}>{c.name}</Chip>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OnboardingPage() {
   const { signUp } = useAuth();
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
@@ -250,14 +342,13 @@ function OnboardingPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [postcode, setPostcode] = useState("");
+  const [regions, setRegions] = useState<string[]>([]);
   const [weekdays, setWeekdays] = useState(false);
   const [weekend, setWeekend] = useState(false);
   const [times, setTimes] = useState<string[]>([]);
   const [budgets, setBudgets] = useState<string[]>([]);
-  const [childName, setChildName] = useState("");
-  const [childDob, setChildDob] = useState("");
-  const [childGender, setChildGender] = useState("unspecified");
-  const [childInterests, setChildInterests] = useState<string[]>([]);
+  const [kids, setKids] = useState<ChildDraft[]>([newChildDraft()]);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
@@ -270,9 +361,33 @@ function OnboardingPage() {
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
 
+  /** Everything recommendations depend on is required, so a new parent can't
+   *  land on an empty Matches page. Returns the first problem, or null. */
+  function validate(): string | null {
+    if (!fullName.trim()) return "Please add your full name.";
+    const emailProblem = emailError(email);
+    if (emailProblem) return emailProblem;
+    const pwProblem = passwordError(password);
+    if (pwProblem) return pwProblem;
+    if (password !== confirmPassword) return "Passwords don't match — please re-enter them.";
+    const postcodeProblem = postcodeError(postcode);
+    if (postcodeProblem) return postcodeProblem;
+    if (regions.length === 0) return "Pick at least one area you'd like activities in.";
+    for (const [i, k] of kids.entries()) {
+      const who = kids.length > 1 ? `Child ${i + 1}` : "Your child";
+      if (!k.name.trim()) return `${who} needs a name.`;
+      const dobProblem = dobError(k.dob);
+      if (dobProblem) return `${who}: ${dobProblem.charAt(0).toLowerCase()}${dobProblem.slice(1)}`;
+      if (k.interests.length === 0) return `Pick at least one interest for ${k.name.trim() || who.toLowerCase()}.`;
+    }
+    if (!acceptedTerms) return "Please accept the Terms & Conditions and Privacy Policy to continue.";
+    return null;
+  }
+
   async function submit() {
-    if (password !== confirmPassword) {
-      setError("Passwords don't match — please re-enter them.");
+    const problem = validate();
+    if (problem) {
+      setError(problem);
       return;
     }
     setBusy(true);
@@ -294,24 +409,32 @@ function OnboardingPage() {
     const budgetMax = chosenBudgets.length && chosenBudgets.every(([, , , hi]) => hi != null)
       ? Math.max(...chosenBudgets.map(([, , , hi]) => hi as number))
       : null;
-    await supabase.from("parent_profiles").update({ full_name: fullName, phone: phone || null, postal_code: postcode || null }).eq("id", uid);
+    // Interests across all children drive the parent-level recommendations.
+    const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
+    await supabase.from("parent_profiles").update({
+      full_name: fullName,
+      phone: phone || null,
+      postal_code: postcode.trim(),
+      terms_accepted_at: new Date().toISOString(),
+    }).eq("id", uid);
     await supabase.from("user_preferences").update({
       preferred_days: days as never,
       preferred_times: times as never,
+      preferred_regions: regions as never,
       budget_min: budgetMin,
       budget_max: budgetMax,
-      interests: childInterests,
+      interests: allInterests,
     }).eq("user_id", uid);
-    if (childName && childDob) {
-      await supabase.from("children").insert({
+    await supabase.from("children").insert(
+      kids.map((k) => ({
         parent_id: uid,
-        name: childName,
-        date_of_birth: childDob,
-        gender: childGender as never,
-        interests: childInterests,
+        name: k.name.trim(),
+        date_of_birth: k.dob,
+        gender: k.gender as never,
+        interests: k.interests,
         notes: null,
-      });
-    }
+      }))
+    );
     window.location.href = "/matches";
   }
 
@@ -320,8 +443,9 @@ function OnboardingPage() {
       <PageShell active="/onboarding">
         <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
           <h1 className="text-2xl font-black">Check your email</h1>
-          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then log in to finish setup.</p>
-          <Button href="/login" className="mt-5">Go to login</Button>
+          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
+          <p className="mt-3 text-sm font-semibold text-[#8a93b2]">Can't find it? Check your spam folder.</p>
+          <Button href="/login" className="mt-5">Go to log in</Button>
         </main>
       </PageShell>
     );
@@ -330,21 +454,45 @@ function OnboardingPage() {
   return (
     <PageShell active="/onboarding">
       <main className="mx-auto max-w-[680px] px-6 py-6">
-        {error && <p className="mb-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
-
         <section className="rounded-[14px] border border-[#eadfd2] bg-white p-5">
           <h1 className="text-[26px] font-black">Let's get to know you</h1>
           <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
             <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
-            <div><label className="mb-1 block text-sm font-black">Password</label><input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" /></div>
+            <div>
+              <label className="mb-1 block text-sm font-black">Password</label>
+              <input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
+                {PASSWORD_RULES.map((rule) => {
+                  const met = rule.test(password);
+                  return (
+                    <li key={rule.label} className={met ? "text-[#1f9d4d]" : "text-[#8a93b2]"}>
+                      {met ? "✓" : "•"} {rule.label}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
             <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
-              <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="307591" /></div>
+              <div>
+                <label className="mb-1 block text-sm font-black">Postcode</label>
+                <input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
+                <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Used to show what's near you.</p>
+              </div>
             </div>
           </div>
+
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
+          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Pick any areas that work for you — they don't have to be near home.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {REGION_FILTERS.map(([v, l]) => (
+              <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
+            ))}
+          </div>
+
           <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             <Chip on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Chip>
@@ -355,25 +503,54 @@ function OnboardingPage() {
         </section>
 
         <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
-          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">child</span></h1>
-          <div className="mt-4 space-y-3">
-            <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="e.g. Emma" /></div>
-            <div><label className="mb-1 block text-sm font-black">Date of birth</label><input type="date" max={new Date().toISOString().slice(0, 10)} className={input} value={childDob} onChange={(e) => setChildDob(e.target.value)} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
-                <Chip key={v} on={childGender === v} onClick={() => setChildGender(v)}>{l}</Chip>
-              ))}
-            </div>
-            <div>
-              <p className="mb-1 text-sm font-black">Interests</p>
-              <div className="flex flex-wrap gap-2">
-                {cats.map((c) => <Chip key={c.slug} on={childInterests.includes(c.slug)} onClick={() => toggle(childInterests, c.slug, setChildInterests)}>{c.name}</Chip>)}
-              </div>
-            </div>
+          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></h1>
+          <div className="mt-4">
+            {kids.map((k, i) => (
+              <ChildDraftFields
+                key={k.key}
+                draft={k}
+                index={i}
+                total={kids.length}
+                cats={cats}
+                onChange={(next) => setKids((xs) => xs.map((x) => (x.key === k.key ? next : x)))}
+                onRemove={() => setKids((xs) => xs.filter((x) => x.key !== k.key))}
+              />
+            ))}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4"
+            onClick={() => setKids((xs) => [...xs, newChildDraft()])}
+          >
+            <Icon name="user" className="h-4 w-4" /> Add another child
+          </Button>
         </section>
 
-        <Button type="button" onClick={submit} className="mt-5 w-full justify-center">{busy ? "Setting up…" : "Show me options →"}</Button>
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#eadfd2] bg-white p-4 text-sm font-semibold text-[#44507b]">
+          <input
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-baby-pink"
+          />
+          <span>
+            I agree to BabyBrain's{" "}
+            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms &amp; Conditions</a>{" "}
+            and{" "}
+            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>.
+          </span>
+        </label>
+
+        {/* The error sits directly above the CTA — QA found it at the top of the
+            page where you had to scroll back up to see why nothing happened. */}
+        {error && (
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#ffd2de] bg-[#ffe9ef] px-4 py-3 text-sm font-bold text-[#b00040]">
+            {error}
+          </p>
+        )}
+
+        <Button type="button" onClick={submit} className="mt-3 w-full justify-center" disabled={busy}>{busy ? "Setting up…" : "Show me options →"}</Button>
         <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
       </main>
     </PageShell>
@@ -389,7 +566,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
       <PageShell active={active}>
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Log in to see your matches.</p>
-          <Button href="/login" className="mt-4">Log In</Button>
+          <Button href="/login" className="mt-4">Log in</Button>
         </main>
       </PageShell>
     );
@@ -453,7 +630,13 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
         </section>
 
         <section className="mt-6">
-          <SectionTitle action={<a href="/explore" className="font-bold text-[#FA5D93]">See activity options →</a>}>Matching Activities</SectionTitle>
+          {/* On mobile the "See activity options" link sits below the cards
+              rather than crowding the heading. */}
+          <SectionTitle
+            action={<a href="/explore" className="hidden font-bold text-[#FA5D93] sm:inline">See activity options →</a>}
+          >
+            Matching activities
+          </SectionTitle>
           {recsLoading ? (
             <p className="font-bold text-[#5a6690]">Loading matches…</p>
           ) : (
@@ -464,10 +647,11 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
+          <a href="/explore" className="mt-4 block text-center font-bold text-[#FA5D93] sm:hidden">See activity options →</a>
         </section>
 
         <section className="mt-6">
-          <SectionTitle>Options Based on Preferences</SectionTitle>
+          <SectionTitle>Options based on your preferences</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {categories.map(([icon, label, copy, slug]) => (
               <CategoryTile key={label} icon={icon} label={label} copy={copy} href={`/explore?cat=${slug}`} />
@@ -479,20 +663,21 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
   );
 }
 
-const AGE_FILTERS: [string, string][] = [
-  ["", "All ages"],
-  ["6", "0 – 6 months"],
-  ["18", "7 – 18 months"],
-  ["36", "19 months – 3 years"],
-  ["48", "Over 3 years"],
+// Age bands, as brackets rather than a single "child is N months old" probe.
+// The old filter matched any class whose range *contained* the age, so picking
+// "0 – 6 months" surfaced classes running up to 2 years. A band matches only
+// when the class's own age range overlaps it.
+const AGE_BANDS: { key: string; label: string; min: number; max: number }[] = [
+  { key: "0-5", label: "0 – 5 months", min: 0, max: 5 },
+  { key: "6-17", label: "6 – 17 months", min: 6, max: 17 },
+  { key: "18-35", label: "18 months – 3 years", min: 18, max: 35 },
+  { key: "36+", label: "Over 3 years", min: 36, max: 132 },
 ];
 
-// Singapore regions for the Explore location filter. Classified from a
-// listing's lat/lng by nearest region centroid (Sentosa handled explicitly
-// since it's a small southern island). Approximate but good enough to narrow a
-// browse; a listing with no coordinates simply isn't matched by this filter.
+// Singapore areas. These now come from the listing itself (derived from its
+// postal sector — see migration 00032), so listings without coordinates are
+// still filterable.
 const REGION_FILTERS: [string, string][] = [
-  ["", "All areas"],
   ["central", "Central"],
   ["east", "East"],
   ["north-east", "North-East"],
@@ -500,24 +685,6 @@ const REGION_FILTERS: [string, string][] = [
   ["west", "West"],
   ["sentosa", "Sentosa"],
 ];
-const REGION_CENTROIDS: [string, number, number][] = [
-  ["central", 1.3, 103.83],
-  ["east", 1.335, 103.94],
-  ["north-east", 1.385, 103.895],
-  ["north", 1.43, 103.82],
-  ["west", 1.335, 103.72],
-];
-function classifyRegion(lat?: number, lng?: number): string | null {
-  if (lat == null || lng == null) return null;
-  if (lat < 1.262 && lng > 103.8 && lng < 103.87) return "sentosa";
-  let best: string | null = null;
-  let bestD = Infinity;
-  for (const [name, clat, clng] of REGION_CENTROIDS) {
-    const d = (lat - clat) ** 2 + (lng - clng) ** 2;
-    if (d < bestD) { bestD = d; best = name; }
-  }
-  return best;
-}
 /** Hour of day (0–23) of an ISO timestamp, in Singapore time. */
 function sgHour(iso?: string | null): number | null {
   if (!iso) return null;
@@ -603,32 +770,98 @@ function EmailCapturePopup() {
   );
 }
 
+/** A row of multi-select filter chips with an "all" reset at the front. */
+function ChipFilter({
+  label,
+  allLabel,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  options: { key: string; label: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-bold text-[#68718f]">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        <Chip on={selected.length === 0} onClick={() => onChange([])}>{allLabel}</Chip>
+        {options.map((o) => (
+          <Chip
+            key={o.key}
+            on={selected.includes(o.key)}
+            onClick={() =>
+              onChange(
+                selected.includes(o.key)
+                  ? selected.filter((k) => k !== o.key)
+                  : [...selected, o.key]
+              )
+            }
+          >
+            {o.label}
+          </Chip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ExplorePage() {
-  const [sort, setSort] = useState<"popular" | "rating" | "distance">("popular");
-  // Seed the category filter from ?cat= so the home-page category tiles land
-  // on a pre-filtered list.
-  const [category, setCategory] = useState(getParam("cat") ?? "");
-  const [age, setAge] = useState(getParam("age") ?? "");
+  // "Top rated" and "Most popular" read the same to parents, so popularity now
+  // covers both; the other two sorts are the ones QA asked for.
+  const [sort, setSort] = useState<"popular" | "distance" | "soonest">("popular");
+  // Seed from the query string so home-page tiles and header search land on a
+  // pre-filtered list.
+  const [categories_, setCategories] = useState<string[]>(() => {
+    const c = getParam("cat");
+    return c ? [c] : [];
+  });
+  const [ages, setAges] = useState<string[]>(() => {
+    const a = getParam("age");
+    // Legacy ?age=<months> links from older emails still work.
+    const band = a ? AGE_BANDS.find((b) => Number(a) >= b.min && Number(a) <= b.max) : null;
+    return band ? [band.key] : [];
+  });
+  const [regions, setRegions] = useState<string[]>([]);
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
-  // Client-side filters (applied to the fetched set): area, date, time window,
-  // and a max price. Kept client-side so they work without a schema change.
-  const [region, setRegion] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [timeRange, setTimeRange] = useState<[number, number]>([0, 23]);
   const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
+  const [showMore, setShowMore] = useState(false);
+  const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
+  const query = getParam("q");
+
+  // Categories, ages and areas are all multi-select now, so we fetch the whole
+  // published set once (it's a few hundred rows) and filter in the browser.
   const { activities, loading } = useActivities({
-    limit: 100,
-    sort,
-    category: category || null,
-    ageMonths: age ? Number(age) : null,
+    limit: 500,
+    sort: sort === "distance" ? "distance" : "popular",
+    query: query || null,
   });
 
   const [minH, maxH] = timeRange;
   const priceActive = maxPrice < PRICE_MAX;
   const timeActive = minH > 0 || maxH < 23;
-  const anyFilter = !!region || !!dateFrom || priceActive || timeActive;
-  const shown = activities.filter((a) => {
-    if (region && classifyRegion(a.lat, a.lng) !== region) return false;
+  const anyFilter =
+    categories_.length > 0 || ages.length > 0 || regions.length > 0 ||
+    !!dateFrom || priceActive || timeActive;
+
+  const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
+
+  const filtered = activities.filter((a) => {
+    if (categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
+    // A class matches an age band when its own range overlaps that band.
+    if (selectedBands.length &&
+        !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
+    if (regions.length) {
+      const inRegion =
+        (a.region && regions.includes(a.region)) ||
+        a.venues.some((v) => v.region && regions.includes(v.region));
+      if (!inRegion) return false;
+    }
     if (priceActive && a.price != null && a.price > maxPrice) return false;
     if (dateFrom) {
       if (!a.nextSessionAt) return false;
@@ -640,15 +873,43 @@ function ExplorePage() {
     }
     return true;
   });
+
+  // "Nearest" and "Starting soonest" re-order what the server returned, but
+  // instant-book listings still lead so parents stay on platform.
+  const shown = [...filtered].sort((x, y) => {
+    if (x.instantBook !== y.instantBook) return x.instantBook ? -1 : 1;
+    if (sort === "soonest") {
+      const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
+      const ay = y.nextSessionAt ? Date.parse(y.nextSessionAt) : Infinity;
+      return ax - ay;
+    }
+    if (sort === "distance" && here) {
+      return distanceFrom(here, x) - distanceFrom(here, y);
+    }
+    return 0;
+  });
+
   function resetFilters() {
-    setRegion(""); setDateFrom(""); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
+    setCategories([]); setAges([]); setRegions([]);
+    setDateFrom(""); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
   }
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
+  // Sorting by distance needs a location; ask only when it's chosen.
+  useEffect(() => {
+    if (sort !== "distance" || here || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setHere(null),
+      { timeout: 8000 }
+    );
+  }, [sort, here]);
+
   const selectClass = "h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
+  const pinned = shown.filter((a) => a.venues.length > 0 || a.lat != null).length;
 
   return (
     <PageShell active="/explore">
@@ -656,62 +917,92 @@ function ExplorePage() {
       <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore Activities <Icon name="spark" className="inline h-6 w-6 text-baby-green" /></h1>
-            <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">Browse activities across Singapore.</p>
+            <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="spark" className="inline h-6 w-6 text-baby-green" /></h1>
+            <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">
+              {query ? <>Results for “{query}”. <a href="/explore" className="font-black text-baby-pink">Clear search</a></> : "Browse activities across Singapore."}
+            </p>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
-        <div className="mb-3 grid gap-3 sm:grid-cols-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Type of activity</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
-              <option value="">All categories</option>
-              {cats.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Age</span>
-            <select value={age} onChange={(e) => setAge(e.target.value)} className={selectClass}>
-              {AGE_FILTERS.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Sort by</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value as "popular" | "rating" | "distance")} className={selectClass}>
-              <option value="popular">Most popular</option>
-              <option value="rating">Top rated</option>
-              <option value="distance">Nearest</option>
-            </select>
-          </label>
-        </div>
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Area</span>
-            <select value={region} onChange={(e) => setRegion(e.target.value)} className={selectClass}>
-              {REGION_FILTERS.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-[#68718f]">Date from</span>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={selectClass} />
-          </label>
-          <label className="flex flex-col justify-center gap-1">
-            <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
-            <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
-          </label>
-          <label className="flex flex-col justify-center gap-1">
-            <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
-            <div className="mt-1 flex items-center gap-2">
-              <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
-              <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
+
+        <div className="mb-4 space-y-3 rounded-[16px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+          <ChipFilter
+            label="Type of activity"
+            allLabel="All types of activity"
+            options={cats.map((c) => ({ key: c.slug, label: c.name }))}
+            selected={categories_}
+            onChange={setCategories}
+          />
+          <ChipFilter
+            label="Age"
+            allLabel="All ages"
+            options={AGE_BANDS.map((b) => ({ key: b.key, label: b.label }))}
+            selected={ages}
+            onChange={setAges}
+          />
+          <ChipFilter
+            label="Area"
+            allLabel="All areas"
+            options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))}
+            selected={regions}
+            onChange={setRegions}
+          />
+
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eef1f7] pt-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-bold text-[#68718f]">Sort by</span>
+              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selectClass}>
+                <option value="popular">Most popular</option>
+                <option value="distance">Nearest</option>
+                <option value="soonest">Starting soonest</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowMore((v) => !v)}
+              className="h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-4 text-[13px] font-bold text-[#4a5680] hover:border-baby-pink"
+            >
+              {showMore ? "Fewer filters ▲" : "More filters ▾"}
+            </button>
+            {anyFilter && (
+              <button type="button" onClick={resetFilters} className="h-10 text-xs font-bold text-baby-pink hover:underline">
+                Reset filters
+              </button>
+            )}
+          </div>
+
+          {sort === "distance" && !here && (
+            <p className="rounded-[10px] bg-[#fff7fb] px-3 py-2 text-xs font-semibold text-[#68718f]">
+              Allow location access to sort by how near activities are to you.
+            </p>
+          )}
+
+          {showMore && (
+            <div className="grid gap-3 border-t border-[#eef1f7] pt-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold text-[#68718f]">Date from</span>
+                <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
+              </label>
+              <label className="flex flex-col justify-center gap-1">
+                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
+                <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
+              </label>
+              <label className="flex flex-col justify-center gap-1">
+                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
+                  <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
+                </div>
+              </label>
             </div>
-          </label>
+          )}
         </div>
+
         <div className="space-y-5">
           <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
-              <span className="text-xs font-bold text-[#68718f]">{shown.filter((a) => a.lat != null).length} pinned</span>
+              <span className="text-xs font-bold text-[#68718f]">{pinned} of {shown.length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
               <ExploreMap activities={shown} />
@@ -720,9 +1011,6 @@ function ExplorePage() {
           <section>
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
-              {anyFilter && (
-                <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-pink hover:underline">Reset filters</button>
-              )}
             </div>
             <div className="grid gap-2.5 md:grid-cols-2">
               {shown.map((activity) => (
@@ -735,7 +1023,32 @@ function ExplorePage() {
           </section>
         </div>
       </main>
+      <Footer />
     </PageShell>
+  );
+}
+
+/** Category slug for an activity — the RPC gives us the display name, so map
+ *  it back through the category list the filter chips were built from. */
+function catSlugOf(a: { category: string }, cats: { slug: string; name: string }[]) {
+  return cats.find((c) => c.name === a.category)?.slug ?? "";
+}
+
+/** Rough great-circle distance (km) from a point to an activity's nearest venue. */
+function distanceFrom(here: { lat: number; lng: number }, a: { venues: { lat: number; lng: number }[]; lat?: number; lng?: number }) {
+  const points = a.venues.length ? a.venues : a.lat != null && a.lng != null ? [{ lat: a.lat, lng: a.lng }] : [];
+  if (!points.length) return Infinity;
+  const R = 6371;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  return Math.min(
+    ...points.map((p) => {
+      const dLat = rad(p.lat - here.lat);
+      const dLng = rad(p.lng - here.lng);
+      const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(rad(here.lat)) * Math.cos(rad(p.lat)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    })
   );
 }
 
@@ -764,10 +1077,42 @@ const sgTime = (iso: string) =>
     minute: "2-digit",
   });
 
+/** A chat CTA that greys out — with the reason on hover — when messaging isn't
+ *  available: either the parent is on Free, or the provider isn't integrated
+ *  with BabyBrain so there's nothing to open. */
+function ChatButton({
+  icon,
+  label,
+  disabledReason,
+  onOpen,
+}: {
+  icon: string;
+  label: string;
+  disabledReason: string | null;
+  onOpen: () => void;
+}) {
+  if (disabledReason) {
+    return (
+      <span
+        title={disabledReason}
+        className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#e3e7f2] bg-[#f5f6fa] px-6 py-3 text-[15px] font-extrabold leading-none text-[#9aa3bd]"
+      >
+        <Icon name={icon} className="h-4 w-4" /> {label} <Icon name="lock" className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  return (
+    <Button variant="outline" className="mt-3 w-full" onClick={onOpen}>
+      <Icon name={icon} className="h-4 w-4" /> {label}
+    </Button>
+  );
+}
+
 function ActivityDetailPage() {
   const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
+  const { isPlus } = usePlan();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
@@ -823,6 +1168,18 @@ function ActivityDetailPage() {
     ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
     : null;
   const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
+
+  // Messaging needs both an integrated provider and a Plus subscription.
+  // Signed-out visitors still get a live button — it sends them to log in.
+  const chatBlockedReason = activity.external_booking_url
+    ? "This provider takes bookings on their own site, so messaging isn't available here. Use the WhatsApp or email buttons to reach them."
+    : session && !isPlus
+      ? "Messaging providers and other parents is a BabyBrain Plus feature."
+      : null;
+  const requireLogin = (open: () => void) => () => {
+    if (!session) window.location.href = "/login";
+    else open();
+  };
 
   return (
     <PageShell active="/explore">
@@ -880,25 +1237,20 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
             ) : (
-              <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a Class</Button>
+              <Button href={`/book?slug=${activity.slug}`} className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Enquiry chat needs a provider to message — hide the button
                 for listings without a linked provider, else it dead-clicks
-                for signed-in users. */}
+                for signed-in users. Messaging is a Plus feature, and it also
+                needs the provider to be integrated with us: a listing that
+                books on the provider's own site has no chat to open. */}
             {activity.provider_id && (
-              <Button
-                variant="outline"
-                className="mt-3 w-full"
-                onClick={() => {
-                  if (!session) {
-                    window.location.href = "/login";
-                  } else {
-                    setEnquiring(true);
-                  }
-                }}
-              >
-                <Icon name="mail" className="h-4 w-4" /> Enquire Now
-              </Button>
+              <ChatButton
+                icon="mail"
+                label="Enquire now"
+                disabledReason={chatBlockedReason}
+                onOpen={requireLogin(() => setEnquiring(true))}
+              />
             )}
             {/* 1.4: direct click-through contact — WhatsApp and email */}
             {(activity.provider_contact?.whatsapp || activity.provider_contact?.contact_phone || activity.provider_contact?.contact_email) && (
@@ -923,18 +1275,14 @@ function ActivityDetailPage() {
                 )}
               </div>
             )}
-            <Button
-              variant="outline"
-              className="mt-3 w-full"
-              onClick={() => {
-                if (!session) window.location.href = "/login";
-                else setGroupChat(true);
-              }}
-            >
-              <Icon name="people" className="h-4 w-4" /> Class Group Chat
-            </Button>
+            <ChatButton
+              icon="people"
+              label="Class group chat"
+              disabledReason={chatBlockedReason}
+              onOpen={requireLogin(() => setGroupChat(true))}
+            />
             <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
-              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to Favorites" : "Save to Favorites"}
+              <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
             </Button>
             {enquiring && activity.provider_id && (
               <EnquiryChat
@@ -954,7 +1302,7 @@ function ActivityDetailPage() {
               {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
               {next && <p><strong>Next available session</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
               {next?.capacity != null && <p><strong>Spaces left</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
-              <p className="rounded-[12px] bg-[#fff7fb] p-3"><Icon name="shield" className="mr-1 inline h-4 w-4 text-baby-lilac" /> Hosted by a trusted provider</p>
+              {durationMins != null && <p><strong>Duration</strong><span className="float-right">{formatDuration(durationMins)}</span></p>}
             </div>
           </aside>
         </section>
@@ -1102,18 +1450,34 @@ type NotifItem = { id: string; title: string; body: string; read_at: string | nu
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null };
 
-const PROFILE_TABS: [string, string, string][] = [
-  ["overview", "Overview", "home"],
-  ["children", "My Children", "people"],
-  ["bookings", "Bookings", "calendar"],
-  ["attended", "Attended Classes", "check"],
-  ["packages", "Packages", "store"],
-  ["makeup", "Make-up Tokens", "gift"],
-  ["favorites", "Favorites", "heart"],
-  ["reviews", "Reviews", "star"],
-  ["notifications", "Notifications", "bell"],
-  ["settings", "Settings", "gear"],
+/** [key, label, icon, plusOnly] — the Plus-only tabs are the ones QA listed as
+ *  needing to differ between tiers (packages, make-up tokens, favourites). */
+const PROFILE_TABS: [string, string, string, boolean][] = [
+  ["overview", "Overview", "home", false],
+  ["children", "My Children", "people", false],
+  ["bookings", "Bookings", "calendar", false],
+  ["past", "Past Activities", "check", false],
+  ["packages", "Packages", "store", true],
+  ["makeup", "Make-up Tokens", "gift", true],
+  ["favorites", "Favorites", "heart", true],
+  ["reviews", "Reviews", "star", false],
+  ["notifications", "Notifications", "bell", false],
+  ["settings", "Settings", "gear", false],
 ];
+
+/** Stand-in shown where a Plus-only feature would be, with the upgrade path. */
+function PlusLock({ title, copy }: { title: string; copy: string }) {
+  return (
+    <div className="mt-4 rounded-[14px] border border-dashed border-[#f0c3d6] bg-[#fff7fb] p-10 text-center">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink">
+        <Icon name="lock" className="h-7 w-7" />
+      </span>
+      <h2 className="mt-4 text-xl font-black">{title}</h2>
+      <p className="mx-auto mt-2 max-w-[420px] font-semibold text-[#68718f]">{copy}</p>
+      <Button href="/pricing" className="mt-5"><Icon name="star" className="h-4 w-4" /> Upgrade to Plus</Button>
+    </div>
+  );
+}
 
 function tokenStatusStyle(status: string) {
   if (status === "issued") return "bg-[#eefbf1] text-green-700";
@@ -1149,7 +1513,6 @@ function ChildForm({
   const [dob, setDob] = useState(initial?.date_of_birth ?? "");
   const [gender, setGender] = useState<string>(initial?.gender ?? "unspecified");
   const [interests, setInterests] = useState<string[]>(initial?.interests ?? []);
-  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1161,13 +1524,19 @@ function ChildForm({
   const toggle = (v: string) => setInterests((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]));
 
   async function save() {
-    if (!name.trim() || !dob) {
-      setError("Please add a name and date of birth.");
+    if (!name.trim()) {
+      setError("Please add a name.");
+      return;
+    }
+    const dobProblem = dobError(dob);
+    if (dobProblem) {
+      setError(dobProblem);
       return;
     }
     setBusy(true);
     setError(null);
-    const payload = { name: name.trim(), date_of_birth: dob, gender: gender as Gender, interests, notes: notes.trim() || null };
+    // `notes` was removed from the form per QA; existing values are left untouched.
+    const payload = { name: name.trim(), date_of_birth: dob, gender: gender as Gender, interests };
     const { error: err } = initial
       ? await supabase.from("children").update(payload).eq("id", initial.id)
       : await supabase.from("children").insert({ parent_id: parentId, ...payload });
@@ -1185,7 +1554,11 @@ function ChildForm({
       {error && <p className="mt-2 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
       <div className="mt-3 space-y-3">
         <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emma" /></div>
-        <div><label className="mb-1 block text-sm font-black">Date of birth</label><input type="date" max={new Date().toISOString().slice(0, 10)} className={input} value={dob} onChange={(e) => setDob(e.target.value)} /></div>
+        <div>
+          <label className="mb-1 block text-sm font-black">Date of birth</label>
+          <DateInput value={dob} onChange={setDob} min={MIN_CHILD_DOB} max={todayIso()} className={input} />
+          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Day first, e.g. 14/03/2024.</p>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
             <Chip key={v} on={gender === v} onClick={() => setGender(v)}>{l}</Chip>
@@ -1197,7 +1570,6 @@ function ChildForm({
             {cats.map((c) => <Chip key={c.slug} on={interests.includes(c.slug)} onClick={() => toggle(c.slug)}>{c.name}</Chip>)}
           </div>
         </div>
-        <div><label className="mb-1 block text-sm font-black">Any other notes?</label><input className={input} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. loves dancing…" /></div>
       </div>
       <div className="mt-4 flex gap-3">
         <Button type="button" onClick={save} disabled={busy}>{busy ? "Saving…" : initial ? "Save changes" : "Add child"}</Button>
@@ -1353,6 +1725,228 @@ function ChildrenTab({
   );
 }
 
+/** Twelve deterministic avatar options — the generator is seeded by string, so
+ *  storing the chosen seed is all we need to reproduce the picture. */
+const AVATAR_SEEDS = Array.from({ length: 12 }, (_, i) => `bb-avatar-${i + 1}`);
+
+/** Edit an existing parent profile.
+ *
+ *  QA: "When you click edit profile, the form should be pre-populated with what
+ *  you have completed before rather than having to do it all again" and "Tried
+ *  to edit profile and it added a child instead". Both came from Edit Profile
+ *  pointing at /onboarding — the sign-up form, which always inserts a new
+ *  child. Children are managed on their own tab; this page never creates one.
+ */
+function EditProfilePage() {
+  const { session, profile, loading, refresh } = useAuth();
+  const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [postcode, setPostcode] = useState("");
+  const [avatarSeed, setAvatarSeed] = useState<string | null>(null);
+  const [regions, setRegions] = useState<string[]>([]);
+  const [days, setDays] = useState<string[]>([]);
+  const [times, setTimes] = useState<string[]>([]);
+  const [interests, setInterests] = useState<string[]>([]);
+  const [budgetMin, setBudgetMin] = useState<number | null>(null);
+  const [budgetMax, setBudgetMax] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Prefill from what the parent has already told us.
+  useEffect(() => {
+    if (!profile) return;
+    setFullName(profile.full_name ?? "");
+    setPhone(profile.phone ?? "");
+    setPostcode(profile.postal_code ?? "");
+    setAvatarSeed(profile.avatar_seed ?? null);
+  }, [profile]);
+
+  useEffect(() => {
+    if (!session) return;
+    supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
+    supabase
+      .from("user_preferences")
+      .select("preferred_days, preferred_times, preferred_regions, interests, budget_min, budget_max")
+      .eq("user_id", session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setDays(data.preferred_days ?? []);
+          setTimes(data.preferred_times ?? []);
+          setRegions(data.preferred_regions ?? []);
+          setInterests(data.interests ?? []);
+          setBudgetMin(data.budget_min);
+          setBudgetMax(data.budget_max);
+        }
+        setReady(true);
+      });
+  }, [session]);
+
+  const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
+    set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const weekdayKeys = ["mon", "tue", "wed", "thu", "fri"];
+  const weekendKeys = ["sat", "sun"];
+  const weekdaysOn = weekdayKeys.every((d) => days.includes(d));
+  const weekendOn = weekendKeys.every((d) => days.includes(d));
+
+  async function save() {
+    if (!session) return;
+    if (!fullName.trim()) return setError("Please add your full name.");
+    const postcodeProblem = postcodeError(postcode);
+    if (postcodeProblem) return setError(postcodeProblem);
+    setBusy(true);
+    setError(null);
+    const { error: pErr } = await supabase
+      .from("parent_profiles")
+      .update({
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+        postal_code: postcode.trim(),
+        avatar_seed: avatarSeed,
+      })
+      .eq("id", session.user.id);
+    const { error: prefErr } = await supabase
+      .from("user_preferences")
+      .update({
+        preferred_days: days as never,
+        preferred_times: times as never,
+        preferred_regions: regions as never,
+        interests,
+        budget_min: budgetMin,
+        budget_max: budgetMax,
+      })
+      .eq("user_id", session.user.id);
+    setBusy(false);
+    if (pErr || prefErr) return setError((pErr ?? prefErr)!.message);
+    await refresh();
+    setSaved(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  if (!loading && !session) {
+    return (
+      <PageShell active="/profile">
+        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
+          <p className="text-xl font-black">Log in to edit your profile.</p>
+          <Button href="/login" className="mt-4">Log in</Button>
+        </main>
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell active="/profile">
+      <main className="mx-auto max-w-[680px] px-6 py-6">
+        <a href="/profile" className="text-sm font-bold text-baby-lilac">← Back to my account</a>
+        <h1 className="mt-3 text-[30px] font-black">Edit your profile</h1>
+        <p className="mt-1 text-sm font-semibold text-[#44507b]">Update your details and what you'd like us to suggest.</p>
+
+        {saved && (
+          <p className="mt-4 rounded-[10px] bg-[#eefbf1] px-4 py-3 text-sm font-bold text-green-700">
+            Your profile has been updated.
+          </p>
+        )}
+
+        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+          <h2 className="font-black">Your avatar</h2>
+          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Pick the one you like — it shows on your account and in class chats.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[null, ...AVATAR_SEEDS].map((seed) => {
+              const on = avatarSeed === seed;
+              return (
+                <button
+                  key={seed ?? "default"}
+                  type="button"
+                  aria-label={seed ? `Avatar option ${seed}` : "Default avatar"}
+                  aria-pressed={on}
+                  onClick={() => setAvatarSeed(seed)}
+                  className={`rounded-full p-0.5 transition ${on ? "ring-2 ring-baby-pink" : "ring-1 ring-[#eceff7] hover:ring-[#f0c3d6]"}`}
+                >
+                  <AnimalAvatar seed={seed ?? fullName} kind="parent" className="h-12 w-12" />
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+          <h2 className="font-black">Your details</h2>
+          <div className="mt-3 space-y-3">
+            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
+              <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} /></div>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Email</p>
+              <p className="font-black">{session?.user.email}</p>
+              <p className="text-xs font-semibold text-[#8a93b2]">Contact us if you need to change the email on your account.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+          <h2 className="flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {REGION_FILTERS.map(([v, l]) => (
+              <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
+            ))}
+          </div>
+
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Chip
+              on={weekdaysOn}
+              onClick={() => setDays((d) => (weekdaysOn ? d.filter((x) => !weekdayKeys.includes(x)) : [...new Set([...d, ...weekdayKeys])]))}
+            >
+              Weekdays
+            </Chip>
+            <Chip
+              on={weekendOn}
+              onClick={() => setDays((d) => (weekendOn ? d.filter((x) => !weekendKeys.includes(x)) : [...new Set([...d, ...weekendKeys])]))}
+            >
+              Weekend
+            </Chip>
+            {TIME_CHIPS.map(([v, l]) => <Chip key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Chip>)}
+            {BUDGET_CHIPS.map(([k, l, lo, hi]) => {
+              const on = budgetMin === lo && budgetMax === hi;
+              return (
+                <Chip key={k} on={on} onClick={() => { setBudgetMin(on ? null : lo); setBudgetMax(on ? null : hi); }}>{l}</Chip>
+              );
+            })}
+          </div>
+
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="spark" className="h-4 w-4 text-baby-pink" /> Interests</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {cats.map((c) => <Chip key={c.slug} on={interests.includes(c.slug)} onClick={() => toggle(interests, c.slug, setInterests)}>{c.name}</Chip>)}
+          </div>
+        </section>
+
+        <section className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#eadfd2] bg-[#fff7fb] p-5">
+          <div>
+            <h2 className="font-black">Your children</h2>
+            <p className="mt-1 text-sm font-semibold text-[#59658d]">Add, edit or remove a child on their own tab — editing your profile never changes them.</p>
+          </div>
+          <Button href="/profile?tab=children" variant="outline" className="shrink-0"><Icon name="people" className="h-4 w-4" /> Manage children</Button>
+        </section>
+
+        {error && (
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#ffd2de] bg-[#ffe9ef] px-4 py-3 text-sm font-bold text-[#b00040]">{error}</p>
+        )}
+        <div className="mt-4 flex gap-3">
+          <Button type="button" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : "Save changes"}</Button>
+          <Button href="/profile" variant="outline">Cancel</Button>
+        </div>
+      </main>
+      <Footer />
+    </PageShell>
+  );
+}
+
 function ProfilePage() {
   const { session, profile, children, loading, signOut, refresh } = useAuth();
   const child = children[0];
@@ -1423,6 +2017,35 @@ function ProfilePage() {
       });
   }
 
+  function loadPackages() {
+    supabase
+      .from("package_purchases")
+      .select("id, credits_total, credits_remaining, status, expires_at, packages(name), providers(business_name)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{
+          id: string;
+          credits_total: number;
+          credits_remaining: number;
+          status: string;
+          expires_at: string | null;
+          packages: { name: string } | null;
+          providers: { business_name: string } | null;
+        }>;
+        setPackages(
+          rows.map((r) => ({
+            id: r.id,
+            name: r.packages?.name ?? "Class package",
+            provider: r.providers?.business_name ?? "A provider",
+            total: r.credits_total,
+            remaining: r.credits_remaining,
+            status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
+            expiresAt: r.expires_at,
+          }))
+        );
+      });
+  }
+
   async function manageBilling() {
     setBillingBusy(true);
     try {
@@ -1485,32 +2108,7 @@ function ProfilePage() {
       .order("created_at", { ascending: false })
       .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
 
-    supabase
-      .from("package_purchases")
-      .select("id, credits_total, credits_remaining, status, expires_at, packages(name), providers(business_name)")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          credits_total: number;
-          credits_remaining: number;
-          status: string;
-          expires_at: string | null;
-          packages: { name: string } | null;
-          providers: { business_name: string } | null;
-        }>;
-        setPackages(
-          rows.map((r) => ({
-            id: r.id,
-            name: r.packages?.name ?? "Class package",
-            provider: r.providers?.business_name ?? "A provider",
-            total: r.credits_total,
-            remaining: r.credits_remaining,
-            status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
-            expiresAt: r.expires_at,
-          }))
-        );
-      });
+    loadPackages();
 
     supabase
       .from("favorite_providers")
@@ -1558,10 +2156,6 @@ function ProfilePage() {
       );
     })();
 
-    // Just came back from a successful checkout? The webhook is async, so poll
-    // a few times until the plan flips to Plus instead of showing stale "Free".
-    const justUpgraded = getParam("billing") === "success";
-    let tries = 0;
     const fetchPlan = () => {
       apiGet<{
         plan: "free" | "plus";
@@ -1571,16 +2165,25 @@ function ProfilePage() {
         terms_accepted_at: string | null;
         terms_version: string | null;
       }>("/api/customer/stripe/subscription")
-        .then((p) => {
-          setBillingPlan(p);
-          if (justUpgraded && p.plan !== "plus" && tries < 5) {
-            tries += 1;
-            setTimeout(fetchPlan, 1500);
-          }
-        })
+        .then(setBillingPlan)
         .catch(() => {});
     };
-    fetchPlan();
+
+    // Coming back from Stripe Checkout: apply the result straight away rather
+    // than waiting on the webhook, which QA found could leave a paid-for
+    // upgrade reading "Free" and a bought class pack missing from Packages.
+    const checkoutSession = getParam("session_id");
+    if (checkoutSession) {
+      apiPost("/api/stripe/reconcile", { session_id: checkoutSession })
+        .catch(() => {})
+        .finally(() => {
+          invalidatePlan();
+          fetchPlan();
+          loadPackages();
+        });
+    } else {
+      fetchPlan();
+    }
   }, [session]);
 
   if (!loading && !session) {
@@ -1588,7 +2191,7 @@ function ProfilePage() {
       <PageShell active="/profile">
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Log in to view your dashboard.</p>
-          <Button href="/login" className="mt-4">Log In</Button>
+          <Button href="/login" className="mt-4">Log in</Button>
         </main>
       </PageShell>
     );
@@ -1596,33 +2199,56 @@ function ProfilePage() {
 
   const recs = recsByChild[0]?.recs ?? [];
   const parentName = profile?.full_name || "Your family";
-  const attended = bookings.filter((b) => b.status === "completed");
+  const isPlus = billingPlan?.plan === "plus";
+  // A class is "past" once its start time has gone by. Attendance decides
+  // which of the two past lists it lands in.
+  const now = Date.now();
+  const isPast = (b: BookingItem) =>
+    b.status !== "cancelled" && !!b.startsAt && new Date(b.startsAt).getTime() < now;
+  const upcomingBookings = bookings.filter((b) => !isPast(b));
+  const pastBookings = bookings.filter(isPast);
 
   return (
     <PageShell active="/profile">
-      <main className="mx-auto grid max-w-[1122px] gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[235px_1fr]">
-        <aside className="space-y-4">
+      {/* On mobile the order is nav → tab content → referral/contact, so
+          switching tabs shows the content straight away instead of burying it
+          under the promo blocks. On desktop both sidebar cards stack on the
+          left with the content beside them. */}
+      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:items-start">
+        <aside className="order-1 lg:col-start-1 lg:row-start-1">
           <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-5 shadow-card">
             <div className="flex items-center gap-3">
-              <AnimalAvatar seed={parentName} kind="parent" className="h-14 w-14" />
+              <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
               <div className="min-w-0"><h2 className="truncate font-black">{parentName}</h2>{child && <p className="truncate text-sm font-semibold text-[#59658d]">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
             </div>
             <a
-              href={billingPlan?.plan === "plus" ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${billingPlan?.plan === "plus" ? "bg-[#ffe9f2] text-[#e5487f]" : "bg-[#fff4ec] text-[#c2571f]"}`}
+              href={isPlus ? "/profile?tab=settings" : "/pricing"}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#ffe9f2] text-[#e5487f]" : "bg-[#fff4ec] text-[#c2571f]"}`}
             >
               <span className="flex items-center gap-1.5">
-                <Icon name={billingPlan?.plan === "plus" ? "star" : "spark"} className="h-4 w-4" />
-                {billingPlan?.plan === "plus" ? "Plus plan" : "Free plan"}
+                <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
+                {isPlus ? "Plus plan" : "Free plan"}
               </span>
-              <span className="text-xs">{billingPlan?.plan === "plus" ? "Manage" : "Upgrade →"}</span>
+              <span className="text-xs">{isPlus ? "Manage" : "Upgrade →"}</span>
             </a>
             <nav className="mt-4 space-y-1.5">
-              {PROFILE_TABS.map(([key, item, icon]) => (
-                <a key={key} href={`/profile?tab=${key}`} className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#ffe9f2] text-[#e5487f]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}><Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}</a>
-              ))}
+              {PROFILE_TABS.map(([key, item, icon, plusOnly]) => {
+                const locked = plusOnly && !isPlus;
+                return (
+                  <a
+                    key={key}
+                    href={`/profile?tab=${key}`}
+                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#ffe9f2] text-[#e5487f]" : locked ? "text-[#9aa3bd] hover:bg-[#f5f8ff]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}
+                  >
+                    <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
+                    {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
+                  </a>
+                );
+              })}
             </nav>
           </div>
+        </aside>
+        <aside className="order-3 space-y-4 lg:col-start-1 lg:row-start-2">
           <div className="rounded-[12px] border border-[#f0e2c6] bg-[#fff9e9] p-5 shadow-card">
             <h3 className="text-lg font-black">Invite a friend</h3>
             <p className="mt-3 text-sm font-semibold leading-6">Get $10 credits when your friend makes their first booking!</p>
@@ -1640,16 +2266,16 @@ function ProfilePage() {
               }}
               className="w-full"
             >
-              Invite Friends
+              Invite friends
             </Button>
           </div>
           <div className="rounded-[12px] bg-[#f4f8ff] p-5">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#FA5D93]">Contact Support →</a>
+            <a href="/contact" className="mt-4 block font-black text-[#FA5D93]">Contact support →</a>
           </div>
         </aside>
-        <section>
+        <section className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           {tab === "overview" && (
           <>
           <div className="grid items-center gap-5 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card lg:grid-cols-[120px_1fr_235px]">
@@ -1663,7 +2289,7 @@ function ProfilePage() {
                   <p className="mt-2 max-w-[200px] text-sm font-semibold capitalize leading-6">{child.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
                 </>
               )}
-              <Button href="/onboarding" variant="outline" className="mt-6"><Icon name="pen" className="h-4 w-4" /> Edit Profile</Button>
+              <Button href="/edit-profile" variant="outline" className="mt-6"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
             </div>
             <div className="rounded-[10px] bg-[#fff0f5] p-5">
               <h2 className="mb-4 text-lg font-black">{child ? `${child.name}'s Journey` : "Journey"}</h2>
@@ -1678,7 +2304,7 @@ function ProfilePage() {
           </div>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#FA5D93]">View all →</a>}>Saved Activities</SectionTitle>
+            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#FA5D93]">View all →</a>}>Saved activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
               {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
@@ -1694,10 +2320,10 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <h2 className="mb-3 text-[22px] font-black">Quick Access</h2>
+            <h2 className="mb-3 text-[22px] font-black">Quick access</h2>
             <div className="grid gap-3 md:grid-cols-4">
               {[
-                { label: "My Bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your classes" },
+                { label: "My bookings", icon: "calendar", href: "/profile?tab=bookings", copy: "Manage your classes" },
                 { label: "Favorites", icon: "heart", href: "/profile?tab=favorites", copy: "Activities you've saved" },
                 { label: "Reviews", icon: "star", href: "/profile?tab=reviews", copy: "Share your experience" },
                 { label: "Explore", icon: "pin", href: "/explore", copy: "Find activities that suit you" },
@@ -1720,18 +2346,22 @@ function ProfilePage() {
           {tab === "bookings" && (
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
-              <BookingList items={bookings} emptyCopy="You haven't booked any classes yet." onChanged={loadBookings} />
+              <p className="text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
+              <BookingList items={upcomingBookings} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
             </div>
           )}
 
-          {tab === "attended" && (
-            <div>
-              <h1 className="mb-1 text-[26px] font-black">Attended Classes</h1>
-              <BookingList items={attended} emptyCopy="No attended classes yet — they'll appear here after you go." />
-            </div>
+          {tab === "past" && (
+            <PastActivitiesTab items={pastBookings} onChanged={loadBookings} />
           )}
 
-          {tab === "packages" && (
+          {tab === "packages" && !isPlus && (
+            <PlusLock
+              title="Packages are a Plus feature"
+              copy="With Plus, every class pack you buy — across all your providers — is tracked here and can be used to book. On the free plan we email your pack details to you instead."
+            />
+          )}
+          {tab === "packages" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Packages</h1>
               <p className="mt-1 text-sm font-semibold text-[#59658d]">Class packs you've purchased — each booking with that provider can use a credit.</p>
@@ -1768,7 +2398,13 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "makeup" && (
+          {tab === "makeup" && !isPlus && (
+            <PlusLock
+              title="Make-up tokens are a Plus feature"
+              copy="With Plus, tokens from every provider are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
+            />
+          )}
+          {tab === "makeup" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Make-up Tokens</h1>
               <p className="mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
@@ -1797,7 +2433,13 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "favorites" && (
+          {tab === "favorites" && !isPlus && (
+            <PlusLock
+              title="Saved favourites are a Plus feature"
+              copy="Upgrade to keep your favourite activities and providers on your own list and map, so you can come back to them any time."
+            />
+          )}
+          {tab === "favorites" && isPlus && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Favorites</h1>
               {favs.length === 0 ? (
@@ -1943,11 +2585,13 @@ function ProfilePage() {
                   <p className="font-black">{session?.user.email || "—"}</p>
                 </div>
                 <div className="flex flex-wrap gap-3 border-t border-[#eef1f7] pt-4">
-                  <Button href="/onboarding" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
+                  <Button href="/edit-profile" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
                   <Button href="/forgot-password" variant="outline"><Icon name="lock" className="h-4 w-4" /> Change password</Button>
                   <Button type="button" variant="soft" onClick={() => signOut()}>Sign out</Button>
                 </div>
               </div>
+
+              <DeleteAccountPanel isPlus={isPlus} />
             </div>
           )}
         </section>
@@ -1956,7 +2600,198 @@ function ProfilePage() {
   );
 }
 
-function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void }) {
+/** Settings → Delete account. Typing DELETE is the confirmation; the route
+ *  cancels any live Plus subscription before removing the account. */
+function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost("/api/customer/account", { confirm: "DELETE" });
+      await supabase.auth.signOut();
+      window.location.href = "/?deleted=1";
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof Error ? e.message : "We couldn't delete your account — please contact hello@babybrain.sg.");
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-[14px] border border-[#ffd2de] bg-white p-6 shadow-card">
+      <h2 className="font-black text-[#b00040]">Delete your account</h2>
+      <p className="mt-1 text-sm font-semibold text-[#59658d]">
+        This removes your profile, your children's details, preferences and saved activities.
+        {isPlus ? " Your Plus subscription is cancelled at the same time, so you won't be charged again." : ""}
+        {" "}It can't be undone.
+      </p>
+
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-4 rounded-[11px] border border-[#ffd2de] px-5 py-2.5 text-sm font-extrabold text-[#d63964] hover:bg-[#fff5f8]"
+        >
+          Delete account
+        </button>
+      ) : (
+        <div className="mt-4 rounded-[12px] bg-[#fff5f8] p-4">
+          <label className="block text-sm font-black text-[#b00040]">
+            Type DELETE to confirm
+            <input
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className="mt-2 h-11 w-full max-w-[220px] rounded-[10px] border border-[#ffd2de] px-3 text-sm font-semibold"
+              placeholder="DELETE"
+            />
+          </label>
+          {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
+          <div className="mt-3 flex gap-3">
+            <button
+              type="button"
+              disabled={confirm !== "DELETE" || busy}
+              onClick={remove}
+              className={`rounded-[11px] px-5 py-2.5 text-sm font-extrabold text-white ${
+                confirm === "DELETE" && !busy ? "bg-[#d63964] hover:brightness-105" : "cursor-not-allowed bg-[#e6a9bd]"
+              }`}
+            >
+              {busy ? "Deleting…" : "Permanently delete"}
+            </button>
+            <Button type="button" variant="outline" onClick={() => { setOpen(false); setConfirm(""); setError(null); }}>
+              Keep my account
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Past classes, split by whether the parent (or the provider) marked them as
+ *  attended. QA: "Once time has passed for a class, it was still showing in
+ *  bookings… Can we call this Past activities and have an attended and not
+ *  attended section?" */
+function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChanged: () => void }) {
+  const [marks, setMarks] = useState<Record<string, "present" | "absent">>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    supabase
+      .from("attendance")
+      .select("booking_id, status")
+      .in("booking_id", items.map((b) => b.id))
+      .then(({ data }) => {
+        const next: Record<string, "present" | "absent"> = {};
+        for (const row of (data ?? []) as unknown as { booking_id: string; status: string }[]) {
+          if (row.status === "present" || row.status === "late") next[row.booking_id] = "present";
+          else if (row.status === "absent") next[row.booking_id] = "absent";
+        }
+        setMarks(next);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.map((b) => b.id).join(",")]);
+
+  async function mark(b: BookingItem, status: "present" | "absent") {
+    setBusyId(b.id);
+    setError(null);
+    const { error: err } = await supabase.rpc("mark_own_attendance", {
+      p_booking_id: b.id,
+      p_status: status,
+    });
+    setBusyId(null);
+    if (err) {
+      setError(err.message.replace(/^.*?:\s*/, ""));
+      return;
+    }
+    setMarks((m) => ({ ...m, [b.id]: status }));
+    onChanged();
+  }
+
+  // A completed booking counts as attended even if nobody ticked it.
+  const statusOf = (b: BookingItem) => marks[b.id] ?? (b.status === "completed" ? "present" : null);
+  const attended = items.filter((b) => statusOf(b) === "present");
+  const notAttended = items.filter((b) => statusOf(b) === "absent");
+  const unmarked = items.filter((b) => statusOf(b) === null);
+
+  function Row({ b }: { b: BookingItem }) {
+    const state = statusOf(b);
+    return (
+      <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card">
+        <div className="flex items-center gap-4">
+          <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
+          <div className="min-w-0 flex-1">
+            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
+            {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
+          </div>
+          {state && (
+            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#eefbf1] text-green-700" : "bg-[#f1efe8] text-[#7a725c]"}`}>
+              {state === "present" ? "Attended" : "Not attended"}
+            </span>
+          )}
+        </div>
+        <div className="mt-2 flex justify-end gap-2 border-t border-[#f2f4fa] pt-2">
+          <button
+            type="button"
+            disabled={busyId === b.id}
+            onClick={() => mark(b, "present")}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#eefbf1] text-green-700" : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"}`}
+          >
+            We went
+          </button>
+          <button
+            type="button"
+            disabled={busyId === b.id}
+            onClick={() => mark(b, "absent")}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#e3e7f2] bg-[#f5f6fa] text-[#5a6484]" : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"}`}
+          >
+            We missed it
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
+      <p className="text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
+      {error && <p className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+
+      {items.length === 0 ? (
+        <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
+      ) : (
+        <div className="mt-4 space-y-6">
+          {unmarked.length > 0 && (
+            <section>
+              <h2 className="mb-2 text-sm font-black text-[#46527d]">Did you make it? ({unmarked.length})</h2>
+              <div className="space-y-3">{unmarked.map((b) => <Row key={b.id} b={b} />)}</div>
+            </section>
+          )}
+          <section>
+            <h2 className="mb-2 text-sm font-black text-[#46527d]">Attended ({attended.length})</h2>
+            {attended.length === 0
+              ? <p className="rounded-[12px] bg-[#fff7fb] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
+              : <div className="space-y-3">{attended.map((b) => <Row key={b.id} b={b} />)}</div>}
+          </section>
+          <section>
+            <h2 className="mb-2 text-sm font-black text-[#46527d]">Not attended ({notAttended.length})</h2>
+            {notAttended.length === 0
+              ? <p className="rounded-[12px] bg-[#fff7fb] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
+              : <div className="space-y-3">{notAttended.map((b) => <Row key={b.id} b={b} />)}</div>}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void; isPlus?: boolean }) {
   // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
@@ -2020,20 +2855,51 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
   const exportable = items.filter((b) => b.startsAt && b.status !== "cancelled");
   return (
     <div className="mt-4 space-y-3">
-      {exportable.length > 1 && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() =>
-              downloadScheduleIcs(
-                exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
-              )
-            }
-            className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
-            title={`Export all ${exportable.length} classes to your calendar`}
-          >
-            <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
-          </button>
+      {exportable.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {/* Calendar sync and the exportable schedule are Plus features. */}
+          {isPlus ? (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadScheduleIcs(
+                    exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
+                title={`Export all ${exportable.length} classes to your calendar`}
+              >
+                <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadSchedulePdf(
+                    exportable.map((b) => ({
+                      title: b.title,
+                      startsAt: b.startsAt!,
+                      endsAt: b.endsAt,
+                      venue: b.venue,
+                      status: b.status,
+                    }))
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
+                title="Open a printable schedule you can save as PDF"
+              >
+                <Icon name="open" className="h-3.5 w-3.5" /> Download PDF schedule
+              </button>
+            </>
+          ) : (
+            <a
+              href="/pricing"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#e3e7f2] bg-[#f5f6fa] px-3 py-1.5 text-xs font-bold text-[#9aa3bd] hover:border-baby-pink hover:text-[#FA5D93]"
+              title="Calendar sync and PDF export are Plus features"
+            >
+              <Icon name="lock" className="h-3.5 w-3.5" /> Calendar &amp; PDF export — Plus
+            </a>
+          )}
         </div>
       )}
       {items.map((b) => {
@@ -2047,7 +2913,7 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
               </div>
-              {b.startsAt && b.status !== "cancelled" && (
+              {b.startsAt && b.status !== "cancelled" && isPlus && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -2201,6 +3067,98 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
   },
 ];
 
+/** Contact form that emails the support inbox.
+ *
+ *  QA: "Bottom of contact page, doesn't make sense to have 'still need help'
+ *  and 'send us a message' since that is directly above — could we add a
+ *  contact form here which sends to the e-mail?" */
+function ContactForm() {
+  const { session, profile } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Prefill for signed-in parents so they don't retype what we already know.
+  useEffect(() => {
+    if (profile?.full_name) setName(profile.full_name);
+    if (session?.user.email) setEmail(session.user.email);
+  }, [profile, session]);
+
+  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold focus:border-baby-pink focus:outline-none";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Please tell us your name.");
+    const emailProblem = emailError(email);
+    if (emailProblem) return setError(emailProblem);
+    if (message.trim().length < 10) return setError("Please add a little more detail to your message.");
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost("/api/contact", {
+        name: name.trim(),
+        email: email.trim(),
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We couldn't send that — please email us directly.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="rounded-[18px] border border-[#e7ebf6] bg-white p-8 text-center shadow-card">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#eafaf0] text-[#28a765]"><Icon name="check" className="h-8 w-8" /></span>
+        <h2 className="mt-4 text-2xl font-black">Message sent</h2>
+        <p className="mt-2 font-semibold text-[#59658d]">Thanks {name.split(" ")[0]} — we endeavour to reply within 3 days.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card sm:p-8">
+      <h2 className="text-2xl font-black">Send us a message</h2>
+      <p className="mt-1 font-semibold text-[#68718f]">Fill this in and it comes straight to our inbox.</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-black">Your name</label>
+          <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sarah Tan" />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-black">Email address</label>
+          <input type="email" className={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+        </div>
+      </div>
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-black">Subject <span className="font-semibold text-[#8a93b2]">(optional)</span></label>
+        <input className={input} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="What's this about?" />
+      </div>
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-black">Message</label>
+        <textarea
+          rows={5}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="How can we help?"
+          className="w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
+        />
+      </div>
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      <Button type="submit" className="mt-4 w-full justify-center sm:w-auto" disabled={busy}>
+        {busy ? "Sending…" : "Send message"}
+      </Button>
+    </form>
+  );
+}
+
 function ContactPage() {
   const { session } = useAuth();
   const [support, setSupport] = useState(false);
@@ -2208,6 +3166,16 @@ function ContactPage() {
     if (!session) { window.location.href = "/login"; return; }
     setSupport(true);
   };
+
+  // Vite renders after the browser has already tried to resolve #faq, so a
+  // link from another page landed at the top of Contact. Scroll once mounted.
+  useEffect(() => {
+    if (window.location.hash !== "#faq") return;
+    const t = setTimeout(() => {
+      document.getElementById("faq")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <>
     {support && <SupportChat onClose={() => setSupport(false)} />}
@@ -2263,15 +3231,12 @@ function ContactPage() {
           </div>
         </section>
 
-        <section className="mt-7 grid items-center gap-6 rounded-[18px] bg-gradient-to-r from-[#fff3fb] to-[#f2edff] p-6 md:grid-cols-[230px_1fr_260px]">
-          <img src={`${import.meta.env.BASE_URL}assets/crops/envelope-cta.png`} alt="" className="h-32 object-contain" />
-          <div>
-            <h2 className="text-2xl font-black">Still need help?</h2>
-            <p className="mt-2 text-lg font-semibold leading-8">Can't find what you're looking for? Send us a message and we'll get back to you soon.</p>
-          </div>
-          <Button size="lg" onClick={openSupport}><Icon name="mail" className="h-5 w-5" /> Send us a message</Button>
+        <section id="contact-form" className="mt-9 grid items-start gap-6 scroll-mt-24 md:grid-cols-[1fr_240px]">
+          <ContactForm />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/envelope-cta.png`} alt="" className="mx-auto hidden h-40 object-contain md:block" />
         </section>
       </main>
+      <Footer />
     </PageShell>
     </>
   );
@@ -2618,6 +3583,46 @@ function PaymentPage() {
   );
 }
 
+/** One selectable row in the booking flow's "Choose your package" step. */
+function PackageOption({
+  selected,
+  onSelect,
+  title,
+  copy,
+  price,
+  badge,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  title: string;
+  copy: string;
+  price: string;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-3 rounded-[12px] border-2 p-4 text-left transition ${
+        selected ? "border-baby-pink bg-[#fff0f5]" : "border-[#dfe5f2] bg-white hover:border-[#f0c3d6]"
+      }`}
+    >
+      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${selected ? "border-baby-pink" : "border-[#cfd7e8]"}`}>
+        {selected && <span className="h-2.5 w-2.5 rounded-full bg-baby-pink" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-black">{title}</span>
+          {badge && <span className="rounded-full bg-[#fff4d6] px-2 py-0.5 text-[10px] font-bold text-[#8a6d1a]">{badge}</span>}
+        </span>
+        <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{copy}</span>
+      </span>
+      <span className="shrink-0 font-black text-baby-pink">{price}</span>
+    </button>
+  );
+}
+
 function BookingPage() {
   const { activity, sessions, loading } = useActivityDetail(getParam("slug"));
   const { session: auth, children: kids } = useAuth();
@@ -2633,6 +3638,23 @@ function BookingPage() {
     activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null;
   };
   const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
+  // Step 4: "single" | "credit" | "pack:<id>"
+  const [payWith, setPayWith] = useState<string>("single");
+
+  // Packs this provider sells that apply to this class (or to all of theirs).
+  useEffect(() => {
+    if (!activity?.provider_id) return;
+    supabase
+      .from("packages")
+      .select("id, name, credits, price_cents, activity_id")
+      .eq("provider_id", activity.provider_id)
+      .eq("active", true)
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
+        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+      });
+  }, [activity?.provider_id, activity?.id]);
 
   useEffect(() => {
     if (!auth || !activity?.provider_id) return;
@@ -2696,6 +3718,13 @@ function BookingPage() {
     if (dates.length && !dateKey) setDateKey(dates[0]);
   }, [dates, dateKey]);
 
+  // Default to an available credit — it's the cheapest option for the parent.
+  useEffect(() => {
+    if (packageCredit && payWith === "single") setPayWith("credit");
+    else if (!packageCredit && payWith === "credit") setPayWith("single");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packageCredit?.id]);
+
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const bookChildId = childId ?? kids[0]?.id ?? null;
@@ -2757,6 +3786,7 @@ function BookingPage() {
     }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
+      slug: activity?.slug ?? "",
       when: selected ? sgDateTime(selected.starts_at) : "",
       status: status ?? "pending",
       start: selected?.starts_at ?? "",
@@ -2779,6 +3809,7 @@ function BookingPage() {
     if (error) { setErr(error.message.replace(/^.*?:\s*/, "")); return; }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
+      slug: activity?.slug ?? "",
       when: selected ? sgDateTime(selected.starts_at) : "",
       status: (data as string | null) ?? "confirmed",
       start: selected?.starts_at ?? "",
@@ -2787,6 +3818,43 @@ function BookingPage() {
     });
     window.location.href = `/booked?${q.toString()}`;
   }
+
+  /** Buy a multi-class pack, then come back here to book with a credit. */
+  async function buyPack(packageId: string) {
+    if (!auth) { window.location.href = "/login"; return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", { package_id: packageId });
+      if (url) window.location.href = url;
+      else setErr("Could not start checkout — please try again.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not start checkout");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Route the CTA to whichever option was picked in step 4. */
+  function checkout() {
+    if (redeemToken) return pay();
+    if (payWith === "credit") return payWithPackage();
+    if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
+    return pay();
+  }
+
+  const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
+  const payLabel = !auth
+    ? "Log in to book"
+    : redeemToken
+      ? "Confirm with make-up token"
+      : payWith === "credit"
+        ? "Confirm with a package credit"
+        : selectedPack
+          ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
+          : total != null && total > 0
+            ? `Pay $${total.toFixed(2)}`
+            : "Confirm booking";
 
   if (loading) {
     return (
@@ -2879,13 +3947,56 @@ function BookingPage() {
                         <button type="button" onClick={() => setCount((c) => Math.min(6, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
+                    {/* Step 4: how to pay for the class — a single drop-in, an
+                        unused credit from a pack, or buying a pack now. */}
+                    {!redeemToken && (
+                      <section>
+                        <h3 className="mb-2 text-xl font-black">4. Choose your package</h3>
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
+                        <div className="space-y-3">
+                          <PackageOption
+                            selected={payWith === "single"}
+                            onSelect={() => setPayWith("single")}
+                            title="Single class"
+                            copy="Just this session."
+                            price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
+                          />
+                          {packageCredit && (
+                            <PackageOption
+                              selected={payWith === "credit"}
+                              onSelect={() => setPayWith("credit")}
+                              title="Use a package credit"
+                              copy={`${packageCredit.remaining} ${packageCredit.remaining === 1 ? "credit" : "credits"} left with this provider.`}
+                              price="No charge"
+                            />
+                          )}
+                          {packs.map((p) => (
+                            <PackageOption
+                              key={p.id}
+                              selected={payWith === `pack:${p.id}`}
+                              onSelect={() => setPayWith(`pack:${p.id}`)}
+                              title={p.name}
+                              copy={`${p.credits} classes · works across this provider's classes`}
+                              price={`$${(p.price_cents / 100).toFixed(0)}`}
+                              badge={price != null && p.credits > 0 && p.price_cents / 100 / p.credits < price ? "Best value" : undefined}
+                            />
+                          ))}
+                        </div>
+                        {restrictedCredit && !packageCredit && (
+                          <p className="mt-3 rounded-[10px] bg-[#f4ecff] p-3 text-xs font-bold text-[#7a5cc8]">
+                            You have package credits with this provider, but they can't be used for this{" "}
+                            {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
+                          </p>
+                        )}
+                      </section>
+                    )}
                   </>
                 )}
               </div>
             </section>
 
             <aside className="rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
-              <h2 className="text-xl font-black">Booking Summary</h2>
+              <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#fff0f5] px-3 py-1 text-xs font-bold text-baby-pink">{activity.category_name}</span>}</div>
@@ -2903,21 +4014,11 @@ function BookingPage() {
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total Amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
             <p className="mb-3 rounded-[10px] bg-[#fff4d6] px-4 py-2.5 text-sm font-bold text-[#8a6d1a]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
-          )}
-          {packageCredit && !redeemToken && (
-            <Button type="button" variant="outline" size="lg" onClick={payWithPackage} className={`mb-3 w-full justify-center ${busy || !sessionId ? "opacity-60" : ""}`}>
-              <Icon name="store" className="h-5 w-5" /> Use a package credit ({packageCredit.remaining} left)
-            </Button>
-          )}
-          {restrictedCredit && !redeemToken && (
-            <p className="mb-3 rounded-[10px] bg-[#f4ecff] p-3 text-center text-xs font-bold text-[#7a5cc8]">
-              You have package credits with this provider, but they can't be used for this {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
-            </p>
           )}
           {activity?.bookings_paused ? (
             /* 1.1: the vendor has paused bookings for this class */
@@ -2925,8 +4026,8 @@ function BookingPage() {
               <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this class are temporarily paused by the provider. Please check back later or enquire with them directly.
             </div>
           ) : (
-            <Button type="button" size="lg" onClick={pay} className={busy || !sessionId ? "opacity-60" : ""}>
-              <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : !auth ? "Log in to book" : redeemToken ? "Confirm with make-up token" : total != null && total > 0 ? `Pay $${total.toFixed(2)}` : "Confirm Booking"}
+            <Button type="button" size="lg" onClick={checkout} className={busy || !sessionId ? "opacity-60" : ""}>
+              <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}
           {total != null && total > 0 && !redeemToken && (
@@ -2940,17 +4041,27 @@ function BookingPage() {
 }
 
 function BookedPage() {
-  const title = getParam("title") || "Tiny Tunes: Music & Movement";
+  const title = getParam("title") || "your class";
   const when = getParam("when") || "";
   const status = getParam("status") || "confirmed";
   const start = getParam("start");
   const end = getParam("end");
   const venue = getParam("venue") || "";
+  const slug = getParam("slug") || "";
   const waitlisted = status === "waitlisted";
+
+  // Paid bookings come back through Stripe; apply the payment immediately
+  // rather than waiting on the webhook.
+  useEffect(() => {
+    const checkoutSession = getParam("session_id");
+    if (checkoutSession) {
+      apiPost("/api/stripe/reconcile", { session_id: checkoutSession }).catch(() => {});
+    }
+  }, []);
   return (
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class Details</span><span>›</span><span className="text-baby-pink">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#e7ebf6] bg-gradient-to-r from-[#fff0f7] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
@@ -2978,7 +4089,7 @@ function BookedPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-amber-600" : "text-green-600"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#eefbf1] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
-              <Button href="/profile?tab=bookings" className="mt-5 w-full">View My Bookings</Button>
+              <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
                 <Button
                   variant="outline"
@@ -2986,11 +4097,24 @@ function BookedPage() {
                   className="mt-3 w-full"
                   onClick={() => downloadBookingIcs({ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue })}
                 >
-                  <Icon name="calendar" className="h-4 w-4" /> Add to Calendar
+                  <Icon name="calendar" className="h-4 w-4" /> Add to calendar
                 </Button>
               )}
             </article>
-            <article className="rounded-[16px] bg-[#f4ecff] p-6"><h2 className="text-xl font-black text-baby-lilac">Need help?</h2><p className="mt-4 font-semibold">Contact Support if you have any questions.</p></article>
+            <article className="rounded-[16px] bg-[#f4ecff] p-6">
+              <h2 className="text-xl font-black text-baby-lilac">Need help?</h2>
+              <p className="mt-3 font-semibold">Questions about this class? Message the provider directly.</p>
+              <Button
+                href={slug ? `/activity?slug=${encodeURIComponent(slug)}#enquire` : "/contact"}
+                variant="outline"
+                className="mt-4 w-full"
+              >
+                <Icon name="mail" className="h-4 w-4" /> Message the provider
+              </Button>
+              <a href="/contact" className="mt-3 block text-center text-sm font-black text-baby-lilac hover:underline">
+                Contact BabyBrain support →
+              </a>
+            </article>
           </aside>
         </section>
       </main>
@@ -3014,19 +4138,19 @@ function AboutPage() {
         </section>
         <section className="mt-6 grid items-center gap-6 rounded-[18px] bg-gradient-to-r from-[#fff0f7] to-white p-7 md:grid-cols-[360px_1fr]">
           <img src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.png`} alt="Katie Crowson" className="h-72 object-contain" />
-          <div><p className="font-black text-baby-lilac">Meet Our Founder</p><h2 className="text-[34px] font-black">Katie Crowson</h2><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mum, and the founder of BabyBrain. After having our son, I realised how unnecessarily difficult it was to find out what activities are on offer and book, only to have to start afresh when the schedule changes. BabyBrain was created to make that journey quicker and easier.</p><p className="mt-4 flex gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p></div>
+          <div><p className="font-black text-baby-lilac">Meet our founder</p><h2 className="text-[34px] font-black">Katie Crowson</h2><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">Hi! I'm Katie, a mum, and the founder of BabyBrain. After having our son, I realised how unnecessarily difficult it was to find out what activities are on offer and book, only to have to start afresh when the schedule changes. BabyBrain was created to make that journey quicker and easier.</p><p className="mt-4 flex gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p></div>
         </section>
         <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#fffaf0] p-8 md:grid-cols-[1fr_320px]">
           <div>
-            <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our Mission</h2>
+            <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our mission</h2>
             <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>
             <p className="mt-4 max-w-[440px] font-semibold leading-7 text-[#3f4b78]">We want to help you spend less time on administration and more time having meaningful experiences.</p>
-            <Button href="/onboarding" size="lg" className="mt-6">Join Today →</Button>
+            <Button href="/onboarding" size="lg" className="mt-6">Join today →</Button>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.png`} alt="" className="mx-auto h-48 object-contain" />
         </section>
         <section className="mt-7 text-center">
-          <h2 className="text-2xl font-black">Why We Built BabyBrain</h2>
+          <h2 className="text-2xl font-black">Why we built BabyBrain</h2>
           <p className="font-semibold text-[#59658d]">Parents told us they faced the same challenges:</p>
           <div className="mt-5 grid gap-4 md:grid-cols-5">
             {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-pink" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
@@ -3036,7 +4160,7 @@ function AboutPage() {
           <div className="grid items-center gap-6 md:grid-cols-[180px_1fr_320px]">
             <BrandBlock />
             <div><h2 className="text-[28px] font-black">Ready to discover activities your child will love?</h2><p className="mt-2 font-semibold text-[#3f4b78]">Join parents using BabyBrain to find classes, events and play experiences across Singapore.</p></div>
-            <div className="flex gap-3"><Button href="/explore">Explore Activities</Button><Button href="/onboarding" variant="outline">Sign Up</Button></div>
+            <div className="flex gap-3"><Button href="/explore">Explore activities</Button><Button href="/onboarding" variant="outline">Sign up</Button></div>
           </div>
         </section>
       </main>
@@ -3090,7 +4214,7 @@ function LoginPage() {
               </div>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
             </div>
-            <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log In"}</Button>
+            <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
           <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
             New here? <a href="/onboarding" className="font-black text-baby-pink">Create a profile</a>
@@ -3238,6 +4362,7 @@ function App() {
   if (pathname === "/explore") return <ExplorePage />;
   if (pathname === "/activity") return <ActivityDetailPage />;
   if (pathname === "/profile") return <ProfilePage />;
+  if (pathname === "/edit-profile") return <EditProfilePage />;
   if (pathname === "/contact") return <ContactPage />;
   if (pathname === "/terms") return <TermsPage />;
   // Home: signed-in parents land on their personalised dashboard (matched

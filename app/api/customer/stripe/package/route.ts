@@ -31,6 +31,8 @@ export async function POST(request: Request) {
   const origin = appOrigin(request);
   const session = await getStripe().checkout.sessions.create({
     mode: 'payment',
+    // PayNow first, then card (which also offers Apple Pay / Google Pay).
+    payment_method_types: ['paynow', 'card', 'grabpay'],
     line_items: [
       {
         price_data: {
@@ -42,7 +44,9 @@ export async function POST(request: Request) {
       },
     ],
     metadata: { kind: 'package', user_id: user.id, package_id: pkg.id },
-    success_url: `${origin}/profile?tab=packages&purchase=success`,
+    // session_id lets the app credit the pack on return even if the Stripe
+    // webhook is delayed or misconfigured (see /api/stripe/reconcile).
+    success_url: `${origin}/profile?tab=packages&purchase=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=packages&purchase=cancelled`,
   });
 

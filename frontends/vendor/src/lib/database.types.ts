@@ -177,6 +177,7 @@ export type Database = {
           requires_medical_disclosure: boolean;
           archived_at: string | null;
           boosted_until: string | null;
+          external_booking_url: string | null;
           bookings_paused: boolean;
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
@@ -764,6 +765,20 @@ export type Database = {
       child_age_months: {
         Args: { dob: string };
         Returns: number;
+      };
+      /** Unclaimed venues shown on the Claim Your Business search. */
+      search_claimable_providers: {
+        Args: { p_query: string | null; p_limit?: number };
+        Returns: {
+          id: string;
+          business_name: string;
+          address: string | null;
+          postal_code: string | null;
+          region: string | null;
+          vendor_category: string | null;
+          logo_url: string | null;
+          activity_count: number;
+        }[];
       };
       child_journey_stats: {
         Args: { p_child_id: string };

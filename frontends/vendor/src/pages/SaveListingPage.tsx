@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -24,24 +24,24 @@ import {
   Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
-const listingData = [
-  { icon: Store, label: 'Business name', value: 'Little Play Studio', color: 'text-purple-600', bg: 'bg-purple-100' },
-  { icon: Baby, label: 'Category', value: 'Playspaces', color: 'text-pink-600', bg: 'bg-pink-100' },
-  { icon: Baby, label: 'Age range', value: '1 - 8 years', color: 'text-green-600', bg: 'bg-green-100' },
-  { icon: DollarSign, label: 'Pricing', value: '$60 per session', color: 'text-yellow-600', bg: 'bg-yellow-100' },
-  { icon: Link, label: 'Booking link', value: 'https://linktr.ee/littleplaystudio', color: 'text-green-600', bg: 'bg-green-100' },
-  { icon: Phone, label: 'Contact', value: 'WhatsApp: +65 8123 4567  •  Email: hello@littleplay.sg', color: 'text-blue-600', bg: 'bg-blue-100' },
-];
+interface ListingRow {
+  icon: typeof Store;
+  label: string;
+  value: string;
+  color: string;
+  bg: string;
+}
 
-// A vendor often runs classes across several venues, each with its own
-// schedule — surface every detected location + hours, not just one.
-const venues = [
-  { name: 'Suntec City', address: '3 Temasek Blvd, #01-120 Suntec City Mall, Singapore 038983', hours: 'Mon – Fri: 9:00 AM – 6:00 PM\nSat – Sun: 9:00 AM – 7:00 PM' },
-  { name: 'East Coast', address: '88 E Coast Rd, #02-06, Singapore 423371', hours: 'Tue – Sun: 9:30 AM – 6:30 PM' },
-];
+interface VenueRow {
+  name: string;
+  address: string;
+  hours: string;
+}
 
 const whyMatters = [
   { icon: Heart, text: 'Ensures accurate information for parents' },
@@ -52,9 +52,93 @@ const whyMatters = [
 
 export default function SaveListingPage() {
   const navigate = useNavigate();
+  const { provider: activeProvider } = useAuth();
+  const providerId = activeProvider?.id ?? null;
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [agreedVendor, setAgreedVendor] = useState(false);
   const [agreedBooking, setAgreedBooking] = useState(false);
+  const [listingData, setListingData] = useState<ListingRow[]>([]);
+  const [venues, setVenues] = useState<VenueRow[]>([]);
+
+  // QA: the pencil icons did nothing because this page showed placeholder
+  // copy. It now renders the business we actually hold, and every edit
+  // control opens the real editor in the portal.
+  useEffect(() => {
+    if (!providerId) return;
+    (async () => {
+      const [{ data: provider }, { data: acts }, { data: locs }] = await Promise.all([
+        supabase
+          .from('providers')
+          .select('business_name, vendor_category, address, postal_code, website, contact_email, contact_phone, whatsapp')
+          .eq('id', providerId)
+          .maybeSingle(),
+        supabase
+          .from('activities')
+          .select('age_min_months, age_max_months, price, external_booking_url')
+          .eq('provider_id', providerId)
+          .eq('is_published', true),
+        supabase
+          .from('provider_locations')
+          .select('name, address, postal_code, operating_hours')
+          .eq('provider_id', providerId),
+      ]);
+
+      const activities = acts ?? [];
+      const ageMin = activities.length ? Math.min(...activities.map((a) => a.age_min_months)) : null;
+      const ageMax = activities.length ? Math.max(...activities.map((a) => a.age_max_months)) : null;
+      const prices = activities.map((a) => Number(a.price)).filter((n) => Number.isFinite(n) && n > 0);
+      const bookingLink = activities.find((a) => a.external_booking_url)?.external_booking_url ?? provider?.website ?? null;
+      const months = (m: number) => (m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
+
+      setListingData([
+        { icon: Store, label: 'Business name', value: provider?.business_name ?? '—', color: 'text-purple-600', bg: 'bg-purple-100' },
+        { icon: Baby, label: 'Category', value: provider?.vendor_category ?? 'Not set', color: 'text-pink-600', bg: 'bg-pink-100' },
+        {
+          icon: Baby,
+          label: 'Age range',
+          value: ageMin != null && ageMax != null ? `${months(ageMin)} – ${months(ageMax)}` : 'Not set',
+          color: 'text-green-600',
+          bg: 'bg-green-100',
+        },
+        {
+          icon: DollarSign,
+          label: 'Pricing',
+          value: prices.length
+            ? `From $${Math.min(...prices).toFixed(0)} per session`
+            : 'Not set',
+          color: 'text-yellow-600',
+          bg: 'bg-yellow-100',
+        },
+        { icon: Link, label: 'Booking link', value: bookingLink ?? 'Not set', color: 'text-green-600', bg: 'bg-green-100' },
+        {
+          icon: Phone,
+          label: 'Contact',
+          value: [
+            provider?.whatsapp || provider?.contact_phone ? `WhatsApp: ${provider.whatsapp ?? provider.contact_phone}` : null,
+            provider?.contact_email ? `Email: ${provider.contact_email}` : null,
+          ].filter(Boolean).join('  •  ') || 'Not set',
+          color: 'text-blue-600',
+          bg: 'bg-blue-100',
+        },
+      ]);
+
+      setVenues(
+        (locs ?? []).map((l) => {
+          const hours = l.operating_hours as Record<string, [string, string][]> | null;
+          const summary = hours
+            ? Object.entries(hours)
+                .map(([day, ranges]) => `${day[0].toUpperCase()}${day.slice(1)}: ${(ranges ?? []).map((r) => r.join(' – ')).join(', ')}`)
+                .join('\n')
+            : '';
+          return {
+            name: l.name,
+            address: [l.address, l.postal_code].filter(Boolean).join(', '),
+            hours: summary || 'Hours not set',
+          };
+        })
+      );
+    })();
+  }, [providerId]);
 
   return (
     <div className="min-h-screen bg-white">
@@ -108,7 +192,12 @@ export default function SaveListingPage() {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
-              <Button variant="outline" size="sm" className="gap-1 text-xs rounded-lg border-gray-300">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/settings')}
+                className="gap-1 text-xs rounded-lg border-gray-300"
+              >
                 <Pencil className="w-3 h-3" />
                 Edit all
               </Button>
@@ -124,7 +213,14 @@ export default function SaveListingPage() {
                     <div className="text-xs text-gray-500 mb-0.5">{item.label}</div>
                     <div className="text-sm text-gray-900 whitespace-pre-line">{item.value}</div>
                   </div>
-                  <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600 flex-shrink-0" />
+                  <button
+                    type="button"
+                    aria-label={`Edit ${item.label}`}
+                    onClick={() => navigate(item.label === 'Age range' || item.label === 'Pricing' || item.label === 'Booking link' ? '/activities' : '/settings')}
+                    className="flex-shrink-0"
+                  >
+                    <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#E91E63]" />
+                  </button>
                 </div>
               ))}
             </div>

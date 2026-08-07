@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check, X, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import SiteFooter from '@/components/SiteFooter';
 
 const plans = [
   {
@@ -217,6 +218,7 @@ export default function PlansPage() {
           )}
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

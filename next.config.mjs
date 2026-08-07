@@ -11,7 +11,11 @@ const nextConfig = {
         { source: '/vendor', destination: '/vendor/index.html' },
         { source: '/vendor/', destination: '/vendor/index.html' },
         {
-          source: '/((?!api|admin|vendor|app/|_next/|assets/|favicon).*)',
+          // `auth/` must stay excluded: /auth/callback is the Supabase email
+          // confirmation + OAuth landing route. Without it the rewrite served
+          // the SPA instead, so confirming an email dropped parents back on
+          // the sign-up form rather than their new profile.
+          source: '/((?!api|auth/|admin|vendor|app/|_next/|assets/|favicon).*)',
           destination: '/app/index.html',
         },
       ],

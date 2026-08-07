@@ -1,4 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import SiteFooter from '@/components/SiteFooter';
 import { useState } from 'react';
 import {
   LayoutDashboard,
@@ -170,6 +171,7 @@ export default function PortalLayout() {
       {/* Main Content */}
       <main className="flex-1 overflow-auto pt-14 md:pt-0">
         <Outlet />
+        <SiteFooter />
       </main>
     </div>
   );

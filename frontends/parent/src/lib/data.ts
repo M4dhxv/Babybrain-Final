@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import { apiGet } from "./api";
 import { useAuth } from "../auth/AuthProvider";
 import {
   formatAgeRange,
@@ -9,6 +10,52 @@ import {
   type Child,
   type JourneyStats,
 } from "./database.types";
+
+/** The signed-in parent's plan, cached for the tab so every gated control
+ *  doesn't re-request it. Defaults to `free` until we know otherwise, so a
+ *  slow response never briefly unlocks a Plus feature. */
+let planCache: { plan: "free" | "plus"; at: number } | null = null;
+
+export function usePlan() {
+  const { session, loading: authLoading } = useAuth();
+  const [plan, setPlan] = useState<"free" | "plus">(planCache?.plan ?? "free");
+  const [loading, setLoading] = useState(!planCache);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session) {
+      setPlan("free");
+      setLoading(false);
+      return;
+    }
+    // 60s is short enough that returning from Stripe shows the new plan.
+    if (planCache && Date.now() - planCache.at < 60_000) {
+      setPlan(planCache.plan);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ plan: "free" | "plus" }>("/api/customer/stripe/subscription")
+      .then((p) => {
+        planCache = { plan: p.plan, at: Date.now() };
+        if (!cancelled) setPlan(p.plan);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, authLoading]);
+
+  return { plan, isPlus: plan === "plus", loading };
+}
+
+/** Drop the cached plan after an upgrade so the UI unlocks immediately. */
+export function invalidatePlan() {
+  planCache = null;
+}
 
 export interface ProviderContact {
   whatsapp: string | null;

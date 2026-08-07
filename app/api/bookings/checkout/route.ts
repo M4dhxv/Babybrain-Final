@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -61,6 +62,10 @@ export async function POST(request: Request) {
 
   const params = {
     mode: 'payment' as const,
+    // Order is the order Checkout renders them in: PayNow first (the default
+    // for Singapore parents), then card — which also surfaces the Apple Pay /
+    // Google Pay wallet buttons — then GrabPay.
+    payment_method_types: ['paynow', 'card', 'grabpay'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
     line_items: [
       {
         price_data: {
@@ -72,7 +77,9 @@ export async function POST(request: Request) {
       },
     ],
     metadata: { kind: 'booking', booking_id: bookingId },
-    success_url: `${origin}/booked?title=${encodeURIComponent(title)}&status=confirmed&paid=1`,
+    // session_id lets the app reconcile the payment on return even if the
+    // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
+    success_url: `${origin}/booked?title=${encodeURIComponent(title)}&slug=${encodeURIComponent(activity?.slug ?? '')}&status=confirmed&paid=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=bookings&booking=cancelled`,
   };
 

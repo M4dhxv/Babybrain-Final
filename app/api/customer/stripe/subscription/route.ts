@@ -120,7 +120,14 @@ export async function POST(request: Request) {
       metadata: { user_id: user.id, billing },
     },
     metadata: { kind: 'customer_subscription', user_id: user.id, billing },
-    success_url: `${origin}/profile?tab=settings&billing=success`,
+    // Payment methods are whatever is enabled in the Stripe Dashboard and is
+    // eligible for recurring SGD charges. PayNow is single-use and can't
+    // auto-renew, so Plus is card/wallet only — one-off booking and package
+    // checkouts do offer PayNow first.
+    //
+    // session_id lets the app flip the plan on return even if the Stripe
+    // webhook is delayed or misconfigured (see /api/stripe/reconcile).
+    success_url: `${origin}/profile?tab=settings&billing=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/pricing?billing=cancelled`,
   });
 

@@ -87,10 +87,64 @@ const PARENT_UPGRADE_BENEFITS = [
   'And more!',
 ];
 
+/** Big pink call-to-action button, for the auth emails. */
+const cta = (href: string, label: string) =>
+  `<p style="margin:0 0 20px"><a href="${href}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${esc(label)}</a></p>`;
+
+const fallbackLink = (href: string) =>
+  `<p style="margin:0 0 16px;font-size:14px;color:#9a9a9a">Or paste this into your browser:<br/><span style="word-break:break-all">${esc(href)}</span></p>`;
+
 // ---- template registry ----
 type Template = (d: EmailData, ctx: EmailCtx) => RenderedEmail;
 
 const T: Record<string, Template> = {
+  // ————————————————— Account / auth —————————————————
+  // These replace Supabase's default unbranded auth emails; they are sent by
+  // app/api/auth/send-email (the Supabase "Send Email" auth hook).
+  auth_confirm_signup: (d, ctx) =>
+    wrap(ctx, 'Confirm your email 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.') +
+      cta(str(d, 'action_url') ?? ctx.appUrl, 'Confirm my email') +
+      p('This link is valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
+      fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
+      sign),
+
+  auth_recovery: (d, ctx) =>
+    wrap(ctx, 'Reset your password 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('We received a request to reset the password on your BabyBrain account.') +
+      cta(str(d, 'action_url') ?? ctx.appUrl, 'Set a new password') +
+      p('This link is valid for one hour. If you didn’t ask for this, nothing has changed — you can ignore this email.') +
+      fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
+      sign),
+
+  auth_magic_link: (d, ctx) =>
+    wrap(ctx, 'Your BabyBrain log-in link 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('Here’s your link to log in — no password needed.') +
+      cta(str(d, 'action_url') ?? ctx.appUrl, 'Log in to BabyBrain') +
+      p('This link is valid for one hour and can only be used once.') +
+      fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
+      sign),
+
+  auth_email_change: (d, ctx) =>
+    wrap(ctx, 'Confirm your new email 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Please confirm ${bold(str(d, 'new_email') ?? 'your new email address')} so we can use it for your BabyBrain account.`) +
+      cta(str(d, 'action_url') ?? ctx.appUrl, 'Confirm new email') +
+      p('If you didn’t request this change, please contact us at hello@babybrain.sg straight away.') +
+      fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
+      sign),
+
+  auth_invite: (d, ctx) =>
+    wrap(ctx, 'You’re invited to BabyBrain 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('You’ve been invited to join BabyBrain — activities for little ones across Singapore, in one place.') +
+      cta(str(d, 'action_url') ?? ctx.appUrl, 'Accept the invitation') +
+      fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
+      sign),
+
   // ————————————————————— Consumers —————————————————————
   parent_welcome_free: (d, ctx) =>
     wrap(ctx, 'Welcome to BabyBrain 👶🧠',

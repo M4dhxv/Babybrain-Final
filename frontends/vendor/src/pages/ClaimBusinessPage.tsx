@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -14,34 +14,33 @@ import {
   CalendarDays,
   MessageCircle,
   Bell,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { apiPost } from '@/lib/api';
+import { useAuth } from '@/auth/AuthProvider';
+import SiteFooter from '@/components/SiteFooter';
 
-const venues = [
-  {
-    id: 1,
-    name: 'MelodyHaus – Novena',
-    address: '12 Thomson Road, Singapore 307606',
-    tag: 'Music Classes',
-    image: `${import.meta.env.BASE_URL}assets/venue-music.jpg`,
-  },
-  {
-    id: 2,
-    name: 'MelodyHaus – Katong',
-    address: '88 East Coast Road, Singapore 428788',
-    tag: 'Music Classes',
-    image: `${import.meta.env.BASE_URL}assets/venue-play.jpg`,
-  },
-  {
-    id: 3,
-    name: 'MelodyHaus – Bukit Timah',
-    address: '1 Jalan Anak Bukit, Singapore 588996',
-    tag: 'Music Classes',
-    image: `${import.meta.env.BASE_URL}assets/venue-play.jpg`,
-  },
-];
+/**
+ * Claim Your Business.
+ *
+ * QA found this page was a mock: the search box did nothing, "Send Code" only
+ * flipped a tick, and nothing was ever verified. It now searches the real
+ * provider list and drives the /api/vendor/claim/* endpoints.
+ */
+
+interface ClaimableVenue {
+  id: string;
+  business_name: string;
+  address: string | null;
+  postal_code: string | null;
+  region: string | null;
+  vendor_category: string | null;
+  activity_count: number;
+}
 
 const whyVerify = [
   { icon: MapPin, title: 'Claim your venue listing', desc: 'Take ownership of your business on BabyBrain.' },
@@ -51,51 +50,142 @@ const whyVerify = [
   { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your classes, timetable and holidays.' },
 ];
 
+const REGION_LABELS: Record<string, string> = {
+  central: 'Central', east: 'East', 'north-east': 'North-East',
+  north: 'North', west: 'West', sentosa: 'Sentosa',
+};
+
 export default function ClaimBusinessPage() {
   const navigate = useNavigate();
-  const [selectedVenue, setSelectedVenue] = useState<number | null>(1);
-  const [email, setEmail] = useState('hello@melodyhaus.com');
-  const [phone, setPhone] = useState('+65 9123 4567');
+  const { session } = useAuth();
+
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<ClaimableVenue[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [selected, setSelected] = useState<ClaimableVenue | null>(null);
+
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [uen, setUen] = useState('');
-  const [emailSent, setEmailSent] = useState(false);
-  const [smsSent, setSmsSent] = useState(false);
+
+  const [claimId, setClaimId] = useState<string | null>(null);
+  const [phoneChannel, setPhoneChannel] = useState<string>('not_requested');
+  const [emailCode, setEmailCode] = useState('');
+  const [phoneCode, setPhoneCode] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Debounced search against the claimable-provider function.
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      const { data, error: err } = await supabase.rpc('search_claimable_providers', {
+        p_query: term,
+        p_limit: 10,
+      });
+      setSearching(false);
+      setSearched(true);
+      if (err) {
+        setError('Search is unavailable right now — please try again.');
+        return;
+      }
+      setResults((data ?? []) as unknown as ClaimableVenue[]);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function sendCodes() {
+    if (!selected) return setError('Find and select your venue first.');
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPost<{ claim_id: string; phone_channel: string; expires_in_minutes: number }>(
+        '/api/vendor/claim/start',
+        { provider_id: selected.id, email, phone, uen }
+      );
+      setClaimId(res.claim_id);
+      setPhoneChannel(res.phone_channel);
+      setNotice(
+        `We've emailed a 6-digit code to ${email}. It expires in ${res.expires_in_minutes} minutes.` +
+          (res.phone_channel === 'unavailable'
+            ? ' SMS isn’t switched on yet, so verify by email for now.'
+            : '')
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send your code.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    if (!claimId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiPost<{ verified: boolean; claimed: boolean; next?: string }>(
+        '/api/vendor/claim/verify',
+        { claim_id: claimId, email_code: emailCode, phone_code: phoneCode || undefined }
+      );
+      setEmailVerified(res.verified);
+      if (res.claimed) {
+        navigate('/save-listing');
+      } else if (res.next === 'sign_in') {
+        setNotice('Code confirmed. Create your partner log-in to finish claiming this business.');
+        navigate('/login?claim=1');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That code could not be verified.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canSendCodes = Boolean(selected && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && uen.trim());
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
+      <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
+        <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
+          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="h-10 w-10" />
           <span className="text-2xl font-bold">
             <span className="text-[#E91E63]">Baby</span>
             <span className="text-[#9C27B0]">Brain</span>
             <span className="text-gray-600">.sg</span>
           </span>
-        </div>
-        <Button variant="outline" className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
-          <ArrowLeft className="w-4 h-4" />
-          Save & Exit
+        </button>
+        <Button variant="outline" className="gap-2 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => navigate('/')}>
+          <ArrowLeft className="h-4 w-4" />
+          Save &amp; exit
         </Button>
       </header>
 
-      {/* Content */}
-      <div className="max-w-6xl mx-auto px-8 py-8">
-        {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#1B1F3B] mb-2">Claim Your Business</h1>
+      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-3xl font-bold text-[#1B1F3B]">Claim your business</h1>
           <p className="text-gray-600">Search for your venue on BabyBrain and verify ownership to get started.</p>
         </div>
 
-        <div className="flex gap-8">
-          {/* Left Sidebar */}
-          <div className="w-64 flex-shrink-0">
-            <img src={`${import.meta.env.BASE_URL}assets/shop-illustration.png`} alt="Shop" className="w-40 h-auto mb-4" />
-            <h3 className="text-lg font-bold text-[#E91E63] mb-4">Why verify your business?</h3>
+        <div className="flex flex-col gap-8 lg:flex-row">
+          <div className="w-full flex-shrink-0 lg:w-64">
+            <img src={`${import.meta.env.BASE_URL}assets/shop-illustration.png`} alt="" className="mb-4 h-auto w-40" />
+            <h3 className="mb-4 text-lg font-bold text-[#E91E63]">Why verify your business?</h3>
             <div className="space-y-4">
               {whyVerify.map((item) => (
                 <div key={item.title} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-pink-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <item.icon className="w-4 h-4 text-[#E91E63]" />
+                  <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50">
+                    <item.icon className="h-4 w-4 text-[#E91E63]" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-gray-900">{item.title}</div>
@@ -106,163 +196,219 @@ export default function ClaimBusinessPage() {
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="flex-1 flex gap-6">
-            {/* Step 1: Find Venue */}
+          <div className="flex flex-1 flex-col gap-6 md:flex-row">
+            {/* Step 1 — find the venue */}
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-pink-100 text-[#E91E63] flex items-center justify-center text-sm font-bold">1</div>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#E91E63]">1</div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">Find Your Venue</h3>
-                  <p className="text-xs text-gray-500">Search and select your venue from our existing listings.</p>
+                  <h3 className="font-semibold text-gray-900">Find your venue</h3>
+                  <p className="text-xs text-gray-500">Search our listings by business name, address or postcode.</p>
                 </div>
               </div>
 
-              {/* Search */}
               <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-300" />}
                 <Input
-                  placeholder="Search venue name or location"
-                  className="pl-10 rounded-xl border-gray-200"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="e.g. Lucy Sparkles, Muckypups, 427664"
+                  className="rounded-xl border-gray-200 pl-10"
                 />
               </div>
 
-              {/* Venue List */}
-              <div className="space-y-3 mb-4">
-                {venues.map((venue) => (
-                  <div
-                    key={venue.id}
-                    onClick={() => setSelectedVenue(venue.id)}
-                    className={cn(
-                      'flex items-center gap-4 p-3 rounded-xl border-2 cursor-pointer transition-colors',
-                      selectedVenue === venue.id
-                        ? 'border-[#E91E63] bg-pink-50/50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    )}
-                  >
-                    <img src={venue.image} alt={venue.name} className="w-20 h-16 rounded-lg object-cover" />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-gray-900">{venue.name}</h4>
-                        {selectedVenue === venue.id && (
-                          <CheckCircle className="w-5 h-5 text-[#E91E63]" />
+              <div className="mb-4 space-y-3">
+                {results.map((venue) => {
+                  const on = selected?.id === venue.id;
+                  return (
+                    <button
+                      type="button"
+                      key={venue.id}
+                      onClick={() => setSelected(venue)}
+                      className={cn(
+                        'flex w-full items-start gap-4 rounded-xl border-2 p-3 text-left transition-colors',
+                        on ? 'border-[#E91E63] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
+                      )}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-semibold text-gray-900">{venue.business_name}</h4>
+                          {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#E91E63]" />}
+                        </div>
+                        {(venue.address || venue.postal_code) && (
+                          <div className="mt-1 flex items-start gap-1 text-xs text-gray-500">
+                            <MapPin className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                            <span>{[venue.address, venue.postal_code].filter(Boolean).join(', ')}</span>
+                          </div>
                         )}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {venue.region && (
+                            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
+                              {REGION_LABELS[venue.region] ?? venue.region}
+                            </span>
+                          )}
+                          <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#E91E63]">
+                            {venue.activity_count} {venue.activity_count === 1 ? 'listing' : 'listings'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-                        <MapPin className="w-3 h-3" />
-                        {venue.address}
-                      </div>
-                      <span className="inline-block mt-2 px-2 py-0.5 bg-pink-100 text-[#E91E63] text-xs rounded-full">
-                        {venue.tag}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
+                {searched && !searching && results.length === 0 && (
+                  <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
+                    No unclaimed venues matched “{query.trim()}”. It may already be claimed, or not listed yet.
+                  </p>
+                )}
+                {query.trim().length < 2 && (
+                  <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">Type at least two characters to search.</p>
+                )}
               </div>
 
               <p className="text-sm text-gray-500">
-                Can't find your venue? <span className="text-[#E91E63] cursor-pointer">Contact our support</span>
+                Can't find your venue?{' '}
+                <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#E91E63]">
+                  Contact our support
+                </button>
               </p>
             </div>
 
-            {/* Step 2: Verify Ownership */}
+            {/* Step 2 — verify ownership */}
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-sm font-bold">2</div>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100 text-sm font-bold text-purple-600">2</div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">Verify Ownership</h3>
-                  <p className="text-xs text-gray-500">We'll send verification codes to make sure you're the rightful owner.</p>
+                  <h3 className="font-semibold text-gray-900">Verify ownership</h3>
+                  <p className="text-xs text-gray-500">We'll send a code to make sure you're the rightful owner.</p>
                 </div>
               </div>
 
-              {/* Business Email */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-pink-100 flex items-center justify-center">
-                    <Mail className="w-4 h-4 text-[#E91E63]" />
+              {!selected && (
+                <p className="mb-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
+                  Select your venue on the left to continue.
+                </p>
+              )}
+
+              <div className={cn('space-y-4', !selected && 'pointer-events-none opacity-50')}>
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-100">
+                      <Mail className="h-4 w-4 text-[#E91E63]" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-gray-900">Business email <span className="text-[#E91E63]">*</span></label>
+                      <p className="text-xs text-gray-500">We'll send your code here.</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-semibold text-gray-900">Business Email <span className="text-[#E91E63]">*</span></label>
-                    <p className="text-xs text-gray-500">We'll send a code to your business email.</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
                   <Input
+                    type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="rounded-xl border-gray-200 flex-1"
+                    placeholder="you@yourbusiness.com"
+                    className="rounded-xl border-gray-200"
                   />
-                  <Button
-                    onClick={() => setEmailSent(true)}
-                    className="gradient-primary text-white rounded-xl hover:opacity-90"
-                  >
-                    Send Code
-                  </Button>
                 </div>
-              </div>
 
-              {/* Business Phone */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                    <Phone className="w-4 h-4 text-green-600" />
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100">
+                      <Phone className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-gray-900">Business phone</label>
+                      <p className="text-xs text-gray-500">Optional — helps us reach you faster.</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-semibold text-gray-900">Business Phone <span className="text-[#E91E63]">*</span></label>
-                    <p className="text-xs text-gray-500">We'll send an SMS code to your business phone.</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
                   <Input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="rounded-xl border-gray-200 flex-1"
+                    placeholder="+65 9123 4567"
+                    className="rounded-xl border-gray-200"
                   />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-100">
+                      <CreditCard className="h-4 w-4 text-yellow-600" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-gray-900">UEN <span className="text-[#E91E63]">*</span></label>
+                      <p className="text-xs text-gray-500">Used to verify your registered business.</p>
+                    </div>
+                  </div>
+                  <Input
+                    value={uen}
+                    onChange={(e) => setUen(e.target.value)}
+                    placeholder="e.g. 202312345W"
+                    className="rounded-xl border-gray-200"
+                  />
+                </div>
+
+                {!claimId ? (
                   <Button
-                    onClick={() => setSmsSent(true)}
-                    className="bg-green-500 text-white rounded-xl hover:bg-green-600"
+                    onClick={sendCodes}
+                    disabled={!canSendCodes || busy}
+                    className="gradient-primary w-full rounded-xl text-white hover:opacity-90"
                   >
-                    Send SMS Code
+                    {busy ? 'Sending…' : 'Send verification code'}
                   </Button>
-                </div>
-              </div>
-
-              {/* UEN */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center">
-                    <CreditCard className="w-4 h-4 text-yellow-600" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-semibold text-gray-900">UEN (business registration number) <span className="text-[#E91E63]">*</span></label>
-                    <p className="text-xs text-gray-500">Used to verify your registered business.</p>
-                  </div>
-                </div>
-                <Input
-                  value={uen}
-                  onChange={(e) => setUen(e.target.value)}
-                  placeholder="e.g. 202312345W"
-                  className="rounded-xl border-gray-200"
-                />
-              </div>
-
-              {/* Verification Status */}
-              <div className="bg-green-50 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3 text-center">Verification Status</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                      <CheckCircle className={cn('w-5 h-5', emailSent ? 'text-green-500' : 'text-gray-300')} />
-                      <span className="text-sm font-medium text-gray-900">Email</span>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <label className="text-sm font-semibold text-gray-900">Code from your email</label>
+                    <Input
+                      value={emailCode}
+                      onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="123456"
+                      className="mt-2 rounded-xl border-gray-200 text-lg tracking-[0.3em]"
+                    />
+                    {phoneChannel === 'pending' && (
+                      <>
+                        <label className="mt-4 block text-sm font-semibold text-gray-900">Code from your phone</label>
+                        <Input
+                          value={phoneCode}
+                          onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          inputMode="numeric"
+                          placeholder="123456"
+                          className="mt-2 rounded-xl border-gray-200 text-lg tracking-[0.3em]"
+                        />
+                      </>
+                    )}
+                    <div className="mt-4 flex gap-2">
+                      <Button onClick={verify} disabled={emailCode.length !== 6 || busy} className="gradient-primary flex-1 rounded-xl text-white hover:opacity-90">
+                        {busy ? 'Checking…' : 'Verify'}
+                      </Button>
+                      <Button variant="outline" onClick={() => { setClaimId(null); setEmailCode(''); setPhoneCode(''); }} className="rounded-xl">
+                        Resend
+                      </Button>
                     </div>
-                    <p className="text-xs text-gray-500">{emailSent ? 'Verified' : 'Not verified yet'}</p>
                   </div>
-                  <div className="text-center border-l border-green-200">
-                    <div className="flex items-center justify-center gap-2 mb-1">
-                      <CheckCircle className={cn('w-5 h-5', smsSent ? 'text-green-500' : 'text-gray-300')} />
-                      <span className="text-sm font-medium text-gray-900">Phone</span>
+                )}
+
+                {notice && <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">{notice}</p>}
+                {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>}
+
+                <div className="rounded-xl bg-green-50 p-4">
+                  <h4 className="mb-3 text-center text-sm font-semibold text-gray-900">Verification status</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div className="mb-1 flex items-center justify-center gap-2">
+                        <CheckCircle className={cn('h-5 w-5', emailVerified ? 'text-green-500' : 'text-gray-300')} />
+                        <span className="text-sm font-medium text-gray-900">Email</span>
+                      </div>
+                      <p className="text-xs text-gray-500">{emailVerified ? 'Verified' : claimId ? 'Code sent' : 'Not verified yet'}</p>
                     </div>
-                    <p className="text-xs text-gray-500">{smsSent ? 'Verified' : 'Not verified yet'}</p>
+                    <div className="border-l border-green-200 text-center">
+                      <div className="mb-1 flex items-center justify-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-gray-300" />
+                        <span className="text-sm font-medium text-gray-900">Phone</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {phoneChannel === 'unavailable' ? 'SMS coming soon' : phoneChannel === 'pending' ? 'Code sent' : 'Optional'}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -271,33 +417,28 @@ export default function ClaimBusinessPage() {
         </div>
       </div>
 
-      {/* Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-8 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="rounded-xl gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            <ArrowLeft className="w-4 h-4" />
+      <div className="border-t border-gray-200 bg-white px-6 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+          <Button variant="outline" onClick={() => navigate('/')} className="gap-2 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
+            <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Lock className="w-4 h-4" />
+            <Lock className="h-4 w-4" />
             Your information is secure and will never be shared.
           </div>
           <Button
-            onClick={() => navigate('/save-listing')}
-            className="gradient-primary text-white rounded-xl px-8 hover:opacity-90 gap-2"
+            onClick={() => (session ? navigate('/save-listing') : navigate('/login?claim=1'))}
+            disabled={!emailVerified}
+            className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90"
           >
             Continue
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {/* Spacer for fixed bottom bar */}
-      <div className="h-20" />
+      <SiteFooter />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail, type EmailData } from '@/lib/emails/render';
+import { klaviyoEnabled, metricFor, trackEvent, upsertProfile } from '@/lib/klaviyo';
 
 /**
  * Called by the on_notification_created pg_net trigger for every new
@@ -77,6 +78,20 @@ export async function POST(request: Request) {
     .from('notifications')
     .update({ email_status: error ? 'failed' : 'sent' })
     .eq('id', notificationId);
+
+  // Mirror the event into Klaviyo so the marketing flows have something to
+  // trigger on. No-ops unless KLAVIYO_API_KEY is set, and never blocks the
+  // transactional send above.
+  const metric = metricFor(notification.type);
+  if (metric && klaviyoEnabled()) {
+    await upsertProfile({ email, firstName: name, properties: { babybrain_user_id: notification.user_id } });
+    await trackEvent({
+      metric,
+      email,
+      name,
+      properties: { notification_type: notification.type, title: notification.title, ...data },
+    });
+  }
 
   return NextResponse.json({ ok: !error });
 }

@@ -20,13 +20,17 @@ export async function GET(request: Request) {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase
-          .from('parent_profiles')
-          .select('onboarding_completed_at')
-          .eq('id', user.id)
-          .single();
+        // A confirmed account always lands on the parent's own profile — QA
+        // found the old /onboarding fallback made people fill the sign-up
+        // form in a second time. Anyone who signed up without finishing
+        // onboarding can still complete it from Edit profile.
+        const { data: kids } = await supabase
+          .from('children')
+          .select('id')
+          .eq('parent_id', user.id)
+          .limit(1);
         return NextResponse.redirect(
-          `${origin}${profile?.onboarding_completed_at ? '/dashboard' : '/onboarding'}`
+          `${origin}${kids && kids.length > 0 ? '/profile' : '/onboarding'}`
         );
       }
     }
