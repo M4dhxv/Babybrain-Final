@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import SiteFooter, { SUPPORT_EMAIL, SUPPORT_PHONE, phoneDigits } from '@/components/SiteFooter';
 import { apiPost } from '@/lib/api';
+import { BrandLogo } from '@/components/BrandLogo';
 
 /**
  * Partner contact page — QA: "On vendor portal, contact page just goes to
@@ -117,12 +118,8 @@ export default function ContactPage() {
     <div className="min-h-screen bg-white">
       <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
         <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="h-10 w-10" />
-          <span className="text-2xl font-bold">
-            <span className="text-[#E91E63]">Baby</span>
-            <span className="text-[#9C27B0]">Brain</span>
-            <span className="text-gray-600">.sg</span>
-          </span>
+          <BrandLogo className="h-10" />
+          
         </button>
         <Button variant="outline" className="gap-2 rounded-lg border-gray-300" onClick={() => navigate('/')}>
           <ArrowLeft className="h-4 w-4" /> Back

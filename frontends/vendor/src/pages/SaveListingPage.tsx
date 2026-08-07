@@ -28,6 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { BrandLogo } from '@/components/BrandLogo';
 
 interface ListingRow {
   icon: typeof Store;
@@ -145,12 +146,8 @@ export default function SaveListingPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
-          <span className="text-2xl font-bold">
-            <span className="text-[#E91E63]">Baby</span>
-            <span className="text-[#9C27B0]">Brain</span>
-            <span className="text-gray-600">.sg</span>
-          </span>
+          <BrandLogo className="h-10" />
+          
         </div>
         <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
           <ArrowLeft className="w-4 h-4" />

@@ -200,20 +200,42 @@ export function AnimalAvatar({
   );
 }
 
-export function Brand() {
+/** The horizontal lockup — per the brand guide this is the one for site
+ *  headers and other wide spaces. It already contains the wordmark, so no
+ *  text sits beside it. */
+export function Brand({ className = "h-11 sm:h-12" }: { className?: string }) {
   return (
-    <a href="/" className="flex items-center gap-2" aria-label="BabyBrain.sg home">
+    <a href="/" className="flex shrink-0 items-center" aria-label="BabyBrain home">
       <img
-        src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`}
-        alt=""
-        className="h-10 w-10 rounded-full"
+        src={`${import.meta.env.BASE_URL}assets/brand/logo-horizontal.png`}
+        alt="BabyBrain"
+        className={`w-auto ${className}`}
       />
-      <span className="text-[25px] font-extrabold leading-none">
-        <span className="text-baby-pink">Baby</span>
-        <span className="text-baby-pink">Brain</span>
-        <span className="text-sm font-black text-baby-ink">.sg</span>
-      </span>
     </a>
+  );
+}
+
+/** The icon mark on its own — for tight spaces where the wordmark won't fit. */
+export function BrandIcon({ className = "h-10 w-10" }: { className?: string }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`}
+      alt=""
+      aria-hidden="true"
+      className={`object-contain ${className}`}
+    />
+  );
+}
+
+/** The stacked lockup — brand guide calls for this at the top of landing
+ *  moments and emails. */
+export function BrandStacked({ className = "h-24" }: { className?: string }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`}
+      alt="BabyBrain"
+      className={`mx-auto w-auto object-contain ${className}`}
+    />
   );
 }
 
@@ -262,7 +284,7 @@ export function Header({ active = "/" }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#edf0fb] bg-baby-paper/95 backdrop-blur">
-      <div className="mx-auto flex h-[62px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
         <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">
           {navItems.map((route) => (

@@ -59,11 +59,11 @@ function layout(ctx: EmailCtx, inner: string): string {
   return `<div style="background:#FFFFFF;margin:0;padding:0">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;font-weight:300;font-size:18px;line-height:1.6;color:#767676">
     <div style="text-align:center;margin-bottom:28px">
-      <img src="${appUrl}/assets/logo-full.png" alt="BabyBrain" width="120" style="max-width:120px;height:auto" />
+      <img src="${appUrl}/assets/brand/logo-stacked.png" alt="BabyBrain" width="150" style="max-width:150px;height:auto" />
     </div>
     <div style="text-align:left">${inner}</div>
     <div style="text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #eee">
-      <img src="${appUrl}/assets/logo-full.png" alt="BabyBrain" width="96" style="max-width:96px;height:auto;margin-bottom:12px" /><br/>
+      <img src="${appUrl}/assets/brand/logo-horizontal.png" alt="BabyBrain" width="132" style="max-width:132px;height:auto;margin-bottom:12px" /><br/>
       <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram</a>
       <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${appUrl}/profile" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;

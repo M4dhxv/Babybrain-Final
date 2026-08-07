@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta } from '@/lib/plans';
+import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -51,10 +52,7 @@ export default function PortalLayout() {
     <div className="flex h-screen bg-gray-50">
       {/* Mobile top bar */}
       <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
-        <div className="flex items-center gap-2">
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="h-7 w-7 rounded-full" />
-          <span className="font-bold text-[#E91E63]">BabyBrain</span>
-        </div>
+        <BrandLogo className="h-8" />
         <button
           onClick={() => setMobileOpen(true)}
           aria-label="Open menu"
@@ -91,17 +89,14 @@ export default function PortalLayout() {
           <X className="h-5 w-5" />
         </button>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-5 py-4">
-          <img
-            src={`${import.meta.env.BASE_URL}assets/logo-icon.png`}
-            alt="BabyBrain"
-            className="w-8 h-8 rounded-full"
-          />
-          {!isSidebarCollapsed && (
-            <div>
-              <div className="text-lg font-bold text-[#E91E63]">BabyBrain</div>
-              <div className="text-xs text-gray-500">Vendor Portal</div>
-            </div>
+        <div className="px-5 py-4">
+          {isSidebarCollapsed ? (
+            <BrandIcon className="h-8 w-8" />
+          ) : (
+            <>
+              <BrandLogo className="h-9" />
+              <div className="mt-1 text-xs text-gray-500">Vendor Portal</div>
+            </>
           )}
         </div>
 

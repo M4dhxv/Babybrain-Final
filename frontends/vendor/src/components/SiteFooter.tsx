@@ -1,5 +1,6 @@
 import { Instagram, Mail, MessageCircle, Phone } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BrandLogo } from '@/components/BrandLogo';
 
 /**
  * Footer for the vendor portal — QA: "On vendor portal, there is no footer."
@@ -44,14 +45,7 @@ export default function SiteFooter() {
     <footer className="border-t border-gray-100 bg-white px-6 py-10 sm:px-8">
       <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2">
-            <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="" className="h-9 w-9" />
-            <span className="text-xl font-bold">
-              <span className="text-[#E91E63]">Baby</span>
-              <span className="text-[#9C27B0]">Brain</span>
-              <span className="text-gray-600">.sg</span>
-            </span>
-          </div>
+          <BrandLogo className="h-10" />
           <p className="mt-3 max-w-[260px] text-sm text-gray-500">
             Helping Singapore's activity providers reach the parents looking for them.
           </p>

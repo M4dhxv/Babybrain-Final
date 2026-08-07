@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/auth/AuthProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center gap-2">
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="h-8 w-8 rounded-full" />
+          <BrandLogo className="h-8" />
           <div>
             <div className="text-lg font-bold text-[#2b7cff]">BabyBrain</div>
             <div className="text-xs text-gray-500">Vendor Portal</div>

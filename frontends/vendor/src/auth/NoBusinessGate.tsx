@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Store, ArrowRight, Baby, LogOut } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 /**
  * Shown when someone is signed in but their account isn't linked to a business.
@@ -26,16 +27,9 @@ export default function NoBusinessGate() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <img
-            src={`${import.meta.env.BASE_URL}assets/logo-icon.png`}
-            alt="BabyBrain"
-            className="h-8 w-8 rounded-full"
-          />
-          <div>
-            <div className="text-lg font-bold text-[#E91E63]">BabyBrain</div>
-            <div className="text-xs text-gray-500">Vendor Portal</div>
-          </div>
+        <div className="mb-6">
+          <BrandLogo className="h-9" />
+          <div className="mt-1 text-xs text-gray-500">Vendor Portal</div>
         </div>
 
         <h1 className="mb-1 text-xl font-bold text-gray-900">This account isn&rsquo;t linked to a business</h1>

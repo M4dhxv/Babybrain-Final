@@ -4,6 +4,7 @@ import { Check, X, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SiteFooter from '@/components/SiteFooter';
+import { BrandLogo } from '@/components/BrandLogo';
 
 const plans = [
   {
@@ -68,12 +69,8 @@ export default function PlansPage() {
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => navigate('/')}
         >
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-10 h-10" />
-          <span className="text-2xl font-bold">
-            <span className="text-[#E91E63]">Baby</span>
-            <span className="text-[#9C27B0]">Brain</span>
-            <span className="text-gray-600">.sg</span>
-          </span>
+          <BrandLogo className="h-10" />
+          
         </div>
         <nav className="flex items-center gap-10">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>

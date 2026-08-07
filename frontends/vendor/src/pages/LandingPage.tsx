@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import SiteFooter from '@/components/SiteFooter';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -20,14 +21,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-white overflow-x-hidden">
       {/* Header */}
       <header className="flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
-        <div className="flex items-center gap-2">
-          <img src={`${import.meta.env.BASE_URL}assets/logo-icon.png`} alt="BabyBrain" className="w-9 h-9 sm:w-10 sm:h-10" />
-          <span className="text-xl font-bold sm:text-2xl">
-            <span className="text-[#E91E63]">Baby</span>
-            <span className="text-[#9C27B0]">Brain</span>
-            <span className="text-gray-600">.sg</span>
-          </span>
-        </div>
+        <BrandLogo className="h-9 sm:h-10" />
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#E91E63] border-b-2 border-[#E91E63] pb-1">Home</button>
           <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>

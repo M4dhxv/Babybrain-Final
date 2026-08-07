@@ -3,6 +3,7 @@ import {
   ActivityRow,
   AnimalAvatar,
   Button,
+  BrandStacked,
   CategoryTile,
   DateInput,
   Footer,
@@ -3566,7 +3567,7 @@ function PaymentPage() {
   return (
     <PageShell active="/pricing" auth="public">
       <main className="mx-auto max-w-[520px] px-6 py-24 text-center">
-        <img src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`} alt="" className="mx-auto h-24 w-24" />
+        <BrandStacked className="h-24" />
         {error ? (
           <>
             <h1 className="mt-6 text-2xl font-black">We couldn't start checkout</h1>
@@ -4171,10 +4172,11 @@ function AboutPage() {
 
 function BrandBlock() {
   return (
-    <div className="flex items-center gap-2">
-      <img src={`${import.meta.env.BASE_URL}assets/crops/logo-mascot.png`} alt="" className="h-14 w-14" />
-      <div className="text-2xl font-black"><span className="text-baby-pink">Baby</span><span className="text-baby-pink">Brain</span></div>
-    </div>
+    <img
+      src={`${import.meta.env.BASE_URL}assets/brand/logo-horizontal.png`}
+      alt="BabyBrain"
+      className="h-16 w-auto object-contain"
+    />
   );
 }
 
