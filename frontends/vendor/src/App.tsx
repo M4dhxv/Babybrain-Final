@@ -6,6 +6,7 @@ import RequireAuth from './auth/RequireAuth';
 import LandingPage from './pages/LandingPage';
 import PlansPage from './pages/PlansPage';
 import ClaimBusinessPage from './pages/ClaimBusinessPage';
+import ContactPage from './pages/ContactPage';
 import SaveListingPage from './pages/SaveListingPage';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -56,6 +57,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/claim-business" element={<ClaimBusinessPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/save-listing" element={<SaveListingPage />} />
 
           {/* Vendor Portal — auth-gated, with sidebar layout */}

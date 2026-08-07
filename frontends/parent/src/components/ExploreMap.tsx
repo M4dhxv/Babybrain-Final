@@ -62,20 +62,37 @@ export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
     if (!map || !layer) return;
     layer.clearLayers();
 
-    // Group activities by rounded coordinate so co-located classes share a pin.
-    const byLoc = new Map<string, { lat: number; lng: number; items: LiveActivity[] }>();
-    for (const a of activities) {
-      if (a.lat == null || a.lng == null) continue;
-      const key = `${a.lat.toFixed(5)},${a.lng.toFixed(5)}`;
-      const g = byLoc.get(key) ?? { lat: a.lat, lng: a.lng, items: [] };
-      g.items.push(a);
+    // Group by rounded coordinate so co-located classes share a pin. A listing
+    // contributes one pin per venue its provider runs, so multi-location
+    // businesses (Kindermusik in the west, east and north; Lucy Sparkles across
+    // nine venues) appear everywhere they actually teach — not just at their
+    // registered address.
+    const byLoc = new Map<
+      string,
+      { lat: number; lng: number; label: string | null; items: LiveActivity[] }
+    >();
+    const addPin = (lat: number, lng: number, label: string | null, a: LiveActivity) => {
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      const g = byLoc.get(key) ?? { lat, lng, label, items: [] };
+      // Don't list the same class twice at one pin.
+      if (!g.items.some((x) => x.id === a.id)) g.items.push(a);
       byLoc.set(key, g);
+    };
+
+    for (const a of activities) {
+      if (a.venues && a.venues.length > 0) {
+        for (const v of a.venues) {
+          addPin(v.lat, v.lng, a.providerName ?? v.name, a);
+        }
+      } else if (a.lat != null && a.lng != null) {
+        addPin(a.lat, a.lng, a.providerName ?? null, a);
+      }
     }
 
     const bounds: [number, number][] = [];
     for (const g of byLoc.values()) {
       bounds.push([g.lat, g.lng]);
-      const name = g.items[0].providerName;
+      const name = g.label ?? g.items[0].providerName;
       const rows = g.items
         .slice(0, 8)
         .map(

@@ -760,6 +760,46 @@ export type Database = {
         Update: { accepted_at?: string | null };
         Relationships: [];
       };
+      /** "Claim Your Business" attempts — one row per verification run. */
+      provider_claims: {
+        Row: {
+          id: string;
+          provider_id: string;
+          claimed_by: string | null;
+          contact_email: string;
+          contact_phone: string | null;
+          uen: string | null;
+          email_code_hash: string | null;
+          phone_code_hash: string | null;
+          email_verified_at: string | null;
+          phone_verified_at: string | null;
+          expires_at: string;
+          attempts: number;
+          status: 'pending' | 'verified' | 'approved' | 'rejected';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          contact_email: string;
+          claimed_by?: string | null;
+          contact_phone?: string | null;
+          uen?: string | null;
+          email_code_hash?: string | null;
+          phone_code_hash?: string | null;
+          expires_at?: string;
+        };
+        Update: {
+          claimed_by?: string | null;
+          email_code_hash?: string | null;
+          phone_code_hash?: string | null;
+          email_verified_at?: string | null;
+          phone_verified_at?: string | null;
+          attempts?: number;
+          status?: 'pending' | 'verified' | 'approved' | 'rejected';
+        };
+        Relationships: [];
+      };
       app_config: {
         Row: { key: string; value: string; updated_at: string };
         Insert: { key: string; value: string };
