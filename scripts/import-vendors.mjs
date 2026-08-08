@@ -55,10 +55,22 @@ const slugify = (s) =>
     .replace(/(^-|-$)/g, '')
     .slice(0, 60);
 
-const CATS = ['music', 'sensory-play', 'art-creativity', 'movement', 'early-learning', 'parent-baby'];
+/* Must track the live taxonomy. Migration 00031 merged `art-creativity` into
+ * sensory-play and `gymnastics` into movement, and this list still named
+ * `art-creativity` while omitting swimming/playspaces/community-events/
+ * holiday-camps — so those categories could never be matched and every such
+ * listing silently fell through to `fallbackCat`. */
+const CATS = [
+  'music', 'sensory-play', 'movement', 'swimming',
+  'early-learning', 'parent-baby', 'playspaces',
+  'community-events', 'holiday-camps',
+];
 const VENDOR_CATS = ['baby-toddler-classes', 'playspaces', 'camps-holiday', 'community-events', 'mum-bub-exercise', 'other'];
 
 function isClosed(rec) {
+  // enrich-openai.mjs reports this explicitly; fall back to reading the summary
+  // for records produced by the older enrichment scripts.
+  if (rec.permanently_closed === true) return true;
   return /permanently closed|is closed|now closed/i.test(rec.summary || '');
 }
 
