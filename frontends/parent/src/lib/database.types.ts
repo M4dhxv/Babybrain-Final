@@ -124,6 +124,8 @@ export type Database = {
           gender: Gender;
           interests: string[];
           notes: string | null;
+          /** Chosen avatar, added by migration 00034. */
+          avatar_seed: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -135,6 +137,7 @@ export type Database = {
           gender?: Gender;
           interests?: string[];
           notes?: string | null;
+          avatar_seed?: string | null;
         };
         Update: {
           name?: string;
@@ -142,6 +145,7 @@ export type Database = {
           gender?: Gender;
           interests?: string[];
           notes?: string | null;
+          avatar_seed?: string | null;
         };
               Relationships: [
           {
@@ -175,6 +179,8 @@ export type Database = {
           postal_code: string | null;
           latitude: number | null;
           longitude: number | null;
+          /** Derived from the postal sector by migration 00032. */
+          region: SgRegion | null;
           image_urls: string[];
           is_published: boolean;
           rating_avg: number;

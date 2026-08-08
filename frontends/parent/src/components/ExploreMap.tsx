@@ -14,7 +14,7 @@ const SG_BOUNDS: L.LatLngBoundsExpression = [
 const pinIcon = L.divIcon({
   className: "",
   html:
-    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FA5D93;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>',
+    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#D9004A;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>',
   iconSize: [22, 22],
   iconAnchor: [11, 22],
   popupAnchor: [0, -20],

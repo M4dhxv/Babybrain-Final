@@ -32,14 +32,13 @@ import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { downloadSchedulePdf } from "./lib/schedule-pdf";
 import { formatChildAge, formatAgeRange, formatDuration, regionLabel } from "./lib/database.types";
 import {
-  MIN_CHILD_DOB,
   PASSWORD_RULES,
   dobError,
   emailError,
   passwordError,
   postcodeError,
-  todayIso,
 } from "./lib/validation";
+import { CHILD_AVATARS, PARENT_AVATARS, type AvatarOption } from "./lib/avatars";
 import type { ActivitySession, Child, Gender } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
@@ -56,7 +55,7 @@ function HomePage() {
       <main>
         <section className="mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
           <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#ffe9f2] px-4 py-2.5 text-[13px] font-bold text-baby-pink">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-baby-pink">
               <Icon name="heart" className="h-4 w-4" /> Made by a parent, for parents.
             </div>
             <h1 className="max-w-[520px] text-[40px] font-black leading-[1.04] md:text-[52px]">
@@ -77,8 +76,8 @@ function HomePage() {
             </div>
           </div>
           <div className="relative min-h-[370px]">
-            <div className="absolute -left-6 top-40 h-14 w-14 rounded-full bg-[#c7a7ff]" />
-            <Icon name="star" className="absolute right-[-18px] top-14 h-8 w-8 fill-[#ffbd30] text-[#ffbd30]" />
+            <div className="absolute -left-6 top-40 h-14 w-14 rounded-full bg-[#C7B1E6]" />
+            <Icon name="star" className="absolute right-[-18px] top-14 h-8 w-8 fill-[#FFD77A] text-[#FFD77A]" />
             <img
               src={`${import.meta.env.BASE_URL}assets/crops/hero-ball-pit.jpg`}
               alt="A toddler wading through a ball pit at an indoor play space"
@@ -96,7 +95,7 @@ function HomePage() {
             ["calendar", "Plan with ease", "Book activities that suit you."],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#ffe4ef] to-[#fff0f5] text-baby-pink">
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] text-baby-pink">
                 <Icon name={icon} className="h-8 w-8" />
               </span>
               <p>
@@ -108,7 +107,7 @@ function HomePage() {
         </section>
 
         <section id="how-it-works" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3">
-          <div className="rounded-[22px] border border-[#e8ecf6] bg-white/80 p-5 shadow-card">
+          <div className="rounded-[22px] border border-[#EBE3E5] bg-white/80 p-5 shadow-card">
             <h2 className="text-center text-[26px] font-black text-baby-orange">
               How it works <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
             </h2>
@@ -135,14 +134,14 @@ function HomePage() {
                 </article>
               ))}
             </div>
-            <div className="mt-5 grid gap-3 rounded-[18px] border border-[#e8ecf6] bg-white p-3 md:grid-cols-3">
+            <div className="mt-5 grid gap-3 rounded-[18px] border border-[#EBE3E5] bg-white p-3 md:grid-cols-3">
               {[
                 ["people", "1000+", "Curated activities"],
                 ["store", "100+", "Verified providers"],
                 ["chart", "200+", "Locations"],
               ].map(([icon, stat, label]) => (
                 <div key={stat} className="flex items-center justify-center gap-3">
-                  <span className="grid h-12 w-12 place-items-center rounded-full bg-[#fff0f7] text-baby-pink">
+                  <span className="grid h-12 w-12 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink">
                     <Icon name={icon} className="h-7 w-7" />
                   </span>
                   <p>
@@ -165,7 +164,7 @@ function HomePage() {
               <a
                 key={band.key}
                 href={`/explore?age=${band.key}`}
-                className="flex min-h-[92px] flex-col justify-center rounded-[16px] border border-[#e9edf7] bg-gradient-to-br from-[#fff0f7] to-[#f0f7ff] px-4 py-3 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
+                className="flex min-h-[92px] flex-col justify-center rounded-[16px] border border-[#EBE3E5] bg-gradient-to-br from-[#FEEBF2] to-[#EDF7FD] px-4 py-3 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
               >
                 <span className="text-[15px] font-black leading-tight text-baby-lilac">{band.label}</span>
                 <span className="mt-1 text-[12px] font-semibold leading-4 text-[#59658d]">{AGE_BAND_COPY[i]}</span>
@@ -194,10 +193,10 @@ function HomePage() {
 
         <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3">
           {["Joanne", "Marcus", "Sarah"].map((name, index) => (
-            <article key={name} className="flex gap-4 rounded-[16px] border border-[#e8ecf6] bg-white p-5 shadow-card">
+            <article key={name} className="flex gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <AnimalAvatar seed={name} kind="parent" className="h-11 w-11" />
               <div>
-                <div className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: 5 }).map((_, starIndex) => <Icon key={starIndex} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
+                <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: 5 }).map((_, starIndex) => <Icon key={starIndex} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
                 <p className="mt-2 text-sm font-semibold leading-6">
                   {index === 0
                     ? "We found so many engaging activities that our daughter loves."
@@ -213,7 +212,7 @@ function HomePage() {
         </section>
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
-          <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#eadcf8] bg-gradient-to-r from-[#fff0f7] via-white to-[#f2edff] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
+          <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#E9E1F5] bg-gradient-to-r from-[#FEEBF2] via-white to-[#F4F0FA] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
             <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="h-28 object-contain object-left" />
             <div>
               <h2 className="text-2xl font-black">Reduce your mental load</h2>
@@ -233,7 +232,7 @@ function Field({ label, placeholder }: { label: string; placeholder: string }) {
     <label className="block text-xs font-black">
       {label}
       <input
-        className="mt-2 h-10 w-full rounded-[8px] border border-[#dfe5f2] bg-white px-3 text-sm font-semibold outline-none focus:border-baby-pink"
+        className="mt-2 h-10 w-full rounded-[8px] border border-[#DCD2D5] bg-white px-3 text-sm font-semibold outline-none focus:border-baby-pink"
         placeholder={placeholder}
       />
     </label>
@@ -250,7 +249,7 @@ const BUDGET_CHIPS: [string, string, number | null, number | null][] = [
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#ffe9f2] text-[#FA5D93]" : "border-[#e2e7f4] bg-white"}`}>
+    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-[#D9004A]" : "border-[#DCD2D5] bg-white"}`}>
       {children}
     </button>
   );
@@ -282,7 +281,7 @@ function ChildDraftFields({
   onChange: (next: ChildDraft) => void;
   onRemove: () => void;
 }) {
-  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
   const toggle = (v: string) =>
     onChange({
       ...draft,
@@ -292,7 +291,7 @@ function ChildDraftFields({
     });
 
   return (
-    <div className={index > 0 ? "mt-5 border-t border-[#f0e6ec] pt-5" : ""}>
+    <div className={index > 0 ? "mt-5 border-t border-[#FEEBF2] pt-5" : ""}>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
         {total > 1 && (
@@ -311,11 +310,9 @@ function ChildDraftFields({
           <DateInput
             value={draft.dob}
             onChange={(iso) => onChange({ ...draft, dob: iso })}
-            min={MIN_CHILD_DOB}
-            max={todayIso()}
             className={input}
           />
-          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Day first, e.g. 14/03/2024.</p>
+          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Day first, e.g. 14/03/2024.</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
@@ -361,7 +358,7 @@ function OnboardingPage() {
 
   const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
 
   /** Everything recommendations depend on is required, so a new parent can't
    *  land on an empty Matches page. Returns the first problem, or null. */
@@ -394,7 +391,40 @@ function OnboardingPage() {
     }
     setBusy(true);
     setError(null);
-    const { error: signErr } = await signUp(email, password, fullName);
+
+    const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
+    const chosenBudgets = BUDGET_CHIPS.filter(([k]) => budgets.includes(k));
+    const budgetMin = chosenBudgets.length ? Math.min(...chosenBudgets.map(([, , lo]) => lo ?? 0)) : null;
+    const budgetMax = chosenBudgets.length && chosenBudgets.every(([, , , hi]) => hi != null)
+      ? Math.max(...chosenBudgets.map(([, , , hi]) => hi as number))
+      : null;
+    // Interests across all children drive the parent-level recommendations.
+    const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
+    const draftKids = kids.map((k) => ({
+      name: k.name.trim(),
+      dob: k.dob,
+      gender: k.gender,
+      interests: k.interests,
+    }));
+
+    // Send the whole form with the sign-up. When confirmation is required there
+    // is no session to write with, so the trigger persists this server-side —
+    // QA: "the children hadn't been saved and I had to add them again".
+    const { error: signErr } = await signUp(email, password, fullName, {
+      full_name: fullName,
+      phone: phone || null,
+      postal_code: postcode.trim(),
+      terms_accepted: acceptedTerms,
+      preferences: {
+        days,
+        times,
+        regions,
+        interests: allInterests,
+        budget_min: budgetMin,
+        budget_max: budgetMax,
+      },
+      children: draftKids,
+    });
     if (signErr) {
       setBusy(false);
       return setError(signErr);
@@ -405,14 +435,6 @@ function OnboardingPage() {
       return setConfirmSent(true); // email confirmation required
     }
     const uid = session.user.id;
-    const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
-    const chosenBudgets = BUDGET_CHIPS.filter(([k]) => budgets.includes(k));
-    const budgetMin = chosenBudgets.length ? Math.min(...chosenBudgets.map(([, , lo]) => lo ?? 0)) : null;
-    const budgetMax = chosenBudgets.length && chosenBudgets.every(([, , , hi]) => hi != null)
-      ? Math.max(...chosenBudgets.map(([, , , hi]) => hi as number))
-      : null;
-    // Interests across all children drive the parent-level recommendations.
-    const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
     await supabase.from("parent_profiles").update({
       full_name: fullName,
       phone: phone || null,
@@ -427,16 +449,24 @@ function OnboardingPage() {
       budget_max: budgetMax,
       interests: allInterests,
     }).eq("user_id", uid);
-    await supabase.from("children").insert(
-      kids.map((k) => ({
-        parent_id: uid,
-        name: k.name.trim(),
-        date_of_birth: k.dob,
-        gender: k.gender as never,
-        interests: k.interests,
-        notes: null,
-      }))
-    );
+    // The trigger already seeded these from the sign-up metadata; only insert
+    // when it didn't, so confirming by email never doubles a parent's children.
+    const { count } = await supabase
+      .from("children")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", uid);
+    if (!count) {
+      await supabase.from("children").insert(
+        draftKids.map((k) => ({
+          parent_id: uid,
+          name: k.name,
+          date_of_birth: k.dob,
+          gender: k.gender as never,
+          interests: k.interests,
+          notes: null,
+        }))
+      );
+    }
     window.location.href = "/matches";
   }
 
@@ -446,7 +476,7 @@ function OnboardingPage() {
         <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
           <h1 className="text-2xl font-black">Check your email</h1>
           <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
-          <p className="mt-3 text-sm font-semibold text-[#8a93b2]">Can't find it? Check your spam folder.</p>
+          <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam folder.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
         </main>
       </PageShell>
@@ -456,7 +486,7 @@ function OnboardingPage() {
   return (
     <PageShell active="/onboarding">
       <main className="mx-auto max-w-[680px] px-6 py-6">
-        <section className="rounded-[14px] border border-[#eadfd2] bg-white p-5">
+        <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h1 className="text-[26px] font-black">Let's get to know you</h1>
           <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
@@ -469,7 +499,7 @@ function OnboardingPage() {
                 {PASSWORD_RULES.map((rule) => {
                   const met = rule.test(password);
                   return (
-                    <li key={rule.label} className={met ? "text-[#1f9d4d]" : "text-[#8a93b2]"}>
+                    <li key={rule.label} className={met ? "text-[#327D20]" : "text-[#6D748D]"}>
                       {met ? "✓" : "•"} {rule.label}
                     </li>
                   );
@@ -482,13 +512,13 @@ function OnboardingPage() {
               <div>
                 <label className="mb-1 block text-sm font-black">Postcode</label>
                 <input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
-                <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Used to show what's near you.</p>
+                <p className="mt-1 text-xs font-semibold text-[#6D748D]">Used to show what's near you.</p>
               </div>
             </div>
           </div>
 
           <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
-          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Pick any areas that work for you — they don't have to be near home.</p>
+          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick any areas that work for you — they don't have to be near home.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {REGION_FILTERS.map(([v, l]) => (
               <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
@@ -504,7 +534,7 @@ function OnboardingPage() {
           </div>
         </section>
 
-        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></h1>
           <div className="mt-4">
             {kids.map((k, i) => (
@@ -529,7 +559,7 @@ function OnboardingPage() {
           </Button>
         </section>
 
-        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#eadfd2] bg-white p-4 text-sm font-semibold text-[#44507b]">
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
           <input
             type="checkbox"
             checked={acceptedTerms}
@@ -603,19 +633,19 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
             {child && (
-              <article className="flex gap-4 rounded-[18px] border border-[#e7ebf6] bg-white p-4 shadow-card">
-                <AnimalAvatar seed={child.name} kind="child" className="h-32 w-32 ring-8 ring-[#fff1f5]" />
+              <article className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+                <AnimalAvatar seed={child.name} kind="child" className="h-32 w-32 ring-8 ring-[#FEEBF2]" />
                 <div>
                   <h2 className="text-xl font-black">{child.name}</h2>
                   <p className="mb-3 font-bold">{formatChildAge(child.date_of_birth)}</p>
                   {child.interests.map((item) => (
-                    <p key={item} className="mb-1.5 rounded-full bg-[#f7f4ef] px-3 py-1.5 text-xs font-bold text-[#596184]">enjoys {item.replace(/-/g, " ")}</p>
+                    <p key={item} className="mb-1.5 rounded-full bg-[#FEF4EB] px-3 py-1.5 text-xs font-bold text-[#596184]">enjoys {item.replace(/-/g, " ")}</p>
                   ))}
                 </div>
               </article>
             )}
           </div>
-          <article className="rounded-[18px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+          <article className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <h2 className="text-2xl font-black text-baby-lilac">Why these activities?</h2>
             <p className="mb-4 mt-1 font-semibold text-[#4b5681]">These activities match what you've shared with us.</p>
             <div className="grid grid-cols-[1fr_150px] items-center gap-4">
@@ -635,7 +665,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           {/* On mobile the "See activity options" link sits below the cards
               rather than crowding the heading. */}
           <SectionTitle
-            action={<a href="/explore" className="hidden font-bold text-[#FA5D93] sm:inline">Explore more activities →</a>}
+            action={<a href="/explore" className="hidden font-bold text-[#D9004A] sm:inline">Explore more activities →</a>}
           >
             Matching activities
           </SectionTitle>
@@ -649,7 +679,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#FA5D93] sm:hidden">Explore more activities →</a>
+          <a href="/explore" className="mt-4 block text-center font-bold text-[#D9004A] sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
@@ -739,19 +769,19 @@ function EmailCapturePopup() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={dismiss}>
       <div className="w-full max-w-md rounded-[20px] bg-white p-7 shadow-soft" onClick={(e) => e.stopPropagation()}>
-        <button type="button" onClick={dismiss} aria-label="Close" className="float-right -mr-1 -mt-1 text-[#9aa3c0] hover:text-[#3a4468]">
+        <button type="button" onClick={dismiss} aria-label="Close" className="float-right -mr-1 -mt-1 text-[#6D7488] hover:text-[#3a4468]">
           <Icon name="close" className="h-5 w-5" />
         </button>
         {done ? (
           <div className="py-4 text-center">
-            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#eafaf0] text-[#28a765]"><Icon name="check" className="h-8 w-8" /></div>
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#327D20]"><Icon name="check" className="h-8 w-8" /></div>
             <h2 className="text-xl font-black">You're on the list! 🎉</h2>
             <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll send you activity ideas matched to your family.</p>
             <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
           </div>
         ) : (
           <>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#ffe9f2] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
             <h2 className="text-2xl font-black leading-tight">Get activity ideas for your child</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll send curated classes and play spaces near you — no spam, unsubscribe anytime.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
@@ -761,12 +791,12 @@ function EmailCapturePopup() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
                 autoFocus
-                className="h-12 w-full rounded-[12px] border border-[#e6e6ef] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
+                className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
               <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Send me ideas"}</Button>
             </form>
-            <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#8b93b3] hover:text-[#59658d]">Maybe later</button>
+            <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
           </>
         )}
       </div>
@@ -880,18 +910,22 @@ function ExplorePage() {
     return true;
   });
 
-  // "Nearest" and "Starting soonest" re-order what the server returned, but
-  // instant-book listings still lead so parents stay on platform.
+  // The chosen sort wins outright. Instant-book listings used to be pinned
+  // above everything regardless, so picking "Nearest" changed nothing and QA
+  // saw a class 30 minutes away above ones within 10. Instant book now only
+  // breaks ties, which still keeps it first under the default "Most popular".
   const shown = [...filtered].sort((x, y) => {
-    if (x.instantBook !== y.instantBook) return x.instantBook ? -1 : 1;
     if (sort === "soonest") {
       const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
       const ay = y.nextSessionAt ? Date.parse(y.nextSessionAt) : Infinity;
-      return ax - ay;
+      if (ax !== ay) return ax - ay;
     }
     if (sort === "distance" && here) {
-      return distanceFrom(here, x) - distanceFrom(here, y);
+      const dx = distanceFrom(here, x);
+      const dy = distanceFrom(here, y);
+      if (dx !== dy) return dx - dy;
     }
+    if (x.instantBook !== y.instantBook) return x.instantBook ? -1 : 1;
     return 0;
   });
 
@@ -904,17 +938,39 @@ function ExplorePage() {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
-  // Sorting by distance needs a location; ask only when it's chosen.
+  // Sorting by distance needs a location; ask only when it's chosen. If the
+  // browser won't give one (denied, or no geolocation at all), fall back to the
+  // postcode the parent gave us, so "Nearest" still does something sensible.
   useEffect(() => {
-    if (sort !== "distance" || here || !navigator.geolocation) return;
+    if (sort !== "distance" || here) return;
+    let cancelled = false;
+    const useProfile = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user || cancelled) return;
+      const { data: p } = await supabase
+        .from("parent_profiles")
+        .select("latitude, longitude")
+        .eq("id", data.user.id)
+        .maybeSingle();
+      if (!cancelled && p?.latitude != null && p?.longitude != null) {
+        setHere({ lat: p.latitude, lng: p.longitude });
+      }
+    };
+    if (!navigator.geolocation) {
+      void useProfile();
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
-      (pos) => setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setHere(null),
+      (pos) => !cancelled && setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => void useProfile(),
       { timeout: 8000 }
     );
+    return () => {
+      cancelled = true;
+    };
   }, [sort, here]);
 
-  const selectClass = "h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
+  const selectClass = "h-10 rounded-[10px] border border-[#EBE3E5] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
   const pinned = shown.filter((a) => a.venues.length > 0 || a.lat != null).length;
 
   return (
@@ -931,7 +987,7 @@ function ExplorePage() {
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
-        <div className="mb-4 space-y-3 rounded-[16px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+        <div className="mb-4 space-y-3 rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card">
           <ChipFilter
             label="Type of activity"
             allLabel="All types of activity"
@@ -954,7 +1010,7 @@ function ExplorePage() {
             onChange={setRegions}
           />
 
-          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eef1f7] pt-3">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#F4EFF0] pt-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-bold text-[#68718f]">Sort by</span>
               <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selectClass}>
@@ -966,7 +1022,7 @@ function ExplorePage() {
             <button
               type="button"
               onClick={() => setShowMore((v) => !v)}
-              className="h-10 rounded-[10px] border border-[#e6e6ef] bg-white px-4 text-[13px] font-bold text-[#4a5680] hover:border-baby-pink"
+              className="h-10 rounded-[10px] border border-[#EBE3E5] bg-white px-4 text-[13px] font-bold text-[#4a5680] hover:border-baby-pink"
             >
               {showMore ? "Fewer filters ▲" : "More filters ▾"}
             </button>
@@ -978,13 +1034,13 @@ function ExplorePage() {
           </div>
 
           {sort === "distance" && !here && (
-            <p className="rounded-[10px] bg-[#fff7fb] px-3 py-2 text-xs font-semibold text-[#68718f]">
+            <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
               Allow location access to sort by how near activities are to you.
             </p>
           )}
 
           {showMore && (
-            <div className="grid gap-3 border-t border-[#eef1f7] pt-3 sm:grid-cols-3">
+            <div className="grid gap-3 border-t border-[#F4EFF0] pt-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-bold text-[#68718f]">Date from</span>
                 <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
@@ -1005,7 +1061,7 @@ function ExplorePage() {
         </div>
 
         <div className="space-y-5">
-          <section className="rounded-[16px] border border-[#e7ebf6] bg-white p-3 shadow-card">
+          <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
               <span className="text-xs font-bold text-[#68718f]">{pinned} of {shown.length} pinned</span>
@@ -1024,7 +1080,7 @@ function ExplorePage() {
               ))}
             </div>
             {!loading && shown.length === 0 && (
-              <p className="mt-6 rounded-[12px] bg-[#fff7fb] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+              <p className="mt-6 rounded-[12px] bg-[#FFF5F8] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
             )}
           </section>
         </div>
@@ -1172,7 +1228,7 @@ function ChatButton({
     return (
       <span
         title={disabledReason}
-        className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#e3e7f2] bg-[#f5f6fa] px-6 py-3 text-[15px] font-extrabold leading-none text-[#9aa3bd]"
+        className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
       >
         <Icon name={icon} className="h-4 w-4" /> {label} <Icon name="lock" className="h-3.5 w-3.5" />
       </span>
@@ -1182,6 +1238,49 @@ function ChatButton({
     <Button variant="blueOutline" className="mt-3 w-full" onClick={onOpen}>
       <Icon name={icon} className="h-4 w-4" /> {label}
     </Button>
+  );
+}
+
+/** One of the direct-contact buttons (WhatsApp / Email / Website).
+ *
+ *  QA: "Inconsistencies on options on vendor page — Storytime Stretch doesn't
+ *  have any of the comms buttons". Each button used to be rendered only when
+ *  that provider happened to have that detail on file, so the panel changed
+ *  shape from listing to listing. Every listing now shows the same three, and
+ *  the ones we have no details for are visibly unavailable instead of absent. */
+function ContactLink({
+  icon,
+  label,
+  href,
+  tone,
+  unavailableReason,
+}: {
+  icon: string;
+  label: string;
+  href: string | null;
+  tone: { border: string; text: string; hover: string };
+  unavailableReason: string;
+}) {
+  const base =
+    "inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border bg-white px-3 py-2.5 text-[13px] font-extrabold leading-none transition";
+  if (!href) {
+    return (
+      <span
+        title={unavailableReason}
+        className={`${base} cursor-not-allowed border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]`}
+      >
+        <Icon name={icon} className="h-4 w-4" /> {label}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      {...(href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      className={`${base} ${tone.border} ${tone.text} ${tone.hover}`}
+    >
+      <Icon name={icon} className="h-4 w-4" /> {label}
+    </a>
   );
 }
 
@@ -1260,6 +1359,17 @@ function ActivityDetailPage() {
     else open();
   };
 
+  const whatsappNumber =
+    activity.provider_contact?.whatsapp ?? activity.provider_contact?.contact_phone ?? null;
+  // Scraped websites aren't consistently prefixed, and a bare "example.com"
+  // href would resolve against our own origin.
+  const rawWebsite = activity.provider_contact?.website?.trim() || null;
+  const providerWebsite = rawWebsite
+    ? /^https?:\/\//i.test(rawWebsite)
+      ? rawWebsite
+      : `https://${rawWebsite}`
+    : null;
+
   return (
     <PageShell active="/explore">
       {galleryAt !== null && (
@@ -1277,16 +1387,16 @@ function ActivityDetailPage() {
             <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
             {activity.provider_name &&
               activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
-                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#7a5cc8]">
+                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#7D4AC5]">
                   <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
                 </p>
               )}
             {activity.category_name && (
-              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#fff0f6] px-4 py-1.5 font-bold text-baby-pink"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
+              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-pink"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
             )}
             <p className="mt-3 text-[15px] font-semibold leading-6 text-[#34406f]">{activity.description}</p>
             {activity.rating_count > 0 && (
-              <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#ffb72b]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
+              <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
             )}
           </div>
           <div>
@@ -1316,7 +1426,7 @@ function ActivityDetailPage() {
               </div>
             )}
           </div>
-          <aside className="rounded-[18px] border border-[#f0dccd] bg-white p-5 shadow-card">
+          <aside className="rounded-[18px] border border-[#FEE9D7] bg-white p-5 shadow-card">
             {activity.price != null ? (
               <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
             ) : (
@@ -1339,42 +1449,52 @@ function ActivityDetailPage() {
             ) : (
               <Button href={`/book?slug=${activity.slug}`} variant="blue" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
-            {/* Enquiry chat needs a provider to message — hide the button
-                for listings without a linked provider, else it dead-clicks
-                for signed-in users. Messaging is a Plus feature, and it also
-                needs the provider to be integrated with us: a listing that
-                books on the provider's own site has no chat to open. */}
-            {activity.provider_id && (
-              <ChatButton
-                icon="mail"
-                label="Chat with provider"
-                disabledReason={chatBlockedReason}
-                onOpen={requireLogin(() => setEnquiring(true))}
+            {/* Messaging is a Plus feature and needs an integrated provider:
+                a listing that books on the provider's own site has no chat to
+                open. The button is always present so the panel keeps the same
+                shape — it greys out with the reason rather than disappearing. */}
+            <ChatButton
+              icon="mail"
+              label="Chat with provider"
+              disabledReason={
+                activity.provider_id
+                  ? chatBlockedReason
+                  : "We don't have this provider on BabyBrain yet, so there's no chat to open."
+              }
+              onOpen={requireLogin(() => setEnquiring(true))}
+            />
+            {/* 1.4: direct click-through contact — the same three every time. */}
+            <div className="mt-3 flex gap-2">
+              <ContactLink
+                icon="whatsapp"
+                label="WhatsApp"
+                href={
+                  whatsappNumber
+                    ? `https://wa.me/${phoneDigits(whatsappNumber)}`
+                    : null
+                }
+                tone={{ border: "border-[#42A72B]", text: "text-[#327D20]", hover: "hover:bg-[#F1FBEF]" }}
+                unavailableReason="We don't have a WhatsApp number for this provider."
               />
-            )}
-            {/* 1.4: direct click-through contact — WhatsApp and email */}
-            {(activity.provider_contact?.whatsapp || activity.provider_contact?.contact_phone || activity.provider_contact?.contact_email) && (
-              <div className="mt-3 flex gap-2">
-                {(activity.provider_contact.whatsapp || activity.provider_contact.contact_phone) && (
-                  <a
-                    href={`https://wa.me/${phoneDigits(activity.provider_contact.whatsapp ?? activity.provider_contact.contact_phone ?? "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#3fc36a] bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#1f9d4d] transition hover:bg-[#f2fcf5]"
-                  >
-                    <Icon name="whatsapp" className="h-4 w-4" /> WhatsApp
-                  </a>
-                )}
-                {activity.provider_contact.contact_email && (
-                  <a
-                    href={`mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border border-baby-blue bg-white px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#2f7fd8] transition hover:bg-[#f2f8ff]"
-                  >
-                    <Icon name="mail" className="h-4 w-4" /> Email
-                  </a>
-                )}
-              </div>
-            )}
+              <ContactLink
+                icon="mail"
+                label="Email"
+                href={
+                  activity.provider_contact?.contact_email
+                    ? `mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`
+                    : null
+                }
+                tone={{ border: "border-baby-blue", text: "text-[#0E6FAE]", hover: "hover:bg-[#EDF7FD]" }}
+                unavailableReason="We don't have an email address for this provider."
+              />
+              <ContactLink
+                icon="open"
+                label="Website"
+                href={providerWebsite}
+                tone={{ border: "border-[#C7B1E6]", text: "text-[#7D4AC5]", hover: "hover:bg-[#F4F0FA]" }}
+                unavailableReason="We don't have a website for this provider."
+              />
+            </div>
             <ChatButton
               icon="people"
               label="Class group chat"
@@ -1398,22 +1518,46 @@ function ActivityDetailPage() {
                 onClose={() => setGroupChat(false)}
               />
             )}
-            <div className="mt-5 space-y-4 border-t border-[#eceff7] pt-4 text-sm font-semibold">
-              {activity.address && <p><strong>Location</strong><span className="float-right text-right">{activity.address}</span></p>}
-              {next && <p><strong>Next available class</strong><span className="float-right">{sgDateTime(next.starts_at)}</span></p>}
-              {next?.capacity != null && <p><strong>Spaces available</strong><span className="float-right text-[#197bff]">{next.capacity} spots</span></p>}
-              {durationMins != null && <p><strong>Duration</strong><span className="float-right">{formatDuration(durationMins)}</span></p>}
+            {/* QA: "Location on vendor pages at the bottom of the far right box
+                is misaligned". These were floated spans, so a wrapping address
+                dropped out of line with the label beside it. Flex rows keep the
+                label and value on the same baseline however long the value. */}
+            <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
+              {activity.address && (
+                <p className="flex items-start justify-between gap-3">
+                  <strong className="shrink-0">Location</strong>
+                  <span className="text-right">{activity.address}</span>
+                </p>
+              )}
+              {next && (
+                <p className="flex items-start justify-between gap-3">
+                  <strong className="shrink-0">Next available class</strong>
+                  <span className="text-right">{sgDateTime(next.starts_at)}</span>
+                </p>
+              )}
+              {next?.capacity != null && (
+                <p className="flex items-start justify-between gap-3">
+                  <strong className="shrink-0">Spaces available</strong>
+                  <span className="text-right text-[#0E6FAE]">{next.capacity} spots</span>
+                </p>
+              )}
+              {durationMins != null && (
+                <p className="flex items-start justify-between gap-3">
+                  <strong className="shrink-0">Duration</strong>
+                  <span className="text-right">{formatDuration(durationMins)}</span>
+                </p>
+              )}
             </div>
           </aside>
         </section>
 
-        <section className="mt-5 grid gap-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card lg:grid-cols-[1.4fr_1fr]">
+        <section className="mt-5 grid gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:grid-cols-[1.4fr_1fr]">
           <InfoBlock title="About" items={[activity.description]} />
           <div>
             <h3 className="mb-2 font-black text-baby-ink">Upcoming sessions</h3>
             <div className="flex flex-wrap gap-2">
               {sessions.map((s) => (
-                <span key={s.id} className="rounded-[10px] border border-[#e6eaf6] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
+                <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
               ))}
               {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
             </div>
@@ -1422,12 +1566,12 @@ function ActivityDetailPage() {
         </section>
 
         {packs.length > 0 && (
-          <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+          <section className="mt-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <h2 className="mb-1 text-xl font-black">Packages</h2>
             <p className="mb-4 text-sm font-semibold text-[#68718f]">Buy a multi-class pack and save — credits work across this provider's classes.</p>
             <div className="grid gap-3 md:grid-cols-2">
               {packs.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e7ebf6] p-4">
+                <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] p-4">
                   <div>
                     <h3 className="font-black">{p.name}</h3>
                     <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
@@ -1441,16 +1585,16 @@ function ActivityDetailPage() {
           </section>
         )}
 
-        <section className="mt-5 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+        <section className="mt-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
           <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
           <ReviewForm activityId={activity.id} />
           {reviews.map((r) => (
-            <div key={r.id} className="mb-3 border-b border-[#eef1f8] pb-3">
-              <div className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
+            <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
+              <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
               {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
-              <p className="mt-1 text-xs font-semibold text-[#8a93b2]">A BabyBrain parent</p>
+              <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
               {r.provider_response && (
-                <div className="mt-2 rounded-[10px] bg-[#fff7fb] p-3">
+                <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
                   <p className="text-xs font-black text-baby-pink">Response from the provider</p>
                   <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
                 </div>
@@ -1474,7 +1618,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
 
   if (!session) {
     return (
-      <p className="mb-4 rounded-[10px] bg-[#f4f8ff] px-4 py-3 text-sm font-semibold text-[#59658d]">
+      <p className="mb-4 rounded-[10px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
         <a href="/login" className="font-black text-baby-pink">Log in</a> to review a class you've attended.
       </p>
     );
@@ -1498,7 +1642,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="mb-5 rounded-[12px] border border-[#e7ebf6] bg-[#f9fbff] p-4">
+    <form onSubmit={submit} className="mb-5 rounded-[12px] border border-[#EBE3E5] bg-[#EDF7FD] p-4">
       <p className="mb-2 font-black">Write a review</p>
       <div className="flex gap-1">
         {[1, 2, 3, 4, 5].map((n) => (
@@ -1510,7 +1654,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
             onClick={() => setRating(n)}
             aria-label={`${n} star${n > 1 ? "s" : ""}`}
           >
-            <Icon name="star" className={`h-7 w-7 ${(hover || rating) >= n ? "text-[#ffb71b] fill-current" : "text-[#d5ddef]"}`} />
+            <Icon name="star" className={`h-7 w-7 ${(hover || rating) >= n ? "text-[#FFD77A] fill-current" : "text-[#DCD2D5]"}`} />
           </button>
         ))}
       </div>
@@ -1519,7 +1663,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         onChange={(e) => setComment(e.target.value)}
         rows={3}
         placeholder="Share how the class went (optional)"
-        className="mt-3 w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2 text-sm font-semibold"
+        className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
       <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
@@ -1567,11 +1711,19 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["settings", "Settings", "gear", false],
 ];
 
+/** Blurred behind the Saved-activities upsell on Free, so the section shows
+ *  the shape of the feature without leaking a parent's real shortlist. */
+const PLACEHOLDER_SAVED = [
+  { id: "ph-1", slug: "", title: "Music & Movement", category: "Music & Drama", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "6 months – 2 years", venue: "Central", date: "", time: "", rating: "New", note: "" },
+  { id: "ph-2", slug: "", title: "Sensory Play", category: "Sensory & Art", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "12 months – 3 years", venue: "East", date: "", time: "", rating: "New", note: "" },
+  { id: "ph-3", slug: "", title: "Toddler Gym", category: "Gym & Dance", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "18 months – 4 years", venue: "West", date: "", time: "", rating: "New", note: "" },
+];
+
 /** Stand-in shown where a Plus-only feature would be, with the upgrade path. */
 function PlusLock({ title, copy }: { title: string; copy: string }) {
   return (
-    <div className="mt-4 rounded-[14px] border border-dashed border-[#f0c3d6] bg-[#fff7fb] p-10 text-center">
-      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink">
+    <div className="mt-4 rounded-[14px] border border-dashed border-[#FFC1D6] bg-[#FFF5F8] p-10 text-center">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
         <Icon name="lock" className="h-7 w-7" />
       </span>
       <h2 className="mt-4 text-xl font-black">{title}</h2>
@@ -1582,16 +1734,16 @@ function PlusLock({ title, copy }: { title: string; copy: string }) {
 }
 
 function tokenStatusStyle(status: string) {
-  if (status === "issued") return "bg-[#eefbf1] text-green-700";
-  if (status === "redeemed") return "bg-[#fff0f5] text-[#FA5D93]";
-  return "bg-[#f1efe8] text-[#7a725c]"; // expired
+  if (status === "issued") return "bg-[#F1FBEF] text-green-700";
+  if (status === "redeemed") return "bg-[#FEEBF2] text-[#D9004A]";
+  return "bg-[#FEF9EB] text-[#936700]"; // expired
 }
 
 function bookingStatusStyle(status: string) {
-  if (status === "confirmed" || status === "completed") return "bg-[#eefbf1] text-green-700";
+  if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-green-700";
   if (status === "cancelled") return "bg-[#ffe9ef] text-[#b00040]";
   if (status === "waitlisted") return "bg-amber-50 text-amber-700";
-  return "bg-[#fff0f5] text-[#FA5D93]";
+  return "bg-[#FEEBF2] text-[#D9004A]";
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -1615,6 +1767,7 @@ function ChildForm({
   const [dob, setDob] = useState(initial?.date_of_birth ?? "");
   const [gender, setGender] = useState<string>(initial?.gender ?? "unspecified");
   const [interests, setInterests] = useState<string[]>(initial?.interests ?? []);
+  const [avatarSeed, setAvatarSeed] = useState<string | null>(initial?.avatar_seed ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1622,7 +1775,7 @@ function ChildForm({
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
-  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
   const toggle = (v: string) => setInterests((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]));
 
   async function save() {
@@ -1638,28 +1791,47 @@ function ChildForm({
     setBusy(true);
     setError(null);
     // `notes` was removed from the form per QA; existing values are left untouched.
-    const payload = { name: name.trim(), date_of_birth: dob, gender: gender as Gender, interests };
+    const payload = { name: name.trim(), date_of_birth: dob, gender: gender as Gender, interests, avatar_seed: avatarSeed };
     const { error: err } = initial
       ? await supabase.from("children").update(payload).eq("id", initial.id)
       : await supabase.from("children").insert({ parent_id: parentId, ...payload });
-    setBusy(false);
     if (err) {
+      setBusy(false);
       setError(err.message);
       return;
     }
+    // Interests live on the child, but parent-level recommendations read
+    // `user_preferences.interests` — keep it as the union across the children
+    // so editing a child actually changes what gets suggested.
+    const { data: all } = await supabase.from("children").select("interests").eq("parent_id", parentId);
+    await supabase
+      .from("user_preferences")
+      .update({ interests: [...new Set((all ?? []).flatMap((c) => c.interests ?? []))] })
+      .eq("user_id", parentId);
+    setBusy(false);
     onSaved();
   }
 
   return (
-    <div className="mt-4 rounded-[14px] border border-[#f0d9e6] bg-white p-5 shadow-card">
+    <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-5 shadow-card">
       <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
       {error && <p className="mt-2 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
       <div className="mt-3 space-y-3">
+        <div>
+          <p className="text-sm font-black">Avatar</p>
+          <AvatarPicker
+            options={CHILD_AVATARS}
+            value={avatarSeed}
+            onChange={setAvatarSeed}
+            kind="child"
+            fallbackSeed={name}
+          />
+        </div>
         <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emma" /></div>
         <div>
           <label className="mb-1 block text-sm font-black">Date of birth</label>
-          <DateInput value={dob} onChange={setDob} min={MIN_CHILD_DOB} max={todayIso()} className={input} />
-          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Day first, e.g. 14/03/2024.</p>
+          <DateInput value={dob} onChange={setDob} className={input} />
+          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Day first, e.g. 14/03/2024.</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
@@ -1683,7 +1855,7 @@ function ChildForm({
 
 function ChildClassRow({ b }: { b: BookingItem }) {
   return (
-    <a href={b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#eef1f7] bg-white p-3 shadow-card transition hover:border-baby-pink">
+    <a href={b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
       <img src={b.image} alt="" className="h-14 w-14 rounded-[10px] object-cover" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate font-black">{b.title}</h4>
@@ -1704,7 +1876,7 @@ function ChildClasses({ child, bookings, recs }: { child: Child; bookings: Booki
   const suggestions = recs.filter((r) => r.activity);
 
   return (
-    <section className="mt-5 rounded-[16px] border border-[#f0d9e6] bg-[#fff7fb] p-5">
+    <section className="mt-5 rounded-[16px] border border-[#FED7E4] bg-[#FFF5F8] p-5">
       <h2 className="text-xl font-black">{child.name}'s classes</h2>
       {bookings.length === 0 ? (
         <p className="mt-3 rounded-[12px] bg-white p-4 text-sm font-semibold text-[#68718f]">
@@ -1783,7 +1955,7 @@ function ChildrenTab({
       {!form && (
         <>
           {kids.length === 0 ? (
-            <p className="mt-4 rounded-[12px] bg-[#fff7fb] p-5 text-center font-semibold text-[#68718f]">
+            <p className="mt-4 rounded-[12px] bg-[#FFF5F8] p-5 text-center font-semibold text-[#68718f]">
               No child profiles yet — add one to get personalised matches and track their classes.
             </p>
           ) : (
@@ -1792,7 +1964,7 @@ function ChildrenTab({
                 const booked = bookings.filter((b) => b.childId === c.id).length;
                 const open = viewId === c.id;
                 return (
-                  <div key={c.id} className={`rounded-[14px] border bg-white p-5 shadow-card transition ${open ? "border-baby-pink ring-1 ring-baby-pink/30" : "border-[#e7ebf6] hover:border-baby-pink"}`}>
+                  <div key={c.id} className={`rounded-[14px] border bg-white p-5 shadow-card transition ${open ? "border-baby-pink ring-1 ring-baby-pink/30" : "border-[#EBE3E5] hover:border-baby-pink"}`}>
                     <button type="button" onClick={() => setViewId(open ? null : c.id)} className="flex w-full items-center gap-4 text-left">
                       <AnimalAvatar seed={c.name} kind="child" className="h-16 w-16 ring-4 ring-white shadow-soft" />
                       <div>
@@ -1827,9 +1999,43 @@ function ChildrenTab({
   );
 }
 
-/** Twelve deterministic avatar options — the generator is seeded by string, so
- *  storing the chosen seed is all we need to reproduce the picture. */
-const AVATAR_SEEDS = Array.from({ length: 12 }, (_, i) => `bb-avatar-${i + 1}`);
+/** Grid of avatar choices. Storing the chosen option's seed is all we need to
+ *  reproduce the picture; `null` means "pick one for me from my name". */
+function AvatarPicker({
+  options,
+  value,
+  onChange,
+  kind,
+  fallbackSeed,
+}: {
+  options: AvatarOption[];
+  value: string | null;
+  onChange: (seed: string | null) => void;
+  kind: "child" | "parent";
+  fallbackSeed?: string;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {[null, ...options.map((o) => o.seed)].map((seed) => {
+        const on = value === seed;
+        const label = seed ? options.find((o) => o.seed === seed)?.label ?? seed : "Choose for me";
+        return (
+          <button
+            key={seed ?? "default"}
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={on}
+            onClick={() => onChange(seed)}
+            className={`rounded-full p-0.5 transition ${on ? "ring-2 ring-baby-pink" : "ring-1 ring-[#F4EFF0] hover:ring-[#FFC1D6]"}`}
+          >
+            <AnimalAvatar seed={seed ?? fallbackSeed} kind={kind} className="h-11 w-11" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Edit an existing parent profile.
  *
@@ -1840,8 +2046,7 @@ const AVATAR_SEEDS = Array.from({ length: 12 }, (_, i) => `bb-avatar-${i + 1}`);
  *  child. Children are managed on their own tab; this page never creates one.
  */
 function EditProfilePage() {
-  const { session, profile, loading, refresh } = useAuth();
-  const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
+  const { session, profile, children: kids, loading, refresh } = useAuth();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -1849,7 +2054,6 @@ function EditProfilePage() {
   const [regions, setRegions] = useState<string[]>([]);
   const [days, setDays] = useState<string[]>([]);
   const [times, setTimes] = useState<string[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
   const [budgetMin, setBudgetMin] = useState<number | null>(null);
   const [budgetMax, setBudgetMax] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
@@ -1868,10 +2072,9 @@ function EditProfilePage() {
 
   useEffect(() => {
     if (!session) return;
-    supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
     supabase
       .from("user_preferences")
-      .select("preferred_days, preferred_times, preferred_regions, interests, budget_min, budget_max")
+      .select("preferred_days, preferred_times, preferred_regions, budget_min, budget_max")
       .eq("user_id", session.user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -1879,7 +2082,6 @@ function EditProfilePage() {
           setDays(data.preferred_days ?? []);
           setTimes(data.preferred_times ?? []);
           setRegions(data.preferred_regions ?? []);
-          setInterests(data.interests ?? []);
           setBudgetMin(data.budget_min);
           setBudgetMax(data.budget_max);
         }
@@ -1889,7 +2091,7 @@ function EditProfilePage() {
 
   const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold";
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
   const weekdayKeys = ["mon", "tue", "wed", "thu", "fri"];
   const weekendKeys = ["sat", "sun"];
   const weekdaysOn = weekdayKeys.every((d) => days.includes(d));
@@ -1911,13 +2113,17 @@ function EditProfilePage() {
         avatar_seed: avatarSeed,
       })
       .eq("id", session.user.id);
+    // QA: "interests show up under the parent section — remove, interests are
+    // associated with the child". They still drive parent-level
+    // recommendations, so we keep the column in step with the children's own
+    // interests rather than asking for them twice.
     const { error: prefErr } = await supabase
       .from("user_preferences")
       .update({
         preferred_days: days as never,
         preferred_times: times as never,
         preferred_regions: regions as never,
-        interests,
+        interests: [...new Set(kids.flatMap((c) => c.interests))],
         budget_min: budgetMin,
         budget_max: budgetMax,
       })
@@ -1948,34 +2154,24 @@ function EditProfilePage() {
         <p className="mt-1 text-sm font-semibold text-[#44507b]">Update your details and what you'd like us to suggest.</p>
 
         {saved && (
-          <p className="mt-4 rounded-[10px] bg-[#eefbf1] px-4 py-3 text-sm font-bold text-green-700">
+          <p className="mt-4 rounded-[10px] bg-[#F1FBEF] px-4 py-3 text-sm font-bold text-green-700">
             Your profile has been updated.
           </p>
         )}
 
-        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h2 className="font-black">Your avatar</h2>
-          <p className="mt-1 text-xs font-semibold text-[#8a93b2]">Pick the one you like — it shows on your account and in class chats.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[null, ...AVATAR_SEEDS].map((seed) => {
-              const on = avatarSeed === seed;
-              return (
-                <button
-                  key={seed ?? "default"}
-                  type="button"
-                  aria-label={seed ? `Avatar option ${seed}` : "Default avatar"}
-                  aria-pressed={on}
-                  onClick={() => setAvatarSeed(seed)}
-                  className={`rounded-full p-0.5 transition ${on ? "ring-2 ring-baby-pink" : "ring-1 ring-[#eceff7] hover:ring-[#f0c3d6]"}`}
-                >
-                  <AnimalAvatar seed={seed ?? fullName} kind="parent" className="h-12 w-12" />
-                </button>
-              );
-            })}
-          </div>
+          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick the one you like — it shows on your account and in class chats.</p>
+          <AvatarPicker
+            options={PARENT_AVATARS}
+            value={avatarSeed}
+            onChange={setAvatarSeed}
+            kind="parent"
+            fallbackSeed={fullName}
+          />
         </section>
 
-        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h2 className="font-black">Your details</h2>
           <div className="mt-3 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
@@ -1984,14 +2180,14 @@ function EditProfilePage() {
               <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} /></div>
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Email</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Email</p>
               <p className="font-black">{session?.user.email}</p>
-              <p className="text-xs font-semibold text-[#8a93b2]">Contact us if you need to change the email on your account.</p>
+              <p className="text-xs font-semibold text-[#6D748D]">Contact us if you need to change the email on your account.</p>
             </div>
           </div>
         </section>
 
-        <section className="mt-4 rounded-[14px] border border-[#eadfd2] bg-white p-5">
+        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h2 className="flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             {REGION_FILTERS.map(([v, l]) => (
@@ -2022,13 +2218,9 @@ function EditProfilePage() {
             })}
           </div>
 
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="spark" className="h-4 w-4 text-baby-pink" /> Interests</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {cats.map((c) => <Chip key={c.slug} on={interests.includes(c.slug)} onClick={() => toggle(interests, c.slug, setInterests)}>{c.name}</Chip>)}
-          </div>
         </section>
 
-        <section className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#eadfd2] bg-[#fff7fb] p-5">
+        <section className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#FEE9D7] bg-[#FFF5F8] p-5">
           <div>
             <h2 className="font-black">Your children</h2>
             <p className="mt-1 text-sm font-semibold text-[#59658d]">Add, edit or remove a child on their own tab — editing your profile never changes them.</p>
@@ -2051,8 +2243,12 @@ function EditProfilePage() {
 
 function ProfilePage() {
   const { session, profile, children, loading, signOut, refresh } = useAuth();
-  const child = children[0];
-  const journey = useJourney(child?.id);
+  // Which child the journey panel and suggestions describe. Defaults to the
+  // first, but every child is listed and selectable — QA: "If I have two
+  // children, only one is showing on the overview".
+  const [journeyChildId, setJourneyChildId] = useState<string | null>(null);
+  const journeyChild = children.find((c) => c.id === journeyChildId) ?? children[0];
+  const journey = useJourney(journeyChild?.id);
   const { data: recsByChild } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
@@ -2299,7 +2495,8 @@ function ProfilePage() {
     );
   }
 
-  const recs = recsByChild[0]?.recs ?? [];
+  const recs =
+    recsByChild.find((r) => r.child.id === journeyChild?.id)?.recs ?? recsByChild[0]?.recs ?? [];
   const parentName = profile?.full_name || "Your family";
   const isPlus = billingPlan?.plan === "plus";
   // A class is "past" once its start time has gone by. Attendance decides
@@ -2318,14 +2515,21 @@ function ProfilePage() {
           left with the content beside them. */}
       <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:items-start">
         <aside className="order-1 lg:col-start-1 lg:row-start-1">
-          <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+          <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <div className="flex items-center gap-3">
               <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
-              <div className="min-w-0"><h2 className="truncate font-black">{parentName}</h2>{child && <p className="truncate text-sm font-semibold text-[#59658d]">{child.name} · {formatChildAge(child.date_of_birth)}</p>}</div>
+              <div className="min-w-0">
+                <h2 className="truncate font-black">{parentName}</h2>
+                {children.map((c) => (
+                  <p key={c.id} className="truncate text-sm font-semibold text-[#59658d]">
+                    {c.name} · {formatChildAge(c.date_of_birth)}
+                  </p>
+                ))}
+              </div>
             </div>
             <a
               href={isPlus ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#ffe9f2] text-[#e5487f]" : "bg-[#fff4ec] text-[#c2571f]"}`}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-[#D9004A]" : "bg-[#FEF4EB] text-[#AE5000]"}`}
             >
               <span className="flex items-center gap-1.5">
                 <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
@@ -2340,7 +2544,7 @@ function ProfilePage() {
                   <a
                     key={key}
                     href={`/profile?tab=${key}`}
-                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#ffe9f2] text-[#e5487f]" : locked ? "text-[#9aa3bd] hover:bg-[#f5f8ff]" : "text-[#5a6484] hover:bg-[#f5f8ff]"}`}
+                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-[#D9004A]" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
                   >
                     <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
@@ -2351,7 +2555,7 @@ function ProfilePage() {
           </div>
         </aside>
         <aside className="order-3 space-y-4 lg:col-start-1 lg:row-start-2">
-          <div className="rounded-[12px] border border-[#f0e2c6] bg-[#fff9e9] p-5 shadow-card">
+          <div className="rounded-[12px] border border-[#FEF2D7] bg-[#FEF9EB] p-5 shadow-card">
             <h3 className="text-lg font-black">Invite a friend</h3>
             <p className="mt-3 text-sm font-semibold leading-6">Get $10 credits when your friend makes their first booking!</p>
             <img src={`${import.meta.env.BASE_URL}assets/crops/invite-gift.png`} alt="" className="mx-auto my-3 h-20 object-contain" />
@@ -2372,50 +2576,130 @@ function ProfilePage() {
               Invite friends
             </Button>
           </div>
-          <div className="rounded-[12px] bg-[#f4f8ff] p-5">
+          <div className="rounded-[12px] bg-[#EDF7FD] p-5">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#FA5D93]">Contact support →</a>
+            <a href="/contact" className="mt-4 block font-black text-[#D9004A]">Contact support →</a>
           </div>
         </aside>
         <section className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           {tab === "overview" && (
           <>
-          <div className="grid items-center gap-5 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card lg:grid-cols-[120px_1fr_235px]">
-            <AnimalAvatar seed={child?.name} kind="child" className="h-24 w-24 ring-4 ring-white shadow-soft" />
+          {/* QA: "If I have two children, only one is showing on the overview".
+              Every child gets their own card; the journey panel follows the
+              child whose card is selected. */}
+          <div className="grid items-start gap-5 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card lg:grid-cols-[1fr_235px]">
             <div>
-              <h1 className="text-[30px] font-black">{child?.name ?? "Your child"}</h1>
-              {child && <p className="mt-1.5 text-base font-semibold">{formatChildAge(child.date_of_birth)}</p>}
-              {child && child.interests.length > 0 && (
-                <>
-                  <p className="mt-4 flex items-center gap-2 font-bold"><Icon name="heart" className="h-4 w-4 text-[#FA5D93]" /> Interests</p>
-                  <p className="mt-2 max-w-[200px] text-sm font-semibold capitalize leading-6">{child.interests.map((i) => i.replace(/-/g, " ")).join(", ")}</p>
-                </>
+              {children.length === 0 ? (
+                <div className="flex items-center gap-5">
+                  <AnimalAvatar kind="child" className="h-24 w-24 ring-4 ring-white shadow-soft" />
+                  <div>
+                    <h1 className="text-[30px] font-black">Your child</h1>
+                    <p className="mt-1.5 text-sm font-semibold text-[#68718f]">
+                      Add a child to get personalised matches. <a href="/profile?tab=children" className="font-black text-baby-pink">Add a child →</a>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {children.map((c) => {
+                    const on = c.id === journeyChild?.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setJourneyChildId(c.id)}
+                        aria-pressed={on}
+                        className={`flex w-full items-center gap-5 rounded-[12px] border p-3 text-left transition ${
+                          children.length > 1
+                            ? on
+                              ? "border-baby-pink bg-[#FFF5F8] ring-1 ring-baby-pink/30"
+                              : "border-[#F4EFF0] hover:border-baby-pink"
+                            : "border-transparent"
+                        }`}
+                      >
+                        <AnimalAvatar seed={c.avatar_seed ?? c.name} kind="child" className="h-20 w-20 shrink-0 ring-4 ring-white shadow-soft" />
+                        <div className="min-w-0">
+                          <h1 className="text-[26px] font-black leading-tight">{c.name}</h1>
+                          <p className="mt-1 text-base font-semibold">{formatChildAge(c.date_of_birth)}</p>
+                          {c.interests.length > 0 && (
+                            <p className="mt-2 text-sm font-semibold capitalize leading-6 text-[#4a5685]">
+                              <Icon name="heart" className="mr-1 inline h-3.5 w-3.5 text-[#D9004A]" />
+                              {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-              <Button href="/edit-profile" variant="outline" className="mt-6"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button href="/edit-profile" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
+                {children.length > 0 && (
+                  <Button href="/profile?tab=children" variant="outline"><Icon name="people" className="h-4 w-4" /> Manage children</Button>
+                )}
+              </div>
             </div>
-            <div className="rounded-[10px] bg-[#fff0f5] p-5">
-              <h2 className="mb-4 text-lg font-black">{child ? `${child.name}'s journey` : "Journey"}</h2>
+            <div className="rounded-[10px] bg-[#FEEBF2] p-5">
+              <h2 className="mb-4 text-lg font-black">{journeyChild ? `${journeyChild.name}'s journey` : "Journey"}</h2>
               {[
                 [`${journey?.classes_attended ?? 0} activities attended`, "calendar"],
                 [`${journey?.venues_explored ?? 0} venues explored`, "pin"],
                 [`${journey?.hours_of_learning ?? 0} hours completed`, "clock"],
               ].map(([item, icon]) => (
-                <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#0d62e8]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
+                <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#0E6FAE]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
               ))}
             </div>
           </div>
 
+          {/* Saved activities is a Plus feature, so on Free it shows as a
+              locked teaser rather than real content — QA: "Saved activities
+              shouldn't be showing under overview for free subscription". */}
           <section className="mt-6">
-            <SectionTitle action={<a href="/profile?tab=favorites" className="font-bold text-[#FA5D93]">View all →</a>}>Saved activities</SectionTitle>
-            <div className="grid gap-4 md:grid-cols-3">
-              {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
-              {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
-            </div>
+            <SectionTitle
+              action={
+                isPlus ? (
+                  <a href="/profile?tab=favorites" className="font-bold text-[#D9004A]">View all →</a>
+                ) : (
+                  <a href="/pricing" className="flex items-center gap-1 font-bold text-[#D9004A]">
+                    <Icon name="lock" className="h-3.5 w-3.5" /> Plus feature
+                  </a>
+                )
+              }
+            >
+              Saved activities
+            </SectionTitle>
+            {isPlus ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
+                {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
+              </div>
+            ) : (
+              <div className="relative overflow-hidden rounded-[14px] border border-dashed border-[#FFC1D6] bg-[#FFF5F8]">
+                <div aria-hidden="true" className="pointer-events-none grid select-none gap-4 p-4 opacity-40 blur-[3px] md:grid-cols-3">
+                  {(favs.length ? favs.slice(0, 3) : PLACEHOLDER_SAVED).map((activity) => (
+                    <ActivityCard key={activity.id} activity={activity} />
+                  ))}
+                </div>
+                <div className="absolute inset-0 grid place-items-center bg-white/55 p-6 text-center">
+                  <div>
+                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
+                      <Icon name="lock" className="h-6 w-6" />
+                    </span>
+                    <p className="mt-3 font-black">Saving activities is a Plus feature</p>
+                    <p className="mx-auto mt-1 max-w-[360px] text-sm font-semibold text-[#68718f]">
+                      Keep a shortlist of the classes you like and come back to them any time.
+                    </p>
+                    <Button href="/pricing" size="sm" className="mt-3"><Icon name="star" className="h-4 w-4" /> Upgrade to Plus</Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#FA5D93]">See all matches →</a>}>Suggested activities</SectionTitle>
+            <SectionTitle action={<a href="/matches" className="font-bold text-[#D9004A]">See all matches →</a>}>Suggested activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -2473,24 +2757,24 @@ function ProfilePage() {
               ) : (
                 <div className="mt-4 space-y-3">
                   {packages.map((p) => (
-                    <div key={p.id} className={`flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""}`}>
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
+                    <div key={p.id} className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""}`}>
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
                         {p.expiresAt && (
-                          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#9aa4c2]"}`}>
+                          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#6D748A]"}`}>
                             {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
                           </p>
                         )}
                       </div>
                       <div className="text-right">
                         {p.status === "expired" ? (
-                          <span className="rounded-full bg-[#f1efe8] px-3 py-1 text-xs font-bold text-[#7a725c]">Expired</span>
+                          <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#936700]">Expired</span>
                         ) : (
                           <>
-                            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#9aa4c2]">/{p.total}</span></p>
-                            <p className="text-xs font-bold text-[#9aa4c2]">credits left</p>
+                            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
+                            <p className="text-xs font-bold text-[#6D748A]">credits left</p>
                           </>
                         )}
                       </div>
@@ -2516,8 +2800,8 @@ function ProfilePage() {
               ) : (
                 <div className="mt-4 space-y-3">
                   {tokens.map((t) => (
-                    <div key={t.id} className="flex items-center gap-4 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#fff4d6] text-[#8a6d1a]"><Icon name="gift" className="h-6 w-6" /></span>
+                    <div key={t.id} className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#936700]"><Icon name="gift" className="h-6 w-6" /></span>
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-black">{t.provider}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">
@@ -2566,8 +2850,8 @@ function ProfilePage() {
                   <h2 className="mb-3 text-xl font-black">Saved providers</h2>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {savedProviders.map((p) => (
-                      <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
-                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink"><Icon name="store" className="h-5 w-5" /></span>
+                      <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-5 w-5" /></span>
                         <h3 className="truncate font-black">{p.name}</h3>
                       </div>
                     ))}
@@ -2585,14 +2869,14 @@ function ProfilePage() {
               ) : (
                 <div className="space-y-3">
                   {reviews.map((r) => (
-                    <div key={r.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-4 shadow-card">
+                    <div key={r.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
                       <div className="flex items-center justify-between">
                         <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-baby-pink">{r.title}</a>
-                        <span className="flex gap-0.5 text-[#ffb71b]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
+                        <span className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
                       </div>
                       {r.comment && <p className="mt-1.5 font-semibold text-[#34406f]">{r.comment}</p>}
                       {r.providerResponse && (
-                        <div className="mt-2 rounded-[10px] bg-[#fff7fb] p-3">
+                        <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
                           <p className="text-xs font-black text-baby-pink">Response from the provider</p>
                           <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.providerResponse}</p>
                         </div>
@@ -2612,13 +2896,13 @@ function ProfilePage() {
               ) : (
                 <div className="space-y-2.5">
                   {notifications.map((n) => (
-                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#e7ebf6] bg-white" : "border-[#cfe2ff] bg-[#fff4f8]"}`}>
+                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#EBE3E5] bg-white" : "border-[#DAEEFB] bg-[#FFF5F8]"}`}>
                       <div className="flex items-start gap-2">
                         {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-pink" />}
                         <div>
                           <p className="font-black">{n.title}</p>
                           {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
-                          <p className="mt-1 text-xs font-semibold text-[#9aa4c2]">{sgDateTime(n.created_at)}</p>
+                          <p className="mt-1 text-xs font-semibold text-[#6D748A]">{sgDateTime(n.created_at)}</p>
                         </div>
                       </div>
                     </div>
@@ -2639,18 +2923,18 @@ function ProfilePage() {
               )}
 
               {/* Plan & Billing */}
-              <div className="mb-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+              <div className="mb-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Plan</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Plan</p>
                     <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
                       <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
                       {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
                       {billingPlan?.status === "trialing" && (
-                        <span className="rounded-full bg-[#ffe9f2] px-2 py-0.5 text-xs font-bold text-baby-pink">Free trial</span>
+                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-baby-pink">Free trial</span>
                       )}
                       {billingPlan?.cancel_at_period_end && (
-                        <span className="rounded-full bg-[#fff4e5] px-2 py-0.5 text-xs font-bold text-[#8a5a00]">Cancels at period end</span>
+                        <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#936700]">Cancels at period end</span>
                       )}
                     </p>
                     {billingPlan?.plan === "plus" && billingPlan.current_period_end && (
@@ -2669,7 +2953,7 @@ function ProfilePage() {
                   )}
                 </div>
                 {billingPlan?.terms_accepted_at && (
-                  <p className="mt-4 border-t border-[#eef1f7] pt-3 text-xs font-semibold text-[#9aa4c2]">
+                  <p className="mt-4 border-t border-[#F4EFF0] pt-3 text-xs font-semibold text-[#6D748A]">
                     <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-green-500" />
                     Terms &amp; Conditions accepted on {sgDay(billingPlan.terms_accepted_at)}
                     {billingPlan.terms_version ? ` (v${billingPlan.terms_version})` : ""} ·{" "}
@@ -2678,16 +2962,16 @@ function ProfilePage() {
                 )}
               </div>
 
-              <div className="space-y-4 rounded-[14px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+              <div className="space-y-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Name</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Name</p>
                   <p className="font-black">{profile?.full_name || "—"}</p>
                 </div>
-                <div className="border-t border-[#eef1f7] pt-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#9aa4c2]">Email</p>
+                <div className="border-t border-[#F4EFF0] pt-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Email</p>
                   <p className="font-black">{session?.user.email || "—"}</p>
                 </div>
-                <div className="flex flex-wrap gap-3 border-t border-[#eef1f7] pt-4">
+                <div className="flex flex-wrap gap-3 border-t border-[#F4EFF0] pt-4">
                   <Button href="/edit-profile" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
                   <Button href="/forgot-password" variant="outline"><Icon name="lock" className="h-4 w-4" /> Change password</Button>
                   <Button type="button" variant="soft" onClick={() => signOut()}>Sign out</Button>
@@ -2737,12 +3021,12 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-4 rounded-[11px] border border-[#ffd2de] px-5 py-2.5 text-sm font-extrabold text-[#d63964] hover:bg-[#fff5f8]"
+          className="mt-4 rounded-[11px] border border-[#ffd2de] px-5 py-2.5 text-sm font-extrabold text-[#BE0041] hover:bg-[#FFF5F8]"
         >
           Delete account
         </button>
       ) : (
-        <div className="mt-4 rounded-[12px] bg-[#fff5f8] p-4">
+        <div className="mt-4 rounded-[12px] bg-[#FFF5F8] p-4">
           {/* The input is `block` so it sits under the instruction rather than
               running on beside it, and lines up with the buttons below. */}
           <label htmlFor="delete-confirm" className="block text-sm font-black text-[#b00040]">
@@ -2762,7 +3046,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
               disabled={confirm !== "DELETE" || busy}
               onClick={remove}
               className={`rounded-[11px] px-5 py-2.5 text-sm font-extrabold text-white ${
-                confirm === "DELETE" && !busy ? "bg-[#d63964] hover:brightness-105" : "cursor-not-allowed bg-[#e6a9bd]"
+                confirm === "DELETE" && !busy ? "bg-[#BE0041] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
               }`}
             >
               {busy ? "Deleting…" : "Permanently delete"}
@@ -2828,7 +3112,7 @@ function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChang
   function Row({ b }: { b: BookingItem }) {
     const state = statusOf(b);
     return (
-      <div className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card">
+      <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card">
         <div className="flex items-center gap-4">
           <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
@@ -2836,17 +3120,17 @@ function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChang
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
           {state && (
-            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#eefbf1] text-green-700" : "bg-[#f1efe8] text-[#7a725c]"}`}>
+            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#F1FBEF] text-green-700" : "bg-[#FEF9EB] text-[#936700]"}`}>
               {state === "present" ? "Attended" : "Not attended"}
             </span>
           )}
         </div>
-        <div className="mt-2 flex justify-end gap-2 border-t border-[#f2f4fa] pt-2">
+        <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
           <button
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "present")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#eefbf1] text-green-700" : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#F1FBEF] text-green-700" : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"}`}
           >
             We went
           </button>
@@ -2854,7 +3138,7 @@ function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChang
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "absent")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#e3e7f2] bg-[#f5f6fa] text-[#5a6484]" : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#EBE3E5] bg-[#FAF7F7] text-[#5a6484]" : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"}`}
           >
             We missed it
           </button>
@@ -2882,13 +3166,13 @@ function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChang
           <section>
             <h2 className="mb-2 text-sm font-black text-[#46527d]">Attended ({attended.length})</h2>
             {attended.length === 0
-              ? <p className="rounded-[12px] bg-[#fff7fb] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
+              ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
               : <div className="space-y-3">{attended.map((b) => <Row key={b.id} b={b} />)}</div>}
           </section>
           <section>
             <h2 className="mb-2 text-sm font-black text-[#46527d]">Not attended ({notAttended.length})</h2>
             {notAttended.length === 0
-              ? <p className="rounded-[12px] bg-[#fff7fb] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
+              ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
               : <div className="space-y-3">{notAttended.map((b) => <Row key={b.id} b={b} />)}</div>}
           </section>
         </div>
@@ -2973,7 +3257,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
                   )
                 }
-                className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
+                className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
                 title={`Export all ${exportable.length} classes to your calendar`}
               >
                 <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
@@ -2991,7 +3275,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     }))
                   )
                 }
-                className="flex items-center gap-1.5 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8]"
+                className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
                 title="Open a printable schedule you can save as PDF"
               >
                 <Icon name="open" className="h-3.5 w-3.5" /> Download PDF schedule
@@ -3000,7 +3284,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
           ) : (
             <a
               href="/pricing"
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#e3e7f2] bg-[#f5f6fa] px-3 py-1.5 text-xs font-bold text-[#9aa3bd] hover:border-baby-pink hover:text-[#FA5D93]"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-[#D9004A]"
               title="Calendar sync and PDF export are Plus features"
             >
               <Icon name="lock" className="h-3.5 w-3.5" /> Calendar &amp; PDF export — Plus
@@ -3012,7 +3296,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         const cancelWhy = cancelBlockReason(b);
         const reschedWhy = reschedBlockReason(b);
         return (
-          <div key={b.id} className="rounded-[12px] border border-[#e7ebf6] bg-white p-3 shadow-card transition hover:border-baby-pink">
+          <div key={b.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink">
             <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
               <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
               <div className="min-w-0 flex-1">
@@ -3027,7 +3311,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     e.stopPropagation();
                     downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
                   }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#ecdfe6] px-3 py-1.5 text-xs font-bold text-[#FA5D93] hover:bg-[#fff4f8] sm:flex"
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8] sm:flex"
                   title="Add to calendar"
                 >
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
@@ -3036,15 +3320,15 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
             </a>
             {upcoming(b) && (
-              <div className="mt-2 flex justify-end gap-2 border-t border-[#f2f4fa] pt-2">
+              <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
                 <button
                   type="button"
                   disabled={busyId === b.id}
                   onClick={() => (reschedWhy ? setNotice(reschedWhy) : openReschedule(b))}
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     reschedWhy
-                      ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
-                      : "border border-[#ecdfe6] text-[#FA5D93] hover:bg-[#fff4f8]"
+                      ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
+                      : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"
                   }`}
                   title={reschedWhy ?? "Move this booking to another session"}
                 >
@@ -3056,8 +3340,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   onClick={() => (cancelWhy ? setNotice(cancelWhy) : doCancel(b))}
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     cancelWhy
-                      ? "cursor-not-allowed border border-[#e3e7f2] bg-[#f5f6fa] text-[#9aa3bd]"
-                      : "border border-[#ffd2de] text-[#d63964] hover:bg-[#fff5f8]"
+                      ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
+                      : "border border-[#ffd2de] text-[#BE0041] hover:bg-[#FFF5F8]"
                   }`}
                   title={cancelWhy ?? "Cancel this booking"}
                 >
@@ -3092,13 +3376,13 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   key={s.id}
                   type="button"
                   onClick={() => doReschedule(s.id)}
-                  className="flex w-full items-center justify-between rounded-[10px] border border-[#e7ebf6] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#fff4f8]"
+                  className="flex w-full items-center justify-between rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#FFF5F8]"
                 >
                   {sgDateTime(s.starts_at)}
-                  <Icon name="calendar" className="h-4 w-4 text-[#FA5D93]" />
+                  <Icon name="calendar" className="h-4 w-4 text-[#D9004A]" />
                 </button>
               ))}
-              {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#8a93b2]">No other upcoming sessions for this class.</p>}
+              {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#6D748D]">No other upcoming sessions for this class.</p>}
             </div>
             <Button type="button" variant="outline" className="mt-4 w-full" onClick={() => setReschedFor(null)}>Close</Button>
           </div>
@@ -3110,8 +3394,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
 
 function EmptyPanel({ icon, copy, cta, href }: { icon: string; copy: string; cta?: string; href?: string }) {
   return (
-    <div className="mt-4 rounded-[14px] border border-dashed border-[#dbe3f4] bg-white p-10 text-center">
-      <Icon name={icon} className="mx-auto h-8 w-8 text-[#b9c3de]" />
+    <div className="mt-4 rounded-[14px] border border-dashed border-[#DCD2D5] bg-white p-10 text-center">
+      <Icon name={icon} className="mx-auto h-8 w-8 text-[#C9BAC2]" />
       <p className="mt-3 font-semibold text-[#68718f]">{copy}</p>
       {cta && href && <Button href={href} variant="outline" className="mt-4">{cta}</Button>}
     </div>
@@ -3194,7 +3478,7 @@ function ContactForm() {
     if (session?.user.email) setEmail(session.user.email);
   }, [profile, session]);
 
-  const input = "h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 text-sm font-semibold focus:border-baby-pink focus:outline-none";
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold focus:border-baby-pink focus:outline-none";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -3221,8 +3505,8 @@ function ContactForm() {
 
   if (sent) {
     return (
-      <div className="rounded-[18px] border border-[#e7ebf6] bg-white p-8 text-center shadow-card">
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#eafaf0] text-[#28a765]"><Icon name="check" className="h-8 w-8" /></span>
+      <div className="rounded-[18px] border border-[#EBE3E5] bg-white p-8 text-center shadow-card">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#327D20]"><Icon name="check" className="h-8 w-8" /></span>
         <h2 className="mt-4 text-2xl font-black">Message sent</h2>
         <p className="mt-2 font-semibold text-[#59658d]">Thanks {name.split(" ")[0]} — we endeavour to reply within 3 days.</p>
       </div>
@@ -3230,7 +3514,7 @@ function ContactForm() {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card sm:p-8">
+    <form onSubmit={submit} className="rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card sm:p-8">
       <h2 className="text-[28px] font-black leading-tight text-baby-orange">Still don't have the answer you are looking for?</h2>
       <h3 className="mt-2 text-2xl font-black">Send us a message</h3>
       <p className="mt-1 font-semibold text-[#68718f]">Fill this in and it comes straight to our inbox.</p>
@@ -3245,7 +3529,7 @@ function ContactForm() {
         </div>
       </div>
       <div className="mt-3">
-        <label className="mb-1 block text-sm font-black">Subject <span className="font-semibold text-[#8a93b2]">(optional)</span></label>
+        <label className="mb-1 block text-sm font-black">Subject <span className="font-semibold text-[#6D748D]">(optional)</span></label>
         <input className={input} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="What's this about?" />
       </div>
       <div className="mt-3">
@@ -3255,7 +3539,7 @@ function ContactForm() {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="How can we help?"
-          className="w-full rounded-[10px] border border-[#ecdfe6] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
+          className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
         />
       </div>
       {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
@@ -3309,9 +3593,9 @@ function ContactPage() {
               { icon: "mail", title: "Email us", tag: "", copy: "For more complex enquiries, send us an e-mail and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
               { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team if urgent.", label: "Call us", variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
-              <article key={c.title} className="rounded-[16px] border border-[#ecdfe6] bg-white/70 p-5 text-center shadow-card">
-                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#fff0f5] to-[#ffe9f2] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
-                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#ffe4ef] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
+              <article key={c.title} className="rounded-[16px] border border-[#FED7E4] bg-white/70 p-5 text-center shadow-card">
+                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
+                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
                 <Button variant={c.variant === "pink" ? "pink" : "outline"} className="w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
               </article>
@@ -3325,9 +3609,9 @@ function ContactPage() {
             {FAQ_GROUPS.map(({ group, items }) => (
               <div key={group}>
                 <h3 className="mb-2 px-1 text-lg font-black text-baby-lilac">{group}</h3>
-                <div className="overflow-hidden rounded-[16px] border border-[#e8ecf6] bg-white">
+                <div className="overflow-hidden rounded-[16px] border border-[#EBE3E5] bg-white">
                   {items.map(([question, answer]) => (
-                    <details key={question} className="border-b border-[#eef1f7] px-6 py-4 last:border-b-0">
+                    <details key={question} className="border-b border-[#F4EFF0] px-6 py-4 last:border-b-0">
                       <summary className="cursor-pointer list-none font-bold">Q&nbsp;&nbsp; {question} <span className="float-right">⌄</span></summary>
                       <p className="mt-3 text-sm font-semibold leading-6 text-[#59658b]">{answer}</p>
                     </details>
@@ -3438,7 +3722,7 @@ function TermsPage() {
     <PageShell active="/terms" auth="public">
       <main className="mx-auto max-w-[820px] px-6 py-10">
         <h1 className="text-[36px] font-black leading-tight">Terms &amp; Conditions</h1>
-        <p className="mt-2 text-sm font-bold text-[#9aa4c2]">Last updated: July 2026</p>
+        <p className="mt-2 text-sm font-bold text-[#6D748A]">Last updated: July 2026</p>
         <p className="mt-4 font-semibold leading-7 text-[#59658d]">
           These Terms cover your use of BabyBrain, including bookings, the BabyBrain Plus
           subscription, privacy, and the disclosures we're required to make. Please read them.
@@ -3530,7 +3814,7 @@ function PricingPage() {
           <p className="mt-2 text-lg font-semibold text-[#68718f]">
             Discover, book and enjoy the best activities for your little ones.
           </p>
-          <div className="mx-auto mt-5 grid h-11 max-w-[360px] grid-cols-2 rounded-full border border-[#e2e7f4] bg-white p-1 font-black">
+          <div className="mx-auto mt-5 grid h-11 max-w-[360px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 font-black">
             <button
               type="button"
               onClick={() => setBilling("monthly")}
@@ -3549,15 +3833,15 @@ function PricingPage() {
         </section>
 
         {error && (
-          <p className="mx-auto mt-5 max-w-[560px] rounded-[10px] bg-[#fff4e5] px-4 py-3 text-center text-sm font-bold text-[#8a5a00]">
+          <p className="mx-auto mt-5 max-w-[560px] rounded-[10px] bg-[#FEF4EB] px-4 py-3 text-center text-sm font-bold text-[#936700]">
             {error}
           </p>
         )}
 
         <section className="mt-7 grid gap-5 md:grid-cols-2">
           {/* Free */}
-          <article className="relative rounded-[18px] border border-[#e7ebf6] bg-white p-6 shadow-card">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#ffe9f2] text-baby-pink">
+          <article className="relative rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
               <Icon name="heart" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
@@ -3565,7 +3849,7 @@ function PricingPage() {
               <span className="text-lg font-black text-[#68718f]">SGD </span>
               <span className="text-[44px] font-black text-baby-lilac">0</span>
             </p>
-            <div className="my-5 border-t border-[#eef1f7]" />
+            <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
               {freeItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
@@ -3586,7 +3870,7 @@ function PricingPage() {
             <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-pink px-8 py-2 text-sm font-black text-white">
               MOST POPULAR
             </span>
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f4ecff] text-baby-lilac">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F4F0FA] text-baby-lilac">
               <Icon name="star" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Plus</h2>
@@ -3595,8 +3879,8 @@ function PricingPage() {
               <span className="text-[44px] font-black text-baby-lilac">{plusPrice}</span>
               <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
             </p>
-            <p className="text-center text-xs font-bold text-[#9aa4c2]">+ GST</p>
-            <div className="my-5 border-t border-[#eef1f7]" />
+            <p className="text-center text-xs font-bold text-[#6D748A]">+ GST</p>
+            <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
               {plusItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
@@ -3607,7 +3891,7 @@ function PricingPage() {
                 </p>
               ))}
             </div>
-            <p className="mt-5 rounded-[10px] bg-[#fff0f5] px-4 py-3 text-center text-sm font-black text-baby-pink">
+            <p className="mt-5 rounded-[10px] bg-[#FEEBF2] px-4 py-3 text-center text-sm font-black text-baby-pink">
               First month free — cancel anytime
             </p>
             <Button
@@ -3623,7 +3907,7 @@ function PricingPage() {
                   ? "Manage subscription"
                   : "Upgrade to Plus"}
             </Button>
-            <p className="mt-3 text-center text-xs font-semibold text-[#9aa4c2]">
+            <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
               Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
               {" "}By subscribing you agree to our{" "}
               <a href="/terms" className="text-baby-pink underline">Terms &amp; Conditions</a>.
@@ -3631,7 +3915,7 @@ function PricingPage() {
           </article>
         </section>
 
-        <section className="mt-5 grid gap-4 rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card md:grid-cols-3">
+        <section className="mt-5 grid gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card md:grid-cols-3">
           {[
             ["store", "Corporate discounts", "available for bulk packages"],
             ["calendar", "Monthly or annual billing", "Choose the plan that works for you"],
@@ -3723,13 +4007,13 @@ function PackageOption({
         }
       }}
       className={`flex cursor-pointer items-center gap-4 rounded-[12px] border-2 p-4 transition ${
-        selected ? "border-baby-blue bg-[#f2f8ff]" : "border-[#dfe5f2] bg-white hover:border-[#bcd9f8]"
+        selected ? "border-baby-blue bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"
       }`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-black">{title}</span>
-          {badge && <span className="rounded-full bg-[#fff4d6] px-2 py-0.5 text-[10px] font-bold text-[#8a6d1a]">{badge}</span>}
+          {badge && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#936700]">{badge}</span>}
         </div>
         <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
       </div>
@@ -4008,8 +4292,8 @@ function BookingPage() {
     <PageShell active="/book">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
         <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-baby-pink">Book</span></div>
-        <section className="rounded-[18px] border border-[#e7ebf6] bg-white shadow-card">
-          <header className="grid items-center gap-5 border-b border-[#eef1f7] p-6 md:grid-cols-[90px_1fr_240px]">
+        <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-card">
+          <header className="grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
             <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
             <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
@@ -4029,16 +4313,16 @@ function BookingPage() {
                 </div>
               </div>
 
-              <div className="mt-6 space-y-6 border-t border-[#eef1f7] pt-5">
+              <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
                 {sessions.length === 0 ? (
-                  <p className="rounded-[12px] bg-[#fff7fb] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
+                  <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
                 ) : (
                   <>
                     <section>
                       <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
+                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4046,7 +4330,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#7a86a8]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4059,7 +4343,7 @@ function BookingPage() {
                               key={k.id}
                               type="button"
                               onClick={() => setChildId(k.id)}
-                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#fff0f5] text-baby-pink" : "border-[#dfe5f2] bg-white"}`}
+                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}
                             >
                               <AnimalAvatar seed={k.name} kind="child" className="h-6 w-6" /> {k.name}
                             </button>
@@ -4069,7 +4353,7 @@ function BookingPage() {
                     )}
                     <section>
                       <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
-                      <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#dfe5f2] text-xl font-black">
+                      <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
                         <button type="button" onClick={() => setCount((c) => Math.min(6, c + 1))} className="h-12 w-12">+</button>
@@ -4109,7 +4393,7 @@ function BookingPage() {
                           ))}
                         </div>
                         {restrictedCredit && !packageCredit && (
-                          <p className="mt-3 rounded-[10px] bg-[#f4ecff] p-3 text-xs font-bold text-[#7a5cc8]">
+                          <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#7D4AC5]">
                             You have package credits with this provider, but they can't be used for this{" "}
                             {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
                           </p>
@@ -4121,30 +4405,30 @@ function BookingPage() {
               </div>
             </section>
 
-            <aside className="rounded-[16px] border border-[#e7ebf6] bg-white p-5 shadow-card">
+            <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
-                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#fff0f5] px-3 py-1 text-xs font-bold text-baby-pink">{activity.category_name}</span>}</div>
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-pink">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
                 {activity.address && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {activity.address}</p>}
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
-              <div className="my-5 border-t border-[#eef1f7]" />
+              <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
-              <div className="mt-5 rounded-[12px] bg-[#fff7fb] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-pink" /> {item}</p>)}</div>
+              <div className="mt-5 rounded-[12px] bg-[#FFF5F8] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-pink" /> {item}</p>)}</div>
             </aside>
           </div>
         </section>
-        <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
+        <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
-            <p className="mb-3 rounded-[10px] bg-[#fff4d6] px-4 py-2.5 text-sm font-bold text-[#8a6d1a]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
+            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#936700]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
           )}
           {activity?.bookings_paused ? (
             /* 1.1: the vendor has paused bookings for this class */
@@ -4157,7 +4441,7 @@ function BookingPage() {
             </Button>
           )}
           {total != null && total > 0 && !redeemToken && (
-            <p className="mt-2 text-center text-xs font-semibold text-[#8a93b2] md:col-span-2">Secure and encrypted payment via Stripe</p>
+            <p className="mt-2 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">Secure and encrypted payment via Stripe</p>
           )}
         </section>
       </main>
@@ -4188,33 +4472,33 @@ function BookedPage() {
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
         <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-baby-pink">Book</span></div>
-        <section className="grid items-center gap-5 rounded-[18px] border border-[#e7ebf6] bg-gradient-to-r from-[#fff0f7] to-white p-8 md:grid-cols-[120px_1fr_220px]">
+        <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
         </section>
         <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
           <div className="space-y-5">
-            <article className="rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+            <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Class details</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
                 <img src={`${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`} alt="" className="h-52 w-full rounded-[12px] object-cover" />
                 <div><h3 className="text-xl font-black">{title}</h3>{when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}</div>
               </div>
-              <div className="mt-5 border-t border-[#eef1f7] pt-5"><h3 className="font-black">About this class</h3><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">A fun and interactive music class that helps little ones explore rhythms, sounds, and movement while boosting coordination, listening skills and confidence.</p></div>
+              <div className="mt-5 border-t border-[#F4EFF0] pt-5"><h3 className="font-black">About this class</h3><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">A fun and interactive music class that helps little ones explore rhythms, sounds, and movement while boosting coordination, listening skills and confidence.</p></div>
             </article>
-            <article className="rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+            <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#fff0f7] text-baby-pink"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
               </div>
             </article>
           </div>
           <aside className="space-y-5">
-            <article className="rounded-[16px] border border-[#e7ebf6] bg-white p-6 shadow-card">
+            <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-amber-600" : "text-green-600"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
-              <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#eefbf1] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
+              <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#F1FBEF] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
                 <Button
@@ -4227,7 +4511,7 @@ function BookedPage() {
                 </Button>
               )}
             </article>
-            <article className="rounded-[16px] bg-[#f4ecff] p-6">
+            <article className="rounded-[16px] bg-[#F4F0FA] p-6">
               <h2 className="text-xl font-black text-baby-lilac">Need help?</h2>
               <p className="mt-3 font-semibold">Questions about this class? Message the provider directly.</p>
               <Button
@@ -4252,31 +4536,31 @@ function BookedPage() {
 // Confetti scatter for the About page, matching the design's placement.
 // Colours come from the brand palette.
 const ABOUT_HERO_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
-  { kind: "heart", top: "4%", left: "47%", color: "#9568DF", size: 30 },
+  { kind: "heart", top: "4%", left: "47%", color: "#7D4AC5", size: 30 },
   { kind: "dot", top: "17%", left: "44%", color: "#A8E59A", size: 18 },
-  { kind: "dot", top: "35%", left: "45%", color: "#FA5D93", size: 16 },
+  { kind: "dot", top: "35%", left: "45%", color: "#D9004A", size: 16 },
   { kind: "star", top: "50%", left: "44%", color: "#FFB77A", size: 26 },
   // Kept in the column gap and the strip above the photo so nothing lands on
   // top of the image itself.
-  { kind: "dash", top: "0%", right: "16%", color: "#FA5D93", size: 26, rotate: -30 },
-  { kind: "dash", top: "3%", right: "12%", color: "#FA5D93", size: 22, rotate: -30 },
+  { kind: "dash", top: "0%", right: "16%", color: "#D9004A", size: 26, rotate: -30 },
+  { kind: "dash", top: "3%", right: "12%", color: "#D9004A", size: 22, rotate: -30 },
   { kind: "star", top: "0%", right: "4%", color: "#FFD77A", size: 28 },
   { kind: "dot", top: "72%", left: "45%", color: "#C7B1E6", size: 16 },
-  { kind: "heart", top: "85%", left: "43%", color: "#FA5D93", size: 30 },
+  { kind: "heart", top: "85%", left: "43%", color: "#D9004A", size: 30 },
   { kind: "dot", top: "94%", right: "6%", color: "#A8E59A", size: 18 },
 ];
 
 const ABOUT_FOUNDER_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
-  { kind: "heart", top: "8%", left: "3%", color: "#FA5D93", size: 30 },
+  { kind: "heart", top: "8%", left: "3%", color: "#D9004A", size: 30 },
   { kind: "star", top: "32%", left: "1%", color: "#FFD77A", size: 28 },
   { kind: "dash", top: "62%", left: "4%", color: "#C7B1E6", size: 24, rotate: -35 },
   { kind: "dash", top: "72%", left: "1%", color: "#C7B1E6", size: 24, rotate: -35 },
   // The gap between the photo (ends ~33.5%) and the copy (starts ~37.3%) is
   // narrow, so these sit at 34% at a size that can't reach the text.
   { kind: "dash", top: "22%", left: "34%", color: "#A7D8F8", size: 20, rotate: -40 },
-  { kind: "dash", top: "29%", left: "34%", color: "#FA5D93", size: 20, rotate: -40 },
+  { kind: "dash", top: "29%", left: "34%", color: "#D9004A", size: 20, rotate: -40 },
   { kind: "dash", top: "48%", left: "34%", color: "#A8E59A", size: 20, rotate: -15 },
-  { kind: "heart", top: "6%", right: "3%", color: "#FA5D93", size: 30 },
+  { kind: "heart", top: "6%", right: "3%", color: "#D9004A", size: 30 },
   { kind: "star", top: "30%", right: "2%", color: "#FFD77A", size: 28 },
   { kind: "dot", top: "58%", right: "1%", color: "#A7D8F8", size: 16 },
   { kind: "dot", top: "80%", right: "5%", color: "#C7B1E6", size: 16 },
@@ -4305,7 +4589,7 @@ function AboutPage() {
           />
         </section>
 
-        <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#fdeef4] to-[#fdf3f7] p-8 md:grid-cols-[300px_1fr]">
+        <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#FEEBF2] to-[#FFF5F8] p-8 md:grid-cols-[300px_1fr]">
           <Confetti pieces={ABOUT_FOUNDER_CONFETTI} />
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.jpg`}
@@ -4323,7 +4607,7 @@ function AboutPage() {
             <p className="mt-4 flex items-center gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p>
           </div>
         </section>
-        <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#fffaf0] p-8 md:grid-cols-[1fr_320px]">
+        <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#FEF4EB] p-8 md:grid-cols-[1fr_320px]">
           <div>
             <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our mission</h2>
             <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>
@@ -4339,7 +4623,7 @@ function AboutPage() {
             {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-pink" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
           </div>
         </section>
-        <section className="mt-7 rounded-[18px] bg-[#ffe9f2] p-7">
+        <section className="mt-7 rounded-[18px] bg-[#FED7E4] p-7">
           <div className="grid items-center gap-6 md:grid-cols-[180px_1fr_320px]">
             <BrandBlock />
             <div><h2 className="text-[28px] font-black">Ready to discover activities your child will love?</h2><p className="mt-2 font-semibold text-[#3f4b78]">Join parents using BabyBrain to find classes, events and play experiences across Singapore.</p></div>
@@ -4382,21 +4666,21 @@ function LoginPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-6 py-12">
-        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-8 shadow-card">
+        <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
           {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
                 <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
@@ -4427,11 +4711,11 @@ function ForgotPasswordPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
-        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-6 shadow-card sm:p-8">
+        <div className="rounded-[18px] border border-[#FED7E4] bg-white p-6 shadow-card sm:p-8">
           <h1 className="text-2xl font-black">Reset your password</h1>
           {sent ? (
             <div className="mt-3">
-              <p className="rounded-[10px] bg-[#eefbf1] px-3 py-3 text-sm font-semibold text-green-700">
+              <p className="rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-green-700">
                 If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
               </p>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
@@ -4445,7 +4729,7 @@ function ForgotPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
               </form>
@@ -4497,14 +4781,14 @@ function ResetPasswordPage() {
   return (
     <PageShell active="/login">
       <main className="mx-auto max-w-[440px] px-4 py-12 sm:px-6">
-        <div className="rounded-[18px] border border-[#ecdfe6] bg-white p-6 shadow-card sm:p-8">
+        <div className="rounded-[18px] border border-[#FED7E4] bg-white p-6 shadow-card sm:p-8">
           <h1 className="text-2xl font-black">Set a new password</h1>
           {done ? (
-            <p className="mt-3 rounded-[10px] bg-[#eefbf1] px-3 py-3 text-sm font-semibold text-green-700">
+            <p className="mt-3 rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-green-700">
               Password updated. Taking you to your profile…
             </p>
           ) : !ready ? (
-            <p className="mt-3 rounded-[10px] bg-[#fff7e6] px-3 py-3 text-sm font-semibold text-[#8a6d1a]">
+            <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#936700]">
               This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-pink">request a new one</a>.
             </p>
           ) : (
@@ -4514,11 +4798,11 @@ function ResetPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-black">Confirm password</label>
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#ecdfe6] px-3 font-semibold" />
+                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Saving…" : "Update password"}</Button>
               </form>
@@ -4532,7 +4816,10 @@ function ResetPasswordPage() {
 
 function App() {
   const { session, loading } = useAuth();
-  const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+  // In production a Next rewrite serves these routes from `/`, but the Vite dev
+  // server hosts the bundle under its `/app/` base — strip it so local routing
+  // matches what parents actually browse.
+  const pathname = window.location.pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";
   if (pathname === "/login") return <LoginPage />;
   if (pathname === "/forgot-password") return <ForgotPasswordPage />;
   if (pathname === "/reset-password") return <ResetPasswordPage />;

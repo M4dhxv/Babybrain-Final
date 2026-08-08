@@ -65,14 +65,14 @@ export function ClassGroupChat({
         className="flex h-[600px] w-full max-w-2xl flex-col overflow-hidden rounded-[16px] bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#eceff7] px-5 py-3">
+        <div className="flex items-center justify-between border-b border-[#F4EFF0] px-5 py-3">
           <div>
             <p className="text-sm font-bold text-baby-ink">{activityTitle} — class group</p>
             <p className="text-xs text-[#59658d]">Parents booked in this class + the provider</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full px-3 py-1 text-sm font-bold text-[#59658d] hover:bg-[#f3f7ff]"
+            className="rounded-full px-3 py-1 text-sm font-bold text-[#59658d] hover:bg-[#EDF7FD]"
             aria-label="Close chat"
           >
             ✕

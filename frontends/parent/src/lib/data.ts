@@ -62,6 +62,7 @@ export interface ProviderContact {
   contact_phone: string | null;
   contact_email: string | null;
   business_name: string | null;
+  website: string | null;
 }
 
 export interface ActivityDetail {
@@ -86,10 +87,14 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     }
     let cancelled = false;
     (async () => {
+      // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
+      // unpublished mock row with no linked provider — by direct link, and it
+      // rendered a listing page with none of the contact buttons.
       const { data: act } = await supabase
         .from("activities")
-        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name)")
+        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website)")
         .eq("slug", slug)
+        .eq("is_published", true)
         .maybeSingle();
       if (!act) {
         if (!cancelled) setState({ activity: null, sessions: [], reviews: [], loading: false });
@@ -283,8 +288,20 @@ export function useJourney(childId: string | undefined) {
   return stats;
 }
 
-/** Map a DB activity row → the content `Activity` card shape. */
-export function toCard(a: ActivityRow & { category_name?: string }) {
+/** Map a DB activity row → the content `Activity` card shape.
+ *
+ *  `providerName` and `region` matter here: QA found cards showing only the
+ *  class name, because this mapper dropped both while the Explore list (which
+ *  goes through `search_activities`) carried them. Rows come from `activities`,
+ *  which keeps a denormalised `provider_name`; a joined `providers` row wins
+ *  when the caller selected one. */
+export function toCard(
+  a: ActivityRow & {
+    category_name?: string;
+    provider_name?: string | null;
+    providers?: { business_name?: string | null } | null;
+  }
+) {
   return {
     id: a.id,
     slug: a.slug,
@@ -297,5 +314,8 @@ export function toCard(a: ActivityRow & { category_name?: string }) {
     time: "",
     rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "New",
     note: "",
+    providerName: a.providers?.business_name ?? a.provider_name ?? undefined,
+    region: a.region ?? null,
+    price: a.price ?? null,
   };
 }

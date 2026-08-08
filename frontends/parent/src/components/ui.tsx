@@ -1,5 +1,5 @@
 import { useState } from "react";
-import animalAvatar from "animal-avatar-generator";
+import { resolveAvatar } from "../lib/avatars";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
 import { useActivities } from "../lib/useActivities";
@@ -167,36 +167,38 @@ export function Icon({
   );
 }
 
-// Cute illustrated animal avatars stand in for photos of parents and kids.
-// Generated with the open-source `animal-avatar-generator` (flat SVG, MIT) —
-// fully offline, no external API, deterministic per seed so a given person is
-// the same animal + colour everywhere. Backgrounds are branded to our pastels.
-const AVATAR_BG = ["#ffe0ec", "#e0ecff", "#ece0ff", "#d9f5e6", "#ffe6d6", "#fff2cf"];
-
+/** A person emoji on a pastel circle, standing in for a photo.
+ *
+ *  Replaces the cartoon-animal generator — QA asked for babies and toddlers of
+ *  varying age and skin tone for children, and adults of varying gender and
+ *  skin tone, "a bit like the emoji's on WhatsApp". See `lib/avatars.ts` for the
+ *  catalogue and how a stored seed resolves to a picture.
+ *
+ *  The emoji is sized in `cqw` against the wrapper, so it fills whatever box the
+ *  caller's Tailwind height/width classes give it without each call site having
+ *  to pass a font size. */
 export function AnimalAvatar({
   seed,
   kind = "parent",
   className = "h-11 w-11",
 }: {
   seed?: string | null;
-  // `kind` salts the seed so a parent and their child never draw the same
-  // animal; the avatar library itself doesn't model age.
+  /** `kind` picks the catalogue: children get babies and toddlers, parents adults. */
   kind?: "child" | "parent";
   className?: string;
 }) {
-  const svg = animalAvatar(`${kind}:${(seed && seed.trim()) || "babybrain"}`, {
-    size: 128,
-    blackout: false,
-    backgroundColors: AVATAR_BG,
-  });
-  const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  const { emoji, background, label } = resolveAvatar(seed, kind);
   return (
-    <img
-      src={uri}
-      alt=""
-      aria-hidden="true"
-      className={`shrink-0 rounded-full object-cover ${className}`}
-    />
+    <span
+      role="img"
+      aria-label={label}
+      style={{ containerType: "inline-size", background }}
+      className={`grid shrink-0 place-items-center overflow-hidden rounded-full leading-none ${className}`}
+    >
+      <span style={{ fontSize: "62cqw" }} className="leading-none">
+        {emoji}
+      </span>
+    </span>
   );
 }
 
@@ -258,7 +260,7 @@ function SearchBox({ className = "", autoFocus = false }: { className?: string; 
       }}
       className={`relative ${className}`}
     >
-      <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3c0]" />
+      <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6D7488]" />
       <input
         type="search"
         value={term}
@@ -266,7 +268,7 @@ function SearchBox({ className = "", autoFocus = false }: { className?: string; 
         onChange={(e) => setTerm(e.target.value)}
         aria-label="Search activities"
         placeholder="Search activities…"
-        className="h-9 w-full rounded-full border border-[#e4e9f6] bg-white pl-9 pr-3 text-[13px] font-semibold text-baby-ink outline-none placeholder:text-[#9aa3c0] focus:border-baby-pink"
+        className="h-9 w-full rounded-full border border-[#EBE3E5] bg-white pl-9 pr-3 text-[13px] font-semibold text-baby-ink outline-none placeholder:text-[#6D7488] focus:border-baby-pink"
       />
     </form>
   );
@@ -283,7 +285,7 @@ export function Header({ active = "/" }: HeaderProps) {
   ];
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#edf0fb] bg-baby-paper/95 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper/95 backdrop-blur">
       <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
         <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">
@@ -325,7 +327,7 @@ export function Header({ active = "/" }: HeaderProps) {
             </a>
             <a
               href="/profile"
-              className="flex items-center gap-2 rounded-full border border-[#e9edf8] bg-white py-1 pl-1 pr-3 shadow-soft hover:border-[#d4ddf3]"
+              className="flex items-center gap-2 rounded-full border border-[#EBE3E5] bg-white py-1 pl-1 pr-3 shadow-soft hover:border-[#DCD2D5]"
             >
               <AnimalAvatar seed={profile?.avatar_seed ?? profile?.full_name} kind="parent" className="h-7 w-7" />
               <span className="max-w-[110px] truncate">{profile?.full_name?.split(" ")[0] || "Account"}</span>
@@ -342,7 +344,7 @@ export function Header({ active = "/" }: HeaderProps) {
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
-          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#e4e9f6] bg-white text-baby-ink lg:hidden"
+          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#EBE3E5] bg-white text-baby-ink lg:hidden"
         >
           <Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />
         </button>
@@ -350,20 +352,20 @@ export function Header({ active = "/" }: HeaderProps) {
 
       {/* Mobile dropdown menu */}
       {menuOpen && (
-        <nav className="border-t border-[#edf0fb] bg-baby-paper px-4 py-3 lg:hidden">
+        <nav className="border-t border-[#F4EFF0] bg-baby-paper px-4 py-3 lg:hidden">
           <SearchBox className="mb-3" />
           <div className="flex flex-col gap-1 text-[15px] font-bold text-baby-ink">
             {navItems.map((route) => (
               <a
                 key={route.href}
                 href={route.href}
-                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#ffe9f2] text-baby-pink" : "hover:bg-white"}`}
+                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#FED7E4] text-baby-pink" : "hover:bg-white"}`}
               >
                 {route.label}
               </a>
             ))}
           </div>
-          <div className="mt-3 border-t border-[#e7ebf6] pt-3">
+          <div className="mt-3 border-t border-[#EBE3E5] pt-3">
             {!session ? (
               <div className="flex flex-col gap-2">
                 <Button href="/login" variant="outline" className="w-full justify-center">
@@ -459,8 +461,6 @@ export function Button({
 export function DateInput({
   value,
   onChange,
-  min,
-  max,
   className = "",
   id,
   placeholder = "DD/MM/YYYY",
@@ -468,9 +468,6 @@ export function DateInput({
   /** ISO yyyy-mm-dd, or "" when empty. */
   value: string;
   onChange: (iso: string) => void;
-  /** ISO bounds, inclusive. */
-  min?: string;
-  max?: string;
   className?: string;
   id?: string;
   placeholder?: string;
@@ -501,15 +498,16 @@ export function DateInput({
     }
     const [dd, mm, yyyy] = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)];
     const iso = `${yyyy}-${mm}-${dd}`;
-    // Reject impossible dates (31/02) — Date normalises them silently.
+    // Reject impossible dates (31/02) — Date normalises them silently. Dates
+    // that are real but out of range are still emitted: clamping them to ""
+    // here made every range problem surface as "enter a date as DD/MM/YYYY",
+    // which QA read as the format being wrong. Range is the caller's to judge.
     const d = new Date(`${iso}T00:00:00Z`);
-    const valid =
+    const isRealDate =
       d.getUTCFullYear() === Number(yyyy) &&
       d.getUTCMonth() + 1 === Number(mm) &&
-      d.getUTCDate() === Number(dd) &&
-      (!min || iso >= min) &&
-      (!max || iso <= max);
-    onChange(valid ? iso : "");
+      d.getUTCDate() === Number(dd);
+    onChange(isRealDate ? iso : "");
   }
 
   return (
@@ -640,7 +638,7 @@ function priceLabel(activity: Activity): string | null {
 /** Badge marking listings bookable on BabyBrain (these also sort first). */
 export function InstantBookBadge({ className = "" }: { className?: string }) {
   return (
-    <span className={`flex items-center gap-1 rounded-full bg-[#eafaf0] px-2.5 py-1 text-[11px] font-bold text-[#1f9d4d] shadow-soft ${className}`}>
+    <span className={`flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#327D20] shadow-soft ${className}`}>
       <Icon name="spark" className="h-3 w-3" /> Instant book
     </span>
   );
@@ -657,7 +655,7 @@ export function ActivityCard({
 }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <article className="overflow-hidden rounded-[14px] border border-[#e6eaf6] bg-white shadow-card">
+    <article className="overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
         <img
           src={activity.image}
@@ -670,7 +668,7 @@ export function ActivityCard({
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
-            <span className="flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#936700] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
@@ -686,15 +684,15 @@ export function ActivityCard({
           {activity.title}
         </h3>
         {providerLabel(activity) && (
-          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7D4AC5]">
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
-          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.age}</p>
-          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#a988ee]" /> {placeLabel(activity)}</p>
+          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#D9004A]" /> {activity.age}</p>
+          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#A581D7]" /> {placeLabel(activity)}</p>
           <p className="flex items-center gap-1.5">
-            <Icon name="calendar" className="h-3.5 w-3.5 text-[#FA5D93]" />{" "}
+            <Icon name="calendar" className="h-3.5 w-3.5 text-[#D9004A]" />{" "}
             {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
           </p>
           {(priceLabel(activity) || formatDuration(activity.durationMins)) && (
@@ -704,14 +702,14 @@ export function ActivityCard({
               )}
               {formatDuration(activity.durationMins) && (
                 <span className="flex items-center gap-1.5">
-                  <Icon name="clock" className="h-3.5 w-3.5 text-[#a988ee]" /> {formatDuration(activity.durationMins)}
+                  <Icon name="clock" className="h-3.5 w-3.5 text-[#A581D7]" /> {formatDuration(activity.durationMins)}
                 </span>
               )}
             </p>
           )}
           {!compact && (
             <p>
-              <Icon name="star" className="inline h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}
+              <Icon name="star" className="inline h-3.5 w-3.5 text-[#D9004A]" /> {activity.rating}
               {activity.note && (
                 <>
                   {" "}· <Icon name="spark" className="inline h-3.5 w-3.5 text-baby-pink" /> {activity.note}
@@ -730,7 +728,7 @@ export function ActivityCard({
             </Button>
           </div>
         ) : (
-          <div className="mt-3 flex items-center justify-between border-t border-[#eef1f8] pt-3">
+          <div className="mt-3 flex items-center justify-between border-t border-[#F4EFF0] pt-3">
             <a href={href} className="text-sm font-extrabold text-baby-pink">
               View details
             </a>
@@ -747,7 +745,7 @@ export function ActivityCard({
 export function ActivityRow({ activity }: { activity: Activity }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#e5e9f5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
+    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
         <img src={activity.image} alt="" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
@@ -756,7 +754,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
-            <span className="flex items-center gap-1 rounded-full bg-[#fff4d6] px-2.5 py-1 text-[11px] font-bold text-[#8a6d1a] shadow-soft">
+            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#936700] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
@@ -766,7 +764,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
         <h3 className="mb-0.5 text-[16px] font-black">{activity.title}</h3>
         {providerLabel(activity) && (
-          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7a5cc8]">
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7D4AC5]">
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
@@ -779,7 +777,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
             <p className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5 text-baby-pink" /> {formatDuration(activity.durationMins)}</p>
           )}
           {priceLabel(activity) && <p className="font-black text-baby-pink">{priceLabel(activity)}</p>}
-          <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#FA5D93]" /> {activity.rating}</p>
+          <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#D9004A]" /> {activity.rating}</p>
           <p>{activity.note}</p>
         </div>
       </div>
@@ -804,8 +802,8 @@ export function CategoryTile({
     <button
       type="button"
       onClick={onClick ?? (href ? () => { window.location.href = href; } : undefined)}
-      className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#e9edf7] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
-      <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#eaf9f1] to-[#f5fdf9] text-baby-green">
+      className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#EBE3E5] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
+      <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#F1FBEF] to-[#F1FBEF] text-baby-green">
         <Icon name={icon} className="h-7 w-7" />
       </span>
       <span>
@@ -823,7 +821,7 @@ export function CategoryTile({
 
 export function Footer() {
   return (
-    <footer className="border-t border-[#eef0f8] bg-white/70 py-6">
+    <footer className="border-t border-[#F4EFF0] bg-white/70 py-6">
       <div className="mx-auto grid max-w-[1120px] grid-cols-2 gap-8 px-6 md:grid-cols-[1.8fr_1fr_1fr_1fr]">
         <div>
           <Brand />
@@ -860,7 +858,7 @@ export function Footer() {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-center text-xs font-semibold text-[#7b85a7]">
+      <p className="mt-4 text-center text-xs font-semibold text-[#69739A]">
         © 2026 BabyBrain.sg. All rights reserved.
       </p>
     </footer>

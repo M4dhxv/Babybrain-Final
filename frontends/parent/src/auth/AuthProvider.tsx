@@ -10,11 +10,44 @@ interface AuthState {
   children: Child[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    onboarding?: SignupOnboarding
+  ) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+}
+
+/** Everything the sign-up form collects beyond the credentials.
+ *
+ *  It rides along as auth metadata because with email confirmation on there is
+ *  no session at sign-up, so the browser cannot write `children` or
+ *  `user_preferences` itself. The `handle_new_user` trigger materialises this
+ *  under the new user's own id (migration 00036) — QA: "when I logged in the
+ *  children hadn't been saved". */
+export interface SignupOnboarding {
+  full_name: string;
+  phone: string | null;
+  postal_code: string;
+  terms_accepted: boolean;
+  preferences: {
+    days: string[];
+    times: string[];
+    regions: string[];
+    interests: string[];
+    budget_min: number | null;
+    budget_max: number | null;
+  };
+  children: {
+    name: string;
+    dob: string;
+    gender: string;
+    interests: string[];
+  }[];
 }
 
 const Ctx = createContext<AuthState | undefined>(undefined);
@@ -74,12 +107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return error ? { error: error.message } : {};
     },
-    signUp: async (email, password, fullName) => {
+    signUp: async (email, password, fullName, onboarding) => {
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name: fullName },
+          data: { full_name: fullName, ...(onboarding ? { onboarding } : {}) },
           // Send the confirmation link through our own callback so a
           // confirmed parent lands on their profile, not back on sign-up.
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile`,

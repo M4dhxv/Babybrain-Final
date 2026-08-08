@@ -30,7 +30,7 @@ export const categories = [
   ["shoe", "Gym & Dance", "Tumbling, balance and moving", "movement"],
   ["movement", "Swimming", "Water confidence and lessons", "swimming"],
   ["flask", "Early Learning", "Curiosity today, ready for more", "early-learning"],
-  ["people", "Baby & Me Exercise", "Move and bond together", "parent-baby"],
+  ["people", "Parent & Child Exercise", "Move and bond together", "parent-baby"],
   ["home", "Playspaces", "Open, come-anytime play", "playspaces"],
   ["calendar", "Community Events", "Family days and meet-ups", "community-events"],
   ["spark", "Holiday Camps", "School-break adventures", "holiday-camps"],
