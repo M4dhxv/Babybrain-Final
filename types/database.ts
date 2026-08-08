@@ -836,6 +836,34 @@ export type Database = {
         };
         Relationships: [];
       };
+      /** Contact-form submissions, stored so none are lost when email fails. */
+      contact_messages: {
+        Row: {
+          id: string;
+          name: string;
+          email: string;
+          subject: string | null;
+          message: string;
+          user_id: string | null;
+          emailed: boolean;
+          email_error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          name: string;
+          email: string;
+          subject?: string | null;
+          message: string;
+          user_id?: string | null;
+          emailed?: boolean;
+          email_error?: string | null;
+        };
+        Update: {
+          emailed?: boolean;
+          email_error?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

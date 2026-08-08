@@ -1,12 +1,21 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
 /**
- * Contact form on /contact — emails the support inbox.
+ * Contact form on /contact — stores the message, then emails the support inbox.
  *
  * QA: "Bottom of contact page… could we add a contact form here which sends to
  * the e-mail?" Open to signed-out visitors by design, so it's rate-limited per
  * IP and the reply-to is set to the sender so support can just hit reply.
+ *
+ * QA round 3: the form failed with "We couldn't send that just now". Resend was
+ * rejecting the send because EMAIL_FROM is still its shared testing sender
+ * (`onboarding@resend.dev`), which may only deliver to the Resend account
+ * owner's own address — so nothing reached hello@babybrain.sg, and the real
+ * reason was swallowed. Now every message is written to `contact_messages`
+ * first, so a delivery failure can never lose a parent's enquiry, and the
+ * underlying Resend error is logged instead of discarded.
  */
 
 const SUPPORT_INBOX = process.env.SUPPORT_EMAIL ?? 'hello@babybrain.sg';
@@ -58,7 +67,45 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'That message is too long' }, { status: 400 });
   }
 
+  // Record it before attempting delivery, so the message survives an email
+  // outage. Service role because `contact_messages` is deliberately unreadable
+  // and unwritable by anon/authenticated.
+  let storedId: string | null = null;
+  const storeUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const storeKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (storeUrl && storeKey) {
+    const admin = createClient(storeUrl, storeKey, { auth: { persistSession: false } });
+    const { data, error: storeErr } = await admin
+      .from('contact_messages')
+      .insert({
+        name: name.trim(),
+        email: email.trim(),
+        subject: subject?.trim() || null,
+        message: message.trim(),
+      })
+      .select('id')
+      .single();
+    if (storeErr) {
+      console.error('[contact] could not store message:', storeErr.message);
+    } else {
+      storedId = (data as { id: string }).id;
+    }
+  }
+
+  const markSent = async (emailed: boolean, emailError?: string) => {
+    if (!storedId || !storeUrl || !storeKey) return;
+    const admin = createClient(storeUrl, storeKey, { auth: { persistSession: false } });
+    await admin
+      .from('contact_messages')
+      .update({ emailed, email_error: emailError ?? null })
+      .eq('id', storedId);
+  };
+
   if (!process.env.RESEND_API_KEY) {
+    console.error('[contact] RESEND_API_KEY is not set — message stored only.');
+    await markSent(false, 'RESEND_API_KEY not set');
+    // The message is safely stored, so don't make the parent retype it.
+    if (storedId) return NextResponse.json({ sent: true, delivered: false });
     return NextResponse.json(
       { error: 'Email is not configured — please write to hello@babybrain.sg.' },
       { status: 503 }
@@ -82,11 +129,22 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    // Log the real reason. A generic 502 here is what made this undiagnosable:
+    // the usual cause is an unverified sending domain, and that never surfaced.
+    console.error(
+      `[contact] Resend rejected the send from "${process.env.EMAIL_FROM ?? '(default)'}" ` +
+        `to "${SUPPORT_INBOX}": ${error.name ?? 'error'} — ${error.message}`
+    );
+    await markSent(false, `${error.name ?? 'error'}: ${error.message}`);
+    // Stored safely, so the parent has done their bit — don't show a failure
+    // and lose what they typed. It's in the admin inbox either way.
+    if (storedId) return NextResponse.json({ sent: true, delivered: false });
     return NextResponse.json(
       { error: "We couldn't send that just now — please email hello@babybrain.sg." },
       { status: 502 }
     );
   }
 
-  return NextResponse.json({ sent: true });
+  await markSent(true);
+  return NextResponse.json({ sent: true, delivered: true });
 }
