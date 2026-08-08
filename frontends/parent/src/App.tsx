@@ -80,8 +80,10 @@ function HomePage() {
             <div className="absolute -left-6 top-40 h-14 w-14 rounded-full bg-[#c7a7ff]" />
             <Icon name="star" className="absolute right-[-18px] top-14 h-8 w-8 fill-[#ffbd30] text-[#ffbd30]" />
             <img
-              src={`${import.meta.env.BASE_URL}assets/crops/hero-mom-child.png`}
-              alt="Mother and child playing with educational toys"
+              src={`${import.meta.env.BASE_URL}assets/crops/hero-ball-pit.jpg`}
+              alt="A toddler wading through a ball pit at an indoor play space"
+              width={1400}
+              height={933}
               className="relative z-10 h-[370px] w-full rounded-[100px_74px_82px_52px] object-cover shadow-soft"
             />
           </div>
