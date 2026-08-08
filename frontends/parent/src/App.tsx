@@ -1555,10 +1555,12 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["children", "My children", "people", false],
   ["bookings", "Bookings", "calendar", false],
   ["past", "Past activities", "check", false],
+  // Packages sits above make-up tokens: parents reach for a pack far more
+  // often than a token, so it reads better in that order.
+  ["packages", "Packages", "store", true],
   ["makeup", "Make-up tokens", "gift", true],
   ["favorites", "Favourites", "heart", true],
   ["reviews", "Reviews", "star", false],
-  ["packages", "Packages", "store", true],
   ["notifications", "Notifications", "bell", false],
   ["settings", "Settings", "gear", false],
 ];
@@ -2457,13 +2459,13 @@ function ProfilePage() {
           {tab === "packages" && !isPlus && (
             <PlusLock
               title="Packages are a Plus feature"
-              copy="With Plus, every class pack you buy — across all your providers — is tracked here and can be used to book. On the free plan we email your pack details to you instead."
+              copy="With Plus, every class pack you buy through BabyBrain is stored here and you can click straight through to book. On the free plan we email your pack details to you instead."
             />
           )}
           {tab === "packages" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Packages</h1>
-              <p className="mt-1 text-sm font-semibold text-[#59658d]">Class packs you've purchased — each booking with that provider can use a credit.</p>
+              <p className="mt-1 text-sm font-semibold text-[#59658d]">Class packs you've bought through BabyBrain — each booking with that provider can use a credit. Packs bought directly with a provider won't appear here.</p>
               {packages.length === 0 ? (
                 <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
               ) : (
@@ -2739,17 +2741,20 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         </button>
       ) : (
         <div className="mt-4 rounded-[12px] bg-[#fff5f8] p-4">
-          <label className="block text-sm font-black text-[#b00040]">
+          {/* The input is `block` so it sits under the instruction rather than
+              running on beside it, and lines up with the buttons below. */}
+          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#b00040]">
             Type DELETE to confirm
-            <input
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="mt-2 h-11 w-full max-w-[220px] rounded-[10px] border border-[#ffd2de] px-3 text-sm font-semibold"
-              placeholder="DELETE"
-            />
           </label>
-          {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
-          <div className="mt-3 flex gap-3">
+          <input
+            id="delete-confirm"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#ffd2de] px-3 text-sm font-semibold"
+            placeholder="DELETE"
+          />
+          {error && <p className="mt-3 text-sm font-bold text-[#b00040]">{error}</p>}
+          <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
               disabled={confirm !== "DELETE" || busy}
@@ -4299,8 +4304,10 @@ function AboutPage() {
         <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#fdeef4] to-[#fdf3f7] p-8 md:grid-cols-[300px_1fr]">
           <Confetti pieces={ABOUT_FOUNDER_CONFETTI} />
           <img
-            src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.png`}
-            alt="Katie Crowson"
+            src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.jpg`}
+            alt="Katie Crowson, founder of BabyBrain"
+            width={720}
+            height={880}
             className="relative z-10 mx-auto h-[340px] w-full max-w-[290px] rounded-[18px] object-cover shadow-soft"
           />
           <div className="relative z-10">
