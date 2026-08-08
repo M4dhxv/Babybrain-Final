@@ -4271,9 +4271,11 @@ const ABOUT_FOUNDER_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = 
   { kind: "star", top: "32%", left: "1%", color: "#FFD77A", size: 28 },
   { kind: "dash", top: "62%", left: "4%", color: "#C7B1E6", size: 24, rotate: -35 },
   { kind: "dash", top: "72%", left: "1%", color: "#C7B1E6", size: 24, rotate: -35 },
-  { kind: "dash", top: "22%", left: "36%", color: "#A7D8F8", size: 24, rotate: -40 },
-  { kind: "dash", top: "29%", left: "37%", color: "#FA5D93", size: 24, rotate: -40 },
-  { kind: "dash", top: "48%", left: "36%", color: "#A8E59A", size: 26, rotate: -15 },
+  // The gap between the photo (ends ~33.5%) and the copy (starts ~37.3%) is
+  // narrow, so these sit at 34% at a size that can't reach the text.
+  { kind: "dash", top: "22%", left: "34%", color: "#A7D8F8", size: 20, rotate: -40 },
+  { kind: "dash", top: "29%", left: "34%", color: "#FA5D93", size: 20, rotate: -40 },
+  { kind: "dash", top: "48%", left: "34%", color: "#A8E59A", size: 20, rotate: -15 },
   { kind: "heart", top: "6%", right: "3%", color: "#FA5D93", size: 30 },
   { kind: "star", top: "30%", right: "2%", color: "#FFD77A", size: 28 },
   { kind: "dot", top: "58%", right: "1%", color: "#A7D8F8", size: 16 },
