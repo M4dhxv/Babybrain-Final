@@ -159,7 +159,7 @@ export default function SaveListingPage() {
       <div className="max-w-6xl mx-auto px-8 py-8">
         {/* Title */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#1B1F3B] mb-2">Save your listing</h1>
+          <h1 className="text-3xl font-bold text-[#111A4C] mb-2">Save your listing</h1>
           <p className="text-gray-600">Double-check your details to help parents find and trust your venue.</p>
         </div>
 
@@ -167,16 +167,16 @@ export default function SaveListingPage() {
           {/* Left Sidebar */}
           <div className="w-56 flex-shrink-0">
             <img src={`${import.meta.env.BASE_URL}assets/asset_1.png`} alt="Brain" className="w-32 h-auto mb-4" />
-            <h3 className="text-lg font-bold text-[#1B1F3B] mb-2">Almost there! <span className="text-lg">🚀</span></h3>
+            <h3 className="text-lg font-bold text-[#111A4C] mb-2">Almost there! <span className="text-lg">🚀</span></h3>
             <p className="text-sm text-gray-600 mb-6">Review your information before saving. You can edit anything if needed.</p>
 
             <div className="bg-pink-50 rounded-xl p-4">
-              <h4 className="text-sm font-semibold text-[#E91E63] mb-3">Why it matters</h4>
+              <h4 className="text-sm font-semibold text-[#C90044] mb-3">Why it matters</h4>
               <div className="space-y-3">
                 {whyMatters.map((item, idx) => (
                   <div key={idx} className="flex gap-2">
                     <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center flex-shrink-0">
-                      <item.icon className="w-3 h-3 text-[#E91E63]" />
+                      <item.icon className="w-3 h-3 text-[#C90044]" />
                     </div>
                     <span className="text-xs text-gray-700">{item.text}</span>
                   </div>
@@ -216,7 +216,7 @@ export default function SaveListingPage() {
                     onClick={() => navigate(item.label === 'Age range' || item.label === 'Pricing' || item.label === 'Booking link' ? '/activities' : '/settings')}
                     className="flex-shrink-0"
                   >
-                    <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#E91E63]" />
+                    <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#C90044]" />
                   </button>
                 </div>
               ))}
@@ -232,7 +232,7 @@ export default function SaveListingPage() {
                   <div className="text-xs text-gray-500">
                     Venues &amp; schedules
                     {venues.length > 1 && (
-                      <span className="ml-1 text-[#E91E63] font-medium">· {venues.length} locations detected</span>
+                      <span className="ml-1 text-[#C90044] font-medium">· {venues.length} locations detected</span>
                     )}
                   </div>
                 </div>
@@ -261,7 +261,7 @@ export default function SaveListingPage() {
             {/* Required to publish */}
             <div className="mt-6 p-4 border border-gray-200 rounded-xl">
               <div className="flex items-center gap-2 mb-3">
-                <Shield className="w-5 h-5 text-[#E91E63]" />
+                <Shield className="w-5 h-5 text-[#C90044]" />
                 <h4 className="font-semibold text-gray-900">Required to publish</h4>
               </div>
               <div className="flex items-start gap-3">
@@ -279,7 +279,7 @@ export default function SaveListingPage() {
                     Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
                   </p>
                 </div>
-                <span className="text-xs text-[#E91E63] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
               </div>
             </div>
 
@@ -304,7 +304,7 @@ export default function SaveListingPage() {
                     Covers messaging rules, cancellation/rescheduling and refund policies.
                   </p>
                 </div>
-                <span className="text-xs text-[#E91E63] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
               </div>
             </div>
           </div>
@@ -350,7 +350,7 @@ export default function SaveListingPage() {
                     <Heart className="w-4 h-4 text-gray-600" />
                   </div>
                   <div className="absolute bottom-3 left-3 w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-md">
-                    <span className="text-xs font-bold text-center leading-tight text-[#E91E63]">Little<br/>Play</span>
+                    <span className="text-xs font-bold text-center leading-tight text-[#C90044]">Little<br/>Play</span>
                   </div>
                 </div>
                 {/* Info */}

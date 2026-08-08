@@ -202,7 +202,7 @@ export default function BookingsPage() {
         {/* Session Selector (real sessions) */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-            <Baby className="w-4 h-4 text-[#E91E63]" />
+            <Baby className="w-4 h-4 text-[#C90044]" />
             <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="bg-transparent font-medium focus:outline-none">
               {sessions.length === 0 && <option>No sessions yet</option>}
               {sessions.map((s) => (
@@ -213,7 +213,7 @@ export default function BookingsPage() {
           {canManage && sessionId && (
             <button
               onClick={() => { setShowManual((v) => !v); setManualError(null); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 text-[#E91E63] rounded-xl text-sm font-medium hover:bg-pink-100"
+              className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100"
             >
               <UserPlus className="w-4 h-4" /> Add booking
             </button>
@@ -228,7 +228,7 @@ export default function BookingsPage() {
             {manualError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{manualError}</div>}
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Child / guest name <span className="text-[#E91E63]">*</span></label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Child / guest name <span className="text-[#C90044]">*</span></label>
                 <input value={manualForm.name} onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })} placeholder="e.g. Mia Tan" className="h-9 w-48 rounded-lg border border-gray-300 px-3 text-sm" />
               </div>
               <div>
@@ -236,10 +236,10 @@ export default function BookingsPage() {
                 <input value={manualForm.contact} onChange={(e) => setManualForm({ ...manualForm, contact: e.target.value })} placeholder="Phone or email" className="h-9 w-52 rounded-lg border border-gray-300 px-3 text-sm" />
               </div>
               <label className="flex h-9 items-center gap-2 text-sm text-gray-700">
-                <Checkbox checked={manualForm.paid} onCheckedChange={(v) => setManualForm({ ...manualForm, paid: Boolean(v) })} className="data-[state=checked]:bg-[#E91E63]" />
+                <Checkbox checked={manualForm.paid} onCheckedChange={(v) => setManualForm({ ...manualForm, paid: Boolean(v) })} className="data-[state=checked]:bg-[#C90044]" />
                 Paid outside BabyBrain
               </label>
-              <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
+              <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
                 {savingManual ? 'Adding…' : 'Add booking'}
               </button>
               <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -252,7 +252,7 @@ export default function BookingsPage() {
           {bookingsTabs.map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
-                activeTab === tab ? 'text-[#E91E63] border-[#E91E63]' : 'text-gray-500 border-transparent hover:text-gray-700')}>
+                activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700')}>
               {tab === 'Bookings' && <CalendarDays className="w-4 h-4" />}
               {tab === 'Waitlist' && <UserPlus className="w-4 h-4" />}
               {tab === 'Attendance' && <CalendarCheck className="w-4 h-4" />}
@@ -352,7 +352,7 @@ export default function BookingsPage() {
                     <button
                       onClick={() => messageParent(sel.user_id!)}
                       disabled={messaging}
-                      className="flex items-center gap-2 mt-6 text-sm text-[#E91E63] font-medium hover:underline disabled:opacity-60"
+                      className="flex items-center gap-2 mt-6 text-sm text-[#C90044] font-medium hover:underline disabled:opacity-60"
                     >
                       <MessageSquare className="w-4 h-4" /> {messaging ? 'Opening chat…' : 'Message parent'}
                     </button>
@@ -434,7 +434,7 @@ export default function BookingsPage() {
                   const tok = tokenStatus[c.booking_id];
                   return (
                     <div key={c.booking_id} className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
-                      <Checkbox className="data-[state=checked]:bg-[#E91E63]" checked={cur === 'present'}
+                      <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>

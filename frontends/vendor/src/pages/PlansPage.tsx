@@ -20,7 +20,7 @@ const plans = [
   {
     name: 'GROWTH',
     price: '99',
-    color: 'text-[#E91E63]',
+    color: 'text-[#C90044]',
     buttonText: 'Start Growing',
     buttonVariant: 'default' as const,
     buttonClass: 'gradient-primary text-white hover:opacity-90',
@@ -74,7 +74,7 @@ export default function PlansPage() {
         </div>
         <nav className="flex items-center gap-10">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>
-          <button className="text-sm font-medium text-[#E91E63] border-b-2 border-[#E91E63] pb-1">Plans</button>
+          <button className="text-sm font-medium text-[#C90044] border-b-2 border-[#C90044] pb-1">Plans</button>
           <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-3">
@@ -91,7 +91,7 @@ export default function PlansPage() {
       <div className="max-w-5xl mx-auto px-8 py-12">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-[#1B1F3B] mb-3">Simple pricing</h1>
+          <h1 className="text-4xl font-bold text-[#111A4C] mb-3">Simple pricing</h1>
           <p className="text-gray-600 mb-6">Choose the plan that fits your business.</p>
           <Button onClick={() => navigate('/login')} className="gradient-primary text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90">
             Upgrade Your Listing
@@ -106,13 +106,13 @@ export default function PlansPage() {
               className={cn(
                 'relative rounded-2xl p-6',
                 plan.featured
-                  ? 'border-2 border-[#E91E63] bg-gradient-to-b from-pink-50/50 to-white'
+                  ? 'border-2 border-[#C90044] bg-gradient-to-b from-pink-50/50 to-white'
                   : 'border border-gray-200 bg-white'
               )}
             >
               {plan.badge && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1 px-3 py-1 bg-[#E91E63] text-white text-xs font-semibold rounded-full">
+                  <div className="flex items-center gap-1 px-3 py-1 bg-[#C90044] text-white text-xs font-semibold rounded-full">
                     <Star className="w-3 h-3" />
                     {plan.badge}
                   </div>
@@ -128,7 +128,7 @@ export default function PlansPage() {
                 </div>
                 {plan.yearlyPrice ? (
                   <p className="text-xs text-gray-500 mb-1">
-                    or SGD <span className="text-[#E91E63] font-medium">{plan.yearlyPrice}</span>
+                    or SGD <span className="text-[#C90044] font-medium">{plan.yearlyPrice}</span>
                   </p>
                 ) : (
                   <div className="mb-1" />
@@ -154,7 +154,7 @@ export default function PlansPage() {
           <div className="grid grid-cols-4 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
             <div>Compare Plans</div>
             <div className="text-center text-green-600">Free</div>
-            <div className="text-center text-[#E91E63]">Growth</div>
+            <div className="text-center text-[#C90044]">Growth</div>
             <div className="text-center text-purple-600">Pro</div>
           </div>
           {features.map((feature, idx) => (
@@ -175,7 +175,7 @@ export default function PlansPage() {
               </div>
               <div className="flex justify-center">
                 {feature.growth ? (
-                  <Check className="w-4 h-4 text-[#E91E63]" />
+                  <Check className="w-4 h-4 text-[#C90044]" />
                 ) : (
                   <X className="w-4 h-4 text-red-400" />
                 )}

@@ -5,6 +5,40 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        /* The vendor portal styles itself almost entirely with Tailwind's stock
+         * colour classes (bg-pink-100, text-green-600, …) — ~1000 usages across
+         * ~40 files. Rather than rewrite every one, the stock ramps are
+         * re-pointed at the brand palette here, so the whole portal moves with
+         * a single source of truth.
+         *
+         * `300` is the palette colour exactly as supplied. 50–200 are its
+         * tints, 500 clears 3:1 and 600+ clear 4.5:1 (against paper, white and
+         * this hue's own tints), because at 1.4–1.9:1 the palette colours
+         * themselves can fill but never carry text.
+         *
+         * `red` keeps its own identity — errors shouldn't blend into the
+         * palette — but 500 is darkened from Tailwind's #EF4444 (3.68:1) so
+         * error text and "remove my listing" links are actually legible. */
+        red:    { 50:"#FEF2F2",100:"#FEE2E2",200:"#FECACA",300:"#FCA5A5",400:"#F87171",500:"#E02929",600:"#C81E1E",700:"#A61B1B",800:"#881A1A",900:"#701C1C" },
+        pink:   { 50:"#FEF5F8",100:"#FEECF2",200:"#FED7E4",300:"#FFC1D6",400:"#FF89B1",500:"#FF528C",600:"#C90044",700:"#A50038",800:"#87002E",900:"#6D0025" },
+        yellow: { 50:"#FEFCF5",100:"#FEF8EC",200:"#FEF2D7",300:"#FFD77A",400:"#FFBC1F",500:"#C38800",600:"#936700",700:"#6F4E00",800:"#513900",900:"#372700" },
+        green:  { 50:"#F8FDF7",100:"#F1FAEF",200:"#E3F6DF",300:"#A8E59A",400:"#6DD355",500:"#42A72B",600:"#317D20",700:"#266119",800:"#1C4812",900:"#14340D" },
+        blue:   { 50:"#F6FBFE",100:"#EDF6FD",200:"#DAEEFB",300:"#A7D8F8",400:"#60B9F2",500:"#1999ED",600:"#0E6FAF",700:"#0B5A8E",800:"#094872",900:"#07395A" },
+        purple: { 50:"#F9F8FC",100:"#F4F0FA",200:"#E9E1F5",300:"#C7B1E6",400:"#B69ADE",500:"#A582D7",600:"#7D4AC5",700:"#6B39B2",800:"#5D329B",900:"#522B88" },
+        orange: { 50:"#FEFAF5",100:"#FEF4EC",200:"#FEE9D7",300:"#FFB77A",400:"#FF9135",500:"#EE6D00",600:"#AE5000",700:"#8A4000",800:"#6C3200",900:"#522600" },
+        /* Aliases so a stray `rose-`/`emerald-`/`amber-`/`violet-`/`sky-` class
+         * can't reintroduce an off-palette hue. */
+        rose:    { 50:"#FEF5F8",100:"#FEECF2",200:"#FED7E4",300:"#FFC1D6",400:"#FF89B1",500:"#FF528C",600:"#C90044",700:"#A50038",800:"#87002E",900:"#6D0025" },
+        emerald: { 50:"#F8FDF7",100:"#F1FAEF",200:"#E3F6DF",300:"#A8E59A",400:"#6DD355",500:"#42A72B",600:"#317D20",700:"#266119",800:"#1C4812",900:"#14340D" },
+        amber:   { 50:"#FEFCF5",100:"#FEF8EC",200:"#FEF2D7",300:"#FFD77A",400:"#FFBC1F",500:"#C38800",600:"#936700",700:"#6F4E00",800:"#513900",900:"#372700" },
+        violet:  { 50:"#F9F8FC",100:"#F4F0FA",200:"#E9E1F5",300:"#C7B1E6",400:"#B69ADE",500:"#A582D7",600:"#7D4AC5",700:"#6B39B2",800:"#5D329B",900:"#522B88" },
+        sky:     { 50:"#F6FBFE",100:"#EDF6FD",200:"#DAEEFB",300:"#A7D8F8",400:"#60B9F2",500:"#1999ED",600:"#0E6FAF",700:"#0B5A8E",800:"#094872",900:"#07395A" },
+        /* Warm neutral, so borders and panels sit with the pastels instead of
+         * fighting them. `400` is darkened from Tailwind's stock #9CA3AF, which
+         * is 2.85:1 — the portal uses it on real text ~50 times. */
+        gray:   { 50:"#FAF7F7",100:"#F4EFF0",200:"#EBE3E5",300:"#DCD2D5",400:"#7B7278",500:"#6E646B",600:"#5A5157",700:"#494146",800:"#332D31",900:"#211D20" },
+        slate:  { 50:"#FAF7F7",100:"#F4EFF0",200:"#EBE3E5",300:"#DCD2D5",400:"#7B7278",500:"#6E646B",600:"#5A5157",700:"#494146",800:"#332D31",900:"#211D20" },
+
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

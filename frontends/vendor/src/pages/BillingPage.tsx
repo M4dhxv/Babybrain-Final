@@ -90,7 +90,7 @@ export default function BillingPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-start gap-6">
             <div className="w-20 h-20 rounded-2xl bg-pink-100 flex items-center justify-center">
-              <Crown className="w-10 h-10 text-[#E91E63]" />
+              <Crown className="w-10 h-10 text-[#C90044]" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
@@ -106,7 +106,7 @@ export default function BillingPage() {
               <div className="flex gap-8">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center">
-                    <CalendarCheck className="w-5 h-5 text-[#E91E63]" />
+                    <CalendarCheck className="w-5 h-5 text-[#C90044]" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-500">{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}</div>
@@ -142,16 +142,16 @@ export default function BillingPage() {
               <p className="text-xs text-gray-500 mb-4">Choose the right plan as you grow.</p>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="p-4 border-2 border-[#E91E63] rounded-xl relative bg-pink-50/30">
-                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#E91E63] text-xs font-medium rounded">
+                <div className="p-4 border-2 border-[#C90044] rounded-xl relative bg-pink-50/30">
+                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#C90044] text-xs font-medium rounded">
                     Current plan
                   </div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Crown className="w-4 h-4 text-[#E91E63]" />
+                    <Crown className="w-4 h-4 text-[#C90044]" />
                     <span className="font-semibold text-gray-900 text-sm">{plan.label}</span>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
-                  <div className="text-sm font-bold text-[#E91E63]">{plan.price}</div>
+                  <div className="text-sm font-bold text-[#C90044]">{plan.price}</div>
                 </div>
                 {upgrade ? (
                   <div className="p-4 border border-purple-200 rounded-xl relative">
@@ -179,7 +179,7 @@ export default function BillingPage() {
 
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-500">Need more exposure? Upgrade to Boost.</p>
-                <button onClick={() => navigate('/plans')} className="text-xs text-[#E91E63] font-medium flex items-center gap-1">
+                <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
                   Learn more about plans
                   <ChevronRight className="w-3 h-3" />
                 </button>

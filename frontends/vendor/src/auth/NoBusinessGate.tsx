@@ -45,7 +45,7 @@ export default function NoBusinessGate() {
             className="flex w-full items-center gap-4 rounded-xl border border-gray-200 p-4 text-left transition-shadow hover:shadow-card-hover"
           >
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-pink-100">
-              <Store className="h-5 w-5 text-[#E91E63]" />
+              <Store className="h-5 w-5 text-[#C90044]" />
             </div>
             <div className="flex-1">
               <div className="font-semibold text-gray-900">I run a business</div>

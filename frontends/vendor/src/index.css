@@ -4,51 +4,65 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 233 35% 17%;
+    /* Themed to the brand palette. `--primary`, `--ring` and the
+       `.gradient-primary` utilities below are deliberately unchanged: they are
+       the CTA buttons. Everything else moves onto the palette. */
+    --background: 34 100% 98%;      /* #FFFCF8 paper, same as the parent app */
+    --foreground: 231 63% 18%;      /* #111A4C ink */
     --card: 0 0% 100%;
-    --card-foreground: 233 35% 17%;
+    --card-foreground: 231 63% 18%;
     --popover: 0 0% 100%;
-    --popover-foreground: 233 35% 17%;
-    --primary: 340 95% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 233 35% 17%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 233 35% 17%;
-    --destructive: 0 84.2% 60.2%;
+    --popover-foreground: 231 63% 18%;
+    --primary: 340 95% 53%;                     /* CTA — unchanged */
+    --primary-foreground: 0 0% 100%;            /* CTA — unchanged */
+    --secondary: 345 17% 94%;       /* warm neutral */
+    --secondary-foreground: 231 63% 18%;
+    --muted: 345 17% 94%;
+    --muted-foreground: 320 4% 42%; /* #6E646B, 5.68:1 on white */
+    --accent: 340 100% 96%;         /* palette pink, lightest tint */
+    --accent-foreground: 340 100% 39%; /* #C90044, 5.89:1 */
+    --destructive: 0 84.2% 60.2%;               /* errors — unchanged */
     --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 340 95% 53%;
+    --border: 345 17% 91%;          /* #EBE3E5 warm hairline */
+    --input: 345 17% 91%;
+    --ring: 340 95% 53%;                        /* CTA focus ring — unchanged */
     --radius: 0.625rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 233 35% 17%;
-    --sidebar-primary: 340 95% 53%;
+    --sidebar-background: 0 23% 97%;
+    --sidebar-foreground: 231 63% 18%;
+    --sidebar-primary: 340 100% 39%;   /* fill under white text, 5.89:1 */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 340 95% 97%;
-    --sidebar-accent-foreground: 340 95% 53%;
-    --sidebar-border: 220 13% 91%;
+    --sidebar-accent: 340 100% 96%;
+    --sidebar-accent-foreground: 340 100% 39%;
+    --sidebar-border: 345 17% 91%;
     --sidebar-ring: 340 95% 53%;
 
-    /* BabyBrain Custom Colors */
-    --bb-pink: 340 95% 53%;
-    --bb-pink-light: 340 95% 97%;
-    --bb-orange: 25 100% 60%;
-    --bb-navy: 233 35% 17%;
-    --bb-green: 142 71% 45%;
-    --bb-green-light: 142 71% 97%;
-    --bb-purple: 258 90% 66%;
-    --bb-purple-light: 258 90% 97%;
-    --bb-blue: 217 91% 60%;
-    --bb-blue-light: 217 91% 97%;
-    --bb-yellow: 38 92% 50%;
-    --bb-yellow-light: 38 92% 97%;
-    --bb-teal: 173 80% 40%;
-    --bb-gray: 220 9% 46%;
-    --bb-gray-light: 220 14% 96%;
+    /* Brand palette.
+       `-surface` is the supplied colour exactly; the bare token is the readable
+       member of that hue (>=4.5:1) because the pastels sit at 1.4–1.9:1 on
+       white and cannot carry text. */
+    --bb-pink: 340 100% 39%;         /* #C90044 */
+    --bb-pink-surface: 340 100% 88%; /* #FFC1D6 */
+    --bb-pink-light: 340 100% 96%;
+    --bb-orange: 28 100% 34%;        /* #AE5000 */
+    --bb-orange-surface: 28 100% 74%;/* #FFB77A */
+    --bb-orange-light: 28 90% 96%;
+    --bb-navy: 231 63% 18%;
+    --bb-green: 108 59% 31%;         /* #317D20 */
+    --bb-green-surface: 109 59% 75%; /* #A8E59A */
+    --bb-green-light: 110 60% 96%;
+    --bb-purple: 265 51% 53%;        /* #7D4AC5 */
+    --bb-purple-surface: 265 51% 80%;/* #C7B1E6 */
+    --bb-purple-light: 264 50% 96%;
+    --bb-blue: 204 85% 37%;          /* #0E6FAF */
+    --bb-blue-surface: 204 85% 81%;  /* #A7D8F8 */
+    --bb-blue-light: 203 80% 96%;
+    --bb-yellow: 42 100% 29%;        /* #936700 */
+    --bb-yellow-surface: 42 100% 74%;/* #FFD77A */
+    --bb-yellow-light: 44 90% 96%;
+    /* No teal in the palette — folded into blue. */
+    --bb-teal: 204 85% 37%;
+    --bb-gray: 320 4% 42%;
+    --bb-gray-light: 345 17% 94%;
   }
 }
 
@@ -63,16 +77,21 @@
 }
 
 @layer utilities {
+  /* CTA gradient — unchanged. Pinned to literals rather than `--bb-pink` /
+     `--bb-orange`, which now resolve to the palette's readable inks; leaving
+     the var reference here would have quietly restyled every primary button. */
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(var(--bb-pink)) 0%, hsl(var(--bb-orange)) 100%);
+    background: linear-gradient(135deg, hsl(340 95% 53%) 0%, hsl(25 100% 60%) 100%);
   }
 
   .gradient-primary-hover {
     background: linear-gradient(135deg, hsl(340 95% 48%) 0%, hsl(25 100% 55%) 100%);
   }
 
+  /* Headings only, so the 3:1 large-text tier is the right one here — the inks
+     would read as crimson-to-brown, the pastels wouldn't read at all. */
   .text-gradient {
-    background: linear-gradient(135deg, hsl(var(--bb-pink)) 0%, hsl(var(--bb-orange)) 100%);
+    background: linear-gradient(135deg, hsl(340 100% 66%) 0%, hsl(28 100% 47%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

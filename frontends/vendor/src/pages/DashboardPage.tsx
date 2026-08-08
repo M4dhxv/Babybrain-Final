@@ -236,7 +236,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3">
           <button onClick={() => navigate('/activities')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
-              <CalendarPlus className="w-6 h-6 text-[#E91E63]" />
+              <CalendarPlus className="w-6 h-6 text-[#C90044]" />
             </div>
             <div className="flex-1">
               <div className="font-semibold text-gray-900">Add a Class</div>
@@ -285,7 +285,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {!stat.change && <div className="mb-3" />}
-              <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 text-xs font-medium text-[#E91E63] hover:underline">
+              <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
                 View Details
                 <ArrowRight className="w-3 h-3" />
               </button>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Upcoming Sessions</h3>
-              <button onClick={() => navigate('/bookings')} className="text-xs text-[#E91E63] font-medium">View all</button>
+              <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
               {upcoming.map((session, idx) => {
@@ -322,7 +322,7 @@ export default function DashboardPage() {
               })}
               {loaded && upcoming.length === 0 && <div className="text-sm text-gray-400">No upcoming sessions.</div>}
             </div>
-            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#E91E63]">
+            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View full schedule
               <ArrowRight className="w-3 h-3" />
             </button>
@@ -332,7 +332,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Recent Bookings</h3>
-              <button onClick={() => navigate('/bookings')} className="text-xs text-[#E91E63] font-medium">View all</button>
+              <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
               {recent.map((booking, idx) => (
@@ -357,7 +357,7 @@ export default function DashboardPage() {
               ))}
               {loaded && recent.length === 0 && <div className="text-sm text-gray-400">No bookings yet.</div>}
             </div>
-            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#E91E63]">
+            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View all bookings
               <ArrowRight className="w-3 h-3" />
             </button>
@@ -457,10 +457,10 @@ export default function DashboardPage() {
       {/* Floating Chat Button */}
       <button
         onClick={() => setShowMessages(!showMessages)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-[#E91E63] to-[#FF5722] rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-[#C90044] to-[#AE5000] rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow z-50"
       >
         <MessageSquare className="w-6 h-6 text-white" />
-        <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#E91E63] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
+        <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
           {showMessages ? 2 : 7}
         </span>
       </button>
@@ -472,7 +472,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-gray-900">Messages</h3>
-              <span className="w-5 h-5 bg-[#E91E63] text-white text-xs rounded-full flex items-center justify-center">2</span>
+              <span className="w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center">2</span>
             </div>
             <div className="flex items-center gap-2">
               <button className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -512,7 +512,7 @@ export default function DashboardPage() {
                   <p className="text-sm text-gray-600 truncate">{msg.message}</p>
                 </div>
                 {msg.count > 0 && (
-                  <span className="w-5 h-5 bg-[#E91E63] text-white text-xs rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center flex-shrink-0">
                     {msg.count}
                   </span>
                 )}

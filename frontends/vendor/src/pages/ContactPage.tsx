@@ -101,7 +101,7 @@ export default function ContactPage() {
       copy: 'Best for anything involving bookings, payments or your plan.',
       label: 'Email us',
       href: `mailto:${SUPPORT_EMAIL}`,
-      tone: 'bg-pink-50 text-[#E91E63]',
+      tone: 'bg-pink-50 text-[#C90044]',
     },
     {
       icon: Phone,
@@ -127,7 +127,7 @@ export default function ContactPage() {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-10 sm:px-8">
-        <h1 className="text-3xl font-bold text-[#1B1F3B]">How can we help?</h1>
+        <h1 className="text-3xl font-bold text-[#111A4C]">How can we help?</h1>
         <p className="mt-2 text-gray-600">
           Whether you're thinking about joining or already listed with us, we're here.
         </p>
@@ -140,7 +140,7 @@ export default function ContactPage() {
               </div>
               <h2 className="text-lg font-bold text-gray-900">
                 {c.title}
-                {c.tag && <span className="ml-2 rounded-full bg-pink-100 px-2 py-0.5 text-[10px] text-[#E91E63]">{c.tag}</span>}
+                {c.tag && <span className="ml-2 rounded-full bg-pink-100 px-2 py-0.5 text-[10px] text-[#C90044]">{c.tag}</span>}
               </h2>
               <p className="my-4 text-sm text-gray-500">{c.copy}</p>
               <Button asChild variant="outline" className="w-full rounded-xl">
@@ -153,7 +153,7 @@ export default function ContactPage() {
         </section>
 
         <section className="mt-10">
-          <h2 className="text-2xl font-bold text-[#1B1F3B]">Send us an enquiry</h2>
+          <h2 className="text-2xl font-bold text-[#111A4C]">Send us an enquiry</h2>
           <p className="mt-1 text-gray-600">Tell us about your business and we'll come back to you.</p>
           {sent ? (
             <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-6 text-center">
@@ -189,7 +189,7 @@ export default function ContactPage() {
         </section>
 
         <section id="faq" className="mt-12 scroll-mt-24">
-          <h2 className="text-2xl font-bold text-[#1B1F3B]">Frequently asked questions</h2>
+          <h2 className="text-2xl font-bold text-[#111A4C]">Frequently asked questions</h2>
           <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200">
             {FAQS.map(([q, a]) => (
               <details key={q} className="border-b border-gray-100 px-6 py-4 last:border-b-0">

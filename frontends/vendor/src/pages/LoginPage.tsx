@@ -38,7 +38,7 @@ export default function LoginPage() {
         <div className="mb-6 flex items-center gap-2">
           <BrandLogo className="h-8" />
           <div>
-            <div className="text-lg font-bold text-[#2b7cff]">BabyBrain</div>
+            <div className="text-lg font-bold text-[#0E6FAF]">BabyBrain</div>
             <div className="text-xs text-gray-500">Vendor Portal</div>
           </div>
         </div>
@@ -57,7 +57,7 @@ export default function LoginPage() {
           <div>
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <button type="button" className="text-xs font-semibold text-[#2b7cff]" onClick={() => navigate('/forgot-password')}>
+              <button type="button" className="text-xs font-semibold text-[#0E6FAF]" onClick={() => navigate('/forgot-password')}>
                 Forgot password?
               </button>
             </div>
@@ -69,7 +69,7 @@ export default function LoginPage() {
         </form>
         <p className="mt-4 text-center text-xs text-gray-500">
           New here?{' '}
-          <button className="font-semibold text-[#2b7cff]" onClick={() => navigate('/claim-business')}>
+          <button className="font-semibold text-[#0E6FAF]" onClick={() => navigate('/claim-business')}>
             Claim your business
           </button>
         </p>

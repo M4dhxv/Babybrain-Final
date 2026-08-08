@@ -427,7 +427,7 @@ export default function ActivitiesPage() {
           <button
             onClick={() => canManage && openCreate()}
             disabled={!canManage}
-            className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#E91E63] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
           >
             <CalendarPlus className="w-4 h-4" />
             New Activity
@@ -468,7 +468,7 @@ export default function ActivitiesPage() {
                   onClick={() => onTab(tab)}
                   className={cn(
                     'text-sm font-medium pb-2 border-b-2 transition-colors',
-                    activeTab === tab ? 'text-[#E91E63] border-[#E91E63]' : 'text-gray-500 border-transparent hover:text-gray-700'
+                    activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
                   )}
                 >
                   {tab}
@@ -626,7 +626,7 @@ export default function ActivitiesPage() {
           <h2 className="font-semibold text-gray-900">Class packs</h2>
           <p className="text-sm text-gray-500 mt-0.5">Multi-session packs parents can buy; each booking uses one credit.</p>
           <p className="text-xs text-gray-500 mt-1.5">
-            Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#E91E63] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token". Parents redeem them when rebooking.
+            Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token". Parents redeem them when rebooking.
           </p>
           {packs.length > 0 && (
             <div className="mt-4 space-y-2">
@@ -667,7 +667,7 @@ export default function ActivitiesPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
                   <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
                 </div>
-                <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#E91E63] px-4 text-sm font-medium text-white disabled:opacity-50">
+                <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
                   {savingPack ? 'Adding…' : 'Add pack'}
                 </button>
               </div>
@@ -709,11 +709,11 @@ export default function ActivitiesPage() {
           <div className="flex-1 overflow-auto p-5 space-y-5">
             {formError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</div>}
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#E91E63]">*</span></label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#C90044]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#E91E63]">*</span></label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#C90044]">*</span></label>
               <select className={inputCls} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
                 <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -739,7 +739,7 @@ export default function ActivitiesPage() {
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
               {locations.length === 0 && (
-                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#E91E63] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
+                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#C90044] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
               )}
             </div>
             <div>
@@ -756,8 +756,8 @@ export default function ActivitiesPage() {
                   <img src={form.image_url} alt="Activity" className="h-24 w-full rounded-lg object-cover" />
                 ) : (
                   <>
-                    <ImageUp className="w-6 h-6 text-[#E91E63]" />
-                    <span className="text-sm font-medium text-[#E91E63]">{uploading ? 'Uploading…' : 'Upload image'}</span>
+                    <ImageUp className="w-6 h-6 text-[#C90044]" />
+                    <span className="text-sm font-medium text-[#C90044]">{uploading ? 'Uploading…' : 'Upload image'}</span>
                     <span className="text-xs text-gray-500">PNG, JPG up to 5MB</span>
                   </>
                 )}
@@ -782,7 +782,7 @@ export default function ActivitiesPage() {
                 <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
                 <div className="text-xs text-gray-500">Parents must complete disclosures and consents before booking</div>
               </div>
-              <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#E91E63]" />
+              <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#C90044]" />
             </div>
 
             {/* 2.2: cancellation & rescheduling policy for this class */}
@@ -793,7 +793,7 @@ export default function ActivitiesPage() {
                   <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
                   <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
                 </div>
-                <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#E91E63]" />
+                <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#C90044]" />
               </div>
               {form.allow_cancellation && (
                 <div>
@@ -806,7 +806,7 @@ export default function ActivitiesPage() {
                   <div className="text-sm font-medium text-gray-900">Allow rescheduling</div>
                   <div className="text-xs text-gray-500">Parents can move their booking to another session</div>
                 </div>
-                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} className="data-[state=checked]:bg-[#E91E63]" />
+                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} className="data-[state=checked]:bg-[#C90044]" />
               </div>
               {form.allow_rescheduling && (
                 <div>

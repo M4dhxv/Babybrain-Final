@@ -123,7 +123,7 @@ export default function SettingsPage() {
           {settingsTabs.map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={cn('flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                activeTab === tab.id ? 'bg-white text-[#E91E63] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
+                activeTab === tab.id ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               <tab.icon className="w-4 h-4" />
               {tab.label}
             </button>
@@ -139,7 +139,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center gap-4 mb-5">
                 <div className="w-16 h-16 rounded-full bg-pink-100 flex items-center justify-center overflow-hidden">
-                  {provider?.logo_url ? <img src={provider.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-8 h-8 text-[#E91E63]" />}
+                  {provider?.logo_url ? <img src={provider.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-8 h-8 text-[#C90044]" />}
                 </div>
                 <div>
                   <h4 className="text-lg font-bold text-gray-900">{form.business_name || 'Your business'}</h4>
@@ -367,7 +367,7 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
           </div>
         </div>
         {canManage && !showForm && (
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#E91E63] rounded-lg text-xs font-medium hover:bg-pink-100">
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
             <Plus className="w-3.5 h-3.5" /> Add location
           </button>
         )}
@@ -376,7 +376,7 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
       <div className="space-y-3 mb-4">
         {locations.map((loc) => (
           <div key={loc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#E91E63]"><Store className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#C90044]"><Store className="w-5 h-5" /></div>
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
               <div className="text-xs text-gray-500 truncate">
@@ -397,7 +397,7 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
         <div className="rounded-xl border border-gray-200 p-4 space-y-3">
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#E91E63]">*</span></label>
+            <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#C90044]">*</span></label>
             <input className={inputCls} placeholder="e.g. Suntec City Studio" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-3">

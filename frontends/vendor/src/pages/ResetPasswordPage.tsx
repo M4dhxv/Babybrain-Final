@@ -41,7 +41,7 @@ export default function ResetPasswordPage() {
         <div className="mb-6 flex items-center gap-2">
           <BrandLogo className="h-8" />
           <div>
-            <div className="text-lg font-bold text-[#2b7cff]">BabyBrain</div>
+            <div className="text-lg font-bold text-[#0E6FAF]">BabyBrain</div>
             <div className="text-xs text-gray-500">Vendor Portal</div>
           </div>
         </div>
