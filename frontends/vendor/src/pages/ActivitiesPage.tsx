@@ -97,12 +97,21 @@ export default function ActivitiesPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Schedule manager (sessions = the bookable dates/times of an activity)
-  type Sess = { id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number };
+  type Sess = {
+    id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number;
+    teacher_name: string | null; studio: string | null;
+  };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
-  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1' });
+  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1', teacher: '', studio: '' });
   const [savingSess, setSavingSess] = useState(false);
   const [sessError, setSessError] = useState<string | null>(null);
+
+  // Per-session teacher/studio can also be set after the fact (a substitute
+  // teacher, or a room reassignment) without recreating the session.
+  const [editingSessId, setEditingSessId] = useState<string | null>(null);
+  const [sessEditForm, setSessEditForm] = useState({ teacher: '', studio: '' });
+  const [savingSessEdit, setSavingSessEdit] = useState(false);
 
   async function openSchedule(a: Activity) {
     setShowMenu(null);
@@ -114,7 +123,7 @@ export default function ActivitiesPage() {
   async function loadSessions(activityId: string) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio')
       .eq('activity_id', activityId)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
@@ -153,6 +162,10 @@ export default function ActivitiesPage() {
         starts_at: starts.toISOString(),
         ends_at: ends.toISOString(),
         capacity: sessForm.capacity ? Number(sessForm.capacity) : null,
+        // Left blank for activity types where neither applies (playspaces,
+        // community events) — that's what "N/A" means here.
+        teacher_name: sessForm.teacher.trim() || null,
+        studio: sessForm.studio.trim() || null,
       };
     });
     const { error } = await supabase.from('activity_sessions').insert(rows);
@@ -161,9 +174,26 @@ export default function ActivitiesPage() {
       setSessError(error.message);
       return;
     }
-    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1' });
+    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1', teacher: sessForm.teacher, studio: sessForm.studio });
     await loadSessions(scheduleFor.id);
     load(); // refresh the upcoming counts in the table
+  }
+
+  function startEditSess(s: Sess) {
+    setEditingSessId(s.id);
+    setSessEditForm({ teacher: s.teacher_name ?? '', studio: s.studio ?? '' });
+  }
+
+  async function saveSessEdit(id: string) {
+    if (!scheduleFor) return;
+    setSavingSessEdit(true);
+    await supabase.from('activity_sessions').update({
+      teacher_name: sessEditForm.teacher.trim() || null,
+      studio: sessEditForm.studio.trim() || null,
+    }).eq('id', id);
+    setSavingSessEdit(false);
+    setEditingSessId(null);
+    await loadSessions(scheduleFor.id);
   }
 
   async function removeSession(s: Sess) {
@@ -398,7 +428,7 @@ export default function ActivitiesPage() {
             <Package className="w-4 h-4" />
             New Package
           </button>
-          <button onClick={() => navigate('/settings')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
+          <button onClick={() => navigate('/settings?tab=locations&new=location')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
             <MapPin className="w-4 h-4" />
             New Location
           </button>
@@ -773,6 +803,14 @@ export default function ActivitiesPage() {
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity (blank = unlimited)</label>
                   <input type="number" min="1" placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>
+                  <input placeholder="e.g. Ms Sarah" className={inputCls} value={sessForm.teacher} onChange={(e) => setSessForm({ ...sessForm, teacher: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Studio / room (leave blank if N/A)</label>
+                  <input placeholder="e.g. Room 2" className={inputCls} value={sessForm.studio} onChange={(e) => setSessForm({ ...sessForm, studio: e.target.value })} />
+                </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat weekly</label>
                   <select className={inputCls} value={sessForm.repeat} onChange={(e) => setSessForm({ ...sessForm, repeat: e.target.value })}>
@@ -795,21 +833,46 @@ export default function ActivitiesPage() {
               )}
               <div className="space-y-2">
                 {sessions.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {new Date(s.starts_at).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                  editingSessId === s.id ? (
+                    <div key={s.id} className="rounded-lg border border-pink-200 bg-pink-50/30 px-3 py-2.5 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input placeholder="Teacher (N/A if blank)" className={inputCls} value={sessEditForm.teacher} onChange={(e) => setSessEditForm({ ...sessEditForm, teacher: e.target.value })} />
+                        <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
-                        {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
-                        {' · '}{s.booked} booked
+                      <div className="flex gap-2">
+                        <button onClick={() => saveSessEdit(s.id)} disabled={savingSessEdit} className="px-3 py-1.5 bg-[#C90044] text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                          {savingSessEdit ? 'Saving…' : 'Save'}
+                        </button>
+                        <button onClick={() => setEditingSessId(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700">Cancel</button>
                       </div>
                     </div>
-                    <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  ) : (
+                    <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900">
+                          {new Date(s.starts_at).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
+                          {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
+                          {' · '}{s.booked} booked
+                        </div>
+                        {(s.teacher_name || s.studio) && (
+                          <div className="text-xs text-purple-700 mt-0.5 truncate">
+                            {[s.teacher_name, s.studio].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )
                 ))}
               </div>
             </div>

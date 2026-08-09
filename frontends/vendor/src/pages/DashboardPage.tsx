@@ -42,7 +42,7 @@ const sessionColors = ['bg-pink-100 text-pink-600', 'bg-purple-100 text-purple-6
 const sgWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
-type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null };
+type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null; location: string | null };
 type RecentBooking = {
   id: string; child: string; activity: string; time: string; status: string;
   isRepeat: boolean; packageName: string | null;
@@ -98,8 +98,13 @@ export default function DashboardPage() {
       .then(({ data }) => setOverview((data?.[0] as ProviderOverview) ?? null));
 
     (async () => {
-      const { data: acts } = await supabase.from('activities').select('id, title').eq('provider_id', provider.id);
+      const [{ data: acts }, { data: locs }] = await Promise.all([
+        supabase.from('activities').select('id, title, location_id').eq('provider_id', provider.id),
+        supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id),
+      ]);
       const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
+      const activityLocationOf = new Map((acts ?? []).map((a) => [a.id, a.location_id]));
+      const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
       if (!ids.length) { setLoaded(true); return; }
 
@@ -109,7 +114,7 @@ export default function DashboardPage() {
       const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
       const { data: sess } = await supabase
         .from('activity_sessions')
-        .select('id, activity_id, starts_at, capacity')
+        .select('id, activity_id, starts_at, capacity, location_id')
         .in('activity_id', ids)
         .gte('starts_at', nowIso)
         .lte('starts_at', in90dIso)
@@ -126,10 +131,14 @@ export default function DashboardPage() {
           if (b.status === 'confirmed' || b.status === 'completed') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
-      setUpcoming((sess ?? []).map((s) => ({
-        id: s.id, when: s.starts_at, name: titleOf.get(s.activity_id) ?? 'Activity',
-        booked: counts[s.id] ?? 0, capacity: s.capacity,
-      })));
+      setUpcoming((sess ?? []).map((s) => {
+        const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
+        return {
+          id: s.id, when: s.starts_at, name: titleOf.get(s.activity_id) ?? 'Activity',
+          booked: counts[s.id] ?? 0, capacity: s.capacity,
+          location: locId ? locationNameOf.get(locId) ?? null : null,
+        };
+      }));
 
       // 1.3: recent bookings with the booked child's name (security-definer RPC).
       // Fetched 30 (not 4) so the status filter has more than one screenful to
@@ -280,7 +289,7 @@ export default function DashboardPage() {
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
-          <button onClick={() => navigate('/settings?tab=locations')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
+          <button onClick={() => navigate('/settings?tab=locations&new=location')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
               <MapPin className="w-6 h-6 text-blue-600" />
             </div>
@@ -338,6 +347,11 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-gray-500">{sgWhen(session.when)}</div>
                       <div className="text-sm font-medium text-gray-900 truncate">{session.name}</div>
+                      {session.location && (
+                        <div className="flex items-center gap-1 text-xs text-gray-400 truncate">
+                          <MapPin className="h-3 w-3 flex-shrink-0" /> {session.location}
+                        </div>
+                      )}
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-semibold text-gray-900">{session.booked}{session.capacity != null ? ` / ${session.capacity}` : ''}</div>

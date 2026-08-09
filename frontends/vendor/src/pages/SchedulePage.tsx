@@ -4,7 +4,7 @@ import {
   addDays, addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format,
   isSameDay, isSameMonth, isToday, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -23,6 +23,8 @@ type EnrichedSession = {
   capacity: number | null;
   booked: number;
   locationName: string | null;
+  teacherName: string | null;
+  studio: string | null;
 };
 
 export default function SchedulePage() {
@@ -70,7 +72,7 @@ export default function SchedulePage() {
       const locationMap = new Map(locations.map((l) => [l.id, l.name]));
       const { data: sess } = await supabase
         .from('activity_sessions')
-        .select('id, activity_id, starts_at, ends_at, capacity, location_id')
+        .select('id, activity_id, starts_at, ends_at, capacity, location_id, teacher_name, studio')
         .in('activity_id', activities.map((a) => a.id))
         .neq('status', 'cancelled')
         .gte('starts_at', rangeStart.toISOString())
@@ -100,6 +102,8 @@ export default function SchedulePage() {
             capacity: s.capacity,
             booked: counts[s.id] ?? 0,
             locationName: locId ? locationMap.get(locId) ?? null : null,
+            teacherName: s.teacher_name,
+            studio: s.studio,
           };
         })
       );
@@ -307,6 +311,12 @@ function SessionCard({ s, onClick }: { s: EnrichedSession; onClick: () => void }
       {s.locationName && (
         <div className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500">
           <MapPin className="h-3 w-3 flex-shrink-0" /> <span className="truncate">{s.locationName}</span>
+        </div>
+      )}
+      {(s.teacherName || s.studio) && (
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-purple-700">
+          <UserIcon className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{[s.teacherName, s.studio].filter(Boolean).join(' · ')}</span>
         </div>
       )}
       <div className="mt-1 flex items-center gap-1 text-[11px]">

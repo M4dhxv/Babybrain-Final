@@ -236,7 +236,9 @@ export default function SaveListingPage() {
                     )}
                   </div>
                 </div>
-                <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600 flex-shrink-0" />
+                <button type="button" aria-label="Edit venues & schedules" onClick={() => navigate('/settings?tab=locations')} className="flex-shrink-0">
+                  <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
+                </button>
               </div>
               <div className="space-y-2">
                 {venues.map((v, i) => (

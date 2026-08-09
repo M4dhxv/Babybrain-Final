@@ -236,6 +236,8 @@ export type Database = {
           capacity: number | null;
           location_id: string | null;
           status: 'scheduled' | 'cancelled';
+          teacher_name: string | null;
+          studio: string | null;
           created_at: string;
         };
         Insert: {
@@ -246,6 +248,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          teacher_name?: string | null;
+          studio?: string | null;
         };
         Update: {
           starts_at?: string;
@@ -253,6 +257,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          teacher_name?: string | null;
+          studio?: string | null;
         };
               Relationships: [
           {
