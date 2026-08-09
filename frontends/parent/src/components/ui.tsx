@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { resolveAvatar } from "../lib/avatars";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
@@ -510,18 +510,68 @@ export function DateInput({
     onChange(isRealDate ? iso : "");
   }
 
+  /* QA asked for "a calendar pop out so you can easily select dates (but also
+   * be able to type too if you wish)". The visible field stays day-first text
+   * so typing is unambiguous — a native `type="date"` renders MM/DD/YYYY for
+   * some locales, which is what it replaced. The calendar button opens a
+   * hidden native date input over the same spot, so picking a date is one tap
+   * and the two stay in sync. */
+  const picker = useRef<HTMLInputElement>(null);
+  const openPicker = () => {
+    const el = picker.current;
+    if (!el) return;
+    // showPicker() is the reliable way; older browsers fall back to a click,
+    // which opens the picker on the (visually hidden) native control.
+    if (typeof el.showPicker === "function") {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        /* not allowed in this context — fall through */
+      }
+    }
+    el.focus();
+    el.click();
+  };
+
   return (
-    <input
-      id={id}
-      type="text"
-      inputMode="numeric"
-      autoComplete="off"
-      value={text}
-      placeholder={placeholder}
-      aria-describedby={id ? `${id}-format` : undefined}
-      onChange={(e) => handle(e.target.value)}
-      className={className}
-    />
+    <span className="relative block">
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        value={text}
+        placeholder={placeholder}
+        aria-describedby={id ? `${id}-format` : undefined}
+        onChange={(e) => handle(e.target.value)}
+        className={`${className} pr-10`}
+      />
+      <button
+        type="button"
+        onClick={openPicker}
+        aria-label="Open calendar"
+        className="absolute right-0 top-0 grid h-full w-10 place-items-center text-[#6D748A] transition hover:text-baby-pink"
+      >
+        <Icon name="calendar" className="h-4 w-4" />
+      </button>
+      <input
+        ref={picker}
+        type="date"
+        tabIndex={-1}
+        aria-hidden="true"
+        value={value || ""}
+        onChange={(e) => {
+          const iso = e.target.value;
+          setText(isoToUk(iso));
+          setLastValue(iso);
+          onChange(iso);
+        }}
+        // Sits under the button so the native popup anchors there, but is
+        // never focusable or readable — the text field is the real control.
+        className="pointer-events-none absolute right-2 bottom-0 h-0 w-0 opacity-0"
+      />
+    </span>
   );
 }
 

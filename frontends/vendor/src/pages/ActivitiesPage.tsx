@@ -79,7 +79,9 @@ export default function ActivitiesPage() {
   const [fStatus, setFStatus] = useState('');
   const [fLocation, setFLocation] = useState('');
   const [fAge, setFAge] = useState('');
-  const [fCategory, setFCategory] = useState('');
+  // QA: filtering this table by category doesn't help a vendor — they want to
+  // pull up one activity and read its stats. Filters by activity instead.
+  const [fActivity, setFActivity] = useState('');
   const [sortBy, setSortBy] = useState<'updated' | 'name' | 'rating'>('updated');
 
   // Create/Edit-activity form (editingId set = editing an existing activity)
@@ -281,7 +283,7 @@ export default function ActivitiesPage() {
       });
     }
     if (fLocation) list = list.filter((a) => a.location_id === fLocation);
-    if (fCategory) list = list.filter((a) => String(a.category_id) === fCategory);
+    if (fActivity) list = list.filter((a) => String(a.id) === fActivity);
     if (fAge) {
       const [lo, hi] = fAge.split('-').map(Number); // months
       list = list.filter((a) => a.age_min_months <= hi && a.age_max_months >= lo);
@@ -289,7 +291,7 @@ export default function ActivitiesPage() {
     if (sortBy === 'name') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     else if (sortBy === 'rating') list = [...list].sort((a, b) => Number(b.rating_avg) - Number(a.rating_avg));
     return list;
-  }, [activities, search, fStatus, fLocation, fCategory, fAge, sortBy]);
+  }, [activities, search, fStatus, fLocation, fActivity, fAge, sortBy]);
   const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? '—';
 
   // Themed placeholder per category so rows without photos still look distinct.
@@ -510,9 +512,11 @@ export default function ActivitiesPage() {
               <option value="36-60">3 – 5 years</option>
               <option value="60-216">5+ years</option>
             </select>
-            <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className={filterCls}>
-              <option value="">All Categories</option>
-              {categories.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={filterCls}>
+              <option value="">All activities</option>
+              {[...activities]
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
             </select>
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'ml-auto')}>
               <option value="updated">Sort by: Recently updated</option>

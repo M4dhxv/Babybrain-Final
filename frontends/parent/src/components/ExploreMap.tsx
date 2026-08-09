@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LiveActivity } from "../lib/useActivities";
+import { formatDuration, regionLabel } from "../lib/database.types";
 
 // Singapore centre + a bounding box to keep the map on-country.
 const SG_CENTER: [number, number] = [1.3521, 103.8198];
@@ -93,12 +94,31 @@ export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
     for (const g of byLoc.values()) {
       bounds.push([g.lat, g.lng]);
       const name = g.label ?? g.items[0].providerName;
+      // QA: "You shouldn't have to click on pop out before seeing price",
+      // "Can't see duration on activity pop outs", and the location should read
+      // as an area rather than a postcode. Each row now carries price, duration
+      // and area under the title.
       const rows = g.items
         .slice(0, 8)
-        .map(
-          (a) =>
-            `<a href="/activity?slug=${encodeURIComponent(a.slug)}" style="display:block;color:#4597F7;font-weight:700;text-decoration:none;margin:2px 0">${esc(a.title)}</a>`
-        )
+        .map((a) => {
+          const bits = [
+            a.price != null
+              ? Number(a.price) > 0
+                ? `From $${Number(a.price) % 1 === 0 ? Number(a.price).toFixed(0) : Number(a.price).toFixed(2)}`
+                : "Free"
+              : null,
+            formatDuration(a.durationMins),
+            regionLabel(a.region) || null,
+          ].filter(Boolean);
+          return (
+            `<a href="/activity?slug=${encodeURIComponent(a.slug)}" style="display:block;text-decoration:none;margin:6px 0">` +
+            `<span style="display:block;color:#0E6FAF;font-weight:700">${esc(a.title)}</span>` +
+            (bits.length
+              ? `<span style="display:block;color:#59658d;font-weight:600;font-size:11.5px">${esc(bits.join(" · "))}</span>`
+              : "") +
+            `</a>`
+          );
+        })
         .join("");
       const html =
         `<div style="min-width:150px;font-family:inherit">` +
