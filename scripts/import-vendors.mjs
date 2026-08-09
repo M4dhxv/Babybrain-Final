@@ -34,8 +34,22 @@ if (!URL || !KEY) throw new Error('Missing SUPABASE creds in .env.local');
 
 const args = process.argv.slice(2);
 const LIVE = args.includes('--live');
+/* Without this, a vendor whose provider row already exists is skipped whole —
+ * which meant 145 of 156 freshly extracted classes were dropped, including
+ * every class for the providers that currently have no listings at all. Only
+ * unclaimed, auto-listed providers are touched, so a vendor who has claimed
+ * their page and curated it by hand is never overwritten. */
+const UPDATE_EXISTING = args.includes('--update-existing');
+/* Scraped "medium confidence" records are where the adult-only classes crept
+ * in last time (the pre/post-natal cleanup). They import unpublished so they
+ * can be reviewed before parents see them. */
+const PUBLISH_ALL = args.includes('--publish-all');
 const SRC = args.find((a) => !a.startsWith('--'));
-if (!SRC) throw new Error('Usage: import-vendors.mjs <enriched.json> [--live]');
+if (!SRC) {
+  throw new Error(
+    'Usage: import-vendors.mjs <enriched.json> [--update-existing] [--publish-all] [--live]'
+  );
+}
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
 
@@ -67,6 +81,18 @@ const CATS = [
 ];
 const VENDOR_CATS = ['baby-toddler-classes', 'playspaces', 'camps-holiday', 'community-events', 'mum-bub-exercise', 'other'];
 
+/* BabyBrain lists activities a child attends. Pre/post-natal and pelvic-floor
+ * work is for the adult only, and publishing it is what forced the earlier
+ * cleanup of 41 listings.
+ *
+ * The extractor's `confidence` doesn't catch these — it scores "is this
+ * clearly described", not "is a child present" — so they're filtered on the
+ * title instead. Parent-and-child classes ("Mum & Baby Pilates", "Mums &
+ * Bubs") are a real category here, so a child word rescues the title. */
+const ADULT_ONLY = /pre-?natal|post-?natal|post-?partum|pelvic|physio|physical therapy|antenatal|c-section|diastasis/i;
+const CHILD_PRESENT = /baby|bub|child|kid|toddler|infant|newborn|little one|parent\s*(&|and)\s*\w+|mum\s*(&|and)\s*(baby|bub)/i;
+const isAdultOnly = (title) => ADULT_ONLY.test(title) && !CHILD_PRESENT.test(title);
+
 function isClosed(rec) {
   // enrich-openai.mjs reports this explicitly; fall back to reading the summary
   // for records produced by the older enrichment scripts.
@@ -82,10 +108,16 @@ async function main() {
   const cats = await rest('activity_categories?select=id,slug');
   const catId = Object.fromEntries(cats.map((c) => [c.slug, c.id]));
   const fallbackCat = catId['early-learning'] ?? cats[0].id;
-  const existing = new Set((await rest('providers?select=slug')).map((p) => p.slug));
+  const existingRows = await rest('providers?select=id,slug,is_claimed,contact_email,contact_phone,whatsapp,website');
+  const existing = new Map(existingRows.map((p) => [p.slug, p]));
+  // Activity slugs are globally unique, so this is what stops a re-run from
+  // duplicating classes onto a provider we already topped up.
+  const existingActivitySlugs = new Set(
+    (await rest('activities?select=slug')).map((a) => a.slug)
+  );
 
-  const plan = { providers: [], skipped: [] };
-  const usedSlugs = new Set(existing);
+  const plan = { providers: [], updates: [], skipped: [] };
+  const usedSlugs = new Set(existing.keys());
 
   for (const rec of records) {
     const reason =
@@ -94,8 +126,20 @@ async function main() {
       !rec.name ? 'no name' : null;
     if (reason) { plan.skipped.push({ name: rec.name, reason }); continue; }
 
-    let slug = slugify(rec.name);
-    if (usedSlugs.has(slug)) { plan.skipped.push({ name: rec.name, reason: 'duplicate slug ' + slug }); continue; }
+    const slug = slugify(rec.name);
+    const already = existing.get(slug);
+    if (already && !UPDATE_EXISTING) {
+      plan.skipped.push({ name: rec.name, reason: `already exists (${slug}) — pass --update-existing to add its classes` });
+      continue;
+    }
+    if (already?.is_claimed) {
+      plan.skipped.push({ name: rec.name, reason: 'provider has claimed their page — not overwriting' });
+      continue;
+    }
+    if (!already && usedSlugs.has(slug)) {
+      plan.skipped.push({ name: rec.name, reason: 'duplicate slug ' + slug });
+      continue;
+    }
     usedSlugs.add(slug);
 
     const vcat = VENDOR_CATS.includes(rec.bb_vendor_category) ? rec.bb_vendor_category : 'other';
@@ -130,7 +174,11 @@ async function main() {
 
     const bookingUrl = rec.booking_url || rec.website || null;
     const classes = (rec.classes || []).filter((c) => c && c.name).slice(0, 20);
-    const acts = (classes.length ? classes : [{ name: rec.name }]).map((c, i) => {
+    // A placeholder activity named after the business is only worth creating
+    // for a brand-new provider; adding one to a provider that already has
+    // listings is just noise.
+    const source = classes.length ? classes : already ? [] : [{ name: rec.name }];
+    const acts = source.map((c, i) => {
       const cslug = (CATS.find((s) => (rec.activities_categories || []).includes(s)) || null);
       const desc = [c.days ? `Days: ${(c.days || []).join(', ')}` : '', c.times ? `Times: ${(c.times || []).join(', ')}` : '', c.duration ? `Duration: ${c.duration}` : '', c.location ? `Location: ${c.location}` : '']
         .filter(Boolean).join(' · ');
@@ -147,11 +195,29 @@ async function main() {
         address: rec.address || loc0.address || null,
         postal_code: loc0.postal_code || null,
         image_urls: [],
-        is_published: true,
+        // Only high-confidence extractions go live unattended. Medium ones
+        // land unpublished for review — that is where adult-only classes hid
+        // last time.
+        is_published: (PUBLISH_ALL || rec.confidence === 'high') && !isAdultOnly(c.name),
         requires_medical_disclosure: false,
         external_booking_url: bookingUrl,
       };
-    });
+    })
+      // Never re-add a class we imported on an earlier run.
+      .filter((a) => !existingActivitySlugs.has(a.slug));
+    acts.forEach((a) => existingActivitySlugs.add(a.slug));
+
+    if (already) {
+      if (!acts.length) { plan.skipped.push({ name: rec.name, reason: 'exists, no new classes to add' }); continue; }
+      // Fill blanks on the existing row without clobbering anything already set.
+      const backfill = {};
+      for (const f of ['contact_email', 'contact_phone', 'whatsapp', 'website']) {
+        const v = { contact_email: rec.email, contact_phone: rec.phone, whatsapp: rec.whatsapp, website: rec.website }[f];
+        if (!already[f] && v) backfill[f] = v;
+      }
+      plan.updates.push({ id: already.id, name: rec.name, acts, backfill });
+      continue;
+    }
 
     plan.providers.push({ provider, locations, acts });
   }
@@ -159,11 +225,27 @@ async function main() {
   // --- summary ---
   const totalActs = plan.providers.reduce((n, p) => n + p.acts.length, 0);
   const totalLocs = plan.providers.reduce((n, p) => n + p.locations.length, 0);
-  console.log(`\nWould create: ${plan.providers.length} providers · ${totalLocs} locations · ${totalActs} activities`);
-  console.log(`Skipped: ${plan.skipped.length}`);
+  const updActs = plan.updates.reduce((n, u) => n + u.acts.length, 0);
+  const allActs = [...plan.providers.flatMap((p) => p.acts), ...plan.updates.flatMap((u) => u.acts)];
+  const pub = allActs.filter((a) => a.is_published).length;
+
+  console.log(`\nNew providers   : ${plan.providers.length}  (${totalLocs} locations, ${totalActs} activities)`);
+  console.log(`Existing topped : ${plan.updates.length}  (${updActs} activities)`);
+  console.log(`Total activities: ${allActs.length}  — ${pub} published, ${allActs.length - pub} unpublished for review`);
+  console.log(`Skipped         : ${plan.skipped.length}`);
   for (const s of plan.skipped) console.log(`  - ${s.name}: ${s.reason}`);
-  console.log('\nSample provider:', JSON.stringify(plan.providers[0]?.provider, null, 2));
-  console.log('Sample activity:', JSON.stringify(plan.providers[0]?.acts[0], null, 2));
+
+  if (plan.updates.length) {
+    console.log('\nClasses added to existing providers:');
+    for (const u of plan.updates) {
+      const extra = Object.keys(u.backfill).length ? ` [+${Object.keys(u.backfill).join(', ')}]` : '';
+      console.log(`  ${u.name} (+${u.acts.length})${extra}`);
+      for (const a of u.acts) console.log(`      · ${a.title}${a.is_published ? '' : '  (unpublished)'}`);
+    }
+  }
+  if (plan.providers.length) {
+    console.log('\nSample new provider:', JSON.stringify(plan.providers[0].provider, null, 2).slice(0, 500));
+  }
 
   if (!LIVE) {
     console.log('\nDRY RUN — nothing written. Re-run with --live to import.');
@@ -188,7 +270,25 @@ async function main() {
       console.log(`  ✗ ${p.provider.business_name}: ${e.message}`);
     }
   }
-  console.log(`\nDone: ${okP} providers · ${okL} locations · ${okA} activities created.`);
+
+  let okU = 0, okUA = 0;
+  for (const u of plan.updates) {
+    try {
+      if (Object.keys(u.backfill).length) {
+        await rest(`providers?id=eq.${u.id}`, { method: 'PATCH', body: JSON.stringify({ ...u.backfill, synced_at: new Date().toISOString() }) });
+      }
+      await rest('activities', { method: 'POST', body: JSON.stringify(u.acts.map((a) => ({ ...a, provider_id: u.id }))) });
+      okU += 1; okUA += u.acts.length;
+      console.log(`  ✓ ${u.name} (+${u.acts.length} activities)`);
+    } catch (e) {
+      console.log(`  ✗ ${u.name}: ${e.message}`);
+    }
+  }
+
+  console.log(
+    `\nDone: ${okP} providers created · ${okL} locations · ${okA} activities` +
+      `\n      ${okU} existing providers topped up · ${okUA} activities added`
+  );
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
