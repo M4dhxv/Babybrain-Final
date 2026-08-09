@@ -43,7 +43,10 @@ const sgWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null };
-type RecentBooking = { id: string; child: string; activity: string; time: string; status: string };
+type RecentBooking = {
+  id: string; child: string; activity: string; time: string; status: string;
+  isRepeat: boolean; packageName: string | null;
+};
 
 
 /** "Good morning/afternoon/evening" in Singapore time. */
@@ -140,6 +143,8 @@ export default function DashboardPage() {
             activity: r.activity_title,
             time: sgWhen(r.starts_at),
             status: r.status,
+            isRepeat: r.is_repeat,
+            packageName: r.package_name,
           })));
         });
 
@@ -364,6 +369,24 @@ export default function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">{booking.child}</div>
                     <div className="text-xs text-gray-500 truncate">{booking.activity}{booking.time ? ` · ${booking.time}` : ''}</div>
+                    {/* QA: "'confirmed' doesn't add much value... is it possible
+                        to tag whether a booking is 'New' or 'Repeat' or what
+                        type of package it was booked with". New/Repeat is
+                        derived from this parent's booking history with this
+                        provider. Pack type only shows for bookings made with a
+                        package credit going forward — bookings never recorded
+                        which pack paid for them until this migration, so a
+                        historic booking or a direct one-off both read "Single
+                        class" rather than a guess. */}
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span className={cn(
+                        'inline-block px-1.5 py-0.5 text-[10px] font-medium rounded',
+                        booking.isRepeat ? 'bg-purple-50 text-purple-600' : 'bg-emerald-50 text-emerald-600'
+                      )}>
+                        {booking.isRepeat ? 'Repeat' : 'New'}
+                      </span>
+                      <span className="text-[10px] text-gray-400">{booking.packageName ?? 'Single class'}</span>
+                    </div>
                   </div>
                   <div className="text-right">
                     <span className={cn(

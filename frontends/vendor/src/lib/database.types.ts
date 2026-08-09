@@ -756,6 +756,8 @@ export type Database = {
           starts_at: string;
           status: BookingStatus;
           created_at: string;
+          is_repeat: boolean;
+          package_name: string | null;
         }[];
       };
       respond_to_review: {
