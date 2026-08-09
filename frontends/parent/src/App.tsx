@@ -3888,7 +3888,6 @@ function PricingPage() {
               <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
             </p>
             <p className="mt-1 text-center text-sm font-black text-baby-pink">Get your first month free!</p>
-            <p className="text-center text-xs font-bold text-[#6D748A]">+ GST</p>
             <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
               {plusItems.map((item) => (
