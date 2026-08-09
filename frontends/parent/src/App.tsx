@@ -3423,7 +3423,7 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
   {
     group: "Cost & payment",
     items: [
-      ["Does BabyBrain cost anything to use?", "BabyBrain is free to browse and book — you just pay the price of the activity. If you'd like extras like saved profiles, pass tracking and calendar sync, our Plus plan is SGD 9/month or SGD 99/year on top of activity prices."],
+      ["Does BabyBrain cost anything to use?", "BabyBrain is free to browse and book — you just pay the price of the activity. Your family profile, reviews and personalised suggestions are all free too. If you'd like extras like pass tracking, saved providers, calendar export and messaging, our Plus plan is SGD 9/month or SGD 99/year on top of activity prices."],
       ["How do I pay?", "PayNow, Apple Pay, Google Pay or card — whatever's easiest for you."],
       ["Is my payment secure?", "Payments are handled by Stripe, a global provider trusted by millions of businesses. Your card details are never stored by BabyBrain."],
     ],
@@ -3433,8 +3433,8 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
     items: [
       ["Can I manage passes I've already bought?", "Yes — with Plus, your packages and make-up tokens across every provider live in one place on your profile, so you never lose track of what you've paid for. Just click through to use them. On the free plan, these are sent to you by email to use from there."],
       ["How do make-up classes work?", "Make-up tokens follow each provider's own rules. With Plus, they're gathered on your profile and you click through to book one. On the free plan, they come to you by email and you book from the link there."],
-      ["What if I have more than one child?", "With Plus, your saved profile holds all your children, and you'll see recommendations based on their ages and your preferences — with every booking, for all of them, in one place."],
-      ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book. Plus (SGD 9/month or SGD 99/year) makes planning and managing your bookings seamless: saved profiles for multiple children, all your passes and make-up tokens in one place, saved favourites, curated activity emails, calendar sync and an exportable schedule for grandparents and helpers, messaging, and priority support."],
+      ["What if I have more than one child?", "Add as many children as you like on the free plan — your family profile holds all of them, and you'll see suggestions based on each child's age and your preferences, with every booking in one place."],
+      ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book, keep your family profile and get suggestions. Plus (SGD 9/month or SGD 99/year) adds twice-weekly curated activity emails, all your packages and make-up tokens for every vendor in one place, saved favourite providers, exporting and sharing your booked activities in calendar view, messaging integrated providers and other parents booked on the same activity, and priority support."],
       ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
       ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
       ["How do I refer a friend?", <>Refer a friend to Plus, and when they sign up for a paid subscription, you get a free month. Your referral link lives on your <a href="/profile" className={FAQ_LINK}>account page</a> under “Invite friends”.</>],
@@ -3783,21 +3783,29 @@ function PricingPage() {
     }
   }
 
+  /* These two lists are the tier spec, so they have to describe what the app
+   * actually gates. Previously Free advertised "See messages from parents and
+   * class providers on booked classes" while ChatButton is gated on isPlus —
+   * i.e. it promised Free users something they could not do. Messaging is
+   * stated as Plus here, matching the code.
+   *
+   * The saved family profile and preference-based suggestions are Free: the
+   * children tab and the recommendations that feed Matches are ungated. What
+   * is Plus is everything behind a plusOnly tab or an isPlus check —
+   * favourites, packages, make-up tokens, calendar export and messaging. */
   const freeItems = [
     "Browse & book activities",
     "Leave reviews",
-    "See messages from parents and class providers on booked classes",
+    "Saved family profile",
+    "Suggestions provided based on your preferences",
   ];
   const plusItems = [
     "Everything in Free",
-    "Saved profile with personalised recommendations",
-    "Packages & make-up tokens for all vendors in one place",
-    "Save favourite providers & places on your own map/list",
-    "Emails with curated activities",
-    "AI planning tool (map against nap schedules & availability)",
-    "Booking reminders & calendar integration",
-    "Calendar schedule view to export to grandparents & helpers",
-    "Message others booked on an activity, and the provider",
+    "Twice weekly e-mails with available activities curated for your little ones",
+    "Packages & make-up tokens for all vendors stored in one place",
+    "Save favourite providers",
+    "Export & share booked activities in calendar view",
+    "For integrated activity providers, message them & other parents booked on the same activity",
     "Priority support",
   ];
   const plusPrice = billing === "monthly" ? "9" : "99";
@@ -3879,6 +3887,7 @@ function PricingPage() {
               <span className="text-[44px] font-black text-baby-lilac">{plusPrice}</span>
               <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
             </p>
+            <p className="mt-1 text-center text-sm font-black text-baby-pink">Get your first month free!</p>
             <p className="text-center text-xs font-bold text-[#6D748A]">+ GST</p>
             <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
@@ -3891,9 +3900,6 @@ function PricingPage() {
                 </p>
               ))}
             </div>
-            <p className="mt-5 rounded-[10px] bg-[#FEEBF2] px-4 py-3 text-center text-sm font-black text-baby-pink">
-              First month free — cancel anytime
-            </p>
             <Button
               type="button"
               onClick={upgrade}
