@@ -93,6 +93,27 @@ const ADULT_ONLY = /pre-?natal|post-?natal|post-?partum|pelvic|physio|physical t
 const CHILD_PRESENT = /baby|bub|child|kid|toddler|infant|newborn|little one|parent\s*(&|and)\s*\w+|mum\s*(&|and)\s*(baby|bub)/i;
 const isAdultOnly = (title) => ADULT_ONLY.test(title) && !CHILD_PRESENT.test(title);
 
+/* Title-first category rules, mirroring migration 00037. Order matters: a
+ * "Holiday Camp" at a swim school is a camp, not a swimming class. */
+const TITLE_CATEGORY = [
+  [/holiday camp|camp\b|school holiday/i, 'holiday-camps'],
+  [/swim|water babies|aqua/i, 'swimming'],
+  [/open play|drop-?in|free play|play session/i, 'playspaces'],
+  [/music|sing|melod|rhythm|drama|storytell/i, 'music'],
+  [/art|craft|messy play|sensory|paint|clay/i, 'sensory-play'],
+  [/meet-?up|community|social|coffee/i, 'community-events'],
+  [/gym|dance|ballet|tumbl|movement/i, 'movement'],
+];
+
+function categoryFor(title, vendorCategories) {
+  for (const [re, slug] of TITLE_CATEGORY) if (re.test(title || '')) return slug;
+  return CATS.find((s) => (vendorCategories || []).includes(s)) ?? null;
+}
+
+/* BabyBrain is for children up to 11, so an unstated upper age can't default to
+ * adulthood — that is what put 62 listings past the cap. */
+const MAX_AGE_MONTHS = 132;
+
 function isClosed(rec) {
   // enrich-openai.mjs reports this explicitly; fall back to reading the summary
   // for records produced by the older enrichment scripts.
@@ -179,7 +200,13 @@ async function main() {
     // listings is just noise.
     const source = classes.length ? classes : already ? [] : [{ name: rec.name }];
     const acts = source.map((c, i) => {
-      const cslug = (CATS.find((s) => (rec.activities_categories || []).includes(s)) || null);
+      // Category is decided per class, not per vendor. Taking the vendor's
+      // first category and stamping it on everything filed a playspace's open
+      // play slots under Music & Drama just because it also runs a music
+      // class -- the "GoBub is a playspace" complaint. The title wins when it
+      // clearly says what the class is; the vendor's own category is only the
+      // fallback.
+      const cslug = categoryFor(c.name, rec.activities_categories);
       const desc = [c.days ? `Days: ${(c.days || []).join(', ')}` : '', c.times ? `Times: ${(c.times || []).join(', ')}` : '', c.duration ? `Duration: ${c.duration}` : '', c.location ? `Location: ${c.location}` : '']
         .filter(Boolean).join(' · ');
       return {
@@ -189,8 +216,11 @@ async function main() {
         category_id: catId[cslug] ?? fallbackCat,
         provider_name: rec.name,
         vendor_category: vcat,
-        age_min_months: Number.isFinite(age.min_months) ? age.min_months : 0,
-        age_max_months: Number.isFinite(age.max_months) ? age.max_months : 216,
+        age_min_months: Math.max(0, Number.isFinite(age.min_months) ? age.min_months : 0),
+        age_max_months: Math.min(
+          MAX_AGE_MONTHS,
+          Number.isFinite(age.max_months) ? age.max_months : MAX_AGE_MONTHS
+        ),
         price: null,
         address: rec.address || loc0.address || null,
         postal_code: loc0.postal_code || null,

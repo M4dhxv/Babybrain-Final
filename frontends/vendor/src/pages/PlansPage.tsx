@@ -4,6 +4,7 @@ import { Check, X, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SiteFooter from '@/components/SiteFooter';
+import { apiPost } from '@/lib/api';
 import { BrandLogo } from '@/components/BrandLogo';
 
 const plans = [
@@ -60,6 +61,41 @@ const features = [
 export default function PlansPage() {
   const navigate = useNavigate();
   const [optedOut, setOptedOut] = useState(false);
+  const [optOutOpen, setOptOutOpen] = useState(false);
+  const [optOutName, setOptOutName] = useState('');
+  const [optOutEmail, setOptOutEmail] = useState('');
+  const [optOutNote, setOptOutNote] = useState('');
+  const [optOutBusy, setOptOutBusy] = useState(false);
+  const [optOutError, setOptOutError] = useState<string | null>(null);
+
+  async function submitOptOut(e: React.FormEvent) {
+    e.preventDefault();
+    if (!optOutName.trim()) return setOptOutError('Please tell us the business name.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(optOutEmail.trim())) {
+      return setOptOutError('Please enter a valid email so we can confirm.');
+    }
+    setOptOutBusy(true);
+    setOptOutError(null);
+    try {
+      // Routed through the contact endpoint so it is stored and shows up in the
+      // founder's admin inbox even while email delivery is unconfigured.
+      await apiPost('/api/contact', {
+        name: optOutName.trim(),
+        email: optOutEmail.trim(),
+        subject: `Listing opt-out request — ${optOutName.trim()}`,
+        message:
+          `${optOutName.trim()} has asked to be removed from BabyBrain.\n` +
+          `Contact: ${optOutEmail.trim()}\n\n${optOutNote.trim() || '(no additional notes)'}`,
+      });
+      setOptedOut(true);
+    } catch (err) {
+      setOptOutError(
+        err instanceof Error ? err.message : "We couldn't send that — please email hello@babybrain.sg."
+      );
+    } finally {
+      setOptOutBusy(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -191,27 +227,65 @@ export default function PlansPage() {
           ))}
         </div>
 
-        {/* Opt out / remove listing */}
-        <div className="mt-10 border-t border-gray-100 pt-6 text-center">
+        {/* Opt out / remove listing.
+            This used to confirm "Request received" on a window.confirm alone:
+            nothing was sent and nobody could tell which business had asked. It
+            now collects the business name and an email and records the request,
+            so it lands in the founder's contact inbox with an identity. */}
+        <div className="mt-10 border-t border-gray-100 pt-6">
           {optedOut ? (
-            <p className="text-sm text-gray-600">
+            <p className="text-center text-sm text-gray-600">
               Request received — our team will remove your listing within 3 working days.
               You can re-list any time.
             </p>
-          ) : (
-            <>
+          ) : !optOutOpen ? (
+            <div className="text-center">
               <p className="text-sm text-gray-500 mb-2">Don't want to be listed on BabyBrain?</p>
               <button
-                onClick={() => {
-                  if (window.confirm('Opt out and remove your listing from BabyBrain? Parents will no longer see your business.')) {
-                    setOptedOut(true);
-                  }
-                }}
+                onClick={() => setOptOutOpen(true)}
                 className="text-sm font-semibold text-red-500 hover:text-red-600 underline underline-offset-4"
               >
                 Opt out / remove my listing
               </button>
-            </>
+            </div>
+          ) : (
+            <form onSubmit={submitOptOut} className="mx-auto max-w-md">
+              <h3 className="text-center font-bold text-gray-900">Remove my listing</h3>
+              <p className="mt-1 text-center text-sm text-gray-500">
+                Tell us which business to remove and we'll confirm by email.
+              </p>
+              <div className="mt-4 space-y-3">
+                <input
+                  value={optOutName}
+                  onChange={(e) => setOptOutName(e.target.value)}
+                  placeholder="Business name"
+                  className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm"
+                />
+                <input
+                  type="email"
+                  value={optOutEmail}
+                  onChange={(e) => setOptOutEmail(e.target.value)}
+                  placeholder="Your email"
+                  className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm"
+                />
+                <textarea
+                  value={optOutNote}
+                  onChange={(e) => setOptOutNote(e.target.value)}
+                  rows={3}
+                  placeholder="Anything we should know? (optional)"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+              </div>
+              {optOutError && <p className="mt-2 text-sm font-semibold text-red-600">{optOutError}</p>}
+              <div className="mt-4 flex gap-3">
+                <Button type="submit" disabled={optOutBusy} className="flex-1">
+                  {optOutBusy ? 'Sending…' : 'Send request'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setOptOutOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
           )}
         </div>
       </div>

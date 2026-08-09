@@ -4636,6 +4636,7 @@ function AboutPage() {
           </div>
         </section>
       </main>
+      <Footer />
     </PageShell>
   );
 }

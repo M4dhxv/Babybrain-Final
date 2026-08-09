@@ -820,6 +820,16 @@ export function CategoryTile({
 }
 
 export function Footer() {
+  const { session } = useAuth();
+  /* "How It Works" points at the signed-out home page, which a signed-in
+     parent never sees — their home is the dashboard — so the link would drop
+     them somewhere unrecognisable. Hidden once they're logged in. */
+  const exploreLinks: [string, string | null, string?][] = [
+    ...(session ? [] : ([["How It Works", "/#how-it-works"]] as [string, string | null][])),
+    ["Activities", "/explore"],
+    ["About Us", "/about"],
+    ["For Partners", "/vendor/"],
+  ];
   return (
     <footer className="border-t border-[#F4EFF0] bg-white/70 py-6">
       <div className="mx-auto grid max-w-[1120px] grid-cols-2 gap-8 px-6 md:grid-cols-[1.8fr_1fr_1fr_1fr]">
@@ -830,7 +840,7 @@ export function Footer() {
           </p>
         </div>
         {([
-          ["Explore", [["How It Works", "/#how-it-works"], ["Activities", "/explore"], ["About Us", "/about"], ["For Partners", "/vendor/"]]],
+          ["Explore", exploreLinks],
           ["Support", [["Contact Us", "/contact"], ["FAQs", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
           ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"]]],
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
