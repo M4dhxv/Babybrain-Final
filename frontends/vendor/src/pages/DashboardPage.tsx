@@ -270,7 +270,7 @@ export default function DashboardPage() {
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
-          <button onClick={() => navigate('/activities?new=package')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
+          <button onClick={() => navigate('/packages?new=pack')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
               <Package className="w-6 h-6 text-purple-600" />
             </div>

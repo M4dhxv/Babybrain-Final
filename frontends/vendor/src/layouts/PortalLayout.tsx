@@ -4,8 +4,12 @@ import { useState } from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
+  CalendarRange,
   CalendarCheck,
+  Package,
+  Gift,
   MessageSquare,
+  Bell,
   Settings,
   CreditCard,
   Crown,
@@ -25,8 +29,12 @@ import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: CalendarDays, label: 'Activities', path: '/activities' },
+  { icon: CalendarRange, label: 'Schedule', path: '/schedule' },
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
+  { icon: Package, label: 'Packages', path: '/packages' },
+  { icon: Gift, label: 'Make-up Tokens', path: '/make-up-tokens' },
   { icon: MessageSquare, label: 'Messages', path: '/messages' },
+  { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
   // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
   { icon: TrendingUp, label: 'Insights', path: '/insights', proOnly: true },

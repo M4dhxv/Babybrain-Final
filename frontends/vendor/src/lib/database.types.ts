@@ -760,6 +760,42 @@ export type Database = {
           package_name: string | null;
         }[];
       };
+      provider_notification_feed: {
+        Args: { p_provider: string; p_limit?: number };
+        Returns: {
+          kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
+          event_at: string;
+          actor_name: string;
+          activity_title: string | null;
+          detail: string | null;
+        }[];
+      };
+      provider_package_purchases: {
+        Args: { p_provider: string };
+        Returns: {
+          purchase_id: string;
+          package_name: string;
+          buyer_name: string;
+          credits_total: number;
+          credits_remaining: number;
+          status: 'active' | 'used' | 'expired';
+          created_at: string;
+          expires_at: string | null;
+        }[];
+      };
+      provider_make_up_tokens: {
+        Args: { p_provider: string };
+        Returns: {
+          token_id: string;
+          child_name: string;
+          parent_name: string;
+          origin_activity_title: string | null;
+          origin_session_at: string | null;
+          status: 'issued' | 'redeemed' | 'expired';
+          created_at: string;
+          expires_at: string | null;
+        }[];
+      };
       respond_to_review: {
         Args: { p_review_id: string; p_response: string };
         Returns: undefined;

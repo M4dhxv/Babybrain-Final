@@ -13,9 +13,13 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import ActivitiesPage from './pages/ActivitiesPage';
+import SchedulePage from './pages/SchedulePage';
 import BookingsPage from './pages/BookingsPage';
+import PackagesPage from './pages/PackagesPage';
+import MakeUpTokensPage from './pages/MakeUpTokensPage';
 import InsightsPage from '@/pages/InsightsPage';
 import MessagesPage from './pages/MessagesPage';
+import NotificationsPage from './pages/NotificationsPage';
 import ReviewsPage from './pages/ReviewsPage';
 import SettingsPage from './pages/SettingsPage';
 import BillingPage from './pages/BillingPage';
@@ -82,8 +86,12 @@ function App() {
             <Route element={<PortalLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/activities" element={<ActivitiesPage />} />
+              <Route path="/schedule" element={<SchedulePage />} />
               <Route path="/bookings" element={<BookingsPage />} />
+              <Route path="/packages" element={<PackagesPage />} />
+              <Route path="/make-up-tokens" element={<MakeUpTokensPage />} />
               <Route path="/messages" element={<MessagesPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/insights" element={<InsightsPage />} />
               <Route path="/reviews" element={<ReviewsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

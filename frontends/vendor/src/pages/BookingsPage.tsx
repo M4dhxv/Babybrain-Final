@@ -134,9 +134,16 @@ export default function BookingsPage() {
       const opts = (sess ?? []).map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
       setSessionActivity(Object.fromEntries((sess ?? []).map((s) => [s.id, s.activity_id])));
       setSessions(opts);
-      setSessionId((cur) => cur || opts[0]?.id || '');
+      // The Schedule tab deep-links here with ?session=, so a click on a
+      // calendar session lands straight on its roster instead of whichever
+      // session happened to load first.
+      const requested = searchParams.get('session');
+      const preselect = requested && opts.some((o) => o.id === requested) ? requested : '';
+      setSessionId((cur) => cur || preselect || opts[0]?.id || '');
+      if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
   async function loadRoster(id: string) {

@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
-const tabs = ['Activities', 'Packages', 'Locations'];
+const tabs = ['Activities', 'Locations'];
 
 const ageLabel = (min: number, max: number) => {
   const f = (m: number) => (m < 24 ? `${m}m` : `${Math.round((m / 12) * 10) / 10}y`);
@@ -54,29 +54,19 @@ export default function ActivitiesPage() {
      it directly. */
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // "New Package" and the Packages tab both jump to the class-packs form below.
-  function goToPackages() {
-    if (!canManage) return;
-    setActiveTab('Packages');
-    requestAnimationFrame(() => {
-      const el = document.getElementById('class-packs');
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      el?.querySelector<HTMLInputElement>('input')?.focus();
-    });
-  }
+  // Packages now live on their own sidebar page — Locations already
+  // redirected to Settings the same way.
   function onTab(tab: string) {
     if (tab === 'Locations') { navigate('/settings?tab=locations'); return; }
-    if (tab === 'Packages') { goToPackages(); return; }
     setActiveTab(tab);
   }
 
-  // Act on ?new=activity|package once, then strip it so a refresh doesn't
-  // reopen the form.
+  // Act on ?new=activity once, then strip it so a refresh doesn't reopen the
+  // form. (?new=pack is handled by PackagesPage now.)
   const newParam = searchParams.get('new');
   useEffect(() => {
-    if (!newParam || !canManage) return;
-    if (newParam === 'activity') openCreate();
-    if (newParam === 'package') goToPackages();
+    if (newParam !== 'activity' || !canManage) return;
+    openCreate();
     setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newParam, canManage]);
@@ -187,119 +177,23 @@ export default function ActivitiesPage() {
     load();
   }
 
-  // Class packs (multi-session packages sold to parents)
-  type Pack = {
-    id: string; name: string; credits: number; price_cents: number; active: boolean;
-    activity_id: string | null; validity_days: number | null;
-    allowed_weekday: number | null; allowed_start_time: string | null;
-  };
-  const [packs, setPacks] = useState<Pack[]>([]);
-  const [packForm, setPackForm] = useState({
-    name: '', credits: '', price: '', validity_days: '',
-    activity_id: '', allowed_weekday: '', allowed_start_time: '',
-  });
-  const [savingPack, setSavingPack] = useState(false);
-  /* The Add Pack button looked dead: it bailed out silently on a missing name
-     or credits, and swallowed any insert error. Both now surface. */
-  const [packError, setPackError] = useState<string | null>(null);
-  const [packNotice, setPackNotice] = useState<string | null>(null);
-  const [editingPackId, setEditingPackId] = useState<string | null>(null);
-
-  const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' };
-
-  function editPack(p: Pack) {
-    setEditingPackId(p.id);
-    setPackError(null);
-    setPackNotice(null);
-    setPackForm({
-      name: p.name,
-      credits: String(p.credits),
-      price: String(p.price_cents / 100),
-      validity_days: p.validity_days != null ? String(p.validity_days) : '',
-      activity_id: p.activity_id ?? '',
-      allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
-      allowed_start_time: p.allowed_start_time ?? '',
-    });
-    document.getElementById('class-packs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  async function deletePack(p: Pack) {
-    if (!window.confirm(`Delete "${p.name}"? Parents who already bought it keep their credits.`)) return;
-    const { error } = await supabase.from('packages').delete().eq('id', p.id);
-    if (error) {
-      // A pack that has been purchased is referenced by package_purchases, so
-      // deleting it would orphan real credits — deactivate instead.
-      setPackError(`${error.message}. Try marking it inactive instead.`);
-      return;
-    }
-    if (editingPackId === p.id) { setEditingPackId(null); setPackForm(emptyPack); }
-    setPackNotice(`Deleted "${p.name}".`);
-    load();
-  }
-
-  async function createPack() {
-    if (!provider) return;
-    setPackError(null);
-    setPackNotice(null);
-    const credits = Number(packForm.credits);
-    const price = Number(packForm.price);
-    if (!packForm.name.trim()) return setPackError('Give the pack a name.');
-    if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
-    if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
-
-    setSavingPack(true);
-    const fields = {
-      name: packForm.name.trim(),
-      credits,
-      price_cents: Math.round((price || 0) * 100),
-      // 1.2: optional expiry window + restriction to one class / weekly slot
-      validity_days: packForm.validity_days ? Number(packForm.validity_days) : null,
-      activity_id: packForm.activity_id || null,
-      allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
-      allowed_start_time: packForm.allowed_start_time || null,
-    };
-    const { error } = editingPackId
-      ? await supabase.from('packages').update(fields).eq('id', editingPackId)
-      : await supabase.from('packages').insert({ provider_id: provider.id, ...fields });
-    setSavingPack(false);
-    if (error) return setPackError(error.message);
-    setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
-    setEditingPackId(null);
-    setPackForm(emptyPack);
-    load();
-  }
-
-  const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const packRestriction = (p: Pack) => {
-    const parts: string[] = [];
-    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One class');
-    if (p.allowed_weekday != null) {
-      const t = p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : '';
-      parts.push(`${WEEKDAY_NAMES[p.allowed_weekday]}${t} only`);
-    } else if (p.allowed_start_time) {
-      parts.push(`${p.allowed_start_time.slice(0, 5)} slot only`);
-    }
-    if (p.validity_days) parts.push(`expires ${p.validity_days}d after purchase`);
-    return parts.join(' · ');
-  };
-  async function togglePack(p: Pack) {
-    await supabase.from('packages').update({ active: !p.active }).eq('id', p.id);
-    load();
-  }
+  // Class-pack management now lives on its own page (PackagesPage) — this
+  // page just shows an "Active Packages" count via packCount below.
+  const [packCount, setPackCount] = useState(0);
 
   async function load() {
     if (!provider) return;
     setLoading(true);
-    const [{ data: acts }, { data: cats }, { data: locs }, { data: pks }] = await Promise.all([
+    const [{ data: acts }, { data: cats }, { data: locs }, { count: packs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
       supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
-      supabase.from('packages').select('id, name, credits, price_cents, active, activity_id, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
+      supabase.from('packages').select('id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('active', true),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
     setLocations((locs ?? []) as { id: string; name: string }[]);
-    setPacks((pks ?? []) as Pack[]);
+    setPackCount(packs ?? 0);
 
     // Upcoming session counts + total booking counts per activity.
     const ids = (acts ?? []).map((a) => a.id);
@@ -369,7 +263,7 @@ export default function ActivitiesPage() {
 
   const stats = [
     { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
-    { icon: Package, label: 'Packages', value: String(packs.filter((p) => p.active).length), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
+    { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
     { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
@@ -500,7 +394,7 @@ export default function ActivitiesPage() {
             <CalendarPlus className="w-4 h-4" />
             New Activity
           </button>
-          <button onClick={goToPackages} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
+          <button onClick={() => navigate('/packages?new=pack')} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
             <Package className="w-4 h-4" />
             New Package
           </button>
@@ -714,100 +608,6 @@ export default function ActivitiesPage() {
           </div>
         </div>
 
-        {/* Class Packs */}
-        <div id="class-packs" className={cn('mt-6 bg-white rounded-xl border p-5 transition-colors', activeTab === 'Packages' ? 'border-purple-300 ring-2 ring-purple-100' : 'border-gray-200')}>
-          <h2 className="font-semibold text-gray-900">Class packs</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Multi-session packs parents can buy; each booking uses one credit.</p>
-          <p className="text-xs text-gray-500 mt-1.5">
-            Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token". Parents redeem them when rebooking.
-          </p>
-          {packs.length > 0 && (
-            <div className="mt-4 space-y-2">
-              {packs.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-                  <div className="min-w-0">
-                    <span className="font-medium text-gray-900">{p.name}</span>
-                    <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
-                    {packRestriction(p) && (
-                      <div className="mt-0.5 text-xs text-purple-700">{packRestriction(p)}</div>
-                    )}
-                  </div>
-                  {canManage && (
-                    <div className="flex flex-shrink-0 items-center gap-2">
-                      <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
-                        {p.active ? 'Active' : 'Inactive'}
-                      </button>
-                      <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => deletePack(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {canManage && (
-            <>
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
-                  <input value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
-                  <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
-                  <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
-                  <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
-                </div>
-                <button onClick={createPack} disabled={savingPack} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
-                  {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
-                </button>
-                {editingPackId && (
-                  <button
-                    onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
-                    className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-              {(packError || packNotice) && (
-                <p className={cn('mt-2 text-sm font-medium', packError ? 'text-red-600' : 'text-green-700')}>
-                  {packError ?? packNotice}
-                </p>
-              )}
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to class (optional)</label>
-                  <select value={packForm.activity_id} onChange={(e) => setPackForm({ ...packForm, activity_id: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                    <option value="">Any of my classes</option>
-                    {activities.filter((a) => !a.archived_at).map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to weekly slot (optional)</label>
-                  <div className="flex gap-2">
-                    <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                      <option value="">Any day</option>
-                      {WEEKDAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select>
-                    <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 rounded-lg border border-gray-300 px-3 text-sm" title="Session start time (SGT); leave blank for any time" />
-                  </div>
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-class pack limited to the Monday 4:00 pm class.</p>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Create Activity Drawer */}
