@@ -199,15 +199,56 @@ export default function ActivitiesPage() {
     activity_id: '', allowed_weekday: '', allowed_start_time: '',
   });
   const [savingPack, setSavingPack] = useState(false);
+  /* The Add Pack button looked dead: it bailed out silently on a missing name
+     or credits, and swallowed any insert error. Both now surface. */
+  const [packError, setPackError] = useState<string | null>(null);
+  const [packNotice, setPackNotice] = useState<string | null>(null);
+  const [editingPackId, setEditingPackId] = useState<string | null>(null);
+
+  const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' };
+
+  function editPack(p: Pack) {
+    setEditingPackId(p.id);
+    setPackError(null);
+    setPackNotice(null);
+    setPackForm({
+      name: p.name,
+      credits: String(p.credits),
+      price: String(p.price_cents / 100),
+      validity_days: p.validity_days != null ? String(p.validity_days) : '',
+      activity_id: p.activity_id ?? '',
+      allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
+      allowed_start_time: p.allowed_start_time ?? '',
+    });
+    document.getElementById('class-packs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function deletePack(p: Pack) {
+    if (!window.confirm(`Delete "${p.name}"? Parents who already bought it keep their credits.`)) return;
+    const { error } = await supabase.from('packages').delete().eq('id', p.id);
+    if (error) {
+      // A pack that has been purchased is referenced by package_purchases, so
+      // deleting it would orphan real credits — deactivate instead.
+      setPackError(`${error.message}. Try marking it inactive instead.`);
+      return;
+    }
+    if (editingPackId === p.id) { setEditingPackId(null); setPackForm(emptyPack); }
+    setPackNotice(`Deleted "${p.name}".`);
+    load();
+  }
 
   async function createPack() {
     if (!provider) return;
+    setPackError(null);
+    setPackNotice(null);
     const credits = Number(packForm.credits);
     const price = Number(packForm.price);
-    if (!packForm.name.trim() || !credits || credits < 1) return;
+    if (!packForm.name.trim()) return setPackError('Give the pack a name.');
+    if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
+    if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
+
     setSavingPack(true);
-    await supabase.from('packages').insert({
-      provider_id: provider.id,
+    const fields = {
       name: packForm.name.trim(),
       credits,
       price_cents: Math.round((price || 0) * 100),
@@ -216,9 +257,15 @@ export default function ActivitiesPage() {
       activity_id: packForm.activity_id || null,
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
-    });
-    setPackForm({ name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' });
+    };
+    const { error } = editingPackId
+      ? await supabase.from('packages').update(fields).eq('id', editingPackId)
+      : await supabase.from('packages').insert({ provider_id: provider.id, ...fields });
     setSavingPack(false);
+    if (error) return setPackError(error.message);
+    setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
+    setEditingPackId(null);
+    setPackForm(emptyPack);
     load();
   }
 
@@ -428,6 +475,8 @@ export default function ActivitiesPage() {
   }
 
   const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const [showFilters, setShowFilters] = useState(true);
+  const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
   const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-200';
 
   return (
@@ -505,14 +554,30 @@ export default function ActivitiesPage() {
                   className="pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-200 w-48"
                 />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
+              <button
+                onClick={() => setShowFilters((v) => !v)}
+                aria-expanded={showFilters}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50',
+                  activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+                )}
+              >
                 <SlidersHorizontal className="w-4 h-4" />
-                Filters
+                Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
               </button>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
+                  className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044]"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
 
           {/* Filter bar */}
+          {showFilters && (
           <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
               <option value="">All Status</option>
@@ -541,11 +606,13 @@ export default function ActivitiesPage() {
               <option value="rating">Sort by: Rating</option>
             </select>
           </div>
+          )}
 
           {/* Table Header */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
             <div>Activity</div>
             <div>Category</div>
+            <div>Location</div>
             <div>Age Group</div>
             <div>Sessions</div>
             <div>Bookings</div>
@@ -565,7 +632,7 @@ export default function ActivitiesPage() {
             return (
               <div
                 key={a.id}
-                className="grid grid-cols-[2fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
+                className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
@@ -575,6 +642,11 @@ export default function ActivitiesPage() {
                   </div>
                 </div>
                 <div className="text-sm text-gray-700">{categoryName(a.category_id)}</div>
+                {/* QA: the table was missing location, so a multi-venue vendor
+                    couldn't tell which of their sites a class runs at. */}
+                <div className="text-sm text-gray-700">
+                  {locations.find((l) => l.id === a.location_id)?.name ?? <span className="text-gray-400">—</span>}
+                </div>
                 <div className="text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
                 <div className="text-sm text-gray-700">{sessionCounts[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Upcoming</span></div>
                 <div className="text-sm text-gray-700">{bookingTotals[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Total</span></div>
@@ -661,9 +733,17 @@ export default function ActivitiesPage() {
                     )}
                   </div>
                   {canManage && (
-                    <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
-                      {p.active ? 'Active' : 'Inactive'}
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
+                        {p.active ? 'Active' : 'Inactive'}
+                      </button>
+                      <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => deletePack(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -688,10 +768,23 @@ export default function ActivitiesPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
                   <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
                 </div>
-                <button onClick={createPack} disabled={savingPack || !packForm.name.trim() || !packForm.credits} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
-                  {savingPack ? 'Adding…' : 'Add pack'}
+                <button onClick={createPack} disabled={savingPack} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
+                  {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
                 </button>
+                {editingPackId && (
+                  <button
+                    onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
+                    className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
+              {(packError || packNotice) && (
+                <p className={cn('mt-2 text-sm font-medium', packError ? 'text-red-600' : 'text-green-700')}>
+                  {packError ?? packNotice}
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap items-end gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to class (optional)</label>

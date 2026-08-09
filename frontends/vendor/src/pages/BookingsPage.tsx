@@ -29,7 +29,9 @@ type RosterRow = {
 };
 
 export default function BookingsPage() {
-  const { provider, role, session } = useAuth();
+  const { provider, role, session, subscription } = useAuth();
+  const plan = subscription?.plan ?? 'free';
+  const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
   const [issuing, setIssuing] = useState(false);
@@ -193,12 +195,32 @@ export default function BookingsPage() {
     }
     setIssuing(false);
   }
+  /* The button wrote the roster but said nothing, so it read as doing nothing.
+     It now reports success or the actual error, and the confirmation clears
+     itself so a second save is obviously a fresh one. */
+  const [rosterSaving, setRosterSaving] = useState(false);
+  const [rosterNotice, setRosterNotice] = useState<string | null>(null);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+
   async function saveRoster() {
     if (!sessionId) return;
+    setRosterSaving(true);
+    setRosterNotice(null);
+    setRosterError(null);
     const rows = booked
       .map((b) => ({ booking_id: b.booking_id, session_id: sessionId, status: (attDraft[b.booking_id] ?? b.attendance_status ?? 'present') as 'present' | 'absent', marked_by: session?.user.id ?? null, marked_at: new Date().toISOString() }))
       .filter((r) => r.status);
-    await supabase.from('attendance').upsert(rows, { onConflict: 'booking_id' });
+    if (!rows.length) {
+      setRosterSaving(false);
+      setRosterError('Nobody is booked on this session yet.');
+      return;
+    }
+    const { error } = await supabase.from('attendance').upsert(rows, { onConflict: 'booking_id' });
+    setRosterSaving(false);
+    if (error) { setRosterError(error.message); return; }
+    const present = rows.filter((r) => r.status === 'present').length;
+    setRosterNotice(`Saved — ${present} present, ${rows.length - present} absent.`);
+    window.setTimeout(() => setRosterNotice(null), 4000);
     loadRoster(sessionId);
   }
 
@@ -363,7 +385,18 @@ export default function BookingsPage() {
                       </div>
                     )}
                   </div>
-                  {sel.user_id ? (
+                  {/* Messaging is a paid feature — the plans page lists "Direct
+                      to user messaging" from Growth up, but this button was
+                      live on Free. */}
+                  {!canMessage ? (
+                    <button
+                      onClick={() => navigate('/plans')}
+                      className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#C90044]"
+                      title="Messaging parents is available on Growth and above"
+                    >
+                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Growth
+                    </button>
+                  ) : sel.user_id ? (
                     <button
                       onClick={() => messageParent(sel.user_id!)}
                       disabled={messaging}
@@ -484,9 +517,14 @@ export default function BookingsPage() {
                 {booked.length === 0 && <div className="px-4 py-6 text-center text-sm text-gray-400">No confirmed attendees.</div>}
               </div>
               {canManage && (
-                <Button onClick={saveRoster} className="w-full gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
-                  <Save className="w-4 h-4" /> Save roster
+                <Button onClick={saveRoster} disabled={rosterSaving} className="w-full gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
+                  <Save className="w-4 h-4" /> {rosterSaving ? 'Saving…' : 'Save roster'}
                 </Button>
+              )}
+              {(rosterError || rosterNotice) && (
+                <p className={cn('mt-2 text-center text-sm font-medium', rosterError ? 'text-red-600' : 'text-green-700')}>
+                  {rosterError ?? rosterNotice}
+                </p>
               )}
             </div>
           )}

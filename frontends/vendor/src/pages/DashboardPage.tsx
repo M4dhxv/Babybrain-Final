@@ -55,7 +55,6 @@ const messages = [
   { initials: 'DK', name: 'D. K.', message: 'Great class! My son loves it.', time: 'Mon', count: 0, color: 'bg-blue-100 text-blue-600' },
 ];
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /** "Good morning/afternoon/evening" in Singapore time. */
 function sgGreeting() {
@@ -73,26 +72,14 @@ function weekLabel() {
   return `${f(mon)} – ${f(sun)} ${sun.getFullYear()}`;
 }
 
-// Drill-down for the top age group: where demand concentrates for these
-// classes, so vendors can see what's working and where to add capacity.
-const topAgeInsight = {
-  ageGroup: '1 – 2 yrs',
-  topDays: ['Saturday', 'Sunday', 'Friday'],
-  topTimes: ['9:30 AM', '10:30 AM', '4:00 PM'],
-  topLocations: ['Suntec City', 'East Coast'],
-};
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [showMessages, setShowMessages] = useState(false);
-  const [showAgeDetail, setShowAgeDetail] = useState(false);
   const { provider } = useAuth();
   const [overview, setOverview] = useState<ProviderOverview | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingSession[]>([]);
   const [recent, setRecent] = useState<RecentBooking[]>([]);
   const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
-  const [byDay, setByDay] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-  const [bookings30, setBookings30] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   /* Replies owed, straight from Stream's own unread counter — something the
      vendor can act on, unlike the session count this card used to show. */
@@ -174,17 +161,6 @@ export default function DashboardPage() {
       }
 
       // 2.3: bookings made in the last 30 days, for the conversion insight.
-      const cutoff30 = Date.now() - 30 * 864e5;
-      setBookings30(bks.filter((b) => new Date(b.created_at).getTime() > cutoff30).length);
-
-      // Bookings by weekday (Mon..Sun) of the session they're for.
-      const dayCounts = [0, 0, 0, 0, 0, 0, 0];
-      bks.forEach((b) => {
-        const info = sessInfo.get(b.session_id);
-        if (!info || (b.status !== 'confirmed' && b.status !== 'completed')) return;
-        dayCounts[(new Date(info.starts_at).getDay() + 6) % 7] += 1;
-      });
-      setByDay(dayCounts);
 
       // Attendance rate = present / marked, across this provider's bookings.
       if (bks.length) {
@@ -214,8 +190,6 @@ export default function DashboardPage() {
       ]
     : [null, null, null, null, null];
   const firstName = provider?.business_name?.split(' ')[0] ?? 'there';
-  const maxDay = Math.max(...byDay, 1);
-  const busiestIdx = byDay.indexOf(Math.max(...byDay));
 
   return (
     <div className="relative">
@@ -370,93 +344,18 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {/* Insights */}
+          {/* Insights moved to its own tab — it is the headline Pro feature, and
+              the copy here showed the same hardcoded age group, days and
+              locations to every vendor. */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="font-semibold text-gray-900 mb-4">Insights</h3>
-            {/* 2.3: conversion — listing views vs bookings, last 30 days */}
-            <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-3">
-              <div>
-                <div className="text-lg font-bold text-gray-900">{overview ? overview.profile_views_30d : '—'}</div>
-                <div className="text-[11px] text-gray-500">Listing views (30d)</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-gray-900">{bookings30 ?? '—'}</div>
-                <div className="text-[11px] text-gray-500">Bookings (30d)</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-purple-600">
-                  {overview && bookings30 != null && overview.profile_views_30d > 0
-                    ? `${Math.round((bookings30 / overview.profile_views_30d) * 100)}%`
-                    : '—'}
-                </div>
-                <div className="text-[11px] text-gray-500">Conversion</div>
-              </div>
-            </div>
-            <div className="mb-4">
-              <button
-                onClick={() => setShowAgeDetail((s) => !s)}
-                className="w-full text-left group"
-              >
-                <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                  Top age group
-                  <ChevronDown className={cn('w-3 h-3 transition-transform', showAgeDetail && 'rotate-180')} />
-                </div>
-                <div className="text-xl font-bold text-purple-600 group-hover:underline">{topAgeInsight.ageGroup}</div>
-                <div className="text-[11px] text-gray-400">Tap to see popular days, times &amp; locations</div>
-              </button>
-              {showAgeDetail && (
-                <div className="mt-3 rounded-lg bg-purple-50 border border-purple-100 p-3 space-y-2">
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-500 mb-1">Most popular days</div>
-                    <div className="flex flex-wrap gap-1">
-                      {topAgeInsight.topDays.map((d) => (
-                        <span key={d} className="px-2 py-0.5 text-xs rounded-full bg-white text-purple-700 border border-purple-200">{d}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-500 mb-1">Most popular times</div>
-                    <div className="flex flex-wrap gap-1">
-                      {topAgeInsight.topTimes.map((t) => (
-                        <span key={t} className="px-2 py-0.5 text-xs rounded-full bg-white text-purple-700 border border-purple-200">{t}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-500 mb-1">Top locations</div>
-                    <div className="flex flex-wrap gap-1">
-                      {topAgeInsight.topLocations.map((l) => (
-                        <span key={l} className="px-2 py-0.5 text-xs rounded-full bg-white text-purple-700 border border-purple-200">{l}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-gray-500 pt-1">
-                    Demand for <span className="font-medium">{topAgeInsight.ageGroup}</span> classes is strongest on {topAgeInsight.topDays[0]} mornings — consider adding slots here.
-                  </p>
-                </div>
-              )}
-            </div>
-            <div className="mb-4">
-              <div className="text-xs text-gray-500 mb-2">Bookings by day</div>
-              <div className="flex items-end gap-2 h-24">
-                {WEEKDAYS.map((day, i) => (
-                  <div key={day} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
-                    <div
-                      className={cn(
-                        'w-full rounded-t-sm',
-                        i === busiestIdx && byDay[i] > 0 ? 'bg-purple-500' : 'bg-purple-200'
-                      )}
-                      style={{ height: `${Math.max((byDay[i] / maxDay) * 100, 4)}%` }}
-                    />
-                    <span className="text-xs text-gray-500">{day}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <Sun className="w-4 h-4 text-yellow-500" />
-              <span className="font-medium">Busiest: {byDay[busiestIdx] > 0 ? WEEKDAYS[busiestIdx] : '—'}</span>
-            </div>
+            <h3 className="font-semibold text-gray-900 mb-2">Insights</h3>
+            <p className="text-sm text-gray-500">
+              Which classes convert, which age groups book, and the days and times parents choose.
+            </p>
+            <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#C90044]">
+              Open Insights
+              <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
         </div>
       </div>

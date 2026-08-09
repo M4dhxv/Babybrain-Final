@@ -14,6 +14,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import ActivitiesPage from './pages/ActivitiesPage';
 import BookingsPage from './pages/BookingsPage';
+import InsightsPage from '@/pages/InsightsPage';
 import MessagesPage from './pages/MessagesPage';
 import ReviewsPage from './pages/ReviewsPage';
 import SettingsPage from './pages/SettingsPage';
@@ -83,6 +84,7 @@ function App() {
               <Route path="/activities" element={<ActivitiesPage />} />
               <Route path="/bookings" element={<BookingsPage />} />
               <Route path="/messages" element={<MessagesPage />} />
+              <Route path="/insights" element={<InsightsPage />} />
               <Route path="/reviews" element={<ReviewsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/billing" element={<BillingPage />} />

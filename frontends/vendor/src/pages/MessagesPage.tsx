@@ -76,6 +76,14 @@ export default function MessagesPage() {
                 filters={{ type: 'messaging', members: { $in: [userId] } }}
                 sort={{ last_message_at: -1 }}
                 options={{ state: true, watch: true, presence: true }}
+                /* QA: "the search messages function ... doesn't work". There was
+                   no search at all — this turns on Stream's own, which queries
+                   the server rather than filtering only what's loaded. */
+                showChannelSearch
+                additionalChannelSearchProps={{
+                  searchForChannels: true,
+                  placeholder: 'Search conversations',
+                }}
                 customActiveChannel={deepLinkChannel}
                 EmptyStateIndicator={() => (
                   <div className="p-8 text-center text-sm text-gray-400">

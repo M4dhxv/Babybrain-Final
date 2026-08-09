@@ -14,6 +14,8 @@ import {
   Menu,
   X,
   Star,
+  TrendingUp,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
@@ -26,6 +28,8 @@ const sidebarItems = [
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: MessageSquare, label: 'Messages', path: '/messages' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
+  // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
+  { icon: TrendingUp, label: 'Insights', path: '/insights', proOnly: true },
   { icon: Settings, label: 'Settings', path: '/settings' },
   { icon: CreditCard, label: 'Billing', path: '/billing' },
 ];
@@ -34,6 +38,7 @@ export default function PortalLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { subscription } = useAuth();
+  const isPro = subscription?.plan === 'pro' || subscription?.plan === 'premium';
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -104,21 +109,29 @@ export default function PortalLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
+            // Pro-only tabs stay visible but greyed, so the feature is
+            // discoverable rather than hidden. The page itself explains the
+            // upgrade, so the tab is still clickable.
+            const locked = item.proOnly && !isPro;
             return (
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
+                title={locked ? 'Insights is a Pro feature' : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
                     ? 'bg-pink-50 text-pink-600'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    : locked
+                      ? 'text-gray-400 hover:bg-gray-50'
+                      : 'text-gray-700 hover:bg-gray-100'
                 )}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
                 {!isSidebarCollapsed && (
                   <span className="flex-1 text-left">{item.label}</span>
                 )}
+                {locked && !isSidebarCollapsed && <Lock className="w-3.5 h-3.5 flex-shrink-0" />}
               </button>
             );
           })}
@@ -151,13 +164,18 @@ export default function PortalLayout() {
 
         {/* Help */}
         <div className="px-5 py-4 border-t border-gray-100">
-          <button className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
+          {/* Both of these were inert. They go to Contact, which is the help
+              page this portal actually has. */}
+          <button onClick={() => navigate('/contact')} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
             <HelpCircle className="w-4 h-4" />
             {!isSidebarCollapsed && <span>Need help?</span>}
           </button>
           {!isSidebarCollapsed && (
             <div className="mt-1 text-xs text-gray-500">
-              Visit our <span className="text-pink-600 cursor-pointer">Help Center</span>
+              Visit our{' '}
+              <button onClick={() => navigate('/contact')} className="text-pink-600 hover:underline">
+                Help Center
+              </button>
             </div>
           )}
         </div>
