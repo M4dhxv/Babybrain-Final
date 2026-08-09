@@ -7,55 +7,106 @@ import SiteFooter from '@/components/SiteFooter';
 import { apiPost } from '@/lib/api';
 import { BrandLogo } from '@/components/BrandLogo';
 
+/* The four tiers, per the founder's pricing deck.
+ *
+ * Pay As You Go sits between Free and Growth: it unlocks taking bookings and
+ * payments with no monthly fee, but not the admin suite (waitlist, packages,
+ * make-up tokens, consent tracking, reminders, attendance) which is what Growth
+ * is for. Without that split PAYG would strictly dominate Growth — same 10%
+ * commission as Pro, and no monthly fee against Growth's $99 + 15%. Flagged for
+ * confirmation. */
 const plans = [
   {
     name: 'FREE',
     price: '0',
     color: 'text-green-600',
+    tagline: 'Improve trust with parents',
     buttonText: 'Claim Listing',
     buttonVariant: 'outline' as const,
     buttonClass: 'border-green-500 text-green-600 hover:bg-green-50',
     featured: false,
     commission: 'Listing only — no booking fees',
+    perks: ['Edit profile', 'Upload photos', 'Increase website traffic', 'Parents can leave reviews'],
+  },
+  {
+    name: 'PAY AS YOU GO',
+    price: '0',
+    color: 'text-blue-600',
+    tagline: 'Take bookings without a monthly fee',
+    buttonText: 'Start Selling',
+    buttonVariant: 'outline' as const,
+    buttonClass: 'border-blue-500 text-blue-600 hover:bg-blue-50',
+    featured: false,
+    commission: '10% of each booked class + Stripe platform costs + GST',
+    perks: [
+      'Everything in Free',
+      'Take bookings on BabyBrain',
+      'Stripe payments',
+      'Pay only when you get booked',
+    ],
   },
   {
     name: 'GROWTH',
     price: '99',
     color: 'text-[#C90044]',
+    tagline: 'Turn discovery into bookings & reduce admin',
     buttonText: 'Start Growing',
     buttonVariant: 'default' as const,
     buttonClass: 'gradient-primary text-white hover:opacity-90',
     featured: true,
     badge: 'MOST POPULAR',
     yearlyPrice: '1,089/year (1 month free)',
-    commission: '15% booking commission + Stripe platform costs',
+    commission: '15% booking commission + Stripe platform costs + GST',
+    perks: [
+      'Everything in Free',
+      'Onboarding and ongoing support',
+      'Direct to user messaging',
+      'Availability, booking & waitlist management, package and make up token allocation either hosted on BabyBrain or integrated to your site',
+      'Ability to track medical disclosures, collect consent, agree terms, warranties, waivers',
+      'Stripe payments with promotions enabled',
+      'Automated reminders, weekly class availability etc',
+      'Attendance tracking',
+    ],
   },
   {
     name: 'PRO',
     price: '199',
     color: 'text-purple-600',
+    tagline: 'Gain clear insight & accelerate growth',
     buttonText: 'Go Pro',
     buttonVariant: 'outline' as const,
     buttonClass: 'border-purple-500 text-purple-600 hover:bg-purple-50',
     featured: false,
     yearlyPrice: '2,189/year (1 month free)',
-    commission: '10% booking commission + Stripe platform costs',
+    commission: '10% booking commission + Stripe platform costs + GST',
+    perks: [
+      'Everything in Growth',
+      'Featured placement',
+      'Priority ranking',
+      'E-mail blasts with class availability three times a week',
+      'Advanced analytics',
+    ],
   },
 ];
 
 const features = [
-  { name: 'Edit Profile & Upload Photos', free: true, growth: true, pro: true },
-  { name: 'Website Traffic', free: true, growth: true, pro: true },
-  { name: 'Reviews', free: true, growth: true, pro: true },
-  { name: 'Messaging', free: false, growth: true, pro: true },
-  { name: 'Booking & Waitlist Management', free: false, growth: true, pro: true },
-  { name: 'Stripe Payments', free: false, growth: true, pro: true },
-  { name: 'Package & Make-up Tokens', free: false, growth: true, pro: true },
-  { name: 'Attendance Tracking', free: false, growth: true, pro: true },
-  { name: 'Featured Placement', free: false, growth: false, pro: true },
-  { name: 'Priority Ranking', free: false, growth: false, pro: true },
-  { name: 'Email Promotions', free: false, growth: false, pro: true },
-  { name: 'Advanced Analytics', free: false, growth: false, pro: true },
+  { name: 'Edit Profile & Upload Photos', free: true, payg: true, growth: true, pro: true },
+  { name: 'Website Traffic', free: true, payg: true, growth: true, pro: true },
+  { name: 'Reviews', free: true, payg: true, growth: true, pro: true },
+  { name: 'Take Bookings', free: false, payg: true, growth: true, pro: true },
+  { name: 'Stripe Payments', free: false, payg: true, growth: true, pro: true },
+  { name: 'Onboarding & Ongoing Support', free: false, payg: false, growth: true, pro: true },
+  { name: 'Direct to User Messaging', free: false, payg: false, growth: true, pro: true },
+  { name: 'Waitlist Management', free: false, payg: false, growth: true, pro: true },
+  { name: 'Package & Make-up Tokens', free: false, payg: false, growth: true, pro: true },
+  { name: 'Medical Disclosures, Consent & Waivers', free: false, payg: false, growth: true, pro: true },
+  { name: 'Promotions on Stripe Payments', free: false, payg: false, growth: true, pro: true },
+  { name: 'Automated Reminders', free: false, payg: false, growth: true, pro: true },
+  { name: 'Attendance Tracking', free: false, payg: false, growth: true, pro: true },
+  { name: 'Featured Placement', free: false, payg: false, growth: false, pro: true },
+  { name: 'Priority Ranking', free: false, payg: false, growth: false, pro: true },
+  { name: 'Email Blasts (3x weekly)', free: false, payg: false, growth: false, pro: true },
+  { name: 'Advanced Analytics', free: false, payg: false, growth: false, pro: true },
 ];
 
 export default function PlansPage() {
@@ -135,7 +186,7 @@ export default function PlansPage() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-3 gap-6 mb-10">
+        <div className="grid gap-5 mb-10 md:grid-cols-2 xl:grid-cols-4 items-start">
           {plans.map((plan) => (
             <div
               key={plan.name}
@@ -170,8 +221,19 @@ export default function PlansPage() {
                   <div className="mb-1" />
                 )}
                 {plan.commission && (
-                  <p className="text-[11px] text-gray-400 mb-4">{plan.commission}</p>
+                  <p className="text-[11px] text-gray-400 mb-3">{plan.commission}</p>
                 )}
+                {plan.tagline && (
+                  <p className="text-[13px] font-semibold text-gray-700 mb-3">{plan.tagline}</p>
+                )}
+                <ul className="mb-4 space-y-1.5 text-left">
+                  {plan.perks.map((perk) => (
+                    <li key={perk} className="flex gap-2 text-[12.5px] leading-5 text-gray-600">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+                      <span>{perk}</span>
+                    </li>
+                  ))}
+                </ul>
 
                 <Button
                   onClick={() => navigate(plan.name === 'FREE' ? '/claim-business' : '/login')}
@@ -187,9 +249,10 @@ export default function PlansPage() {
 
         {/* Comparison Table */}
         <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <div className="grid grid-cols-4 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
+          <div className="grid grid-cols-5 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
             <div>Compare Plans</div>
             <div className="text-center text-green-600">Free</div>
+            <div className="text-center text-blue-600">Pay As You Go</div>
             <div className="text-center text-[#C90044]">Growth</div>
             <div className="text-center text-purple-600">Pro</div>
           </div>
@@ -197,7 +260,7 @@ export default function PlansPage() {
             <div
               key={feature.name}
               className={cn(
-                'grid grid-cols-4 px-6 py-3 text-sm',
+                'grid grid-cols-5 px-6 py-3 text-sm',
                 idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
               )}
             >
@@ -205,6 +268,13 @@ export default function PlansPage() {
               <div className="flex justify-center">
                 {feature.free ? (
                   <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <X className="w-4 h-4 text-red-400" />
+                )}
+              </div>
+              <div className="flex justify-center">
+                {feature.payg ? (
+                  <Check className="w-4 h-4 text-blue-500" />
                 ) : (
                   <X className="w-4 h-4 text-red-400" />
                 )}
