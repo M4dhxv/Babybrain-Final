@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import SiteFooter from '@/components/SiteFooter';
 import { apiPost } from '@/lib/api';
 import { BrandLogo } from '@/components/BrandLogo';
+import { useAuth } from '@/auth/AuthProvider';
 
 /* The four tiers, per the founder's pricing deck.
  *
@@ -18,6 +19,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 const plans = [
   {
     name: 'FREE',
+    planKey: null as 'growth' | 'pro' | null,
     price: '0',
     color: 'text-green-600',
     tagline: 'Improve trust with parents',
@@ -30,6 +32,7 @@ const plans = [
   },
   {
     name: 'PAY AS YOU GO',
+    planKey: null as 'growth' | 'pro' | null,
     price: '0',
     color: 'text-blue-600',
     tagline: 'Take bookings without a monthly fee',
@@ -47,6 +50,7 @@ const plans = [
   },
   {
     name: 'GROWTH',
+    planKey: 'growth' as 'growth' | 'pro' | null,
     price: '99',
     color: 'text-[#C90044]',
     tagline: 'Turn discovery into bookings & reduce admin',
@@ -70,6 +74,7 @@ const plans = [
   },
   {
     name: 'PRO',
+    planKey: 'pro' as 'growth' | 'pro' | null,
     price: '199',
     color: 'text-purple-600',
     tagline: 'Gain clear insight & accelerate growth',
@@ -111,6 +116,9 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
+  const { session, provider } = useAuth();
+  const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
   const [optedOut, setOptedOut] = useState(false);
   const [optOutOpen, setOptOutOpen] = useState(false);
   const [optOutName, setOptOutName] = useState('');
@@ -118,6 +126,45 @@ export default function PlansPage() {
   const [optOutNote, setOptOutNote] = useState('');
   const [optOutBusy, setOptOutBusy] = useState(false);
   const [optOutError, setOptOutError] = useState<string | null>(null);
+
+  /* QA: "click upgrade to growth and then start growing and it just takes me
+     back to the dashboard still on the free plan." Every paid-plan button sent
+     the click to /login unconditionally, and the login page redirects an
+     already-signed-in session straight to /dashboard — so a vendor who was
+     already logged in got bounced right back to where they started, on Free,
+     with no indication anything had gone wrong.
+     A signed-in owner now starts real Stripe checkout for the plan clicked;
+     a signed-out visitor still goes to /login, which is the correct behaviour
+     for them. */
+  async function selectPlan(planKey: 'growth' | 'pro' | null, planName: string) {
+    if (!planKey) {
+      // FREE -> claim a listing. PAYG has no subscription (it's commission-only),
+      // so an existing owner goes to Billing to turn on Stripe payouts; a guest
+      // signs in first.
+      if (planName === 'PAY AS YOU GO' && session) { navigate('/billing'); return; }
+      navigate(session ? (provider ? '/dashboard' : '/claim-business') : (planName === 'FREE' ? '/claim-business' : '/login'));
+      return;
+    }
+    if (!session) { navigate('/login'); return; }
+    if (!provider) {
+      setCheckoutError({ plan: planKey, message: 'Claim your business first, then come back to upgrade.' });
+      return;
+    }
+    setCheckoutError(null);
+    setCheckoutBusy(planKey);
+    try {
+      const { url } = await apiPost<{ url?: string }>('/api/vendor/stripe/subscription', {
+        provider_id: provider.id,
+        plan: planKey,
+      });
+      if (url) window.location.href = url;
+      else setCheckoutError({ plan: planKey, message: 'Could not start checkout — please try again.' });
+    } catch (e) {
+      setCheckoutError({ plan: planKey, message: e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.' });
+    } finally {
+      setCheckoutBusy(null);
+    }
+  }
 
   async function submitOptOut(e: React.FormEvent) {
     e.preventDefault();
@@ -236,12 +283,16 @@ export default function PlansPage() {
                 </ul>
 
                 <Button
-                  onClick={() => navigate(plan.name === 'FREE' ? '/claim-business' : '/login')}
+                  onClick={() => selectPlan(plan.planKey, plan.name)}
+                  disabled={checkoutBusy === plan.planKey}
                   className={cn('w-full rounded-xl py-3 font-semibold', plan.buttonClass)}
                   variant={plan.buttonVariant}
                 >
-                  {plan.buttonText}
+                  {checkoutBusy === plan.planKey ? 'Redirecting to Stripe…' : plan.buttonText}
                 </Button>
+                {checkoutError?.plan === plan.planKey && (
+                  <p className="mt-2 text-xs font-medium text-red-600">{checkoutError.message}</p>
+                )}
               </div>
             </div>
           ))}

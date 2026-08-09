@@ -34,13 +34,16 @@ export async function POST(request: Request) {
       const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
       const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
-      // Vendor "Growth" subscription (unchanged).
+      // Vendor subscription — Growth or Pro. `plan` rides on the
+      // subscription's own metadata (set when checkout is created) rather
+      // than being assumed, so a Pro checkout isn't recorded as Growth.
       const providerId = sub.metadata?.provider_id;
       if (providerId) {
+        const vendorPlan = sub.metadata?.plan === 'pro' ? 'pro' : 'growth';
         await admin
           .from('subscriptions')
           .update({
-            plan: active ? 'growth' : 'free',
+            plan: active ? vendorPlan : 'free',
             stripe_subscription_id: sub.id,
             status: sub.status as never,
             current_period_end: periodEndIso,

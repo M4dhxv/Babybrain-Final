@@ -333,6 +333,12 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
   const [form, setForm] = useState({ name: '', address: '', postal_code: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Locations could be added and removed but never edited — a typo in the
+     address meant delete-and-recreate, which also loses is_primary. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', address: '', postal_code: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   async function load() {
     if (!provider) return;
@@ -369,6 +375,35 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
     load();
   }
 
+  function startEdit(loc: ProviderLocation) {
+    setEditingId(loc.id);
+    setEditError(null);
+    setEditForm({ name: loc.name ?? '', address: loc.address ?? '', postal_code: loc.postal_code ?? '' });
+  }
+
+  async function saveEdit(id: string) {
+    if (!editForm.name.trim()) { setEditError('A location name is required.'); return; }
+    setEditSaving(true);
+    setEditError(null);
+    const { error: err } = await supabase.from('provider_locations').update({
+      name: editForm.name.trim(),
+      address: editForm.address.trim() || null,
+      postal_code: editForm.postal_code.trim() || null,
+    }).eq('id', id);
+    setEditSaving(false);
+    if (err) { setEditError(err.message); return; }
+    setEditingId(null);
+    load();
+  }
+
+  async function setPrimary(id: string) {
+    if (!provider) return;
+    // Only one row may be primary, so clear the rest first.
+    await supabase.from('provider_locations').update({ is_primary: false }).eq('provider_id', provider.id);
+    await supabase.from('provider_locations').update({ is_primary: true }).eq('id', id);
+    load();
+  }
+
   const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
 
   return (
@@ -390,6 +425,22 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
 
       <div className="space-y-3 mb-4">
         {locations.map((loc) => (
+          editingId === loc.id ? (
+            <div key={loc.id} className="rounded-xl border border-pink-200 bg-pink-50/30 p-3 space-y-2">
+              {editError && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{editError}</div>}
+              <input className={inputCls} placeholder="Location name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <input className={inputCls} placeholder="Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                <input className={inputCls} placeholder="Postal code" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => saveEdit(loc.id)} disabled={editSaving} className="px-3 py-1.5 bg-[#C90044] text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                  {editSaving ? 'Saving…' : 'Save'}
+                </button>
+                <button onClick={() => setEditingId(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700">Cancel</button>
+              </div>
+            </div>
+          ) : (
           <div key={loc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#C90044]"><Store className="w-5 h-5" /></div>
             <div className="flex-1 min-w-0">
@@ -399,11 +450,22 @@ function LocationsManager({ provider, canManage }: { provider: { id: string } | 
               </div>
             </div>
             {canManage && (
-              <button onClick={() => removeLocation(loc.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove location">
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                {!loc.is_primary && (
+                  <button onClick={() => setPrimary(loc.id)} className="px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:bg-gray-200" title="Set as main branch">
+                    Set main
+                  </button>
+                )}
+                <button onClick={() => startEdit(loc)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-200 hover:text-gray-700" title="Edit location">
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button onClick={() => removeLocation(loc.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove location">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             )}
           </div>
+          )
         ))}
         {locations.length === 0 && !showForm && <div className="text-sm text-gray-400">No locations added yet.</div>}
       </div>

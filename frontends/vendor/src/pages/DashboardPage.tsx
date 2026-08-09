@@ -17,11 +17,8 @@ import {
   TrendingUp,
   Sun,
   MessageSquare,
-  Search,
   SlidersHorizontal,
   ChevronDown,
-  X,
-  Edit3,
   CalendarCheck,
   Baby,
 } from 'lucide-react';
@@ -48,13 +45,6 @@ const sgWhen = (iso: string) =>
 type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null };
 type RecentBooking = { id: string; child: string; activity: string; time: string; status: string };
 
-const messages = [
-  { initials: 'SJ', name: 'S. J.', message: 'Hi! Is there a makeup class available this week?', time: '9:41 AM', count: 2, color: 'bg-pink-100 text-pink-600' },
-  { initials: 'MT', name: 'M. T.', message: 'Thanks! See you tomorrow.', time: 'Yesterday', count: 1, color: 'bg-yellow-100 text-yellow-600' },
-  { initials: 'EJ', name: 'E. J.', message: 'Can I bring my younger baby too?', time: 'Yesterday', count: 1, color: 'bg-purple-100 text-purple-600' },
-  { initials: 'DK', name: 'D. K.', message: 'Great class! My son loves it.', time: 'Mon', count: 0, color: 'bg-blue-100 text-blue-600' },
-];
-
 
 /** "Good morning/afternoon/evening" in Singapore time. */
 function sgGreeting() {
@@ -62,23 +52,28 @@ function sgGreeting() {
   return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 }
 
-/** Current week label, e.g. "13 Jun – 19 Jun 2026". */
-function weekLabel() {
-  const now = new Date();
-  const dow = (now.getDay() + 6) % 7; // Monday = 0
-  const mon = new Date(now.getTime() - dow * 864e5);
-  const sun = new Date(mon.getTime() + 6 * 864e5);
-  const f = (d: Date) => d.toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short' });
-  return `${f(mon)} – ${f(sun)} ${sun.getFullYear()}`;
-}
-
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [showMessages, setShowMessages] = useState(false);
   const { provider } = useAuth();
   const [overview, setOverview] = useState<ProviderOverview | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingSession[]>([]);
   const [recent, setRecent] = useState<RecentBooking[]>([]);
+  /* Both header buttons used to navigate('/bookings') regardless of what was
+     clicked. They're real controls now: the date range narrows Upcoming
+     Sessions to a window (sessions are fetched 90 days out so every preset has
+     data to show), and Filters narrows Recent Bookings by status — both
+     client-side, since neither list needs a new backend endpoint to do this
+     honestly. */
+  const RANGE_PRESETS = [
+    { key: '7d', label: 'Next 7 days', days: 7 },
+    { key: '30d', label: 'Next 30 days', days: 30 },
+    { key: '90d', label: 'Next 90 days', days: 90 },
+  ] as const;
+  const [rangeKey, setRangeKey] = useState<(typeof RANGE_PRESETS)[number]['key']>('7d');
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const STATUS_FILTERS = ['All', 'Confirmed', 'Waitlisted', 'Cancelled', 'Completed'] as const;
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('All');
+  const [filterOpen, setFilterOpen] = useState(false);
   const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   /* Replies owed, straight from Stream's own unread counter — something the
@@ -106,15 +101,17 @@ export default function DashboardPage() {
       if (!ids.length) { setLoaded(true); return; }
 
       const nowIso = new Date().toISOString();
-      // Ongoing sessions KPI: how many sessions run in the next 7 days.
-      // Upcoming sessions (next few) with live booked counts.
+      // Fetched 90 days out (not just the next 4) so the date-range control has
+      // something to actually narrow — it used to just navigate to /bookings.
+      const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
       const { data: sess } = await supabase
         .from('activity_sessions')
         .select('id, activity_id, starts_at, capacity')
         .in('activity_id', ids)
         .gte('starts_at', nowIso)
+        .lte('starts_at', in90dIso)
         .order('starts_at')
-        .limit(4);
+        .limit(60);
       const sessIds = (sess ?? []).map((s) => s.id);
       const counts: Record<string, number> = {};
       if (sessIds.length) {
@@ -132,8 +129,10 @@ export default function DashboardPage() {
       })));
 
       // 1.3: recent bookings with the booked child's name (security-definer RPC).
+      // Fetched 30 (not 4) so the status filter has more than one screenful to
+      // narrow.
       supabase
-        .rpc('provider_recent_bookings', { p_provider: provider.id, p_limit: 4 })
+        .rpc('provider_recent_bookings', { p_provider: provider.id, p_limit: 30 })
         .then(({ data }) => {
           setRecent((data ?? []).map((r) => ({
             id: r.booking_id,
@@ -191,6 +190,11 @@ export default function DashboardPage() {
     : [null, null, null, null, null];
   const firstName = provider?.business_name?.split(' ')[0] ?? 'there';
 
+  const activeRangeDays = RANGE_PRESETS.find((r) => r.key === rangeKey)!.days;
+  const rangeCutoff = Date.now() + activeRangeDays * 864e5;
+  const visibleUpcoming = upcoming.filter((s) => new Date(s.when).getTime() <= rangeCutoff);
+  const visibleRecent = statusFilter === 'All' ? recent : recent.filter((r) => r.status.toLowerCase() === statusFilter.toLowerCase());
+
   return (
     <div className="relative">
       {/* Top Bar */}
@@ -200,15 +204,51 @@ export default function DashboardPage() {
           <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/bookings')} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
-            <CalendarDays className="w-4 h-4" />
-            {weekLabel()}
-            <ChevronDown className="w-4 h-4" />
-          </button>
-          <button onClick={() => navigate('/bookings')} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
-            <SlidersHorizontal className="w-4 h-4" />
-            Filters
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => { setRangeOpen((v) => !v); setFilterOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <CalendarDays className="w-4 h-4" />
+              {RANGE_PRESETS.find((r) => r.key === rangeKey)!.label}
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {rangeOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+                {RANGE_PRESETS.map((r) => (
+                  <button
+                    key={r.key}
+                    onClick={() => { setRangeKey(r.key); setRangeOpen(false); }}
+                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', r.key === rangeKey ? 'text-[#C90044] font-medium' : 'text-gray-700')}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => { setFilterOpen((v) => !v); setRangeOpen(false); }}
+              className={cn('flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50', statusFilter !== 'All' ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700')}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              {statusFilter === 'All' ? 'Filters' : statusFilter}
+            </button>
+            {filterOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => { setStatusFilter(f); setFilterOpen(false); }}
+                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', f === statusFilter ? 'text-[#C90044] font-medium' : 'text-gray-700')}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -283,7 +323,7 @@ export default function DashboardPage() {
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
-              {upcoming.map((session, idx) => {
+              {visibleUpcoming.map((session, idx) => {
                 const Icon = sessionIcons[idx % sessionIcons.length];
                 return (
                   <div key={session.id} className="flex items-center gap-3">
@@ -301,7 +341,7 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
-              {loaded && upcoming.length === 0 && <div className="text-sm text-gray-400">No upcoming sessions.</div>}
+              {loaded && visibleUpcoming.length === 0 && <div className="text-sm text-gray-400">No sessions in this range.</div>}
             </div>
             <button onClick={() => navigate('/activities')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View full schedule
@@ -316,7 +356,7 @@ export default function DashboardPage() {
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
-              {recent.map((booking, idx) => (
+              {visibleRecent.map((booking, idx) => (
                 <div key={booking.id} className="flex items-center gap-3">
                   <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold', sessionColors[idx % sessionColors.length])}>
                     {booking.child.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
@@ -336,7 +376,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
-              {loaded && recent.length === 0 && <div className="text-sm text-gray-400">No bookings yet.</div>}
+              {loaded && visibleRecent.length === 0 && <div className="text-sm text-gray-400">No {statusFilter === 'All' ? '' : statusFilter.toLowerCase() + ' '}bookings yet.</div>}
             </div>
             <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View all bookings
@@ -360,73 +400,27 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Floating Chat Button */}
+      {/* Floating Chat Button.
+          This used to open a drawer with its own hardcoded conversation list —
+          a second, fake "Messages" completely disconnected from the real
+          Stream-backed inbox at /messages (different names, no real unread
+          state, a search box with no onChange, and a pen icon with no
+          onClick). QA: "shouldn't they be the same? Currently they are
+          showing different messages" — they were never the same data. Rather
+          than maintain two message UIs in parallel, this now opens the one
+          real inbox, with its own real unread count. */}
       <button
-        onClick={() => setShowMessages(!showMessages)}
+        onClick={() => navigate('/messages')}
         className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-[#C90044] to-[#AE5000] rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow z-50"
+        title="Open messages"
       >
         <MessageSquare className="w-6 h-6 text-white" />
-        <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
-          {showMessages ? 2 : 7}
-        </span>
+        {!!unreadCount && (
+          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
+            {unreadCount}
+          </span>
+        )}
       </button>
-
-      {/* Messages Drawer */}
-      {showMessages && (
-        <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-2xl border-l border-gray-200 z-40 animate-slide-in-right flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-5 border-b border-gray-200">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-gray-900">Messages</h3>
-              <span className="w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center">2</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <Edit3 className="w-4 h-4 text-gray-600" />
-              </button>
-              <button onClick={() => setShowMessages(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <X className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="p-4 border-b border-gray-200">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search messages..."
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-200"
-              />
-              <SlidersHorizontal className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            </div>
-          </div>
-
-          {/* Message List */}
-          <div className="flex-1 overflow-auto">
-            {messages.map((msg, idx) => (
-              <div key={idx} className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
-                <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0', msg.color)}>
-                  {msg.initials}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="font-medium text-gray-900 text-sm">{msg.name}</span>
-                    <span className="text-xs text-gray-500">{msg.time}</span>
-                  </div>
-                  <p className="text-sm text-gray-600 truncate">{msg.message}</p>
-                </div>
-                {msg.count > 0 && (
-                  <span className="w-5 h-5 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center flex-shrink-0">
-                    {msg.count}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
-      )}
-    </div>
   );
 }

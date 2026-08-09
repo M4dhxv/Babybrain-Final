@@ -96,7 +96,14 @@ export default function MessagesPage() {
               <Channel>
                 <Window>
                   <ChannelHeader />
-                  <MessageList />
+                  {/* QA: "not sure what the pen edit button would be intended
+                      to do under messages but currently doesn't work". It's
+                      Stream's stock "edit my own message" action (hover a
+                      sent message → "…" → the pencil) — it does work, but
+                      editing a message after a parent has read it isn't a
+                      function that makes sense for booking conversations, so
+                      it's dropped rather than kept as a confusing no-op. */}
+                  <MessageList messageActions={['delete', 'flag', 'quote', 'react', 'reply']} />
                   <MessageInput />
                 </Window>
                 <Thread />
