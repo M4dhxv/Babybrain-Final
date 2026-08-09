@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText,
   CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2,
@@ -35,7 +36,21 @@ export default function SettingsPage() {
   const { provider, role, session, refreshProvider } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
 
-  const [activeTab, setActiveTab] = useState('profile');
+  /* Deep-linkable: "Add a Location" on the dashboard and the Locations tab in
+     Activities both land here and should highlight Locations, not Profile. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wanted = (searchParams.get('tab') || '').toLowerCase();
+  const [activeTab, setActiveTab] = useState(
+    settingsTabs.some((t) => t.id === wanted) ? wanted : 'profile'
+  );
+  useEffect(() => {
+    if (settingsTabs.some((t) => t.id === wanted) && wanted !== activeTab) setActiveTab(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted]);
+  const selectTab = (id: string) => {
+    setActiveTab(id);
+    setSearchParams(id === 'profile' ? {} : { tab: id }, { replace: true });
+  };
   const [team, setTeam] = useState<Member[]>([]);
   const [form, setForm] = useState({
     business_name: '', contact_phone: '', contact_email: '', website: '', description: '',
@@ -121,7 +136,7 @@ export default function SettingsPage() {
       <div className="px-8 pb-8">
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
           {settingsTabs.map((tab) => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => selectTab(tab.id)}
               className={cn('flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 activeTab === tab.id ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               <tab.icon className="w-4 h-4" />

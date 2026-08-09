@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarPlus,
   Package,
@@ -49,6 +49,10 @@ export default function ActivitiesPage() {
 
   const [activeTab, setActiveTab] = useState('Activities');
   const [showDrawer, setShowDrawer] = useState(false);
+  /* The dashboard's shortcuts used to drop the vendor on this page's default
+     view and leave them to find the right form. `?new=activity|package` opens
+     it directly. */
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // "New Package" and the Packages tab both jump to the class-packs form below.
   function goToPackages() {
@@ -61,10 +65,21 @@ export default function ActivitiesPage() {
     });
   }
   function onTab(tab: string) {
-    if (tab === 'Locations') { navigate('/settings'); return; }
+    if (tab === 'Locations') { navigate('/settings?tab=locations'); return; }
     if (tab === 'Packages') { goToPackages(); return; }
     setActiveTab(tab);
   }
+
+  // Act on ?new=activity|package once, then strip it so a refresh doesn't
+  // reopen the form.
+  const newParam = searchParams.get('new');
+  useEffect(() => {
+    if (!newParam || !canManage) return;
+    if (newParam === 'activity') openCreate();
+    if (newParam === 'package') goToPackages();
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newParam, canManage]);
   const [showMenu, setShowMenu] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 

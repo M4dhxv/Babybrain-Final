@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderOverview } from '@/lib/database.types';
 import {
@@ -9,7 +10,7 @@ import {
   MapPin,
   CalendarDays,
   Users,
-  Clock,
+
   UserPlus,
   DollarSign,
   ArrowRight,
@@ -26,12 +27,17 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/* Every card used to send you to /bookings regardless of what you clicked, so
+   "View details" on Attendance, Waitlist and Revenue all landed in the same
+   place. `to` is where each one actually belongs.
+   "Ongoing Sessions" replaced with unread messages — QA: it "isn't that useful
+   an analytic", and a count of replies owed is something a vendor acts on. */
 const statsCards = [
-  { icon: CalendarDays, label: 'Bookings', value: '28', sub: 'this week', change: '22%', color: 'text-pink-600', bg: 'bg-pink-100' },
-  { icon: Users, label: 'Attendance Rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100' },
-  { icon: Clock, label: 'Ongoing Sessions', value: '12', sub: 'in next 7 days', change: null, color: 'text-yellow-600', bg: 'bg-yellow-100' },
-  { icon: UserPlus, label: 'Waitlist', value: '14', sub: 'children', change: null, color: 'text-blue-600', bg: 'bg-blue-100' },
-  { icon: DollarSign, label: 'Revenue', value: '$3,240', sub: 'this month', change: '18%', color: 'text-green-600', bg: 'bg-green-100' },
+  { icon: CalendarDays, label: 'Bookings', value: '28', sub: 'this week', change: '22%', color: 'text-pink-600', bg: 'bg-pink-100', to: '/bookings' },
+  { icon: Users, label: 'Attendance Rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100', to: '/bookings?tab=Attendance' },
+  { icon: MessageSquare, label: 'Messages to reply', value: '0', sub: 'awaiting a response', change: null, color: 'text-yellow-600', bg: 'bg-yellow-100', to: '/messages' },
+  { icon: UserPlus, label: 'Waitlist', value: '14', sub: 'children', change: null, color: 'text-blue-600', bg: 'bg-blue-100', to: '/bookings?tab=Waitlist' },
+  { icon: DollarSign, label: 'Revenue', value: '$3,240', sub: 'this month', change: '18%', color: 'text-green-600', bg: 'bg-green-100', to: '/billing' },
 ];
 
 const sessionIcons = [Baby, CalendarCheck, Sun];
@@ -84,11 +90,21 @@ export default function DashboardPage() {
   const [overview, setOverview] = useState<ProviderOverview | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingSession[]>([]);
   const [recent, setRecent] = useState<RecentBooking[]>([]);
-  const [next7Count, setNext7Count] = useState<number | null>(null);
   const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
   const [byDay, setByDay] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [bookings30, setBookings30] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+  /* Replies owed, straight from Stream's own unread counter — something the
+     vendor can act on, unlike the session count this card used to show. */
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getChatClient()
+      .then((c) => c.getUnreadCount())
+      .then((u) => { if (!cancelled) setUnreadCount(u.total_unread_count ?? 0); })
+      .catch(() => { if (!cancelled) setUnreadCount(0); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!provider) return;
@@ -103,16 +119,7 @@ export default function DashboardPage() {
       if (!ids.length) { setLoaded(true); return; }
 
       const nowIso = new Date().toISOString();
-      const in7dIso = new Date(Date.now() + 7 * 864e5).toISOString();
       // Ongoing sessions KPI: how many sessions run in the next 7 days.
-      supabase
-        .from('activity_sessions')
-        .select('id', { count: 'exact', head: true })
-        .in('activity_id', ids)
-        .gte('starts_at', nowIso)
-        .lt('starts_at', in7dIso)
-        .then(({ count }) => setNext7Count(count ?? 0));
-
       // Upcoming sessions (next few) with live booked counts.
       const { data: sess } = await supabase
         .from('activity_sessions')
@@ -196,12 +203,12 @@ export default function DashboardPage() {
 
   // Live values mapped onto the existing card config (icons/labels/colours
   // stay; only the numbers come from the backend). Order matches statsCards:
-  // Bookings · Attendance Rate · Ongoing Sessions · Waitlist · Revenue.
+  // Bookings · Attendance Rate · Messages to reply · Waitlist · Revenue.
   const liveValues: (string | null)[] = overview
     ? [
         String(overview.upcoming_bookings),
         attendanceRate ?? '—',
-        next7Count != null ? String(next7Count) : '—',
+        unreadCount != null ? String(unreadCount) : '—',
         String(overview.pending_waitlist),
         `$${Number(overview.revenue).toLocaleString()}`,
       ]
@@ -234,7 +241,7 @@ export default function DashboardPage() {
       <div className="px-4 pb-8 sm:px-8">
         {/* Quick Actions */}
         <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3">
-          <button onClick={() => navigate('/activities')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
+          <button onClick={() => navigate('/activities?new=activity')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
               <CalendarPlus className="w-6 h-6 text-[#C90044]" />
             </div>
@@ -244,7 +251,7 @@ export default function DashboardPage() {
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
-          <button onClick={() => navigate('/activities')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
+          <button onClick={() => navigate('/activities?new=package')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
               <Package className="w-6 h-6 text-purple-600" />
             </div>
@@ -254,7 +261,7 @@ export default function DashboardPage() {
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
-          <button onClick={() => navigate('/settings')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
+          <button onClick={() => navigate('/settings?tab=locations')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
               <MapPin className="w-6 h-6 text-blue-600" />
             </div>
@@ -285,7 +292,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {!stat.change && <div className="mb-3" />}
-              <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
+              <button onClick={() => navigate(stat.to)} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
                 View Details
                 <ArrowRight className="w-3 h-3" />
               </button>
@@ -322,7 +329,7 @@ export default function DashboardPage() {
               })}
               {loaded && upcoming.length === 0 && <div className="text-sm text-gray-400">No upcoming sessions.</div>}
             </div>
-            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/activities')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View full schedule
               <ArrowRight className="w-3 h-3" />
             </button>

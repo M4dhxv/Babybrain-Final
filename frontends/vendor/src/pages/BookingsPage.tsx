@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift,
@@ -50,7 +50,22 @@ export default function BookingsPage() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState('Bookings');
+  /* Deep-linkable so the dashboard's "View details" can land on the right tab
+     rather than dumping everyone on Bookings. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    bookingsTabs.find((t) => t.toLowerCase() === (requestedTab || '').toLowerCase()) ?? 'Bookings'
+  );
+  useEffect(() => {
+    const match = bookingsTabs.find((t) => t.toLowerCase() === (requestedTab || '').toLowerCase());
+    if (match && match !== activeTab) setActiveTab(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedTab]);
+  const selectTab = (t: string) => {
+    setActiveTab(t);
+    setSearchParams(t === 'Bookings' ? {} : { tab: t }, { replace: true });
+  };
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
   const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
   const [sessionId, setSessionId] = useState<string>('');
@@ -250,7 +265,7 @@ export default function BookingsPage() {
         {/* Tabs */}
         <div className="flex gap-6 border-b border-gray-200 mb-6">
           {bookingsTabs.map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
+            <button key={tab} onClick={() => selectTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
                 activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700')}>
               {tab === 'Bookings' && <CalendarDays className="w-4 h-4" />}
