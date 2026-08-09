@@ -130,7 +130,30 @@ Rules:
 - postal_code is the 6-digit Singapore code only.
 - price_sgd is a number in SGD, no currency symbol. Use the lowest advertised price when a range is given.
 - summary: 1-2 plain sentences on what a parent gets. No marketing language.
-- confidence: "high" if the page clearly describes children's activities; "medium" if partly inferred; "low" if the content is thin, irrelevant, or not about children.`;
+- confidence: "high" if the page clearly describes children's activities; "medium" if partly inferred; "low" if the content is thin, irrelevant, or not about children.
+
+Contact and booking details. The content is markdown, so links appear as
+[label](url) — read the url out of the brackets, don't just read the label.
+These are usually in the page header or footer rather than the body, and they
+were the most-missed fields on the last run, so check specifically:
+- booking_url: the destination of a link whose label is about booking — "Book
+  now", "Book a trial", "Register", "Enrol", "Sign up", "Reserve". Prefer a
+  dedicated booking or class-signup page over the generic homepage.
+  It MUST be either on this business's own domain, or a recognised booking host
+  (bookeo, momence, mindbody, calendly, eventbrite, acuity, glofox, peek,
+  classpass, hitpay). Reject anything else, even if the label mentions booking:
+  pages often link out to unrelated businesses, and sending a parent there is
+  worse than returning null. Never use a social profile, a wa.me link, or a
+  different company's site. Null if in any doubt.
+- whatsapp: any wa.me / api.whatsapp.com link, or a number labelled WhatsApp.
+  Return the phone number in digits, not the URL.
+- phone: any Singapore number, typically 8 digits starting 6, 8 or 9, with or
+  without a +65 prefix and with or without spaces. Ignore anything that is
+  plainly a postal code, price, date or licence number.
+- email: any address on the page, including one written as "hello [at]
+  example.com". Ignore obvious placeholders like you@example.com.
+- socials.instagram / socials.facebook: the profile URL, not a share link and
+  not an embedded post.`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
