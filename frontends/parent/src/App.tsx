@@ -29,7 +29,7 @@ import {
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
-import { downloadSchedulePdf } from "./lib/schedule-pdf";
+import { downloadSchedulePdf, withinRange } from "./lib/schedule-pdf";
 import { formatChildAge, formatAgeRange, formatDuration, regionLabel } from "./lib/database.types";
 import {
   PASSWORD_RULES,
@@ -1711,6 +1711,145 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["settings", "Settings", "gear", false],
 ];
 
+/** Pick a date range, then export those bookings as a printable PDF or an
+ *  .ics calendar file.
+ *
+ *  The exports used to take everything at once, which is unhelpful once a
+ *  parent has a term's worth of classes — QA asked to "choose a range before
+ *  download". Presets cover the common cases; the two date fields (which carry
+ *  their own calendar pop-out) handle anything else. */
+function ExportScheduleDialog({
+  items,
+  parentName,
+  onClose,
+}: {
+  items: BookingItem[];
+  parentName?: string;
+  onClose: () => void;
+}) {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const addDays = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return iso(d);
+  };
+  const [from, setFrom] = useState(iso(new Date()));
+  const [to, setTo] = useState(addDays(30));
+
+  const presets: [string, string, string][] = [
+    ["Next 7 days", iso(new Date()), addDays(7)],
+    ["Next 30 days", iso(new Date()), addDays(30)],
+    ["Next 3 months", iso(new Date()), addDays(90)],
+    ["Everything", "", ""],
+  ];
+
+  const entries = items
+    .filter((b) => b.startsAt && b.status !== "cancelled")
+    .map((b) => ({
+      title: b.title,
+      startsAt: b.startsAt!,
+      endsAt: b.endsAt,
+      venue: b.venue,
+      status: b.status,
+    }));
+  const selected = withinRange(entries, { from: from || null, to: to || null });
+  const invalid = from && to && from > to;
+
+  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Export schedule"
+        className="w-full max-w-[420px] rounded-[16px] bg-white p-5 shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black">Export your schedule</h2>
+            <p className="mt-1 text-sm font-semibold text-[#59658d]">
+              Choose a date range, then save it as a PDF or add it to your calendar.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-1 text-[#6D748A] hover:bg-[#FAF7F7]">
+            <Icon name="close" className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {presets.map(([label, f, t]) => {
+            const on = from === f && to === t;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => { setFrom(f); setTo(t); }}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  on ? "bg-baby-pink text-white" : "border border-[#EBE3E5] text-[#59658d] hover:border-baby-pink"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-black">From</span>
+            <DateInput value={from} onChange={setFrom} className={input} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-black">To</span>
+            <DateInput value={to} onChange={setTo} className={input} />
+          </label>
+        </div>
+
+        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#b00040]" : "text-[#59658d]"}`}>
+          {invalid
+            ? "The end date is before the start date."
+            : `${selected.length} ${selected.length === 1 ? "class" : "classes"} in this range`}
+        </p>
+
+        <div className="mt-4 flex gap-3">
+          <Button
+            type="button"
+            disabled={!!invalid || selected.length === 0}
+            onClick={() => {
+              downloadSchedulePdf(entries, parentName, { from: from || null, to: to || null });
+              onClose();
+            }}
+            className="flex-1 justify-center"
+          >
+            <Icon name="open" className="h-4 w-4" /> Save as PDF
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!!invalid || selected.length === 0}
+            onClick={() => {
+              downloadScheduleIcs(
+                selected.map((e, i) => ({
+                  id: `${i}-${e.startsAt}`,
+                  title: e.title,
+                  startsAt: e.startsAt,
+                  endsAt: e.endsAt ?? null,
+                  venue: e.venue,
+                }))
+              );
+              onClose();
+            }}
+            className="flex-1 justify-center"
+          >
+            <Icon name="calendar" className="h-4 w-4" /> Calendar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Blurred behind the Saved-activities upsell on Free, so the section shows
  *  the shape of the feature without leaking a parent's real shortlist. */
 const PLACEHOLDER_SAVED = [
@@ -3186,6 +3325,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
   const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -3249,38 +3389,14 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         <div className="flex flex-wrap justify-end gap-2">
           {/* Calendar sync and the exportable schedule are Plus features. */}
           {isPlus ? (
-            <>
-              <button
-                type="button"
-                onClick={() =>
-                  downloadScheduleIcs(
-                    exportable.map((b) => ({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue }))
-                  )
-                }
-                className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
-                title={`Export all ${exportable.length} classes to your calendar`}
-              >
-                <Icon name="calendar" className="h-3.5 w-3.5" /> Export all to calendar
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  downloadSchedulePdf(
-                    exportable.map((b) => ({
-                      title: b.title,
-                      startsAt: b.startsAt!,
-                      endsAt: b.endsAt,
-                      venue: b.venue,
-                      status: b.status,
-                    }))
-                  )
-                }
-                className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
-                title="Open a printable schedule you can save as PDF"
-              >
-                <Icon name="open" className="h-3.5 w-3.5" /> Download PDF schedule
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => setExporting(true)}
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
+              title="Pick a date range, then save as PDF or add to your calendar"
+            >
+              <Icon name="calendar" className="h-3.5 w-3.5" /> Export schedule
+            </button>
           ) : (
             <a
               href="/pricing"
@@ -3291,6 +3407,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             </a>
           )}
         </div>
+      )}
+      {exporting && (
+        <ExportScheduleDialog items={exportable} onClose={() => setExporting(false)} />
       )}
       {items.map((b) => {
         const cancelWhy = cancelBlockReason(b);

@@ -35,8 +35,44 @@ const sgClock = (iso: string) =>
     minute: "2-digit",
   });
 
-export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: string) {
-  const sorted = [...entries].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+/** Inclusive ISO (yyyy-mm-dd) bounds, interpreted in Singapore time. */
+export interface DateRange {
+  from?: string | null;
+  to?: string | null;
+}
+
+/** Keep only the entries falling inside an inclusive SGT day range. */
+export function withinRange<T extends { startsAt: string }>(entries: T[], range?: DateRange): T[] {
+  if (!range?.from && !range?.to) return entries;
+  const fromMs = range?.from ? Date.parse(`${range.from}T00:00:00+08:00`) : -Infinity;
+  // `to` is inclusive, so run to the last millisecond of that Singapore day.
+  const toMs = range?.to ? Date.parse(`${range.to}T23:59:59.999+08:00`) : Infinity;
+  return entries.filter((e) => {
+    const t = Date.parse(e.startsAt);
+    return t >= fromMs && t <= toMs;
+  });
+}
+
+const sgShort = (iso: string) =>
+  new Date(`${iso}T00:00:00+08:00`).toLocaleDateString("en-SG", {
+    timeZone: "Asia/Singapore",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+/** Human label for the chosen range, shown under the PDF's title. */
+export function rangeLabel(range?: DateRange): string {
+  if (range?.from && range?.to) return `${sgShort(range.from)} – ${sgShort(range.to)}`;
+  if (range?.from) return `From ${sgShort(range.from)}`;
+  if (range?.to) return `Up to ${sgShort(range.to)}`;
+  return "All booked activities";
+}
+
+export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: string, range?: DateRange) {
+  const sorted = [...withinRange(entries, range)].sort(
+    (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)
+  );
 
   // Group by day so it reads like a calendar rather than a flat list.
   const byDay = new Map<string, ScheduleEntry[]>();
@@ -93,7 +129,7 @@ export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: strin
 <body>
   <header>
     <h1>Class schedule${parentName ? ` — ${esc(parentName)}` : ""}</h1>
-    <div class="sub">${sorted.length} ${sorted.length === 1 ? "class" : "classes"} · generated ${esc(generated)} · babybrain.sg</div>
+    <div class="sub">${esc(rangeLabel(range))} · ${sorted.length} ${sorted.length === 1 ? "class" : "classes"} · generated ${esc(generated)} · babybrain.sg</div>
   </header>
   ${days || '<p class="meta">No upcoming classes.</p>'}
   <footer>Share this with grandparents and helpers so everyone knows where to be.</footer>

@@ -43,11 +43,27 @@ function PageviewTracker() {
   return null;
 }
 
+/** Reset the scroll position on navigation.
+ *
+ *  A router swap replaces the content but leaves the window where it was, so
+ *  following a footer link left you at the bottom of the new page. QA read that
+ *  as the links themselves being broken: "the 'Why BabyBrain', 'Plans &
+ *  Pricing', 'Claim Your Business' and 'Contact Us' tabs all direct to the
+ *  bottom of the page". The routes were right all along. */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, [pathname]);
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider>
       <HashRouter>
         <RecoveryRedirect />
+        <ScrollToTop />
         <PageviewTracker />
         <Routes>
           {/* Public pages */}

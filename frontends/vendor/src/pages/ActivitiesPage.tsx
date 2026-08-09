@@ -377,8 +377,10 @@ export default function ActivitiesPage() {
       description: form.description,
       category_id: Number(form.category_id),
       vendor_category: (form.vendor_category || provider.vendor_category) as VendorCategory | undefined,
-      age_min_months: form.age_min_months ? Number(form.age_min_months) : 0,
-      age_max_months: form.age_max_months ? Number(form.age_max_months) : 216,
+      age_min_months: Math.max(0, form.age_min_months ? Number(form.age_min_months) : 0),
+      // BabyBrain lists activities for children up to 11, so an unstated upper
+      // age can't default to adulthood — 216 was putting listings past the cap.
+      age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
       price: form.price ? Number(form.price) : null,
       location_id: form.location_id || null,
       image_urls: form.image_url ? [form.image_url] : [],
