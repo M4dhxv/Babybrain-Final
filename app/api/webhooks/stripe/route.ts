@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -151,14 +152,31 @@ export async function POST(request: Request) {
           .eq('id', session.metadata.package_id)
           .maybeSingle();
         if (pkg) {
-          await admin.from('package_purchases').insert({
-            user_id: session.metadata.user_id,
-            package_id: pkg.id,
-            provider_id: pkg.provider_id,
-            credits_total: pkg.credits,
-            credits_remaining: pkg.credits,
-            stripe_payment_intent: (session.payment_intent as string) ?? null,
-          });
+          const { data: purchase } = await admin
+            .from('package_purchases')
+            .insert({
+              user_id: session.metadata.user_id,
+              package_id: pkg.id,
+              provider_id: pkg.provider_id,
+              credits_total: pkg.credits,
+              credits_remaining: pkg.credits,
+              stripe_payment_intent: (session.payment_intent as string) ?? null,
+            })
+            .select('id')
+            .single();
+          // QA: buying a pack from a class's booking page should book that
+          // class, not just grant credits. Only present when checkout was
+          // started from there — see app/api/customer/stripe/package.
+          if (purchase && session.metadata?.activity_session_id) {
+            await autoBookPackageSession(admin, {
+              purchaseId: purchase.id,
+              packageId: pkg.id,
+              providerId: pkg.provider_id,
+              userId: session.metadata.user_id,
+              activitySessionId: session.metadata.activity_session_id,
+              childId: session.metadata.child_id ?? null,
+            });
+          }
         }
       }
 

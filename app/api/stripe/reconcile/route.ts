@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 
 /**
  * Apply the effect of a completed Stripe Checkout Session on return from
@@ -83,14 +84,28 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (!pkg) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
 
-    await admin.from('package_purchases').insert({
-      user_id: user.id,
-      package_id: pkg.id,
-      provider_id: pkg.provider_id,
-      credits_total: pkg.credits,
-      credits_remaining: pkg.credits,
-      stripe_payment_intent: paymentIntent,
-    });
+    const { data: purchase } = await admin
+      .from('package_purchases')
+      .insert({
+        user_id: user.id,
+        package_id: pkg.id,
+        provider_id: pkg.provider_id,
+        credits_total: pkg.credits,
+        credits_remaining: pkg.credits,
+        stripe_payment_intent: paymentIntent,
+      })
+      .select('id')
+      .single();
+    if (purchase && session.metadata?.activity_session_id) {
+      await autoBookPackageSession(admin, {
+        purchaseId: purchase.id,
+        packageId: pkg.id,
+        providerId: pkg.provider_id,
+        userId: user.id,
+        activitySessionId: session.metadata.activity_session_id,
+        childId: session.metadata.child_id ?? null,
+      });
+    }
     return NextResponse.json({ applied: true, kind, credits: pkg.credits });
   }
 

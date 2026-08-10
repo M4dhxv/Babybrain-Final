@@ -13,7 +13,8 @@ import {
   PageShell,
   SectionTitle,
 } from "./components/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { MessagesTab } from "./components/MessagesTab";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
 import { useAuth } from "./auth/AuthProvider";
@@ -30,7 +31,7 @@ import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { downloadSchedulePdf, withinRange } from "./lib/schedule-pdf";
-import { formatChildAge, formatAgeRange, formatDuration, regionLabel } from "./lib/database.types";
+import { formatChildAge, formatAgeRange, formatDuration, regionLabel, ageInMonths } from "./lib/database.types";
 import {
   PASSWORD_RULES,
   dobError,
@@ -1692,7 +1693,7 @@ type BookingItem = {
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
 type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
-type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null };
+type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
 
 /** [key, label, icon, plusOnly] — the Plus-only tabs are the ones QA listed as
  *  needing to differ between tiers (packages, make-up tokens, favourites). */
@@ -1706,6 +1707,7 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["packages", "Packages", "store", true],
   ["makeup", "Make-up tokens", "gift", true],
   ["favorites", "Favourites", "heart", true],
+  ["messages", "Messages", "chat", true],
   ["reviews", "Reviews", "star", false],
   ["notifications", "Notifications", "bell", false],
   ["settings", "Settings", "gear", false],
@@ -1868,6 +1870,41 @@ function PlusLock({ title, copy }: { title: string; copy: string }) {
       <h2 className="mt-4 text-xl font-black">{title}</h2>
       <p className="mx-auto mt-2 max-w-[420px] font-semibold text-[#68718f]">{copy}</p>
       <Button href="/pricing" className="mt-5"><Icon name="star" className="h-4 w-4" /> Upgrade to Plus</Button>
+    </div>
+  );
+}
+
+/** "All children" + one chip per child — shown once there's more than one,
+ *  to filter a list (Bookings, Past activities) down to a single child's. */
+function ChildFilterChips({
+  kids,
+  value,
+  onChange,
+}: {
+  kids: { id: string; name: string }[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  if (kids.length < 2) return null;
+  return (
+    <div className="mb-4 flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={`rounded-full border px-3 py-1.5 text-sm font-bold ${value === null ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white text-[#4a5685]"}`}
+      >
+        All children
+      </button>
+      {kids.map((k) => (
+        <button
+          key={k.id}
+          type="button"
+          onClick={() => onChange(k.id)}
+          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-bold ${value === k.id ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white text-[#4a5685]"}`}
+        >
+          <AnimalAvatar seed={k.name} kind="child" className="h-4 w-4" /> {k.name}
+        </button>
+      ))}
     </div>
   );
 }
@@ -2387,6 +2424,10 @@ function ProfilePage() {
   // children, only one is showing on the overview".
   const [journeyChildId, setJourneyChildId] = useState<string | null>(null);
   const journeyChild = children.find((c) => c.id === journeyChildId) ?? children[0];
+  // Bookings/Past activities mix every child's classes together by default —
+  // QA asked for a per-child filter once there's more than one. "All" (null)
+  // shows the combined list, same as before this existed.
+  const [bookingsChildFilter, setBookingsChildFilter] = useState<string | null>(null);
   const journey = useJourney(journeyChild?.id);
   const { data: recsByChild } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
@@ -2457,7 +2498,9 @@ function ProfilePage() {
   function loadPackages() {
     supabase
       .from("package_purchases")
-      .select("id, credits_total, credits_remaining, status, expires_at, packages(name), providers(business_name)")
+      .select(
+        "id, credits_total, credits_remaining, status, expires_at, packages(name, activities(slug)), providers(business_name)"
+      )
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
@@ -2466,19 +2509,29 @@ function ProfilePage() {
           credits_remaining: number;
           status: string;
           expires_at: string | null;
-          packages: { name: string } | null;
+          packages: { name: string; activities: { slug: string } | null } | null;
           providers: { business_name: string } | null;
         }>;
         setPackages(
-          rows.map((r) => ({
-            id: r.id,
-            name: r.packages?.name ?? "Class package",
-            provider: r.providers?.business_name ?? "A provider",
-            total: r.credits_total,
-            remaining: r.credits_remaining,
-            status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
-            expiresAt: r.expires_at,
-          }))
+          rows.map((r) => {
+            const activitySlug = r.packages?.activities?.slug;
+            // A pack tied to one class books it directly; an open pack (usable
+            // across a provider's classes) goes to Explore pre-searched for
+            // them, since there's no single class to jump straight into.
+            const bookHref = activitySlug
+              ? `/book?slug=${encodeURIComponent(activitySlug)}`
+              : `/explore?q=${encodeURIComponent(r.providers?.business_name ?? "")}`;
+            return {
+              id: r.id,
+              name: r.packages?.name ?? "Class package",
+              provider: r.providers?.business_name ?? "A provider",
+              total: r.credits_total,
+              remaining: r.credits_remaining,
+              status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
+              expiresAt: r.expires_at,
+              bookHref,
+            };
+          })
         );
       });
   }
@@ -2617,6 +2670,7 @@ function ProfilePage() {
           invalidatePlan();
           fetchPlan();
           loadPackages();
+          loadBookings();
         });
     } else {
       fetchPlan();
@@ -2643,8 +2697,11 @@ function ProfilePage() {
   const now = Date.now();
   const isPast = (b: BookingItem) =>
     b.status !== "cancelled" && !!b.startsAt && new Date(b.startsAt).getTime() < now;
-  const upcomingBookings = bookings.filter((b) => !isPast(b));
-  const pastBookings = bookings.filter(isPast);
+  const childFiltered = bookingsChildFilter
+    ? bookings.filter((b) => b.childId === bookingsChildFilter)
+    : bookings;
+  const upcomingBookings = childFiltered.filter((b) => !isPast(b));
+  const pastBookings = childFiltered.filter(isPast);
 
   return (
     <PageShell active="/profile">
@@ -2872,13 +2929,18 @@ function ProfilePage() {
           {tab === "bookings" && (
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
-              <p className="text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
+              <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
+              <ChildFilterChips kids={children} value={bookingsChildFilter} onChange={setBookingsChildFilter} />
               <BookingList items={upcomingBookings} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
             </div>
           )}
 
           {tab === "past" && (
-            <PastActivitiesTab items={pastBookings} onChanged={loadBookings} />
+            <PastActivitiesTab
+              items={pastBookings}
+              onChanged={loadBookings}
+              filterChips={<ChildFilterChips kids={children} value={bookingsChildFilter} onChange={setBookingsChildFilter} />}
+            />
           )}
 
           {tab === "packages" && !isPlus && (
@@ -2895,30 +2957,38 @@ function ProfilePage() {
                 <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
               ) : (
                 <div className="mt-4 space-y-3">
-                  {packages.map((p) => (
-                    <div key={p.id} className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""}`}>
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate font-black">{p.name}</h3>
-                        <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
-                        {p.expiresAt && (
-                          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#6D748A]"}`}>
-                            {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        {p.status === "expired" ? (
-                          <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#936700]">Expired</span>
-                        ) : (
-                          <>
-                            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
-                            <p className="text-xs font-bold text-[#6D748A]">credits left</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                  {packages.map((p) => {
+                    const clickable = p.status !== "expired" && p.remaining > 0;
+                    const Card = clickable ? "a" : "div";
+                    return (
+                      <Card
+                        key={p.id}
+                        {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
+                        className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""} ${clickable ? "transition hover:border-baby-pink" : ""}`}
+                      >
+                        <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate font-black">{p.name}</h3>
+                          <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
+                          {p.expiresAt && (
+                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#6D748A]"}`}>
+                              {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {p.status === "expired" ? (
+                            <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#936700]">Expired</span>
+                          ) : (
+                            <>
+                              <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
+                              <p className="text-xs font-bold text-[#6D748A]">credits left</p>
+                            </>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2997,6 +3067,19 @@ function ProfilePage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === "messages" && !isPlus && (
+            <PlusLock
+              title="Messages are a Plus feature"
+              copy="With Plus, every conversation with an integrated provider — enquiries, class group chats, support — lives in one inbox. You can still read messages on your booked classes for free; sending needs Plus and the provider to have messaging enabled."
+            />
+          )}
+          {tab === "messages" && isPlus && session && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Messages</h1>
+              <MessagesTab userId={session.user.id} />
             </div>
           )}
 
@@ -3204,7 +3287,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
  *  attended. QA: "Once time has passed for a class, it was still showing in
  *  bookings… Can we call this Past activities and have an attended and not
  *  attended section?" */
-function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChanged: () => void }) {
+function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingItem[]; onChanged: () => void; filterChips?: ReactNode }) {
   const [marks, setMarks] = useState<Record<string, "present" | "absent">>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3289,7 +3372,8 @@ function PastActivitiesTab({ items, onChanged }: { items: BookingItem[]; onChang
   return (
     <div>
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
-      <p className="text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
+      <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
+      {filterChips}
       {error && <p className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
 
       {items.length === 0 ? (
@@ -3422,7 +3506,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
               </div>
-              {b.startsAt && b.status !== "cancelled" && isPlus && (
+              {/* Adding a single class to your own calendar is free; only the
+                  bulk date-range export + PDF above is a Plus feature. */}
+              {b.startsAt && b.status !== "cancelled" && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -4264,6 +4350,16 @@ function BookingPage() {
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const bookChildId = childId ?? kids[0]?.id ?? null;
+  const bookChild = kids.find((k) => k.id === bookChildId) ?? null;
+  // Flag (not block outright) when the selected child falls outside the
+  // class's stated age range — parents sometimes book ahead for a sibling or
+  // a class that's a deliberate stretch, so this is a confirm-to-override
+  // warning rather than a hard wall.
+  const childAgeMonths = bookChild ? ageInMonths(bookChild.date_of_birth) : null;
+  const childAgeMismatch =
+    !!activity &&
+    childAgeMonths != null &&
+    (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
   const price = activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
 
@@ -4358,10 +4454,21 @@ function BookingPage() {
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
     if (!auth) { window.location.href = "/login"; return; }
+    if (childAgeMismatch) {
+      setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", { package_id: packageId });
+      // Passing the selected session/child means the webhook books this
+      // class with the pack's first credit, not just grants it — QA: "buy a
+      // package, that class should also then be booked".
+      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", {
+        package_id: packageId,
+        ...(sessionId ? { activity_session_id: sessionId } : {}),
+        ...(bookChildId ? { child_id: bookChildId } : {}),
+      });
       if (url) window.location.href = url;
       else setErr("Could not start checkout — please try again.");
     } catch (e) {
@@ -4373,6 +4480,11 @@ function BookingPage() {
 
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
+    setErr(null);
+    if (childAgeMismatch) {
+      setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
+      return;
+    }
     if (redeemToken) return pay();
     if (payWith === "credit") return payWithPackage();
     if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
@@ -4474,6 +4586,12 @@ function BookingPage() {
                           ))}
                         </div>
                       </section>
+                    )}
+                    {childAgeMismatch && bookChild && (
+                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#936700]">
+                        <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                        {bookChild.name} is {formatChildAge(bookChild.date_of_birth)}, outside this class's {ageText} age range — you won't be able to confirm this booking with them selected.
+                      </p>
                     )}
                     <section>
                       <h3 className="mb-2 text-xl font-black">3. Number of children</h3>

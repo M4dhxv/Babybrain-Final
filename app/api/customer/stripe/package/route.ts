@@ -7,10 +7,24 @@ import { appOrigin } from '@/lib/cors';
 /**
  * Parent buys a class package (multi-session pack). One-off Stripe Checkout;
  * the webhook (kind='package') creates the package_purchases row with credits.
- * Body: { package_id: string }
+ * Body: { package_id: string, activity_session_id?: string, child_id?: string }
+ *
+ * activity_session_id/child_id are only present when checkout was started
+ * from a specific class's booking page — QA: buying the pack there should
+ * also book that class, not just grant credits. Not validated here beyond
+ * shape; autoBookPackageSession re-checks the pack actually applies to that
+ * session before booking anything.
  */
 export async function POST(request: Request) {
-  const { package_id: packageId } = (await request.json().catch(() => ({}))) as { package_id?: string };
+  const {
+    package_id: packageId,
+    activity_session_id: activitySessionId,
+    child_id: childId,
+  } = (await request.json().catch(() => ({}))) as {
+    package_id?: string;
+    activity_session_id?: string;
+    child_id?: string;
+  };
   if (!packageId) {
     return NextResponse.json({ error: 'package_id required' }, { status: 400 });
   }
@@ -43,7 +57,13 @@ export async function POST(request: Request) {
         quantity: 1,
       },
     ],
-    metadata: { kind: 'package', user_id: user.id, package_id: pkg.id },
+    metadata: {
+      kind: 'package',
+      user_id: user.id,
+      package_id: pkg.id,
+      ...(activitySessionId ? { activity_session_id: activitySessionId } : {}),
+      ...(childId ? { child_id: childId } : {}),
+    },
     // session_id lets the app credit the pack on return even if the Stripe
     // webhook is delayed or misconfigured (see /api/stripe/reconcile).
     success_url: `${origin}/profile?tab=packages&purchase=success&session_id={CHECKOUT_SESSION_ID}`,

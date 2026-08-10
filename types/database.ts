@@ -429,6 +429,7 @@ export type Database = {
           followed_up_at: string | null;
           created_at: string;
           updated_at: string;
+          package_purchase_id: string | null;
         };
         Insert: {
           id?: string;
@@ -436,7 +437,15 @@ export type Database = {
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
-          // provider_id / status / waitlist_position set by trigger
+          package_purchase_id?: string | null;
+          // provider_id / waitlist_position set by trigger either way.
+          // status / payment_status: the trigger sets these for normal
+          // (non-service-role) inserts and ignores whatever's passed; a
+          // service-role caller (Stripe webhook auto-booking a package
+          // credit) is trusted to set them itself, since the trigger
+          // explicitly skips its own defaults for that path.
+          status?: BookingStatus;
+          payment_status?: PaymentStatus;
         };
         Update: {
           status?: BookingStatus;
@@ -691,6 +700,9 @@ export type Database = {
           price_cents: number;
           active: boolean;
           created_at: string;
+          validity_days: number | null;
+          allowed_weekday: number | null;
+          allowed_start_time: string | null;
         };
         Insert: {
           provider_id: string;

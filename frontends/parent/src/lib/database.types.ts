@@ -940,13 +940,18 @@ export function formatAgeRange(minMonths: number, maxMonths: number): string {
   return `${fmt(minMonths)} – ${fmt(maxMonths)}`;
 }
 
-/** Age like "2y 3m" from an ISO date of birth. */
-export function formatChildAge(dateOfBirth: string): string {
+/** A child's age in whole months from an ISO date of birth. */
+export function ageInMonths(dateOfBirth: string): number {
   const dob = new Date(dateOfBirth);
   const now = new Date();
   let months =
     (now.getFullYear() - dob.getFullYear()) * 12 + (now.getMonth() - dob.getMonth());
   if (now.getDate() < dob.getDate()) months -= 1;
-  months = Math.max(0, months);
+  return Math.max(0, months);
+}
+
+/** Age like "2y 3m" from an ISO date of birth. */
+export function formatChildAge(dateOfBirth: string): string {
+  const months = ageInMonths(dateOfBirth);
   return `${Math.floor(months / 12)}y ${months % 12}m`;
 }
