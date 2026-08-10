@@ -215,12 +215,26 @@ export default function BillingPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Payout account status</div>
-                  <span className="inline-flex items-center px-2.5 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
-                    Connected / Pending
-                  </span>
+                  {/* Was hardcoded to "Connected / Pending" regardless of
+                      whether the vendor had ever even started onboarding —
+                      now reflects the real stripe_account_id/payouts_enabled
+                      state on the provider row. */}
+                  {provider?.payouts_enabled ? (
+                    <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                      Active — payouts on
+                    </span>
+                  ) : provider?.stripe_account_id ? (
+                    <span className="inline-flex items-center px-2.5 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
+                      Connected / Pending
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                      Not connected
+                    </span>
+                  )}
                 </div>
                 <Button onClick={() => stripe('/api/vendor/stripe/connect', 'payouts')} disabled={busy === 'payouts'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
-                  {busy === 'payouts' ? 'Opening…' : 'Manage payouts'}
+                  {busy === 'payouts' ? 'Opening…' : provider?.stripe_account_id ? 'Manage payouts' : 'Connect payouts'}
                 </Button>
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-500">

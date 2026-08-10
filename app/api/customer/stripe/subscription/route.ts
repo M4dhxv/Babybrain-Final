@@ -10,8 +10,10 @@ import { appOrigin } from '@/lib/cors';
  *   POST → a Stripe Checkout URL to start Plus. Body: { billing?: 'monthly' | 'annual' }
  *
  * Pricing (SGD, from the Plans deck): Plus is 9/mo or 99/yr, first month free
- * (30-day trial). Prices are inlined via price_data so no pre-made Stripe Price
- * is required. GST is billed separately once Stripe Tax is configured.
+ * (30-day trial). Prices are real Stripe Price objects (stripe_plus_price_id /
+ * _annual in app_config) rather than inline price_data, so they show up in
+ * the Stripe Dashboard's own Product catalog and can be managed from there.
+ * GST is billed separately once Stripe Tax is configured.
  */
 
 const PLUS_TRIAL_DAYS = 30;
@@ -19,10 +21,6 @@ const PLUS_TRIAL_DAYS = 30;
 // acceptance timestamp so we know which version a user agreed to. Kept local:
 // App Router route files may only export handlers + Next's config fields.
 const TERMS_VERSION = '2026-07';
-const PLUS_PRICING = {
-  monthly: { unit_amount: 900, interval: 'month' as const, label: 'BabyBrain Plus (monthly)' },
-  annual: { unit_amount: 9900, interval: 'year' as const, label: 'BabyBrain Plus (annual)' },
-};
 
 export async function GET(request: Request) {
   const { supabase, user } = await getAuthedContext(request);
@@ -56,12 +54,18 @@ export async function POST(request: Request) {
   const { billing = 'monthly' } = (await request.json().catch(() => ({}))) as {
     billing?: 'monthly' | 'annual';
   };
-  const price = PLUS_PRICING[billing] ?? PLUS_PRICING.monthly;
 
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const admin = createAdminClient();
+
+  const priceKey = billing === 'annual' ? 'stripe_plus_price_id_annual' : 'stripe_plus_price_id';
+  const { data: cfg } = await admin.from('app_config').select('value').eq('key', priceKey).maybeSingle();
+  const priceId = cfg?.value;
+  if (!priceId) {
+    return NextResponse.json({ error: `Plus price not configured (${priceKey} missing from app_config)` }, { status: 500 });
+  }
 
   // The checkout CTA states "By subscribing you agree to our Terms &
   // Conditions" — record that explicit consent (timestamp + version).
@@ -104,17 +108,7 @@ export async function POST(request: Request) {
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [
-      {
-        price_data: {
-          currency: 'sgd',
-          unit_amount: price.unit_amount,
-          recurring: { interval: price.interval },
-          product_data: { name: price.label },
-        },
-        quantity: 1,
-      },
-    ],
+    line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: {
       trial_period_days: PLUS_TRIAL_DAYS,
       metadata: { user_id: user.id, billing },

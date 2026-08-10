@@ -35,6 +35,11 @@ export async function POST(request: Request) {
       business_type: 'company',
       capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
       metadata: { provider_id: providerId },
+      // Vendor "autopay": once onboarding + verification finish, payouts go
+      // out automatically on this schedule rather than needing anyone to
+      // trigger them manually. Express accounts default to daily anyway, but
+      // set it explicitly so it doesn't depend on Stripe's own default.
+      settings: { payouts: { schedule: { interval: 'daily' } } },
     });
     accountId = account.id;
     await admin
