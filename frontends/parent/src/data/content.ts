@@ -7,7 +7,6 @@ export type Activity = {
   date: string;
   time: string;
   rating: string;
-  note: string;
   slug?: string;
   id?: string;
   boosted?: boolean;

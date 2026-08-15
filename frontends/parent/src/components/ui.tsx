@@ -427,17 +427,22 @@ export function Button({
   const variantClass = {
     primary:
       "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink hover:brightness-105",
+    // Only the filled CTAs (`primary`, `pink`, `blue`) keep the brighter
+    // non-palette hues; the quieter variants sit on palette tokens.
     outline:
-      "border border-[#fa5d93] bg-white text-[#e5487f] hover:bg-[#fff4f8]",
-    soft: "bg-[#fff0f5] text-baby-pink hover:bg-[#ffe4ef]",
+      "border border-palette-pinkStrong bg-white text-palette-pinkInk hover:bg-palette-pinkTint",
+    soft: "bg-palette-pinkTint text-baby-pink hover:bg-palette-pinkSoft",
     pink: "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
-    ghost: "bg-transparent text-baby-pink hover:bg-[#fff0f5]",
+    ghost: "bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
     // for marketing CTAs and the final confirm step.
     blue: "bg-baby-blue text-white shadow-blue hover:brightness-105",
-    blueOutline: "border border-baby-blue bg-white text-[#2f7fd8] hover:bg-[#f2f8ff]",
+    blueOutline: "border border-baby-blue bg-white text-palette-blueInk hover:bg-palette-blueTint",
   }[variant];
-  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
+  // Every variant carries a border, transparent on the filled ones. Without it
+  // the outline variants were 2px taller than the filled ones, so a filled and
+  // an outline button sitting side by side never quite lined up.
+  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border border-transparent font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
 
   if (href && !disabled) {
     return (
@@ -646,16 +651,24 @@ export function PageShell({
 export function SectionTitle({
   children,
   action,
+  emoji,
 }: {
   children: React.ReactNode;
   action?: React.ReactNode;
+  /** Literal emoji shown after the heading — a real emoji, not a drawn icon,
+   *  so what ships is exactly the character specified (skin-tone modifiers
+   *  included). Opt-in per section: this used to hardcode the spark on every
+   *  heading, which kept reinstating it where it had been taken out. Omit it
+   *  and the heading carries no glyph. */
+  emoji?: string;
 }) {
   // On narrow screens the heading and its action were colliding, so the action
   // drops onto its own line rather than being squeezed alongside the title.
   return (
     <div className="mb-3 flex flex-col items-start gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
       <h2 className="text-[22px] font-black leading-tight tracking-normal text-baby-ink">
-        {children} <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
+        {children}
+        {emoji && <span aria-hidden="true"> {emoji}</span>}
       </h2>
       {action}
     </div>
@@ -674,8 +687,14 @@ function providerLabel(activity: Activity): string | null {
 /** Cards lead with the area ("East") rather than a street address + postcode —
  *  the exact address is on the listing page. Falls back to the address tail
  *  for the handful of listings with no region. */
+/** Region name where we have one. The address fallback is the tail of the
+ *  address, which is usually "Singapore 098327" — a postal code is no use to a
+ *  parent scanning cards, so it's stripped rather than shown. */
 function placeLabel(activity: Activity): string {
-  return regionLabel(activity.region) || activity.venue || "Singapore";
+  const region = regionLabel(activity.region);
+  if (region) return region;
+  const venue = (activity.venue ?? "").replace(/\b\d{6}\b/g, "").replace(/[,\s]+$/, "").trim();
+  return venue || "Singapore";
 }
 
 /** "From $32" — a price the parent can see without opening the listing. */
@@ -714,7 +733,7 @@ export function ActivityCard({
           alt=""
           className="h-full w-full object-cover"
         />
-        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink shadow-soft">
+        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">
           {activity.category}
         </span>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
@@ -736,36 +755,34 @@ export function ActivityCard({
           {activity.title}
         </h3>
         {providerLabel(activity) && (
-          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7D4AC5]">
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-palette-blue">
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
+        {/* Metadata glyphs all carry the brand blue; only price and the save
+            heart stay pink. The old "Popular this week" line is gone — it was
+            noise — and duration takes that slot beside the rating. */}
         <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
-          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-[#D9004A]" /> {activity.age}</p>
-          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-[#A581D7]" /> {placeLabel(activity)}</p>
+          <p className="flex items-center gap-1.5"><Icon name="user" className="h-3.5 w-3.5 text-palette-blue" /> {activity.age}</p>
+          <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-palette-blue" /> {placeLabel(activity)}</p>
           <p className="flex items-center gap-1.5">
-            <Icon name="calendar" className="h-3.5 w-3.5 text-[#D9004A]" />{" "}
+            <Icon name="calendar" className="h-3.5 w-3.5 text-palette-blue" />{" "}
             {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
           </p>
-          {(priceLabel(activity) || formatDuration(activity.durationMins)) && (
+          {priceLabel(activity) && (
+            <p className="font-black text-palette-blue">{priceLabel(activity)}</p>
+          )}
+          {!compact && (activity.rating || formatDuration(activity.durationMins)) && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {priceLabel(activity) && (
-                <span className="font-black text-baby-pink">{priceLabel(activity)}</span>
+              {activity.rating && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="star" className="h-3.5 w-3.5 text-palette-blue" /> {activity.rating}
+                </span>
               )}
               {formatDuration(activity.durationMins) && (
                 <span className="flex items-center gap-1.5">
-                  <Icon name="clock" className="h-3.5 w-3.5 text-[#A581D7]" /> {formatDuration(activity.durationMins)}
+                  <Icon name="clock" className="h-3.5 w-3.5 text-palette-blue" /> {formatDuration(activity.durationMins)}
                 </span>
-              )}
-            </p>
-          )}
-          {!compact && (
-            <p>
-              <Icon name="star" className="inline h-3.5 w-3.5 text-[#D9004A]" /> {activity.rating}
-              {activity.note && (
-                <>
-                  {" "}· <Icon name="spark" className="inline h-3.5 w-3.5 text-baby-pink" /> {activity.note}
-                </>
               )}
             </p>
           )}
@@ -781,10 +798,10 @@ export function ActivityCard({
           </div>
         ) : (
           <div className="mt-3 flex items-center justify-between border-t border-[#F4EFF0] pt-3">
-            <a href={href} className="text-sm font-extrabold text-baby-pink">
+            <a href={href} className="text-sm font-extrabold text-palette-blue">
               View details
             </a>
-            <a href={href} aria-label="Open activity" className="text-[#1c2b61] hover:text-baby-pink">
+            <a href={href} aria-label="Open activity" className="text-palette-blue">
               <Icon name="open" className="h-5 w-5" />
             </a>
           </div>
@@ -800,7 +817,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
         <img src={activity.image} alt="" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
-        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-baby-pink">
+        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">
           {activity.category}
         </span>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
@@ -816,21 +833,20 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
         <h3 className="mb-0.5 text-[16px] font-black">{activity.title}</h3>
         {providerLabel(activity) && (
-          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#7D4AC5]">
+          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-palette-blue">
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
         <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
-          <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-baby-pink" /> {activity.age}</p>
-          <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-baby-pink" /> {placeLabel(activity)}</p>
-          <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-baby-pink" /> {activity.date || "Schedule TBC"}</p>
+          <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-palette-blue" /> {activity.age}</p>
+          <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-palette-blue" /> {placeLabel(activity)}</p>
+          <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-palette-blue" /> {activity.date || "Schedule TBC"}</p>
           <p>{activity.time}</p>
           {formatDuration(activity.durationMins) && (
-            <p className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5 text-baby-pink" /> {formatDuration(activity.durationMins)}</p>
+            <p className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5 text-palette-blue" /> {formatDuration(activity.durationMins)}</p>
           )}
-          {priceLabel(activity) && <p className="font-black text-baby-pink">{priceLabel(activity)}</p>}
-          <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-[#D9004A]" /> {activity.rating}</p>
-          <p>{activity.note}</p>
+          {priceLabel(activity) && <p className="font-black text-palette-blue">{priceLabel(activity)}</p>}
+          {activity.rating && <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-palette-blue" /> {activity.rating}</p>}
         </div>
       </div>
     </a>

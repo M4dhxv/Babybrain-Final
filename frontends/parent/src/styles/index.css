@@ -28,6 +28,18 @@
   }
 }
 
+/* Leaflet ships its own chrome on the Explore map: the attribution links come
+   in at #0078A8 and it draws a small flag icon in #4C7BE1/#FFD500. All three
+   are the last off-palette colours on the page, and none of them are ours, so
+   pull the links onto the palette blue ink and drop the flag (Leaflet supports
+   hiding it; the OpenStreetMap/CARTO credits themselves stay). */
+.leaflet-container .leaflet-control-attribution a {
+  color: #0e6fae;
+}
+.leaflet-attribution-flag {
+  display: none !important;
+}
+
 @layer utilities {
   .pixelated-fidelity {
     image-rendering: auto;

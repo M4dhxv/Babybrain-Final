@@ -125,13 +125,14 @@ export function useActivities(params: ActivityQuery = {}) {
           slug: r.slug,
           title: r.title,
           category: r.category_name,
-          image: r.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-music.png`,
+          image: r.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
           age: formatAgeRange(r.age_min_months, r.age_max_months),
           venue: r.address ? r.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
           date: sgDate(r.next_session_at),
           time: sgTime(r.next_session_at),
-          rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "New",
-          note: r.popularity > 2 ? "Popular this week" : "",
+          // Empty when there are no reviews yet, so the card drops the rating
+          // line entirely instead of showing a bare "New".
+          rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "",
           boosted: r.boosted ?? false,
           lat: r.latitude ?? venues[0]?.lat ?? undefined,
           lng: r.longitude ?? venues[0]?.lng ?? undefined,

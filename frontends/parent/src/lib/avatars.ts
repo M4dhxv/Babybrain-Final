@@ -59,14 +59,16 @@ function build(
 export const CHILD_AVATARS = build(CHILD_FACES, "child");
 export const PARENT_AVATARS = build(ADULT_FACES, "parent");
 
-/** Pastel circle behind the emoji, from the brand palette. */
+/** Pastel circle behind the emoji: the six brand palette colours exactly as
+ *  supplied. They only ever sit under an emoji, never under text, so the
+ *  full-strength shades are fine here. */
 export const AVATAR_BACKGROUNDS = [
-  "#ffe0ec",
-  "#e0ecff",
-  "#ece0ff",
-  "#d9f5e6",
-  "#ffe6d6",
-  "#fff2cf",
+  "#FFC1D6", // pink
+  "#A7D8F8", // blue
+  "#C7B1E6", // purple
+  "#A8E59A", // green
+  "#FFB77A", // orange
+  "#FFD77A", // yellow
 ];
 
 /** Stable small hash so an unseeded profile still gets a consistent picture

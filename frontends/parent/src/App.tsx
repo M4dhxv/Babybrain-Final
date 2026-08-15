@@ -5,7 +5,6 @@ import {
   Button,
   BrandStacked,
   CategoryTile,
-  Confetti,
   DateInput,
   Footer,
   Icon,
@@ -135,22 +134,29 @@ function HomePage() {
                 </article>
               ))}
             </div>
-            <div className="mt-5 grid gap-3 rounded-[18px] border border-[#EBE3E5] bg-white p-3 md:grid-cols-3">
-              {[
-                ["people", "1000+", "Curated activities"],
-                ["store", "100+", "Verified providers"],
-                ["chart", "200+", "Locations"],
-              ].map(([icon, stat, label]) => (
-                <div key={stat} className="flex items-center justify-center gap-3">
-                  <span className="grid h-12 w-12 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink">
-                    <Icon name={icon} className="h-7 w-7" />
-                  </span>
-                  <p>
-                    <strong className="block text-2xl font-black text-baby-pink">{stat}</strong>
-                    <span className="text-sm font-semibold">{label}</span>
-                  </p>
-                </div>
-              ))}
+            {/* Stacked on mobile, each row used to centre itself, so "Locations"
+                — much shorter than "Curated activities" — sat visibly right of
+                the rows above it. The inner wrapper shrinks to the widest row
+                and centres as one block, giving every row a shared left edge;
+                from md up they're columns again and centre individually. */}
+            <div className="mt-5 rounded-[18px] border border-[#EBE3E5] bg-white p-3">
+              <div className="mx-auto grid w-fit gap-3 md:w-full md:grid-cols-3">
+                {[
+                  ["people", "1000+", "Curated activities"],
+                  ["store", "100+", "Verified providers"],
+                  ["chart", "200+", "Locations"],
+                ].map(([icon, stat, label]) => (
+                  <div key={stat} className="flex items-center justify-start gap-3 md:justify-center">
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink">
+                      <Icon name={icon} className="h-7 w-7" />
+                    </span>
+                    <p>
+                      <strong className="block text-2xl font-black text-baby-pink">{stat}</strong>
+                      <span className="text-sm font-semibold">{label}</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -214,7 +220,7 @@ function HomePage() {
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#E9E1F5] bg-gradient-to-r from-[#FEEBF2] via-white to-[#F4F0FA] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
-            <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="h-28 object-contain object-left" />
+            <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="h-28 object-contain object-left" />
             <div>
               <h2 className="text-2xl font-black">Reduce your mental load</h2>
               <p className="mt-1 font-semibold text-[#4e5982]">We make it quicker &amp; easier to plan activities for your little ones.</p>
@@ -296,7 +302,7 @@ function ChildDraftFields({
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
         {total > 1 && (
-          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#b00040] hover:underline">
+          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#C90044] hover:underline">
             Remove
           </button>
         )}
@@ -488,7 +494,7 @@ function OnboardingPage() {
     <PageShell active="/onboarding">
       <main className="mx-auto max-w-[680px] px-6 py-6">
         <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Let's get to know you</h1>
+          <h1 className="text-[26px] font-black">Let's get to know <span className="text-baby-pink">you</span></h1>
           <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
@@ -578,7 +584,7 @@ function OnboardingPage() {
         {/* The error sits directly above the CTA — QA found it at the top of the
             page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#ffd2de] bg-[#ffe9ef] px-4 py-3 text-sm font-bold text-[#b00040]">
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#C90044]">
             {error}
           </p>
         )}
@@ -617,19 +623,22 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
 
   const first = recsByChild[0];
   const child = first?.child;
-  const reasons = first ? [...new Set(first.recs.slice(0, 4).flatMap((r) => r.reasons))].slice(0, 4) : [];
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
   return (
     <PageShell active={active}>
       <main className="mx-auto max-w-[1180px] px-6 py-6">
-        <section className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <section>
           <div className="grid items-center gap-6 lg:grid-cols-[1fr_340px]">
             <div>
-              <p className="text-base font-bold">Hi {firstName}!</p>
-              <h1 className="mt-2 text-[36px] font-black leading-tight">
-                Here are some suggested activities for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
+              {/* The greeting is the page header; the suggestion line sits a
+                  step below it. */}
+              <h1 className="text-[36px] font-black leading-tight">
+                Hi <span className="text-baby-lilac">{firstName}</span>!
               </h1>
+              <p className="mt-2 text-[26px] font-black leading-tight">
+                Here are some suggested activities for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
+              </p>
               <p className="mt-4 text-[17px] font-semibold text-[#47527d]">Based on age, interests and your preferences.</p>
               <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
@@ -646,20 +655,6 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               </article>
             )}
           </div>
-          <article className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-            <h2 className="text-2xl font-black text-baby-lilac">Why these activities?</h2>
-            <p className="mb-4 mt-1 font-semibold text-[#4b5681]">These activities match what you've shared with us.</p>
-            <div className="grid grid-cols-[1fr_150px] items-center gap-4">
-              <div className="space-y-3">
-                {reasons.length > 0 ? reasons.map((item) => (
-                  <p key={item} className="text-sm font-semibold leading-5"><strong className="block">{item}</strong></p>
-                )) : (
-                  <p className="text-sm font-semibold text-[#5a648b]">Add your preferences in onboarding to sharpen these matches.</p>
-                )}
-              </div>
-              <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="h-36 object-contain" />
-            </div>
-          </article>
         </section>
 
         <section className="mt-6">
@@ -675,7 +670,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {(first?.recs ?? []).slice(0, 4).map((r) =>
-                r.activity ? <ActivityCard key={r.id} activity={{ ...toCard(r.activity), note: r.reasons[0] ?? "" }} /> : null
+                r.activity ? <ActivityCard key={r.id} activity={toCard(r.activity)} /> : null
               )}
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
@@ -777,14 +772,19 @@ function EmailCapturePopup() {
           <div className="py-4 text-center">
             <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#327D20]"><Icon name="check" className="h-8 w-8" /></div>
             <h2 className="text-xl font-black">You're on the list! 🎉</h2>
-            <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll send you activity ideas matched to your family.</p>
+            <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll email you when new activities and providers join BabyBrain.</p>
             <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
           </div>
         ) : (
           <>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
-            <h2 className="text-2xl font-black leading-tight">Get activity ideas for your child</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll send curated classes and play spaces near you — no spam, unsubscribe anytime.</p>
+            {/* This captures a plain mailing-list signup, and everyone who
+                lands here is on Free — where curated, child-matched picks are
+                not included. So the copy promises only what Free gives: word
+                of new listings. Anything about "curated for your little one"
+                belongs on the Plus card, not here. */}
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
+            <h2 className="text-2xl font-black leading-tight">Hear about new activities first</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll let you know as new classes, play spaces and holiday camps are added to BabyBrain — no spam, unsubscribe anytime.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
               <input
                 type="email"
@@ -795,7 +795,7 @@ function EmailCapturePopup() {
                 className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Send me ideas"}</Button>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Keep me posted"}</Button>
             </form>
             <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
           </>
@@ -980,7 +980,7 @@ function ExplorePage() {
       <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="spark" className="inline h-6 w-6 text-baby-green" /></h1>
+            <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="search" className="inline h-6 w-6 text-baby-green" /></h1>
             <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">
               {query ? <>Results for “{query}”. <a href="/explore" className="font-black text-baby-pink">Clear search</a></> : "Browse activities across Singapore."}
             </p>
@@ -1262,8 +1262,11 @@ function ContactLink({
   tone: { border: string; text: string; hover: string };
   unavailableReason: string;
 }) {
+  // Three of these across the 295px rail needed 319px, so "Website" was being
+  // clipped mid-word. A half-width floor makes them wrap two-up, with the odd
+  // one growing to fill its own row.
   const base =
-    "inline-flex flex-1 items-center justify-center gap-2 rounded-[11px] border bg-white px-3 py-2.5 text-[13px] font-extrabold leading-none transition";
+    "inline-flex min-w-[calc(50%-0.25rem)] flex-1 items-center justify-center gap-2 rounded-[11px] border bg-white px-3 py-2.5 text-[13px] font-extrabold leading-none transition";
   if (!href) {
     return (
       <span
@@ -1381,8 +1384,14 @@ function ActivityDetailPage() {
           onIndex={setGalleryAt}
         />
       )}
-      <main className="mx-auto max-w-[1180px] px-6 py-5">
-        <section className="grid gap-5 lg:grid-cols-[285px_1fr_295px]">
+      {/* The booking rail is a page-level sidebar rather than a cell in the top
+          row. It used to sit inside that row, so the row took the rail's full
+          height and left a tall blank band under the title and hero before
+          About started. Explicit column placement keeps the rail on the right
+          while every other section stacks down column 1. */}
+      <main className="mx-auto grid max-w-[1180px] items-start gap-5 px-6 py-5 lg:grid-cols-[1fr_295px]">
+        <div className="grid gap-5">
+        <section className="grid gap-5 lg:grid-cols-[285px_1fr]">
           <div>
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
             <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
@@ -1427,7 +1436,68 @@ function ActivityDetailPage() {
               </div>
             )}
           </div>
-          <aside className="rounded-[18px] border border-[#FEE9D7] bg-white p-5 shadow-card">
+        </section>
+
+          {/* Per the mockup: About stands alone, then Upcoming sessions and
+              Packages sit side by side, then Reviews. With no packs to show,
+              sessions takes the full width rather than leaving a half-empty
+              row. */}
+          <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+            <InfoBlock title="About" items={[activity.description]} />
+          </section>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 ? " md:col-span-2" : ""}`}>
+              <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
+              <div className="flex flex-wrap gap-2">
+                {sessions.map((s) => (
+                  <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
+                ))}
+                {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
+              </div>
+              {durationMins && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
+            </section>
+
+            {packs.length > 0 && (
+              <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+                <h2 className="mb-3 text-xl font-black">Packages</h2>
+                <div className="grid gap-3">
+                  {packs.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] p-4">
+                      <div>
+                        <h3 className="font-black">{p.name}</h3>
+                        <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
+                      </div>
+                      <Button type="button" variant="blue" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                        {buyingPack === p.id ? "…" : "Buy pack"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+
+          <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+            <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
+            <ReviewForm activityId={activity.id} />
+            {reviews.map((r) => (
+              <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
+                <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
+                {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
+                <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
+                {r.provider_response && (
+                  <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
+                    <p className="text-xs font-black text-baby-pink">Response from the provider</p>
+                    <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+            {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
+          </section>
+        </div>
+        <aside className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:col-start-2 lg:row-start-1">
             {activity.price != null ? (
               <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
             ) : (
@@ -1465,7 +1535,7 @@ function ActivityDetailPage() {
               onOpen={requireLogin(() => setEnquiring(true))}
             />
             {/* 1.4: direct click-through contact — the same three every time. */}
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <ContactLink
                 icon="whatsapp"
                 label="WhatsApp"
@@ -1549,61 +1619,7 @@ function ActivityDetailPage() {
                 </p>
               )}
             </div>
-          </aside>
-        </section>
-
-        <section className="mt-5 grid gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:grid-cols-[1.4fr_1fr]">
-          <InfoBlock title="About" items={[activity.description]} />
-          <div>
-            <h3 className="mb-2 font-black text-baby-ink">Upcoming sessions</h3>
-            <div className="flex flex-wrap gap-2">
-              {sessions.map((s) => (
-                <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
-              ))}
-              {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
-            </div>
-            {durationMins && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
-          </div>
-        </section>
-
-        {packs.length > 0 && (
-          <section className="mt-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-            <h2 className="mb-1 text-xl font-black">Packages</h2>
-            <p className="mb-4 text-sm font-semibold text-[#68718f]">Buy a multi-class pack and save — credits work across this provider's classes.</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              {packs.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] p-4">
-                  <div>
-                    <h3 className="font-black">{p.name}</h3>
-                    <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
-                  </div>
-                  <Button type="button" variant="blue" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
-                    {buyingPack === p.id ? "…" : "Buy pack"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section className="mt-5 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-          <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
-          <ReviewForm activityId={activity.id} />
-          {reviews.map((r) => (
-            <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
-              <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
-              {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
-              <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
-              {r.provider_response && (
-                <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
-                  <p className="text-xs font-black text-baby-pink">Response from the provider</p>
-                  <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
-                </div>
-              )}
-            </div>
-          ))}
-          {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
-        </section>
+        </aside>
       </main>
     </PageShell>
   );
@@ -1666,7 +1682,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         placeholder="Share how the class went (optional)"
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
-      {error && <p className="mt-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      {error && <p className="mt-2 text-sm font-bold text-[#C90044]">{error}</p>}
       <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
@@ -1808,7 +1824,7 @@ function ExportScheduleDialog({
           </label>
         </div>
 
-        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#b00040]" : "text-[#59658d]"}`}>
+        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#C90044]" : "text-[#59658d]"}`}>
           {invalid
             ? "The end date is before the start date."
             : `${selected.length} ${selected.length === 1 ? "class" : "classes"} in this range`}
@@ -1855,9 +1871,9 @@ function ExportScheduleDialog({
 /** Blurred behind the Saved-activities upsell on Free, so the section shows
  *  the shape of the feature without leaking a parent's real shortlist. */
 const PLACEHOLDER_SAVED = [
-  { id: "ph-1", slug: "", title: "Music & Movement", category: "Music & Drama", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "6 months – 2 years", venue: "Central", date: "", time: "", rating: "New", note: "" },
-  { id: "ph-2", slug: "", title: "Sensory Play", category: "Sensory & Art", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "12 months – 3 years", venue: "East", date: "", time: "", rating: "New", note: "" },
-  { id: "ph-3", slug: "", title: "Toddler Gym", category: "Gym & Dance", image: `${import.meta.env.BASE_URL}assets/crops/activity-music.png`, age: "18 months – 4 years", venue: "West", date: "", time: "", rating: "New", note: "" },
+  { id: "ph-1", slug: "", title: "Music & Movement", category: "Music & Drama", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "6 months – 2 years", venue: "Central", date: "", time: "", rating: "" },
+  { id: "ph-2", slug: "", title: "Sensory Play", category: "Sensory & Art", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "12 months – 3 years", venue: "East", date: "", time: "", rating: "" },
+  { id: "ph-3", slug: "", title: "Toddler Gym", category: "Gym & Dance", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "18 months – 4 years", venue: "West", date: "", time: "", rating: "" },
 ];
 
 /** Stand-in shown where a Plus-only feature would be, with the upgrade path. */
@@ -1917,7 +1933,7 @@ function tokenStatusStyle(status: string) {
 
 function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-green-700";
-  if (status === "cancelled") return "bg-[#ffe9ef] text-[#b00040]";
+  if (status === "cancelled") return "bg-[#FEEBF2] text-[#C90044]";
   if (status === "waitlisted") return "bg-amber-50 text-amber-700";
   return "bg-[#FEEBF2] text-[#D9004A]";
 }
@@ -1991,7 +2007,7 @@ function ChildForm({
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-5 shadow-card">
       <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
-      {error && <p className="mt-2 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
       <div className="mt-3 space-y-3">
         <div>
           <p className="text-sm font-black">Avatar</p>
@@ -2154,7 +2170,7 @@ function ChildrenTab({
                     )}
                     <div className="mt-3 flex items-center gap-3">
                       <Button type="button" variant="outline" size="sm" onClick={() => setForm({ child: c })}><Icon name="pen" className="h-4 w-4" /> Edit</Button>
-                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#b00040] hover:underline">Remove</button>
+                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#C90044] hover:underline">Remove</button>
                     </div>
                   </div>
                 );
@@ -2405,7 +2421,7 @@ function EditProfilePage() {
         </section>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#ffd2de] bg-[#ffe9ef] px-4 py-3 text-sm font-bold text-[#b00040]">{error}</p>
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#C90044]">{error}</p>
         )}
         <div className="mt-4 flex gap-3">
           <Button type="button" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : "Save changes"}</Button>
@@ -2479,7 +2495,9 @@ function ProfilePage() {
               when: s?.starts_at ? sgDateTime(s.starts_at) : "",
               title: act?.title ?? "Class",
               slug: act?.slug ?? "",
-              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`,
+              // activity-play is the only crop without a category tag baked
+              // into the artwork, so it's the safe generic fallback.
+              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
               startsAt: s?.starts_at ?? null,
               endsAt: s?.ends_at ?? null,
               venue: act?.address ?? "",
@@ -2854,6 +2872,7 @@ function ProfilePage() {
               shouldn't be showing under overview for free subscription". */}
           <section className="mt-6">
             <SectionTitle
+              emoji="🩷"
               action={
                 isPlus ? (
                   <a href="/profile?tab=favorites" className="font-bold text-[#D9004A]">View all →</a>
@@ -2971,7 +2990,7 @@ function ProfilePage() {
                           <h3 className="truncate font-black">{p.name}</h3>
                           <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
                           {p.expiresAt && (
-                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#b00040]" : "text-[#6D748A]"}`}>
+                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#C90044]" : "text-[#6D748A]"}`}>
                               {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
                             </p>
                           )}
@@ -3231,8 +3250,8 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
   }
 
   return (
-    <div className="mt-4 rounded-[14px] border border-[#ffd2de] bg-white p-6 shadow-card">
-      <h2 className="font-black text-[#b00040]">Delete your account</h2>
+    <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-6 shadow-card">
+      <h2 className="font-black text-[#C90044]">Delete your account</h2>
       <p className="mt-1 text-sm font-semibold text-[#59658d]">
         This removes your profile, your children's details, preferences and saved activities.
         {isPlus ? " Your Plus subscription is cancelled at the same time, so you won't be charged again." : ""}
@@ -3243,7 +3262,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-4 rounded-[11px] border border-[#ffd2de] px-5 py-2.5 text-sm font-extrabold text-[#BE0041] hover:bg-[#FFF5F8]"
+          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#C90044] hover:bg-[#FFF5F8]"
         >
           Delete account
         </button>
@@ -3251,24 +3270,24 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <div className="mt-4 rounded-[12px] bg-[#FFF5F8] p-4">
           {/* The input is `block` so it sits under the instruction rather than
               running on beside it, and lines up with the buttons below. */}
-          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#b00040]">
+          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#C90044]">
             Type DELETE to confirm
           </label>
           <input
             id="delete-confirm"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#ffd2de] px-3 text-sm font-semibold"
+            className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold"
             placeholder="DELETE"
           />
-          {error && <p className="mt-3 text-sm font-bold text-[#b00040]">{error}</p>}
+          {error && <p className="mt-3 text-sm font-bold text-[#C90044]">{error}</p>}
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
               disabled={confirm !== "DELETE" || busy}
               onClick={remove}
               className={`rounded-[11px] px-5 py-2.5 text-sm font-extrabold text-white ${
-                confirm === "DELETE" && !busy ? "bg-[#BE0041] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
+                confirm === "DELETE" && !busy ? "bg-[#C90044] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
               }`}
             >
               {busy ? "Deleting…" : "Permanently delete"}
@@ -3374,7 +3393,7 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
       <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
       {filterChips}
-      {error && <p className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
 
       {items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
@@ -3546,7 +3565,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                      : "border border-[#ffd2de] text-[#BE0041] hover:bg-[#FFF5F8]"
+                      : "border border-[#FED7E4] text-[#C90044] hover:bg-[#FFF5F8]"
                   }`}
                   title={cancelWhy ?? "Cancel this booking"}
                 >
@@ -3747,7 +3766,7 @@ function ContactForm() {
           className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
         />
       </div>
-      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
       <Button type="submit" className="mt-4 w-full justify-center sm:w-auto" disabled={busy}>
         {busy ? "Sending…" : "Send message"}
       </Button>
@@ -3779,37 +3798,50 @@ function ContactPage() {
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="grid items-center gap-7 md:grid-cols-[1fr_420px]">
           <div>
-            <p className="mb-5 flex items-center gap-2 text-lg font-black text-baby-pink">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current" /></p>
+            {/* Blue, not pink. The eyebrow is 18px bold — just under the
+                large-text threshold — so it takes the readable blue ink;
+                the heart beside it is decorative and can run brighter. */}
+            <p className="mb-5 flex items-center gap-2 text-lg font-black text-palette-blueInk">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current text-palette-blueStrong" /></p>
             <h1 className="text-[40px] font-black leading-tight">How can our team support you today?</h1>
             <p className="mt-5 text-lg font-semibold leading-8 text-[#68718f]">Have a question, feedback, or need assistance? Our team is happy to help.</p>
           </div>
-          <div className="relative">
-            <div className="absolute left-4 top-16 rounded-[16px] bg-white p-5 font-semibold leading-7 shadow-soft">We endeavor to<br />respond within 3 days.<br />If more urgent,<br />please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-baby-pink" /></div>
-            <img src={`${import.meta.env.BASE_URL}assets/crops/baby-character.png`} alt="" className="ml-auto h-[280px] object-contain" />
+          {/* The reply-time note used to be absolutely positioned over the
+              mascot. The logo is far wider than that illustration, so the note
+              covered most of it — they sit side by side now instead. */}
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-end">
+            <div className="rounded-[16px] bg-white p-4 text-sm font-semibold leading-6 shadow-soft sm:max-w-[190px] sm:shrink">We endeavor to respond within 3 days. If more urgent, please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-palette-blueStrong" /></div>
+            <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="h-[200px] shrink-0 object-contain" />
           </div>
         </section>
 
         <section className="mt-8">
-          <SectionTitle>Get in touch</SectionTitle>
+          <SectionTitle emoji="👇🏻">Get in touch</SectionTitle>
           <div className="grid gap-5 md:grid-cols-4">
             {[
-              { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for the quickest response.", label: "Chat on WhatsApp", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
+              // "Chat on WhatsApp" needed 138px in the 137px a quarter-width
+              // card leaves, so it wrapped and made this CTA taller than the
+              // other three. The shorter label also matches the pattern of the
+              // rest of the row, where the button repeats the card title.
+              { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for the quickest response.", label: "WhatsApp us", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
               { icon: "pen", title: "Message us", tag: "", copy: "Plus subscribers can chat with our team in real time.", label: "Message us", variant: "outline", onClick: openSupport },
               { icon: "mail", title: "Email us", tag: "", copy: "For more complex enquiries, send us an e-mail and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
               { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team if urgent.", label: "Call us", variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
-              <article key={c.title} className="rounded-[16px] border border-[#FED7E4] bg-white/70 p-5 text-center shadow-card">
+              // Column layout with the CTA pushed down by `mt-auto`, so the
+              // four buttons line up across the row however many lines each
+              // card's copy runs to (and whether or not it has a tag).
+              <article key={c.title} className="flex flex-col rounded-[16px] border border-[#FED7E4] bg-white/70 p-5 text-center shadow-card">
                 <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
                 <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
-                <Button variant={c.variant === "pink" ? "pink" : "outline"} className="w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
+                <Button variant={c.variant === "pink" ? "pink" : "outline"} className="mt-auto w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
               </article>
             ))}
           </div>
         </section>
 
         <section id="faq" className="mt-9 scroll-mt-24">
-          <SectionTitle>Frequently asked questions</SectionTitle>
+          <SectionTitle emoji="ℹ️">Frequently asked questions</SectionTitle>
           <div className="space-y-5">
             {FAQ_GROUPS.map(({ group, items }) => (
               <div key={group}>
@@ -3827,9 +3859,8 @@ function ContactPage() {
           </div>
         </section>
 
-        <section id="contact-form" className="mt-9 grid items-start gap-6 scroll-mt-24 md:grid-cols-[1fr_240px]">
+        <section id="contact-form" className="mt-9 scroll-mt-24">
           <ContactForm />
-          <img src={`${import.meta.env.BASE_URL}assets/crops/envelope-cta.png`} alt="" className="mx-auto hidden h-40 object-contain md:block" />
         </section>
       </main>
       <Footer />
@@ -4025,22 +4056,25 @@ function PricingPage() {
             Choose the plan that's right for your family
           </h1>
           <p className="mt-2 text-lg font-semibold text-[#68718f]">
-            Discover, book and enjoy the best activities for your little ones.
+            Discover, book and let your little ones enjoy great activities.
           </p>
           <div className="mx-auto mt-5 grid h-11 max-w-[360px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 font-black">
             <button
               type="button"
               onClick={() => setBilling("monthly")}
-              className={billing === "monthly" ? "rounded-full bg-baby-pink text-white" : "text-[#59658d]"}
+              className={billing === "monthly" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setBilling("annual")}
-              className={billing === "annual" ? "rounded-full bg-baby-pink text-white" : "text-[#59658d]"}
+              className={billing === "annual" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
             >
-              Annual <span className="text-baby-pink">(1 month free)</span>
+              {/* The mock only shows the Monthly-active state. Once Annual is
+                  selected the pill turns blue, and pink-on-blue is ~1.5:1, so
+                  the nudge goes white against the selected fill. */}
+              Annual <span className={billing === "annual" ? "text-white" : "text-baby-pink"}>(1 month free)</span>
             </button>
           </div>
         </section>
@@ -4054,7 +4088,7 @@ function PricingPage() {
         <section className="mt-7 grid gap-5 md:grid-cols-2">
           {/* Free */}
           <article className="relative rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-baby-blue">
               <Icon name="heart" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
@@ -4066,21 +4100,18 @@ function PricingPage() {
             <div className="space-y-3">
               {freeItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-pink text-baby-pink">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
                 </p>
               ))}
             </div>
-            <Button href="/" variant="outline" className="mt-5 w-full">
-              {plan === "free" ? "Continue Free" : "Included"}
-            </Button>
           </article>
 
           {/* Plus */}
-          <article className="relative rounded-[18px] border border-baby-pink bg-white p-6 shadow-card ring-1 ring-baby-pink/20">
-            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-pink px-8 py-2 text-sm font-black text-white">
+          <article className="relative rounded-[18px] border border-baby-blue bg-white p-6 shadow-card ring-1 ring-baby-blue/20">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
               MOST POPULAR
             </span>
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F4F0FA] text-baby-lilac">
@@ -4097,7 +4128,7 @@ function PricingPage() {
             <div className="space-y-3">
               {plusItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-pink text-baby-pink">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
@@ -4108,7 +4139,7 @@ function PricingPage() {
               type="button"
               onClick={upgrade}
               disabled={busy}
-              variant="primary"
+              variant="blue"
               className="mt-5 w-full"
             >
               {busy
@@ -4120,7 +4151,7 @@ function PricingPage() {
             <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
               Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
               {" "}By subscribing you agree to our{" "}
-              <a href="/terms" className="text-baby-pink underline">Terms &amp; Conditions</a>.
+              <a href="/terms" className="text-palette-blueInk underline">Terms &amp; Conditions</a>.
             </p>
           </article>
         </section>
@@ -4532,7 +4563,9 @@ function BookingPage() {
           <header className="grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
             <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
-            <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
+            {/* The brand icon itself, rather than the confetti mascot crop that
+                was lifted from the design mockup. */}
+            <img src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`} alt="" className="hidden h-24 object-contain md:block" />
           </header>
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
@@ -4660,7 +4693,6 @@ function BookingPage() {
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
-              <div className="mt-5 rounded-[12px] bg-[#FFF5F8] p-4"><h3 className="font-black">Why parents love us</h3>{["Trusted by thousands of parents", "Safe & engaging environments", "Expert-led activities", "Hassle-free booking"].map((item) => <p key={item} className="mt-3 flex gap-2 text-sm font-semibold"><Icon name="check" className="h-4 w-4 text-baby-pink" /> {item}</p>)}</div>
             </aside>
           </div>
         </section>
@@ -4775,45 +4807,11 @@ function BookedPage() {
   );
 }
 
-// Confetti scatter for the About page, matching the design's placement.
-// Colours come from the brand palette.
-const ABOUT_HERO_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
-  { kind: "heart", top: "4%", left: "47%", color: "#7D4AC5", size: 30 },
-  { kind: "dot", top: "17%", left: "44%", color: "#A8E59A", size: 18 },
-  { kind: "dot", top: "35%", left: "45%", color: "#D9004A", size: 16 },
-  { kind: "star", top: "50%", left: "44%", color: "#FFB77A", size: 26 },
-  // Kept in the column gap and the strip above the photo so nothing lands on
-  // top of the image itself.
-  { kind: "dash", top: "0%", right: "16%", color: "#D9004A", size: 26, rotate: -30 },
-  { kind: "dash", top: "3%", right: "12%", color: "#D9004A", size: 22, rotate: -30 },
-  { kind: "star", top: "0%", right: "4%", color: "#FFD77A", size: 28 },
-  { kind: "dot", top: "72%", left: "45%", color: "#C7B1E6", size: 16 },
-  { kind: "heart", top: "85%", left: "43%", color: "#D9004A", size: 30 },
-  { kind: "dot", top: "94%", right: "6%", color: "#A8E59A", size: 18 },
-];
-
-const ABOUT_FOUNDER_CONFETTI: React.ComponentProps<typeof Confetti>["pieces"] = [
-  { kind: "heart", top: "8%", left: "3%", color: "#D9004A", size: 30 },
-  { kind: "star", top: "32%", left: "1%", color: "#FFD77A", size: 28 },
-  { kind: "dash", top: "62%", left: "4%", color: "#C7B1E6", size: 24, rotate: -35 },
-  { kind: "dash", top: "72%", left: "1%", color: "#C7B1E6", size: 24, rotate: -35 },
-  // The gap between the photo (ends ~33.5%) and the copy (starts ~37.3%) is
-  // narrow, so these sit at 34% at a size that can't reach the text.
-  { kind: "dash", top: "22%", left: "34%", color: "#A7D8F8", size: 20, rotate: -40 },
-  { kind: "dash", top: "29%", left: "34%", color: "#D9004A", size: 20, rotate: -40 },
-  { kind: "dash", top: "48%", left: "34%", color: "#A8E59A", size: 20, rotate: -15 },
-  { kind: "heart", top: "6%", right: "3%", color: "#D9004A", size: 30 },
-  { kind: "star", top: "30%", right: "2%", color: "#FFD77A", size: 28 },
-  { kind: "dot", top: "58%", right: "1%", color: "#A7D8F8", size: 16 },
-  { kind: "dot", top: "80%", right: "5%", color: "#C7B1E6", size: 16 },
-];
-
 function AboutPage() {
   return (
     <PageShell active="/about" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="relative grid items-center gap-8 md:grid-cols-[1fr_520px]">
-          <Confetti pieces={ABOUT_HERO_CONFETTI} />
           <div className="relative z-10">
             <h1 className="text-[54px] font-black leading-tight text-baby-lilac">About</h1>
             <p className="mt-5 text-2xl font-black leading-tight">BabyBrain helps parents to discover &amp; book amazing activities for their little ones.</p>
@@ -4832,7 +4830,6 @@ function AboutPage() {
         </section>
 
         <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#FEEBF2] to-[#FFF5F8] p-8 md:grid-cols-[300px_1fr]">
-          <Confetti pieces={ABOUT_FOUNDER_CONFETTI} />
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.jpg`}
             alt="Katie Crowson, founder of BabyBrain"
@@ -4849,7 +4846,8 @@ function AboutPage() {
             <p className="mt-4 flex items-center gap-2 font-black"><Icon name="heart" className="h-5 w-5 text-baby-lilac" /> Made by a parent, for parents.</p>
           </div>
         </section>
-        <section className="mt-5 grid items-center gap-6 rounded-[18px] bg-[#FEF4EB] p-8 md:grid-cols-[1fr_320px]">
+        {/* No tinted panel here — the mission sits straight on the page. */}
+        <section className="mt-5 grid items-center gap-6 px-2 py-8 md:grid-cols-[1fr_320px]">
           <div>
             <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our mission</h2>
             <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>
@@ -4858,33 +4856,9 @@ function AboutPage() {
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.png`} alt="" className="mx-auto h-48 object-contain" />
         </section>
-        <section className="mt-7 text-center">
-          <h2 className="text-2xl font-black">Why we built BabyBrain</h2>
-          <p className="font-semibold text-[#59658d]">Parents told us they faced the same challenges:</p>
-          <div className="mt-5 grid gap-4 md:grid-cols-5">
-            {[["search", "Too many options"], ["mail", "Information scattered"], ["people", "Age uncertainty"], ["target", "No easy comparison"], ["calendar", "Time-consuming planning"]].map(([icon, text]) => <div key={text} className="text-center"><Icon name={icon} className="mx-auto h-10 w-10 text-baby-pink" /><p className="mt-3 text-sm font-black">{text}</p></div>)}
-          </div>
-        </section>
-        <section className="mt-7 rounded-[18px] bg-[#FED7E4] p-7">
-          <div className="grid items-center gap-6 md:grid-cols-[180px_1fr_320px]">
-            <BrandBlock />
-            <div><h2 className="text-[28px] font-black">Ready to discover activities your child will love?</h2><p className="mt-2 font-semibold text-[#3f4b78]">Join parents using BabyBrain to find classes, events and play experiences across Singapore.</p></div>
-            <div className="flex gap-3"><Button href="/explore">Explore activities</Button><Button href="/onboarding" variant="outline">Sign up</Button></div>
-          </div>
-        </section>
       </main>
       <Footer />
     </PageShell>
-  );
-}
-
-function BrandBlock() {
-  return (
-    <img
-      src={`${import.meta.env.BASE_URL}assets/brand/logo-horizontal.png`}
-      alt="BabyBrain"
-      className="h-16 w-auto object-contain"
-    />
   );
 }
 
@@ -4912,7 +4886,7 @@ function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
-          {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
@@ -4968,7 +4942,7 @@ function ForgotPasswordPage() {
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Enter your email and we'll send you a link to set a new password.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
@@ -5037,7 +5011,7 @@ function ResetPasswordPage() {
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Choose a new password for your account.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#ffe9ef] px-3 py-2 text-sm font-bold text-[#b00040]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>

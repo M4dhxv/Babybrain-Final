@@ -248,7 +248,11 @@ export function useRecommendations(children: Child[]) {
         children.map(async (child) => {
           const { data: recs } = await supabase
             .from("user_recommendations")
-            .select("id, score, reasons, activities(*)")
+            // Sessions come along so the card can show a duration. Unlike the
+            // Explore list, these rows don't go through `search_activities`
+            // (which derives duration_mins server-side), and `activities` has
+            // no duration column of its own.
+            .select("id, score, reasons, activities(*, activity_sessions(starts_at, ends_at))")
             .eq("child_id", child.id)
             .order("score", { ascending: false })
             .limit(8);
@@ -300,22 +304,32 @@ export function toCard(
     category_name?: string;
     provider_name?: string | null;
     providers?: { business_name?: string | null } | null;
+    activity_sessions?: { starts_at: string; ends_at: string | null }[] | null;
   }
 ) {
+  // `search_activities` derives this server-side; here it comes off whichever
+  // session has both ends, matching the RPC's definition.
+  const timed = (a.activity_sessions ?? []).find((s) => s.starts_at && s.ends_at);
+  const durationMins = timed
+    ? Math.round((new Date(timed.ends_at as string).getTime() - new Date(timed.starts_at).getTime()) / 60000)
+    : null;
+
   return {
     id: a.id,
     slug: a.slug,
     title: a.title,
     category: a.category_name ?? "",
-    image: a.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-music.png`,
+    image: a.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
     age: formatAgeRange(a.age_min_months, a.age_max_months),
     venue: a.address ? a.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
     date: "",
     time: "",
-    rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "New",
-    note: "",
+    // Empty when there are no reviews, so the card drops the rating line
+    // rather than printing a bare "New" beside nothing else.
+    rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "",
     providerName: a.providers?.business_name ?? a.provider_name ?? undefined,
     region: a.region ?? null,
     price: a.price ?? null,
+    durationMins,
   };
 }

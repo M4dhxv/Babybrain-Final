@@ -112,18 +112,18 @@ export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: strin
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; padding: 32px; font-family: "Helvetica Neue", Arial, sans-serif; color: #1c2b61; }
-  header { border-bottom: 3px solid #FA5D93; padding-bottom: 12px; margin-bottom: 20px; }
+  header { border-bottom: 3px solid #D9004A; padding-bottom: 12px; margin-bottom: 20px; }
   h1 { margin: 0; font-size: 24px; }
   .sub { margin-top: 4px; font-size: 13px; color: #68718f; }
   .day { break-inside: avoid; margin-bottom: 18px; }
-  .day h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: #7a5cc8; margin: 0 0 8px; }
+  .day h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: #7D4AC5; margin: 0 0 8px; }
   .slot { display: grid; grid-template-columns: 110px 1fr auto; gap: 12px; align-items: baseline;
-          border: 1px solid #e7ebf6; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
-  .time { font-weight: 700; font-size: 13px; color: #FA5D93; }
+          border: 1px solid #EBE3E5; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .time { font-weight: 700; font-size: 13px; color: #D9004A; }
   .title { font-weight: 700; font-size: 15px; }
   .meta { font-size: 12px; color: #59658d; margin-top: 2px; }
   .status { font-size: 11px; text-transform: capitalize; color: #68718f; }
-  footer { margin-top: 24px; border-top: 1px solid #e7ebf6; padding-top: 10px; font-size: 11px; color: #9aa4c2; }
+  footer { margin-top: 24px; border-top: 1px solid #EBE3E5; padding-top: 10px; font-size: 11px; color: #59658d; }
   @media print { body { padding: 0; } @page { margin: 16mm; } }
 </style></head>
 <body>
