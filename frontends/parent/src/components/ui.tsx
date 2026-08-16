@@ -424,25 +424,29 @@ export function Button({
       : size === "lg"
         ? "px-7 py-3.5 text-base"
         : "px-6 py-3 text-[15px]";
+  // Each variant sets its own border COLOUR and nothing else sets one. The
+  // base used to carry `border-transparent` to equalise heights, but Tailwind
+  // emits utilities in its own canonical order rather than the order they're
+  // written, so that transparent won over the outline variants' colour and the
+  // outlined buttons lost their outline. The width lives in `classes` below;
+  // only the colour varies here.
   const variantClass = {
     primary:
-      "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink hover:brightness-105",
+      "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink hover:brightness-105",
     // Only the filled CTAs (`primary`, `pink`, `blue`) keep the brighter
     // non-palette hues; the quieter variants sit on palette tokens.
     outline:
-      "border border-palette-pinkStrong bg-white text-palette-pinkInk hover:bg-palette-pinkTint",
-    soft: "bg-palette-pinkTint text-baby-pink hover:bg-palette-pinkSoft",
-    pink: "bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
-    ghost: "bg-transparent text-baby-pink hover:bg-palette-pinkTint",
+      "border-palette-pink bg-white text-palette-pink hover:bg-palette-pinkTint",
+    soft: "border-transparent bg-palette-pinkTint text-baby-pink hover:bg-palette-pinkSoft",
+    pink: "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
+    ghost: "border-transparent bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
     // for marketing CTAs and the final confirm step.
-    blue: "bg-baby-blue text-white shadow-blue hover:brightness-105",
-    blueOutline: "border border-baby-blue bg-white text-palette-blueInk hover:bg-palette-blueTint",
+    blue: "border-transparent bg-baby-blue text-white shadow-blue hover:brightness-105",
+    blueOutline: "border-baby-blue bg-white text-palette-blue hover:bg-palette-blueTint",
   }[variant];
-  // Every variant carries a border, transparent on the filled ones. Without it
-  // the outline variants were 2px taller than the filled ones, so a filled and
-  // an outline button sitting side by side never quite lined up.
-  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border border-transparent font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
+  // `border` here is the WIDTH only, so every variant is the same height.
+  const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
 
   if (href && !disabled) {
     return (
@@ -709,7 +713,7 @@ function priceLabel(activity: Activity): string | null {
 /** Badge marking listings bookable on BabyBrain (these also sort first). */
 export function InstantBookBadge({ className = "" }: { className?: string }) {
   return (
-    <span className={`flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#327D20] shadow-soft ${className}`}>
+    <span className={`flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A] shadow-soft ${className}`}>
       <Icon name="spark" className="h-3 w-3" /> Instant book
     </span>
   );
@@ -739,7 +743,7 @@ export function ActivityCard({
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
-            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#936700] shadow-soft">
+            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#FFD77A] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
@@ -823,7 +827,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
-            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#936700] shadow-soft">
+            <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#FFD77A] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}

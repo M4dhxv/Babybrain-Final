@@ -5,22 +5,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* Brand tokens.
-         *
-         * These are the *text* tier: `baby-pink` alone is used as a text colour
-         * ~100 times, so it has to stay readable. Each one is the legible member
-         * of its hue family in `palette` below, dark enough to clear 4.5:1 on
-         * the paper, on white cards, and on its own tinted badges.
-         *
-         * `blue` is the exception — it fills the in-app CTA button under white
-         * text, so it keeps its original value. */
+        /* Brand accents ARE the palette shades now. They used to be each hue
+         * darkened for legibility, which read as crimson / forest green /
+         * aubergine rather than the pastels — the "strange colours" from QA.
+         * `blue` stays the CTA blue; `ink` and `paper` are neutrals. */
         baby: {
           ink: "#111A4C",
           blue: "#4597F7",
-          pink: "#D9004A",
-          lilac: "#7D4AC5",
-          green: "#327D20",
-          orange: "#AE5000",
+          pink: "#FFC1D6",
+          lilac: "#C7B1E6",
+          green: "#A8E59A",
+          orange: "#FFB77A",
           paper: "#FFFCF8",
         },
         /* The supplied six-colour palette, plus the tints and inks derived from

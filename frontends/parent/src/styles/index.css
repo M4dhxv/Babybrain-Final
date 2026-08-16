@@ -34,7 +34,7 @@
    pull the links onto the palette blue ink and drop the flag (Leaflet supports
    hiding it; the OpenStreetMap/CARTO credits themselves stay). */
 .leaflet-container .leaflet-control-attribution a {
-  color: #0e6fae;
+  color: #A7D8F8;
 }
 .leaflet-attribution-flag {
   display: none !important;

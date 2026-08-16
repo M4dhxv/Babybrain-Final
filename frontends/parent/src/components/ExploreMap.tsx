@@ -15,7 +15,7 @@ const SG_BOUNDS: L.LatLngBoundsExpression = [
 const pinIcon = L.divIcon({
   className: "",
   html:
-    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#D9004A;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>',
+    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FFC1D6;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>',
   iconSize: [22, 22],
   iconAnchor: [11, 22],
   popupAnchor: [0, -20],
@@ -112,7 +112,7 @@ export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
           ].filter(Boolean);
           return (
             `<a href="/activity?slug=${encodeURIComponent(a.slug)}" style="display:block;text-decoration:none;margin:6px 0">` +
-            `<span style="display:block;color:#0E6FAF;font-weight:700">${esc(a.title)}</span>` +
+            `<span style="display:block;color:#A7D8F8;font-weight:700">${esc(a.title)}</span>` +
             (bits.length
               ? `<span style="display:block;color:#59658d;font-weight:600;font-size:11.5px">${esc(bits.join(" · "))}</span>`
               : "") +

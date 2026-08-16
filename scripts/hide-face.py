@@ -73,7 +73,7 @@ def main():
         cx = (box[0] + box[2]) / 2
         cy = (box[1] + box[3]) / 2
         r = face_w * 0.72
-        pink = (250, 93, 147, 255)
+        pink = (255, 193, 214, 255)  # palette pink #FFC1D6
         # Two lobes plus a triangle. The triangle's top edge sits on the lobe
         # centre line and spans their full width, so the union has no gap —
         # a cover with holes in it would defeat the point.

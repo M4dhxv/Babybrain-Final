@@ -256,7 +256,7 @@ const BUDGET_CHIPS: [string, string, number | null, number | null][] = [
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-[#D9004A]" : "border-[#DCD2D5] bg-white"}`}>
+    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-[#FFC1D6]" : "border-[#DCD2D5] bg-white"}`}>
       {children}
     </button>
   );
@@ -302,7 +302,7 @@ function ChildDraftFields({
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
         {total > 1 && (
-          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#C90044] hover:underline">
+          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#FFC1D6] hover:underline">
             Remove
           </button>
         )}
@@ -506,7 +506,7 @@ function OnboardingPage() {
                 {PASSWORD_RULES.map((rule) => {
                   const met = rule.test(password);
                   return (
-                    <li key={rule.label} className={met ? "text-[#327D20]" : "text-[#6D748D]"}>
+                    <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
                       {met ? "✓" : "•"} {rule.label}
                     </li>
                   );
@@ -584,7 +584,7 @@ function OnboardingPage() {
         {/* The error sits directly above the CTA — QA found it at the top of the
             page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#C90044]">
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#FFC1D6]">
             {error}
           </p>
         )}
@@ -661,7 +661,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           {/* On mobile the "See activity options" link sits below the cards
               rather than crowding the heading. */}
           <SectionTitle
-            action={<a href="/explore" className="hidden font-bold text-[#D9004A] sm:inline">Explore more activities →</a>}
+            action={<a href="/explore" className="hidden font-bold text-[#FFC1D6] sm:inline">Explore more activities →</a>}
           >
             Matching activities
           </SectionTitle>
@@ -675,7 +675,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#D9004A] sm:hidden">Explore more activities →</a>
+          <a href="/explore" className="mt-4 block text-center font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
@@ -770,7 +770,7 @@ function EmailCapturePopup() {
         </button>
         {done ? (
           <div className="py-4 text-center">
-            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#327D20]"><Icon name="check" className="h-8 w-8" /></div>
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#A8E59A]"><Icon name="check" className="h-8 w-8" /></div>
             <h2 className="text-xl font-black">You're on the list! 🎉</h2>
             <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll email you when new activities and providers join BabyBrain.</p>
             <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
@@ -1397,7 +1397,7 @@ function ActivityDetailPage() {
             <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
             {activity.provider_name &&
               activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
-                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#7D4AC5]">
+                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
                   <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
                 </p>
               )}
@@ -1544,7 +1544,7 @@ function ActivityDetailPage() {
                     ? `https://wa.me/${phoneDigits(whatsappNumber)}`
                     : null
                 }
-                tone={{ border: "border-[#42A72B]", text: "text-[#327D20]", hover: "hover:bg-[#F1FBEF]" }}
+                tone={{ border: "border-[#A8E59A]", text: "text-[#A8E59A]", hover: "hover:bg-[#F1FBEF]" }}
                 unavailableReason="We don't have a WhatsApp number for this provider."
               />
               <ContactLink
@@ -1555,14 +1555,14 @@ function ActivityDetailPage() {
                     ? `mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`
                     : null
                 }
-                tone={{ border: "border-baby-blue", text: "text-[#0E6FAE]", hover: "hover:bg-[#EDF7FD]" }}
+                tone={{ border: "border-baby-blue", text: "text-[#A7D8F8]", hover: "hover:bg-[#EDF7FD]" }}
                 unavailableReason="We don't have an email address for this provider."
               />
               <ContactLink
                 icon="open"
                 label="Website"
                 href={providerWebsite}
-                tone={{ border: "border-[#C7B1E6]", text: "text-[#7D4AC5]", hover: "hover:bg-[#F4F0FA]" }}
+                tone={{ border: "border-[#C7B1E6]", text: "text-[#C7B1E6]", hover: "hover:bg-[#F4F0FA]" }}
                 unavailableReason="We don't have a website for this provider."
               />
             </div>
@@ -1609,7 +1609,7 @@ function ActivityDetailPage() {
               {next?.capacity != null && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Spaces available</strong>
-                  <span className="text-right text-[#0E6FAE]">{next.capacity} spots</span>
+                  <span className="text-right text-[#A7D8F8]">{next.capacity} spots</span>
                 </p>
               )}
               {durationMins != null && (
@@ -1682,7 +1682,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         placeholder="Share how the class went (optional)"
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
-      {error && <p className="mt-2 text-sm font-bold text-[#C90044]">{error}</p>}
+      {error && <p className="mt-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
       <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
@@ -1824,7 +1824,7 @@ function ExportScheduleDialog({
           </label>
         </div>
 
-        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#C90044]" : "text-[#59658d]"}`}>
+        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#FFC1D6]" : "text-[#59658d]"}`}>
           {invalid
             ? "The end date is before the start date."
             : `${selected.length} ${selected.length === 1 ? "class" : "classes"} in this range`}
@@ -1926,16 +1926,16 @@ function ChildFilterChips({
 }
 
 function tokenStatusStyle(status: string) {
-  if (status === "issued") return "bg-[#F1FBEF] text-green-700";
-  if (status === "redeemed") return "bg-[#FEEBF2] text-[#D9004A]";
-  return "bg-[#FEF9EB] text-[#936700]"; // expired
+  if (status === "issued") return "bg-[#F1FBEF] text-palette-green";
+  if (status === "redeemed") return "bg-[#FEEBF2] text-[#FFC1D6]";
+  return "bg-[#FEF9EB] text-[#FFD77A]"; // expired
 }
 
 function bookingStatusStyle(status: string) {
-  if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-green-700";
-  if (status === "cancelled") return "bg-[#FEEBF2] text-[#C90044]";
-  if (status === "waitlisted") return "bg-amber-50 text-amber-700";
-  return "bg-[#FEEBF2] text-[#D9004A]";
+  if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-palette-green";
+  if (status === "cancelled") return "bg-[#FEEBF2] text-[#FFC1D6]";
+  if (status === "waitlisted") return "bg-amber-50 text-palette-yellow";
+  return "bg-[#FEEBF2] text-[#FFC1D6]";
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -2007,7 +2007,7 @@ function ChildForm({
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-5 shadow-card">
       <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
-      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
       <div className="mt-3 space-y-3">
         <div>
           <p className="text-sm font-black">Avatar</p>
@@ -2170,7 +2170,7 @@ function ChildrenTab({
                     )}
                     <div className="mt-3 flex items-center gap-3">
                       <Button type="button" variant="outline" size="sm" onClick={() => setForm({ child: c })}><Icon name="pen" className="h-4 w-4" /> Edit</Button>
-                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#C90044] hover:underline">Remove</button>
+                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#FFC1D6] hover:underline">Remove</button>
                     </div>
                   </div>
                 );
@@ -2346,7 +2346,7 @@ function EditProfilePage() {
         <p className="mt-1 text-sm font-semibold text-[#44507b]">Update your details and what you'd like us to suggest.</p>
 
         {saved && (
-          <p className="mt-4 rounded-[10px] bg-[#F1FBEF] px-4 py-3 text-sm font-bold text-green-700">
+          <p className="mt-4 rounded-[10px] bg-[#F1FBEF] px-4 py-3 text-sm font-bold text-palette-green">
             Your profile has been updated.
           </p>
         )}
@@ -2421,7 +2421,7 @@ function EditProfilePage() {
         </section>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#C90044]">{error}</p>
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#FFC1D6]">{error}</p>
         )}
         <div className="mt-4 flex gap-3">
           <Button type="button" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : "Save changes"}</Button>
@@ -2743,7 +2743,7 @@ function ProfilePage() {
             </div>
             <a
               href={isPlus ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-[#D9004A]" : "bg-[#FEF4EB] text-[#AE5000]"}`}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-[#FFC1D6]" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
             >
               <span className="flex items-center gap-1.5">
                 <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
@@ -2758,7 +2758,7 @@ function ProfilePage() {
                   <a
                     key={key}
                     href={`/profile?tab=${key}`}
-                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-[#D9004A]" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
+                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-[#FFC1D6]" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
                   >
                     <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
@@ -2769,31 +2769,12 @@ function ProfilePage() {
           </div>
         </aside>
         <aside className="order-3 space-y-4 lg:col-start-1 lg:row-start-2">
-          <div className="rounded-[12px] border border-[#FEF2D7] bg-[#FEF9EB] p-5 shadow-card">
-            <h3 className="text-lg font-black">Invite a friend</h3>
-            <p className="mt-3 text-sm font-semibold leading-6">Get $10 credits when your friend makes their first booking!</p>
-            <img src={`${import.meta.env.BASE_URL}assets/crops/invite-gift.png`} alt="" className="mx-auto my-3 h-20 object-contain" />
-            <Button
-              type="button"
-              onClick={() => {
-                const url = `${window.location.origin}/onboarding?ref=friend`;
-                if (navigator.share) {
-                  navigator.share({ title: "BabyBrain.sg", text: "Join me on BabyBrain — find great activities for your little one!", url }).catch(() => {});
-                } else {
-                  navigator.clipboard?.writeText(url);
-                  alert("Referral link copied — share it with a friend!");
-                }
-              }}
-              variant="blue"
-              className="w-full"
-            >
-              Invite friends
-            </Button>
-          </div>
+          {/* Invite a friend removed: the referral mechanism isn't built,
+              so the $10-credit promise had nothing behind it. */}
           <div className="rounded-[12px] bg-[#EDF7FD] p-5">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#D9004A]">Contact support →</a>
+            <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
           </div>
         </aside>
         <section className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
@@ -2838,7 +2819,7 @@ function ProfilePage() {
                           <p className="mt-1 text-base font-semibold">{formatChildAge(c.date_of_birth)}</p>
                           {c.interests.length > 0 && (
                             <p className="mt-2 text-sm font-semibold capitalize leading-6 text-[#4a5685]">
-                              <Icon name="heart" className="mr-1 inline h-3.5 w-3.5 text-[#D9004A]" />
+                              <Icon name="heart" className="mr-1 inline h-3.5 w-3.5 text-[#FFC1D6]" />
                               {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}
                             </p>
                           )}
@@ -2862,7 +2843,7 @@ function ProfilePage() {
                 [`${journey?.venues_explored ?? 0} venues explored`, "pin"],
                 [`${journey?.hours_of_learning ?? 0} hours completed`, "clock"],
               ].map(([item, icon]) => (
-                <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#0E6FAE]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
+                <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#A7D8F8]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
               ))}
             </div>
           </div>
@@ -2875,9 +2856,9 @@ function ProfilePage() {
               emoji="🩷"
               action={
                 isPlus ? (
-                  <a href="/profile?tab=favorites" className="font-bold text-[#D9004A]">View all →</a>
+                  <a href="/profile?tab=favorites" className="font-bold text-[#FFC1D6]">View all →</a>
                 ) : (
-                  <a href="/pricing" className="flex items-center gap-1 font-bold text-[#D9004A]">
+                  <a href="/pricing" className="flex items-center gap-1 font-bold text-[#FFC1D6]">
                     <Icon name="lock" className="h-3.5 w-3.5" /> Plus feature
                   </a>
                 )
@@ -2914,7 +2895,7 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#D9004A]">See all matches →</a>}>Suggested activities</SectionTitle>
+            <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>Suggested activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -2990,14 +2971,14 @@ function ProfilePage() {
                           <h3 className="truncate font-black">{p.name}</h3>
                           <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
                           {p.expiresAt && (
-                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#C90044]" : "text-[#6D748A]"}`}>
+                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#FFC1D6]" : "text-[#6D748A]"}`}>
                               {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
                             </p>
                           )}
                         </div>
                         <div className="text-right">
                           {p.status === "expired" ? (
-                            <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#936700]">Expired</span>
+                            <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#FFD77A]">Expired</span>
                           ) : (
                             <>
                               <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
@@ -3029,7 +3010,7 @@ function ProfilePage() {
                 <div className="mt-4 space-y-3">
                   {tokens.map((t) => (
                     <div key={t.id} className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#936700]"><Icon name="gift" className="h-6 w-6" /></span>
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-black">{t.provider}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">
@@ -3158,7 +3139,7 @@ function ProfilePage() {
               <h1 className="mb-4 text-[26px] font-black">Settings</h1>
 
               {getParam("billing") === "success" && (
-                <div className="mb-4 rounded-[12px] border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
+                <div className="mb-4 rounded-[12px] border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-palette-green">
                   🎉 Welcome to Plus! Your subscription is active — your first month is free.
                 </div>
               )}
@@ -3175,7 +3156,7 @@ function ProfilePage() {
                         <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-baby-pink">Free trial</span>
                       )}
                       {billingPlan?.cancel_at_period_end && (
-                        <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#936700]">Cancels at period end</span>
+                        <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#FFD77A]">Cancels at period end</span>
                       )}
                     </p>
                     {billingPlan?.plan === "plus" && billingPlan.current_period_end && (
@@ -3195,7 +3176,7 @@ function ProfilePage() {
                 </div>
                 {billingPlan?.terms_accepted_at && (
                   <p className="mt-4 border-t border-[#F4EFF0] pt-3 text-xs font-semibold text-[#6D748A]">
-                    <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-green-500" />
+                    <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-palette-green" />
                     Terms &amp; Conditions accepted on {sgDay(billingPlan.terms_accepted_at)}
                     {billingPlan.terms_version ? ` (v${billingPlan.terms_version})` : ""} ·{" "}
                     <a href="/terms" className="text-baby-pink underline">View terms</a>
@@ -3251,7 +3232,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
 
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-6 shadow-card">
-      <h2 className="font-black text-[#C90044]">Delete your account</h2>
+      <h2 className="font-black text-[#FFC1D6]">Delete your account</h2>
       <p className="mt-1 text-sm font-semibold text-[#59658d]">
         This removes your profile, your children's details, preferences and saved activities.
         {isPlus ? " Your Plus subscription is cancelled at the same time, so you won't be charged again." : ""}
@@ -3262,7 +3243,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#C90044] hover:bg-[#FFF5F8]"
+          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#FFC1D6] hover:bg-[#FFF5F8]"
         >
           Delete account
         </button>
@@ -3270,7 +3251,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <div className="mt-4 rounded-[12px] bg-[#FFF5F8] p-4">
           {/* The input is `block` so it sits under the instruction rather than
               running on beside it, and lines up with the buttons below. */}
-          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#C90044]">
+          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#FFC1D6]">
             Type DELETE to confirm
           </label>
           <input
@@ -3280,14 +3261,14 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
             className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold"
             placeholder="DELETE"
           />
-          {error && <p className="mt-3 text-sm font-bold text-[#C90044]">{error}</p>}
+          {error && <p className="mt-3 text-sm font-bold text-[#FFC1D6]">{error}</p>}
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
               disabled={confirm !== "DELETE" || busy}
               onClick={remove}
               className={`rounded-[11px] px-5 py-2.5 text-sm font-extrabold text-white ${
-                confirm === "DELETE" && !busy ? "bg-[#C90044] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
+                confirm === "DELETE" && !busy ? "bg-[#FFC1D6] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
               }`}
             >
               {busy ? "Deleting…" : "Permanently delete"}
@@ -3361,7 +3342,7 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
           {state && (
-            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#F1FBEF] text-green-700" : "bg-[#FEF9EB] text-[#936700]"}`}>
+            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#F1FBEF] text-palette-green" : "bg-[#FEF9EB] text-[#FFD77A]"}`}>
               {state === "present" ? "Attended" : "Not attended"}
             </span>
           )}
@@ -3371,7 +3352,7 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "present")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#F1FBEF] text-green-700" : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#F1FBEF] text-palette-green" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
           >
             We went
           </button>
@@ -3379,7 +3360,7 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "absent")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#EBE3E5] bg-[#FAF7F7] text-[#5a6484]" : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#EBE3E5] bg-[#FAF7F7] text-[#5a6484]" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
           >
             We missed it
           </button>
@@ -3393,7 +3374,7 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
       <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
       {filterChips}
-      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
 
       {items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
@@ -3495,7 +3476,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             <button
               type="button"
               onClick={() => setExporting(true)}
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8]"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8]"
               title="Pick a date range, then save as PDF or add to your calendar"
             >
               <Icon name="calendar" className="h-3.5 w-3.5" /> Export schedule
@@ -3503,7 +3484,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
           ) : (
             <a
               href="/pricing"
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-[#D9004A]"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-[#FFC1D6]"
               title="Calendar sync and PDF export are Plus features"
             >
               <Icon name="lock" className="h-3.5 w-3.5" /> Calendar &amp; PDF export — Plus
@@ -3535,7 +3516,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     e.stopPropagation();
                     downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
                   }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#D9004A] hover:bg-[#FFF5F8] sm:flex"
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8] sm:flex"
                   title="Add to calendar"
                 >
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
@@ -3552,7 +3533,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     reschedWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                      : "border border-[#FED7E4] text-[#D9004A] hover:bg-[#FFF5F8]"
+                      : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
                   }`}
                   title={reschedWhy ?? "Move this booking to another session"}
                 >
@@ -3565,7 +3546,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                      : "border border-[#FED7E4] text-[#C90044] hover:bg-[#FFF5F8]"
+                      : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
                   }`}
                   title={cancelWhy ?? "Cancel this booking"}
                 >
@@ -3581,7 +3562,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
       {notice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setNotice(null)}>
           <div className="w-full max-w-sm rounded-[16px] bg-white p-6 text-center shadow-card" onClick={(e) => e.stopPropagation()}>
-            <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-amber-500"><Icon name="bell" className="h-6 w-6" /></span>
+            <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-palette-yellow"><Icon name="bell" className="h-6 w-6" /></span>
             <p className="mt-4 font-semibold text-[#3f4b78]">{notice}</p>
             <Button type="button" className="mt-5 w-full" onClick={() => setNotice(null)}>Got it</Button>
           </div>
@@ -3603,7 +3584,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className="flex w-full items-center justify-between rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#FFF5F8]"
                 >
                   {sgDateTime(s.starts_at)}
-                  <Icon name="calendar" className="h-4 w-4 text-[#D9004A]" />
+                  <Icon name="calendar" className="h-4 w-4 text-[#FFC1D6]" />
                 </button>
               ))}
               {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#6D748D]">No other upcoming sessions for this class.</p>}
@@ -3661,7 +3642,6 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
       ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book, keep your family profile and get suggestions. Plus (SGD 9/month or SGD 99/year) adds twice-weekly curated activity emails, all your packages and make-up tokens for every vendor in one place, saved favourite providers, exporting and sharing your booked activities in calendar view, messaging integrated providers and other parents booked on the same activity, and priority support."],
       ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
       ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
-      ["How do I refer a friend?", <>Refer a friend to Plus, and when they sign up for a paid subscription, you get a free month. Your referral link lives on your <a href="/profile" className={FAQ_LINK}>account page</a> under “Invite friends”.</>],
     ],
   },
   {
@@ -3730,7 +3710,7 @@ function ContactForm() {
   if (sent) {
     return (
       <div className="rounded-[18px] border border-[#EBE3E5] bg-white p-8 text-center shadow-card">
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#327D20]"><Icon name="check" className="h-8 w-8" /></span>
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#A8E59A]"><Icon name="check" className="h-8 w-8" /></span>
         <h2 className="mt-4 text-2xl font-black">Message sent</h2>
         <p className="mt-2 font-semibold text-[#59658d]">Thanks {name.split(" ")[0]} — we endeavour to reply within 3 days.</p>
       </div>
@@ -3766,7 +3746,7 @@ function ContactForm() {
           className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
         />
       </div>
-      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
       <Button type="submit" className="mt-4 w-full justify-center sm:w-auto" disabled={busy}>
         {busy ? "Sending…" : "Send message"}
       </Button>
@@ -3801,7 +3781,7 @@ function ContactPage() {
             {/* Blue, not pink. The eyebrow is 18px bold — just under the
                 large-text threshold — so it takes the readable blue ink;
                 the heart beside it is decorative and can run brighter. */}
-            <p className="mb-5 flex items-center gap-2 text-lg font-black text-palette-blueInk">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current text-palette-blueStrong" /></p>
+            <p className="mb-5 flex items-center gap-2 text-lg font-black text-palette-blue">We're here to help! <Icon name="heart" className="h-5 w-5 fill-current text-palette-blue" /></p>
             <h1 className="text-[40px] font-black leading-tight">How can our team support you today?</h1>
             <p className="mt-5 text-lg font-semibold leading-8 text-[#68718f]">Have a question, feedback, or need assistance? Our team is happy to help.</p>
           </div>
@@ -3809,7 +3789,7 @@ function ContactPage() {
               mascot. The logo is far wider than that illustration, so the note
               covered most of it — they sit side by side now instead. */}
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-end">
-            <div className="rounded-[16px] bg-white p-4 text-sm font-semibold leading-6 shadow-soft sm:max-w-[190px] sm:shrink">We endeavor to respond within 3 days. If more urgent, please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-palette-blueStrong" /></div>
+            <div className="rounded-[16px] bg-white p-4 text-sm font-semibold leading-6 shadow-soft sm:max-w-[190px] sm:shrink">We endeavor to respond within 3 days. If more urgent, please call us. <Icon name="heart" className="inline h-4 w-4 fill-current text-palette-blue" /></div>
             <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="h-[200px] shrink-0 object-contain" />
           </div>
         </section>
@@ -4080,7 +4060,7 @@ function PricingPage() {
         </section>
 
         {error && (
-          <p className="mx-auto mt-5 max-w-[560px] rounded-[10px] bg-[#FEF4EB] px-4 py-3 text-center text-sm font-bold text-[#936700]">
+          <p className="mx-auto mt-5 max-w-[560px] rounded-[10px] bg-[#FEF4EB] px-4 py-3 text-center text-sm font-bold text-[#FFD77A]">
             {error}
           </p>
         )}
@@ -4151,7 +4131,7 @@ function PricingPage() {
             <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
               Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
               {" "}By subscribing you agree to our{" "}
-              <a href="/terms" className="text-palette-blueInk underline">Terms &amp; Conditions</a>.
+              <a href="/terms" className="text-palette-blue underline">Terms &amp; Conditions</a>.
             </p>
           </article>
         </section>
@@ -4254,7 +4234,7 @@ function PackageOption({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-black">{title}</span>
-          {badge && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#936700]">{badge}</span>}
+          {badge && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#FFD77A]">{badge}</span>}
         </div>
         <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
       </div>
@@ -4621,7 +4601,7 @@ function BookingPage() {
                       </section>
                     )}
                     {childAgeMismatch && bookChild && (
-                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#936700]">
+                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {bookChild.name} is {formatChildAge(bookChild.date_of_birth)}, outside this class's {ageText} age range — you won't be able to confirm this booking with them selected.
                       </p>
@@ -4668,7 +4648,7 @@ function BookingPage() {
                           ))}
                         </div>
                         {restrictedCredit && !packageCredit && (
-                          <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#7D4AC5]">
+                          <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
                             You have package credits with this provider, but they can't be used for this{" "}
                             {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
                           </p>
@@ -4702,11 +4682,11 @@ function BookingPage() {
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
-            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#936700]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
+            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
           )}
           {activity?.bookings_paused ? (
             /* 1.1: the vendor has paused bookings for this class */
-            <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-amber-700">
+            <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-palette-yellow">
               <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this class are temporarily paused by the provider. Please check back later or enquire with them directly.
             </div>
           ) : (
@@ -4771,8 +4751,8 @@ function BookedPage() {
           <aside className="space-y-5">
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
-              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-amber-600" : "text-green-600"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
-              <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-amber-700" : "bg-[#F1FBEF] text-green-700"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
+              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
+              <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
                 <Button
@@ -4886,7 +4866,7 @@ function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
-          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
@@ -4932,7 +4912,7 @@ function ForgotPasswordPage() {
           <h1 className="text-2xl font-black">Reset your password</h1>
           {sent ? (
             <div className="mt-3">
-              <p className="rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-green-700">
+              <p className="rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-palette-green">
                 If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
               </p>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
@@ -4942,7 +4922,7 @@ function ForgotPasswordPage() {
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Enter your email and we'll send you a link to set a new password.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
@@ -5001,17 +4981,17 @@ function ResetPasswordPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-6 shadow-card sm:p-8">
           <h1 className="text-2xl font-black">Set a new password</h1>
           {done ? (
-            <p className="mt-3 rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-green-700">
+            <p className="mt-3 rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-palette-green">
               Password updated. Taking you to your profile…
             </p>
           ) : !ready ? (
-            <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#936700]">
+            <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#FFD77A]">
               This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-pink">request a new one</a>.
             </p>
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Choose a new password for your account.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#C90044]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
