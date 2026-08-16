@@ -10,6 +10,7 @@ import {
   Icon,
   MiniActivityGrid,
   PageShell,
+  PlusFeatureDialog,
   SectionTitle,
 } from "./components/ui";
 import { useEffect, useState, type ReactNode } from "react";
@@ -39,7 +40,7 @@ import {
   postcodeError,
 } from "./lib/validation";
 import { CHILD_AVATARS, PARENT_AVATARS, type AvatarOption } from "./lib/avatars";
-import type { ActivitySession, Child, Gender } from "./lib/database.types";
+import type { ActivitySession, Child, Gender, ProviderPolicy } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
@@ -254,6 +255,20 @@ const BUDGET_CHIPS: [string, string, number | null, number | null][] = [
   ["120+", "$120+", 120, null],
 ];
 
+/** Ticked budget bands → the single {budget_min, budget_max} span we store.
+ *  Shared by sign-up and edit-profile so both accept several bands. */
+function budgetRange(keys: string[]): { budget_min: number | null; budget_max: number | null } {
+  const chosen = BUDGET_CHIPS.filter(([k]) => keys.includes(k));
+  if (!chosen.length) return { budget_min: null, budget_max: null };
+  return {
+    budget_min: Math.min(...chosen.map(([, , lo]) => lo ?? 0)),
+    // An open-ended band ("$120+") means no upper limit at all.
+    budget_max: chosen.every(([, , , hi]) => hi != null)
+      ? Math.max(...chosen.map(([, , , hi]) => hi as number))
+      : null,
+  };
+}
+
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-[#FFC1D6]" : "border-[#DCD2D5] bg-white"}`}>
@@ -400,11 +415,7 @@ function OnboardingPage() {
     setError(null);
 
     const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
-    const chosenBudgets = BUDGET_CHIPS.filter(([k]) => budgets.includes(k));
-    const budgetMin = chosenBudgets.length ? Math.min(...chosenBudgets.map(([, , lo]) => lo ?? 0)) : null;
-    const budgetMax = chosenBudgets.length && chosenBudgets.every(([, , , hi]) => hi != null)
-      ? Math.max(...chosenBudgets.map(([, , , hi]) => hi as number))
-      : null;
+    const { budget_min: budgetMin, budget_max: budgetMax } = budgetRange(budgets);
     // Interests across all children drive the parent-level recommendations.
     const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
     const draftKids = kids.map((k) => ({
@@ -644,7 +655,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             </div>
             {child && (
               <article className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-                <AnimalAvatar seed={child.name} kind="child" className="h-32 w-32 ring-8 ring-[#FEEBF2]" />
+                <AnimalAvatar seed={child.avatar_seed ?? child.name} kind="child" gender={child.gender} className="h-32 w-32 ring-8 ring-[#FEEBF2]" />
                 <div>
                   <h2 className="text-xl font-black">{child.name}</h2>
                   <p className="mb-3 font-bold">{formatChildAge(child.date_of_birth)}</p>
@@ -1295,6 +1306,8 @@ function ActivityDetailPage() {
   const { isPlus } = usePlan();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
+  /** Shown when a free-plan parent taps "Save to favourites". */
+  const [favUpgrade, setFavUpgrade] = useState(false);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
@@ -1572,9 +1585,15 @@ function ActivityDetailPage() {
               disabledReason={chatBlockedReason}
               onOpen={requireLogin(() => setGroupChat(true))}
             />
-            <Button variant="soft" type="button" onClick={fav.toggle} className="mt-3 w-full text-baby-pink">
+            <Button
+              variant="soft"
+              type="button"
+              onClick={() => fav.toggle().then((ok) => { if (!ok) setFavUpgrade(true); })}
+              className="mt-3 w-full text-baby-pink"
+            >
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
             </Button>
+            {favUpgrade && <PlusFeatureDialog onClose={() => setFavUpgrade(false)} />}
             {enquiring && activity.provider_id && (
               <EnquiryChat
                 providerId={activity.provider_id}
@@ -1636,7 +1655,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
   if (!session) {
     return (
       <p className="mb-4 rounded-[10px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
-        <a href="/login" className="font-black text-baby-pink">Log in</a> to review a class you've attended.
+        <a href="/login" className="font-black text-baby-pink">Log in</a> to leave a review.
       </p>
     );
   }
@@ -1646,15 +1665,15 @@ function ReviewForm({ activityId }: { activityId: string }) {
     if (rating === 0) return setError("Pick a star rating first.");
     setBusy(true);
     setError(null);
+    // QA: "Should be able to leave a review even if haven't been booked onto a
+    // class on the platform as may have been another time" — the
+    // booked-and-attended requirement is gone from the RLS policy too.
     const { error } = await supabase.from("reviews").upsert(
       { user_id: session!.user.id, activity_id: activityId, rating, comment: comment.trim() || null },
       { onConflict: "user_id,activity_id" }
     );
     setBusy(false);
-    if (error) {
-      const blocked = error.code === "42501" || /row-level security/i.test(error.message);
-      return setError(blocked ? "You can only review a class you've booked and attended." : error.message);
-    }
+    if (error) return setError(error.message);
     window.location.reload();
   }
 
@@ -1702,13 +1721,13 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
   startsAt: string | null; endsAt: string | null; venue: string;
-  activityId: string | null; childId: string | null;
+  activityId: string | null; childId: string | null; packagePurchaseId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
-type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null };
+type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
 
 /** [key, label, icon, plusOnly] — the Plus-only tabs are the ones QA listed as
@@ -1890,37 +1909,74 @@ function PlusLock({ title, copy }: { title: string; copy: string }) {
   );
 }
 
-/** "All children" + one chip per child — shown once there's more than one,
- *  to filter a list (Bookings, Past activities) down to a single child's. */
-function ChildFilterChips({
+/** Which child a profile tab is showing.
+ *
+ *  QA: "If you have more than one child, bookings etc are bundled together —
+ *  there should be a drop down under overview, bookings, past activities,
+ *  packages, make up tokens, favourites to select which child you want to see
+ *  the details for with the option to select both and they are split out."
+ *  So: one selector, shared by every tab, and "All children" doesn't merge the
+ *  lists — it splits them into a section per child. */
+function ChildSelect({
   kids,
   value,
   onChange,
+  label = "Showing",
 }: {
   kids: { id: string; name: string }[];
   value: string | null;
   onChange: (id: string | null) => void;
+  label?: string;
 }) {
   if (kids.length < 2) return null;
   return (
-    <div className="mb-4 flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={() => onChange(null)}
-        className={`rounded-full border px-3 py-1.5 text-sm font-bold ${value === null ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white text-[#4a5685]"}`}
+    <label className="mb-4 flex items-center gap-2 text-sm font-bold text-[#4a5685]">
+      {label}
+      <select
+        value={value ?? "all"}
+        onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
+        className="h-10 rounded-[10px] border border-[#DCD2D5] bg-white px-3 text-sm font-bold text-[#4a5685]"
       >
-        All children
-      </button>
-      {kids.map((k) => (
-        <button
-          key={k.id}
-          type="button"
-          onClick={() => onChange(k.id)}
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-bold ${value === k.id ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white text-[#4a5685]"}`}
-        >
-          <AnimalAvatar seed={k.name} kind="child" className="h-4 w-4" /> {k.name}
-        </button>
-      ))}
+        <option value="all">All children (split out)</option>
+        {kids.map((k) => (
+          <option key={k.id} value={k.id}>{k.name}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Split a list into one group per child, in the order the children appear.
+ *  Anything with no child on it lands in a trailing "Not assigned" group. */
+function groupByChild<T extends { childId?: string | null; child_id?: string | null }>(
+  items: T[],
+  kids: { id: string; name: string }[]
+): { key: string; name: string; items: T[] }[] {
+  const childOf = (i: T) => i.childId ?? i.child_id ?? null;
+  const groups = kids
+    .map((k) => ({ key: k.id, name: k.name, items: items.filter((i) => childOf(i) === k.id) }))
+    .filter((g) => g.items.length > 0);
+  const loose = items.filter((i) => !childOf(i) || !kids.some((k) => k.id === childOf(i)));
+  if (loose.length) groups.push({ key: "unassigned", name: "Not assigned to a child", items: loose });
+  return groups;
+}
+
+/** One make-up token, shared by the flat and the split-by-child lists. */
+function TokenRow({ t }: { t: TokenItem }) {
+  return (
+    <div className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-black">{t.provider}</h3>
+        <p className="text-sm font-semibold text-[#59658d]">
+          Issued {sgDay(t.created_at)}
+          {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
+        </p>
+      </div>
+      {t.status === "issued" && t.originSlug && (
+        <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+      )}
+      <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
     </div>
   );
 }
@@ -2017,6 +2073,7 @@ function ChildForm({
             onChange={setAvatarSeed}
             kind="child"
             fallbackSeed={name}
+            gender={gender}
           />
         </div>
         <div><label className="mb-1 block text-sm font-black">Child's name</label><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emma" /></div>
@@ -2158,7 +2215,7 @@ function ChildrenTab({
                 return (
                   <div key={c.id} className={`rounded-[14px] border bg-white p-5 shadow-card transition ${open ? "border-baby-pink ring-1 ring-baby-pink/30" : "border-[#EBE3E5] hover:border-baby-pink"}`}>
                     <button type="button" onClick={() => setViewId(open ? null : c.id)} className="flex w-full items-center gap-4 text-left">
-                      <AnimalAvatar seed={c.name} kind="child" className="h-16 w-16 ring-4 ring-white shadow-soft" />
+                      <AnimalAvatar seed={c.avatar_seed ?? c.name} kind="child" gender={c.gender} className="h-16 w-16 ring-4 ring-white shadow-soft" />
                       <div>
                         <h3 className="font-black">{c.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p>
@@ -2199,12 +2256,15 @@ function AvatarPicker({
   onChange,
   kind,
   fallbackSeed,
+  gender,
 }: {
   options: AvatarOption[];
   value: string | null;
   onChange: (seed: string | null) => void;
   kind: "child" | "parent";
   fallbackSeed?: string;
+  /** Drives the "Choose for me" swatch, so it previews the girl/boy default. */
+  gender?: string | null;
 }) {
   return (
     <div className="mt-3 flex flex-wrap gap-2">
@@ -2221,7 +2281,7 @@ function AvatarPicker({
             onClick={() => onChange(seed)}
             className={`rounded-full p-0.5 transition ${on ? "ring-2 ring-baby-pink" : "ring-1 ring-[#F4EFF0] hover:ring-[#FFC1D6]"}`}
           >
-            <AnimalAvatar seed={seed ?? fallbackSeed} kind={kind} className="h-11 w-11" />
+            <AnimalAvatar seed={seed ?? fallbackSeed} kind={kind} gender={seed ? null : gender} className="h-11 w-11" />
           </button>
         );
       })}
@@ -2246,8 +2306,10 @@ function EditProfilePage() {
   const [regions, setRegions] = useState<string[]>([]);
   const [days, setDays] = useState<string[]>([]);
   const [times, setTimes] = useState<string[]>([]);
-  const [budgetMin, setBudgetMin] = useState<number | null>(null);
-  const [budgetMax, setBudgetMax] = useState<number | null>(null);
+  // QA: "Under account, edit profile, can only select one budget — should be
+  // able to select multiple." Sign-up already worked this way: the parent
+  // ticks any number of bands and we store the span they cover.
+  const [budgets, setBudgets] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2274,8 +2336,17 @@ function EditProfilePage() {
           setDays(data.preferred_days ?? []);
           setTimes(data.preferred_times ?? []);
           setRegions(data.preferred_regions ?? []);
-          setBudgetMin(data.budget_min);
-          setBudgetMax(data.budget_max);
+          // Stored as one min/max span; tick every band that span covers.
+          const lo = data.budget_min;
+          const hi = data.budget_max;
+          if (lo != null || hi != null) {
+            setBudgets(
+              BUDGET_CHIPS.filter(
+                ([, , bLo, bHi]) =>
+                  (lo == null || (bHi ?? Infinity) > lo) && (hi == null || (bLo ?? 0) < hi)
+              ).map(([k]) => k)
+            );
+          }
         }
         setReady(true);
       });
@@ -2316,8 +2387,7 @@ function EditProfilePage() {
         preferred_times: times as never,
         preferred_regions: regions as never,
         interests: [...new Set(kids.flatMap((c) => c.interests))],
-        budget_min: budgetMin,
-        budget_max: budgetMax,
+        ...budgetRange(budgets),
       })
       .eq("user_id", session.user.id);
     setBusy(false);
@@ -2402,12 +2472,9 @@ function EditProfilePage() {
               Weekend
             </Chip>
             {TIME_CHIPS.map(([v, l]) => <Chip key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Chip>)}
-            {BUDGET_CHIPS.map(([k, l, lo, hi]) => {
-              const on = budgetMin === lo && budgetMax === hi;
-              return (
-                <Chip key={k} on={on} onClick={() => { setBudgetMin(on ? null : lo); setBudgetMax(on ? null : hi); }}>{l}</Chip>
-              );
-            })}
+            {BUDGET_CHIPS.map(([k, l]) => (
+              <Chip key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Chip>
+            ))}
           </div>
 
         </section>
@@ -2439,11 +2506,14 @@ function ProfilePage() {
   // first, but every child is listed and selectable — QA: "If I have two
   // children, only one is showing on the overview".
   const [journeyChildId, setJourneyChildId] = useState<string | null>(null);
-  const journeyChild = children.find((c) => c.id === journeyChildId) ?? children[0];
-  // Bookings/Past activities mix every child's classes together by default —
-  // QA asked for a per-child filter once there's more than one. "All" (null)
-  // shows the combined list, same as before this existed.
-  const [bookingsChildFilter, setBookingsChildFilter] = useState<string | null>(null);
+  // One per-child selection, shared by every tab that can honour it. null =
+  // "All children", which splits the lists out by child rather than merging.
+  const [childFilter, setChildFilter] = useState<string | null>(null);
+  // The child the journey panel and Overview suggestions describe: whoever the
+  // selector names, else whichever card was last clicked, else the first.
+  const journeyChild =
+    (childFilter ? children.find((c) => c.id === childFilter) : children.find((c) => c.id === journeyChildId)) ??
+    children[0];
   const journey = useJourney(journeyChild?.id);
   const { data: recsByChild } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
@@ -2467,13 +2537,14 @@ function ProfilePage() {
   function loadBookings() {
     supabase
       .from("bookings")
-      .select("id, status, created_at, child_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
+      .select("id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string;
           status: string;
           child_id: string | null;
+          package_purchase_id: string | null;
           activity_sessions: {
             starts_at: string;
             ends_at: string | null;
@@ -2503,6 +2574,7 @@ function ProfilePage() {
               venue: act?.address ?? "",
               activityId: s?.activity_id ?? null,
               childId: r.child_id ?? null,
+              packagePurchaseId: r.package_purchase_id ?? null,
               allowCancel: act?.allow_cancellation ?? true,
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
@@ -2629,7 +2701,7 @@ function ProfilePage() {
     (async () => {
       const { data } = await supabase
         .from("make_up_tokens")
-        .select("id, status, created_at, expires_at, origin_booking_id, providers(business_name)")
+        .select("id, status, created_at, expires_at, origin_booking_id, child_id, providers(business_name)")
         .order("created_at", { ascending: false });
       const rows = (data ?? []) as unknown as Array<{
         id: string;
@@ -2637,6 +2709,7 @@ function ProfilePage() {
         created_at: string;
         expires_at: string | null;
         origin_booking_id: string | null;
+        child_id: string | null;
         providers: { business_name: string } | null;
       }>;
       // Resolve the origin class slug so "Redeem" can link to its booking page.
@@ -2659,6 +2732,7 @@ function ProfilePage() {
           created_at: r.created_at,
           expires_at: r.expires_at,
           provider: r.providers?.business_name ?? "A provider",
+          childId: r.child_id,
           originSlug: r.origin_booking_id ? slugByBooking.get(r.origin_booking_id) ?? null : null,
         }))
       );
@@ -2715,11 +2789,31 @@ function ProfilePage() {
   const now = Date.now();
   const isPast = (b: BookingItem) =>
     b.status !== "cancelled" && !!b.startsAt && new Date(b.startsAt).getTime() < now;
-  const childFiltered = bookingsChildFilter
-    ? bookings.filter((b) => b.childId === bookingsChildFilter)
+  const childFiltered = childFilter
+    ? bookings.filter((b) => b.childId === childFilter)
     : bookings;
   const upcomingBookings = childFiltered.filter((b) => !isPast(b));
   const pastBookings = childFiltered.filter(isPast);
+  // "All children" with more than one child means split out, not merged.
+  const splitByChild = childFilter === null && children.length > 1;
+  // Overview: picking a child narrows the tab to them; "All children" keeps
+  // one card each, which is already split out.
+  const overviewChildren = childFilter ? children.filter((c) => c.id === childFilter) : children;
+  const filterChild = children.find((c) => c.id === childFilter) ?? null;
+  // Packs aren't bought for a particular child — any of them can spend a
+  // credit — so a pack belongs to a child once one of their bookings has used
+  // it, and an unspent pack belongs to all of them.
+  const packChildIds = (purchaseId: string) =>
+    new Set(bookings.filter((b) => b.packagePurchaseId === purchaseId && b.childId).map((b) => b.childId as string));
+  const packagesForChild = (childId: string | null) =>
+    childId === null
+      ? packages
+      : packages.filter((p) => {
+          const used = packChildIds(p.id);
+          return used.size === 0 || used.has(childId);
+        });
+  const visiblePackages = packagesForChild(childFilter);
+  const visibleTokens = childFilter ? tokens.filter((t) => t.childId === childFilter) : tokens;
 
   return (
     <PageShell active="/profile">
@@ -2782,7 +2876,9 @@ function ProfilePage() {
           <>
           {/* QA: "If I have two children, only one is showing on the overview".
               Every child gets their own card; the journey panel follows the
-              child whose card is selected. */}
+              child whose card is selected. The selector narrows the whole tab
+              to one child, or leaves every child's card showing. */}
+          <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} label="Overview for" />
           <div className="grid items-start gap-5 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card lg:grid-cols-[1fr_235px]">
             <div>
               {children.length === 0 ? (
@@ -2797,7 +2893,7 @@ function ProfilePage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {children.map((c) => {
+                  {overviewChildren.map((c) => {
                     const on = c.id === journeyChild?.id;
                     return (
                       <button
@@ -2813,7 +2909,7 @@ function ProfilePage() {
                             : "border-transparent"
                         }`}
                       >
-                        <AnimalAvatar seed={c.avatar_seed ?? c.name} kind="child" className="h-20 w-20 shrink-0 ring-4 ring-white shadow-soft" />
+                        <AnimalAvatar seed={c.avatar_seed ?? c.name} kind="child" gender={c.gender} className="h-20 w-20 shrink-0 ring-4 ring-white shadow-soft" />
                         <div className="min-w-0">
                           <h1 className="text-[26px] font-black leading-tight">{c.name}</h1>
                           <p className="mt-1 text-base font-semibold">{formatChildAge(c.date_of_birth)}</p>
@@ -2930,8 +3026,22 @@ function ProfilePage() {
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
-              <ChildFilterChips kids={children} value={bookingsChildFilter} onChange={setBookingsChildFilter} />
-              <BookingList items={upcomingBookings} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
+              <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              {splitByChild ? (
+                <div className="space-y-8">
+                  {groupByChild(upcomingBookings, children).map((g) => (
+                    <section key={g.key}>
+                      <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
+                      <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} isPlus={isPlus} />
+                    </section>
+                  ))}
+                  {upcomingBookings.length === 0 && (
+                    <BookingList items={[]} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
+                  )}
+                </div>
+              ) : (
+                <BookingList items={upcomingBookings} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
+              )}
             </div>
           )}
 
@@ -2939,7 +3049,8 @@ function ProfilePage() {
             <PastActivitiesTab
               items={pastBookings}
               onChanged={loadBookings}
-              filterChips={<ChildFilterChips kids={children} value={bookingsChildFilter} onChange={setBookingsChildFilter} />}
+              filterChips={<ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />}
+              groups={splitByChild ? groupByChild(pastBookings, children) : null}
             />
           )}
 
@@ -2952,12 +3063,18 @@ function ProfilePage() {
           {tab === "packages" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Packages</h1>
-              <p className="mt-1 text-sm font-semibold text-[#59658d]">Class packs you've bought through BabyBrain — each booking with that provider can use a credit. Packs bought directly with a provider won't appear here.</p>
-              {packages.length === 0 ? (
+              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Class packs you've bought through BabyBrain — each booking with that provider can use a credit. Packs bought directly with a provider won't appear here.</p>
+              <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              {filterChild && (
+                <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
+                  A pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus any still untouched.
+                </p>
+              )}
+              {visiblePackages.length === 0 ? (
                 <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
               ) : (
                 <div className="mt-4 space-y-3">
-                  {packages.map((p) => {
+                  {visiblePackages.map((p) => {
                     const clickable = p.status !== "expired" && p.remaining > 0;
                     const Card = clickable ? "a" : "div";
                     return (
@@ -3003,27 +3120,22 @@ function ProfilePage() {
           {tab === "makeup" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Make-up tokens</h1>
-              <p className="mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
-              {tokens.length === 0 ? (
+              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
+              <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              {visibleTokens.length === 0 ? (
                 <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
+              ) : splitByChild ? (
+                <div className="mt-4 space-y-8">
+                  {groupByChild(visibleTokens, children).map((g) => (
+                    <section key={g.key}>
+                      <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
+                      <div className="space-y-3">{g.items.map((t) => <TokenRow key={t.id} t={t} />)}</div>
+                    </section>
+                  ))}
+                </div>
               ) : (
                 <div className="mt-4 space-y-3">
-                  {tokens.map((t) => (
-                    <div key={t.id} className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate font-black">{t.provider}</h3>
-                        <p className="text-sm font-semibold text-[#59658d]">
-                          Issued {sgDay(t.created_at)}
-                          {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
-                        </p>
-                      </div>
-                      {t.status === "issued" && t.originSlug && (
-                        <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
-                      )}
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
-                    </div>
-                  ))}
+                  {visibleTokens.map((t) => <TokenRow key={t.id} t={t} />)}
                 </div>
               )}
             </div>
@@ -3038,6 +3150,12 @@ function ProfilePage() {
           {tab === "favorites" && isPlus && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Favourites</h1>
+              <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              {filterChild && (
+                <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
+                  Favourites are saved for your whole family rather than per child, so this list is the same for {filterChild.name}.
+                </p>
+              )}
               {favs.length === 0 ? (
                 <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
               ) : (
@@ -3287,7 +3405,19 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
  *  attended. QA: "Once time has passed for a class, it was still showing in
  *  bookings… Can we call this Past activities and have an attended and not
  *  attended section?" */
-function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingItem[]; onChanged: () => void; filterChips?: ReactNode }) {
+function PastActivitiesTab({
+  items,
+  onChanged,
+  filterChips,
+  groups,
+}: {
+  items: BookingItem[];
+  onChanged: () => void;
+  filterChips?: ReactNode;
+  /** Set when "All children" is chosen and there's more than one child: the
+   *  same three attendance sections, repeated under each child's name. */
+  groups?: { key: string; name: string; items: BookingItem[] }[] | null;
+}) {
   const [marks, setMarks] = useState<Record<string, "present" | "absent">>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3327,9 +3457,6 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
 
   // A completed booking counts as attended even if nobody ticked it.
   const statusOf = (b: BookingItem) => marks[b.id] ?? (b.status === "completed" ? "present" : null);
-  const attended = items.filter((b) => statusOf(b) === "present");
-  const notAttended = items.filter((b) => statusOf(b) === "absent");
-  const unmarked = items.filter((b) => statusOf(b) === null);
 
   function Row({ b }: { b: BookingItem }) {
     const state = statusOf(b);
@@ -3369,6 +3496,35 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
     );
   }
 
+  /** The three attendance sections for one list of classes. */
+  function Sections({ list }: { list: BookingItem[] }) {
+    const attended = list.filter((b) => statusOf(b) === "present");
+    const notAttended = list.filter((b) => statusOf(b) === "absent");
+    const unmarked = list.filter((b) => statusOf(b) === null);
+    return (
+      <div className="mt-4 space-y-6">
+        {unmarked.length > 0 && (
+          <section>
+            <h2 className="mb-2 text-sm font-black text-[#46527d]">Did you make it? ({unmarked.length})</h2>
+            <div className="space-y-3">{unmarked.map((b) => <Row key={b.id} b={b} />)}</div>
+          </section>
+        )}
+        <section>
+          <h2 className="mb-2 text-sm font-black text-[#46527d]">Attended ({attended.length})</h2>
+          {attended.length === 0
+            ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
+            : <div className="space-y-3">{attended.map((b) => <Row key={b.id} b={b} />)}</div>}
+        </section>
+        <section>
+          <h2 className="mb-2 text-sm font-black text-[#46527d]">Not attended ({notAttended.length})</h2>
+          {notAttended.length === 0
+            ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
+            : <div className="space-y-3">{notAttended.map((b) => <Row key={b.id} b={b} />)}</div>}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
@@ -3378,27 +3534,17 @@ function PastActivitiesTab({ items, onChanged, filterChips }: { items: BookingIt
 
       {items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
-      ) : (
-        <div className="mt-4 space-y-6">
-          {unmarked.length > 0 && (
-            <section>
-              <h2 className="mb-2 text-sm font-black text-[#46527d]">Did you make it? ({unmarked.length})</h2>
-              <div className="space-y-3">{unmarked.map((b) => <Row key={b.id} b={b} />)}</div>
+      ) : groups ? (
+        <div className="mt-4 space-y-8">
+          {groups.map((g) => (
+            <section key={g.key}>
+              <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
+              <Sections list={g.items} />
             </section>
-          )}
-          <section>
-            <h2 className="mb-2 text-sm font-black text-[#46527d]">Attended ({attended.length})</h2>
-            {attended.length === 0
-              ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
-              : <div className="space-y-3">{attended.map((b) => <Row key={b.id} b={b} />)}</div>}
-          </section>
-          <section>
-            <h2 className="mb-2 text-sm font-black text-[#46527d]">Not attended ({notAttended.length})</h2>
-            {notAttended.length === 0
-              ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
-              : <div className="space-y-3">{notAttended.map((b) => <Row key={b.id} b={b} />)}</div>}
-          </section>
+          ))}
         </div>
+      ) : (
+        <Sections list={items} />
       )}
     </div>
   );
@@ -3914,7 +4060,7 @@ function TermsPage() {
     },
     {
       title: "16. Reviews & Moderation",
-      body: "You may review classes you have booked. Reviews must be honest and lawful. We may moderate or remove content that is abusive, misleading, or violates these Terms.",
+      body: "You may review any class listed on BabyBrain, whether or not you booked it through us. Reviews must be honest, first-hand and lawful. We may moderate or remove content that is abusive, misleading, or violates these Terms.",
     },
     {
       title: "17. Messaging Rules",
@@ -4274,6 +4420,28 @@ function BookingPage() {
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>("single");
+  // The provider's own consents / waivers / disclosures for this class, and
+  // which of them the parent has ticked. QA: the vendor's "require medical
+  // disclosure" switch changed nothing on the parent's side, and each vendor
+  // wants their own bespoke paperwork accepted before a booking stands.
+  const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
+  const [acceptedPolicies, setAcceptedPolicies] = useState<string[]>([]);
+  const [medicalNote, setMedicalNote] = useState("");
+
+  useEffect(() => {
+    if (!activity?.provider_id) return;
+    supabase
+      .from("provider_policies")
+      .select("id, title, body, document_url, required, activity_id")
+      .eq("provider_id", activity.provider_id)
+      .eq("active", true)
+      .order("sort_order")
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as ProviderPolicy[];
+        // A policy is either provider-wide (no activity) or pinned to this class.
+        setPolicies(rows.filter((p) => !p.activity_id || p.activity_id === activity.id));
+      });
+  }, [activity?.provider_id, activity?.id]);
 
   // Packs this provider sells that apply to this class (or to all of theirs).
   useEffect(() => {
@@ -4391,6 +4559,7 @@ function BookingPage() {
       const { data, error } = await supabase.rpc("redeem_make_up_token", {
         p_token_id: redeemToken,
         p_session_id: sessionId,
+        p_policies: acceptedPolicies,
       });
       setBusy(false);
       if (error) {
@@ -4401,7 +4570,15 @@ function BookingPage() {
     } else {
       const { data, error } = await supabase
         .from("bookings")
-        .insert({ user_id: auth.user.id, session_id: sessionId, child_id: bookChildId })
+        .insert({
+          user_id: auth.user.id,
+          session_id: sessionId,
+          child_id: bookChildId,
+          // Enforced again by the `booking_policy_gate` trigger, so a booking
+          // can never exist without the provider's required consents.
+          policies_accepted: acceptedPolicies,
+          ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
+        })
         .select("id, status")
         .single();
       if (error) {
@@ -4447,6 +4624,10 @@ function BookingPage() {
     const { data, error } = await supabase.rpc("redeem_package_credit", {
       p_purchase_id: packageCredit.id,
       p_session_id: sessionId,
+      // Was hard-coded to null server-side, which is why a class booked with
+      // a pack credit showed up as "Guest" on the vendor's roster.
+      p_child_id: bookChildId,
+      p_policies: acceptedPolicies,
     });
     setBusy(false);
     if (error) { setErr(error.message.replace(/^.*?:\s*/, "")); return; }
@@ -4465,6 +4646,9 @@ function BookingPage() {
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
     if (!auth) { window.location.href = "/login"; return; }
+    // Buying a pack books the selected class too, so the same paperwork applies.
+    const consent = consentProblem();
+    if (consent) { setErr(consent); return; }
     if (childAgeMismatch) {
       setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
       return;
@@ -4489,9 +4673,29 @@ function BookingPage() {
     }
   }
 
+  const requiredPolicies = policies.filter((p) => p.required);
+  const missingPolicies = requiredPolicies.filter((p) => !acceptedPolicies.includes(p.id));
+  const needsMedical = Boolean(activity?.requires_medical_disclosure);
+
+  /** Everything the provider insists on before this booking can go through. */
+  function consentProblem(): string | null {
+    if (missingPolicies.length) {
+      return `Please read and accept ${missingPolicies.map((p) => `"${p.title}"`).join(", ")} before booking.`;
+    }
+    if (needsMedical && !medicalNote.trim()) {
+      return "This provider asks for a medical and health disclosure before the class — add it above (write \u201cnone\u201d if there is nothing to declare).";
+    }
+    return null;
+  }
+
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
     setErr(null);
+    const consent = consentProblem();
+    if (consent) {
+      setErr(consent);
+      return;
+    }
     if (childAgeMismatch) {
       setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
       return;
@@ -4594,7 +4798,7 @@ function BookingPage() {
                               onClick={() => setChildId(k.id)}
                               className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}
                             >
-                              <AnimalAvatar seed={k.name} kind="child" className="h-6 w-6" /> {k.name}
+                              <AnimalAvatar seed={k.avatar_seed ?? k.name} kind="child" gender={k.gender} className="h-6 w-6" /> {k.name}
                             </button>
                           ))}
                         </div>
@@ -4653,6 +4857,75 @@ function BookingPage() {
                             {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
                           </p>
                         )}
+                      </section>
+                    )}
+
+                    {/* The provider's own paperwork. Each vendor writes their
+                        own consents, waivers and disclosures, so this section
+                        only appears when they have some. */}
+                    {(policies.length > 0 || needsMedical) && (
+                      <section>
+                        <h3 className="mb-2 text-xl font-black">{redeemToken ? "4" : "5"}. Provider terms</h3>
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">
+                          {activity?.provider_name ?? "This provider"} asks you to read and accept the following before the class.
+                        </p>
+                        <div className="space-y-3">
+                          {policies.map((p) => {
+                            const on = acceptedPolicies.includes(p.id);
+                            return (
+                              <label
+                                key={p.id}
+                                className={`flex cursor-pointer gap-3 rounded-[12px] border-2 p-4 transition ${on ? "border-baby-blue bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  onChange={() =>
+                                    setAcceptedPolicies((xs) => (on ? xs.filter((x) => x !== p.id) : [...xs, p.id]))
+                                  }
+                                  className="mt-1 h-4 w-4 shrink-0 accent-[#FA5D93]"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block font-black">
+                                    {p.title}
+                                    {p.required ? <span className="ml-1 text-baby-pink">*</span> : (
+                                      <span className="ml-2 rounded-full bg-[#F4EFF0] px-2 py-0.5 text-[10px] font-bold text-[#6D748D]">Optional</span>
+                                    )}
+                                  </span>
+                                  {p.body && (
+                                    <span className="mt-1 block whitespace-pre-wrap text-sm font-semibold leading-6 text-[#4a5685]">{p.body}</span>
+                                  )}
+                                  {p.document_url && (
+                                    <a
+                                      href={p.document_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="mt-1 inline-flex items-center gap-1 text-sm font-black text-palette-blue underline"
+                                    >
+                                      <Icon name="open" className="h-3.5 w-3.5" /> Read the full document
+                                    </a>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                          {needsMedical && (
+                            <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                              <p className="font-black">Medical &amp; health disclosure <span className="text-baby-pink">*</span></p>
+                              <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                                Anything the provider should know — allergies, conditions, medication. Write &ldquo;none&rdquo; if there is nothing to declare.
+                              </p>
+                              <textarea
+                                value={medicalNote}
+                                onChange={(e) => setMedicalNote(e.target.value)}
+                                rows={3}
+                                className="mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
+                                placeholder="e.g. mild peanut allergy — carries an EpiPen"
+                              />
+                            </div>
+                          )}
+                        </div>
                       </section>
                     )}
                   </>
@@ -4965,7 +5238,11 @@ function ResetPasswordPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (password !== confirm) return setError("Passwords don't match.");
-    if (password.length < 6) return setError("Use at least 6 characters.");
+    // QA: a reset let through any six characters, so a password that would
+    // have been rejected at sign-up could be set here and then used to log in.
+    // Same rules, same wording, both ends.
+    const pwProblem = passwordError(password);
+    if (pwProblem) return setError(pwProblem);
     setBusy(true);
     setError(null);
     const { error } = await updatePassword(password);
@@ -4996,6 +5273,18 @@ function ResetPasswordPage() {
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
                   <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+                  {/* The same live checklist the sign-up form shows, so the
+                      rules are visible before the form is submitted. */}
+                  <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
+                    {PASSWORD_RULES.map((rule) => {
+                      const met = rule.test(password);
+                      return (
+                        <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
+                          {met ? "✓" : "•"} {rule.label}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-black">Confirm password</label>

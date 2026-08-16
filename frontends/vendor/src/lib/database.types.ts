@@ -609,6 +609,22 @@ export type Database = {
         Update: { status?: 'present' | 'absent' | 'late'; note?: string | null; marked_by?: string | null; marked_at?: string };
         Relationships: [];
       };
+      provider_policies: {
+        Row: {
+          id: string; provider_id: string; activity_id: string | null; title: string;
+          body: string; document_url: string | null; required: boolean; active: boolean;
+          sort_order: number; created_at: string; updated_at: string;
+        };
+        Insert: {
+          provider_id: string; activity_id?: string | null; title: string; body?: string;
+          document_url?: string | null; required?: boolean; active?: boolean; sort_order?: number;
+        };
+        Update: {
+          activity_id?: string | null; title?: string; body?: string; document_url?: string | null;
+          required?: boolean; active?: boolean; sort_order?: number;
+        };
+        Relationships: [];
+      };
       packages: {
         Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
         Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
@@ -751,6 +767,20 @@ export type Database = {
           skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
           is_manual: boolean;
           user_id: string | null;
+          /** Falls back to this when there's no child on the booking. */
+          parent_name: string | null;
+          medical_disclosure: string | null;
+          /** How many of the provider's waivers this parent ticked. */
+          policies_accepted: number;
+        }[];
+      };
+      provider_trial_conversion: {
+        Args: { p_provider: string; p_days?: number };
+        Returns: {
+          trials: number;
+          converted: number;
+          conversion_rate: number | null;
+          median_days_to_convert: number | null;
         }[];
       };
       provider_recent_bookings: {
@@ -882,6 +912,8 @@ export type Booking = Database['public']['Tables']['bookings']['Row'];
 export type Provider = Database['public']['Tables']['providers']['Row'];
 export type ProviderMember = Database['public']['Tables']['provider_members']['Row'];
 export type ProviderLocation = Database['public']['Tables']['provider_locations']['Row'];
+/** A vendor's own consent / waiver / disclosure, accepted by parents at booking. */
+export type ProviderPolicy = Database['public']['Tables']['provider_policies']['Row'];
 export type Attendance = Database['public']['Tables']['attendance']['Row'];
 export type MakeUpToken = Database['public']['Tables']['make_up_tokens']['Row'];
 export type Subscription = Database['public']['Tables']['subscriptions']['Row'];

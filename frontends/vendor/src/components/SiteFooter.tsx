@@ -7,7 +7,9 @@ import { BrandLogo } from '@/components/BrandLogo';
  * Shown on the public partner pages and beneath the signed-in portal.
  */
 
-export const SUPPORT_EMAIL = 'partners@babybrain.sg';
+// QA: "On contact us page, e-mail takes you to send an e-mail to
+// partners@babybrain.sg which doesn't exist — should go to hello@babybrain.sg."
+export const SUPPORT_EMAIL = 'hello@babybrain.sg';
 export const SUPPORT_PHONE = '+65 8996 6716';
 export const phoneDigits = (p: string) => p.replace(/[^\d]/g, '');
 

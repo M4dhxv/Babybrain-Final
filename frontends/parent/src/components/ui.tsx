@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { resolveAvatar } from "../lib/avatars";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
@@ -6,6 +7,54 @@ import { useActivities } from "../lib/useActivities";
 import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
+
+/** "That's a Plus feature" prompt.
+ *
+ *  QA: tapping the heart on the free plan looked like it worked but the
+ *  activity never appeared under Favourites. Free parents get this instead. */
+export function PlusFeatureDialog({
+  title = "Favourites are a Plus feature",
+  copy = "Save the classes you love and come back to them any time — on your own list and map.",
+  onClose,
+}: {
+  title?: string;
+  copy?: string;
+  onClose: () => void;
+}) {
+  // Through a portal: the heart lives inside the card's own <a>, and a link
+  // nested in a link would hand the "Upgrade" click to the card instead.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-[380px] rounded-[16px] bg-white p-6 text-center shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink">
+          <Icon name="heart" className="h-7 w-7" />
+        </span>
+        <h2 className="mt-4 text-lg font-black">{title}</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">{copy}</p>
+        <p className="mt-3 text-sm font-black text-palette-blue">Upgrade for just SGD 9 per month.</p>
+        <div className="mt-5 flex flex-col gap-2">
+          <Button href="/pricing" className="w-full justify-center">Upgrade to Plus</Button>
+          <Button type="button" variant="outline" className="w-full justify-center" onClick={onClose}>
+            Not now
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 /** Heart button that saves/unsaves an activity to the parent's favorites.
  *  Guards its own click so it works inside a card link. */
@@ -19,22 +68,28 @@ export function SaveHeart({
   onToggled?: (saved: boolean) => void;
 }) {
   const fav = useFavorite(activityId, onToggled);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   return (
-    <button
-      type="button"
-      aria-label={fav.saved ? "Saved to favourites" : "Save to favourites"}
-      aria-pressed={fav.saved}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        fav.toggle();
-      }}
-      className={`grid place-items-center rounded-full shadow-soft transition ${
-        fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"
-      } ${className}`}
-    >
-      <Icon name="heart" className="h-4.5 w-4.5" />
-    </button>
+    <>
+      <button
+        type="button"
+        aria-label={fav.saved ? "Saved to favourites" : "Save to favourites"}
+        aria-pressed={fav.saved}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          fav.toggle().then((ok) => {
+            if (!ok) setShowUpgrade(true);
+          });
+        }}
+        className={`grid place-items-center rounded-full shadow-soft transition ${
+          fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"
+        } ${className}`}
+      >
+        <Icon name="heart" className="h-4.5 w-4.5" />
+      </button>
+      {showUpgrade && <PlusFeatureDialog onClose={() => setShowUpgrade(false)} />}
+    </>
   );
 }
 
@@ -182,14 +237,17 @@ export function Icon({
 export function AnimalAvatar({
   seed,
   kind = "parent",
+  gender,
   className = "h-11 w-11",
 }: {
   seed?: string | null;
   /** `kind` picks the catalogue: children get babies and toddlers, parents adults. */
   kind?: "child" | "parent";
+  /** Without a picked avatar, a stated gender chooses a girl/boy face. */
+  gender?: string | null;
   className?: string;
 }) {
-  const { emoji, background, label } = resolveAvatar(seed, kind);
+  const { emoji, background, label } = resolveAvatar(seed, kind, gender);
   return (
     <span
       role="img"

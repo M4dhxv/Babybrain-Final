@@ -82,6 +82,23 @@ function hash(input: string): number {
   return Math.abs(h);
 }
 
+/** The faces a stated gender should default to, or the whole catalogue when
+ *  it's unstated (or "prefer not to say"). Seeds are `kind:face-label:tone`,
+ *  so the face is the middle segment. */
+function genderPool(
+  catalogue: AvatarOption[],
+  kind: "child" | "parent",
+  gender?: string | null
+): AvatarOption[] {
+  const face =
+    gender === "female" ? (kind === "child" ? "girl" : "woman")
+      : gender === "male" ? (kind === "child" ? "boy" : "man")
+        : null;
+  if (!face) return catalogue;
+  const pool = catalogue.filter((o) => o.seed.split(":")[1] === face);
+  return pool.length ? pool : catalogue;
+}
+
 /** Resolve a stored seed (or any string, e.g. a name) to a picture.
  *
  *  A seed from the picker maps to exactly that option; anything else falls back
@@ -89,12 +106,18 @@ function hash(input: string): number {
  *  stable avatar instead of a generic blank. */
 export function resolveAvatar(
   seed: string | null | undefined,
-  kind: "child" | "parent"
+  kind: "child" | "parent",
+  gender?: string | null
 ): { emoji: string; background: string; label: string } {
   const catalogue = kind === "child" ? CHILD_AVATARS : PARENT_AVATARS;
   const key = (seed && seed.trim()) || "babybrain";
   const chosen = catalogue.find((o) => o.seed === key);
-  const option = chosen ?? catalogue[hash(`${kind}:${key}`) % catalogue.length];
+  // QA: "the avatar should automatically go to a little boy or little girl if
+  // gender is selected". Only when they haven't picked one themselves — an
+  // explicit choice from the picker always wins. Skin tone still varies, so
+  // the default isn't the same face for every child.
+  const pool = chosen ? catalogue : genderPool(catalogue, kind, gender);
+  const option = chosen ?? pool[hash(`${kind}:${key}`) % pool.length];
   return {
     emoji: option.emoji,
     background: AVATAR_BACKGROUNDS[hash(key) % AVATAR_BACKGROUNDS.length],

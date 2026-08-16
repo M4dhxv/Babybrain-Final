@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
-  Clock, Baby, Info, Check, X, Save, Gift,
+  Clock, Baby, Info, Check, X, Save, Gift, FileCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,6 +26,7 @@ type RosterRow = {
   attendance_status: 'present' | 'absent' | 'late' | null;
   child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
   is_manual: boolean; user_id: string | null;
+  parent_name: string | null; medical_disclosure: string | null; policies_accepted: number;
 };
 
 export default function BookingsPage() {
@@ -325,7 +326,11 @@ export default function BookingsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-gray-900 text-sm">{b.child_name}</span>
-                    <div className="text-xs text-gray-500">{ageLabel(b.child_age_months)}</div>
+                    <div className="text-xs text-gray-500">
+                      {[ageLabel(b.child_age_months), b.parent_name ? `Parent: ${b.parent_name}` : '']
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-100 text-purple-700">Medical Disclosure</span>}
                       {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700">Manual</span>}
@@ -359,12 +364,29 @@ export default function BookingsPage() {
                       <div className="text-xs text-gray-500 mb-1">Payment</div>
                       <div className="text-sm text-gray-700 capitalize">{sel.payment_status}</div>
                     </div>
+                    {sel.parent_name && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Booked by</div>
+                        <div className="text-sm text-gray-700">{sel.parent_name}</div>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Medical Disclosure</div>
-                      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg', sel.has_medical ? 'bg-purple-50' : 'bg-gray-50')}>
-                        <Shield className={cn('w-4 h-4', sel.has_medical ? 'text-purple-600' : 'text-gray-400')} />
-                        <span className={cn('text-sm', sel.has_medical ? 'text-purple-700' : 'text-gray-500')}>
-                          {sel.has_medical ? 'On file' : 'None provided'}
+                      <div className={cn('flex items-start gap-2 px-3 py-2 rounded-lg', sel.has_medical ? 'bg-purple-50' : 'bg-gray-50')}>
+                        <Shield className={cn('w-4 h-4 mt-0.5 shrink-0', sel.has_medical ? 'text-purple-600' : 'text-gray-400')} />
+                        <span className={cn('text-sm whitespace-pre-wrap', sel.has_medical ? 'text-purple-700' : 'text-gray-500')}>
+                          {sel.medical_disclosure || (sel.has_medical ? 'On file' : 'None provided')}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-2">Waivers &amp; consents</div>
+                      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg', sel.policies_accepted > 0 ? 'bg-green-50' : 'bg-gray-50')}>
+                        <FileCheck className={cn('w-4 h-4', sel.policies_accepted > 0 ? 'text-green-600' : 'text-gray-400')} />
+                        <span className={cn('text-sm', sel.policies_accepted > 0 ? 'text-green-700' : 'text-gray-500')}>
+                          {sel.policies_accepted > 0
+                            ? `${sel.policies_accepted} accepted at booking`
+                            : sel.is_manual ? 'Manual booking — collected offline' : 'None on file'}
                         </span>
                       </div>
                     </div>

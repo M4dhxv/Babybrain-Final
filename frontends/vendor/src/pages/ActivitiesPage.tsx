@@ -724,7 +724,10 @@ export default function ActivitiesPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
-                <div className="text-xs text-gray-500">Parents must complete disclosures and consents before booking</div>
+                <div className="text-xs text-gray-500">
+                  Parents must fill in a health declaration before this class can be booked. For your own
+                  waivers and consents, use Settings → Waivers &amp; Consents.
+                </div>
               </div>
               <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#C90044]" />
             </div>

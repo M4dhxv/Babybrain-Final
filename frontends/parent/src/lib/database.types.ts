@@ -453,6 +453,9 @@ export type Database = {
           status: BookingStatus;
           waitlist_position: number | null;
           medical_disclosure: string | null;
+          package_purchase_id: string | null;
+          /** provider_policies ids the parent ticked at booking time. */
+          policies_accepted: string[];
           payment_status: PaymentStatus;
           amount: number | null;
           stripe_payment_intent: string | null;
@@ -467,6 +470,7 @@ export type Database = {
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
+          policies_accepted?: string[];
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {
@@ -621,6 +625,31 @@ export type Database = {
         Update: { status?: 'present' | 'absent' | 'late'; note?: string | null };
         Relationships: [];
       };
+      provider_policies: {
+        Row: {
+          id: string; provider_id: string; activity_id: string | null; title: string;
+          body: string; document_url: string | null; required: boolean; active: boolean;
+          sort_order: number; created_at: string; updated_at: string;
+        };
+        Insert: {
+          provider_id: string; activity_id?: string | null; title: string; body?: string;
+          document_url?: string | null; required?: boolean; active?: boolean; sort_order?: number;
+        };
+        Update: {
+          activity_id?: string | null; title?: string; body?: string; document_url?: string | null;
+          required?: boolean; active?: boolean; sort_order?: number;
+        };
+        Relationships: [];
+      };
+      booking_policy_acceptances: {
+        Row: {
+          id: string; booking_id: string; policy_id: string; user_id: string | null;
+          policy_title: string; accepted_at: string;
+        };
+        Insert: { booking_id: string; policy_id: string; user_id?: string | null; policy_title?: string };
+        Update: never;
+        Relationships: [];
+      };
       packages: {
         Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
         Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
@@ -739,11 +768,14 @@ export type Database = {
     Views: { [_ in never]: never };
     Functions: {
       redeem_make_up_token: {
-        Args: { p_token_id: string; p_session_id: string };
+        Args: { p_token_id: string; p_session_id: string; p_policies?: string[] };
         Returns: string;
       };
       redeem_package_credit: {
-        Args: { p_purchase_id: string; p_session_id: string };
+        Args: {
+          p_purchase_id: string; p_session_id: string;
+          p_child_id?: string | null; p_policies?: string[];
+        };
         Returns: string;
       };
       cancel_booking: {
@@ -847,6 +879,8 @@ export type ActivityCategory = Database['public']['Tables']['activity_categories
 export type Activity = Database['public']['Tables']['activities']['Row'];
 export type ActivitySession = Database['public']['Tables']['activity_sessions']['Row'];
 export type Favorite = Database['public']['Tables']['favorites']['Row'];
+/** A vendor's own consent / waiver / disclosure, shown at booking. */
+export type ProviderPolicy = Database['public']['Tables']['provider_policies']['Row'];
 export type Review = Database['public']['Tables']['reviews']['Row'];
 export type UserRecommendation = Database['public']['Tables']['user_recommendations']['Row'];
 export type AppNotification = Database['public']['Tables']['notifications']['Row'];

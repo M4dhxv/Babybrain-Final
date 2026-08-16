@@ -10,12 +10,16 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
-import type { ProviderLocation, VendorCategory } from '@/lib/database.types';
+import type { ProviderLocation, ProviderPolicy, VendorCategory } from '@/lib/database.types';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'locations', label: 'Locations', icon: MapPin },
   { id: 'team', label: 'Team', icon: Users },
+  // QA: "each vendor will have their own consents, waivers, disclosures they
+  // want accepted so need a way to make this bespoke" + "there needs to be an
+  // option to toggle on and upload the relevant material".
+  { id: 'policies', label: 'Waivers & Consents', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: Shield },
 ];
 
@@ -332,6 +336,12 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {activeTab === 'policies' && (
+          <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
+            <PoliciesManager provider={provider} canManage={canManage} />
+          </div>
+        )}
+
         {activeTab === 'team' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center gap-3 mb-5">
@@ -622,6 +632,224 @@ function LocationsManager({
               {saving ? 'Saving…' : 'Save location'}
             </Button>
             <Button variant="outline" onClick={() => { setShowForm(false); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Waivers, consents and disclosures the vendor writes themselves.
+ *
+ * QA (11/08): the "require medical disclosure" switch on an activity changed
+ * nothing on the parent's side, and the founder noted it "won't always be
+ * medical disclosures — each vendor will have their own consents, waivers,
+ * disclosures they want accepted so need a way to make this bespoke".
+ *
+ * Each entry is either provider-wide or pinned to one class, carries the
+ * wording parents read (and optionally a document they can open), and is
+ * either required — a tick-box that blocks the booking until it's ticked,
+ * enforced by a database trigger, not just the UI — or informational.
+ */
+function PoliciesManager({
+  provider, canManage,
+}: {
+  provider: { id: string } | null; canManage: boolean;
+}) {
+  const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
+  const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const emptyForm = { title: '', body: '', document_url: '', required: true, activity_id: '' };
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    if (!provider) return;
+    const [{ data: rows }, { data: acts }] = await Promise.all([
+      supabase
+        .from('provider_policies')
+        .select('*')
+        .eq('provider_id', provider.id)
+        .order('sort_order')
+        .order('created_at'),
+      supabase.from('activities').select('id, title').eq('provider_id', provider.id).order('title'),
+    ]);
+    setPolicies((rows ?? []) as ProviderPolicy[]);
+    setActivities((acts ?? []) as { id: string; title: string }[]);
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+
+  async function uploadDocument(file: File) {
+    if (!provider) return;
+    setUploading(true);
+    setError(null);
+    const path = `${provider.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
+    const { error: err } = await supabase.storage.from('provider-policies').upload(path, file, { upsert: true });
+    setUploading(false);
+    if (err) { setError(`Upload failed: ${err.message}`); return; }
+    const { data } = supabase.storage.from('provider-policies').getPublicUrl(path);
+    setForm((f) => ({ ...f, document_url: data.publicUrl }));
+  }
+
+  async function save() {
+    if (!provider) return;
+    if (!form.title.trim()) { setError('Give it a title parents will recognise.'); return; }
+    setSaving(true);
+    setError(null);
+    const fields = {
+      title: form.title.trim(),
+      body: form.body.trim(),
+      document_url: form.document_url.trim() || null,
+      required: form.required,
+      activity_id: form.activity_id || null,
+    };
+    const { error: err } = editingId
+      ? await supabase.from('provider_policies').update(fields).eq('id', editingId)
+      : await supabase.from('provider_policies').insert({ provider_id: provider.id, ...fields });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    setForm(emptyForm);
+    setShowForm(false);
+    setEditingId(null);
+    load();
+  }
+
+  function startEdit(p: ProviderPolicy) {
+    setEditingId(p.id);
+    setShowForm(true);
+    setError(null);
+    setForm({
+      title: p.title,
+      body: p.body ?? '',
+      document_url: p.document_url ?? '',
+      required: p.required,
+      activity_id: p.activity_id ?? '',
+    });
+  }
+
+  /* Deactivating rather than deleting: a policy that has already gated
+     bookings is part of their record, and the acceptance rows point at it. */
+  async function setActive(id: string, active: boolean) {
+    await supabase.from('provider_policies').update({ active }).eq('id', id);
+    load();
+  }
+
+  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><FileText className="w-5 h-5 text-amber-600" /></div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Waivers &amp; Consents</h3>
+            <p className="text-xs text-gray-500">Parents accept these before their booking is confirmed</p>
+          </div>
+        </div>
+        {canManage && !showForm && (
+          <Button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); }} className="gradient-primary text-white rounded-xl hover:opacity-90">
+            <Plus className="w-4 h-4 mr-1" /> Add
+          </Button>
+        )}
+      </div>
+
+      {policies.length === 0 && !showForm && (
+        <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+          Nothing added yet. Add a waiver, photo consent, health declaration or house rules and every parent must
+          tick it before they can book.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {policies.map((p) => (
+          <div key={p.id} className={cn('rounded-xl border p-4', p.active ? 'border-gray-200' : 'border-dashed border-gray-300 bg-gray-50 opacity-70')}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900">
+                  {p.title}
+                  <span className={cn('ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
+                    {p.required ? 'Required to book' : 'Optional'}
+                  </span>
+                  {!p.active && <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Off</span>}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {p.activity_id
+                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one class'}`
+                    : 'All of your classes'}
+                </p>
+                {p.body && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{p.body}</p>}
+                {p.document_url && (
+                  <a href={p.document_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-medium text-[#C90044] underline">
+                    View uploaded document
+                  </a>
+                )}
+              </div>
+              {canManage && (
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setActive(p.id, !p.active)}>
+                    {p.active ? 'Turn off' : 'Turn on'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && canManage && (
+        <div className="mt-5 rounded-xl border border-gray-200 p-4">
+          {error && <p className="mb-3 text-sm font-medium text-red-600">{error}</p>}
+          <div className="space-y-3 mb-4">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Title</label>
+              <input className={inputCls} placeholder="e.g. Liability waiver" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">What parents read</label>
+              <textarea rows={4} className={inputCls} placeholder="The wording a parent ticks to accept." value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
+              <select className={inputCls} value={form.activity_id} onChange={(e) => setForm({ ...form, activity_id: e.target.value })}>
+                <option value="">All of my classes</option>
+                {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Document (optional)</label>
+              <div className="flex items-center gap-3">
+                <label className="cursor-pointer rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                  <ImageUp className="mr-1 inline w-4 h-4" />
+                  {uploading ? 'Uploading…' : 'Upload PDF'}
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDocument(f); }}
+                  />
+                </label>
+                {form.document_url && (
+                  <a href={form.document_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-[#C90044] underline">Uploaded ✓</a>
+                )}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={form.required} onChange={(e) => setForm({ ...form, required: e.target.checked })} className="h-4 w-4 accent-[#C90044]" />
+              Parents must accept this before they can book
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={save} disabled={saving || !form.title.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add'}
+            </Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
           </div>
         </div>
       )}

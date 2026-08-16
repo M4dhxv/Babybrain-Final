@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Crown, TrendingUp, Users, CalendarDays, Eye, Star } from 'lucide-react';
+import { Crown, TrendingUp, Users, CalendarDays, Eye, Star, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +48,12 @@ export default function InsightsPage() {
   const [topDays, setTopDays] = useState<Row[]>([]);
   const [topTimes, setTopTimes] = useState<Row[]>([]);
   const [topLocations, setTopLocations] = useState<Row[]>([]);
+  // QA (vendor): "Insights missing — if there is a trial option, how many
+  // convert into package sign ups."
+  const [trial, setTrial] = useState<{
+    trials: number; converted: number;
+    conversion_rate: number | null; median_days_to_convert: number | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!provider || !unlocked) { setLoading(false); return; }
@@ -108,6 +114,12 @@ export default function InsightsPage() {
         setTopTimes(top(acc.time));
         setTopLocations(top(acc.loc));
       }
+      const { data: conv } = await supabase.rpc('provider_trial_conversion', {
+        p_provider: provider.id,
+        p_days: 90,
+      });
+      setTrial((conv?.[0] as typeof trial) ?? null);
+
       setLoading(false);
     })();
   }, [provider, unlocked]);
@@ -177,6 +189,40 @@ export default function InsightsPage() {
             <div className="mt-2 text-2xl font-bold text-gray-900">{loading ? '…' : s.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Trials look further back than 30 days: a parent who tries a class
+          rarely buys a pack the same month. */}
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-gray-900">
+          <Repeat className="h-4 w-4 text-purple-600" /> Trial → package conversion
+        </h3>
+        <p className="mb-4 text-xs text-gray-500">
+          Parents whose first booking with you was paid for on its own, and how many went on to buy a
+          class pack. Last 90 days.
+        </p>
+        {loading ? (
+          <p className="text-sm text-gray-400">…</p>
+        ) : !trial || trial.trials === 0 ? (
+          <p className="text-sm text-gray-400">No first-time bookings in the last 90 days yet.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: 'Trials', value: String(trial.trials) },
+              { label: 'Bought a pack', value: String(trial.converted) },
+              { label: 'Conversion', value: trial.conversion_rate != null ? `${trial.conversion_rate}%` : '—' },
+              {
+                label: 'Typical time to buy',
+                value: trial.median_days_to_convert != null ? `${trial.median_days_to_convert} days` : '—',
+              },
+            ].map((s) => (
+              <div key={s.label}>
+                <div className="text-xs font-medium text-gray-500">{s.label}</div>
+                <div className="mt-1 text-2xl font-bold text-gray-900">{s.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

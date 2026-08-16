@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   }
   if (claim.attempts >= MAX_ATTEMPTS) {
     return NextResponse.json(
-      { error: 'Too many attempts. Request a new code, or email partners@babybrain.sg.' },
+      { error: 'Too many attempts. Request a new code, or email hello@babybrain.sg.' },
       { status: 429 }
     );
   }

@@ -183,11 +183,22 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
   return { saved, toggle, busy, authed: Boolean(session) };
 }
 
-/** Favourite toggle for the signed-in parent. */
+/** Favourite toggle for the signed-in parent.
+ *
+ *  QA: "On free plan, I'm able to click the heart button but it doesn't save
+ *  to favourites as [it's a] plus feature — should have a pop up." The row was
+ *  in fact being written, but the Favourites tab that shows it is Plus-only,
+ *  so a free parent saw the heart fill and then found nothing on their list.
+ *  Free parents now get told before anything is written; `locked` is what the
+ *  heart uses to open the upgrade prompt. */
 export function useFavorite(activityId: string | undefined, onToggled?: (saved: boolean) => void) {
   const { session } = useAuth();
+  const { isPlus, loading: planLoading } = usePlan();
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Never lock while the plan is still in flight — a Plus parent shouldn't be
+  // shown an upgrade prompt because the request hadn't landed yet.
+  const locked = Boolean(session) && !planLoading && !isPlus;
 
   useEffect(() => {
     if (!session || !activityId) return;
@@ -200,12 +211,14 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
       .then(({ data }) => setSaved(Boolean(data)));
   }, [session, activityId]);
 
-  async function toggle() {
-    if (!activityId) return;
+  /** Returns false when the click was refused because the parent is on free. */
+  async function toggle(): Promise<boolean> {
+    if (!activityId) return true;
     if (!session) {
       window.location.href = "/login";
-      return;
+      return true;
     }
+    if (locked) return false;
     setBusy(true);
     if (saved) {
       await supabase.from("favorites").delete().eq("user_id", session.user.id).eq("activity_id", activityId);
@@ -217,9 +230,10 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
       onToggled?.(true);
     }
     setBusy(false);
+    return true;
   }
 
-  return { saved, toggle, busy, authed: Boolean(session) };
+  return { saved, toggle, busy, locked, authed: Boolean(session) };
 }
 
 export interface ChildRecommendations {
@@ -252,18 +266,33 @@ export function useRecommendations(children: Child[]) {
             // Explore list, these rows don't go through `search_activities`
             // (which derives duration_mins server-side), and `activities` has
             // no duration column of its own.
-            .select("id, score, reasons, activities(*, activity_sessions(starts_at, ends_at))")
+            //
+            // QA: "the activity type label for the pop outs under home and
+            // suggested activities are incorrect… should be the same as under
+            // explore". `activities` only carries `category_id`, so without
+            // this join `toCard` had nothing to print and the card rendered an
+            // empty category pill where Explore shows a real one.
+            .select(
+              "id, score, reasons, activities(*, activity_categories(name), activity_sessions(starts_at, ends_at))"
+            )
             .eq("child_id", child.id)
             .order("score", { ascending: false })
             .limit(8);
           return {
             child,
-            recs: (recs ?? []).map((r) => ({
-              id: r.id,
-              score: r.score,
-              reasons: r.reasons,
-              activity: (r.activities as unknown as ActivityRow) ?? null,
-            })),
+            recs: (recs ?? []).map((r) => {
+              const act = (r.activities as unknown as
+                | (ActivityRow & { activity_categories?: { name: string } | null })
+                | null) ?? null;
+              return {
+                id: r.id,
+                score: r.score,
+                reasons: r.reasons,
+                activity: act
+                  ? { ...act, category_name: act.activity_categories?.name ?? undefined }
+                  : null,
+              };
+            }),
           };
         })
       );
