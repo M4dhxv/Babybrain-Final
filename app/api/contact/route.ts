@@ -115,7 +115,7 @@ export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const heading = subject?.trim() ? esc(subject.trim()) : 'New contact form message';
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@babybrain.sg>',
+    from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
     to: SUPPORT_INBOX,
     replyTo: email.trim(),
     subject: `[Contact] ${heading}`,

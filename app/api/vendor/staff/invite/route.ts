@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY!);
     await resend.emails.send({
-      from: process.env.EMAIL_FROM ?? 'BabyBrain <onboarding@resend.dev>',
+      from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
       to: email,
       subject: `You've been invited to ${provider?.business_name ?? 'a business'} on BabyBrain`,
       html: `<div style="font-family:sans-serif">

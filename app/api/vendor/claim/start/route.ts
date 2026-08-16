@@ -80,7 +80,7 @@ export async function POST(request: Request) {
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error: sendError } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@babybrain.sg>',
+    from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
     replyTo: 'hello@babybrain.sg',
     to: email.trim(),
     subject: `Your BabyBrain verification code: ${emailCode}`,
