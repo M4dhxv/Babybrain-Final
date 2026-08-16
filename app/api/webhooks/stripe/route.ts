@@ -146,11 +146,29 @@ export async function POST(request: Request) {
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {
-        const { data: pkg } = await admin
-          .from('packages')
-          .select('id, provider_id, credits')
-          .eq('id', session.metadata.package_id)
-          .maybeSingle();
+        // Idempotency. Stripe retries a webhook whenever the endpoint is slow
+        // or errors, and /api/stripe/reconcile processes the same checkout on
+        // the parent's return — that fallback exists because this webhook has
+        // a history of not landing. Without this guard, the second delivery
+        // granted a whole extra pack and auto-booked the class a second time
+        // (found in QA: replaying one event produced two purchases and two
+        // bookings). Reconcile already guards this way; the webhook didn't.
+        const paymentIntent = (session.payment_intent as string) ?? null;
+        const { data: already } = paymentIntent
+          ? await admin
+              .from('package_purchases')
+              .select('id')
+              .eq('stripe_payment_intent', paymentIntent)
+              .maybeSingle()
+          : { data: null };
+
+        const { data: pkg } = already
+          ? { data: null }
+          : await admin
+              .from('packages')
+              .select('id, provider_id, credits')
+              .eq('id', session.metadata.package_id)
+              .maybeSingle();
         if (pkg) {
           const { data: purchase } = await admin
             .from('package_purchases')
