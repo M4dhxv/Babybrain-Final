@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
+import { renderEmail } from '@/lib/emails/render';
 
 /**
  * Contact form on /contact — stores the message, then emails the support inbox.
@@ -34,9 +35,6 @@ function rateLimited(ip: string): boolean {
   hits.set(ip, recent);
   return recent.length > MAX_PER_WINDOW;
 }
-
-const esc = (v: string) =>
-  v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
 export async function POST(request: Request) {
   const ip =
@@ -113,19 +111,25 @@ export async function POST(request: Request) {
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const heading = subject?.trim() ? esc(subject.trim()) : 'New contact form message';
+  // Branded like every other BabyBrain email — this used to go out as a bare
+  // unstyled block, which is what QA saw arriving in the inbox.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  const rendered = renderEmail(
+    'contact_received',
+    {
+      subject: subject?.trim() || null,
+      from_name: name.trim(),
+      from_email: email.trim(),
+      message: message.trim(),
+    },
+    { appUrl }
+  )!;
   const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
     to: SUPPORT_INBOX,
     replyTo: email.trim(),
-    subject: `[Contact] ${heading}`,
-    html: `
-      <div style="font-family:Helvetica,Arial,sans-serif;font-size:15px;color:#1c2b61">
-        <h2 style="margin:0 0 12px">${heading}</h2>
-        <p style="margin:0 0 4px"><strong>From:</strong> ${esc(name.trim())} &lt;${esc(email.trim())}&gt;</p>
-        <p style="margin:0 0 16px;color:#68718f"><strong>Sent via:</strong> babybrain.sg contact form</p>
-        <div style="white-space:pre-wrap;border-left:3px solid #FA5D93;padding-left:12px">${esc(message.trim())}</div>
-      </div>`,
+    subject: rendered.subject,
+    html: rendered.html,
   });
 
   if (error) {

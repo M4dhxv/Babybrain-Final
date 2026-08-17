@@ -295,6 +295,20 @@ export type Database = {
           },
         ];
       };
+      favorite_children: {
+        Row: { user_id: string; activity_id: string; child_id: string; created_at: string };
+        Insert: { user_id: string; activity_id: string; child_id: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'favorite_children_child_id_fkey';
+            columns: ['child_id'];
+            isOneToOne: false;
+            referencedRelation: 'children';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       favorite_providers: {
         Row: { user_id: string; provider_id: string; created_at: string };
         Insert: { user_id: string; provider_id: string };

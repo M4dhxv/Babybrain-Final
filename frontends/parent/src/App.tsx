@@ -1079,7 +1079,7 @@ function ExplorePage() {
               <span className="text-xs font-bold text-[#68718f]">{pinned} of {shown.length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              <ExploreMap activities={shown} />
+              <ExploreMap activities={shown} regions={regions} />
             </div>
           </section>
           <section>
@@ -1987,6 +1987,97 @@ function tokenStatusStyle(status: string) {
   return "bg-[#FEF9EB] text-[#FFD77A]"; // expired
 }
 
+/** One class pack, shared by the active and the used/expired lists. */
+function PackageCard({ p }: { p: PackageItem }) {
+  const clickable = p.status !== "expired" && p.remaining > 0;
+  const Card = clickable ? "a" : "div";
+  return (
+    <Card
+      {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
+      className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${clickable ? "transition hover:border-baby-pink" : "opacity-60"}`}
+    >
+      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-black">{p.name}</h3>
+        <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
+        {p.expiresAt && (
+          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#FFC1D6]" : "text-[#6D748A]"}`}>
+            {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
+          </p>
+        )}
+      </div>
+      <div className="text-right">
+        {p.status === "expired" ? (
+          <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#FFD77A]">Expired</span>
+        ) : p.remaining === 0 ? (
+          <span className="rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-[#FFC1D6]">All used</span>
+        ) : (
+          <>
+            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
+            <p className="text-xs font-bold text-[#6D748A]">credits left</p>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** QA: "Old and active packages are all bundled together — can we split out
+ *  packages and make up tokens that have expired/been used from those that are
+ *  active". Used as the heading above each half of both lists. */
+function PastHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="mb-3 mt-8 border-b border-[#F4EFF0] pb-2 text-[15px] font-black uppercase tracking-wide text-[#6D748A]">
+      {children}
+    </h2>
+  );
+}
+
+/** A pack is finished once it has expired or every credit has been spent. */
+const packIsActive = (p: PackageItem) => p.status !== "expired" && p.remaining > 0;
+/** Only an 'issued' token can still be redeemed; redeemed/expired are done. */
+const tokenIsActive = (t: TokenItem) => t.status === "issued";
+
+/** "Saved for" row under a favourite — assign it to one child, several, or
+ *  leave it unassigned, which means the whole family. Only rendered when there
+ *  is more than one child, since with one child the distinction is meaningless. */
+function FavChildAssign({
+  kids,
+  assigned,
+  onToggle,
+}: {
+  kids: Child[];
+  assigned: string[];
+  onToggle: (childId: string) => void;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-xs font-bold text-[#6D748A]">Saved for</span>
+      {kids.map((k) => {
+        const on = assigned.includes(k.id);
+        return (
+          <button
+            key={k.id}
+            type="button"
+            onClick={() => onToggle(k.id)}
+            aria-pressed={on}
+            className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
+              on
+                ? "bg-[#FFC1D6] text-[#87002E]"
+                : "border border-[#EBE3E5] bg-white text-[#6D748A] hover:border-baby-pink"
+            }`}
+          >
+            {k.name}
+          </button>
+        );
+      })}
+      {assigned.length === 0 && (
+        <span className="text-xs font-semibold text-[#6D748A]">· everyone</span>
+      )}
+    </div>
+  );
+}
+
 function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-palette-green";
   if (status === "cancelled") return "bg-[#FEEBF2] text-[#FFC1D6]";
@@ -2517,6 +2608,8 @@ function ProfilePage() {
   const journey = useJourney(journeyChild?.id);
   const { data: recsByChild } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
+  // activity_id -> child ids it's assigned to. Empty/absent = whole family.
+  const [favChildren, setFavChildren] = useState<Record<string, string[]>>({});
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
@@ -2654,6 +2747,19 @@ function ProfilePage() {
             })
             .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
         );
+      });
+
+    // Which children each favourite is assigned to. A favourite with no rows is
+    // saved for the whole family, which is what every pre-existing favourite is.
+    supabase
+      .from("favorite_children")
+      .select("activity_id, child_id")
+      .then(({ data }) => {
+        const m: Record<string, string[]> = {};
+        for (const r of (data ?? []) as { activity_id: string; child_id: string }[]) {
+          (m[r.activity_id] ??= []).push(r.child_id);
+        }
+        setFavChildren(m);
       });
 
     loadBookings();
@@ -2814,6 +2920,41 @@ function ProfilePage() {
         });
   const visiblePackages = packagesForChild(childFilter);
   const visibleTokens = childFilter ? tokens.filter((t) => t.childId === childFilter) : tokens;
+
+  // QA: packs and tokens that are spent or expired were mixed in with the live
+  // ones, so what a parent could still use wasn't obvious. Split, live first.
+  const activePackages = visiblePackages.filter(packIsActive);
+  const finishedPackages = visiblePackages.filter((p) => !packIsActive(p));
+  const activeTokens = visibleTokens.filter(tokenIsActive);
+  const finishedTokens = visibleTokens.filter((t) => !tokenIsActive(t));
+
+  // A favourite shows for a child when it's assigned to them, or to nobody in
+  // particular (saved for the whole family).
+  const visibleFavs = childFilter
+    ? favs.filter((a) => {
+        const assigned = favChildren[a.id] ?? [];
+        return assigned.length === 0 || assigned.includes(childFilter);
+      })
+    : favs;
+
+  /** Assign / unassign a favourite to a child, writing straight through. */
+  async function toggleFavChild(activityId: string, childId: string) {
+    if (!session) return;
+    const assigned = favChildren[activityId] ?? [];
+    const on = assigned.includes(childId);
+    // Optimistic — the row is the parent's own, and a failure just reloads.
+    setFavChildren((prev) => ({
+      ...prev,
+      [activityId]: on ? assigned.filter((c) => c !== childId) : [...assigned, childId],
+    }));
+    const q = supabase.from("favorite_children");
+    const { error } = on
+      ? await q.delete().eq("activity_id", activityId).eq("child_id", childId)
+      : await q.insert({ user_id: session.user.id, activity_id: activityId, child_id: childId });
+    if (error) {
+      setFavChildren((prev) => ({ ...prev, [activityId]: assigned }));
+    }
+  }
 
   return (
     <PageShell active="/profile">
@@ -3073,40 +3214,24 @@ function ProfilePage() {
               {visiblePackages.length === 0 ? (
                 <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
               ) : (
-                <div className="mt-4 space-y-3">
-                  {visiblePackages.map((p) => {
-                    const clickable = p.status !== "expired" && p.remaining > 0;
-                    const Card = clickable ? "a" : "div";
-                    return (
-                      <Card
-                        key={p.id}
-                        {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
-                        className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${p.status === "expired" ? "opacity-60" : ""} ${clickable ? "transition hover:border-baby-pink" : ""}`}
-                      >
-                        <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate font-black">{p.name}</h3>
-                          <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
-                          {p.expiresAt && (
-                            <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#FFC1D6]" : "text-[#6D748A]"}`}>
-                              {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          {p.status === "expired" ? (
-                            <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#FFD77A]">Expired</span>
-                          ) : (
-                            <>
-                              <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
-                              <p className="text-xs font-bold text-[#6D748A]">credits left</p>
-                            </>
-                          )}
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
+                <>
+                  {activePackages.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {activePackages.map((p) => <PackageCard key={p.id} p={p} />)}
+                    </div>
+                  )}
+                  {activePackages.length === 0 && (
+                    <EmptyPanel icon="store" copy="No active packs — everything below has been used up or expired." cta="Browse activities" href="/explore" />
+                  )}
+                  {finishedPackages.length > 0 && (
+                    <>
+                      <PastHeading>Used &amp; expired</PastHeading>
+                      <div className="space-y-3">
+                        {finishedPackages.map((p) => <PackageCard key={p.id} p={p} />)}
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -3125,18 +3250,45 @@ function ProfilePage() {
               {visibleTokens.length === 0 ? (
                 <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
               ) : splitByChild ? (
+                /* Split by child first, then active/finished within each child,
+                   so a parent still sees whose token is whose. */
                 <div className="mt-4 space-y-8">
-                  {groupByChild(visibleTokens, children).map((g) => (
-                    <section key={g.key}>
-                      <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
-                      <div className="space-y-3">{g.items.map((t) => <TokenRow key={t.id} t={t} />)}</div>
-                    </section>
-                  ))}
+                  {groupByChild(visibleTokens, children).map((g) => {
+                    const act = g.items.filter(tokenIsActive);
+                    const fin = g.items.filter((t) => !tokenIsActive(t));
+                    return (
+                      <section key={g.key}>
+                        <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
+                        {act.length > 0 && <div className="space-y-3">{act.map((t) => <TokenRow key={t.id} t={t} />)}</div>}
+                        {fin.length > 0 && (
+                          <>
+                            <PastHeading>Used &amp; expired</PastHeading>
+                            <div className="space-y-3">{fin.map((t) => <TokenRow key={t.id} t={t} />)}</div>
+                          </>
+                        )}
+                      </section>
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {visibleTokens.map((t) => <TokenRow key={t.id} t={t} />)}
-                </div>
+                <>
+                  {activeTokens.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {activeTokens.map((t) => <TokenRow key={t.id} t={t} />)}
+                    </div>
+                  )}
+                  {activeTokens.length === 0 && (
+                    <EmptyPanel icon="gift" copy="No tokens left to redeem — everything below has been used or has expired." />
+                  )}
+                  {finishedTokens.length > 0 && (
+                    <>
+                      <PastHeading>Used &amp; expired</PastHeading>
+                      <div className="space-y-3">
+                        {finishedTokens.map((t) => <TokenRow key={t.id} t={t} />)}
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -3153,21 +3305,31 @@ function ProfilePage() {
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {filterChild && (
                 <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
-                  Favourites are saved for your whole family rather than per child, so this list is the same for {filterChild.name}.
+                  Showing what's saved for {filterChild.name}, plus anything saved for the whole family.
                 </p>
               )}
               {favs.length === 0 ? (
                 <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
+              ) : visibleFavs.length === 0 ? (
+                <EmptyPanel icon="heart" copy={`Nothing saved for ${filterChild?.name ?? "this child"} yet — use "Saved for" on any favourite to assign it.`} cta="Browse activities" href="/explore" />
               ) : (
                 <div className="grid gap-4 md:grid-cols-3">
-                  {favs.map((activity) => (
-                    <ActivityCard
-                      key={activity.id}
-                      activity={activity}
-                      onFavoriteToggled={(id, saved) => {
-                        if (!saved) setFavs((prev) => prev.filter((a) => a.id !== id));
-                      }}
-                    />
+                  {visibleFavs.map((activity) => (
+                    <div key={activity.id}>
+                      <ActivityCard
+                        activity={activity}
+                        onFavoriteToggled={(id, saved) => {
+                          if (!saved) setFavs((prev) => prev.filter((a) => a.id !== id));
+                        }}
+                      />
+                      {children.length > 1 && (
+                        <FavChildAssign
+                          kids={children}
+                          assigned={favChildren[activity.id] ?? []}
+                          onToggle={(childId) => toggleFavChild(activity.id, childId)}
+                        />
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

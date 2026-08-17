@@ -64,7 +64,7 @@ function layout(ctx: EmailCtx, inner: string): string {
     <div style="text-align:left">${inner}</div>
     <div style="text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #eee">
       <img src="${appUrl}/assets/brand/logo-horizontal.png" alt="BabyBrain" width="132" style="max-width:132px;height:auto;margin-bottom:12px" /><br/>
-      <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram</a>
+      <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram <img src="${appUrl}/assets/brand/instagram.png" alt="Instagram" width="15" height="15" style="width:15px;height:15px;vertical-align:-2px;border:0" /></a>
       <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${appUrl}/profile" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
         <a href="${appUrl}/profile?unsubscribe=1" style="color:#9a9a9a">Unsubscribe</a>
@@ -80,8 +80,9 @@ const wrap = (ctx: EmailCtx, subject: string, inner: string): RenderedEmail => (
 const bullets = (items: string[]) =>
   `<ul style="margin:0 0 16px;padding-left:20px">${items.map((i) => `<li style="margin:0 0 6px">${esc(i)}</li>`).join('')}</ul>`;
 
+// Weekly suggested activities used to be listed here, but they ship on the free
+// plan now, so naming them as a reason to upgrade no longer made sense.
 const PARENT_UPGRADE_BENEFITS = [
-  'Suggested activities with availability each week based on saved preferences',
   'Packages & make-up tokens booked through BabyBrain saved in one place',
   'Messaging other parents booked on the same activity and subscribed vendors',
   'And more!',
@@ -371,6 +372,18 @@ const T: Record<string, Template> = {
       p(`Your schedule is looking a little light, please consider adding to it ${link(ctx, '/vendor', 'here')}.`) +
       p('If you are having any issues adding to your listing, please don’t hesitate to reach out for support.') +
       sign),
+
+  // Inbound contact-form message, delivered to the BabyBrain inbox. It used to
+  // be sent as a bare unstyled block; it now carries the same branding as every
+  // other BabyBrain email. Reply-to is set to the sender by the route, so
+  // replying from the inbox goes straight back to the parent.
+  contact_received: (d, ctx) =>
+    wrap(ctx, `[Contact] ${str(d, 'subject') ?? 'New contact form message'}`,
+      p(bold(str(d, 'subject') ?? 'New contact form message')) +
+      p(`<strong style="color:#4a4a4a">From:</strong> ${esc(str(d, 'from_name') ?? '')} ` +
+        `&lt;${esc(str(d, 'from_email') ?? '')}&gt;<br/>` +
+        `<strong style="color:#4a4a4a">Sent via:</strong> babybrain.sg contact form`) +
+      `<div style="white-space:pre-wrap;border-left:3px solid ${PINK};padding-left:12px;margin:0 0 16px">${esc(str(d, 'message') ?? '')}</div>`),
 };
 
 /** Aliases so existing DB-trigger type names resolve to the new templates. */

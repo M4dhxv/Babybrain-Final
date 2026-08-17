@@ -25,8 +25,21 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 /** Interactive Explore map: one pin per provider location, its popup lists the
- *  activities at that spot. Tiles are CARTO Positron (free, no API key). */
-export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
+ *  activities at that spot. Tiles are CARTO Positron (free, no API key).
+ *
+ *  `regions` is the Explore page's area filter. It has to reach the map,
+ *  because the list filter keeps an activity when ANY of its provider's venues
+ *  sits in the chosen area — so a multi-venue business (Kindermusik teaches
+ *  west, east and north) survives a filter on "East" and then contributed a pin
+ *  at every one of its venues. Filtering on East drew pins right across the
+ *  island. Pins are now restricted to the venues actually in the chosen areas. */
+export function ExploreMap({
+  activities,
+  regions = [],
+}: {
+  activities: LiveActivity[];
+  regions?: string[];
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -80,12 +93,19 @@ export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
       byLoc.set(key, g);
     };
 
+    const inFilter = (r: string | null | undefined) =>
+      regions.length === 0 || (!!r && regions.includes(r));
+
     for (const a of activities) {
       if (a.venues && a.venues.length > 0) {
-        for (const v of a.venues) {
+        // Only the venues in the chosen areas get a pin. A venue with no region
+        // recorded is dropped while a filter is on rather than guessed at —
+        // showing it would put an unplaceable pin back on the map.
+        const venues = a.venues.filter((v) => inFilter(v.region));
+        for (const v of venues) {
           addPin(v.lat, v.lng, a.providerName ?? v.name, a);
         }
-      } else if (a.lat != null && a.lng != null) {
+      } else if (a.lat != null && a.lng != null && inFilter(a.region)) {
         addPin(a.lat, a.lng, a.providerName ?? null, a);
       }
     }
@@ -134,7 +154,7 @@ export function ExploreMap({ activities }: { activities: LiveActivity[] }) {
     } else {
       map.setView(SG_CENTER, 11);
     }
-  }, [activities]);
+  }, [activities, regions]);
 
   return <div ref={containerRef} className="h-[395px] w-full" style={{ zIndex: 0 }} />;
 }
