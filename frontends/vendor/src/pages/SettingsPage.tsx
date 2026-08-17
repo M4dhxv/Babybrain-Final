@@ -195,7 +195,7 @@ export default function SettingsPage() {
     }
   }
 
-  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
   const categoryLabel = VENDOR_CATEGORIES.find((c) => c.value === form.vendor_category)?.label;
 
   return (
@@ -357,12 +357,12 @@ export default function SettingsPage() {
                 const label = isYou ? 'You' : m.invited_email ?? 'Member';
                 return (
                   <div key={m.id} className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-green-100 text-green-600">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-green-300 text-green-800">
                       {(label[0] ?? '?').toUpperCase()}
                     </div>
                     <div className="flex-1"><div className="text-sm font-medium text-gray-900 truncate">{label}</div></div>
                     <span className={cn('px-2 py-0.5 text-xs rounded-full capitalize',
-                      m.role === 'owner' ? 'bg-green-100 text-green-700' : m.role === 'manager' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700')}>
+                      m.role === 'owner' ? 'bg-green-300 text-green-800' : m.role === 'manager' ? 'bg-purple-300 text-purple-800' : 'bg-blue-300 text-blue-800')}>
                       {m.role}
                     </span>
                   </div>
@@ -379,7 +379,7 @@ export default function SettingsPage() {
                     placeholder="name@email.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-200"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
                   />
                   <select
                     value={inviteRole}
@@ -420,9 +420,9 @@ export default function SettingsPage() {
                   <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
                   <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
                   {item.accepted ? (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
+                    <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
                   ) : item.status === 'Edit' ? (
-                    <button className="flex items-center gap-1 px-3 py-1.5 border border-blue-200 rounded-lg text-xs text-blue-600 hover:bg-blue-50"><Pencil className="w-3 h-3" />Edit</button>
+                    <button className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"><Pencil className="w-3 h-3" />Edit</button>
                   ) : (
                     <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
                   )}
@@ -544,7 +544,7 @@ function LocationsManager({
     load();
   }
 
-  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
 
   return (
     <>
@@ -566,7 +566,7 @@ function LocationsManager({
       <div className="space-y-3 mb-4">
         {locations.map((loc) => (
           editingId === loc.id ? (
-            <div key={loc.id} className="rounded-xl border border-pink-200 bg-pink-50/30 p-3 space-y-2">
+            <div key={loc.id} className="rounded-xl border border-pink-300 bg-pink-50/30 p-3 space-y-2">
               {editError && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{editError}</div>}
               <input className={inputCls} placeholder="Location name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
               <div className="grid grid-cols-2 gap-2">
@@ -738,7 +738,7 @@ function PoliciesManager({
     load();
   }
 
-  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
 
   return (
     <>

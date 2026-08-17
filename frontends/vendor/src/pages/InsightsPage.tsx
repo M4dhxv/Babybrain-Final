@@ -129,8 +129,8 @@ export default function InsightsPage() {
       <div className="p-8">
         <h1 className="text-2xl font-bold text-gray-900">Insights</h1>
         <p className="mt-1 text-sm text-gray-500">See what's driving your bookings.</p>
-        <div className="mt-6 rounded-xl border border-dashed border-purple-200 bg-purple-50/40 p-10 text-center">
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-100 text-purple-600">
+        <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-300 text-purple-800">
             <Crown className="h-7 w-7" />
           </span>
           <h2 className="mt-4 text-xl font-bold text-gray-900">Insights is a Pro feature</h2>

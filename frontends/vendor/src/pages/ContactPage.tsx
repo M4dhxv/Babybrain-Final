@@ -156,7 +156,7 @@ export default function ContactPage() {
           <h2 className="text-2xl font-bold text-[#111A4C]">Send us an enquiry</h2>
           <p className="mt-1 text-gray-600">Tell us about your business and we'll come back to you.</p>
           {sent ? (
-            <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-6 text-center">
+            <div className="mt-5 rounded-2xl border border-green-300 bg-green-50 p-6 text-center">
               <h3 className="text-lg font-bold text-green-800">Thanks — enquiry received</h3>
               <p className="mt-1 text-sm text-green-700">We'll be in touch within one working day.</p>
             </div>

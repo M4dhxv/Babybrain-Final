@@ -3257,7 +3257,7 @@ function ProfilePage() {
               <h1 className="mb-4 text-[26px] font-black">Settings</h1>
 
               {getParam("billing") === "success" && (
-                <div className="mb-4 rounded-[12px] border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-palette-green">
+                <div className="mb-4 rounded-[12px] border border-green-300 bg-green-50 px-4 py-3 text-sm font-bold text-palette-green">
                   🎉 Welcome to Plus! Your subscription is active — your first month is free.
                 </div>
               )}
@@ -3479,7 +3479,7 @@ function PastActivitiesTab({
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "present")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-200 bg-[#F1FBEF] text-palette-green" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-300 bg-[#F1FBEF] text-palette-green" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
           >
             We went
           </button>

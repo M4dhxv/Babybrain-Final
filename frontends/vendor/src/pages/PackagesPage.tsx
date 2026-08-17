@@ -148,7 +148,7 @@ export default function PackagesPage() {
 
   const statusBadge = (s: string) => cn(
     'inline-block px-2 py-0.5 text-xs rounded-full capitalize',
-    s === 'active' ? 'bg-green-100 text-green-700' : s === 'used' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
+    s === 'active' ? 'bg-green-300 text-green-800' : s === 'used' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
   );
 
   return (
@@ -195,7 +195,7 @@ export default function PackagesPage() {
                     </div>
                     {canManage && (
                       <div className="flex flex-shrink-0 items-center gap-2">
-                        <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
+                        <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-500')}>
                           {p.active ? 'Active' : 'Inactive'}
                         </button>
                         <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">

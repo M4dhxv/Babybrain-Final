@@ -23,7 +23,7 @@ const fmtDate = (iso: string) =>
 
 const statusBadge = (s: string) => cn(
   'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full capitalize',
-  s === 'issued' ? 'bg-blue-100 text-blue-700' : s === 'redeemed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+  s === 'issued' ? 'bg-blue-300 text-blue-800' : s === 'redeemed' ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-500'
 );
 
 export default function MakeUpTokensPage() {

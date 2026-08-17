@@ -54,7 +54,7 @@ export default function LandingPage() {
               <Shield className="w-4 h-4 text-[#C90044]" />
               <span className="text-sm font-medium text-[#C90044]">Join 500+ trusted providers</span>
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -left-6 -top-2" />
-              <Cloud className="w-5 h-5 text-purple-200 absolute -right-8 top-0" />
+              <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />
             </div>
 
             {/* Heading */}

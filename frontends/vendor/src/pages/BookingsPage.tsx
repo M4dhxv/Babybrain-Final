@@ -12,7 +12,7 @@ import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 
 const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
-const PALETTE = ['bg-pink-100 text-pink-600', 'bg-blue-100 text-blue-600', 'bg-yellow-100 text-yellow-600', 'bg-purple-100 text-purple-600', 'bg-green-100 text-green-600'];
+const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-yellow-300 text-yellow-800', 'bg-purple-300 text-purple-800', 'bg-green-300 text-green-800'];
 
 const sgDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -314,13 +314,13 @@ export default function BookingsPage() {
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bookings..."
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-200" />
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" />
             </div>
             <div className="space-y-2">
               {visibleBookings.map((b, idx) => (
                 <div key={b.booking_id} onClick={() => setSelected(idx)}
                   className={cn('flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors',
-                    selected === idx ? 'bg-pink-50 border border-pink-200' : 'hover:bg-gray-50 border border-transparent')}>
+                    selected === idx ? 'bg-pink-50 border border-pink-300' : 'hover:bg-gray-50 border border-transparent')}>
                   <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0', PALETTE[idx % PALETTE.length])}>
                     {initials(b.child_name)}
                   </div>
@@ -332,12 +332,12 @@ export default function BookingsPage() {
                         .join(' · ')}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-100 text-purple-700">Medical Disclosure</span>}
-                      {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700">Manual</span>}
-                      {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-100 text-orange-700 capitalize">{b.skill_level}</span>}
+                      {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-300 text-purple-800">Medical Disclosure</span>}
+                      {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-300 text-blue-800">Manual</span>}
+                      {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-300 text-orange-800 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
-                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', b.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600')}>
+                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', b.payment_status === 'paid' ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600')}>
                     {b.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
                   </span>
                 </div>
@@ -404,7 +404,7 @@ export default function BookingsPage() {
                           value={sel.skill_level ?? ''}
                           disabled={!canManage || savingSkill}
                           onChange={(e) => setSkillLevel(sel, e.target.value)}
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-pink-200 disabled:opacity-60"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-pink-300 disabled:opacity-60"
                         >
                           <option value="">Not set</option>
                           {['beginner', 'intermediate', 'advanced'].map((l) => (
@@ -514,7 +514,7 @@ export default function BookingsPage() {
                       <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
+                        <div className="w-8 h-8 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
                         <div>
                           <div className="text-sm font-medium text-gray-900">{c.child_name}</div>
                           <div className="text-xs text-gray-500">{ageLabel(c.child_age_months)}</div>
@@ -525,9 +525,9 @@ export default function BookingsPage() {
                       </span>
                       <div>
                         {tok === 'redeemed' ? (
-                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">Redeemed</span>
+                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-300 text-purple-800">Redeemed</span>
                         ) : tok ? (
-                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">Issued ✓</span>
+                          <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-green-300 text-green-800">Issued ✓</span>
                         ) : cur === 'absent' && canManage ? (
                           <button
                             onClick={() => issueToken(c.booking_id)}

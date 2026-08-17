@@ -132,7 +132,7 @@ export default function ReviewsPage() {
           {visible.map((r) => (
             <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-sm font-bold flex-shrink-0">
                   {initials(r.parent_name)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -163,7 +163,7 @@ export default function ReviewsPage() {
                         value={drafts[r.id] ?? ''}
                         onChange={(e) => setDrafts({ ...drafts, [r.id]: e.target.value })}
                         placeholder="Write a reply…"
-                        className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+                        className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
                       />
                       <Button
                         onClick={() => submitResponse(r.id)}

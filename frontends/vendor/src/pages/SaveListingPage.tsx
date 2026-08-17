@@ -375,7 +375,7 @@ export default function SaveListingPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 mb-3">
                     {['1 - 8 years', 'Indoor', 'Birthday Parties', 'Open Play'].map((tag) => (
-                      <span key={tag} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                      <span key={tag} className="px-2 py-1 bg-purple-300 text-purple-800 text-xs rounded-full">
                         {tag}
                       </span>
                     ))}

@@ -80,7 +80,7 @@ export default function BillingPage() {
       </div>
 
       {msg && (
-        <div className="mx-8 mb-4 rounded-xl bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800">
+        <div className="mx-8 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800">
           {msg}
         </div>
       )}
@@ -95,7 +95,7 @@ export default function BillingPage() {
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 <h2 className="text-xl font-bold text-gray-900">{plan.isPaid ? `${plan.short.replace(' Plan', '')} — ${plan.price}` : 'Free plan'}</h2>
-                <span className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                <span className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full ${active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
                   {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}
                 </span>
@@ -154,8 +154,8 @@ export default function BillingPage() {
                   <div className="text-sm font-bold text-[#C90044]">{plan.price}</div>
                 </div>
                 {upgrade ? (
-                  <div className="p-4 border border-purple-200 rounded-xl relative">
-                    <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                  <div className="p-4 border border-purple-300 rounded-xl relative">
+                    <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-300 text-purple-800 text-xs font-medium rounded">
                       Next step up
                     </div>
                     <div className="flex items-center gap-2 mb-2">
@@ -220,11 +220,11 @@ export default function BillingPage() {
                       now reflects the real stripe_account_id/payouts_enabled
                       state on the provider row. */}
                   {provider?.payouts_enabled ? (
-                    <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                    <span className="inline-flex items-center px-2.5 py-1 bg-green-300 text-green-800 text-xs font-medium rounded-full">
                       Active — payouts on
                     </span>
                   ) : provider?.stripe_account_id ? (
-                    <span className="inline-flex items-center px-2.5 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
+                    <span className="inline-flex items-center px-2.5 py-1 bg-yellow-300 text-yellow-800 text-xs font-medium rounded-full">
                       Connected / Pending
                     </span>
                   ) : (
@@ -244,7 +244,7 @@ export default function BillingPage() {
             </div>
 
             {/* Boost Visibility */}
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200 p-6">
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
                   <Rocket className="w-6 h-6 text-purple-600" />

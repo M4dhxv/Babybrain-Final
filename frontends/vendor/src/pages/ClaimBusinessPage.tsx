@@ -397,7 +397,7 @@ export default function ClaimBusinessPage() {
                       </div>
                       <p className="text-xs text-gray-500">{emailVerified ? 'Verified' : claimId ? 'Code sent' : 'Not verified yet'}</p>
                     </div>
-                    <div className="border-l border-green-200 text-center">
+                    <div className="border-l border-green-300 text-center">
                       <div className="mb-1 flex items-center justify-center gap-2">
                         <CheckCircle className="h-5 w-5 text-gray-300" />
                         <span className="text-sm font-medium text-gray-900">Phone</span>

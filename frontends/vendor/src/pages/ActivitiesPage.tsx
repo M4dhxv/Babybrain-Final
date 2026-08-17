@@ -398,10 +398,10 @@ export default function ActivitiesPage() {
     load();
   }
 
-  const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
   const [showFilters, setShowFilters] = useState(true);
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
-  const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-200';
+  const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-300';
 
   return (
     <div className="relative">
@@ -475,7 +475,7 @@ export default function ActivitiesPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search activities..."
-                  className="pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-200 w-48"
+                  className="pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300 w-48"
                 />
               </div>
               <button
@@ -588,13 +588,13 @@ export default function ActivitiesPage() {
                 <div className="flex flex-col items-start gap-1">
                   <span className={cn(
                     'inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full',
-                    status === 'Live' ? 'bg-green-100 text-green-700' : status === 'Draft' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                    status === 'Live' ? 'bg-green-300 text-green-800' : status === 'Draft' ? 'bg-yellow-300 text-yellow-800' : 'bg-gray-100 text-gray-600'
                   )}>
                     <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : 'bg-gray-400')} />
                     {status}
                   </span>
                   {a.bookings_paused && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-700">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-orange-300 text-orange-800">
                       <Pause className="w-3 h-3" /> Paused
                     </span>
                   )}
@@ -837,7 +837,7 @@ export default function ActivitiesPage() {
               <div className="space-y-2">
                 {sessions.map((s) => (
                   editingSessId === s.id ? (
-                    <div key={s.id} className="rounded-lg border border-pink-200 bg-pink-50/30 px-3 py-2.5 space-y-2">
+                    <div key={s.id} className="rounded-lg border border-pink-300 bg-pink-50/30 px-3 py-2.5 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <input placeholder="Teacher (N/A if blank)" className={inputCls} value={sessEditForm.teacher} onChange={(e) => setSessEditForm({ ...sessEditForm, teacher: e.target.value })} />
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />

@@ -38,7 +38,7 @@ const statsCards = [
 ];
 
 const sessionIcons = [Baby, CalendarCheck, Sun];
-const sessionColors = ['bg-pink-100 text-pink-600', 'bg-purple-100 text-purple-600', 'bg-yellow-100 text-yellow-600', 'bg-blue-100 text-blue-600'];
+const sessionColors = ['bg-pink-300 text-pink-800', 'bg-purple-300 text-purple-800', 'bg-yellow-300 text-yellow-800', 'bg-blue-300 text-blue-800'];
 const sgWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
@@ -405,8 +405,8 @@ export default function DashboardPage() {
                   <div className="text-right">
                     <span className={cn(
                       'inline-block px-2 py-0.5 text-xs rounded-full mt-1 capitalize',
-                      booking.status === 'confirmed' || booking.status === 'completed' ? 'bg-green-100 text-green-700'
-                        : booking.status === 'waitlisted' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
+                      booking.status === 'confirmed' || booking.status === 'completed' ? 'bg-green-300 text-green-800'
+                        : booking.status === 'waitlisted' ? 'bg-blue-300 text-blue-800' : 'bg-yellow-300 text-yellow-800'
                     )}>
                       {booking.status}
                     </span>
