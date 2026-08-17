@@ -334,7 +334,7 @@ export default function BookingsPage() {
                     <div className="flex flex-wrap gap-1 mt-1">
                       {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-100 text-purple-700">Medical Disclosure</span>}
                       {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700">Manual</span>}
-                      {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-teal-100 text-teal-700 capitalize">{b.skill_level}</span>}
+                      {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-100 text-orange-700 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
                   <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', b.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600')}>
