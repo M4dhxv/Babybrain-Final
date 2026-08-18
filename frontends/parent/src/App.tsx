@@ -5164,7 +5164,10 @@ function BookedPage() {
         <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/book-mascot-confetti.png`} alt="" className="hidden h-24 object-contain md:block" />
+          {/* The full stacked logo (mascot + wordmark), not the confetti mascot
+              crop lifted from the mockup — same call as the Book page header,
+              which already dropped the confetti. */}
+          <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="hidden h-24 object-contain md:block" />
         </section>
         <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
           <div className="space-y-5">
