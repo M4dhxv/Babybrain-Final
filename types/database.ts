@@ -207,6 +207,8 @@ export type Database = {
           location_id?: string | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
+          // Directory listings link out to the vendor's own booking page.
+          external_booking_url?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -505,6 +507,9 @@ export type Database = {
           is_auto_listed: boolean;
           source_url: string | null;
           synced_at: string | null;
+          // Derived by the providers_region_trg trigger from postal_code /
+          // coordinates — never written directly.
+          region: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -527,6 +532,8 @@ export type Database = {
           longitude?: number | null;
           uen?: string | null;
           status?: ProviderStatus;
+          is_claimed?: boolean;
+          verification_status?: 'unverified' | 'pending' | 'verified';
           is_auto_listed?: boolean;
           source_url?: string | null;
           synced_at?: string | null;

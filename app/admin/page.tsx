@@ -35,6 +35,30 @@ type EmailFlow = {
   wired: boolean; trigger: string;
   last30d: { sent: number; pending: number; failed: number; skipped: number; total: number };
 };
+type AdminCategory = { slug: string; name: string };
+type RecentProvider = {
+  id: string; business_name: string; slug: string; vendor_category: string;
+  region: string | null; status: string; is_claimed: boolean; is_auto_listed: boolean; created_at: string;
+};
+type NewVendorMeta = { categories: AdminCategory[]; vendorCategories: string[]; recent: RecentProvider[] };
+type DraftLocation = { name: string; address: string; postal_code: string };
+type DraftActivity = {
+  title: string; category_slug: string; description: string;
+  age_min_months: string; age_max_months: string; price: string; is_published: boolean;
+};
+type CreatedVendor = {
+  provider: { id: string; slug: string; business_name: string; region: string | null };
+  locations: number; activities: number; geocoded: number; warnings: string[];
+};
+
+const VENDOR_CATEGORY_LABELS: Record<string, string> = {
+  'baby-toddler-classes': 'Baby & toddler classes',
+  playspaces: 'Playspace',
+  'camps-holiday': 'Holiday camps',
+  'community-events': 'Community events',
+  'mum-bub-exercise': 'Parent & child exercise',
+  other: 'Other',
+};
 
 const C = {
   bg: '#0d1424', panel: '#151d31', panel2: '#1c2740', border: '#26324f',
@@ -59,7 +83,7 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
-  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'vendors' | 'flows'>('metrics');
+  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'flows'>('metrics');
 
   const check = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -82,10 +106,11 @@ export default function AdminPage() {
         <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
         {phase === 'ok' && (
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['metrics', 'messages', 'contact', 'vendors', 'flows'] as const).map((t) => (
+            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'flows'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
                 {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages'
-                  : t === 'contact' ? 'Contact form' : t === 'vendors' ? 'Vendor data' : 'Email flows'}
+                  : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Add vendor'
+                  : t === 'vendors' ? 'Vendor data' : 'Email flows'}
               </button>
             ))}
             <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }} style={tabBtn(false)}>
@@ -109,6 +134,7 @@ export default function AdminPage() {
         {phase === 'ok' && tab === 'metrics' && <MetricsView />}
         {phase === 'ok' && tab === 'messages' && <MessagesView />}
         {phase === 'ok' && tab === 'contact' && <ContactView />}
+        {phase === 'ok' && tab === 'addVendor' && <AddVendorView />}
         {phase === 'ok' && tab === 'vendors' && <VendorsView />}
         {phase === 'ok' && tab === 'flows' && <FlowsView />}
       </main>
@@ -403,6 +429,356 @@ const OUTCOME: Record<VendorResult['outcome'], { label: string; color: string }>
   no_price: { label: 'Crawled · no price', color: C.muted },
   no_wp: { label: 'Unreachable / no content', color: C.pink },
 };
+
+/**
+ * Add a vendor to the directory by hand — the business, its venues and its
+ * classes — without touching SQL. Everything the parent app needs to show a
+ * listing properly is on this one form; venues are geocoded server-side so the
+ * new vendor appears on the Explore map and under its area filter immediately.
+ */
+function AddVendorView() {
+  const [meta, setMeta] = useState<NewVendorMeta | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<CreatedVendor | null>(null);
+
+  // business
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [vendorCategory, setVendorCategory] = useState('baby-toddler-classes');
+  const [description, setDescription] = useState('');
+  const [website, setWebsite] = useState('');
+  const [bookingUrl, setBookingUrl] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [address, setAddress] = useState('');
+  const [postal, setPostal] = useState('');
+
+  const [locations, setLocations] = useState<DraftLocation[]>([]);
+  const [activities, setActivities] = useState<DraftActivity[]>([]);
+
+  const load = useCallback(async () => {
+    try { setMeta(await adminFetch<NewVendorMeta>('/api/admin/providers')); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // The slug is derived from the name until the founder edits it herself.
+  const autoSlug = name.toLowerCase().normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60);
+  const effectiveSlug = slugTouched ? slug : autoSlug;
+
+  const defaultCategory = meta?.categories[0]?.slug ?? 'music';
+
+  function reset() {
+    setName(''); setSlug(''); setSlugTouched(false); setVendorCategory('baby-toddler-classes');
+    setDescription(''); setWebsite(''); setBookingUrl(''); setEmail(''); setPhone('');
+    setWhatsapp(''); setAddress(''); setPostal(''); setLocations([]); setActivities([]);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true); setErr(null); setDone(null);
+    try {
+      const payload = {
+        business_name: name,
+        slug: effectiveSlug,
+        description,
+        vendor_category: vendorCategory,
+        contact_email: email,
+        contact_phone: phone,
+        whatsapp,
+        website,
+        booking_url: bookingUrl,
+        address,
+        postal_code: postal,
+        locations: locations.map((l) => ({ name: l.name, address: l.address, postal_code: l.postal_code })),
+        activities: activities
+          .filter((a) => a.title.trim())
+          .map((a) => ({
+            title: a.title,
+            category_slug: a.category_slug,
+            description: a.description,
+            age_min_months: a.age_min_months === '' ? null : Number(a.age_min_months),
+            age_max_months: a.age_max_months === '' ? null : Number(a.age_max_months),
+            price: a.price === '' ? null : Number(a.price),
+            is_published: a.is_published,
+          })),
+      };
+      const r = await adminFetch<CreatedVendor>('/api/admin/providers', {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      setDone(r);
+      reset();
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  const label = (t: string): React.CSSProperties => ({ fontSize: 12, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 5 });
+  const field = { marginBottom: 12 };
+  const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
+
+  return (
+    <div>
+      <form onSubmit={submit}>
+        <div style={card()}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Add a vendor to the directory</div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 4, maxWidth: 720 }}>
+            Creates the business, its venues and its classes in one go. Addresses are looked up
+            automatically so the vendor shows on the Explore map and under the right area filter.
+            The listing is unclaimed, so the vendor can claim it later, and the weekly crawler will
+            never overwrite what you type here.
+          </div>
+        </div>
+
+        {/* ---- business ---- */}
+        <div style={{ ...card(), marginTop: 12 }}>
+          <div style={{ fontWeight: 800, marginBottom: 14 }}>Business</div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>Business name *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} style={input()} placeholder="Little Blue Chair" required />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Page address (slug)</label>
+              <input value={effectiveSlug}
+                onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }}
+                style={input()} placeholder="little-blue-chair" />
+            </div>
+          </div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>Business type *</label>
+              <select value={vendorCategory} onChange={(e) => setVendorCategory(e.target.value)} style={input()}>
+                {(meta?.vendorCategories ?? Object.keys(VENDOR_CATEGORY_LABELS)).map((v) => (
+                  <option key={v} value={v}>{VENDOR_CATEGORY_LABELS[v] ?? v}</option>
+                ))}
+              </select>
+            </div>
+            <div style={field}>
+              <label style={label('')}>Website</label>
+              <input value={website} onChange={(e) => setWebsite(e.target.value)} style={input()} placeholder="https://…" />
+            </div>
+          </div>
+
+          <div style={field}>
+            <label style={label('')}>Description</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              rows={3} style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+              placeholder="What they do, in a sentence or two — this is what parents read on the listing." />
+          </div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>Address</label>
+              <input value={address} onChange={(e) => setAddress(e.target.value)} style={input()} placeholder="25E Lor Liput, Singapore" />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Postal code <span style={{ color: C.blue }}>· drives the map pin &amp; area</span></label>
+              <input value={postal} onChange={(e) => setPostal(e.target.value)} style={input()} placeholder="277736" />
+            </div>
+          </div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>Contact email</label>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} style={input()} placeholder="hello@…" />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Phone</label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} style={input()} placeholder="8123 4567" />
+            </div>
+          </div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>WhatsApp</label>
+              <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={input()} placeholder="+65…" />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Booking link</label>
+              <input value={bookingUrl} onChange={(e) => setBookingUrl(e.target.value)} style={input()}
+                placeholder="Leave blank to send parents to the website" />
+            </div>
+          </div>
+        </div>
+
+        {/* ---- venues ---- */}
+        <div style={{ ...card(), marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontWeight: 800 }}>Venues</div>
+              <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
+                One per place they teach — each gets its own pin. Skip this if they only use the address above.
+              </div>
+            </div>
+            <button type="button" onClick={() => setLocations((p) => [...p, { name: '', address: '', postal_code: '' }])}
+              style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add venue</button>
+          </div>
+
+          {locations.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No extra venues.</div>}
+          {locations.map((l, i) => (
+            <div key={i} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 40px', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={label('')}>Venue name</label>
+                  <input value={l.name} style={input()} placeholder="East Coast studio"
+                    onChange={(e) => setLocations((p) => p.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Address</label>
+                  <input value={l.address} style={input()}
+                    onChange={(e) => setLocations((p) => p.map((x, j) => j === i ? { ...x, address: e.target.value } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Postal code</label>
+                  <input value={l.postal_code} style={input()}
+                    onChange={(e) => setLocations((p) => p.map((x, j) => j === i ? { ...x, postal_code: e.target.value } : x))} />
+                </div>
+                <button type="button" title="Remove venue"
+                  onClick={() => setLocations((p) => p.filter((_, j) => j !== i))}
+                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border, height: 42 }}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ---- classes ---- */}
+        <div style={{ ...card(), marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontWeight: 800 }}>Classes</div>
+              <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
+                What parents can browse and book. A vendor with no classes won&rsquo;t appear in search results.
+              </div>
+            </div>
+            <button type="button"
+              onClick={() => setActivities((p) => [...p, {
+                title: '', category_slug: defaultCategory, description: '',
+                age_min_months: '', age_max_months: '', price: '', is_published: true,
+              }])}
+              style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add class</button>
+          </div>
+
+          {activities.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No classes yet.</div>}
+          {activities.map((a, i) => (
+            <div key={i} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 40px', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={label('')}>Class name</label>
+                  <input value={a.title} style={input()} placeholder="Outdoor Sensory Play"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Category</label>
+                  <select value={a.category_slug} style={input()}
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, category_slug: e.target.value } : x))}>
+                    {(meta?.categories ?? []).map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                  </select>
+                </div>
+                <button type="button" title="Remove class"
+                  onClick={() => setActivities((p) => p.filter((_, j) => j !== i))}
+                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border, height: 42 }}>✕</button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginTop: 10 }}>
+                <div>
+                  <label style={label('')}>Age from (months)</label>
+                  <input value={a.age_min_months} inputMode="numeric" style={input()} placeholder="0"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, age_min_months: e.target.value.replace(/\D/g, '') } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Age to (months)</label>
+                  <input value={a.age_max_months} inputMode="numeric" style={input()} placeholder="132"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, age_max_months: e.target.value.replace(/\D/g, '') } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Price (SGD)</label>
+                  <input value={a.price} inputMode="decimal" style={input()} placeholder="blank = on enquiry"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, price: e.target.value.replace(/[^\d.]/g, '') } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Visible to parents</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, fontSize: 14 }}>
+                    <input type="checkbox" checked={a.is_published}
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, is_published: e.target.checked } : x))} />
+                    {a.is_published ? 'Published' : 'Hidden'}
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <label style={label('')}>Description</label>
+                <input value={a.description} style={input()} placeholder="Falls back to the business description if blank"
+                  onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
+
+        {done && (
+          <div style={{ ...card(), marginTop: 12, borderColor: C.green }}>
+            <div style={{ color: C.green, fontWeight: 800 }}>
+              {done.provider.business_name} added — {done.activities} class{done.activities === 1 ? '' : 'es'},{' '}
+              {done.locations} venue{done.locations === 1 ? '' : 's'}
+              {done.provider.region ? `, ${done.provider.region}` : ''}.
+            </div>
+            <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>
+              {done.geocoded} address{done.geocoded === 1 ? '' : 'es'} placed on the map. Live at{' '}
+              <code style={{ color: C.blue }}>/provider?slug={done.provider.slug}</code>
+            </div>
+            {done.warnings.map((w, i) => (
+              <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+          <button type="submit" disabled={busy || !name.trim()}
+            style={{ ...primaryBtn(), opacity: busy || !name.trim() ? 0.55 : 1 }}>
+            {busy ? 'Adding…' : 'Add vendor'}
+          </button>
+          <button type="button" onClick={reset} style={tabBtn(false)}>Clear</button>
+          {busy && <span style={{ color: C.muted, fontSize: 13 }}>Looking up addresses…</span>}
+        </div>
+      </form>
+
+      {/* ---- what's already there ---- */}
+      <div style={{ fontWeight: 800, margin: '26px 0 10px' }}>Recently added</div>
+      {!meta ? <p style={{ color: C.muted }}>Loading…</p> : (
+        <div style={{ ...card(), padding: 0, overflow: 'hidden' }}>
+          {meta.recent.map((p, i) => (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.business_name}
+                </div>
+                <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                  {VENDOR_CATEGORY_LABELS[p.vendor_category] ?? p.vendor_category}
+                  {p.region ? ` · ${p.region}` : ' · no area'}
+                  {` · ${new Date(p.created_at).toLocaleDateString('en-SG')}`}
+                </div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999,
+                background: p.is_claimed ? C.green : C.panel2, color: p.is_claimed ? '#04220f' : C.muted }}>
+                {p.is_claimed ? 'Claimed' : p.is_auto_listed ? 'Auto-listed' : 'Added by hand'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function VendorsView() {
   const [runs, setRuns] = useState<VendorRun[] | null>(null);
