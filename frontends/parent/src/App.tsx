@@ -56,12 +56,12 @@ function HomePage() {
       <main>
         <section className="mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
           <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-baby-pink">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-pink-700">
               <Icon name="heart" className="h-4 w-4" /> Made by a parent, for parents.
             </div>
             <h1 className="max-w-[520px] text-[40px] font-black leading-[1.04] md:text-[52px]">
               Curated activities for{" "}
-              <span className="text-baby-pink">your child</span>
+              <span className="text-pink-700">your child</span>
             </h1>
             <p className="mt-5 max-w-[460px] text-[17px] font-semibold leading-7 text-[#27325f]">
               Discover &amp; book classes, play spaces and events tailored to
@@ -96,7 +96,7 @@ function HomePage() {
             ["calendar", "Plan with ease", "Book activities that suit you."],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] text-baby-pink">
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] text-pink-700">
                 <Icon name={icon} className="h-8 w-8" />
               </span>
               <p>
@@ -110,7 +110,7 @@ function HomePage() {
         <section id="how-it-works" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3">
           <div className="rounded-[22px] border border-[#EBE3E5] bg-white/80 p-5 shadow-card">
             <h2 className="text-center text-[26px] font-black text-baby-orange">
-              How it works <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
+              How it works <Icon name="spark" className="inline h-5 w-5 text-pink-700" />
             </h2>
             <p className="text-center text-sm font-semibold text-[#46527d]">
               Three simple steps to help you identify &amp; book activities ideal for your child.
@@ -148,11 +148,11 @@ function HomePage() {
                   ["chart", "200+", "Locations"],
                 ].map(([icon, stat, label]) => (
                   <div key={stat} className="flex items-center justify-start gap-3 md:justify-center">
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink">
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-pink-700">
                       <Icon name={icon} className="h-7 w-7" />
                     </span>
                     <p>
-                      <strong className="block text-2xl font-black text-baby-pink">{stat}</strong>
+                      <strong className="block text-2xl font-black text-pink-700">{stat}</strong>
                       <span className="text-sm font-semibold">{label}</span>
                     </p>
                   </div>
@@ -192,7 +192,7 @@ function HomePage() {
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <SectionTitle
-            action={<a href="/explore" className="font-bold text-baby-pink">View all activities ›</a>}
+            action={<a href="/explore" className="font-bold text-pink-700">View all activities ›</a>}
           >
             Activities near you
           </SectionTitle>
@@ -271,7 +271,7 @@ function budgetRange(keys: string[]): { budget_min: number | null; budget_max: n
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-[#FFC1D6]" : "border-[#DCD2D5] bg-white"}`}>
+    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>
       {children}
     </button>
   );
@@ -317,7 +317,7 @@ function ChildDraftFields({
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
         {total > 1 && (
-          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#FFC1D6] hover:underline">
+          <button type="button" onClick={onRemove} className="text-xs font-bold text-pink-700 hover:underline">
             Remove
           </button>
         )}
@@ -505,7 +505,7 @@ function OnboardingPage() {
     <PageShell active="/onboarding">
       <main className="mx-auto max-w-[680px] px-6 py-6">
         <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Let's get to know <span className="text-baby-pink">you</span></h1>
+          <h1 className="text-[26px] font-black">Let's get to know <span className="text-pink-700">you</span></h1>
           <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
             <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
@@ -535,7 +535,7 @@ function OnboardingPage() {
             </div>
           </div>
 
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-pink-700" /> Areas you'd like activities in</h2>
           <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick any areas that work for you — they don't have to be near home.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {REGION_FILTERS.map(([v, l]) => (
@@ -543,7 +543,7 @@ function OnboardingPage() {
             ))}
           </div>
 
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-pink-700" /> Your preferences</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             <Chip on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Chip>
             <Chip on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Chip>
@@ -553,7 +553,7 @@ function OnboardingPage() {
         </section>
 
         <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></h1>
+          <h1 className="text-[26px] font-black">Tell us about your <span className="text-pink-700">{kids.length > 1 ? "children" : "child"}</span></h1>
           <div className="mt-4">
             {kids.map((k, i) => (
               <ChildDraftFields
@@ -586,22 +586,22 @@ function OnboardingPage() {
           />
           <span>
             I agree to BabyBrain's{" "}
-            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms &amp; Conditions</a>{" "}
+            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-pink-700 underline">Terms &amp; Conditions</a>{" "}
             and{" "}
-            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>.
+            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-pink-700 underline">Privacy Policy</a>.
           </span>
         </label>
 
         {/* The error sits directly above the CTA — QA found it at the top of the
             page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#FFC1D6]">
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-700">
             {error}
           </p>
         )}
 
         <Button type="button" onClick={submit} className="mt-3 w-full justify-center" disabled={busy}>{busy ? "Setting up…" : "Show me options →"}</Button>
-        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
+        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-pink-700">Log in</a></p>
       </main>
     </PageShell>
   );
@@ -672,7 +672,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           {/* On mobile the "See activity options" link sits below the cards
               rather than crowding the heading. */}
           <SectionTitle
-            action={<a href="/explore" className="hidden font-bold text-[#FFC1D6] sm:inline">Explore more activities →</a>}
+            action={<a href="/explore" className="hidden font-bold text-pink-700 sm:inline">Explore more activities →</a>}
           >
             Matching activities
           </SectionTitle>
@@ -686,7 +686,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
+          <a href="/explore" className="mt-4 block text-center font-bold text-pink-700 sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
@@ -793,7 +793,7 @@ function EmailCapturePopup() {
                 not included. So the copy promises only what Free gives: word
                 of new listings. Anything about "curated for your little one"
                 belongs on the Plus card, not here. */}
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-pink"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-pink-700"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
             <h2 className="text-2xl font-black leading-tight">Hear about new activities first</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll let you know as new classes, play spaces and holiday camps are added to BabyBrain — no spam, unsubscribe anytime.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
@@ -805,7 +805,7 @@ function EmailCapturePopup() {
                 autoFocus
                 className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
-              {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
+              {error && <p className="text-sm font-semibold text-pink-700">{error}</p>}
               <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Keep me posted"}</Button>
             </form>
             <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
@@ -993,7 +993,7 @@ function ExplorePage() {
           <div>
             <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="search" className="inline h-6 w-6 text-baby-green" /></h1>
             <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">
-              {query ? <>Results for “{query}”. <a href="/explore" className="font-black text-baby-pink">Clear search</a></> : "Browse activities across Singapore."}
+              {query ? <>Results for “{query}”. <a href="/explore" className="font-black text-pink-700">Clear search</a></> : "Browse activities across Singapore."}
             </p>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
@@ -1039,7 +1039,7 @@ function ExplorePage() {
               {showMore ? "Fewer filters ▲" : "More filters ▾"}
             </button>
             {anyFilter && (
-              <button type="button" onClick={resetFilters} className="h-10 text-xs font-bold text-baby-pink hover:underline">
+              <button type="button" onClick={resetFilters} className="h-10 text-xs font-bold text-pink-700 hover:underline">
                 Reset filters
               </button>
             )}
@@ -1058,11 +1058,11 @@ function ExplorePage() {
                 <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
               </label>
               <label className="flex flex-col justify-center gap-1">
-                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
+                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-pink-700">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
                 <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
               </label>
               <label className="flex flex-col justify-center gap-1">
-                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
+                <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-pink-700">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
                 <div className="mt-1 flex items-center gap-2">
                   <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
                   <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
@@ -1352,7 +1352,7 @@ function ActivityDetailPage() {
       <PageShell active="/explore">
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Activity not found.</p>
-          <a href="/explore" className="font-bold text-baby-pink">← Back to results</a>
+          <a href="/explore" className="font-bold text-pink-700">← Back to results</a>
         </main>
       </PageShell>
     );
@@ -1415,7 +1415,7 @@ function ActivityDetailPage() {
                 </p>
               )}
             {activity.category_name && (
-              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-pink"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
+              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-pink-700"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
             )}
             <p className="mt-3 text-[15px] font-semibold leading-6 text-[#34406f]">{activity.description}</p>
             {activity.rating_count > 0 && (
@@ -1501,7 +1501,7 @@ function ActivityDetailPage() {
                 <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
                 {r.provider_response && (
                   <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
-                    <p className="text-xs font-black text-baby-pink">Response from the provider</p>
+                    <p className="text-xs font-black text-pink-700">Response from the provider</p>
                     <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
                   </div>
                 )}
@@ -1589,7 +1589,7 @@ function ActivityDetailPage() {
               variant="soft"
               type="button"
               onClick={() => fav.toggle().then((ok) => { if (!ok) setFavUpgrade(true); })}
-              className="mt-3 w-full text-baby-pink"
+              className="mt-3 w-full text-pink-700"
             >
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
             </Button>
@@ -1655,7 +1655,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
   if (!session) {
     return (
       <p className="mb-4 rounded-[10px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
-        <a href="/login" className="font-black text-baby-pink">Log in</a> to leave a review.
+        <a href="/login" className="font-black text-pink-700">Log in</a> to leave a review.
       </p>
     );
   }
@@ -1701,7 +1701,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         placeholder="Share how the class went (optional)"
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
-      {error && <p className="mt-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+      {error && <p className="mt-2 text-sm font-bold text-pink-700">{error}</p>}
       <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
@@ -1843,7 +1843,7 @@ function ExportScheduleDialog({
           </label>
         </div>
 
-        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#FFC1D6]" : "text-[#59658d]"}`}>
+        <p className={`mt-3 text-sm font-bold ${invalid ? "text-pink-700" : "text-[#59658d]"}`}>
           {invalid
             ? "The end date is before the start date."
             : `${selected.length} ${selected.length === 1 ? "class" : "classes"} in this range`}
@@ -1899,7 +1899,7 @@ const PLACEHOLDER_SAVED = [
 function PlusLock({ title, copy }: { title: string; copy: string }) {
   return (
     <div className="mt-4 rounded-[14px] border border-dashed border-[#FFC1D6] bg-[#FFF5F8] p-10 text-center">
-      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-pink-700">
         <Icon name="lock" className="h-7 w-7" />
       </span>
       <h2 className="mt-4 text-xl font-black">{title}</h2>
@@ -1983,7 +1983,7 @@ function TokenRow({ t }: { t: TokenItem }) {
 
 function tokenStatusStyle(status: string) {
   if (status === "issued") return "bg-[#F1FBEF] text-palette-green";
-  if (status === "redeemed") return "bg-[#FEEBF2] text-[#FFC1D6]";
+  if (status === "redeemed") return "bg-[#FEEBF2] text-pink-700";
   return "bg-[#FEF9EB] text-[#FFD77A]"; // expired
 }
 
@@ -1996,12 +1996,12 @@ function PackageCard({ p }: { p: PackageItem }) {
       {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
       className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${clickable ? "transition hover:border-baby-pink" : "opacity-60"}`}
     >
-      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-6 w-6" /></span>
+      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-700"><Icon name="store" className="h-6 w-6" /></span>
       <div className="min-w-0 flex-1">
         <h3 className="truncate font-black">{p.name}</h3>
         <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
         {p.expiresAt && (
-          <p className={`text-xs font-bold ${p.status === "expired" ? "text-[#FFC1D6]" : "text-[#6D748A]"}`}>
+          <p className={`text-xs font-bold ${p.status === "expired" ? "text-pink-700" : "text-[#6D748A]"}`}>
             {p.status === "expired" ? "Expired" : "Expires"} {sgDay(p.expiresAt)}
           </p>
         )}
@@ -2010,10 +2010,10 @@ function PackageCard({ p }: { p: PackageItem }) {
         {p.status === "expired" ? (
           <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#FFD77A]">Expired</span>
         ) : p.remaining === 0 ? (
-          <span className="rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-[#FFC1D6]">All used</span>
+          <span className="rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-700">All used</span>
         ) : (
           <>
-            <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
+            <p className="text-lg font-black text-pink-700">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
             <p className="text-xs font-bold text-[#6D748A]">credits left</p>
           </>
         )}
@@ -2080,9 +2080,9 @@ function FavChildAssign({
 
 function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-palette-green";
-  if (status === "cancelled") return "bg-[#FEEBF2] text-[#FFC1D6]";
+  if (status === "cancelled") return "bg-[#FEEBF2] text-pink-700";
   if (status === "waitlisted") return "bg-amber-50 text-palette-yellow";
-  return "bg-[#FEEBF2] text-[#FFC1D6]";
+  return "bg-[#FEEBF2] text-pink-700";
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -2154,7 +2154,7 @@ function ChildForm({
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-5 shadow-card">
       <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
-      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
       <div className="mt-3 space-y-3">
         <div>
           <p className="text-sm font-black">Avatar</p>
@@ -2220,7 +2220,7 @@ function ChildClasses({ child, bookings, recs }: { child: Child; bookings: Booki
       <h2 className="text-xl font-black">{child.name}'s classes</h2>
       {bookings.length === 0 ? (
         <p className="mt-3 rounded-[12px] bg-white p-4 text-sm font-semibold text-[#68718f]">
-          No classes booked for {child.name} yet. <a href="/explore" className="font-black text-baby-pink">Explore activities →</a>
+          No classes booked for {child.name} yet. <a href="/explore" className="font-black text-pink-700">Explore activities →</a>
         </p>
       ) : (
         <div className="mt-3 space-y-4">
@@ -2310,7 +2310,7 @@ function ChildrenTab({
                       <div>
                         <h3 className="font-black">{c.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p>
-                        <p className="mt-0.5 text-xs font-bold text-baby-pink">{open ? "Hide classes ▲" : `View classes ▾${booked ? ` · ${booked} booked` : ""}`}</p>
+                        <p className="mt-0.5 text-xs font-bold text-pink-700">{open ? "Hide classes ▲" : `View classes ▾${booked ? ` · ${booked} booked` : ""}`}</p>
                       </div>
                     </button>
                     {c.interests.length > 0 && (
@@ -2318,7 +2318,7 @@ function ChildrenTab({
                     )}
                     <div className="mt-3 flex items-center gap-3">
                       <Button type="button" variant="outline" size="sm" onClick={() => setForm({ child: c })}><Icon name="pen" className="h-4 w-4" /> Edit</Button>
-                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-[#FFC1D6] hover:underline">Remove</button>
+                      <button type="button" onClick={() => remove(c)} className="text-xs font-bold text-pink-700 hover:underline">Remove</button>
                     </div>
                   </div>
                 );
@@ -2541,14 +2541,14 @@ function EditProfilePage() {
         </section>
 
         <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h2 className="flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
+          <h2 className="flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-pink-700" /> Areas you'd like activities in</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             {REGION_FILTERS.map(([v, l]) => (
               <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
             ))}
           </div>
 
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
+          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-pink-700" /> Your preferences</h2>
           <div className="mt-2 flex flex-wrap gap-2">
             <Chip
               on={weekdaysOn}
@@ -2579,7 +2579,7 @@ function EditProfilePage() {
         </section>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-[#FFC1D6]">{error}</p>
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-700">{error}</p>
         )}
         <div className="mt-4 flex gap-3">
           <Button type="button" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : "Save changes"}</Button>
@@ -2978,7 +2978,7 @@ function ProfilePage() {
             </div>
             <a
               href={isPlus ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-[#FFC1D6]" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-pink-700" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
             >
               <span className="flex items-center gap-1.5">
                 <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
@@ -2993,7 +2993,7 @@ function ProfilePage() {
                   <a
                     key={key}
                     href={`/profile?tab=${key}`}
-                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-[#FFC1D6]" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
+                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-pink-700" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
                   >
                     <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
@@ -3009,7 +3009,7 @@ function ProfilePage() {
           <div className="rounded-[12px] bg-[#EDF7FD] p-5">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
+            <a href="/contact" className="mt-4 block font-black text-pink-700">Contact support →</a>
           </div>
         </aside>
         <section className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
@@ -3028,7 +3028,7 @@ function ProfilePage() {
                   <div>
                     <h1 className="text-[30px] font-black">Your child</h1>
                     <p className="mt-1.5 text-sm font-semibold text-[#68718f]">
-                      Add a child to get personalised matches. <a href="/profile?tab=children" className="font-black text-baby-pink">Add a child →</a>
+                      Add a child to get personalised matches. <a href="/profile?tab=children" className="font-black text-pink-700">Add a child →</a>
                     </p>
                   </div>
                 </div>
@@ -3056,7 +3056,7 @@ function ProfilePage() {
                           <p className="mt-1 text-base font-semibold">{formatChildAge(c.date_of_birth)}</p>
                           {c.interests.length > 0 && (
                             <p className="mt-2 text-sm font-semibold capitalize leading-6 text-[#4a5685]">
-                              <Icon name="heart" className="mr-1 inline h-3.5 w-3.5 text-[#FFC1D6]" />
+                              <Icon name="heart" className="mr-1 inline h-3.5 w-3.5 text-pink-700" />
                               {c.interests.map((i) => i.replace(/-/g, " ")).join(", ")}
                             </p>
                           )}
@@ -3093,9 +3093,9 @@ function ProfilePage() {
               emoji="🩷"
               action={
                 isPlus ? (
-                  <a href="/profile?tab=favorites" className="font-bold text-[#FFC1D6]">View all →</a>
+                  <a href="/profile?tab=favorites" className="font-bold text-pink-700">View all →</a>
                 ) : (
-                  <a href="/pricing" className="flex items-center gap-1 font-bold text-[#FFC1D6]">
+                  <a href="/pricing" className="flex items-center gap-1 font-bold text-pink-700">
                     <Icon name="lock" className="h-3.5 w-3.5" /> Plus feature
                   </a>
                 )
@@ -3117,7 +3117,7 @@ function ProfilePage() {
                 </div>
                 <div className="absolute inset-0 grid place-items-center bg-white/55 p-6 text-center">
                   <div>
-                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#FED7E4] text-baby-pink">
+                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#FED7E4] text-pink-700">
                       <Icon name="lock" className="h-6 w-6" />
                     </span>
                     <p className="mt-3 font-black">Saving activities is a Plus feature</p>
@@ -3132,7 +3132,7 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>Suggested activities</SectionTitle>
+            <SectionTitle action={<a href="/matches" className="font-bold text-pink-700">See all matches →</a>}>Suggested activities</SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -3340,7 +3340,7 @@ function ProfilePage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {savedProviders.map((p) => (
                       <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-pink"><Icon name="store" className="h-5 w-5" /></span>
+                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-700"><Icon name="store" className="h-5 w-5" /></span>
                         <h3 className="truncate font-black">{p.name}</h3>
                       </div>
                     ))}
@@ -3373,13 +3373,13 @@ function ProfilePage() {
                   {reviews.map((r) => (
                     <div key={r.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
                       <div className="flex items-center justify-between">
-                        <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-baby-pink">{r.title}</a>
+                        <a href={r.slug ? `/activity?slug=${r.slug}` : "/explore"} className="font-black hover:text-pink-700">{r.title}</a>
                         <span className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-4 w-4 fill-current" />)}</span>
                       </div>
                       {r.comment && <p className="mt-1.5 font-semibold text-[#34406f]">{r.comment}</p>}
                       {r.providerResponse && (
                         <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
-                          <p className="text-xs font-black text-baby-pink">Response from the provider</p>
+                          <p className="text-xs font-black text-pink-700">Response from the provider</p>
                           <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.providerResponse}</p>
                         </div>
                       )}
@@ -3430,10 +3430,10 @@ function ProfilePage() {
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Plan</p>
                     <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
-                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
+                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-pink-700" />
                       {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
                       {billingPlan?.status === "trialing" && (
-                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-baby-pink">Free trial</span>
+                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-pink-700">Free trial</span>
                       )}
                       {billingPlan?.cancel_at_period_end && (
                         <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#FFD77A]">Cancels at period end</span>
@@ -3459,7 +3459,7 @@ function ProfilePage() {
                     <Icon name="check" className="mr-1 inline h-3.5 w-3.5 text-palette-green" />
                     Terms &amp; Conditions accepted on {sgDay(billingPlan.terms_accepted_at)}
                     {billingPlan.terms_version ? ` (v${billingPlan.terms_version})` : ""} ·{" "}
-                    <a href="/terms" className="text-baby-pink underline">View terms</a>
+                    <a href="/terms" className="text-pink-700 underline">View terms</a>
                   </p>
                 )}
               </div>
@@ -3512,7 +3512,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
 
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-6 shadow-card">
-      <h2 className="font-black text-[#FFC1D6]">Delete your account</h2>
+      <h2 className="font-black text-pink-700">Delete your account</h2>
       <p className="mt-1 text-sm font-semibold text-[#59658d]">
         This removes your profile, your children's details, preferences and saved activities.
         {isPlus ? " Your Plus subscription is cancelled at the same time, so you won't be charged again." : ""}
@@ -3523,7 +3523,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#FFC1D6] hover:bg-[#FFF5F8]"
+          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-pink-700 hover:bg-[#FFF5F8]"
         >
           Delete account
         </button>
@@ -3531,7 +3531,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
         <div className="mt-4 rounded-[12px] bg-[#FFF5F8] p-4">
           {/* The input is `block` so it sits under the instruction rather than
               running on beside it, and lines up with the buttons below. */}
-          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#FFC1D6]">
+          <label htmlFor="delete-confirm" className="block text-sm font-black text-pink-700">
             Type DELETE to confirm
           </label>
           <input
@@ -3541,7 +3541,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
             className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold"
             placeholder="DELETE"
           />
-          {error && <p className="mt-3 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+          {error && <p className="mt-3 text-sm font-bold text-pink-700">{error}</p>}
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
@@ -3627,7 +3627,7 @@ function PastActivitiesTab({
         <div className="flex items-center gap-4">
           <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
-            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
+            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-pink-700">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
           {state && (
@@ -3641,7 +3641,7 @@ function PastActivitiesTab({
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "present")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-300 bg-[#F1FBEF] text-palette-green" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "present" ? "border border-green-300 bg-[#F1FBEF] text-palette-green" : "border border-[#FED7E4] text-pink-700 hover:bg-[#FFF5F8]"}`}
           >
             We went
           </button>
@@ -3649,7 +3649,7 @@ function PastActivitiesTab({
             type="button"
             disabled={busyId === b.id}
             onClick={() => mark(b, "absent")}
-            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#EBE3E5] bg-[#FAF7F7] text-[#5a6484]" : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"}`}
+            className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${state === "absent" ? "border border-[#EBE3E5] bg-[#FAF7F7] text-[#5a6484]" : "border border-[#FED7E4] text-pink-700 hover:bg-[#FFF5F8]"}`}
           >
             We missed it
           </button>
@@ -3692,7 +3692,7 @@ function PastActivitiesTab({
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
       <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
       {filterChips}
-      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
 
       {items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
@@ -3784,7 +3784,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             <button
               type="button"
               onClick={() => setExporting(true)}
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8]"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-pink-700 hover:bg-[#FFF5F8]"
               title="Pick a date range, then save as PDF or add to your calendar"
             >
               <Icon name="calendar" className="h-3.5 w-3.5" /> Export schedule
@@ -3792,7 +3792,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
           ) : (
             <a
               href="/pricing"
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-[#FFC1D6]"
+              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-pink-700"
               title="Calendar sync and PDF export are Plus features"
             >
               <Icon name="lock" className="h-3.5 w-3.5" /> Calendar &amp; PDF export — Plus
@@ -3824,7 +3824,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     e.stopPropagation();
                     downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
                   }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8] sm:flex"
+                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-pink-700 hover:bg-[#FFF5F8] sm:flex"
                   title="Add to calendar"
                 >
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
@@ -3841,7 +3841,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     reschedWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                      : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
+                      : "border border-[#FED7E4] text-pink-700 hover:bg-[#FFF5F8]"
                   }`}
                   title={reschedWhy ?? "Move this booking to another session"}
                 >
@@ -3854,7 +3854,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                      : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
+                      : "border border-[#FED7E4] text-pink-700 hover:bg-[#FFF5F8]"
                   }`}
                   title={cancelWhy ?? "Cancel this booking"}
                 >
@@ -3892,7 +3892,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   className="flex w-full items-center justify-between rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#FFF5F8]"
                 >
                   {sgDateTime(s.starts_at)}
-                  <Icon name="calendar" className="h-4 w-4 text-[#FFC1D6]" />
+                  <Icon name="calendar" className="h-4 w-4 text-pink-700" />
                 </button>
               ))}
               {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#6D748D]">No other upcoming sessions for this class.</p>}
@@ -3919,7 +3919,7 @@ const SUPPORT_EMAIL = "hello@babybrain.sg";
 const SUPPORT_PHONE = "+65 8996 6716"; // BabyBrain support line (call + WhatsApp)
 const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
 
-const FAQ_LINK = "font-black text-baby-pink hover:underline";
+const FAQ_LINK = "font-black text-pink-700 hover:underline";
 const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
   {
     group: "Booking & getting started",
@@ -4054,7 +4054,7 @@ function ContactForm() {
           className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
         />
       </div>
-      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
       <Button type="submit" className="mt-4 w-full justify-center sm:w-auto" disabled={busy}>
         {busy ? "Sending…" : "Send message"}
       </Button>
@@ -4119,8 +4119,8 @@ function ContactPage() {
               // four buttons line up across the row however many lines each
               // card's copy runs to (and whether or not it has a tag).
               <article key={c.title} className="flex flex-col rounded-[16px] border border-[#FED7E4] bg-white/70 p-5 text-center shadow-card">
-                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-baby-pink"><Icon name={c.icon} className="h-9 w-9" /></div>
-                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-baby-pink">{c.tag}</span>}</h3>
+                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-pink-700"><Icon name={c.icon} className="h-9 w-9" /></div>
+                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-pink-700">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
                 <Button variant={c.variant === "pink" ? "pink" : "outline"} className="mt-auto w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
               </article>
@@ -4339,7 +4339,7 @@ function PricingPage() {
     <PageShell active="/pricing" auth="public">
       <main className="mx-auto max-w-[960px] px-6 py-8">
         <section className="text-center">
-          <Icon name="heart" className="mx-auto h-9 w-9 text-baby-pink" />
+          <Icon name="heart" className="mx-auto h-9 w-9 text-pink-700" />
           <h1 className="mt-2 text-[36px] font-black leading-tight">
             Choose the plan that's right for your family
           </h1>
@@ -4362,7 +4362,7 @@ function PricingPage() {
               {/* The mock only shows the Monthly-active state. Once Annual is
                   selected the pill turns blue, and pink-on-blue is ~1.5:1, so
                   the nudge goes white against the selected fill. */}
-              Annual <span className={billing === "annual" ? "text-white" : "text-baby-pink"}>(1 month free)</span>
+              Annual <span className={billing === "annual" ? "text-white" : "text-pink-700"}>(1 month free)</span>
             </button>
           </div>
         </section>
@@ -4411,7 +4411,7 @@ function PricingPage() {
               <span className="text-[44px] font-black text-baby-lilac">{plusPrice}</span>
               <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
             </p>
-            <p className="mt-1 text-center text-sm font-black text-baby-pink">Get your first month free!</p>
+            <p className="mt-1 text-center text-sm font-black text-pink-700">Get your first month free!</p>
             <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
               {plusItems.map((item) => (
@@ -4451,7 +4451,7 @@ function PricingPage() {
             ["shield", "Cancel anytime", "Manage your subscription from your profile"],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <Icon name={icon} className="h-8 w-8 text-baby-pink" />
+              <Icon name={icon} className="h-8 w-8 text-pink-700" />
               <p><strong className="block">{title}</strong><span className="text-sm font-semibold text-[#59658d]">{copy}</span></p>
             </div>
           ))}
@@ -4892,7 +4892,7 @@ function BookingPage() {
     return (
       <PageShell active="/book">
         <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">
-          Class not found. <a href="/explore" className="text-baby-pink">Browse activities →</a>
+          Class not found. <a href="/explore" className="text-pink-700">Browse activities →</a>
         </main>
       </PageShell>
     );
@@ -4904,7 +4904,7 @@ function BookingPage() {
   return (
     <PageShell active="/book">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-baby-pink">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><a href={`/activity?slug=${activity.slug}`}>{activity.title}</a><span>›</span><span className="text-pink-700">Book</span></div>
         <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
@@ -4937,7 +4937,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
+                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4945,7 +4945,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4958,7 +4958,7 @@ function BookingPage() {
                               key={k.id}
                               type="button"
                               onClick={() => setChildId(k.id)}
-                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-baby-pink" : "border-[#DCD2D5] bg-white"}`}
+                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}
                             >
                               <AnimalAvatar seed={k.avatar_seed ?? k.name} kind="child" gender={k.gender} className="h-6 w-6" /> {k.name}
                             </button>
@@ -5050,7 +5050,7 @@ function BookingPage() {
                                 <span className="min-w-0">
                                   <span className="block font-black">
                                     {p.title}
-                                    {p.required ? <span className="ml-1 text-baby-pink">*</span> : (
+                                    {p.required ? <span className="ml-1 text-pink-700">*</span> : (
                                       <span className="ml-2 rounded-full bg-[#F4EFF0] px-2 py-0.5 text-[10px] font-bold text-[#6D748D]">Optional</span>
                                     )}
                                   </span>
@@ -5074,7 +5074,7 @@ function BookingPage() {
                           })}
                           {needsMedical && (
                             <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
-                              <p className="font-black">Medical &amp; health disclosure <span className="text-baby-pink">*</span></p>
+                              <p className="font-black">Medical &amp; health disclosure <span className="text-pink-700">*</span></p>
                               <p className="mt-1 text-sm font-semibold text-[#59658d]">
                                 Anything the provider should know — allergies, conditions, medication. Write &ldquo;none&rdquo; if there is nothing to declare.
                               </p>
@@ -5099,7 +5099,7 @@ function BookingPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
-                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-pink">{activity.category_name}</span>}</div>
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-700">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
@@ -5107,14 +5107,14 @@ function BookingPage() {
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
-              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-pink-700">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
             </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
-            {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-700"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            {err && <p className="mt-3 text-sm font-bold text-pink-700">{err}</p>}
           </div>
           {redeemToken && (
             <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
@@ -5160,7 +5160,7 @@ function BookedPage() {
   return (
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-baby-pink">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-pink-700">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
           <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
@@ -5182,7 +5182,7 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-pink"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-700"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
               </div>
             </article>
           </div>
@@ -5304,7 +5304,7 @@ function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
-          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
@@ -5313,14 +5313,14 @@ function LoginPage() {
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
-                <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
+                <a href="/forgot-password" className="text-xs font-bold text-pink-700 hover:underline">Forgot password?</a>
               </div>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
           <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-            New here? <a href="/onboarding" className="font-black text-baby-pink">Create a profile</a>
+            New here? <a href="/onboarding" className="font-black text-pink-700">Create a profile</a>
           </p>
         </div>
       </main>
@@ -5354,13 +5354,13 @@ function ForgotPasswordPage() {
                 If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
               </p>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-                <a href="/login" className="font-black text-baby-pink">← Back to log in</a>
+                <a href="/login" className="font-black text-pink-700">← Back to log in</a>
               </p>
             </div>
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Enter your email and we'll send you a link to set a new password.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
@@ -5369,7 +5369,7 @@ function ForgotPasswordPage() {
                 <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
               </form>
               <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-                Remembered it? <a href="/login" className="font-black text-baby-pink">Log in</a>
+                Remembered it? <a href="/login" className="font-black text-pink-700">Log in</a>
               </p>
             </>
           )}
@@ -5428,12 +5428,12 @@ function ResetPasswordPage() {
             </p>
           ) : !ready ? (
             <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#FFD77A]">
-              This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-pink">request a new one</a>.
+              This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-pink-700">request a new one</a>.
             </p>
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Choose a new password for your account.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
