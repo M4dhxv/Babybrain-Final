@@ -83,7 +83,7 @@ export function SaveHeart({
           });
         }}
         className={`grid place-items-center rounded-full shadow-soft transition ${
-          fav.saved ? "bg-baby-pink text-white" : "bg-white text-pink-700"
+          fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"
         } ${className}`}
       >
         <Icon name="heart" className="h-4.5 w-4.5" />
@@ -354,7 +354,7 @@ export function Header({ active = "/" }: HeaderProps) {
               key={route.href}
               href={route.href}
               className={`relative whitespace-nowrap py-5 ${
-                active === route.href ? "text-pink-700" : ""
+                active === route.href ? "text-baby-pink" : ""
               }`}
             >
               {route.label}
@@ -382,8 +382,8 @@ export function Header({ active = "/" }: HeaderProps) {
           </div>
         ) : (
           <div className="hidden items-center gap-4 text-sm font-bold lg:flex">
-            <a href="/profile?tab=favorites" className="flex items-center gap-1.5 text-baby-ink hover:text-pink-700">
-              <Icon name="heart" className="h-5 w-5 text-pink-700" /> Saved
+            <a href="/profile?tab=favorites" className="flex items-center gap-1.5 text-baby-ink hover:text-baby-pink">
+              <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
             </a>
             <a
               href="/profile"
@@ -438,10 +438,10 @@ export function Header({ active = "/" }: HeaderProps) {
             ) : (
               <div className="flex flex-col gap-1 text-[15px] font-bold">
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
-                  <Icon name="user" className="h-5 w-5 text-pink-700" /> {profile?.full_name?.split(" ")[0] || "My account"}
+                  <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
                 </a>
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
-                  <Icon name="heart" className="h-5 w-5 text-pink-700" /> Saved
+                  <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
                 </a>
                 <button onClick={() => signOut()} className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[#68718f] hover:bg-white">
                   Sign out
@@ -494,10 +494,10 @@ export function Button({
     // Only the filled CTAs (`primary`, `pink`, `blue`) keep the brighter
     // non-palette hues; the quieter variants sit on palette tokens.
     outline:
-      "border-palette-pink bg-white text-pink-700 hover:bg-palette-pinkTint",
+      "border-palette-pink bg-white text-palette-pink hover:bg-palette-pinkTint",
     soft: "border-transparent bg-palette-pinkTint text-pink-700 hover:bg-palette-pinkSoft",
     pink: "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
-    ghost: "border-transparent bg-transparent text-pink-700 hover:bg-palette-pinkTint",
+    ghost: "border-transparent bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
     // for marketing CTAs and the final confirm step.
     blue: "border-transparent bg-baby-blue text-white shadow-blue hover:brightness-105",
@@ -620,7 +620,7 @@ export function DateInput({
         type="button"
         onClick={openPicker}
         aria-label="Open calendar"
-        className="absolute right-0 top-0 grid h-full w-10 place-items-center text-[#6D748A] transition hover:text-pink-700"
+        className="absolute right-0 top-0 grid h-full w-10 place-items-center text-[#6D748A] transition hover:text-baby-pink"
       >
         <Icon name="calendar" className="h-4 w-4" />
       </button>
@@ -983,7 +983,7 @@ export function Footer() {
                   <p key={label}>
                     <a
                       href={href}
-                      className="inline-flex items-center gap-1.5 hover:text-pink-700"
+                      className="inline-flex items-center gap-1.5 hover:text-baby-pink"
                       {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
                     >
                       {icon && <Icon name={icon} className="h-4 w-4" />}
