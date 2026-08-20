@@ -56,7 +56,7 @@ function HomePage() {
       <main>
         <section className="mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
           <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-pink-700">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-pink-600">
               <Icon name="heart" className="h-4 w-4" /> Made by a parent, for parents.
             </div>
             <h1 className="max-w-[520px] text-[40px] font-black leading-[1.04] md:text-[52px]">
@@ -96,7 +96,7 @@ function HomePage() {
             ["calendar", "Plan with ease", "Book activities that suit you."],
           ].map(([icon, title, copy]) => (
             <div key={title} className="flex items-center gap-4">
-              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] text-pink-700">
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] text-pink-600">
                 <Icon name={icon} className="h-8 w-8" />
               </span>
               <p>
@@ -148,7 +148,7 @@ function HomePage() {
                   ["chart", "200+", "Locations"],
                 ].map(([icon, stat, label]) => (
                   <div key={stat} className="flex items-center justify-start gap-3 md:justify-center">
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-pink-700">
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-pink-600">
                       <Icon name={icon} className="h-7 w-7" />
                     </span>
                     <p>
@@ -271,7 +271,7 @@ function budgetRange(keys: string[]): { budget_min: number | null; budget_max: n
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>
+    <button type="button" onClick={onClick} className={`rounded-[8px] border px-3 py-2 text-xs font-bold ${on ? "border-baby-pink bg-[#FED7E4] text-pink-600" : "border-[#DCD2D5] bg-white"}`}>
       {children}
     </button>
   );
@@ -595,7 +595,7 @@ function OnboardingPage() {
         {/* The error sits directly above the CTA — QA found it at the top of the
             page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-700">
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-600">
             {error}
           </p>
         )}
@@ -793,7 +793,7 @@ function EmailCapturePopup() {
                 not included. So the copy promises only what Free gives: word
                 of new listings. Anything about "curated for your little one"
                 belongs on the Plus card, not here. */}
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-pink-700"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-pink-600"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
             <h2 className="text-2xl font-black leading-tight">Hear about new activities first</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll let you know as new classes, play spaces and holiday camps are added to BabyBrain — no spam, unsubscribe anytime.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
@@ -1415,7 +1415,7 @@ function ActivityDetailPage() {
                 </p>
               )}
             {activity.category_name && (
-              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-pink-700"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
+              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-pink-600"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
             )}
             <p className="mt-3 text-[15px] font-semibold leading-6 text-[#34406f]">{activity.description}</p>
             {activity.rating_count > 0 && (
@@ -1899,7 +1899,7 @@ const PLACEHOLDER_SAVED = [
 function PlusLock({ title, copy }: { title: string; copy: string }) {
   return (
     <div className="mt-4 rounded-[14px] border border-dashed border-[#FFC1D6] bg-[#FFF5F8] p-10 text-center">
-      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-pink-700">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-pink-600">
         <Icon name="lock" className="h-7 w-7" />
       </span>
       <h2 className="mt-4 text-xl font-black">{title}</h2>
@@ -1983,7 +1983,7 @@ function TokenRow({ t }: { t: TokenItem }) {
 
 function tokenStatusStyle(status: string) {
   if (status === "issued") return "bg-[#F1FBEF] text-palette-green";
-  if (status === "redeemed") return "bg-[#FEEBF2] text-pink-700";
+  if (status === "redeemed") return "bg-[#FEEBF2] text-pink-600";
   return "bg-[#FEF9EB] text-[#FFD77A]"; // expired
 }
 
@@ -1996,7 +1996,7 @@ function PackageCard({ p }: { p: PackageItem }) {
       {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
       className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${clickable ? "transition hover:border-baby-pink" : "opacity-60"}`}
     >
-      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-700"><Icon name="store" className="h-6 w-6" /></span>
+      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-600"><Icon name="store" className="h-6 w-6" /></span>
       <div className="min-w-0 flex-1">
         <h3 className="truncate font-black">{p.name}</h3>
         <p className="text-sm font-semibold text-[#59658d]">{p.provider}</p>
@@ -2010,7 +2010,7 @@ function PackageCard({ p }: { p: PackageItem }) {
         {p.status === "expired" ? (
           <span className="rounded-full bg-[#FEF9EB] px-3 py-1 text-xs font-bold text-[#FFD77A]">Expired</span>
         ) : p.remaining === 0 ? (
-          <span className="rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-700">All used</span>
+          <span className="rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-600">All used</span>
         ) : (
           <>
             <p className="text-lg font-black text-baby-pink">{p.remaining}<span className="text-sm text-[#6D748A]">/{p.total}</span></p>
@@ -2080,9 +2080,9 @@ function FavChildAssign({
 
 function bookingStatusStyle(status: string) {
   if (status === "confirmed" || status === "completed") return "bg-[#F1FBEF] text-palette-green";
-  if (status === "cancelled") return "bg-[#FEEBF2] text-pink-700";
+  if (status === "cancelled") return "bg-[#FEEBF2] text-pink-600";
   if (status === "waitlisted") return "bg-amber-50 text-palette-yellow";
-  return "bg-[#FEEBF2] text-pink-700";
+  return "bg-[#FEEBF2] text-pink-600";
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -2154,7 +2154,7 @@ function ChildForm({
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-5 shadow-card">
       <h3 className="text-lg font-black">{initial ? `Edit ${initial.name}` : "Add a child"}</h3>
-      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+      {error && <p className="mt-2 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
       <div className="mt-3 space-y-3">
         <div>
           <p className="text-sm font-black">Avatar</p>
@@ -2579,7 +2579,7 @@ function EditProfilePage() {
         </section>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-700">{error}</p>
+          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-pink-600">{error}</p>
         )}
         <div className="mt-4 flex gap-3">
           <Button type="button" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : "Save changes"}</Button>
@@ -2978,7 +2978,7 @@ function ProfilePage() {
             </div>
             <a
               href={isPlus ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-pink-700" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
+              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-pink-600" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
             >
               <span className="flex items-center gap-1.5">
                 <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
@@ -2993,7 +2993,7 @@ function ProfilePage() {
                   <a
                     key={key}
                     href={`/profile?tab=${key}`}
-                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-pink-700" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
+                    className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-pink-600" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
                   >
                     <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
@@ -3117,7 +3117,7 @@ function ProfilePage() {
                 </div>
                 <div className="absolute inset-0 grid place-items-center bg-white/55 p-6 text-center">
                   <div>
-                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#FED7E4] text-pink-700">
+                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#FED7E4] text-pink-600">
                       <Icon name="lock" className="h-6 w-6" />
                     </span>
                     <p className="mt-3 font-black">Saving activities is a Plus feature</p>
@@ -3340,7 +3340,7 @@ function ProfilePage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {savedProviders.map((p) => (
                       <div key={p.id} className="flex items-center gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-700"><Icon name="store" className="h-5 w-5" /></span>
+                        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-pink-600"><Icon name="store" className="h-5 w-5" /></span>
                         <h3 className="truncate font-black">{p.name}</h3>
                       </div>
                     ))}
@@ -3433,7 +3433,7 @@ function ProfilePage() {
                       <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
                       {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
                       {billingPlan?.status === "trialing" && (
-                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-pink-700">Free trial</span>
+                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-pink-600">Free trial</span>
                       )}
                       {billingPlan?.cancel_at_period_end && (
                         <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#FFD77A]">Cancels at period end</span>
@@ -3692,7 +3692,7 @@ function PastActivitiesTab({
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
       <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
       {filterChips}
-      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+      {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
 
       {items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
@@ -4054,7 +4054,7 @@ function ContactForm() {
           className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-semibold focus:border-baby-pink focus:outline-none"
         />
       </div>
-      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
       <Button type="submit" className="mt-4 w-full justify-center sm:w-auto" disabled={busy}>
         {busy ? "Sending…" : "Send message"}
       </Button>
@@ -4119,8 +4119,8 @@ function ContactPage() {
               // four buttons line up across the row however many lines each
               // card's copy runs to (and whether or not it has a tag).
               <article key={c.title} className="flex flex-col rounded-[16px] border border-[#FED7E4] bg-white/70 p-5 text-center shadow-card">
-                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-pink-700"><Icon name={c.icon} className="h-9 w-9" /></div>
-                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-pink-700">{c.tag}</span>}</h3>
+                <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-pink-600"><Icon name={c.icon} className="h-9 w-9" /></div>
+                <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-pink-600">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
                 <Button variant={c.variant === "pink" ? "pink" : "outline"} className="mt-auto w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
               </article>
@@ -4937,7 +4937,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
+                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-pink-600" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4945,7 +4945,7 @@ function BookingPage() {
                       <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-pink-600" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
                         ))}
                       </div>
                     </section>
@@ -4958,7 +4958,7 @@ function BookingPage() {
                               key={k.id}
                               type="button"
                               onClick={() => setChildId(k.id)}
-                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-pink-700" : "border-[#DCD2D5] bg-white"}`}
+                              className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold ${bookChildId === k.id ? "border-baby-pink bg-[#FEEBF2] text-pink-600" : "border-[#DCD2D5] bg-white"}`}
                             >
                               <AnimalAvatar seed={k.avatar_seed ?? k.name} kind="child" gender={k.gender} className="h-6 w-6" /> {k.name}
                             </button>
@@ -5099,7 +5099,7 @@ function BookingPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
-                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-700">{activity.category_name}</span>}</div>
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-pink-600">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
@@ -5113,7 +5113,7 @@ function BookingPage() {
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-700"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-600"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
@@ -5182,7 +5182,7 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-700"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-pink-600"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
               </div>
             </article>
           </div>
@@ -5304,7 +5304,7 @@ function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
-          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
@@ -5360,7 +5360,7 @@ function ForgotPasswordPage() {
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Enter your email and we'll send you a link to set a new password.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
@@ -5433,7 +5433,7 @@ function ResetPasswordPage() {
           ) : (
             <>
               <p className="mt-1 font-semibold text-[#5a6690]">Choose a new password for your account.</p>
-              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-700">{error}</p>}
+              {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-pink-600">{error}</p>}
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>

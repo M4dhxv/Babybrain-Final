@@ -38,7 +38,7 @@ export function PlusFeatureDialog({
         className="w-full max-w-[380px] rounded-[16px] bg-white p-6 text-center shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FEEBF2] text-pink-700">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FEEBF2] text-pink-600">
           <Icon name="heart" className="h-7 w-7" />
         </span>
         <h2 className="mt-4 text-lg font-black">{title}</h2>
@@ -419,7 +419,7 @@ export function Header({ active = "/" }: HeaderProps) {
               <a
                 key={route.href}
                 href={route.href}
-                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#FED7E4] text-pink-700" : "hover:bg-white"}`}
+                className={`rounded-[10px] px-3 py-2.5 ${active === route.href ? "bg-[#FED7E4] text-pink-600" : "hover:bg-white"}`}
               >
                 {route.label}
               </a>
@@ -495,7 +495,7 @@ export function Button({
     // non-palette hues; the quieter variants sit on palette tokens.
     outline:
       "border-palette-pink bg-white text-palette-pink hover:bg-palette-pinkTint",
-    soft: "border-transparent bg-palette-pinkTint text-pink-700 hover:bg-palette-pinkSoft",
+    soft: "border-transparent bg-palette-pinkTint text-pink-600 hover:bg-palette-pinkSoft",
     pink: "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
     ghost: "border-transparent bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
