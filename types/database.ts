@@ -185,6 +185,12 @@ export type Database = {
           boosted_until: string | null;
           // Directory listings link out to the vendor's own booking page.
           external_booking_url: string | null;
+          // Booking-policy flags (migrations 00026/00027).
+          bookings_paused: boolean;
+          allow_cancellation: boolean;
+          allow_rescheduling: boolean;
+          cancellation_cutoff_hours: number | null;
+          reschedule_cutoff_hours: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -211,6 +217,11 @@ export type Database = {
           requires_medical_disclosure?: boolean;
           // Directory listings link out to the vendor's own booking page.
           external_booking_url?: string | null;
+          bookings_paused?: boolean;
+          allow_cancellation?: boolean;
+          allow_rescheduling?: boolean;
+          cancellation_cutoff_hours?: number | null;
+          reschedule_cutoff_hours?: number | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -235,6 +246,9 @@ export type Database = {
           capacity: number | null;
           location_id: string | null;
           status: 'scheduled' | 'cancelled';
+          // Added by 00042 so a vendor can say who teaches and in which room.
+          teacher_name: string | null;
+          studio: string | null;
           created_at: string;
         };
         Insert: {
@@ -243,6 +257,8 @@ export type Database = {
           starts_at: string;
           ends_at: string;
           capacity?: number | null;
+          teacher_name?: string | null;
+          studio?: string | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
         };

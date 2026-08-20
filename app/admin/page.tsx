@@ -42,10 +42,19 @@ type RecentProvider = {
 };
 type NewVendorMeta = { categories: AdminCategory[]; vendorCategories: string[]; recent: RecentProvider[] };
 type DraftLocation = { name: string; address: string; postal_code: string };
+type DraftSession = {
+  starts_at: string; duration_mins: string; capacity: string; teacher_name: string; studio: string;
+};
 type DraftActivity = {
   title: string; category_slug: string; description: string;
   age_min_months: string; age_max_months: string; price: string; is_published: boolean;
+  image_urls: string; external_booking_url: string; requires_medical_disclosure: boolean;
+  sessions: DraftSession[];
 };
+/** Images are entered as URLs, one per line. */
+const splitUrls = (s: string) => s.split(/[\n,]/).map((u) => u.trim()).filter(Boolean);
+const blankSession = (): DraftSession =>
+  ({ starts_at: '', duration_mins: '60', capacity: '', teacher_name: '', studio: '' });
 type CreatedVendor = {
   provider: { id: string; slug: string; business_name: string; region: string | null };
   locations: number; activities: number; geocoded: number; warnings: string[];
@@ -54,10 +63,16 @@ type EditLocation = {
   id: string; name: string; address: string | null; postal_code: string | null;
   region: string | null; is_primary: boolean; latitude: number | null; longitude: number | null;
 };
+type EditSession = {
+  id: string; starts_at: string; ends_at: string; capacity: number | null;
+  teacher_name: string | null; studio: string | null;
+};
 type EditActivity = {
   id: string; title: string; slug: string; category_slug: string | null; category_name: string | null;
   age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
   description: string | null; external_booking_url: string | null;
+  image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
+  sessions: EditSession[];
 };
 type ProviderDetail = {
   id: string; business_name: string; slug: string | null; description: string | null;
@@ -65,11 +80,14 @@ type ProviderDetail = {
   whatsapp: string | null; website: string | null; address: string | null; postal_code: string | null;
   region: string | null; status: string; is_claimed: boolean; is_auto_listed: boolean;
   latitude: number | null; longitude: number | null;
+  logo_url: string | null; cover_image_url: string | null; uen: string | null;
+  social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
   locations: EditLocation[]; activities: EditActivity[];
 };
 type SaveResult = {
   provider: { id: string; business_name: string; slug: string | null; region: string | null };
-  locationsChanged: number; activitiesChanged: number; regeocoded: boolean; warnings: string[];
+  locationsChanged: number; activitiesChanged: number; sessionsChanged: number;
+  regeocoded: boolean; warnings: string[];
 };
 
 const VENDOR_CATEGORY_LABELS: Record<string, string> = {
@@ -476,6 +494,12 @@ function AddVendorView() {
   const [whatsapp, setWhatsapp] = useState('');
   const [address, setAddress] = useState('');
   const [postal, setPostal] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [coverUrl, setCoverUrl] = useState('');
+  const [uen, setUen] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [tiktok, setTiktok] = useState('');
 
   const [locations, setLocations] = useState<DraftLocation[]>([]);
   const [activities, setActivities] = useState<DraftActivity[]>([]);
@@ -506,6 +530,7 @@ function AddVendorView() {
     setName(''); setSlug(''); setSlugTouched(false); setVendorCategory('baby-toddler-classes');
     setDescription(''); setWebsite(''); setBookingUrl(''); setEmail(''); setPhone('');
     setWhatsapp(''); setAddress(''); setPostal(''); setLocations([]); setActivities([]);
+    setLogoUrl(''); setCoverUrl(''); setUen(''); setInstagram(''); setFacebook(''); setTiktok('');
   }
 
   async function submit(e: React.FormEvent) {
@@ -535,6 +560,18 @@ function AddVendorView() {
             age_max_months: a.age_max_months === '' ? null : Number(a.age_max_months),
             price: a.price === '' ? null : Number(a.price),
             is_published: a.is_published,
+            image_urls: splitUrls(a.image_urls),
+            external_booking_url: a.external_booking_url,
+            requires_medical_disclosure: a.requires_medical_disclosure,
+            sessions: a.sessions
+              .filter((s) => s.starts_at.trim())
+              .map((s) => ({
+                starts_at: s.starts_at,
+                duration_mins: s.duration_mins === '' ? null : Number(s.duration_mins),
+                capacity: s.capacity === '' ? null : Number(s.capacity),
+                teacher_name: s.teacher_name,
+                studio: s.studio,
+              })),
           })),
       };
       const r = await adminFetch<CreatedVendor>('/api/admin/providers', {
@@ -637,6 +674,36 @@ function AddVendorView() {
                 placeholder="Leave blank to send parents to the website" />
             </div>
           </div>
+
+          <div style={grid2}>
+            <div style={field}>
+              <label style={label('')}>Logo image URL</label>
+              <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} style={input()} placeholder="https://…/logo.png" />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Cover image URL</label>
+              <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} style={input()} placeholder="https://…/cover.jpg" />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
+            <div style={field}>
+              <label style={label('')}>Instagram</label>
+              <input value={instagram} onChange={(e) => setInstagram(e.target.value)} style={input()} placeholder="@handle or URL" />
+            </div>
+            <div style={field}>
+              <label style={label('')}>Facebook</label>
+              <input value={facebook} onChange={(e) => setFacebook(e.target.value)} style={input()} />
+            </div>
+            <div style={field}>
+              <label style={label('')}>TikTok</label>
+              <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} style={input()} />
+            </div>
+            <div style={field}>
+              <label style={label('')}>UEN</label>
+              <input value={uen} onChange={(e) => setUen(e.target.value)} style={input()} placeholder="business reg. no." />
+            </div>
+          </div>
         </div>
 
         {/* ---- venues ---- */}
@@ -692,6 +759,8 @@ function AddVendorView() {
               onClick={() => setActivities((p) => [...p, {
                 title: '', category_slug: defaultCategory, description: '',
                 age_min_months: '', age_max_months: '', price: '', is_published: true,
+                image_urls: '', external_booking_url: '', requires_medical_disclosure: false,
+                sessions: [],
               }])}
               style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add class</button>
           </div>
@@ -747,6 +816,57 @@ function AddVendorView() {
                 <label style={label('')}>Description</label>
                 <input value={a.description} style={input()} placeholder="Falls back to the business description if blank"
                   onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                <div>
+                  <label style={label('')}>Image URLs <span style={{ color: C.muted }}>· one per line</span></label>
+                  <textarea value={a.image_urls} rows={2}
+                    style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                    placeholder="https://…/photo.jpg"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, image_urls: e.target.value } : x))} />
+                </div>
+                <div>
+                  <label style={label('')}>Booking link for this class</label>
+                  <input value={a.external_booking_url} style={input()}
+                    placeholder="blank = use the business booking link"
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, external_booking_url: e.target.value } : x))} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13 }}>
+                    <input type="checkbox" checked={a.requires_medical_disclosure}
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, requires_medical_disclosure: e.target.checked } : x))} />
+                    Ask for a medical disclosure before booking
+                  </label>
+                </div>
+              </div>
+
+              {/* Schedule. Without a session a class shows "Schedule TBC" and
+                  can't be booked — most of the catalogue is in that state. */}
+              <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>
+                    SESSIONS {a.sessions.length === 0 && <span style={{ color: C.pink }}>· none yet — shows &ldquo;Schedule TBC&rdquo; and can&rsquo;t be booked</span>}
+                  </span>
+                  <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
+                    onClick={() => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: [...x.sessions, blankSession()] } : x))}>
+                    + Session
+                  </button>
+                </div>
+                {a.sessions.map((s, si) => (
+                  <div key={si} style={{ display: 'grid', gridTemplateColumns: '1.4fr 80px 80px 1fr 1fr 34px', gap: 8, marginBottom: 8 }}>
+                    <input type="datetime-local" value={s.starts_at} style={input()}
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, starts_at: e.target.value } : y) } : x))} />
+                    <input value={s.duration_mins} inputMode="numeric" style={input()} placeholder="mins"
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, duration_mins: e.target.value.replace(/\D/g, '') } : y) } : x))} />
+                    <input value={s.capacity} inputMode="numeric" style={input()} placeholder="cap"
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, capacity: e.target.value.replace(/\D/g, '') } : y) } : x))} />
+                    <input value={s.teacher_name} style={input()} placeholder="teacher"
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, teacher_name: e.target.value } : y) } : x))} />
+                    <input value={s.studio} style={input()} placeholder="room"
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, studio: e.target.value } : y) } : x))} />
+                    <button type="button" style={{ ...tabBtn(false), color: C.pink, padding: 0 }}
+                      onClick={() => setActivities((p) => p.map((x, j) => j === i ? { ...x, sessions: x.sessions.filter((_, k) => k !== si) } : x))}>✕</button>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -858,6 +978,9 @@ function EditVendorModal({
   // ids marked for removal — applied on save, so a misclick is undoable
   const [dropLoc, setDropLoc] = useState<string[]>([]);
   const [dropAct, setDropAct] = useState<string[]>([]);
+  // Existing sessions removed in the UI. New (unsaved) ones just vanish from
+  // the array, but a saved one has to be sent back with _delete.
+  const [dropSess, setDropSess] = useState<{ actId: string; sessId: string }[]>([]);
   const [newLocs, setNewLocs] = useState<DraftLocation[]>([]);
 
   useEffect(() => {
@@ -888,6 +1011,10 @@ function EditVendorModal({
             address: d.address,
             postal_code: d.postal_code,
             status: d.status,
+            logo_url: d.logo_url,
+            cover_image_url: d.cover_image_url,
+            uen: d.uen,
+            social: d.social ?? {},
           },
           locations: [
             ...d.locations.map((l) => ({
@@ -901,12 +1028,34 @@ function EditVendorModal({
             id: a.id, title: a.title, category_slug: a.category_slug ?? undefined,
             description: a.description, age_min_months: a.age_min_months,
             age_max_months: a.age_max_months, price: a.price, is_published: a.is_published,
+            image_urls: a.image_urls.map((u) => u.trim()).filter(Boolean),
+            external_booking_url: a.external_booking_url,
+            requires_medical_disclosure: a.requires_medical_disclosure,
+            bookings_paused: a.bookings_paused,
+            sessions: [
+              ...a.sessions
+                .filter((s) => s.starts_at.trim())
+                .map((s) => ({
+                  ...(s.id ? { id: s.id } : {}),
+                  starts_at: s.starts_at,
+                  // The form edits a start time; keep whatever length the
+                  // session already had rather than silently resetting it.
+                  duration_mins: s.id && s.ends_at
+                    ? Math.max(5, Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000))
+                    : 60,
+                  capacity: s.capacity,
+                  teacher_name: s.teacher_name,
+                  studio: s.studio,
+                })),
+              // only the ones that belonged to this class
+              ...dropSess.filter((x) => x.actId === a.id).map((x) => ({ id: x.sessId, _delete: true })),
+            ],
             _delete: dropAct.includes(a.id),
           })),
         }),
       });
       setNote([
-        `Saved — ${r.locationsChanged} venue${r.locationsChanged === 1 ? '' : 's'}, ${r.activitiesChanged} class${r.activitiesChanged === 1 ? '' : 'es'}${r.regeocoded ? ', map pin moved' : ''}${r.provider.region ? `, ${r.provider.region}` : ''}.`,
+        `Saved — ${r.locationsChanged} venue${r.locationsChanged === 1 ? '' : 's'}, ${r.activitiesChanged} class${r.activitiesChanged === 1 ? '' : 'es'}, ${r.sessionsChanged} session${r.sessionsChanged === 1 ? '' : 's'}${r.regeocoded ? ', map pin moved' : ''}${r.provider.region ? `, ${r.provider.region}` : ''}.`,
         ...r.warnings,
       ]);
       setTimeout(onSaved, 1200);
@@ -1003,6 +1152,43 @@ function EditVendorModal({
               <div>
                 <label style={lbl}>WhatsApp</label>
                 <input value={d.whatsapp ?? ''} style={input()} onChange={(e) => set('whatsapp', e.target.value)} />
+              </div>
+            </div>
+
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Logo image URL</label>
+                <input value={d.logo_url ?? ''} style={input()} placeholder="https://…/logo.png"
+                  onChange={(e) => set('logo_url', e.target.value)} />
+                {d.logo_url ? <img src={d.logo_url} alt="" style={{ height: 34, marginTop: 6, borderRadius: 6, background: C.panel2 }} /> : null}
+              </div>
+              <div>
+                <label style={lbl}>Cover image URL</label>
+                <input value={d.cover_image_url ?? ''} style={input()} placeholder="https://…/cover.jpg"
+                  onChange={(e) => set('cover_image_url', e.target.value)} />
+                {d.cover_image_url ? <img src={d.cover_image_url} alt="" style={{ height: 34, marginTop: 6, borderRadius: 6, background: C.panel2 }} /> : null}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={lbl}>Instagram</label>
+                <input value={d.social?.instagram ?? ''} style={input()}
+                  onChange={(e) => set('social', { ...(d.social ?? {}), instagram: e.target.value })} />
+              </div>
+              <div>
+                <label style={lbl}>Facebook</label>
+                <input value={d.social?.facebook ?? ''} style={input()}
+                  onChange={(e) => set('social', { ...(d.social ?? {}), facebook: e.target.value })} />
+              </div>
+              <div>
+                <label style={lbl}>TikTok</label>
+                <input value={d.social?.tiktok ?? ''} style={input()}
+                  onChange={(e) => set('social', { ...(d.social ?? {}), tiktok: e.target.value })} />
+              </div>
+              <div>
+                <label style={lbl}>UEN</label>
+                <input value={d.uen ?? ''} style={input()} onChange={(e) => set('uen', e.target.value)} />
               </div>
             </div>
 
@@ -1124,6 +1310,73 @@ function EditVendorModal({
                       </label>
                     </div>
                   </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                    <div>
+                      <label style={lbl}>Image URLs <span style={{ color: C.muted }}>· one per line</span></label>
+                      <textarea value={a.image_urls.join('\n')} rows={2} disabled={gone}
+                        style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, image_urls: e.target.value.split('\n') } : x))} />
+                      {a.image_urls.filter(Boolean).length > 0 && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          {a.image_urls.filter(Boolean).slice(0, 4).map((u, k) => (
+                            <img key={k} src={u} alt="" style={{ height: 34, borderRadius: 6, background: C.panel2 }} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={lbl}>Booking link for this class</label>
+                      <input value={a.external_booking_url ?? ''} style={input()} disabled={gone}
+                        placeholder="blank = books through BabyBrain"
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, external_booking_url: e.target.value } : x))} />
+                      <div style={{ display: 'flex', gap: 14, marginTop: 8, flexWrap: 'wrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                          <input type="checkbox" checked={a.requires_medical_disclosure} disabled={gone}
+                            onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, requires_medical_disclosure: e.target.checked } : x))} />
+                          Medical disclosure
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                          <input type="checkbox" checked={a.bookings_paused} disabled={gone}
+                            onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, bookings_paused: e.target.checked } : x))} />
+                          Bookings paused
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* schedule */}
+                  <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>
+                        SESSIONS ({a.sessions.length})
+                        {a.sessions.length === 0 && <span style={{ color: C.pink }}> · none — shows &ldquo;Schedule TBC&rdquo; and can&rsquo;t be booked</span>}
+                      </span>
+                      <button type="button" disabled={gone} style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
+                        onClick={() => set('activities', d.activities.map((x) => x.id === a.id
+                          ? { ...x, sessions: [...x.sessions, { id: '', starts_at: '', ends_at: '', capacity: null, teacher_name: '', studio: '' }] } : x))}>
+                        + Session
+                      </button>
+                    </div>
+                    {a.sessions.map((s, si) => (
+                      <div key={s.id || `new-${si}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 80px 1fr 1fr 34px', gap: 8, marginBottom: 8 }}>
+                        <input type="datetime-local" value={s.starts_at} style={input()} disabled={gone}
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, starts_at: e.target.value } : y) } : x))} />
+                        <input value={s.capacity == null ? '' : String(s.capacity)} inputMode="numeric" style={input()} placeholder="cap" disabled={gone}
+                          onChange={(e) => { const v = e.target.value.replace(/\D/g, '');
+                            set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, capacity: v === '' ? null : Number(v) } : y) } : x)); }} />
+                        <input value={s.teacher_name ?? ''} style={input()} placeholder="teacher" disabled={gone}
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, teacher_name: e.target.value } : y) } : x))} />
+                        <input value={s.studio ?? ''} style={input()} placeholder="room" disabled={gone}
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, studio: e.target.value } : y) } : x))} />
+                        <button type="button" style={{ ...tabBtn(false), color: C.pink, padding: 0 }} disabled={gone}
+                          onClick={() => {
+                            if (s.id) setDropSess((p) => [...p, { actId: a.id, sessId: s.id }]);
+                            set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.filter((_, k) => k !== si) } : x));
+                          }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -1142,9 +1395,10 @@ function EditVendorModal({
                 {busy ? 'Saving…' : 'Save changes'}
               </button>
               <button type="button" onClick={onClose} style={tabBtn(false)}>Cancel</button>
-              {(dropLoc.length > 0 || dropAct.length > 0) && (
+              {(dropLoc.length > 0 || dropAct.length > 0 || dropSess.length > 0) && (
                 <span style={{ color: C.pink, fontSize: 13, fontWeight: 700 }}>
-                  {dropLoc.length + dropAct.length} item{dropLoc.length + dropAct.length === 1 ? '' : 's'} will be removed on save
+                  {dropLoc.length + dropAct.length + dropSess.length} item
+                  {dropLoc.length + dropAct.length + dropSess.length === 1 ? '' : 's'} will be removed on save
                 </span>
               )}
             </div>

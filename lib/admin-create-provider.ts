@@ -35,6 +35,15 @@ export type NewLocation = {
   postal_code?: string | null;
 };
 
+export type NewSession = {
+  /** Local Singapore wall-clock, "YYYY-MM-DDTHH:mm" as an <input type=datetime-local> gives it. */
+  starts_at: string;
+  duration_mins?: number | null;
+  capacity?: number | null;
+  teacher_name?: string | null;
+  studio?: string | null;
+};
+
 export type NewActivity = {
   title: string;
   category_slug: string;
@@ -43,6 +52,10 @@ export type NewActivity = {
   age_max_months?: number | null;
   price?: number | null;
   is_published?: boolean;
+  image_urls?: string[];
+  external_booking_url?: string | null;
+  requires_medical_disclosure?: boolean;
+  sessions?: NewSession[];
 };
 
 export type NewProvider = {
@@ -57,9 +70,29 @@ export type NewProvider = {
   address?: string | null;
   postal_code?: string | null;
   booking_url?: string | null;
+  logo_url?: string | null;
+  cover_image_url?: string | null;
+  uen?: string | null;
+  social?: { instagram?: string | null; facebook?: string | null; tiktok?: string | null };
   locations?: NewLocation[];
   activities?: NewActivity[];
 };
+
+/**
+ * A datetime-local value carries no zone, and every session in this catalogue
+ * is Singapore time. Appending +08:00 keeps a 10:00 class at 10:00 rather than
+ * shifting by whatever zone the server happens to run in.
+ */
+export function sgToUtcIso(local: string): string {
+  const s = local.trim();
+  if (!s) throw new Error('A session needs a date and time.');
+  const hasZone = /[zZ]|[+-]\d{2}:\d{2}$/.test(s);
+  // "2026-09-01T10:00" -> "2026-09-01T10:00:00+08:00"
+  const withSeconds = /T\d{2}:\d{2}$/.test(s) ? `${s}:00` : s;
+  const d = new Date(hasZone ? s : `${withSeconds}+08:00`);
+  if (Number.isNaN(d.getTime())) throw new Error(`"${local}" isn't a valid date and time.`);
+  return d.toISOString();
+}
 
 export type CreateResult = {
   // `slug` is nullable on the table (a trigger fills it when absent), but we
@@ -165,6 +198,14 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
       postal_code: input.postal_code?.trim() || null,
       latitude: providerCoords?.lat ?? null,
       longitude: providerCoords?.lng ?? null,
+      logo_url: input.logo_url?.trim() || null,
+      cover_image_url: input.cover_image_url?.trim() || null,
+      uen: input.uen?.trim() || null,
+      social: {
+        instagram: input.social?.instagram?.trim() || null,
+        facebook: input.social?.facebook?.trim() || null,
+        tiktok: input.social?.tiktok?.trim() || null,
+      },
       source_url: input.website?.trim() || null,
       is_claimed: false,
       is_auto_listed: false,
@@ -244,14 +285,46 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
         price: a.price ?? null,
         address: input.address?.trim() || null,
         postal_code: input.postal_code?.trim() || null,
-        image_urls: [],
+        image_urls: (a.image_urls ?? []).map((u) => u.trim()).filter(Boolean),
         is_published: a.is_published ?? true,
-        requires_medical_disclosure: false,
-        external_booking_url: bookingUrl,
+        requires_medical_disclosure: a.requires_medical_disclosure ?? false,
+        // A per-class link wins over the vendor-wide one; with neither, the
+        // class books through BabyBrain rather than linking out.
+        external_booking_url: a.external_booking_url?.trim() || bookingUrl,
       };
     });
-    const { error } = await db.from('activities').insert(rows);
+    const { data: created2, error } = await db.from('activities').insert(rows).select('id, slug');
     if (error) await undo(`Vendor rolled back — its classes failed: ${error.message}`);
+
+    /* Sessions. Without at least one a class shows "Schedule TBC" and can't be
+       booked — which is the state most of the catalogue is in, so the form
+       offers them at creation time. */
+    const byActivitySlug = Object.fromEntries((created2 ?? []).map((r) => [r.slug, r.id]));
+    const sessionRows: Record<string, unknown>[] = [];
+    for (const [i, a] of activities.entries()) {
+      const actId = byActivitySlug[rows[i].slug];
+      if (!actId) continue;
+      for (const s of a.sessions ?? []) {
+        if (!s.starts_at?.trim()) continue;
+        let startsIso: string;
+        try { startsIso = sgToUtcIso(s.starts_at); }
+        catch (e) { await undo(`Vendor rolled back — ${(e as Error).message}`); return undefined as never; }
+        const mins = Number.isFinite(s.duration_mins as number) && (s.duration_mins as number) > 0
+          ? (s.duration_mins as number) : 60;
+        sessionRows.push({
+          activity_id: actId,
+          starts_at: startsIso,
+          ends_at: new Date(new Date(startsIso).getTime() + mins * 60_000).toISOString(),
+          capacity: s.capacity ?? null,
+          teacher_name: s.teacher_name?.trim() || null,
+          studio: s.studio?.trim() || null,
+        });
+      }
+    }
+    if (sessionRows.length) {
+      const { error: sErr } = await db.from('activity_sessions').insert(sessionRows as never);
+      if (sErr) await undo(`Vendor rolled back — its sessions failed: ${sErr.message}`);
+    }
   }
 
   // Re-read so the caller sees the region the trigger derived.
