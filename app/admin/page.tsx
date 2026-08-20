@@ -732,8 +732,11 @@ function AddVendorView() {
               {done.provider.region ? `, ${done.provider.region}` : ''}.
             </div>
             <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>
-              {done.geocoded} address{done.geocoded === 1 ? '' : 'es'} placed on the map. Live at{' '}
-              <code style={{ color: C.blue }}>/provider?slug={done.provider.slug}</code>
+              {done.geocoded} address{done.geocoded === 1 ? '' : 'es'} placed on the map. Find it at{' '}
+              <a href={`/explore?q=${encodeURIComponent(done.provider.business_name)}`}
+                target="_blank" rel="noreferrer" style={{ color: C.blue }}>
+                Explore &rarr; {done.provider.business_name}
+              </a>
             </div>
             {done.warnings.map((w, i) => (
               <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>

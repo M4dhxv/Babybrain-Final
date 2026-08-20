@@ -11,6 +11,7 @@ import {
   MiniActivityGrid,
   PageShell,
   PlusFeatureDialog,
+  ConfirmDialog,
   SectionTitle,
 } from "./components/ui";
 import { useEffect, useState, type ReactNode } from "react";
@@ -610,6 +611,8 @@ function OnboardingPage() {
 function MatchesPage({ active = "/matches" }: { active?: string }) {
   const { session, profile, children, loading } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
+  // Which child's suggestions are on screen; defaults to the first.
+  const [homeChildId, setHomeChildId] = useState<string | null>(null);
 
   if (!loading && !session) {
     return (
@@ -632,8 +635,13 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
     );
   }
 
-  const first = recsByChild[0];
-  const child = first?.child;
+  /* QA: "How do I know which child the suggested activities are for? On Home
+     page just see one child?" — recommendations have always been per child
+     (user_recommendations.child_id), but Home silently showed the first
+     child's and never said so. The name is now on the heading and, with more
+     than one child, a chip switches between them. */
+  const shown = recsByChild.find((r) => r.child.id === homeChildId) ?? recsByChild[0];
+  const child = shown?.child;
   const firstName = profile?.full_name?.split(" ")[0] ?? "there";
 
   return (
@@ -651,6 +659,27 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                 Here are some suggested activities for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
               </p>
               <p className="mt-4 text-[17px] font-semibold text-[#47527d]">Based on age, interests and your preferences.</p>
+              {recsByChild.length > 1 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-[#6D748A]">Suggestions for</span>
+                  {recsByChild.map((r) => {
+                    const on = r.child.id === (child?.id ?? null);
+                    return (
+                      <button
+                        key={r.child.id}
+                        type="button"
+                        onClick={() => setHomeChildId(r.child.id)}
+                        aria-pressed={on}
+                        className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                          on ? "bg-[#FED7E4] text-pink-600" : "border border-[#EBE3E5] bg-white text-[#6D748A] hover:border-baby-pink"
+                        }`}
+                      >
+                        {r.child.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
             {child && (
@@ -674,16 +703,16 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           <SectionTitle
             action={<a href="/explore" className="hidden font-bold text-[#FFC1D6] sm:inline">Explore more activities →</a>}
           >
-            Matching activities
+            {child ? `Matching activities for ${child.name}` : "Matching activities"}
           </SectionTitle>
           {recsLoading ? (
             <p className="font-bold text-[#5a6690]">Loading matches…</p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {(first?.recs ?? []).slice(0, 4).map((r) =>
+              {(shown?.recs ?? []).slice(0, 4).map((r) =>
                 r.activity ? <ActivityCard key={r.id} activity={toCard(r.activity)} /> : null
               )}
-              {first && first.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
+              {shown && shown.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
           <a href="/explore" className="mt-4 block text-center font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
@@ -698,6 +727,9 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           </div>
         </section>
       </main>
+      {/* Signed-in parents land here instead of the marketing home, and this
+          page was the one route that never rendered the footer. */}
+      <Footer />
     </PageShell>
   );
 }
@@ -3132,7 +3164,11 @@ function ProfilePage() {
           </section>
 
           <section className="mt-6">
-            <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>Suggested activities</SectionTitle>
+            {/* Say whose suggestions these are — the list already follows the
+                child picked above, but nothing on screen said so. */}
+            <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>
+              {journeyChild ? `Suggested for ${journeyChild.name}` : "Suggested activities"}
+            </SectionTitle>
             <div className="grid gap-4 md:grid-cols-3">
               {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
               {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
@@ -3485,6 +3521,7 @@ function ProfilePage() {
           )}
         </section>
       </main>
+      <Footer />
     </PageShell>
   );
 }
@@ -4589,6 +4626,12 @@ function BookingPage() {
   const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
   const [acceptedPolicies, setAcceptedPolicies] = useState<string[]>([]);
   const [medicalNote, setMedicalNote] = useState("");
+  /* Sessions this parent already holds a live booking on, as
+     `${session_id}:${child_id}`. Booking the same child onto the same class
+     twice is allowed — a parent may well want two slots for a friend — so this
+     only drives a confirmation step, never a block. */
+  const [existingBookings, setExistingBookings] = useState<Set<string>>(new Set());
+  const [dupPrompt, setDupPrompt] = useState<null | { childName: string; proceed: () => void }>(null);
 
   useEffect(() => {
     if (!activity?.provider_id) return;
@@ -4618,6 +4661,21 @@ function BookingPage() {
         setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
       });
   }, [activity?.provider_id, activity?.id]);
+
+  // What this parent has already booked on this activity's sessions, so the
+  // form can warn before putting the same child on the same class twice.
+  useEffect(() => {
+    if (!auth || !activity?.id) { setExistingBookings(new Set()); return; }
+    supabase
+      .from("bookings")
+      .select("session_id, child_id, status, activity_sessions!inner(activity_id)")
+      .eq("activity_sessions.activity_id", activity.id)
+      .in("status", ["confirmed", "pending"])
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as Array<{ session_id: string; child_id: string | null }>;
+        setExistingBookings(new Set(rows.map((r) => `${r.session_id}:${r.child_id ?? ""}`)));
+      });
+  }, [auth, activity?.id]);
 
   useEffect(() => {
     if (!auth || !activity?.provider_id) return;
@@ -4850,6 +4908,10 @@ function BookingPage() {
     return null;
   }
 
+  /** True when this child already holds a live booking on the chosen session. */
+  const alreadyBooked =
+    !!sessionId && existingBookings.has(`${sessionId}:${bookChildId ?? ""}`);
+
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
     setErr(null);
@@ -4862,10 +4924,25 @@ function BookingPage() {
       setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
       return;
     }
-    if (redeemToken) return pay();
-    if (payWith === "credit") return payWithPackage();
-    if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
-    return pay();
+
+    const go = () => {
+      if (redeemToken) return pay();
+      if (payWith === "credit") return payWithPackage();
+      if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
+      return pay();
+    };
+
+    /* Booking the same child on the same session twice is deliberately still
+       allowed — a parent may want a second slot for a friend — so this asks
+       rather than blocks. QA 18/08. */
+    if (alreadyBooked) {
+      setDupPrompt({
+        childName: bookChild?.name ?? "This child",
+        proceed: () => { setDupPrompt(null); go(); },
+      });
+      return;
+    }
+    return go();
   }
 
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
@@ -4967,9 +5044,15 @@ function BookingPage() {
                       </section>
                     )}
                     {childAgeMismatch && bookChild && (
-                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]">
+                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {bookChild.name} is {formatChildAge(bookChild.date_of_birth)}, outside this class's {ageText} age range — you won't be able to confirm this booking with them selected.
+                      </p>
+                    )}
+                    {alreadyBooked && !childAgeMismatch && (
+                      <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
+                        <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                        {bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.
                       </p>
                     )}
                     <section>
@@ -5134,6 +5217,16 @@ function BookingPage() {
           )}
         </section>
       </main>
+      {dupPrompt && (
+        <ConfirmDialog
+          title="Already booked on this class"
+          copy={`${dupPrompt.childName} already has a place on this session. Book a second place anyway?`}
+          confirmLabel="Yes, book again"
+          cancelLabel="Cancel"
+          onConfirm={dupPrompt.proceed}
+          onClose={() => setDupPrompt(null)}
+        />
+      )}
       <Footer />
     </PageShell>
   );

@@ -56,6 +56,53 @@ export function PlusFeatureDialog({
   );
 }
 
+/** Yes/no confirmation, same portal treatment as {@link PlusFeatureDialog}.
+ *  For choices we want a parent to pause over but never want to prevent —
+ *  booking the same child onto a class they already hold a place on, say. */
+export function ConfirmDialog({
+  title,
+  copy,
+  confirmLabel = "Continue",
+  cancelLabel = "Cancel",
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  copy: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
+    >
+      <div
+        className="w-full max-w-[380px] rounded-[16px] bg-white p-6 text-center shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FEF2D7] text-yellow-600">
+          <Icon name="bell" className="h-7 w-7" />
+        </span>
+        <h2 className="mt-4 text-lg font-black">{title}</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">{copy}</p>
+        <div className="mt-5 flex flex-col gap-2">
+          <Button type="button" className="w-full justify-center" onClick={onConfirm}>{confirmLabel}</Button>
+          <Button type="button" variant="outline" className="w-full justify-center" onClick={onClose}>
+            {cancelLabel}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /** Heart button that saves/unsaves an activity to the parent's favorites.
  *  Guards its own click so it works inside a card link. */
 export function SaveHeart({
