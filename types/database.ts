@@ -183,6 +183,8 @@ export type Database = {
           requires_medical_disclosure: boolean;
           archived_at: string | null;
           boosted_until: string | null;
+          // Directory listings link out to the vendor's own booking page.
+          external_booking_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -578,6 +580,8 @@ export type Database = {
           operating_hours: Json;
           is_primary: boolean;
           created_at: string;
+          // Derived from postal_code / coordinates by provider_locations_region_trg.
+          region: string | null;
         };
         Insert: {
           provider_id: string;

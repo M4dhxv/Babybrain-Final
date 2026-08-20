@@ -50,6 +50,27 @@ type CreatedVendor = {
   provider: { id: string; slug: string; business_name: string; region: string | null };
   locations: number; activities: number; geocoded: number; warnings: string[];
 };
+type EditLocation = {
+  id: string; name: string; address: string | null; postal_code: string | null;
+  region: string | null; is_primary: boolean; latitude: number | null; longitude: number | null;
+};
+type EditActivity = {
+  id: string; title: string; slug: string; category_slug: string | null; category_name: string | null;
+  age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
+  description: string | null; external_booking_url: string | null;
+};
+type ProviderDetail = {
+  id: string; business_name: string; slug: string | null; description: string | null;
+  vendor_category: string | null; contact_email: string | null; contact_phone: string | null;
+  whatsapp: string | null; website: string | null; address: string | null; postal_code: string | null;
+  region: string | null; status: string; is_claimed: boolean; is_auto_listed: boolean;
+  latitude: number | null; longitude: number | null;
+  locations: EditLocation[]; activities: EditActivity[];
+};
+type SaveResult = {
+  provider: { id: string; business_name: string; slug: string | null; region: string | null };
+  locationsChanged: number; activitiesChanged: number; regeocoded: boolean; warnings: string[];
+};
 
 const VENDOR_CATEGORY_LABELS: Record<string, string> = {
   'baby-toddler-classes': 'Baby & toddler classes',
@@ -109,7 +130,7 @@ export default function AdminPage() {
             {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'flows'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
                 {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages'
-                  : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Add vendor'
+                  : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Vendors'
                   : t === 'vendors' ? 'Vendor data' : 'Email flows'}
               </button>
             ))}
@@ -459,11 +480,20 @@ function AddVendorView() {
   const [locations, setLocations] = useState<DraftLocation[]>([]);
   const [activities, setActivities] = useState<DraftActivity[]>([]);
 
+  // directory list: search + which vendor is open in the editor
+  const [search, setSearch] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try { setMeta(await adminFetch<NewVendorMeta>('/api/admin/providers')); }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const q = search.trim().toLowerCase();
+  const filteredVendors = !meta ? [] : !q ? meta.recent : meta.recent.filter((p) =>
+    [p.business_name, p.slug, p.region ?? '', VENDOR_CATEGORY_LABELS[p.vendor_category] ?? p.vendor_category]
+      .join(' ').toLowerCase().includes(q));
 
   // The slug is derived from the name until the founder edits it herself.
   const autoSlug = name.toLowerCase().normalize('NFKD')
@@ -754,13 +784,24 @@ function AddVendorView() {
         </div>
       </form>
 
-      {/* ---- what's already there ---- */}
-      <div style={{ fontWeight: 800, margin: '26px 0 10px' }}>Recently added</div>
+      {/* ---- the directory: search, then click to edit ---- */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '26px 0 10px', flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 800 }}>
+          All vendors {meta ? <span style={{ color: C.muted, fontWeight: 600 }}>({filteredVendors.length} of {meta.recent.length})</span> : null}
+        </div>
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, area or type…" style={{ ...input(), maxWidth: 320 }} />
+      </div>
       {!meta ? <p style={{ color: C.muted }}>Loading…</p> : (
         <div style={{ ...card(), padding: 0, overflow: 'hidden' }}>
-          {meta.recent.map((p, i) => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
-              borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+          {filteredVendors.length === 0 && (
+            <div style={{ padding: 16, color: C.muted, fontSize: 14 }}>No vendor matches that.</div>
+          )}
+          {filteredVendors.slice(0, 60).map((p, i) => (
+            <button key={p.id} type="button" onClick={() => setEditingId(p.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', width: '100%',
+                textAlign: 'left', background: 'transparent', color: C.text, cursor: 'pointer',
+                border: 'none', borderTop: i ? `1px solid ${C.border}` : 'none' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.business_name}
@@ -775,10 +816,341 @@ function AddVendorView() {
                 background: p.is_claimed ? C.green : C.panel2, color: p.is_claimed ? '#04220f' : C.muted }}>
                 {p.is_claimed ? 'Claimed' : p.is_auto_listed ? 'Auto-listed' : 'Added by hand'}
               </span>
-            </div>
+              <span style={{ color: C.blue, fontWeight: 800, fontSize: 13 }}>Edit</span>
+            </button>
           ))}
+          {filteredVendors.length > 60 && (
+            <div style={{ padding: '10px 14px', color: C.muted, fontSize: 12, borderTop: `1px solid ${C.border}` }}>
+              Showing the first 60 — search to narrow it down.
+            </div>
+          )}
         </div>
       )}
+
+      {editingId && (
+        <EditVendorModal
+          id={editingId}
+          categories={meta?.categories ?? []}
+          vendorCategories={meta?.vendorCategories ?? Object.keys(VENDOR_CATEGORY_LABELS)}
+          onClose={() => setEditingId(null)}
+          onSaved={async () => { setEditingId(null); await load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Full editor for one vendor: the business, its venues and its classes.
+ *  Saves patch-style, so an untouched section is left exactly as it was. */
+function EditVendorModal({
+  id, categories, vendorCategories, onClose, onSaved,
+}: {
+  id: string;
+  categories: AdminCategory[];
+  vendorCategories: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [d, setD] = useState<ProviderDetail | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string[] | null>(null);
+  // ids marked for removal — applied on save, so a misclick is undoable
+  const [dropLoc, setDropLoc] = useState<string[]>([]);
+  const [dropAct, setDropAct] = useState<string[]>([]);
+  const [newLocs, setNewLocs] = useState<DraftLocation[]>([]);
+
+  useEffect(() => {
+    adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
+      .then(setD)
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, [id]);
+
+  const set = <K extends keyof ProviderDetail>(k: K, v: ProviderDetail[K]) =>
+    setD((p) => (p ? { ...p, [k]: v } : p));
+
+  async function save() {
+    if (!d) return;
+    setBusy(true); setErr(null); setNote(null);
+    try {
+      const r = await adminFetch<SaveResult>(`/api/admin/providers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          provider: {
+            business_name: d.business_name,
+            slug: d.slug ?? undefined,
+            description: d.description,
+            vendor_category: d.vendor_category,
+            contact_email: d.contact_email,
+            contact_phone: d.contact_phone,
+            whatsapp: d.whatsapp,
+            website: d.website,
+            address: d.address,
+            postal_code: d.postal_code,
+            status: d.status,
+          },
+          locations: [
+            ...d.locations.map((l) => ({
+              id: l.id, name: l.name, address: l.address, postal_code: l.postal_code,
+              is_primary: l.is_primary, _delete: dropLoc.includes(l.id),
+            })),
+            ...newLocs.filter((l) => l.name.trim() || l.address.trim())
+              .map((l) => ({ name: l.name, address: l.address, postal_code: l.postal_code })),
+          ],
+          activities: d.activities.map((a) => ({
+            id: a.id, title: a.title, category_slug: a.category_slug ?? undefined,
+            description: a.description, age_min_months: a.age_min_months,
+            age_max_months: a.age_max_months, price: a.price, is_published: a.is_published,
+            _delete: dropAct.includes(a.id),
+          })),
+        }),
+      });
+      setNote([
+        `Saved — ${r.locationsChanged} venue${r.locationsChanged === 1 ? '' : 's'}, ${r.activitiesChanged} class${r.activitiesChanged === 1 ? '' : 'es'}${r.regeocoded ? ', map pin moved' : ''}${r.provider.region ? `, ${r.provider.region}` : ''}.`,
+        ...r.warnings,
+      ]);
+      setTimeout(onSaved, 1200);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 5 };
+  const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 };
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.55)', overflow: 'auto', padding: 24 }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ ...card(), maxWidth: 860, margin: '0 auto', padding: 20 }}>
+        {!d ? (
+          <p style={{ color: C.muted }}>{err ?? 'Loading…'}</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 18 }}>{d.business_name}</div>
+                <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
+                  {d.is_claimed
+                    ? 'This vendor has claimed their page — they can see and change what you edit here.'
+                    : d.is_auto_listed ? 'Auto-listed by the crawler; the weekly refresh may overwrite prices.'
+                    : 'Added by hand; the crawler leaves it alone.'}
+                </div>
+              </div>
+              <button type="button" onClick={onClose} style={tabBtn(false)}>Close</button>
+            </div>
+
+            {/* business */}
+            <div style={{ fontWeight: 800, margin: '4px 0 10px' }}>Business</div>
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Business name</label>
+                <input value={d.business_name} style={input()} onChange={(e) => set('business_name', e.target.value)} />
+              </div>
+              <div>
+                <label style={lbl}>Page address (slug)</label>
+                <input value={d.slug ?? ''} style={input()} onChange={(e) => set('slug', e.target.value)} />
+              </div>
+            </div>
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Business type</label>
+                <select value={d.vendor_category ?? 'other'} style={input()}
+                  onChange={(e) => set('vendor_category', e.target.value)}>
+                  {vendorCategories.map((v) => <option key={v} value={v}>{VENDOR_CATEGORY_LABELS[v] ?? v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={lbl}>Listing status</label>
+                <select value={d.status} style={input()} onChange={(e) => set('status', e.target.value)}>
+                  {['active', 'draft', 'pending', 'suspended'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>Description</label>
+              <textarea value={d.description ?? ''} rows={3}
+                style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                onChange={(e) => set('description', e.target.value)} />
+            </div>
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Address</label>
+                <input value={d.address ?? ''} style={input()} onChange={(e) => set('address', e.target.value)} />
+              </div>
+              <div>
+                <label style={lbl}>
+                  Postal code <span style={{ color: C.blue }}>· {d.region ? `currently ${d.region}` : 'no area yet'}</span>
+                </label>
+                <input value={d.postal_code ?? ''} style={input()} onChange={(e) => set('postal_code', e.target.value)} />
+              </div>
+            </div>
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Website</label>
+                <input value={d.website ?? ''} style={input()} onChange={(e) => set('website', e.target.value)} />
+              </div>
+              <div>
+                <label style={lbl}>Contact email</label>
+                <input value={d.contact_email ?? ''} style={input()} onChange={(e) => set('contact_email', e.target.value)} />
+              </div>
+            </div>
+            <div style={grid2}>
+              <div>
+                <label style={lbl}>Phone</label>
+                <input value={d.contact_phone ?? ''} style={input()} onChange={(e) => set('contact_phone', e.target.value)} />
+              </div>
+              <div>
+                <label style={lbl}>WhatsApp</label>
+                <input value={d.whatsapp ?? ''} style={input()} onChange={(e) => set('whatsapp', e.target.value)} />
+              </div>
+            </div>
+
+            {/* venues */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '18px 0 10px' }}>
+              <div style={{ fontWeight: 800 }}>Venues <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>({d.locations.length})</span></div>
+              <button type="button" style={tabBtn(false)}
+                onClick={() => setNewLocs((p) => [...p, { name: '', address: '', postal_code: '' }])}>+ Add venue</button>
+            </div>
+            {d.locations.map((l) => {
+              const gone = dropLoc.includes(l.id);
+              return (
+                <div key={l.id} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10, opacity: gone ? 0.45 : 1 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 80px', gap: 10, alignItems: 'end' }}>
+                    <div>
+                      <label style={lbl}>Name{l.is_primary ? ' · primary' : ''}</label>
+                      <input value={l.name} style={input()} disabled={gone}
+                        onChange={(e) => set('locations', d.locations.map((x) => x.id === l.id ? { ...x, name: e.target.value } : x))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Address</label>
+                      <input value={l.address ?? ''} style={input()} disabled={gone}
+                        onChange={(e) => set('locations', d.locations.map((x) => x.id === l.id ? { ...x, address: e.target.value } : x))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Postal {l.latitude ? '· pinned' : '· NO PIN'}</label>
+                      <input value={l.postal_code ?? ''} style={input()} disabled={gone}
+                        onChange={(e) => set('locations', d.locations.map((x) => x.id === l.id ? { ...x, postal_code: e.target.value } : x))} />
+                    </div>
+                    <button type="button" style={{ ...tabBtn(false), color: gone ? C.blue : C.pink, height: 42 }}
+                      onClick={() => setDropLoc((p) => gone ? p.filter((x) => x !== l.id) : [...p, l.id])}>
+                      {gone ? 'Undo' : 'Remove'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {newLocs.map((l, i) => (
+              <div key={`new-${i}`} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10, border: `1px dashed ${C.blue}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 80px', gap: 10, alignItems: 'end' }}>
+                  <div>
+                    <label style={lbl}>New venue name</label>
+                    <input value={l.name} style={input()}
+                      onChange={(e) => setNewLocs((p) => p.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Address</label>
+                    <input value={l.address} style={input()}
+                      onChange={(e) => setNewLocs((p) => p.map((x, j) => j === i ? { ...x, address: e.target.value } : x))} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Postal code</label>
+                    <input value={l.postal_code} style={input()}
+                      onChange={(e) => setNewLocs((p) => p.map((x, j) => j === i ? { ...x, postal_code: e.target.value } : x))} />
+                  </div>
+                  <button type="button" style={{ ...tabBtn(false), color: C.pink, height: 42 }}
+                    onClick={() => setNewLocs((p) => p.filter((_, j) => j !== i))}>Remove</button>
+                </div>
+              </div>
+            ))}
+
+            {/* classes */}
+            <div style={{ fontWeight: 800, margin: '18px 0 10px' }}>
+              Classes <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>
+                ({d.activities.filter((a) => a.is_published).length} live of {d.activities.length})
+              </span>
+            </div>
+            {d.activities.length === 0 && (
+              <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>
+                No classes — this vendor won&rsquo;t appear in search results.
+              </div>
+            )}
+            {d.activities.map((a) => {
+              const gone = dropAct.includes(a.id);
+              return (
+                <div key={a.id} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10, opacity: gone ? 0.45 : 1 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 190px 80px', gap: 10, alignItems: 'end' }}>
+                    <div>
+                      <label style={lbl}>Class name</label>
+                      <input value={a.title} style={input()} disabled={gone}
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, title: e.target.value } : x))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Category</label>
+                      <select value={a.category_slug ?? ''} style={input()} disabled={gone}
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, category_slug: e.target.value } : x))}>
+                        {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <button type="button" style={{ ...tabBtn(false), color: gone ? C.blue : C.pink, height: 42 }}
+                      onClick={() => setDropAct((p) => gone ? p.filter((x) => x !== a.id) : [...p, a.id])}>
+                      {gone ? 'Undo' : 'Delete'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 150px', gap: 10, marginTop: 10 }}>
+                    <div>
+                      <label style={lbl}>Age from (months)</label>
+                      <input value={String(a.age_min_months)} inputMode="numeric" style={input()} disabled={gone}
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, age_min_months: Number(e.target.value.replace(/\D/g, '') || 0) } : x))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Age to (months)</label>
+                      <input value={String(a.age_max_months)} inputMode="numeric" style={input()} disabled={gone}
+                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, age_max_months: Number(e.target.value.replace(/\D/g, '') || 0) } : x))} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Price (SGD)</label>
+                      <input value={a.price == null ? '' : String(a.price)} inputMode="decimal" style={input()} disabled={gone}
+                        placeholder="on enquiry"
+                        onChange={(e) => { const v = e.target.value.replace(/[^\d.]/g, '');
+                          set('activities', d.activities.map((x) => x.id === a.id ? { ...x, price: v === '' ? null : Number(v) } : x)); }} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Visible to parents</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, fontSize: 14 }}>
+                        <input type="checkbox" checked={a.is_published} disabled={gone}
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, is_published: e.target.checked } : x))} />
+                        {a.is_published ? 'Published' : 'Hidden'}
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
+            {note && (
+              <div style={{ ...card(), marginTop: 12, borderColor: C.green }}>
+                <div style={{ color: C.green, fontWeight: 800 }}>{note[0]}</div>
+                {note.slice(1).map((w, i) => <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>)}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
+              <button type="button" onClick={save} disabled={busy}
+                style={{ ...primaryBtn(), opacity: busy ? 0.55 : 1 }}>
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+              <button type="button" onClick={onClose} style={tabBtn(false)}>Cancel</button>
+              {(dropLoc.length > 0 || dropAct.length > 0) && (
+                <span style={{ color: C.pink, fontSize: 13, fontWeight: 700 }}>
+                  {dropLoc.length + dropAct.length} item{dropLoc.length + dropAct.length === 1 ? '' : 's'} will be removed on save
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -110,7 +110,7 @@ async function oneMapSearch(term: string): Promise<Coords> {
 }
 
 /** Postal code is authoritative; fall back to the address, then the name. */
-async function geocode(parts: (string | null | undefined)[]): Promise<Coords> {
+export async function geocode(parts: (string | null | undefined)[]): Promise<Coords> {
   for (const p of parts) {
     if (!p?.trim()) continue;
     const hit = await oneMapSearch(p);

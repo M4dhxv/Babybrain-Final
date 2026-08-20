@@ -25,13 +25,15 @@ export async function GET(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const db = createAdminClient();
+  // The whole directory, not a recent slice — the panel filters client-side so
+  // the founder can find any vendor to edit, and spot duplicates before adding.
   const [cats, providers] = await Promise.all([
     db.from('activity_categories').select('slug, name').order('name'),
     db
       .from('providers')
       .select('id, business_name, slug, vendor_category, region, status, is_claimed, is_auto_listed, created_at')
       .order('created_at', { ascending: false })
-      .limit(25),
+      .limit(1000),
   ]);
 
   if (cats.error) return NextResponse.json({ error: cats.error.message }, { status: 500 });
