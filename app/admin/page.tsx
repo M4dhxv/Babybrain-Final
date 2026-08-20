@@ -53,6 +53,115 @@ type DraftActivity = {
 };
 /** Images are entered as URLs, one per line. */
 const splitUrls = (s: string) => s.split(/[\n,]/).map((u) => u.trim()).filter(Boolean);
+
+/** Upload a file to the admin image bucket and hand back its public URL. */
+async function uploadImage(file: File, folder: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const body = new FormData();
+  body.append('file', file);
+  body.append('folder', folder);
+  const res = await fetch('/api/admin/upload', {
+    method: 'POST',
+    headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+    body,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error ?? 'Upload failed');
+  return json.url as string;
+}
+
+/**
+ * One image: paste a URL or upload a file — both end up as a URL, since that's
+ * what the column stores either way. Shows a thumbnail once there's something
+ * to show, so a broken link is obvious straight away.
+ */
+function ImageField({
+  label, value, folder, onChange, placeholder,
+}: {
+  label: string; value: string; folder: string;
+  onChange: (url: string) => void; placeholder?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const id = `up-${label.replace(/\W+/g, '')}-${folder}`;
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = '';           // so re-picking the same file still fires
+    if (!f) return;
+    setBusy(true); setErr(null);
+    try { onChange(await uploadImage(f, folder)); }
+    catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 5 }}>
+        {label}
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={value} onChange={(e) => onChange(e.target.value)} style={input()}
+          placeholder={placeholder ?? 'https://… or upload →'} />
+        <label htmlFor={id} style={{ ...tabBtn(false), whiteSpace: 'nowrap', lineHeight: '22px', opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Uploading…' : 'Upload'}
+        </label>
+        <input id={id} type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />
+      </div>
+      {err && <div style={{ color: C.pink, fontSize: 12, marginTop: 5 }}>{err}</div>}
+      {value.trim() && (
+        <img src={value} alt="" style={{ height: 40, marginTop: 6, borderRadius: 6, background: C.panel2 }} />
+      )}
+    </div>
+  );
+}
+
+/** Several images for one class: a list of URLs plus an uploader that appends. */
+function ImageListField({
+  value, folder, onChange,
+}: { value: string; folder: string; onChange: (v: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const id = `upl-${folder}`;
+  const urls = splitUrls(value);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = [...(e.target.files ?? [])];
+    e.target.value = '';
+    if (!files.length) return;
+    setBusy(true); setErr(null);
+    try {
+      const added: string[] = [];
+      for (const f of files) added.push(await uploadImage(f, folder));
+      onChange([...urls, ...added].join('\n'));
+    } catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+        <label style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>
+          Images <span style={{ fontWeight: 600 }}>· paste URLs, one per line, or upload</span>
+        </label>
+        <label htmlFor={id} style={{ ...tabBtn(false), padding: '4px 9px', fontSize: 12, opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Uploading…' : '+ Upload'}
+        </label>
+        <input id={id} type="file" accept="image/*" multiple onChange={pick} style={{ display: 'none' }} />
+      </div>
+      <textarea value={value} rows={2} style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+        placeholder="https://…/photo.jpg" onChange={(e) => onChange(e.target.value)} />
+      {err && <div style={{ color: C.pink, fontSize: 12, marginTop: 5 }}>{err}</div>}
+      {urls.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+          {urls.slice(0, 6).map((u, k) => (
+            <img key={k} src={u} alt="" style={{ height: 38, borderRadius: 6, background: C.panel2 }} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 const blankSession = (): DraftSession =>
   ({ starts_at: '', duration_mins: '60', capacity: '', teacher_name: '', studio: '' });
 type CreatedVendor = {
@@ -677,12 +786,10 @@ function AddVendorView() {
 
           <div style={grid2}>
             <div style={field}>
-              <label style={label('')}>Logo image URL</label>
-              <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} style={input()} placeholder="https://…/logo.png" />
+              <ImageField label="Logo" value={logoUrl} folder={effectiveSlug || 'new-vendor'} onChange={setLogoUrl} />
             </div>
             <div style={field}>
-              <label style={label('')}>Cover image URL</label>
-              <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} style={input()} placeholder="https://…/cover.jpg" />
+              <ImageField label="Cover image" value={coverUrl} folder={effectiveSlug || 'new-vendor'} onChange={setCoverUrl} />
             </div>
           </div>
 
@@ -819,13 +926,11 @@ function AddVendorView() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                <div>
-                  <label style={label('')}>Image URLs <span style={{ color: C.muted }}>· one per line</span></label>
-                  <textarea value={a.image_urls} rows={2}
-                    style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
-                    placeholder="https://…/photo.jpg"
-                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, image_urls: e.target.value } : x))} />
-                </div>
+                <ImageListField
+                  value={a.image_urls}
+                  folder={`${effectiveSlug || 'new-vendor'}-class-${i}`}
+                  onChange={(v) => setActivities((p) => p.map((x, j) => j === i ? { ...x, image_urls: v } : x))}
+                />
                 <div>
                   <label style={label('')}>Booking link for this class</label>
                   <input value={a.external_booking_url} style={input()}
@@ -1156,18 +1261,10 @@ function EditVendorModal({
             </div>
 
             <div style={grid2}>
-              <div>
-                <label style={lbl}>Logo image URL</label>
-                <input value={d.logo_url ?? ''} style={input()} placeholder="https://…/logo.png"
-                  onChange={(e) => set('logo_url', e.target.value)} />
-                {d.logo_url ? <img src={d.logo_url} alt="" style={{ height: 34, marginTop: 6, borderRadius: 6, background: C.panel2 }} /> : null}
-              </div>
-              <div>
-                <label style={lbl}>Cover image URL</label>
-                <input value={d.cover_image_url ?? ''} style={input()} placeholder="https://…/cover.jpg"
-                  onChange={(e) => set('cover_image_url', e.target.value)} />
-                {d.cover_image_url ? <img src={d.cover_image_url} alt="" style={{ height: 34, marginTop: 6, borderRadius: 6, background: C.panel2 }} /> : null}
-              </div>
+              <ImageField label="Logo" value={d.logo_url ?? ''} folder={d.slug ?? d.id}
+                onChange={(u) => set('logo_url', u)} />
+              <ImageField label="Cover image" value={d.cover_image_url ?? ''} folder={d.slug ?? d.id}
+                onChange={(u) => set('cover_image_url', u)} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -1312,19 +1409,11 @@ function EditVendorModal({
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                    <div>
-                      <label style={lbl}>Image URLs <span style={{ color: C.muted }}>· one per line</span></label>
-                      <textarea value={a.image_urls.join('\n')} rows={2} disabled={gone}
-                        style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
-                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, image_urls: e.target.value.split('\n') } : x))} />
-                      {a.image_urls.filter(Boolean).length > 0 && (
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                          {a.image_urls.filter(Boolean).slice(0, 4).map((u, k) => (
-                            <img key={k} src={u} alt="" style={{ height: 34, borderRadius: 6, background: C.panel2 }} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <ImageListField
+                      value={a.image_urls.join('\n')}
+                      folder={`${d.slug ?? d.id}-${a.slug}`}
+                      onChange={(v) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, image_urls: v.split('\n') } : x))}
+                    />
                     <div>
                       <label style={lbl}>Booking link for this class</label>
                       <input value={a.external_booking_url ?? ''} style={input()} disabled={gone}
