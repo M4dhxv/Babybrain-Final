@@ -658,6 +658,10 @@ function AddVendorView() {
         booking_url: bookingUrl,
         address,
         postal_code: postal,
+        logo_url: logoUrl,
+        cover_image_url: coverUrl,
+        uen,
+        social: { instagram, facebook, tiktok },
         locations: locations.map((l) => ({ name: l.name, address: l.address, postal_code: l.postal_code })),
         activities: activities
           .filter((a) => a.title.trim())
