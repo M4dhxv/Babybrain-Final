@@ -13,6 +13,10 @@ export default {
           ink: "#111A4C",
           blue: "#4597F7",
           pink: "#FFC1D6",
+          /* The CTA gradient's own pink — the colour of the filled buttons.
+           * Used for text sitting on a pink pastel, so labels read in the same
+           * pink as the buttons rather than a darker crimson. */
+          cta: "#FA4D8D",
           lilac: "#C7B1E6",
           green: "#A8E59A",
           orange: "#FFB77A",
