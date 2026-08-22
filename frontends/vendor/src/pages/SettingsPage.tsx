@@ -498,6 +498,9 @@ function WixIntegrationManager({
       setRevealedKey(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load Wix integration status');
+      // Status is unknown, not necessarily "connected" — still let a manager
+      // attempt to (re)connect rather than leaving them with a dead end.
+      setEditing(true);
     } finally {
       setLoading(false);
     }

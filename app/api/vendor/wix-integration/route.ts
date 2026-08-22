@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
-import { maskWixApiKey, fetchWixServices } from '@/lib/wix/client';
+import { maskWixApiKey, fetchWixServices, describeWixApiError } from '@/lib/wix/client';
 import { syncWixServicesToActivities } from '@/lib/wix/sync';
 
 /**
@@ -61,8 +61,9 @@ export async function POST(request: Request) {
   // silently fails.
   try {
     await fetchWixServices(creds);
-  } catch {
-    return NextResponse.json({ error: 'Could not verify these credentials against Wix — check the key and site ID.' }, { status: 400 });
+  } catch (e) {
+    console.error('[wix-integration] credential verification failed:', e);
+    return NextResponse.json({ error: describeWixApiError(e) }, { status: 400 });
   }
 
   const admin = createAdminClient();

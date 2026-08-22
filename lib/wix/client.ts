@@ -27,6 +27,17 @@ export interface WixCredentials {
   siteId: string;
 }
 
+/** Thrown by {@link wixFetch} on a non-2xx response, carrying the raw HTTP
+ *  status and body so callers (e.g. the connect-credentials route) can tell
+ *  "wrong site ID" apart from "bad/revoked key" instead of one generic
+ *  failure message. */
+export class WixApiError extends Error {
+  constructor(public status: number, public path: string, public body: string) {
+    super(`Wix API ${path} failed (${status}): ${body}`);
+    this.name = 'WixApiError';
+  }
+}
+
 function wixHeaders(creds: WixCredentials): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -43,9 +54,25 @@ async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): 
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Wix API ${path} failed (${res.status}): ${text}`);
+    throw new WixApiError(res.status, path, text);
   }
   return res.json() as Promise<T>;
+}
+
+/** Turn a WixApiError into a message a vendor can actually act on, instead
+ *  of one generic "check the key and site ID" for every failure mode. */
+export function describeWixApiError(e: unknown): string {
+  if (!(e instanceof WixApiError)) {
+    return 'Could not verify these credentials against Wix — check the key and site ID.';
+  }
+  if (e.status === 404 && /meta-site .* not found/i.test(e.body)) {
+    return "This Site ID doesn't match the account this API key belongs to — " +
+      'make sure both are copied from the same Wix site (if you manage more than one).';
+  }
+  if (e.status === 401 || e.status === 403) {
+    return 'This API key was rejected by Wix — check it hasn\'t been revoked and has Bookings read/write permissions.';
+  }
+  return `Wix rejected these credentials (${e.status}) — check the key and site ID.`;
 }
 
 /** Safe-to-display form of an API key: mostly masked, last 10 characters
