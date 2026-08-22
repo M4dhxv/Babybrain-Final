@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, endOfWeek, format,
-  isSameDay, isSameMonth, isToday, startOfMonth, startOfWeek,
+  addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
+  isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -62,12 +62,16 @@ export default function SchedulePage() {
 
   const wixLinkedIds = useMemo(() => activities.filter((a) => a.wix_service_id).map((a) => a.id), [activities]);
 
+  // "week" is a rolling 7-day window from cursor, not the Mon-Sun calendar
+  // week containing it — on a Friday/Saturday/Sunday, the calendar-week
+  // version left almost nothing upcoming in view by default, even with
+  // plenty booked for the days immediately ahead.
   const rangeStart = useMemo(
-    () => (view === 'week' ? startOfWeek(cursor, WEEK_OPTS) : startOfWeek(startOfMonth(cursor), WEEK_OPTS)),
+    () => (view === 'week' ? startOfDay(cursor) : startOfWeek(startOfMonth(cursor), WEEK_OPTS)),
     [view, cursor]
   );
   const rangeEnd = useMemo(
-    () => (view === 'week' ? endOfWeek(cursor, WEEK_OPTS) : endOfWeek(endOfMonth(cursor), WEEK_OPTS)),
+    () => (view === 'week' ? endOfDay(addDays(cursor, 6)) : endOfWeek(endOfMonth(cursor), WEEK_OPTS)),
     [view, cursor]
   );
 
@@ -169,11 +173,11 @@ export default function SchedulePage() {
 
   const rangeLabel =
     view === 'week'
-      ? `${format(rangeStart, 'd MMM')} – ${format(endOfWeek(cursor, WEEK_OPTS), 'd MMM yyyy')}`
+      ? `${format(rangeStart, 'd MMM')} – ${format(addDays(cursor, 6), 'd MMM yyyy')}`
       : format(cursor, 'MMMM yyyy');
 
   const weekDays = useMemo(
-    () => eachDayOfInterval({ start: startOfWeek(cursor, WEEK_OPTS), end: endOfWeek(cursor, WEEK_OPTS) }),
+    () => eachDayOfInterval({ start: startOfDay(cursor), end: addDays(startOfDay(cursor), 6) }),
     [cursor]
   );
   const monthDays = useMemo(() => eachDayOfInterval({ start: rangeStart, end: rangeEnd }), [rangeStart, rangeEnd]);
