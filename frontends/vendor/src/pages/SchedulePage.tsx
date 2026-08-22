@@ -119,14 +119,19 @@ export default function SchedulePage() {
           const locId = s.location_id ?? act?.location_id ?? null;
           const fromWix = !!s.wix_slot_key;
           // A Wix-sourced slot can be booked directly on Wix's own site, so
-          // our local `bookings` count would under-report it — Wix's own
-          // remaining-capacity figure (kept fresh by the sync above) is the
-          // true occupancy for these; site-native sessions keep counting
-          // local bookings as before.
-          const booked =
+          // our local `bookings` count alone would under-report it — Wix's
+          // remaining-capacity figure (kept fresh by the sync above) catches
+          // that case. But the reverse also happens: Wix's own availability
+          // endpoint has been observed to lag behind a booking that was just
+          // created through Wix's own booking API (confirmed, real, but not
+          // yet reflected in remainingCapacity) — trusting it exclusively
+          // then hides a real BabyBrain-made booking. Taking the higher of
+          // the two numbers covers both directions instead of picking one.
+          const wixDerived =
             fromWix && s.wix_remaining_capacity != null && s.capacity != null
               ? Math.max(0, s.capacity - s.wix_remaining_capacity)
-              : counts[s.id] ?? 0;
+              : 0;
+          const booked = Math.max(wixDerived, counts[s.id] ?? 0);
           return {
             id: s.id,
             activity_id: s.activity_id,

@@ -111,6 +111,7 @@ export async function POST(request: Request) {
     p_session_id: result.sessionId,
     p_child_id: body.childId ?? undefined,
     p_policies: body.policiesAccepted ?? [],
+    p_wix_booking_id: result.wixBookingId,
   });
   if (error) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race
