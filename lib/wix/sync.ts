@@ -159,7 +159,8 @@ export async function createWixBookingAndSession(
   creds: WixCredentials,
   activity: WixSlotActivity,
   wixSlotId: string,
-  contact: WixContact
+  contact: WixContact,
+  participants = 1
 ): Promise<
   | { ok: true; sessionId: string; wixBookingId: string }
   | { ok: false; status: number; error: string }
@@ -167,6 +168,12 @@ export async function createWixBookingAndSession(
   const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
   if (!isClass && !activity.wix_resource_id) {
     return { ok: false, status: 404, error: 'Activity is not linked to a Wix service' };
+  }
+  // An APPOINTMENT is a 1:1 slot against one specific resource/staff member —
+  // there's no "capacity" to split across several children the way a CLASS
+  // has real seats. One booking per child, not one booking for several.
+  if (!isClass && participants > 1) {
+    return { ok: false, status: 400, error: 'This class has one spot per booking — book each child separately.' };
   }
 
   const key = wixSlotId.slice('wix:'.length);
@@ -183,14 +190,21 @@ export async function createWixBookingAndSession(
   try {
     if (slotKey.kind === 'class') {
       const sessions = await fetchWixClassSessions(creds, activity.wix_service_id);
-      const session = sessions.find((s) => s.id === slotKey.sessionId && s.remainingCapacity > 0);
+      const session = sessions.find((s) => s.id === slotKey.sessionId && s.remainingCapacity >= participants);
       if (!session) {
-        return { ok: false, status: 409, error: 'That class is no longer available' };
+        return {
+          ok: false,
+          status: 409,
+          error: participants > 1 ? 'Not enough spots left for that many children' : 'That class is no longer available',
+        };
       }
-      const booking = await createWixClassBooking(creds, session, contact);
+      const booking = await createWixClassBooking(creds, session, contact, participants);
       startsAt = session.start;
       endsAt = session.end;
-      capacity = session.remainingCapacity;
+      // The session's actual total capacity, not what's currently remaining
+      // — activity_sessions.capacity is meant to be the fixed seat count the
+      // local waitlist trigger compares bookings against.
+      capacity = session.capacity;
       wixBookingId = booking.id;
     } else {
       const available = await fetchWixAvailability(creds, activity.wix_service_id);
@@ -198,7 +212,7 @@ export async function createWixBookingAndSession(
       if (!slot) {
         return { ok: false, status: 409, error: 'That slot is no longer available' };
       }
-      const booking = await createWixBooking(creds, slot, activity.wix_resource_id!, contact);
+      const booking = await createWixBooking(creds, slot, activity.wix_resource_id!, contact, participants);
       startsAt = slot.localStartDate;
       endsAt = slot.localEndDate;
       capacity = 1;

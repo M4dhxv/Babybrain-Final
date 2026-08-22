@@ -4865,6 +4865,7 @@ function BookingPage() {
           wixSlotId: sessionId,
           childId: bookChildId,
           policiesAccepted: acceptedPolicies,
+          count,
           ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
         });
         status = data.status;
@@ -4927,6 +4928,11 @@ function BookingPage() {
     if (!auth) { goTo("/login"); return; }
     if (!sessionId) { setErr("Please choose a date and time first."); return; }
     if (!packageCredit) return;
+    // 1 child = 1 credit = 1 spot — count is how many are attending.
+    if (packageCredit.remaining < count) {
+      setErr(`This pack only has ${packageCredit.remaining} credit${packageCredit.remaining === 1 ? "" : "s"} left — not enough for ${count} children.`);
+      return;
+    }
     setBusy(true);
     let status: string;
     if (sessionId.startsWith("wix:")) {
@@ -4941,6 +4947,7 @@ function BookingPage() {
           packagePurchaseId: packageCredit.id,
           childId: bookChildId,
           policiesAccepted: acceptedPolicies,
+          count,
         });
         status = data.status;
       } catch (e) {
@@ -4956,6 +4963,7 @@ function BookingPage() {
         // a pack credit showed up as "Guest" on the vendor's roster.
         p_child_id: bookChildId,
         p_policies: acceptedPolicies,
+        p_quantity: count,
       });
       if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error.message)); return; }
       status = (data as string | null) ?? "confirmed";
@@ -5190,7 +5198,11 @@ function BookingPage() {
                             <PackageOption
                               selected={payWith === "credit"}
                               onSelect={() => setPayWith("credit")}
-                              title={`Use a package credit — ${packageCredit.remaining} left`}
+                              title={
+                                count > 1
+                                  ? `Use ${count} package credits — ${packageCredit.remaining} left`
+                                  : `Use a package credit — ${packageCredit.remaining} left`
+                              }
                               price="No charge"
                             />
                           )}

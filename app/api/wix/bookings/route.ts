@@ -7,12 +7,12 @@ import { createWixBookingAndSession } from '@/lib/wix/sync';
 /**
  * Parent books a Wix-sourced slot for free (no package, no payment — see
  * app/api/wix/bookings/redeem-package for the credit-paid path). Creates
- * the booking in Wix and materializes the local session via
- * createWixBookingAndSession, then inserts the local booking referencing
- * it — so the existing capacity/waitlist trigger (handle_booking_insert)
- * and every feature reading bookings/activity_sessions keeps working
- * unmodified.
- * Body: { activityId, wixSlotId, childId?, policiesAccepted?, medicalDisclosure? }
+ * the booking in Wix (for `count` participants) and materializes the local
+ * session via createWixBookingAndSession, then inserts `count` local
+ * bookings referencing it — one per spot, so the existing capacity/waitlist
+ * trigger (handle_booking_insert), which counts rows, correctly sees each
+ * child as its own seat instead of the whole party as one.
+ * Body: { activityId, wixSlotId, childId?, policiesAccepted?, medicalDisclosure?, count? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
@@ -21,8 +21,10 @@ export async function POST(request: Request) {
     childId?: string | null;
     policiesAccepted?: string[];
     medicalDisclosure?: string;
+    count?: number;
   };
   const { activityId, wixSlotId } = body;
+  const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
   if (!activityId || !wixSlotId?.startsWith('wix:')) {
     return NextResponse.json({ error: 'activityId and wixSlotId required' }, { status: 400 });
   }
@@ -63,33 +65,31 @@ export async function POST(request: Request) {
     creds,
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
-    contact
+    contact,
+    count
   );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  const { data: booking, error: bookingError } = await admin
-    .from('bookings')
-    .insert({
-      user_id: user.id,
-      child_id: body.childId ?? null,
-      session_id: result.sessionId,
-      status: 'confirmed',
-      payment_status: 'none',
-      policies_accepted: body.policiesAccepted ?? [],
-      medical_disclosure: body.medicalDisclosure || null,
-      wix_booking_id: result.wixBookingId,
-    })
-    .select('id, status')
-    .single();
-  if (bookingError || !booking) {
-    console.error('Booked in Wix but failed to save the local booking', result.wixBookingId, bookingError);
+  const rows = Array.from({ length: count }, () => ({
+    user_id: user.id,
+    child_id: body.childId ?? null,
+    session_id: result.sessionId,
+    status: 'confirmed' as const,
+    payment_status: 'none' as const,
+    policies_accepted: body.policiesAccepted ?? [],
+    medical_disclosure: body.medicalDisclosure || null,
+    wix_booking_id: result.wixBookingId,
+  }));
+  const { data: bookings, error: bookingError } = await admin.from('bookings').insert(rows).select('id, status');
+  if (bookingError || !bookings || bookings.length !== count) {
+    console.error('Booked in Wix but failed to save the local booking(s)', result.wixBookingId, bookingError);
     return NextResponse.json(
       { error: 'Booked in Wix but failed to save locally — contact support' },
       { status: 500 }
     );
   }
 
-  return NextResponse.json(booking);
+  return NextResponse.json(bookings[0]);
 }

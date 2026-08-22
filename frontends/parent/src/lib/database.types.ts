@@ -805,6 +805,7 @@ export type Database = {
         Args: {
           p_purchase_id: string; p_session_id: string;
           p_child_id?: string | null; p_policies?: string[];
+          p_wix_booking_id?: string | null; p_quantity?: number;
         };
         Returns: string;
       };

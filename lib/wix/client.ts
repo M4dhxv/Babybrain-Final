@@ -243,7 +243,8 @@ export async function createWixBooking(
   creds: WixCredentials,
   slot: WixTimeSlot,
   resourceId: string,
-  contact: WixContactDetails
+  contact: WixContactDetails,
+  numberOfParticipants = 1
 ): Promise<WixBooking> {
   const rawLocationType = slot.location?.locationType ?? 'BUSINESS';
   const mappedLocationType = LOCATION_TYPE_MAP[rawLocationType] ?? rawLocationType;
@@ -260,7 +261,7 @@ export async function createWixBooking(
           location: { locationType: mappedLocationType },
         },
       },
-      numberOfParticipants: 1,
+      numberOfParticipants,
       contactDetails: contact,
     },
     // Makes the booking CONFIRMED immediately, visible in the Wix dashboard,
@@ -278,14 +279,15 @@ export async function createWixBooking(
 export async function createWixClassBooking(
   creds: WixCredentials,
   session: WixClassSession,
-  contact: WixContactDetails
+  contact: WixContactDetails,
+  numberOfParticipants = 1
 ): Promise<WixBooking> {
   const data = await wixFetch<{ booking?: WixBooking }>(creds, '/_api/bookings-service/v2/bookings', {
     booking: {
       bookedEntity: {
         schedule: { scheduleId: session.scheduleId, eventId: session.eventId },
       },
-      numberOfParticipants: 1,
+      numberOfParticipants,
       contactDetails: contact,
     },
     flowControlSettings: { skipBusinessConfirmation: true, ignoreBookingWindow: true },

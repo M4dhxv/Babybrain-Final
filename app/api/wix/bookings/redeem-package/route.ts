@@ -27,7 +27,13 @@ import { createWixBookingAndSession } from '@/lib/wix/sync';
  * happens inside createWixBookingAndSession — so that specific restriction
  * is still enforced, just by the final RPC call rather than the pre-check.
  *
- * Body: { activityId, wixSlotId, packagePurchaseId, childId?, policiesAccepted? }
+ * `count` is the number of children/spots this one credit-purchase should
+ * cover — 1 credit is spent per spot, and the Wix booking itself is made
+ * for that many participants (a CLASS has real seats to spare; an
+ * APPOINTMENT is 1:1 and createWixBookingAndSession rejects count > 1
+ * for those before ever touching Wix).
+ *
+ * Body: { activityId, wixSlotId, packagePurchaseId, childId?, policiesAccepted?, count? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
@@ -36,8 +42,10 @@ export async function POST(request: Request) {
     packagePurchaseId?: string;
     childId?: string | null;
     policiesAccepted?: string[];
+    count?: number;
   };
   const { activityId, wixSlotId, packagePurchaseId } = body;
+  const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
   if (!activityId || !wixSlotId?.startsWith('wix:') || !packagePurchaseId) {
     return NextResponse.json({ error: 'activityId, wixSlotId and packagePurchaseId required' }, { status: 400 });
   }
@@ -62,9 +70,9 @@ export async function POST(request: Request) {
     .eq('id', packagePurchaseId)
     .eq('user_id', user.id)
     .maybeSingle();
-  if (!purchase || purchase.status !== 'active' || purchase.credits_remaining <= 0 ||
+  if (!purchase || purchase.status !== 'active' || purchase.credits_remaining < count ||
       (purchase.expires_at && new Date(purchase.expires_at) <= new Date())) {
-    return NextResponse.json({ error: 'No credits available on this package (it may have expired)' }, { status: 409 });
+    return NextResponse.json({ error: 'Not enough credits available on this package (it may have expired)' }, { status: 409 });
   }
   if (purchase.provider_id !== activity.provider_id) {
     return NextResponse.json({ error: "This package can only be used for its provider's classes" }, { status: 409 });
@@ -97,7 +105,8 @@ export async function POST(request: Request) {
     creds,
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
-    contact
+    contact,
+    count
   );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
@@ -105,13 +114,16 @@ export async function POST(request: Request) {
 
   // The RPC re-validates everything (including the weekday/time restriction
   // the pre-check above couldn't) atomically with the credit decrement and
-  // booking insert. On the caller's own client so auth.uid() resolves.
+  // booking insert — one row per spot, all against the one real Wix booking
+  // made for `count` participants. On the caller's own client so auth.uid()
+  // resolves.
   const { data: status, error } = await supabase.rpc('redeem_package_credit', {
     p_purchase_id: packagePurchaseId,
     p_session_id: result.sessionId,
     p_child_id: body.childId ?? undefined,
     p_policies: body.policiesAccepted ?? [],
     p_wix_booking_id: result.wixBookingId,
+    p_quantity: count,
   });
   if (error) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race
