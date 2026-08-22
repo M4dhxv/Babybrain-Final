@@ -961,6 +961,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      redeem_package_credit: {
+        Args: { p_purchase_id: string; p_session_id: string; p_child_id?: string | null; p_policies?: string[] };
+        Returns: string;
+      };
       provider_overview: {
         Args: { p_provider: string };
         Returns: {

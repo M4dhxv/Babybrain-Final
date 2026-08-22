@@ -52,6 +52,28 @@ function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+/**
+ * RPC errors are sometimes wrapped with a short label before the actual
+ * text (e.g. a Postgres error code) — strip that if present. A *raw*
+ * Postgres error (a type-cast failure, a constraint violation) has its own
+ * colon-shaped formatting too and can quote the offending value verbatim
+ * (seen for real: redeeming a package credit against a Wix slot id sent
+ * "wix:<encoded slot>" where a session uuid was expected, and the naive
+ * strip-up-to-the-first-colon this used to do stopped at *that* inner
+ * colon, leaving the raw encoded value on screen). So this only strips a
+ * prefix that looks like a genuine short label, and never surfaces a
+ * quoted/oversized remainder to the user.
+ */
+function cleanRpcErrorMessage(message: string): string {
+  const m = message.match(/^([A-Za-z0-9 _.'()-]{1,60}):\s*(.*)$/s);
+  if (!m) return message;
+  const rest = m[2];
+  if (rest.startsWith('"') || rest.length > 200) {
+    return "Something went wrong — please try again or contact support.";
+  }
+  return rest;
+}
+
 function HomePage() {
   return (
     <PageShell active="/" auth="public">
@@ -3693,7 +3715,7 @@ function PastActivitiesTab({
     });
     setBusyId(null);
     if (err) {
-      setError(err.message.replace(/^.*?:\s*/, ""));
+      setError(cleanRpcErrorMessage(err.message));
       return;
     }
     setMarks((m) => ({ ...m, [b.id]: status }));
@@ -3828,7 +3850,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: b.id });
     setBusyId(null);
-    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    if (error) setNotice(cleanRpcErrorMessage(error.message));
     else onChanged?.();
   }
 
@@ -3851,7 +3873,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     const { error } = await supabase.rpc("reschedule_booking", { p_booking_id: reschedFor.id, p_new_session_id: newSessionId });
     setBusyId(null);
     setReschedFor(null);
-    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    if (error) setNotice(cleanRpcErrorMessage(error.message));
     else onChanged?.();
   }
 
@@ -4829,7 +4851,7 @@ function BookingPage() {
       });
       setBusy(false);
       if (error) {
-        setErr(error.message.replace(/^.*?:\s*/, ""));
+        setErr(cleanRpcErrorMessage(error.message));
         return;
       }
       status = (data as string | null) ?? "confirmed";
@@ -4906,21 +4928,44 @@ function BookingPage() {
     if (!sessionId) { setErr("Please choose a date and time first."); return; }
     if (!packageCredit) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc("redeem_package_credit", {
-      p_purchase_id: packageCredit.id,
-      p_session_id: sessionId,
-      // Was hard-coded to null server-side, which is why a class booked with
-      // a pack credit showed up as "Guest" on the vendor's roster.
-      p_child_id: bookChildId,
-      p_policies: acceptedPolicies,
-    });
+    let status: string;
+    if (sessionId.startsWith("wix:")) {
+      // Wix-linked activity: the slot lives in Wix, not activity_sessions —
+      // redeem_package_credit expects a real session id, so this goes
+      // through a route that creates the booking in Wix first (same as the
+      // free-booking path) and only then redeems the credit.
+      try {
+        const data = await apiPost<{ status: string }>("/api/wix/bookings/redeem-package", {
+          activityId: activity?.id,
+          wixSlotId: sessionId,
+          packagePurchaseId: packageCredit.id,
+          childId: bookChildId,
+          policiesAccepted: acceptedPolicies,
+        });
+        status = data.status;
+      } catch (e) {
+        setBusy(false);
+        setErr(e instanceof Error ? e.message : "Could not redeem this credit");
+        return;
+      }
+    } else {
+      const { data, error } = await supabase.rpc("redeem_package_credit", {
+        p_purchase_id: packageCredit.id,
+        p_session_id: sessionId,
+        // Was hard-coded to null server-side, which is why a class booked with
+        // a pack credit showed up as "Guest" on the vendor's roster.
+        p_child_id: bookChildId,
+        p_policies: acceptedPolicies,
+      });
+      if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error.message)); return; }
+      status = (data as string | null) ?? "confirmed";
+    }
     setBusy(false);
-    if (error) { setErr(error.message.replace(/^.*?:\s*/, "")); return; }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
       when: selected ? sgDateTime(selected.starts_at) : "",
-      status: (data as string | null) ?? "confirmed",
+      status,
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",

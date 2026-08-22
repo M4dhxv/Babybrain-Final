@@ -1,6 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
-import { fetchWixServices, fetchWixResources, type WixCredentials } from './client';
+import {
+  fetchWixServices,
+  fetchWixResources,
+  fetchWixAvailability,
+  fetchWixClassSessions,
+  createWixBooking,
+  createWixClassBooking,
+  decodeWixSlotKey,
+  type WixCredentials,
+} from './client';
 
 /**
  * Turns every service on a vendor's connected Wix account (appointment or
@@ -116,4 +125,114 @@ export async function syncWixServicesToActivities(
   }
 
   return result;
+}
+
+export interface WixSlotActivity {
+  id: string;
+  wix_service_id: string;
+  wix_resource_id: string | null;
+  wix_service_type: string | null;
+}
+
+export interface WixContact {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+}
+
+/**
+ * Shared middle of every "book a Wix slot" flow, whichever way it's being
+ * paid for: re-validates the slot against live Wix availability (never
+ * trusts client-supplied slot times) to close the race where a slot fills
+ * between the picker loading and "Book" being clicked, creates the real
+ * booking in Wix, then materializes exactly one activity_sessions row for
+ * it (find-or-create, keyed on wix_slot_key — a second parent booking the
+ * same class occurrence must not reset capacity back to "before their
+ * booking" on top of the first parent's already-counted seat).
+ *
+ * Callers only need to decide how the resulting local `bookings` row itself
+ * gets created (a free booking, a Stripe-paid one, a package credit, ...).
+ */
+export async function createWixBookingAndSession(
+  admin: SupabaseClient<Database>,
+  creds: WixCredentials,
+  activity: WixSlotActivity,
+  wixSlotId: string,
+  contact: WixContact
+): Promise<
+  | { ok: true; sessionId: string; wixBookingId: string }
+  | { ok: false; status: number; error: string }
+> {
+  const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
+  if (!isClass && !activity.wix_resource_id) {
+    return { ok: false, status: 404, error: 'Activity is not linked to a Wix service' };
+  }
+
+  const key = wixSlotId.slice('wix:'.length);
+  const slotKey = decodeWixSlotKey(key);
+  if (isClass !== (slotKey.kind === 'class')) {
+    return { ok: false, status: 400, error: 'Slot does not match this activity' };
+  }
+
+  let startsAt: string;
+  let endsAt: string;
+  let capacity: number;
+  let wixBookingId: string;
+
+  try {
+    if (slotKey.kind === 'class') {
+      const sessions = await fetchWixClassSessions(creds, activity.wix_service_id);
+      const session = sessions.find((s) => s.id === slotKey.sessionId && s.remainingCapacity > 0);
+      if (!session) {
+        return { ok: false, status: 409, error: 'That class is no longer available' };
+      }
+      const booking = await createWixClassBooking(creds, session, contact);
+      startsAt = session.start;
+      endsAt = session.end;
+      capacity = session.remainingCapacity;
+      wixBookingId = booking.id;
+    } else {
+      const available = await fetchWixAvailability(creds, activity.wix_service_id);
+      const slot = available.find((s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e);
+      if (!slot) {
+        return { ok: false, status: 409, error: 'That slot is no longer available' };
+      }
+      const booking = await createWixBooking(creds, slot, activity.wix_resource_id!, contact);
+      startsAt = slot.localStartDate;
+      endsAt = slot.localEndDate;
+      capacity = 1;
+      wixBookingId = booking.id;
+    }
+  } catch (e) {
+    console.error('Wix booking creation failed', e);
+    return { ok: false, status: 502, error: 'Could not create the booking in Wix' };
+  }
+
+  const { data: existingSession } = await admin
+    .from('activity_sessions')
+    .select('id')
+    .eq('activity_id', activity.id)
+    .eq('wix_slot_key', key)
+    .maybeSingle();
+  if (existingSession) {
+    return { ok: true, sessionId: existingSession.id, wixBookingId };
+  }
+
+  const { data: newSession, error: sessionError } = await admin
+    .from('activity_sessions')
+    .insert({
+      activity_id: activity.id,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      capacity,
+      wix_slot_key: key,
+    })
+    .select('id')
+    .single();
+  if (sessionError || !newSession) {
+    console.error('Booked in Wix but failed to materialize the local session', wixBookingId, sessionError);
+    return { ok: false, status: 500, error: 'Booked in Wix but failed to save locally — contact support' };
+  }
+  return { ok: true, sessionId: newSession.id, wixBookingId };
 }

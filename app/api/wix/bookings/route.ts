@@ -1,25 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  fetchWixAvailability,
-  fetchWixClassSessions,
-  createWixBooking,
-  createWixClassBooking,
-  decodeWixSlotKey,
-  getProviderWixCredentials,
-} from '@/lib/wix/client';
+import { getProviderWixCredentials } from '@/lib/wix/client';
+import { createWixBookingAndSession } from '@/lib/wix/sync';
 
 /**
- * Parent books a Wix-sourced slot. Re-validates against live Wix
- * availability (never trusts client-supplied slot times) to close the race
- * where a slot fills between the picker loading and "Book" being clicked,
- * creates the booking in Wix, then materializes exactly one
- * activity_sessions row for that slot/session (capacity from Wix — 1 for an
- * appointment, the class's real remaining capacity for a class) and inserts
- * the local booking referencing it — so the existing capacity/waitlist
- * trigger (handle_booking_insert) and every feature reading bookings/
- * activity_sessions keeps working unmodified.
+ * Parent books a Wix-sourced slot for free (no package, no payment — see
+ * app/api/wix/bookings/redeem-package for the credit-paid path). Creates
+ * the booking in Wix and materializes the local session via
+ * createWixBookingAndSession, then inserts the local booking referencing
+ * it — so the existing capacity/waitlist trigger (handle_booking_insert)
+ * and every feature reading bookings/activity_sessions keeps working
+ * unmodified.
  * Body: { activityId, wixSlotId, childId?, policiesAccepted?, medicalDisclosure? }
  */
 export async function POST(request: Request) {
@@ -47,16 +39,6 @@ export async function POST(request: Request) {
   if (!activity?.wix_service_id || !activity.provider_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
   }
-  const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
-  if (!isClass && !activity.wix_resource_id) {
-    return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
-  }
-
-  const key = wixSlotId.slice('wix:'.length);
-  const slotKey = decodeWixSlotKey(key);
-  if (isClass !== (slotKey.kind === 'class')) {
-    return NextResponse.json({ error: 'Slot does not match this activity' }, { status: 400 });
-  }
 
   const creds = await getProviderWixCredentials(admin, activity.provider_id);
   if (!creds) {
@@ -76,72 +58,15 @@ export async function POST(request: Request) {
     phone: parent?.phone || '',
   };
 
-  let startsAt: string;
-  let endsAt: string;
-  let capacity: number;
-  let wixBookingId: string;
-
-  try {
-    if (slotKey.kind === 'class') {
-      const sessions = await fetchWixClassSessions(creds, activity.wix_service_id);
-      const session = sessions.find((s) => s.id === slotKey.sessionId && s.remainingCapacity > 0);
-      if (!session) {
-        return NextResponse.json({ error: 'That class is no longer available' }, { status: 409 });
-      }
-      const booking = await createWixClassBooking(creds, session, contact);
-      startsAt = session.start;
-      endsAt = session.end;
-      capacity = session.remainingCapacity;
-      wixBookingId = booking.id;
-    } else {
-      const available = await fetchWixAvailability(creds, activity.wix_service_id);
-      const slot = available.find((s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e);
-      if (!slot) {
-        return NextResponse.json({ error: 'That slot is no longer available' }, { status: 409 });
-      }
-      const booking = await createWixBooking(creds, slot, activity.wix_resource_id!, contact);
-      startsAt = slot.localStartDate;
-      endsAt = slot.localEndDate;
-      capacity = 1;
-      wixBookingId = booking.id;
-    }
-  } catch (e) {
-    console.error('Wix booking creation failed', e);
-    return NextResponse.json({ error: 'Could not create the booking in Wix' }, { status: 502 });
-  }
-
-  // Find-or-create rather than upsert, so a second parent booking the same
-  // class occurrence doesn't reset capacity back to "remaining before their
-  // booking" on top of the first parent's already-counted seat.
-  let sessionId: string;
-  const { data: existingSession } = await admin
-    .from('activity_sessions')
-    .select('id')
-    .eq('activity_id', activity.id)
-    .eq('wix_slot_key', key)
-    .maybeSingle();
-  if (existingSession) {
-    sessionId = existingSession.id;
-  } else {
-    const { data: newSession, error: sessionError } = await admin
-      .from('activity_sessions')
-      .insert({
-        activity_id: activity.id,
-        starts_at: startsAt,
-        ends_at: endsAt,
-        capacity,
-        wix_slot_key: key,
-      })
-      .select('id')
-      .single();
-    if (sessionError || !newSession) {
-      console.error('Booked in Wix but failed to materialize the local session', wixBookingId, sessionError);
-      return NextResponse.json(
-        { error: 'Booked in Wix but failed to save locally — contact support' },
-        { status: 500 }
-      );
-    }
-    sessionId = newSession.id;
+  const result = await createWixBookingAndSession(
+    admin,
+    creds,
+    { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
+    wixSlotId,
+    contact
+  );
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
   const { data: booking, error: bookingError } = await admin
@@ -149,17 +74,17 @@ export async function POST(request: Request) {
     .insert({
       user_id: user.id,
       child_id: body.childId ?? null,
-      session_id: sessionId,
+      session_id: result.sessionId,
       status: 'confirmed',
       payment_status: 'none',
       policies_accepted: body.policiesAccepted ?? [],
       medical_disclosure: body.medicalDisclosure || null,
-      wix_booking_id: wixBookingId,
+      wix_booking_id: result.wixBookingId,
     })
     .select('id, status')
     .single();
   if (bookingError || !booking) {
-    console.error('Booked in Wix but failed to save the local booking', wixBookingId, bookingError);
+    console.error('Booked in Wix but failed to save the local booking', result.wixBookingId, bookingError);
     return NextResponse.json(
       { error: 'Booked in Wix but failed to save locally — contact support' },
       { status: 500 }
