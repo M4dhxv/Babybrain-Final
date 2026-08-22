@@ -129,9 +129,14 @@ export default function BookingsPage() {
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const ids = [...map.keys()];
       if (!ids.length) { setSessions([]); setLoading(false); return; }
+      // Soonest-first, and never further back than now — a Wix-linked
+      // activity alone can generate hundreds of rows (30-min slots over
+      // weeks), so sorting the wrong way here silently pushed every
+      // near-term session out of the 50-row cap.
       const { data: sess } = await supabase
         .from('activity_sessions').select('id, starts_at, capacity, activity_id')
-        .in('activity_id', ids).order('starts_at', { ascending: false }).limit(50);
+        .in('activity_id', ids).gte('starts_at', new Date().toISOString())
+        .order('starts_at', { ascending: true }).limit(50);
       const opts = (sess ?? []).map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
       setSessionActivity(Object.fromEntries((sess ?? []).map((s) => [s.id, s.activity_id])));
       setSessions(opts);
