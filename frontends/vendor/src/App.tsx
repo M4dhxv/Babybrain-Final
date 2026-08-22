@@ -87,6 +87,8 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/activities" element={<ActivitiesPage />} />
               <Route path="/schedule" element={<SchedulePage />} />
+              {/* Wix Availability was folded into Schedule — old links/bookmarks still land somewhere. */}
+              <Route path="/wix-availability" element={<Navigate to="/schedule" replace />} />
               <Route path="/bookings" element={<BookingsPage />} />
               <Route path="/packages" element={<PackagesPage />} />
               <Route path="/make-up-tokens" element={<MakeUpTokensPage />} />

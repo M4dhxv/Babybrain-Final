@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
@@ -33,6 +34,11 @@ const ageLabel = (min: number, max: number) => {
 };
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
+const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
 
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
@@ -168,6 +174,32 @@ export default function ActivitiesPage() {
         studio: sessForm.studio.trim() || null,
       };
     });
+    // A Wix-connected vendor's real-world time is already spoken for by
+    // anything on their Wix calendar — check every proposed slot (the
+    // weekly-repeat loop can produce several) against everything Wix has
+    // them committed to before saving any of them.
+    if (provider?.wix_site_id) {
+      try {
+        const { ranges } = await apiGet<{ ranges: { start: string; end: string }[] }>(`/api/wix/busy?providerId=${provider.id}`);
+        for (const row of rows) {
+          const start = new Date(row.starts_at);
+          const end = new Date(row.ends_at);
+          const clash = ranges.find((r) => rangesOverlap(start, end, new Date(r.start), new Date(r.end)));
+          if (clash) {
+            setSavingSess(false);
+            setSessError(
+              `That clashes with something already on your Wix calendar (${fmtDateTime(clash.start)}–${new Date(clash.end).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' })}). Pick a different time, or update it in Wix first.`
+            );
+            return;
+          }
+        }
+      } catch {
+        setSavingSess(false);
+        setSessError("Couldn't check your Wix calendar for clashes — try again in a moment.");
+        return;
+      }
+    }
+
     const { error } = await supabase.from('activity_sessions').insert(rows);
     setSavingSess(false);
     if (error) {

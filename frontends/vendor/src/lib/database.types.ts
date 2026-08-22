@@ -183,6 +183,9 @@ export type Database = {
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
           reschedule_cutoff_hours: number;
+          wix_service_id: string | null;
+          wix_resource_id: string | null;
+          wix_service_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -212,6 +215,9 @@ export type Database = {
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number;
           reschedule_cutoff_hours?: number;
+          wix_service_id?: string | null;
+          wix_resource_id?: string | null;
+          wix_service_type?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -238,6 +244,8 @@ export type Database = {
           status: 'scheduled' | 'cancelled';
           teacher_name: string | null;
           studio: string | null;
+          wix_slot_key: string | null;
+          wix_remaining_capacity: number | null;
           created_at: string;
         };
         Insert: {
@@ -250,6 +258,8 @@ export type Database = {
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
           studio?: string | null;
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -259,6 +269,8 @@ export type Database = {
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
           studio?: string | null;
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
               Relationships: [
           {
@@ -442,6 +454,7 @@ export type Database = {
           followed_up_at: string | null;
           guest_name: string | null;
           guest_contact: string | null;
+          wix_booking_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -454,6 +467,7 @@ export type Database = {
           guest_name?: string | null;
           guest_contact?: string | null;
           payment_status?: PaymentStatus;
+          wix_booking_id?: string | null;
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {
@@ -511,6 +525,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          wix_site_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -533,6 +548,7 @@ export type Database = {
           longitude?: number | null;
           uen?: string | null;
           status?: ProviderStatus;
+          wix_site_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;

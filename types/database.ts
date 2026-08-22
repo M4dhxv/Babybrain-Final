@@ -191,6 +191,9 @@ export type Database = {
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number | null;
           reschedule_cutoff_hours: number | null;
+          wix_service_id: string | null;
+          wix_resource_id: string | null;
+          wix_service_type: 'APPOINTMENT' | 'CLASS' | 'COURSE' | null;
           created_at: string;
           updated_at: string;
         };
@@ -222,6 +225,9 @@ export type Database = {
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number | null;
           reschedule_cutoff_hours?: number | null;
+          wix_service_id?: string | null;
+          wix_resource_id?: string | null;
+          wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -250,6 +256,10 @@ export type Database = {
           teacher_name: string | null;
           studio: string | null;
           created_at: string;
+          // Wix-sourced sessions only (migrations 00050, 00052) — null for
+          // ordinary site-native sessions.
+          wix_slot_key: string | null;
+          wix_remaining_capacity: number | null;
         };
         Insert: {
           id?: string;
@@ -261,6 +271,8 @@ export type Database = {
           studio?: string | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -268,6 +280,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
               Relationships: [
           {
@@ -450,6 +464,8 @@ export type Database = {
           created_at: string;
           updated_at: string;
           package_purchase_id: string | null;
+          policies_accepted: string[];
+          wix_booking_id: string | null;
         };
         Insert: {
           id?: string;
@@ -458,6 +474,8 @@ export type Database = {
           session_id: string;
           medical_disclosure?: string | null;
           package_purchase_id?: string | null;
+          policies_accepted?: string[];
+          wix_booking_id?: string | null;
           // provider_id / waitlist_position set by trigger either way.
           // status / payment_status: the trigger sets these for normal
           // (non-service-role) inserts and ignores whatever's passed; a
@@ -528,6 +546,7 @@ export type Database = {
           // Derived by the providers_region_trg trigger from postal_code /
           // coordinates — never written directly.
           region: string | null;
+          wix_site_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -555,14 +574,50 @@ export type Database = {
           is_auto_listed?: boolean;
           source_url?: string | null;
           synced_at?: string | null;
+          wix_site_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
           verification_status?: 'unverified' | 'pending' | 'verified';
           stripe_account_id?: string | null;
           payouts_enabled?: boolean;
+          wix_site_id?: string | null;
         };
         Relationships: [];
+      };
+      // Per-vendor Wix credentials (migration 00053). No RLS policies at
+      // all — only the service-role admin client may touch this table, via
+      // app/api/vendor/wix-integration.
+      provider_wix_credentials: {
+        Row: {
+          provider_id: string;
+          wix_site_id: string;
+          wix_api_key: string;
+          wix_api_key_preview: string;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          wix_site_id: string;
+          wix_api_key: string;
+          wix_api_key_preview: string;
+          updated_at?: string;
+        };
+        Update: {
+          wix_site_id?: string;
+          wix_api_key?: string;
+          wix_api_key_preview?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'provider_wix_credentials_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: true;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       provider_members: {
         Row: {

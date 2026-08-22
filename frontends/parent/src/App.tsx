@@ -30,6 +30,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
+import { goTo } from "./lib/nav";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { downloadSchedulePdf, withinRange } from "./lib/schedule-pdf";
 import { formatChildAge, formatAgeRange, formatDuration, regionLabel, ageInMonths } from "./lib/database.types";
@@ -374,6 +375,7 @@ function OnboardingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
+  const [emailExists, setEmailExists] = useState(false);
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
@@ -429,7 +431,7 @@ function OnboardingPage() {
     // Send the whole form with the sign-up. When confirmation is required there
     // is no session to write with, so the trigger persists this server-side —
     // QA: "the children hadn't been saved and I had to add them again".
-    const { error: signErr } = await signUp(email, password, fullName, {
+    const { error: signErr, emailExists: alreadyExists } = await signUp(email, password, fullName, {
       full_name: fullName,
       phone: phone || null,
       postal_code: postcode.trim(),
@@ -444,6 +446,10 @@ function OnboardingPage() {
       },
       children: draftKids,
     });
+    if (alreadyExists) {
+      setBusy(false);
+      return setEmailExists(true);
+    }
     if (signErr) {
       setBusy(false);
       return setError(signErr);
@@ -486,7 +492,7 @@ function OnboardingPage() {
         }))
       );
     }
-    window.location.href = "/matches";
+    goTo("/matches");
   }
 
   if (confirmSent) {
@@ -497,6 +503,23 @@ function OnboardingPage() {
           <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
           <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam folder.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
+        </main>
+      </PageShell>
+    );
+  }
+
+  if (emailExists) {
+    return (
+      <PageShell active="/onboarding">
+        <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
+          <h1 className="text-2xl font-black">Account already exists</h1>
+          <p className="mt-3 font-semibold text-[#44507b]">An account with <strong>{email}</strong> already exists. Log in instead, or use a different email to sign up.</p>
+          <Button href="/login" className="mt-5">Go to log in</Button>
+          <p className="mt-4 text-sm font-semibold text-[#5a6690]">
+            <button type="button" onClick={() => setEmailExists(false)} className="font-black text-baby-pink underline">
+              Use a different email
+            </button>
+          </p>
         </main>
       </PageShell>
     );
@@ -758,6 +781,16 @@ const REGION_FILTERS: [string, string][] = [
   ["west", "West"],
   ["sentosa", "Sentosa"],
 ];
+/** Same centroids as `sg_region()` in migration 00032, for parents who deny
+ *  (or don't have) precise geolocation — picking an area beats no sort at all. */
+const REGION_CENTROIDS: Record<string, { lat: number; lng: number }> = {
+  central: { lat: 1.300, lng: 103.830 },
+  east: { lat: 1.335, lng: 103.940 },
+  "north-east": { lat: 1.385, lng: 103.895 },
+  north: { lat: 1.430, lng: 103.820 },
+  west: { lat: 1.335, lng: 103.720 },
+  sentosa: { lat: 1.2494, lng: 103.8303 },
+};
 /** Hour of day (0–23) of an ISO timestamp, in Singapore time. */
 function sgHour(iso?: string | null): number | null {
   if (!iso) return null;
@@ -1078,8 +1111,21 @@ function ExplorePage() {
           </div>
 
           {sort === "distance" && !here && (
-            <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
-              Allow location access to sort by how near activities are to you.
+            <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
+              <span>Allow location access to sort by how near activities are to you, or</span>
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  const centroid = REGION_CENTROIDS[e.target.value];
+                  if (centroid) setHere(centroid);
+                }}
+                className="h-7 rounded-[8px] border border-[#EBE3E5] bg-white px-2 text-xs font-bold text-[#4a5680] focus:border-baby-pink focus:outline-none"
+              >
+                <option value="" disabled>pick your area</option>
+                {REGION_FILTERS.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
             </p>
           )}
 
@@ -1360,7 +1406,7 @@ function ActivityDetailPage() {
 
   async function buyPack(packageId: string) {
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     setBuyingPack(packageId);
@@ -1404,7 +1450,7 @@ function ActivityDetailPage() {
       ? "Messaging providers and other parents is a BabyBrain Plus feature."
       : null;
   const requireLogin = (open: () => void) => () => {
-    if (!session) window.location.href = "/login";
+    if (!session) goTo("/login");
     else open();
   };
 
@@ -3540,7 +3586,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
     try {
       await apiPost("/api/customer/account", { confirm: "DELETE" });
       await supabase.auth.signOut();
-      window.location.href = "/?deleted=1";
+      goTo("/?deleted=1");
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : "We couldn't delete your account — please contact hello@babybrain.sg.");
@@ -4103,7 +4149,7 @@ function ContactPage() {
   const { session } = useAuth();
   const [support, setSupport] = useState(false);
   const openSupport = () => {
-    if (!session) { window.location.href = "/login"; return; }
+    if (!session) { goTo("/login"); return; }
     setSupport(true);
   };
 
@@ -4320,7 +4366,7 @@ function PricingPage() {
 
   async function upgrade() {
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     setError(null);
@@ -4508,7 +4554,7 @@ function PaymentPage() {
   useEffect(() => {
     if (loading) return;
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     apiPost<{ url?: string }>("/api/customer/stripe/subscription", { billing: "monthly" })
@@ -4765,7 +4811,7 @@ function BookingPage() {
   async function pay() {
     setErr(null);
     if (!auth) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     if (!sessionId) {
@@ -4787,6 +4833,25 @@ function BookingPage() {
         return;
       }
       status = (data as string | null) ?? "confirmed";
+    } else if (sessionId.startsWith("wix:")) {
+      // Wix-linked activity: the slot lives in Wix, not activity_sessions —
+      // creating the booking there (and materializing the local session) is
+      // handled server-side.
+      try {
+        const data = await apiPost<{ id: string; status: string }>("/api/wix/bookings", {
+          activityId: activity?.id,
+          wixSlotId: sessionId,
+          childId: bookChildId,
+          policiesAccepted: acceptedPolicies,
+          ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+        });
+        status = data.status;
+      } catch (e) {
+        setBusy(false);
+        setErr(e instanceof Error ? e.message : "Could not create the booking");
+        return;
+      }
+      setBusy(false);
     } else {
       const { data, error } = await supabase
         .from("bookings")
@@ -4833,11 +4898,11 @@ function BookingPage() {
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
     });
-    window.location.href = `/booked?${q.toString()}`;
+    goTo(`/booked?${q.toString()}`);
   }
 
   async function payWithPackage() {
-    if (!auth) { window.location.href = "/login"; return; }
+    if (!auth) { goTo("/login"); return; }
     if (!sessionId) { setErr("Please choose a date and time first."); return; }
     if (!packageCredit) return;
     setBusy(true);
@@ -4860,12 +4925,12 @@ function BookingPage() {
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
     });
-    window.location.href = `/booked?${q.toString()}`;
+    goTo(`/booked?${q.toString()}`);
   }
 
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
-    if (!auth) { window.location.href = "/login"; return; }
+    if (!auth) { goTo("/login"); return; }
     // Buying a pack books the selected class too, so the same paperwork applies.
     const consent = consentProblem();
     if (consent) { setErr(consent); return; }
@@ -5389,7 +5454,7 @@ function LoginPage() {
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
     const next = getParam("next");
-    window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile";
+    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile");
   }
   return (
     <PageShell active="/login">
@@ -5507,7 +5572,7 @@ function ResetPasswordPage() {
     setBusy(false);
     if (error) return setError(error);
     setDone(true);
-    setTimeout(() => (window.location.href = "/profile"), 1500);
+    setTimeout(() => goTo("/profile"), 1500);
   }
 
   return (

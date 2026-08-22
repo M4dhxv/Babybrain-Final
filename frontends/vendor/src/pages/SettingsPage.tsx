@@ -3,12 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderLocation, ProviderPolicy, VendorCategory } from '@/lib/database.types';
 
@@ -21,6 +22,7 @@ const settingsTabs = [
   // option to toggle on and upload the relevant material".
   { id: 'policies', label: 'Waivers & Consents', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: Shield },
+  { id: 'integrations', label: 'Integrate your Business', icon: Plug },
 ];
 
 const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
@@ -431,8 +433,285 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {activeTab === 'integrations' && (
+          <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
+            <WixIntegrationManager provider={provider} canManage={canManage} />
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+type WixStatus = {
+  connected: boolean;
+  wix_site_id?: string;
+  wix_api_key_preview?: string;
+  updated_at?: string;
+};
+
+/** Settings -> Integrate your Business. A vendor connects their own Wix
+ *  account (API key + site ID) so their Schedule calendar, availability and
+ *  bookings sync against their own Wix Bookings data instead of a shared
+ *  one. The key is never sent to the browser on page load — only a masked
+ *  preview — and the eye button fetches the full value on demand via a
+ *  separate, explicitly-called route. */
+function WixIntegrationManager({
+  provider, canManage,
+}: {
+  provider: { id: string } | null; canManage: boolean;
+}) {
+  const [status, setStatus] = useState<WixStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [siteId, setSiteId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[] }) {
+    const parts = [];
+    if (sync.created) parts.push(`${sync.created} new`);
+    if (sync.updated) parts.push(`${sync.updated} updated`);
+    if (!sync.created && !sync.updated) parts.push('nothing new');
+    let text = `Synced from Wix: ${parts.join(', ')}.`;
+    if (sync.skipped.length) {
+      text += ` ${sync.skipped.length} skipped — ${sync.skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
+    }
+    return text;
+  }
+
+  async function load() {
+    if (!provider) return;
+    setLoading(true);
+    try {
+      const s = await apiGet<WixStatus>(`/api/vendor/wix-integration?providerId=${provider.id}`);
+      setStatus(s);
+      setEditing(!s.connected);
+      setSiteId(s.wix_site_id ?? '');
+      setRevealedKey(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load Wix integration status');
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+
+  async function save() {
+    if (!provider || !siteId.trim() || !apiKey.trim()) {
+      setError('Both the API key and site ID are required.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[] } }>(
+        '/api/vendor/wix-integration',
+        { provider_id: provider.id, wix_site_id: siteId.trim(), wix_api_key: apiKey.trim() }
+      );
+      setApiKey('');
+      setShowKey(false);
+      setNotice(`Wix account connected. ${summarizeSync(res.sync)}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save these credentials');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function syncServices() {
+    if (!provider) return;
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[] } }>(
+        '/api/vendor/wix-services-sync',
+        { provider_id: provider.id }
+      );
+      setNotice(summarizeSync(res.sync));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not sync services');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function toggleReveal() {
+    if (revealedKey) { setRevealedKey(null); return; }
+    if (!provider) return;
+    setRevealing(true);
+    setError(null);
+    try {
+      const { wix_api_key } = await apiGet<{ wix_api_key: string }>(`/api/vendor/wix-integration/reveal?providerId=${provider.id}`);
+      setRevealedKey(wix_api_key);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reveal the key');
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  // Credential fields get a visibly heavier border than an ordinary text
+  // input — these hold a secret and a site identifier, not "just a field".
+  const inputCls = 'w-full px-3.5 py-2.5 border-2 border-indigo-200 bg-indigo-50/30 rounded-lg text-sm font-mono shadow-sm transition-colors focus:outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100';
+  const readOnlyCls = 'w-full px-3.5 py-2.5 border-2 border-gray-200 bg-gray-50 rounded-lg text-sm font-mono text-gray-700';
+
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-1">
+        <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Plug className="w-5 h-5 text-indigo-600" /></div>
+        <div>
+          <h3 className="font-semibold text-gray-900">WIX Integration</h3>
+          <p className="text-xs text-gray-500">Connect your own Wix Bookings account to sync availability and bookings.</p>
+        </div>
+      </div>
+
+      {loading && <div className="mt-5 text-sm text-gray-400">Loading…</div>}
+
+      {!loading && (
+        <div className="mt-5">
+          {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+          {notice && <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div>}
+
+          {status?.connected && !editing && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  <CheckCircle className="w-3.5 h-3.5" /> Connected
+                </span>
+                {status.updated_at && (
+                  <span className="text-xs text-gray-400">since {new Date(status.updated_at).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Site ID</label>
+                <div className={readOnlyCls}>{status.wix_site_id}</div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">API Key</label>
+                <div className="flex items-center gap-2">
+                  <div className={cn(readOnlyCls, 'flex-1 truncate')}>
+                    {revealedKey ?? status.wix_api_key_preview}
+                  </div>
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={toggleReveal}
+                      disabled={revealing}
+                      title={revealedKey ? 'Hide key' : 'Show full key'}
+                      className="flex-shrink-0 grid h-9 w-9 place-items-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {revealedKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {canManage && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button onClick={syncServices} disabled={syncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
+                    <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} /> {syncing ? 'Syncing…' : 'Sync services'}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setEditing(true); setRevealedKey(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
+                    <Pencil className="w-3.5 h-3.5" /> Change key
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-gray-400">
+                Every service, class and appointment on this Wix account becomes an activity here — new ones land
+                unpublished until you fill in a category, age range and price.
+              </p>
+            </div>
+          )}
+
+          {!status?.connected && !canManage && (
+            <p className="text-sm text-gray-400">This business hasn't connected a Wix account yet. Ask an owner or manager to set it up.</p>
+          )}
+
+          {editing && canManage && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-5">
+              <div>
+                <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix API Key</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    className={cn(inputCls, 'flex-1')}
+                    placeholder="IST.eyJra..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((v) => !v)}
+                    title={showKey ? 'Hide' : 'Show'}
+                    className="flex-shrink-0 grid h-9 w-9 place-items-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  In your Wix dashboard: <strong>Settings → API Keys</strong> → Generate API Key. Give it Bookings
+                  permissions (read + write), then copy the key immediately — Wix only shows it once.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix Site ID</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  placeholder="e.g. a240b75d-88bb-414a-bf15-01f112022e66"
+                  value={siteId}
+                  onChange={(e) => setSiteId(e.target.value)}
+                  autoComplete="off"
+                />
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Open your Wix dashboard and look at the browser's address bar — it follows this pattern:
+                </p>
+                <p className="mt-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700">
+                  wix.com/dashboard/<span className="font-bold text-[#C90044]">SITE_ID</span>/home
+                </p>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Copy just the <span className="font-bold text-[#C90044]">SITE_ID</span> part — the segment between{' '}
+                  <span className="font-mono">/dashboard/</span> and <span className="font-mono">/home</span> — and
+                  paste it above.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button onClick={save} disabled={saving || !siteId.trim() || !apiKey.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5 gap-2">
+                  <Save className="w-4 h-4" /> {saving ? 'Connecting…' : 'Save & connect'}
+                </Button>
+                {status?.connected && (
+                  <Button variant="outline" onClick={() => { setEditing(false); setApiKey(''); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <a
+            href="https://support.wix.com/en/article/about-api-keys"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+          >
+            More on Wix API keys <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
+    </>
   );
 }
 

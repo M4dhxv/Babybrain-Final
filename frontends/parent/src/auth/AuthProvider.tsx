@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
+import { goTo, appUrl } from "../lib/nav";
 import type { ParentProfile, Child } from "../lib/database.types";
 
 interface AuthState {
@@ -15,7 +16,7 @@ interface AuthState {
     password: string,
     fullName: string,
     onboarding?: SignupOnboarding
-  ) => Promise<{ error?: string }>;
+  ) => Promise<{ error?: string; emailExists?: boolean }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -108,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return error ? { error: error.message } : {};
     },
     signUp: async (email, password, fullName, onboarding) => {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -118,11 +119,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile`,
         },
       });
-      return error ? { error: error.message } : {};
+      if (error) return { error: error.message };
+      // With "Confirm email" on, Supabase won't error on a duplicate address —
+      // it returns a fake user with no identities instead, so enumerating
+      // registered emails isn't possible from the response alone. That's the
+      // only way to tell the signup didn't actually happen.
+      if (data.user && data.user.identities?.length === 0) return { emailExists: true };
+      return {};
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: appUrl("/reset-password"),
       });
       return error ? { error: error.message } : {};
     },
@@ -132,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     signOut: async () => {
       await supabase.auth.signOut();
-      window.location.href = "/";
+      goTo("/");
     },
     refresh: load,
   };

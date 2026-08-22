@@ -25,7 +25,7 @@ const ACTIVITIES = [
   ['sensory-explorers-playtime', 'Sensory Explorers Playtime', 'sensory-play', ['sensory-play'], 18, 48, 38,
     'United Square, Novena', '307591', 1.3175, 103.8434, 'photo-1596464716127-f2a82984de30',
     [6, 0], 10, 'Messy play heaven: water beads, kinetic sand, edible paint and texture trays designed by early-childhood educators to spark curiosity safely.', 'Little Senses SG'],
-  ['little-artists-workshop', 'Little Artists Workshop', 'art-creativity', ['art-creativity'], 24, 72, 50,
+  ['little-artists-workshop', 'Little Artists Workshop', 'sensory-play', ['art-creativity'], 24, 72, 50,
     'Tiong Bahru Community Centre', '160058', 1.2859, 103.8270, 'photo-1617791160505-6f00504e3519',
     [3, 6], 14, 'Process-over-product art sessions: finger painting, clay, collage and big-canvas work. Aprons provided — mess guaranteed, masterpieces optional.', 'Studio Mini'],
   ['mini-movers-adventure', 'Mini Movers Adventure', 'movement', ['movement'], 18, 60, 42,
