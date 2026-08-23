@@ -46,14 +46,14 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative px-4 pt-8 pb-10 sm:px-8 sm:pt-10 sm:pb-12">
+      <section className="relative px-4 pt-6 pb-6 sm:px-8 sm:pt-8 sm:pb-8">
         <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:gap-8">
           {/* Left Content */}
           <div className="flex-1">
             {/* Trust Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-4 relative">
               <Shield className="w-4 h-4 text-[#FA4D8D]" />
-              <span className="text-sm font-bold text-[#FA4D8D]">Join 500+ trusted providers</span>
+              <span className="text-sm font-bold text-[#FA4D8D]">Join 75+ trusted providers</span>
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -left-6 -top-2" />
               <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />
             </div>
@@ -66,28 +66,28 @@ export default function LandingPage() {
 
             {/* Subtitle */}
             <p className="text-gray-600 text-sm leading-relaxed max-w-lg mb-4">
-              List your classes, play spaces and experiences in minutes and connect with thousands of parents looking for the best for their kids.
+              List your classes, play spaces, events and experiences with ease and connect with thousands of parents looking for the best activities for their little ones.
             </p>
 
             {/* Features */}
-            <div className="flex flex-wrap gap-3 mb-4">
-              <div className="flex items-center gap-2 rounded-full bg-[#FEEBF2] py-1.5 pl-1.5 pr-3">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center flex-shrink-0">
-                  <Users className="w-3.5 h-3.5 text-[#FA4D8D]" />
+            <div className="space-y-2.5 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center flex-shrink-0">
+                  <Users className="w-4 h-4 text-[#FA4D8D]" />
                 </div>
-                <span className="text-xs font-medium text-gray-800">Reach targeted parents</span>
+                <span className="text-sm font-medium text-gray-800">Reach a targeted audience</span>
               </div>
-              <div className="flex items-center gap-2 rounded-full bg-yellow-50 py-1.5 pl-1.5 pr-3">
-                <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="w-3.5 h-3.5 text-yellow-600" />
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="w-4 h-4 text-yellow-600" />
                 </div>
-                <span className="text-xs font-medium text-gray-800">Boost visibility & bookings</span>
+                <span className="text-sm font-medium text-gray-800">Boost visibility & bookings</span>
               </div>
-              <div className="flex items-center gap-2 rounded-full bg-green-50 py-1.5 pl-1.5 pr-3">
-                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
                 </div>
-                <span className="text-xs font-medium text-gray-800">Verified & trusted platform</span>
+                <span className="text-sm font-medium text-gray-800">Efficiently manage your business</span>
               </div>
             </div>
 
@@ -134,8 +134,8 @@ export default function LandingPage() {
               <Store className="w-6 h-6 text-yellow-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-yellow-600">500+</div>
-              <div className="text-sm font-semibold text-gray-900">Active Providers</div>
+              <div className="text-2xl font-bold text-yellow-600">75+</div>
+              <div className="text-sm font-semibold text-gray-900">Active providers</div>
               <div className="text-xs text-gray-500">growing with us</div>
             </div>
           </div>
@@ -144,8 +144,8 @@ export default function LandingPage() {
               <CalendarCheck className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-green-600">75K+</div>
-              <div className="text-sm font-semibold text-gray-900">Bookings facilitated</div>
+              <div className="text-2xl font-bold text-green-600">1000+</div>
+              <div className="text-sm font-semibold text-gray-900">Activities to book</div>
               <div className="text-xs text-gray-500">every month</div>
             </div>
           </div>
