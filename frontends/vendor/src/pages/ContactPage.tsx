@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, MessageCircle, Phone, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,34 +14,75 @@ import { BrandLogo } from '@/components/BrandLogo';
  * parents."
  */
 
-const FAQS: [string, string][] = [
+const faqLink = 'font-medium text-[#FA4D8D] underline underline-offset-2 hover:text-[#e0417b]';
+
+const FAQS: [string, ReactNode][] = [
   [
-    'How do I get my business listed on BabyBrain?',
-    "Send us an enquiry below and we'll be in touch. If we've already listed you from public information, use Claim Your Business to take ownership of the listing.",
+    'How does BabyBrain help my business?',
+    'BabyBrain combines a targeted consumer marketplace with tools to help you manage your bookings, customers and day-to-day operations. This gives you a new channel to reach relevant parents while helping you manage your business more efficiently.',
+  ],
+  [
+    'How do I get my business listed?',
+    'If you provide activities for children aged 0–12 years, send us an enquiry above and we’ll be in touch.',
   ],
   [
     'What does it cost?',
-    'A basic listing is free. Paid plans add direct booking and payments, messaging with parents, priority ranking and analytics — see Plans & Pricing for the detail.',
+    <>
+      With our Pay as You Grow plan, there is no fixed monthly subscription — you only pay a commission on new
+      bookings. Our Pro and Premium plans have a monthly subscription fee and give you access to enhanced marketing
+      and customer management tools, including features such as parent messaging, priority ranking and analytics.
+      See <Link to="/plans" className={faqLink}>Plans</Link> for full details.
+    </>,
   ],
   [
     'How do parents book?',
-    "On a paid plan, parents book and pay through BabyBrain and the booking lands in your portal. On the free plan we link parents to your own booking page instead.",
+    'On a paid plan, parents can discover, book and pay for your activities through BabyBrain, with the booking appearing in your BabyBrain portal. If you currently use another booking system, we can integrate with it where the platform supports integration, allowing you to manage your bookings and availability across both systems.',
   ],
   [
-    'When do I get paid?',
-    'Payments run through Stripe Connect. Once your Stripe account is set up, payouts follow your Stripe schedule, less the platform commission shown on your plan.',
+    'Can I still accept bookings directly through my own website?',
+    'Yes. BabyBrain is designed to work alongside your existing booking processes. If you use booking software, we can integrate with it where supported. If you manage bookings manually, you can add bookings from other channels directly into your BabyBrain portal so that you can keep your bookings and customer information in one place.',
+  ],
+  [
+    'Do I need to change my existing booking system?',
+    'No. BabyBrain is designed to work alongside the tools you already use. Where your existing booking platform supports integration, we can connect the two systems so you don’t have to manually manage the same information in multiple places.',
+  ],
+  [
+    'How does commission work and when do I get paid?',
+    'Payments are processed through Stripe Connect. Any applicable BabyBrain commission and payment processing fees are deducted from the booking payment before the remaining balance is paid out to you. Payouts are then made to your connected account in accordance with the agreed commercial terms and payout schedule.',
+  ],
+  [
+    'How do I edit my profile?',
+    <>
+      If we’ve already listed your business using publicly available information, use{' '}
+      <Link to="/claim-business" className={faqLink}>Claim Your Business</Link> to take ownership of the listing.
+      Once claimed, you can edit your business information, upload photos and your logo, add or amend activities,
+      schedules and locations, and update your packages and pricing.
+    </>,
   ],
   [
     'Can I manage more than one venue?',
-    "Yes — add each venue under Settings and assign classes to it. Parents then see the right location on the map for every class.",
+    'Yes. You can add and manage multiple locations from your BabyBrain portal.',
   ],
   [
-    'How do I edit my classes or timetable?',
-    'Everything lives under Activities in the portal: edit details, prices, age ranges and session times, and changes appear on the parent site straight away.',
+    'Who is responsible for the activity or class?',
+    'The provider is responsible for delivering the activity or class and for anything that occurs during the session. BabyBrain provides the marketplace and technology that enables parents to discover and book activities, but the provider remains responsible for the activity itself.',
   ],
   [
-    'Who do I contact if something goes wrong?',
-    'WhatsApp is quickest. For anything involving a booking or payment, email us so we have a written record and we will come back to you within one working day.',
+    'What is the policy on cancellations and rescheduling?',
+    'BabyBrain can be configured to reflect your own cancellation and rescheduling policies. Settings can be adjusted so that cancellation or rescheduling options are not offered, or so that they are only available up to a specified cut-off time. If you offer make-up classes or tokens, you can assign these directly to parents through your BabyBrain portal.',
+  ],
+  [
+    'How do reviews work?',
+    'Parents can leave reviews based on their experience with your business. Reviews are monitored, and reviews that are found to be false, fraudulent or malicious may be removed. If you believe a review is inappropriate or inaccurate, you can request that it is assessed at any time using the enquiry form above.',
+  ],
+  [
+    'Can I remove my listing at any time?',
+    <>
+      Yes. If you have not claimed your listing, you can{' '}
+      <Link to="/plans" className={faqLink}>opt out</Link> at any time. If you have a subscription, you can{' '}
+      <Link to="/billing" className={faqLink}>unsubscribe</Link> at any time. Depending on the terms of your plan,
+      you may be charged for the next subscription cycle if the required notice period has not been met.
+    </>,
   ],
 ];
 
@@ -158,7 +199,7 @@ export default function ContactPage() {
           {sent ? (
             <div className="mt-5 rounded-2xl border border-green-300 bg-green-50 p-6 text-center">
               <h3 className="text-lg font-bold text-green-800">Thanks — enquiry received</h3>
-              <p className="mt-1 text-sm text-green-700">We'll be in touch within one working day.</p>
+              <p className="mt-1 text-sm text-green-700">We'll be in touch within 3 working days.</p>
             </div>
           ) : (
             <form onSubmit={submit} className="mt-5 rounded-2xl border border-gray-200 p-6">
