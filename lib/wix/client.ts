@@ -237,6 +237,25 @@ export interface WixContactDetails {
 export interface WixBooking {
   id: string;
   status: string;
+  revision?: string;
+}
+
+/** `flowControlSettings.skipBusinessConfirmation` on create does NOT confirm
+ *  a booking — it only skips requiring the business's manual approval. Every
+ *  booking still lands in status CREATED, which Wix's own docs say "doesn't
+ *  yet appear in the business calendar." A separate Confirm Booking call
+ *  (using the revision returned from create) is what actually flips it to
+ *  CONFIRMED — the status that shows up in the Wix dashboard and decrements
+ *  the session's remaining capacity. Confirmed empirically: without this
+ *  call, bookings were created successfully in Wix (visible via the
+ *  bookings/query API) but never appeared on the merchant's calendar. */
+async function confirmWixBooking(creds: WixCredentials, booking: WixBooking): Promise<WixBooking> {
+  const data = await wixFetch<{ booking?: WixBooking }>(
+    creds,
+    `/_api/bookings-service/v2/bookings/${booking.id}/confirm`,
+    { revision: booking.revision }
+  );
+  return data.booking ?? booking;
 }
 
 export async function createWixBooking(
@@ -244,7 +263,7 @@ export async function createWixBooking(
   slot: WixTimeSlot,
   resourceId: string,
   contact: WixContactDetails,
-  numberOfParticipants = 1
+  totalParticipants = 1
 ): Promise<WixBooking> {
   const rawLocationType = slot.location?.locationType ?? 'BUSINESS';
   const mappedLocationType = LOCATION_TYPE_MAP[rawLocationType] ?? rawLocationType;
@@ -261,39 +280,47 @@ export async function createWixBooking(
           location: { locationType: mappedLocationType },
         },
       },
-      numberOfParticipants,
+      totalParticipants,
       contactDetails: contact,
     },
-    // Makes the booking CONFIRMED immediately, visible in the Wix dashboard,
-    // rather than left pending on the business's manual approval.
     flowControlSettings: { skipBusinessConfirmation: true },
   });
   if (!data.booking) throw new Error('Wix booking creation returned no booking');
-  return data.booking;
+  return confirmWixBooking(creds, data.booking);
 }
 
-/** Books one occurrence of a CLASS/COURSE. No resource — Wix's own
- *  BOOKING_POLICY_VIOLATION rejects a plain request even when the service's
- *  early/late-booking policies are disabled, so `ignoreBookingWindow` is
- *  required here (confirmed empirically against the sandbox site). */
+/** Books one occurrence of a CLASS/COURSE. Uses `bookedEntity.slot` (keyed
+ *  on the session's `eventId`), not `bookedEntity.schedule` — `schedule` is
+ *  for enrolling in an entire COURSE's date range and was silently doing
+ *  that here, booking the whole recurring series (e.g. Aug 19 – Aug 31)
+ *  instead of the single occurrence the parent actually picked, which is
+ *  the other reason these bookings never matched anything on the Wix
+ *  calendar's day view. No resource — Wix's own BOOKING_POLICY_VIOLATION
+ *  rejects a plain request even when the service's early/late-booking
+ *  policies are disabled, so `ignoreBookingWindow` is required here
+ *  (confirmed empirically against the sandbox site). */
 export async function createWixClassBooking(
   creds: WixCredentials,
   session: WixClassSession,
   contact: WixContactDetails,
-  numberOfParticipants = 1
+  totalParticipants = 1
 ): Promise<WixBooking> {
   const data = await wixFetch<{ booking?: WixBooking }>(creds, '/_api/bookings-service/v2/bookings', {
     booking: {
       bookedEntity: {
-        schedule: { scheduleId: session.scheduleId, eventId: session.eventId },
+        slot: {
+          eventId: session.eventId,
+          scheduleId: session.scheduleId,
+          serviceId: session.serviceId,
+        },
       },
-      numberOfParticipants,
+      totalParticipants,
       contactDetails: contact,
     },
     flowControlSettings: { skipBusinessConfirmation: true, ignoreBookingWindow: true },
   });
   if (!data.booking) throw new Error('Wix class booking creation returned no booking');
-  return data.booking;
+  return confirmWixBooking(creds, data.booking);
 }
 
 export interface WixBusyRange {
