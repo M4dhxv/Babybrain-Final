@@ -23,9 +23,11 @@ respond when something breaks.
 | Payments | Stripe (subscriptions, Connect payouts, boosts) | webhook → `/api/webhooks/stripe` |
 | Email | Resend, fired from `notifications` rows via pg_net | webhook → `/api/webhooks/notifications` |
 
-Both SPAs are static builds committed into `public/` and served by the single
-Next.js deployment. **A frontend change is not live until its SPA is rebuilt** —
-see §6.
+Both SPAs are built into `public/app` and `public/vendor` and served by the single
+Next.js deployment. That output is **git-ignored, not committed** — Vercel's build
+command is `npm run build`, which rebuilds both SPAs before `next build`, so a
+frontend change ships on a normal deploy with nothing to commit. Build locally
+(§6) only to test or to check a bundle.
 
 ---
 
