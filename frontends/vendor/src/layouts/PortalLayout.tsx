@@ -106,10 +106,7 @@ export default function PortalLayout() {
           {isSidebarCollapsed ? (
             <BrandIcon className="h-8 w-8" />
           ) : (
-            <>
-              <BrandLogo className="h-9" />
-              <div className="mt-1 text-xs text-gray-500">Vendor Portal</div>
-            </>
+            <BrandLogo className="h-9" />
           )}
         </div>
 

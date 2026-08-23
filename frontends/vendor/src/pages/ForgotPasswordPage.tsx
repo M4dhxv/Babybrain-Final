@@ -34,7 +34,6 @@ export default function ForgotPasswordPage() {
           <BrandLogo className="h-8" />
           <div>
             <div className="text-lg font-bold text-[#0E6FAF]">BabyBrain</div>
-            <div className="text-xs text-gray-500">Vendor Portal</div>
           </div>
         </div>
         <h1 className="mb-1 text-xl font-bold text-gray-900">Reset your password</h1>

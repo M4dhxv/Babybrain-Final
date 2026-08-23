@@ -29,7 +29,6 @@ export default function NoBusinessGate() {
       <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6">
           <BrandLogo className="h-9" />
-          <div className="mt-1 text-xs text-gray-500">Vendor Portal</div>
         </div>
 
         <h1 className="mb-1 text-xl font-bold text-gray-900">This account isn&rsquo;t linked to a business</h1>

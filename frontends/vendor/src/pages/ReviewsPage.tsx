@@ -88,7 +88,7 @@ export default function ReviewsPage() {
       <div className="flex items-center justify-between px-8 py-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
-          <p className="text-sm text-gray-500 mt-1">What parents are saying about your classes.</p>
+          <p className="text-sm text-gray-500 mt-1">What parents are saying about your activities.</p>
         </div>
       </div>
 

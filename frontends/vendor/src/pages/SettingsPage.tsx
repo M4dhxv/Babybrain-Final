@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
-  Plug, Eye, EyeOff, ExternalLink, RefreshCw,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -54,7 +54,7 @@ const emptyProfileForm = {
 };
 
 export default function SettingsPage() {
-  const { provider, role, session, refreshProvider } = useAuth();
+  const { provider, role, session, refreshProvider, signOut } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
 
   /* Deep-linkable: "Add a Location" on the dashboard and the Locations tab in
@@ -207,6 +207,14 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage your business profile, locations, team and compliance.</p>
         </div>
+        <Button
+          variant="outline"
+          onClick={() => signOut()}
+          className="gap-2 rounded-full border-gray-300 text-gray-700 hover:bg-gray-50"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </Button>
       </div>
 
       <div className="px-8 pb-8">

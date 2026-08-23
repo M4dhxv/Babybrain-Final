@@ -135,7 +135,7 @@ export default function InsightsPage() {
           </span>
           <h2 className="mt-4 text-xl font-bold text-gray-900">Insights is a Pro feature</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">
-            Find out which classes convert, which age groups book most, and the days,
+            Find out which activities convert, which age groups book most, and the days,
             times and locations parents actually choose.
           </p>
           <Button onClick={() => navigate('/plans')} className="mt-5 gradient-primary text-white">
