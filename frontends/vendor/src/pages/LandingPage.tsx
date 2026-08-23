@@ -24,7 +24,7 @@ export default function LandingPage() {
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
         <BrandLogo className="h-9 sm:h-10" />
         <nav className="hidden items-center gap-10 md:flex">
-          <button className="text-sm font-medium text-[#C90044] border-b-2 border-[#C90044] pb-1">Home</button>
+          <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Home</button>
           <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
           <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
@@ -38,7 +38,7 @@ export default function LandingPage() {
           </Button>
           <Button
             onClick={() => navigate('/plans')}
-            className="hidden rounded-full px-6 gradient-primary text-white hover:gradient-primary-hover border-0 sm:inline-flex"
+            className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 transition border-0 sm:inline-flex"
           >
             Upgrade your listing
           </Button>
@@ -51,16 +51,16 @@ export default function LandingPage() {
           {/* Left Content */}
           <div className="flex-1">
             {/* Trust Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-pink-50 rounded-full mb-4 relative">
-              <Shield className="w-4 h-4 text-[#C90044]" />
-              <span className="text-sm font-medium text-[#C90044]">Join 500+ trusted providers</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-4 relative">
+              <Shield className="w-4 h-4 text-[#FA4D8D]" />
+              <span className="text-sm font-bold text-[#FA4D8D]">Join 500+ trusted providers</span>
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -left-6 -top-2" />
               <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />
             </div>
 
             {/* Heading */}
             <h1 className="text-3xl font-extrabold text-[#111A4C] leading-tight mb-2 sm:text-4xl">
-              Bring More <span className="text-[#C90044]">Families</span> To You
+              Bring More <span className="text-[#FFC1D6]">Families</span> To You
             </h1>
             <Heart className="w-5 h-5 text-pink-300 inline-block -mt-1 mb-2" />
 
@@ -71,9 +71,9 @@ export default function LandingPage() {
 
             {/* Features */}
             <div className="flex flex-wrap gap-3 mb-4">
-              <div className="flex items-center gap-2 rounded-full bg-pink-50 py-1.5 pl-1.5 pr-3">
-                <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
-                  <Users className="w-3.5 h-3.5 text-[#C90044]" />
+              <div className="flex items-center gap-2 rounded-full bg-[#FEEBF2] py-1.5 pl-1.5 pr-3">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center flex-shrink-0">
+                  <Users className="w-3.5 h-3.5 text-[#FA4D8D]" />
                 </div>
                 <span className="text-xs font-medium text-gray-800">Reach targeted parents</span>
               </div>
@@ -95,14 +95,14 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <Button
                 onClick={() => navigate('/plans')}
-                className="gradient-primary text-white px-8 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90"
+                className="bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white px-8 py-2.5 rounded-xl text-sm font-semibold shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105"
               >
                 Upgrade your listing
               </Button>
               <Button
                 onClick={() => navigate('/contact')}
                 variant="outline"
-                className="px-8 py-2.5 rounded-xl text-sm font-semibold border-[#C90044] text-[#C90044] hover:bg-pink-50"
+                className="px-8 py-2.5 rounded-xl text-sm font-semibold border-[#FFC1D6] text-[#FFC1D6] hover:bg-[#FEEBF2]"
               >
                 Enquire
               </Button>
@@ -120,11 +120,11 @@ export default function LandingPage() {
       <section className="bg-gray-50 py-6 px-4 sm:px-8">
         <div className="max-w-5xl mx-auto grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-pink-100 flex items-center justify-center">
-              <Users className="w-6 h-6 text-[#C90044]" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center">
+              <Users className="w-6 h-6 text-[#FA4D8D]" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-[#C90044]">10K+</div>
+              <div className="text-2xl font-bold text-[#FA4D8D]">10K+</div>
               <div className="text-sm font-semibold text-gray-900">Parents</div>
               <div className="text-xs text-gray-500">reached every month</div>
             </div>

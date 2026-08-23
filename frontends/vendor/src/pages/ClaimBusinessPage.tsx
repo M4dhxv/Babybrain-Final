@@ -177,12 +177,12 @@ export default function ClaimBusinessPage() {
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full flex-shrink-0 lg:w-64">
             <img src={`${import.meta.env.BASE_URL}assets/shop-illustration.png`} alt="" className="mb-4 h-auto w-40" />
-            <h3 className="mb-4 text-lg font-bold text-[#C90044]">Why verify your business?</h3>
+            <h3 className="mb-4 text-lg font-bold text-[#FA4D8D]">Why verify your business?</h3>
             <div className="space-y-4">
               {whyVerify.map((item) => (
                 <div key={item.title} className="flex gap-3">
                   <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50">
-                    <item.icon className="h-4 w-4 text-[#C90044]" />
+                    <item.icon className="h-4 w-4 text-[#FA4D8D]" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-gray-900">{item.title}</div>
@@ -197,7 +197,7 @@ export default function ClaimBusinessPage() {
             {/* Step 1 — find the venue */}
             <div className="flex-1">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#C90044]">1</div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#FA4D8D]">1</div>
                 <div>
                   <h3 className="font-semibold text-gray-900">Find your venue</h3>
                   <p className="text-xs text-gray-500">Search our listings by business name, address or postcode.</p>
@@ -225,13 +225,13 @@ export default function ClaimBusinessPage() {
                       onClick={() => setSelected(venue)}
                       className={cn(
                         'flex w-full items-start gap-4 rounded-xl border-2 p-3 text-left transition-colors',
-                        on ? 'border-[#C90044] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
+                        on ? 'border-[#FA4D8D] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
                       )}
                     >
                       <div className="flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-semibold text-gray-900">{venue.business_name}</h4>
-                          {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#C90044]" />}
+                          {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#FA4D8D]" />}
                         </div>
                         {(venue.address || venue.postal_code) && (
                           <div className="mt-1 flex items-start gap-1 text-xs text-gray-500">
@@ -245,7 +245,7 @@ export default function ClaimBusinessPage() {
                               {REGION_LABELS[venue.region] ?? venue.region}
                             </span>
                           )}
-                          <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#C90044]">
+                          <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#FA4D8D]">
                             {venue.activity_count} {venue.activity_count === 1 ? 'listing' : 'listings'}
                           </span>
                         </div>
@@ -265,7 +265,7 @@ export default function ClaimBusinessPage() {
 
               <p className="text-sm text-gray-500">
                 Can't find your venue?{' '}
-                <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#C90044]">
+                <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#FA4D8D]">
                   Contact our support
                 </button>
               </p>
@@ -291,10 +291,10 @@ export default function ClaimBusinessPage() {
                 <div>
                   <div className="mb-2 flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-100">
-                      <Mail className="h-4 w-4 text-[#C90044]" />
+                      <Mail className="h-4 w-4 text-[#FA4D8D]" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-gray-900">Business email <span className="text-[#C90044]">*</span></label>
+                      <label className="text-sm font-semibold text-gray-900">Business email <span className="text-[#FA4D8D]">*</span></label>
                       <p className="text-xs text-gray-500">We'll send your code here.</p>
                     </div>
                   </div>
@@ -331,7 +331,7 @@ export default function ClaimBusinessPage() {
                       <CreditCard className="h-4 w-4 text-yellow-600" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-gray-900">UEN <span className="text-[#C90044]">*</span></label>
+                      <label className="text-sm font-semibold text-gray-900">UEN <span className="text-[#FA4D8D]">*</span></label>
                       <p className="text-xs text-gray-500">Used to verify your registered business.</p>
                     </div>
                   </div>

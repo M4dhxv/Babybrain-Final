@@ -101,7 +101,7 @@ export default function ContactPage() {
       copy: 'Best for anything involving bookings, payments or your plan.',
       label: 'Email us',
       href: `mailto:${SUPPORT_EMAIL}`,
-      tone: 'bg-pink-50 text-[#C90044]',
+      tone: 'bg-pink-50 text-[#FA4D8D]',
     },
     {
       icon: Phone,
@@ -140,7 +140,7 @@ export default function ContactPage() {
               </div>
               <h2 className="text-lg font-bold text-gray-900">
                 {c.title}
-                {c.tag && <span className="ml-2 rounded-full bg-pink-100 px-2 py-0.5 text-[10px] text-[#C90044]">{c.tag}</span>}
+                {c.tag && <span className="ml-2 rounded-full bg-pink-100 px-2 py-0.5 text-[10px] text-[#FA4D8D]">{c.tag}</span>}
               </h2>
               <p className="my-4 text-sm text-gray-500">{c.copy}</p>
               <Button asChild variant="outline" className="w-full rounded-xl">

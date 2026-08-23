@@ -5,15 +5,17 @@
 @layer base {
   :root {
     /* Themed to the brand palette. `--primary`, `--ring` and the
-       `.gradient-primary` utilities below are deliberately unchanged: they are
-       the CTA buttons. Everything else moves onto the palette. */
+       `.gradient-primary` utilities below now use the same softer
+       `#FA4D8D → #FF6B9B` pink used across the marketing pages, replacing the
+       old pink-to-orange CTA gradient — this is the single source every
+       button reads from, so no per-page overrides are needed. */
     --background: 34.3 100.0% 98.6%;      /* #FFFCF8 paper, same as the parent app */
     --foreground: 230.8 63.4% 18.2%;      /* #111A4C ink */
     --card: 0 0% 100%;
     --card-foreground: 230.8 63.4% 18.2%;
     --popover: 0 0% 100%;
     --popover-foreground: 230.8 63.4% 18.2%;
-    --primary: 340 95% 53%;                     /* CTA — unchanged */
+    --primary: 338 94% 64%;                     /* CTA — #FA4D8D */
     --primary-foreground: 0 0% 100%;            /* CTA — unchanged */
     --secondary: 348.0 18.5% 94.7%;       /* warm neutral */
     --secondary-foreground: 230.8 63.4% 18.2%;
@@ -25,7 +27,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 345.0 16.7% 90.6%;          /* #EBE3E5 warm hairline */
     --input: 345.0 16.7% 90.6%;
-    --ring: 340 95% 53%;                        /* CTA focus ring — unchanged */
+    --ring: 338 94% 64%;                        /* CTA focus ring — #FA4D8D */
     --radius: 0.625rem;
     --sidebar-background: 0 23% 97%;
     --sidebar-foreground: 230.8 63.4% 18.2%;
@@ -34,7 +36,7 @@
     --sidebar-accent: 340 100% 96%;
     --sidebar-accent-foreground: 339.5 100.0% 39.4%;
     --sidebar-border: 345.0 16.7% 90.6%;
-    --sidebar-ring: 340 95% 53%;
+    --sidebar-ring: 338 94% 64%;
 
     /* Brand palette.
        `-surface` is the supplied colour exactly; the bare token is the readable
@@ -77,21 +79,22 @@
 }
 
 @layer utilities {
-  /* CTA gradient — unchanged. Pinned to literals rather than `--bb-pink` /
-     `--bb-orange`, which now resolve to the palette's readable inks; leaving
-     the var reference here would have quietly restyled every primary button. */
+  /* CTA gradient — the same softer pink used across the marketing pages.
+     Pinned to literals rather than `--bb-pink` / `--bb-orange`, which resolve
+     to the palette's readable inks; leaving a var reference here would have
+     quietly restyled every primary button. */
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(340 95% 53%) 0%, hsl(25 100% 60%) 100%);
+    background: linear-gradient(135deg, #FA4D8D 0%, #FF6B9B 100%);
+    box-shadow: 0 8px 20px rgba(250, 93, 147, 0.32);
   }
 
   .gradient-primary-hover {
-    background: linear-gradient(135deg, hsl(340 95% 48%) 0%, hsl(25 100% 55%) 100%);
+    background: linear-gradient(135deg, #F03D7E 0%, #FF5A8E 100%);
   }
 
-  /* Headings only, so the 3:1 large-text tier is the right one here — the inks
-     would read as crimson-to-brown, the pastels wouldn't read at all. */
+  /* Headings only, so the 3:1 large-text tier is the right one here. */
   .text-gradient {
-    background: linear-gradient(135deg, hsl(340 100% 66%) 0%, hsl(28 100% 47%) 100%);
+    background: linear-gradient(135deg, #FA4D8D 0%, #FF6B9B 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

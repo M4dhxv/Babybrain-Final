@@ -64,7 +64,7 @@ export default function SiteFooter() {
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
               aria-label="Email us"
-              className="grid h-9 w-9 place-items-center rounded-full bg-pink-50 text-[#C90044] hover:bg-pink-100"
+              className="grid h-9 w-9 place-items-center rounded-full bg-pink-50 text-[#FA4D8D] hover:bg-pink-100"
             >
               <Mail className="h-4 w-4" />
             </a>
@@ -94,9 +94,9 @@ export default function SiteFooter() {
               {col.links.map((l) => (
                 <p key={l.label}>
                   {l.to ? (
-                    <Link to={l.to} className="hover:text-[#C90044]">{l.label}</Link>
+                    <Link to={l.to} className="hover:text-[#FA4D8D]">{l.label}</Link>
                   ) : (
-                    <a href={l.href} className="hover:text-[#C90044]">{l.label}</a>
+                    <a href={l.href} className="hover:text-[#FA4D8D]">{l.label}</a>
                   )}
                 </p>
               ))}

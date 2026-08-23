@@ -47,19 +47,19 @@ export function HeroDashboardPreview() {
       aria-hidden="true"
     >
       {/* Bookings card */}
-      <div className="absolute left-0 top-0 w-[46%] rounded-xl border border-gray-200 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
+      <div className="absolute left-0 top-0 w-[46%] rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
         <div className="mb-2">
           <div className="text-[13px] font-bold text-gray-900">Bookings</div>
           <div className="text-[9px] text-gray-400">Manage bookings for your sessions</div>
         </div>
         <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1">
           <span className="truncate text-[9px] text-gray-600">Toddler Music · Mon, 24 Aug, 11:45 am</span>
-          <span className="flex items-center gap-0.5 whitespace-nowrap text-[9px] font-semibold text-[#C90044]">
+          <span className="flex items-center gap-0.5 whitespace-nowrap text-[9px] font-semibold text-[#FA4D8D]">
             <Plus className="h-2.5 w-2.5" /> Add
           </span>
         </div>
         <div className="mb-2 flex gap-3 border-b border-gray-100 text-[9px] font-medium text-gray-400">
-          <span className="border-b-2 border-[#C90044] pb-1 text-[#C90044]">Bookings</span>
+          <span className="border-b-2 border-[#FA4D8D] pb-1 text-[#FA4D8D]">Bookings</span>
           <span className="pb-1">Waitlist</span>
           <span className="pb-1">Attendance</span>
         </div>
@@ -86,7 +86,7 @@ export function HeroDashboardPreview() {
       </div>
 
       {/* Schedule card */}
-      <div className="absolute left-[16%] top-[15%] w-[46%] rounded-xl border border-gray-200 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
+      <div className="absolute left-[16%] top-[15%] w-[46%] rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
         <div className="mb-2 flex items-start justify-between">
           <div>
             <div className="text-[13px] font-bold text-gray-900">Schedule</div>
@@ -115,13 +115,13 @@ export function HeroDashboardPreview() {
               }`}
             >
               <span className="text-[7px] font-semibold text-gray-500">{18 + i}</span>
-              {(i === 2 || i === 4) && <span className="h-1 w-3 rounded-full bg-[#C90044]" />}
+              {(i === 2 || i === 4) && <span className="h-1 w-3 rounded-full bg-[#FA4D8D]" />}
             </div>
           ))}
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1 text-[7px] text-gray-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#C90044]" /> Toddler Music
+            <span className="h-1.5 w-1.5 rounded-full bg-[#FA4D8D]" /> Toddler Music
           </span>
           <span className="flex items-center gap-1 text-[7px] text-gray-500">
             <span className="h-1.5 w-1.5 rounded-full bg-purple-400" /> Ballet Basics
@@ -130,7 +130,7 @@ export function HeroDashboardPreview() {
       </div>
 
       {/* Messages card */}
-      <div className="absolute left-[38%] top-[28%] w-[46%] rounded-xl border border-gray-200 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
+      <div className="absolute left-[38%] top-[28%] w-[46%] rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]">
         <div className="mb-2">
           <div className="text-[13px] font-bold text-gray-900">Messages</div>
           <div className="text-[9px] text-gray-400">Parents and providers, one inbox</div>
@@ -153,7 +153,7 @@ export function HeroDashboardPreview() {
       </div>
 
       {/* Dashboard summary card */}
-      <div className="absolute bottom-0 right-0 w-[58%] rounded-xl border border-gray-200 bg-white p-3 shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]">
+      <div className="absolute bottom-0 right-0 w-[58%] rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]">
         <div className="mb-2 flex items-center gap-1">
           <span className="text-[13px] font-bold text-gray-900">Good morning! 👋</span>
           <Sparkles className="h-3 w-3 text-yellow-400" />
