@@ -54,12 +54,12 @@ export default function LandingPage() {
           the visitor actually scrolls. */}
       <div className="flex flex-1 flex-col justify-center">
       {/* Hero Section */}
-      <section className="relative px-4 pt-6 pb-6 sm:px-8 sm:pt-8 sm:pb-8">
+      <section className="relative px-4 pt-3 pb-3 sm:px-8 sm:pt-4 sm:pb-4">
         <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:gap-8">
           {/* Left Content */}
           <div className="flex-1">
             {/* Trust Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-4 relative">
+            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-3 relative">
               <Shield className="w-4 h-4 text-[#FA4D8D]" />
               <span className="text-sm font-bold text-[#FA4D8D]">Join 75+ trusted providers</span>
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -left-6 -top-2" />
@@ -67,18 +67,18 @@ export default function LandingPage() {
             </div>
 
             {/* Heading */}
-            <h1 className="text-4xl font-extrabold text-[#111A4C] leading-tight mb-3 sm:text-5xl">
+            <h1 className="text-4xl font-extrabold text-[#111A4C] leading-tight mb-2 sm:text-5xl">
               Bring More <span className="text-[#FFC1D6]">Families</span> To You
             </h1>
-            <Heart className="w-6 h-6 text-pink-300 inline-block -mt-1 mb-3" />
+            <Heart className="w-6 h-6 text-pink-300 inline-block -mt-1 mb-2" />
 
             {/* Subtitle */}
-            <p className="text-gray-600 text-base leading-relaxed max-w-lg mb-5">
+            <p className="text-gray-600 text-base leading-relaxed max-w-lg mb-3">
               List your classes, play spaces, events and experiences with ease and connect with thousands of parents looking for the best activities for their little ones.
             </p>
 
             {/* Features */}
-            <div className="space-y-3 mb-5">
+            <div className="space-y-2 mb-3">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center flex-shrink-0">
                   <Users className="w-4.5 h-4.5 text-[#FA4D8D]" />
@@ -125,7 +125,7 @@ export default function LandingPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="bg-gray-50 py-6 px-4 sm:px-8">
+      <section className="bg-gray-50 py-3 px-4 sm:px-8">
         <div className="max-w-5xl mx-auto grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-6">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center">
@@ -161,7 +161,7 @@ export default function LandingPage() {
       </section>
 
       {/* Trust Banner */}
-      <section className="bg-white py-3 px-8 border-t border-gray-100">
+      <section className="bg-white py-1.5 px-8 border-t border-gray-100">
         <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
           <Heart className="w-5 h-5 text-pink-400" />
           <span className="text-base text-gray-600">
