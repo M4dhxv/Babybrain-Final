@@ -30,6 +30,12 @@ const bookingRows = [
   { name: 'Maya', status: 'Paid' },
 ];
 
+// Computed at load, not hardcoded, so this never reads as a stale past
+// date on the marketing page — always "today" for whoever's viewing it.
+const today = new Date();
+const todayShort = `${today.toLocaleDateString('en-US', { weekday: 'short' })}, ${today.getDate()} ${today.toLocaleDateString('en-US', { month: 'short' })}, 11:45 am`;
+const bookingBlurb = `Tinkers Playdate · ${todayShort}`;
+
 const conversations = [
   { name: 'Sarah Tan', preview: 'Anyone want a coffee after class tomorrow?' },
   { name: 'Wei Jie', preview: 'Thanks so much, see you Saturday!' },
@@ -43,6 +49,7 @@ const statTiles = [
   { icon: DollarSign, label: 'Revenue', value: '$81', color: 'text-green-600', bg: 'bg-green-100' },
 ];
 
+
 // One uniform size + a consistent diagonal stagger for every card — locked
 // in per the approved reference arrangement. Card height is derived from
 // width via aspect-ratio, and mobile's narrower width leaves too little
@@ -50,37 +57,45 @@ const statTiles = [
 // taller ratio (still uniform across all four cards) purely to avoid
 // clipping; sm+ keeps the approved 253:159 shape.
 const CARD_CLASS =
-  'absolute w-[44%] aspect-[3/4] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
-// The vertical step must clear the previous card's title+subheading block
-// (~47px) or its next-in-front neighbour paints over the bottom half of
-// that text. Mobile needs its own (smaller) step: its cards are much
-// taller (3:4 vs 253:159), so the sm+ step would push the last card past
-// the container's bottom edge.
+  'absolute w-[55%] aspect-[3/4] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
+// Left/top steps are sized so the last card's far edge lands at the
+// container's edge — the cascade fills the box instead of leaving a dead
+// margin on the right/bottom. The vertical step has two competing limits
+// per breakpoint: it must stay tall enough to clear the previous card's
+// content — for the Bookings card specifically that's title + subheading
+// + the highlighted booking row (~65px), the tallest of any card's header
+// block, since it's the one every other step has to clear — yet short
+// enough that 3 steps + one card's height doesn't exceed the container.
+// Card height (via the aspect-ratio) and the container's own height both
+// change per breakpoint, so each needs its own calibrated step.
 const POSITIONS = [
   'left-0 top-0',
-  'left-[13%] top-[14%] sm:top-[15%]',
-  'left-[26%] top-[28%] sm:top-[30%]',
-  'left-[39%] top-[42%] sm:top-[45%]',
+  'left-[15%] top-[15%] sm:top-[15.5%] lg:top-[16%]',
+  'left-[30%] top-[30%] sm:top-[31%] lg:top-[32%]',
+  'left-[45%] top-[45%] sm:top-[46.5%] lg:top-[48%]',
 ];
 
 export function HeroDashboardPreview() {
   return (
     <div
       data-testid="hero-dashboard-preview"
-      className="relative mx-auto h-[380px] w-full max-w-2xl sm:h-[340px] lg:h-[360px]"
+      className="relative mx-auto h-[480px] w-full max-w-3xl sm:h-[470px] lg:h-[440px]"
       aria-hidden="true"
     >
       {/* Bookings card — list (left) + the real page's detail side panel (right) */}
       <div className={`${CARD_CLASS} ${POSITIONS[0]}`}>
-        <div className="mb-1">
+        <div className="mb-0.5">
           <div className="text-[13px] font-bold text-gray-900">Bookings</div>
           <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
             <span className="sm:hidden">Manage your bookings</span>
             <span className="hidden sm:inline">Manage bookings for your sessions</span>
           </div>
         </div>
-        <div className="mb-1 flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-0.5">
-          <span className="truncate text-[8.5px] text-gray-600">Tinkers Playdate · Mon, 24 Aug, 11:45 am</span>
+        <div className="mb-1 flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-0">
+          <span className="truncate text-[8.5px] text-gray-600">
+            <span className="sm:hidden">{todayShort}</span>
+            <span className="hidden sm:inline">{bookingBlurb}</span>
+          </span>
           <span className="flex items-center gap-0.5 whitespace-nowrap text-[8.5px] font-semibold text-[#FA4D8D]">
             <Plus className="h-2.5 w-2.5" /> Add
           </span>
@@ -200,20 +215,78 @@ export function HeroDashboardPreview() {
           <span className="text-[13px] font-bold text-gray-900">Good morning! 👋</span>
           <Sparkles className="h-3 w-3 text-yellow-400" />
         </div>
-        <div className="mb-1.5 text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
+        <div className="mb-1 text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
           <span className="sm:hidden">What's happening today</span>
           <span className="hidden sm:inline">Here's what's happening today</span>
         </div>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="mb-1.5 grid grid-cols-5 gap-1">
           {statTiles.map((s, i) => (
-            <div key={i} className="rounded-md bg-gray-50 p-1.5 text-center">
-              <div className={`mx-auto mb-1 flex h-4 w-4 items-center justify-center rounded-full ${s.bg}`}>
-                <s.icon className={`h-2.5 w-2.5 ${s.color}`} />
+            <div key={i} className="rounded-md bg-gray-50 p-1 text-center">
+              <div className={`mx-auto mb-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full ${s.bg}`}>
+                <s.icon className={`h-2 w-2 ${s.color}`} />
               </div>
               <div className="text-[9.5px] font-bold text-gray-900">{s.value}</div>
-              <div className="truncate text-[6.5px] text-gray-400">{s.label}</div>
+              <div className="hidden break-words text-[6.5px] leading-[7px] text-gray-400 sm:block">{s.label}</div>
             </div>
           ))}
+        </div>
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-3 sm:gap-1.5">
+          {/* Upcoming Sessions */}
+          <div className="rounded-md bg-gray-50 p-1 sm:p-1.5">
+            <div className="mb-1 flex items-center justify-between gap-0.5 sm:mb-1.5">
+              <span className="truncate text-[7px] font-bold text-gray-900">Upcoming Sessions</span>
+              <span className="flex-shrink-0 text-[6.5px] font-semibold text-[#FA4D8D]">View all</span>
+            </div>
+            <div className="space-y-1 sm:space-y-1.5">
+              {[
+                { name: 'Tinkers Playdate', booked: '5 / 20' },
+                { name: 'Hatha Yoga', booked: '1 / 1' },
+              ].map((s, i) => (
+                <div key={i} className={`items-center gap-1 ${i === 0 ? 'flex' : 'hidden sm:flex'}`}>
+                  <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-pink-100">
+                    <CalendarDays className="h-2 w-2 text-pink-600" />
+                  </div>
+                  <div className="min-w-0 flex-1 truncate text-[6.5px] font-medium text-gray-800">{s.name}</div>
+                  <div className="flex-shrink-0 text-[6px] font-semibold text-gray-900">{s.booked}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent Bookings */}
+          <div className="rounded-md bg-gray-50 p-1 sm:p-1.5">
+            <div className="mb-1 flex items-center justify-between gap-0.5 sm:mb-1.5">
+              <span className="truncate text-[7px] font-bold text-gray-900">Recent Bookings</span>
+              <span className="flex-shrink-0 text-[6.5px] font-semibold text-[#FA4D8D]">View all</span>
+            </div>
+            <div className="space-y-1 sm:space-y-1.5">
+              {[
+                { initial: 'L', name: 'Lorelei' },
+                { initial: 'M', name: 'Madhav' },
+              ].map((b, i) => (
+                <div key={i} className={`items-center gap-1 ${i === 0 ? 'flex' : 'hidden sm:flex'}`}>
+                  <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[5.5px] font-bold ${
+                    ['bg-pink-100 text-pink-700', 'bg-purple-100 text-purple-700'][i]
+                  }`}>
+                    {b.initial}
+                  </div>
+                  <div className="min-w-0 flex-1 truncate text-[6.5px] font-medium text-gray-800">{b.name}</div>
+                  <span className="flex-shrink-0 rounded-full bg-green-100 px-1 py-0.5 text-[5px] font-medium text-green-700">
+                    Confirmed
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Insights */}
+          <div className="rounded-md bg-gray-50 p-1 sm:p-1.5">
+            <div className="mb-1 text-[7px] font-bold text-gray-900 sm:mb-1.5">Insights</div>
+            <div className="text-[6px] leading-[8px] text-gray-500">
+              Which classes convert, which age groups book, and the days parents choose.
+            </div>
+            <div className="mt-1 text-[6.5px] font-semibold text-[#FA4D8D] sm:mt-1.5">Open Insights →</div>
+          </div>
         </div>
       </div>
     </div>
