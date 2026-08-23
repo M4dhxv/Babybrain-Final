@@ -274,7 +274,7 @@ export default function DashboardPage() {
               <CalendarPlus className="w-6 h-6 text-[#C90044]" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Add a Class</div>
+              <div className="font-semibold text-gray-900">Add an Activity</div>
               <div className="text-xs text-gray-500">Create a new class<br/>or activity</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -285,7 +285,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1">
               <div className="font-semibold text-gray-900">Create a Package</div>
-              <div className="text-xs text-gray-500">Bundle your classes<br/>together</div>
+              <div className="text-xs text-gray-500">Bundle your activities<br/>together</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
@@ -427,7 +427,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-900 mb-2">Insights</h3>
             <p className="text-sm text-gray-500">
-              Which classes convert, which age groups book, and the days and times parents choose.
+              Which activities convert, which age groups book, and the days and times parents choose.
             </p>
             <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#C90044]">
               Open Insights

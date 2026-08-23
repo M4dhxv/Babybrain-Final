@@ -48,7 +48,7 @@ const whyVerify = [
   { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programs up to date.' },
   { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Growth plan.' },
   { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Growth plan.' },
-  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your classes, timetable and holidays.' },
+  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your activities, timetable and holidays.' },
 ];
 
 const REGION_LABELS: Record<string, string> = {

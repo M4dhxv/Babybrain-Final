@@ -1068,8 +1068,8 @@ function PoliciesManager({
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
                   {p.activity_id
-                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one class'}`
-                    : 'All of your classes'}
+                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one activity'}`
+                    : 'All of your activities'}
                 </p>
                 {p.body && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{p.body}</p>}
                 {p.document_url && (
@@ -1108,7 +1108,7 @@ function PoliciesManager({
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
               <select className={inputCls} value={form.activity_id} onChange={(e) => setForm({ ...form, activity_id: e.target.value })}>
-                <option value="">All of my classes</option>
+                <option value="">All of my activities</option>
                 {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
               </select>
             </div>

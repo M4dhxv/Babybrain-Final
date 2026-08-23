@@ -67,7 +67,14 @@ export default function MessagesPage() {
   }
 
   return (
-    <div className="h-full p-6">
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between px-8 py-5">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
+          <p className="text-sm text-gray-500 mt-1">Parents and providers, in one inbox.</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 px-6 pb-6">
       <div className="h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
         <Chat client={client}>
           <div className="flex h-full">
@@ -111,6 +118,7 @@ export default function MessagesPage() {
             </div>
           </div>
         </Chat>
+      </div>
       </div>
     </div>
   );

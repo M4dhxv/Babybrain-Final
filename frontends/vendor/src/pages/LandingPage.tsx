@@ -74,7 +74,7 @@ export default function LandingPage() {
 
             {/* Subtitle */}
             <p className="text-gray-600 text-base leading-relaxed max-w-lg mb-3">
-              List your classes, play spaces, events and experiences with ease and connect with thousands of parents looking for the best activities for their little ones.
+              List your activities, play spaces, events and experiences with ease and connect with thousands of parents looking for the best activities for their little ones.
             </p>
 
             {/* Features */}

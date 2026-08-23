@@ -26,7 +26,7 @@ function message(e: Event): string {
     case 'booking':
       return `${e.actor_name} booked ${e.activity_title ?? 'a session'}.`;
     case 'waitlist':
-      return `${e.actor_name} joined the waitlist for ${e.activity_title ?? 'a class'}.`;
+      return `${e.actor_name} joined the waitlist for ${e.activity_title ?? 'an activity'}.`;
     case 'cancellation':
       return `${e.actor_name}'s booking for ${e.activity_title ?? 'a session'} was cancelled.`;
     case 'review':

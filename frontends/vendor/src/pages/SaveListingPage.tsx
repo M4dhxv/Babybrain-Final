@@ -256,7 +256,7 @@ export default function SaveListingPage() {
                 ))}
               </div>
               <p className="text-[11px] text-gray-400 mt-2">
-                Different classes can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
+                Different activities can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
               </p>
             </div>
 

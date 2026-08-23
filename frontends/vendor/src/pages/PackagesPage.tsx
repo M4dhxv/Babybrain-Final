@@ -69,7 +69,7 @@ export default function PackagesPage() {
 
   const packRestriction = (p: Pack) => {
     const parts: string[] = [];
-    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One class');
+    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One activity');
     if (p.allowed_weekday != null) {
       const t = p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : '';
       parts.push(`${WEEKDAY_NAMES[p.allowed_weekday]}${t} only`);
@@ -250,9 +250,9 @@ export default function PackagesPage() {
                 )}
                 <div className="mt-3 flex flex-wrap items-end gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to class (optional)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to activity (optional)</label>
                     <select value={packForm.activity_id} onChange={(e) => setPackForm({ ...packForm, activity_id: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                      <option value="">Any of my classes</option>
+                      <option value="">Any of my activities</option>
                       {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
                     </select>
                   </div>

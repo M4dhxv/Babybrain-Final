@@ -757,7 +757,7 @@ export default function ActivitiesPage() {
               <div>
                 <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
                 <div className="text-xs text-gray-500">
-                  Parents must fill in a health declaration before this class can be booked. For your own
+                  Parents must fill in a health declaration before this activity can be booked. For your own
                   waivers and consents, use Settings → Waivers &amp; Consents.
                 </div>
               </div>
