@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStripe, GROWTH_TRIAL_DAYS } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
+import { vendorPageUrl } from '@/lib/cors';
 
 /**
  * Start (or resume) a paid subscription — Growth or Pro — for a provider.
@@ -33,7 +34,6 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
   const stripe = getStripe();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
   // Resolve the plan's price (monthly/annual) from app_config. Pro's keys
   // don't exist in app_config yet — this returns a clear config error rather
@@ -93,8 +93,8 @@ export async function POST(request: Request) {
       metadata: { provider_id: providerId, plan },
     },
     metadata: { provider_id: providerId, kind: 'subscription', plan },
-    success_url: `${appUrl}/vendor/billing?status=success`,
-    cancel_url: `${appUrl}/vendor/billing?status=cancelled`,
+    success_url: vendorPageUrl(request, '/billing', 'status=success'),
+    cancel_url: vendorPageUrl(request, '/billing', 'status=cancelled'),
   });
 
   return NextResponse.json({ url: session.url });

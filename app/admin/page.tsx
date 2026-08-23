@@ -35,6 +35,14 @@ type EmailFlow = {
   wired: boolean; trigger: string;
   last30d: { sent: number; pending: number; failed: number; skipped: number; total: number };
 };
+type VendorTerms = {
+  provider_id: string; business_name: string; plan: string;
+  connected: boolean; payouts_enabled: boolean;
+  commission_rate: number; commission_flat_cents: number;
+  fee_payer: 'platform' | 'vendor'; commission_on_packages: boolean; custom_terms: boolean;
+  lifetime_gross_cents: number; lifetime_commission_cents: number;
+  lifetime_net_cents: number; sales_count: number;
+};
 type AdminCategory = { slug: string; name: string };
 type RecentProvider = {
   id: string; business_name: string; slug: string; vendor_category: string;
@@ -231,7 +239,7 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
-  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'flows'>('metrics');
+  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'flows'>('metrics');
 
   const check = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -254,11 +262,12 @@ export default function AdminPage() {
         <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
         {phase === 'ok' && (
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'flows'] as const).map((t) => (
+            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'commercials', 'flows'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
                 {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages'
                   : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Vendors'
-                  : t === 'vendors' ? 'Vendor data' : 'Email flows'}
+                  : t === 'vendors' ? 'Vendor data'
+                  : t === 'commercials' ? 'Commercials' : 'Email flows'}
               </button>
             ))}
             <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }} style={tabBtn(false)}>
@@ -284,6 +293,7 @@ export default function AdminPage() {
         {phase === 'ok' && tab === 'contact' && <ContactView />}
         {phase === 'ok' && tab === 'addVendor' && <AddVendorView />}
         {phase === 'ok' && tab === 'vendors' && <VendorsView />}
+        {phase === 'ok' && tab === 'commercials' && <CommercialsView />}
         {phase === 'ok' && tab === 'flows' && <FlowsView />}
       </main>
     </div>
@@ -1736,6 +1746,175 @@ function FlowsView() {
       )}
     </div>
   );
+}
+
+
+// ---- Commercials: bespoke commission terms per vendor ----
+const sgd = (cents: number) =>
+  new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(cents / 100);
+
+function CommercialsView() {
+  const [rows, setRows] = useState<VendorTerms[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { vendors } = await adminFetch<{ vendors: VendorTerms[] }>('/api/admin/commercials');
+      setRows(vendors);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load commercial terms.');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function save(providerId: string, patch: Partial<VendorTerms>) {
+    setSaving(providerId);
+    setNote(null);
+    setError(null);
+    try {
+      await adminFetch('/api/admin/commercials', {
+        method: 'PATCH',
+        body: JSON.stringify({ provider_id: providerId, ...patch }),
+      });
+      // Optimistic: the PATCH echoes what it applied, so just merge locally
+      // rather than refetching the whole table on every keystroke-commit.
+      setRows((prev) => prev?.map((r) => (r.provider_id === providerId ? { ...r, ...patch } : r)) ?? prev);
+      setNote('Saved. Applies to future sales — past earnings keep their original terms.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save.');
+      void load();
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const visible = (rows ?? []).filter((r) =>
+    r.business_name.toLowerCase().includes(filter.trim().toLowerCase()));
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={card()}>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Commercial terms</div>
+        <p style={{ color: C.muted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+          The deal per vendor. Rates are read at checkout and stamped onto each sale, so changes apply to
+          future bookings only. <strong style={{ color: C.text }}>Stripe fee</strong> decides who absorbs
+          Stripe&apos;s processing cost — charges stay destination charges either way, so switching it to the
+          vendor moves the cost but <em>not</em> chargeback liability. Editing a rate marks the vendor
+          <strong style={{ color: C.text }}> bespoke</strong>, after which plan changes no longer reset it.
+        </p>
+      </div>
+
+      {error && <div style={{ ...card(), borderColor: C.pink, color: C.pink }}>{error}</div>}
+      {note && <div style={{ ...card(), borderColor: C.green, color: C.green }}>{note}</div>}
+
+      <input
+        style={input()}
+        placeholder="Filter by business name…"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+
+      {!rows ? (
+        <p style={{ color: C.muted }}>Loading…</p>
+      ) : visible.length === 0 ? (
+        <p style={{ color: C.muted }}>No vendors match.</p>
+      ) : (
+        <div style={{ ...card(), padding: 0, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: C.muted, textAlign: 'left' }}>
+                <th style={th()}>Business</th>
+                <th style={th()}>Plan</th>
+                <th style={th()}>Commission %</th>
+                <th style={th()}>Flat fee</th>
+                <th style={th()}>Stripe fee</th>
+                <th style={th()}>Packs</th>
+                <th style={{ ...th(), textAlign: 'right' }}>Sold</th>
+                <th style={{ ...th(), textAlign: 'right' }}>We kept</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => (
+                <tr key={r.provider_id} style={{ borderTop: `1px solid ${C.border}`,
+                  opacity: saving === r.provider_id ? 0.5 : 1 }}>
+                  <td style={td()}>
+                    <div style={{ fontWeight: 700 }}>{r.business_name}</div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>
+                      {r.payouts_enabled ? 'Payouts on' : r.connected ? 'Connect pending' : 'Not connected'}
+                      {r.custom_terms && <span style={{ color: C.pink }}> · bespoke</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...td(), textTransform: 'capitalize' }}>{r.plan}</td>
+                  <td style={td()}>
+                    <input
+                      style={{ ...input(), width: 78, padding: '6px 8px' }}
+                      type="number" min={0} max={50} step={0.5}
+                      defaultValue={(r.commission_rate * 100).toString()}
+                      onBlur={(e) => {
+                        const pct = Number(e.target.value);
+                        const rate = Math.round(pct * 10) / 1000;
+                        if (Number.isFinite(rate) && rate !== r.commission_rate) {
+                          void save(r.provider_id, { commission_rate: rate });
+                        }
+                      }}
+                    />
+                  </td>
+                  <td style={td()}>
+                    <input
+                      style={{ ...input(), width: 78, padding: '6px 8px' }}
+                      type="number" min={0} step={50}
+                      defaultValue={r.commission_flat_cents}
+                      onBlur={(e) => {
+                        const cents = Math.round(Number(e.target.value));
+                        if (Number.isFinite(cents) && cents !== r.commission_flat_cents) {
+                          void save(r.provider_id, { commission_flat_cents: cents });
+                        }
+                      }}
+                    />
+                  </td>
+                  <td style={td()}>
+                    <select
+                      style={{ ...input(), width: 118, padding: '6px 8px' }}
+                      value={r.fee_payer}
+                      onChange={(e) => void save(r.provider_id, { fee_payer: e.target.value as 'platform' | 'vendor' })}
+                    >
+                      <option value="platform">We absorb</option>
+                      <option value="vendor">Vendor pays</option>
+                    </select>
+                  </td>
+                  <td style={td()}>
+                    <input
+                      type="checkbox"
+                      checked={r.commission_on_packages}
+                      onChange={(e) => void save(r.provider_id, { commission_on_packages: e.target.checked })}
+                    />
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right' }}>
+                    {sgd(r.lifetime_gross_cents)}
+                    <div style={{ color: C.muted, fontSize: 11 }}>{r.sales_count} sales</div>
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right', color: C.green, fontWeight: 700 }}>
+                    {sgd(r.lifetime_commission_cents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function th(): React.CSSProperties {
+  return { padding: '10px 12px', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' };
+}
+function td(): React.CSSProperties {
+  return { padding: '10px 12px', verticalAlign: 'top' };
 }
 
 // ---- style helpers ----

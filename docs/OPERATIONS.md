@@ -233,6 +233,49 @@ deliveries to `/api/webhooks/stripe`? Verify `STRIPE_WEBHOOK_SECRET` matches the
 endpoint; check that `app_config` price ids ([vendor-setup.md](vendor-setup.md) §1)
 are current.
 
+**Vendor payouts / earnings look wrong** → the endpoint must be subscribed to the
+events the money flow depends on. A missing event is silent: nothing errors, the data
+just never updates.
+
+| Event | Without it |
+|---|---|
+| `checkout.session.completed` | bookings never mark paid; no earnings recorded |
+| `account.updated` | payouts never switch on after onboarding |
+| `payout.paid` / `payout.failed` / `payout.canceled` | earnings never show as paid out |
+| `charge.refunded` | a vendor's own dashboard refund never reaches the ledger |
+| `charge.dispute.created` | nobody is told about a chargeback |
+
+`payout.*` and connected-account `account.*` are **Connect** events: Stripe only
+delivers them to an endpoint created with `connect: true`, which is a *separate*
+endpoint with its own signing secret (`STRIPE_CONNECT_WEBHOOK_SECRET`). Both point at
+the same route. Audit or create them with:
+
+```
+npm run stripe:webhooks             # dry run
+npm run stripe:webhooks -- --apply  # create/repair
+```
+
+It acts on whichever mode `STRIPE_SECRET_KEY` is in, so run it once per mode. Vendor-facing payout status and balances are read
+live from Stripe, so those stay right even when the webhook lags; the per-sale ledger
+(`provider_earnings`) is the part that depends on it.
+
+Commission terms live on `subscriptions` and are stamped onto each sale, so fixing a
+wrong rate in `/admin` → Commercials affects future sales only. Past rows keep the
+deal they were sold under, by design.
+
+**Refunds and cancellations.** `cancel_booking` only changes a booking's status — it
+has never moved money, and the parent's notification says any refund follows the
+provider's policy. To actually return money, a manager or owner uses
+`POST /api/vendor/bookings/refund`, which unwinds the Connect split
+(`reverse_transfer` + `refund_application_fee`, proportional on a partial refund) so
+BabyBrain doesn't absorb the vendor's share. Refunds a vendor issues from their own
+Express dashboard are picked up by the `charge.refunded` webhook instead.
+
+Stripe's processing fee is never returned on a refund — that cost stays with whoever
+the vendor's terms say absorbs it. `charge.dispute.created` notifies the vendor's
+owners; BabyBrain is merchant of record on destination charges, so disputes are ours
+to contest.
+
 **Chat won't load** → token route (`/api/vendor/chat/token`) returning 200? Stream
 key/secret valid? Stream webhook still pointed at `/api/webhooks/stream`?
 

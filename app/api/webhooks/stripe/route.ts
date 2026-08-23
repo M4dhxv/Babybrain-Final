@@ -3,6 +3,9 @@ import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { recordSale } from '@/lib/commercials';
+import { applyPayout } from '@/lib/payouts';
+import { markEarningRefunded } from '@/lib/refunds';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -11,16 +14,36 @@ import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
  *
  * Configure the endpoint + signing secret in the Stripe Dashboard:
  *   https://<domain>/api/webhooks/stripe  →  STRIPE_WEBHOOK_SECRET
+ *
+ * Connect events (`account.*`, `payout.*` on a vendor's own account) are only
+ * ever delivered to an endpoint created with `connect: true`, which is a
+ * separate endpoint with its own signing secret. Point both at this route and
+ * set STRIPE_CONNECT_WEBHOOK_SECRET as well — each delivery is verified
+ * against whichever secret matches.
  */
+
+/** Every signing secret this route accepts, in the order they're tried. */
+function signingSecrets(): string[] {
+  return [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET].filter(
+    (secret): secret is string => Boolean(secret)
+  );
+}
+
 export async function POST(request: Request) {
   const body = await request.text();
   const sig = request.headers.get('stripe-signature') ?? '';
   const stripe = getStripe();
 
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
-  } catch {
+  let event: Stripe.Event | null = null;
+  for (const secret of signingSecrets()) {
+    try {
+      event = stripe.webhooks.constructEvent(body, sig, secret);
+      break;
+    } catch {
+      // Wrong secret for this endpoint — try the next one.
+    }
+  }
+  if (!event) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
@@ -107,14 +130,54 @@ export async function POST(request: Request) {
       break;
     }
 
-    case 'account.updated': {
+    case 'account.updated':
+    case 'account.application.deauthorized': {
       const account = event.data.object as Stripe.Account;
-      const providerId = account.metadata?.provider_id;
-      if (providerId) {
-        await admin
+      // Prefer the id we stored over the metadata: metadata can be edited
+      // away in the Stripe dashboard, and accounts created before it was set
+      // have none — those used to silently never flip payouts_enabled.
+      let providerId = account.metadata?.provider_id ?? null;
+      if (!providerId) {
+        const { data: match } = await admin
           .from('providers')
-          .update({ payouts_enabled: Boolean(account.charges_enabled && account.payouts_enabled) })
-          .eq('id', providerId);
+          .select('id')
+          .eq('stripe_account_id', account.id)
+          .maybeSingle();
+        providerId = match?.id ?? null;
+      }
+      if (!providerId) break;
+
+      const deauthorized = event.type === 'account.application.deauthorized';
+      const enabled =
+        !deauthorized && Boolean(account.charges_enabled && account.payouts_enabled);
+
+      const { data: before } = await admin
+        .from('providers')
+        .select('payouts_enabled')
+        .eq('id', providerId)
+        .maybeSingle();
+      await admin.from('providers').update({ payouts_enabled: enabled }).eq('id', providerId);
+
+      // Tell the owners when payouts turn on, or when Stripe takes them away
+      // again — otherwise the only signal is a badge they have to go look at.
+      if (before && before.payouts_enabled !== enabled) {
+        const { data: owners } = await admin
+          .from('provider_members')
+          .select('user_id')
+          .eq('provider_id', providerId)
+          .eq('role', 'owner')
+          .eq('status', 'active');
+        await admin.from('notifications').insert(
+          (owners ?? []).map((o) => ({
+            user_id: o.user_id,
+            type: 'payouts_status',
+            title: enabled ? 'Payouts are live' : 'Payouts are on hold',
+            body: enabled
+              ? 'Stripe finished verifying your business — booking payments now go straight to your bank account.'
+              : 'Stripe needs more information before it can pay you out. Open Billing to finish up.',
+            data: { url: '/vendor/billing' },
+          }))
+        );
       }
       break;
     }
@@ -135,14 +198,34 @@ export async function POST(request: Request) {
       }
 
       if (kind === 'booking' && session.metadata?.booking_id) {
+        const bookingId = session.metadata.booking_id;
+        const paymentIntent = (session.payment_intent as string) ?? null;
         await admin
           .from('bookings')
           .update({
             payment_status: 'paid',
             status: 'confirmed',
-            stripe_payment_intent: (session.payment_intent as string) ?? null,
+            stripe_payment_intent: paymentIntent,
           })
-          .eq('id', session.metadata.booking_id);
+          .eq('id', bookingId);
+
+        // Ledger entry so the vendor can see what they earned on this booking
+        // and what was deducted. Idempotent on the payment intent.
+        // provider_id is stamped on the booking by handle_booking_insert.
+        const { data: booked } = await admin
+          .from('bookings')
+          .select('amount, provider_id')
+          .eq('id', bookingId)
+          .maybeSingle();
+        if (booked?.provider_id) {
+          await recordSale(admin, {
+            providerId: booked.provider_id,
+            source: 'booking',
+            bookingId,
+            grossCents: Math.round(Number(booked.amount ?? 0) * 100),
+            paymentIntentId: paymentIntent,
+          });
+        }
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {
@@ -166,7 +249,7 @@ export async function POST(request: Request) {
           ? { data: null }
           : await admin
               .from('packages')
-              .select('id, provider_id, credits')
+              .select('id, provider_id, credits, price_cents')
               .eq('id', session.metadata.package_id)
               .maybeSingle();
         if (pkg) {
@@ -195,6 +278,15 @@ export async function POST(request: Request) {
               childId: session.metadata.child_id ?? null,
             });
           }
+          if (purchase) {
+            await recordSale(admin, {
+              providerId: pkg.provider_id,
+              source: 'package',
+              packagePurchaseId: purchase.id,
+              grossCents: pkg.price_cents,
+              paymentIntentId: paymentIntent,
+            });
+          }
         }
       }
 
@@ -218,6 +310,79 @@ export async function POST(request: Request) {
           { onConflict: 'user_id' }
         );
       }
+      break;
+    }
+
+    case 'charge.refunded': {
+      // Covers refunds we issued AND refunds a vendor made straight from their
+      // Express dashboard — for those, this is the only path that runs, so the
+      // ledger and the booking would otherwise keep claiming the money.
+      const charge = event.data.object as Stripe.Charge;
+      const paymentIntent =
+        typeof charge.payment_intent === 'string'
+          ? charge.payment_intent
+          : charge.payment_intent?.id ?? null;
+      if (!paymentIntent) break;
+
+      const full = charge.amount_refunded >= charge.amount;
+      if (full) {
+        await admin
+          .from('bookings')
+          .update({ payment_status: 'refunded', status: 'cancelled' })
+          .eq('stripe_payment_intent', paymentIntent);
+      }
+      await markEarningRefunded(admin, paymentIntent, full);
+      break;
+    }
+
+    case 'charge.dispute.created': {
+      // A chargeback takes the money back immediately. Treat it like a refund
+      // for reporting, and tell the owners — they have evidence to submit and
+      // a deadline, and BabyBrain is the merchant of record on these.
+      const dispute = event.data.object as Stripe.Dispute;
+      const paymentIntent =
+        typeof dispute.payment_intent === 'string'
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id ?? null;
+      if (!paymentIntent) break;
+
+      const { data: earning } = await admin
+        .from('provider_earnings')
+        .select('provider_id')
+        .eq('stripe_payment_intent', paymentIntent)
+        .maybeSingle();
+      await markEarningRefunded(admin, paymentIntent, true);
+
+      if (earning?.provider_id) {
+        const { data: owners } = await admin
+          .from('provider_members')
+          .select('user_id')
+          .eq('provider_id', earning.provider_id)
+          .eq('role', 'owner')
+          .eq('status', 'active');
+        await admin.from('notifications').insert(
+          (owners ?? []).map((o) => ({
+            user_id: o.user_id,
+            type: 'payment_disputed',
+            title: 'A parent disputed a payment',
+            body: 'The amount has been held while the bank reviews it. We may ask you for class records as evidence.',
+            data: { url: '/vendor/earnings' },
+          }))
+        );
+      }
+      break;
+    }
+
+    case 'payout.paid':
+    case 'payout.failed':
+    case 'payout.canceled':
+    case 'payout.created':
+    case 'payout.updated': {
+      // Connect events: `event.account` is the vendor's account, not ours.
+      // This is what turns "earned" into "paid out, on this date" on the
+      // vendor's earnings page.
+      const payout = event.data.object as Stripe.Payout;
+      if (event.account) await applyPayout(admin, event.account, payout);
       break;
     }
 

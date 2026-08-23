@@ -23,6 +23,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import ReviewsPage from './pages/ReviewsPage';
 import SettingsPage from './pages/SettingsPage';
 import BillingPage from './pages/BillingPage';
+import EarningsPage from './pages/EarningsPage';
 import PortalLayout from './layouts/PortalLayout';
 
 /**
@@ -96,6 +97,7 @@ function App() {
               <Route path="/reviews" element={<ReviewsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/billing" element={<BillingPage />} />
+              <Route path="/earnings" element={<EarningsPage />} />
             </Route>
           </Route>
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
+import { vendorPageUrl } from '@/lib/cors';
 
 /**
  * Stripe Billing Portal link (manage/cancel subscription, invoices, card).
@@ -25,10 +26,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No billing account yet' }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const portal = await getStripe().billingPortal.sessions.create({
     customer: sub.stripe_customer_id,
-    return_url: `${appUrl}/vendor/billing`,
+    return_url: vendorPageUrl(request, '/billing'),
   });
   return NextResponse.json({ url: portal.url });
 }

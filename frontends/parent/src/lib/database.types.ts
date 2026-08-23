@@ -28,6 +28,8 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' 
 export type PaymentStatus = 'none' | 'paid' | 'refunded';
 export type ProviderRole = 'owner' | 'manager' | 'staff';
 export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
+/** Who absorbs Stripe's processing fee on a booking. */
+export type FeePayer = 'platform' | 'vendor';
 export type SubscriptionPlan = 'free' | 'growth';
 export type VendorCategory =
   | 'baby-toddler-classes' | 'playspaces' | 'camps-holiday'
@@ -722,6 +724,10 @@ export type Database = {
           current_period_end: string | null;
           cancel_at_period_end: boolean;
           commission_rate: number;
+          commission_flat_cents: number;
+          fee_payer: FeePayer;
+          commission_on_packages: boolean;
+          custom_terms: boolean;
           updated_at: string;
         };
         Insert: { provider_id: string; plan?: SubscriptionPlan };

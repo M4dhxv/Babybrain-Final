@@ -20,6 +20,7 @@ import {
   Star,
   TrendingUp,
   Lock,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
@@ -39,6 +40,7 @@ const sidebarItems = [
   // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
   { icon: TrendingUp, label: 'Insights', path: '/insights', proOnly: true },
   { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: Wallet, label: 'Earnings', path: '/earnings' },
   { icon: CreditCard, label: 'Billing', path: '/billing' },
 ];
 

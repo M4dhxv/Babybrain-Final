@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
+import { vendorPageUrl } from '@/lib/cors';
 
 /**
  * One-off Checkout to buy featured/sponsored placement ("Boost") for an
@@ -40,9 +41,11 @@ export async function POST(request: Request) {
     .maybeSingle();
   const amountCents = Number(cfg?.value ?? 3000); // default SGD 30 / 14 days
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const session = await getStripe().checkout.sessions.create({
     mode: 'payment',
+    // Boost was the one one-off checkout that never set these, so it fell back
+    // to Stripe's default (card first, no GrabPay).
+    payment_method_types: ONE_OFF_PAYMENT_METHODS,
     line_items: [
       {
         price_data: {
@@ -59,8 +62,8 @@ export async function POST(request: Request) {
       activity_id: activityId,
       days: String(days),
     },
-    success_url: `${appUrl}/vendor/boost?status=success`,
-    cancel_url: `${appUrl}/vendor/boost?status=cancelled`,
+    success_url: vendorPageUrl(request, '/activities', 'boost=success'),
+    cancel_url: vendorPageUrl(request, '/activities', 'boost=cancelled'),
   });
 
   return NextResponse.json({ url: session.url });
