@@ -67,10 +67,10 @@ export default function LandingPage() {
             </div>
 
             {/* Heading */}
-            <h1 className="text-4xl font-extrabold text-[#111A4C] leading-tight mb-2 sm:text-5xl">
+            <h1 className="text-4xl font-extrabold text-[#111A4C] leading-tight sm:text-5xl">
               Bring more <span className="text-[#FFC1D6]">families</span> to you
             </h1>
-            <Heart className="w-6 h-6 text-pink-300 inline-block -mt-1 mb-2" />
+            <Heart className="w-6 h-6 text-pink-300 inline-block my-2" />
 
             {/* Subtitle */}
             <p className="text-gray-600 text-base leading-relaxed max-w-lg mb-3">
