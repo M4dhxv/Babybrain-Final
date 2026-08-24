@@ -66,6 +66,28 @@ export interface ProviderContact {
   website: string | null;
 }
 
+/**
+ * A locally-recorded session's `capacity` is the class's total capacity, not
+ * what's left — "10 spots" stayed 10 even once 3 families had booked it.
+ * Subtracts each session's confirmed/completed booking count (fetched via
+ * the public booked-counts route, since "select own bookings" RLS blocks a
+ * parent from counting other families' bookings directly) to get what's
+ * actually still open. Wix-sourced slots already carry Wix's own remaining
+ * count and are left alone — pass only locally-recorded sessions in.
+ */
+async function withRemainingCapacity<T extends { id: string; capacity: number | null }>(
+  sessions: T[]
+): Promise<T[]> {
+  const ids = sessions.filter((s) => s.capacity != null).map((s) => s.id);
+  if (ids.length === 0) return sessions;
+  const { counts } = await apiGet<{ counts: Record<string, number> }>(
+    `/api/public/booked-counts?sessionIds=${ids.join(",")}`
+  ).catch(() => ({ counts: {} as Record<string, number> }));
+  return sessions.map((s) =>
+    s.capacity == null ? s : { ...s, capacity: Math.max(0, s.capacity - (counts[s.id] ?? 0)) }
+  );
+}
+
 export interface ActivityDetail {
   activity: (ActivityRow & { category_name: string | null; provider_contact: ProviderContact | null }) | null;
   sessions: ActivitySession[];
@@ -147,7 +169,8 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .gte("starts_at", new Date().toISOString())
               .order("starts_at")
               .limit(8)
-              .then((r) => r.data ?? []),
+              .then((r) => r.data ?? [])
+              .then(withRemainingCapacity),
           ]).then(([wixSlots, independentSlots]) =>
             [...wixSlots, ...independentSlots].sort(
               (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
@@ -162,6 +185,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .order("starts_at")
               .limit(8)
               .then((r) => r.data ?? [])
+              .then(withRemainingCapacity)
           );
 
       const [sessions, { data: reviews }] = await Promise.all([

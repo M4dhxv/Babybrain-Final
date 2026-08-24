@@ -43,7 +43,7 @@ const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aS
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
-  location_id: '', image_url: '', requires_medical_disclosure: true,
+  location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: true,
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
 };
@@ -123,6 +123,9 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setScheduleFor(a);
     setSessError(null);
+    // Pre-fill from the activity's default capacity so a vendor adding
+    // sessions doesn't have to retype the same number every time.
+    setSessForm((f) => ({ ...f, capacity: a.default_capacity != null ? String(a.default_capacity) : f.capacity }));
     await loadSessions(a.id);
   }
 
@@ -367,6 +370,7 @@ export default function ActivitiesPage() {
       age_max_months: String(a.age_max_months ?? ''),
       price: a.price != null ? String(a.price) : '',
       location_id: a.location_id ?? '',
+      default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_url: a.image_urls?.[0] ?? '',
       requires_medical_disclosure: a.requires_medical_disclosure ?? true,
       allow_cancellation: a.allow_cancellation ?? true,
@@ -400,6 +404,7 @@ export default function ActivitiesPage() {
   async function saveActivity() {
     if (!provider) return;
     if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
+    if (!form.default_capacity || Number(form.default_capacity) < 1) { setFormError('Set a capacity for this activity.'); return; }
     setSaving(true);
     setFormError(null);
     // The activity's address/postal_code/lat/lng are denormalized from its
@@ -417,6 +422,7 @@ export default function ActivitiesPage() {
       age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
       price: form.price ? Number(form.price) : null,
       location_id: form.location_id || null,
+      default_capacity: Number(form.default_capacity),
       address: loc?.address ?? null,
       postal_code: loc?.postal_code ?? null,
       latitude: loc?.latitude ?? null,
@@ -741,6 +747,11 @@ export default function ActivitiesPage() {
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
               <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#C90044]">*</span></label>
+              <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
+              <p className="mt-1 text-xs text-gray-500">Pre-fills the capacity when you add new sessions for this activity.</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity Image</label>

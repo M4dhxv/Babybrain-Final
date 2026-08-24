@@ -179,6 +179,7 @@ export type Database = {
           popularity: number;
           provider_id: string | null;
           location_id: string | null;
+          default_capacity: number | null;
           vendor_category: VendorCategory | null;
           requires_medical_disclosure: boolean;
           archived_at: string | null;
@@ -217,6 +218,7 @@ export type Database = {
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;
+          default_capacity?: number | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
           // Directory listings link out to the vendor's own booking page.
