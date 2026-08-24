@@ -153,6 +153,10 @@ export default function ActivitiesPage() {
       setSessError('Pick a date and start time.');
       return;
     }
+    if (!sessForm.capacity || Number(sessForm.capacity) < 1) {
+      setSessError('Set a capacity for this session.');
+      return;
+    }
     setSavingSess(true);
     setSessError(null);
     const durationMins = Math.max(15, Number(sessForm.duration) || 45);
@@ -843,8 +847,8 @@ export default function ActivitiesPage() {
                   <input type="number" min="15" step="15" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity (blank = unlimited)</label>
-                  <input type="number" min="1" placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity *</label>
+                  <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>
