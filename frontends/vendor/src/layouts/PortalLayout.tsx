@@ -33,7 +33,9 @@ const sidebarItems = [
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: Package, label: 'Packages', path: '/packages' },
   { icon: Gift, label: 'Make-up Tokens', path: '/make-up-tokens' },
-  { icon: MessageSquare, label: 'Messages', path: '/messages' },
+  // Messaging is a Growth-and-above perk (see plans.ts PLAN_META) — locked
+  // on Pay As You Grow, same "visible but greyed" treatment as Insights.
+  { icon: MessageSquare, label: 'Messages', path: '/messages', paidOnly: true },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
   // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
@@ -114,15 +116,15 @@ export default function PortalLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
-            // Pro-only tabs stay visible but greyed, so the feature is
-            // discoverable rather than hidden. The page itself explains the
-            // upgrade, so the tab is still clickable.
-            const locked = item.proOnly && !isPro;
+            // Pro-only / paid-only tabs stay visible but greyed, so the
+            // feature is discoverable rather than hidden. The page itself
+            // explains the upgrade, so the tab is still clickable.
+            const locked = (item.proOnly && !isPro) || (item.paidOnly && !plan.isPaid);
             return (
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
-                title={locked ? 'Insights is a Pro feature' : undefined}
+                title={locked ? (item.proOnly ? 'Insights is a Pro feature' : 'Messaging is available on Pro and above') : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive

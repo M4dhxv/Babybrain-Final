@@ -28,7 +28,9 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' 
 export type PaymentStatus = 'none' | 'paid' | 'refunded';
 export type ProviderRole = 'owner' | 'manager' | 'staff';
 export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
-export type SubscriptionPlan = 'free' | 'growth' | 'pro';
+// 'premium' is a legacy value from before the Plans page's pro/premium
+// rename (see vendor's lib/plans.ts) — pre-existing rows can still carry it.
+export type SubscriptionPlan = 'free' | 'growth' | 'pro' | 'premium';
 export type VendorCategory =
   | 'baby-toddler-classes' | 'playspaces' | 'camps-holiday'
   | 'community-events' | 'mum-bub-exercise' | 'other';

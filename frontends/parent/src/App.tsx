@@ -1464,13 +1464,16 @@ function ActivityDetailPage() {
     : null;
   const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
 
-  // Messaging needs both an integrated provider and a Plus subscription.
-  // Signed-out visitors still get a live button — it sends them to log in.
+  // Messaging needs an integrated provider on Growth-and-above, and a Plus
+  // subscription on the parent's side. Signed-out visitors still get a live
+  // button — it sends them to log in.
   const chatBlockedReason = activity.external_booking_url
     ? "This provider takes bookings on their own site, so messaging isn't available here. Use the WhatsApp or email buttons to reach them."
-    : session && !isPlus
-      ? "Messaging providers and other parents is a BabyBrain Plus feature."
-      : null;
+    : !activity.provider_can_message
+      ? "This provider hasn't enabled parent messaging yet. Use the WhatsApp or email buttons to reach them."
+      : session && !isPlus
+        ? "Messaging providers and other parents is a BabyBrain Plus feature."
+        : null;
   const requireLogin = (open: () => void) => () => {
     if (!session) goTo("/login");
     else open();

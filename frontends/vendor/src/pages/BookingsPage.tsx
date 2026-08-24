@@ -426,9 +426,9 @@ export default function BookingsPage() {
                     <button
                       onClick={() => navigate('/plans')}
                       className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#C90044]"
-                      title="Messaging parents is available on Growth and above"
+                      title="Messaging parents is available on Pro and above"
                     >
-                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Growth
+                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Pro
                     </button>
                   ) : sel.user_id ? (
                     <button

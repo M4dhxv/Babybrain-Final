@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StreamChat } from 'stream-chat';
 import {
   Chat,
@@ -11,14 +11,21 @@ import {
   MessageInput,
   Thread,
 } from 'stream-chat-react';
-import { MessageSquare, Loader2 } from 'lucide-react';
+import { MessageSquare, Loader2, Crown } from 'lucide-react';
 import 'stream-chat-react/dist/css/v2/index.css';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
+import { Button } from '@/components/ui/button';
 
 export default function MessagesPage() {
-  const { session } = useAuth();
+  const { session, subscription } = useAuth();
+  const navigate = useNavigate();
   const userId = session?.user.id;
+  // Messaging is a Growth-and-above perk (see plans.ts PLAN_META) — the
+  // sidebar shows this tab greyed on Pay As You Grow, but a vendor could
+  // still land here by URL, so the page itself has to enforce it too.
+  const plan = subscription?.plan ?? 'free';
+  const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
   const [client, setClient] = useState<StreamChat | null>(null);
   const [error, setError] = useState<string | null>(null);
   // ?channel=<id> deep-links straight into a conversation (e.g. a booking's
@@ -37,6 +44,7 @@ export default function MessagesPage() {
   }, []);
 
   useEffect(() => {
+    if (!canMessage) return;
     let active = true;
     getChatClient()
       .then((c) => active && setClient(c))
@@ -44,7 +52,28 @@ export default function MessagesPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [canMessage]);
+
+  if (!canMessage) {
+    return (
+      <div className="p-8">
+        <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
+        <p className="mt-1 text-sm text-gray-500">Parents and providers, in one inbox.</p>
+        <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-300 text-purple-800">
+            <Crown className="h-7 w-7" />
+          </span>
+          <h2 className="mt-4 text-xl font-bold text-gray-900">Messaging is a Pro feature</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">
+            Message parents directly and reply to their enquiries once you're on Pro or above.
+          </p>
+          <Button onClick={() => navigate('/plans')} className="mt-5 gradient-primary text-white">
+            Go Pro
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

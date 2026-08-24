@@ -89,7 +89,15 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
 }
 
 export interface ActivityDetail {
-  activity: (ActivityRow & { category_name: string | null; provider_contact: ProviderContact | null }) | null;
+  activity:
+    | (ActivityRow & {
+        category_name: string | null;
+        provider_contact: ProviderContact | null;
+        // Messaging is a Growth-and-above perk — a Pay As You Grow provider
+        // isn't reachable via chat, so the buttons grey out instead.
+        provider_can_message: boolean;
+      })
+    | null;
   sessions: ActivitySession[];
   reviews: Review[];
   loading: boolean;
@@ -188,7 +196,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .then(withRemainingCapacity)
           );
 
-      const [sessions, { data: reviews }] = await Promise.all([
+      const [sessions, { data: reviews }, providerCanMessage] = await Promise.all([
         sessionsPromise,
         supabase
           .from("reviews")
@@ -196,6 +204,11 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           .eq("activity_id", act.id)
           .order("created_at", { ascending: false })
           .limit(10),
+        act.provider_id
+          ? apiGet<{ canMessage: boolean }>(`/api/public/provider-plan?providerId=${act.provider_id}`)
+              .then((r) => r.canMessage)
+              .catch(() => false)
+          : Promise.resolve(false),
       ]);
       if (!cancelled)
         setState({
@@ -204,6 +217,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
             category_name:
               (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
             provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
+            provider_can_message: providerCanMessage,
           },
           sessions,
           reviews: reviews ?? [],
