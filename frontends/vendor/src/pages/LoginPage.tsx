@@ -63,7 +63,7 @@ export default function LoginPage() {
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign In'}
+            {busy ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
         <p className="mt-4 text-center text-xs text-gray-500">

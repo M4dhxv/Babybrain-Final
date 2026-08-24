@@ -38,7 +38,7 @@ export default function LandingPage() {
             onClick={() => navigate('/login')}
             className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
-            Sign In
+            Sign in
           </Button>
           <Button
             onClick={() => navigate('/plans')}
@@ -68,7 +68,7 @@ export default function LandingPage() {
 
             {/* Heading */}
             <h1 className="text-4xl font-extrabold text-[#111A4C] leading-tight mb-2 sm:text-5xl">
-              Bring More <span className="text-[#FFC1D6]">Families</span> To You
+              Bring more <span className="text-[#FFC1D6]">families</span> to you
             </h1>
             <Heart className="w-6 h-6 text-pink-300 inline-block -mt-1 mb-2" />
 
@@ -161,7 +161,7 @@ export default function LandingPage() {
       </section>
 
       {/* Trust Banner */}
-      <section className="bg-white py-1.5 px-8 border-t border-gray-100">
+      <section className="bg-white py-1.5 px-8 border-t border-gray-100 mt-8">
         <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
           <Heart className="w-5 h-5 text-pink-400" />
           <span className="text-base text-gray-600">

@@ -44,7 +44,7 @@ const conversations = [
 const statTiles = [
   { icon: CalendarDays, label: 'Bookings', value: '10', color: 'text-pink-600', bg: 'bg-pink-100' },
   { icon: Users, label: 'Attendance', value: '64%', color: 'text-purple-600', bg: 'bg-purple-100' },
-  { icon: MessageSquare, label: 'Messages', value: '0', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+  { icon: MessageSquare, label: 'Messages', value: '2', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   { icon: UserPlus, label: 'Waitlist', value: '0', color: 'text-blue-600', bg: 'bg-blue-100' },
   { icon: DollarSign, label: 'Revenue', value: '$81', color: 'text-green-600', bg: 'bg-green-100' },
 ];
