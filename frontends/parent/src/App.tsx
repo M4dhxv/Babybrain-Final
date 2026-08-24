@@ -1715,7 +1715,7 @@ function ActivityDetailPage() {
             <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
               {activity.address && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="flex shrink-0 items-center gap-1.5"><Icon name="pin" className="h-4 w-4 text-baby-lilac" /> Location</strong>
+                  <strong className="shrink-0">Location</strong>
                   <span className="text-right">{activity.address}</span>
                 </p>
               )}
@@ -5131,16 +5131,30 @@ function BookingPage() {
                     <section>
                       <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                        {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
-                        ))}
+                        {/* Split "Tue, 25 Aug" into two fixed lines rather than
+                            letting it wrap naturally — a plain text wrap broke
+                            differently per weekday's width, so cards ended up
+                            one or two lines tall depending on which day it was. */}
+                        {dates.map((d) => {
+                          const [weekday, dayMonth] = d.split(", ");
+                          return (
+                            <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                              <span className="block whitespace-nowrap">{weekday},</span>
+                              <span className="block whitespace-nowrap">{dayMonth}</span>
+                              <span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </section>
                     <section>
                       <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                         {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
+                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                            <span className="block whitespace-nowrap">{sgTime(s.starts_at)}</span>
+                            <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span>
+                          </button>
                         ))}
                       </div>
                     </section>
