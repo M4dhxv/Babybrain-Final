@@ -1824,6 +1824,10 @@ type BookingItem = {
   activityId: string | null; childId: string | null; packagePurchaseId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
+  // Set once the vendor removes the activity (unlinkWixActivities stamps
+  // wix_removed_at) — its own detail page is gone, so booking cards for it
+  // route back to the activities list instead of a dead link.
+  removed: boolean;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -2295,7 +2299,7 @@ function ChildForm({
 
 function ChildClassRow({ b }: { b: BookingItem }) {
   return (
-    <a href={b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
+    <a href={b.removed ? "/explore" : b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
       <img src={b.image} alt="" className="h-14 w-14 rounded-[10px] object-cover" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate font-black">{b.title}</h4>
@@ -2727,28 +2731,34 @@ function ProfilePage() {
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
 
+  // Goes through the /api/customer/bookings backend route (service role)
+  // instead of querying `bookings` directly from the browser — a direct
+  // client-side query is subject to RLS's "published activities are public"
+  // policy on the nested activities/activity_sessions join, which has no
+  // exception for a parent viewing their own past booking. Once a vendor
+  // removes/unpublishes an activity, that join silently came back null and
+  // My Bookings fell back to a bare "Class" placeholder with no date.
   function loadBookings() {
-    supabase
-      .from("bookings")
-      .select("id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          status: string;
-          child_id: string | null;
-          package_purchase_id: string | null;
-          activity_sessions: {
-            starts_at: string;
-            ends_at: string | null;
-            activity_id: string;
-            activities: {
-              title: string; slug: string; image_urls: string[]; address: string | null;
-              allow_cancellation: boolean; allow_rescheduling: boolean;
-              cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
-            } | null;
+    apiGet<{
+      bookings: Array<{
+        id: string;
+        status: string;
+        child_id: string | null;
+        package_purchase_id: string | null;
+        activity_sessions: {
+          starts_at: string;
+          ends_at: string | null;
+          activity_id: string;
+          activities: {
+            title: string; slug: string; image_urls: string[]; address: string | null;
+            allow_cancellation: boolean; allow_rescheduling: boolean;
+            cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
+            wix_removed_at: string | null;
           } | null;
-        }>;
+        } | null;
+      }>;
+    }>("/api/customer/bookings")
+      .then(({ bookings: rows }) => {
         setBookings(
           rows.map((r) => {
             const s = r.activity_sessions;
@@ -2772,6 +2782,7 @@ function ProfilePage() {
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
+              removed: act?.wix_removed_at != null,
             };
           })
         );
@@ -3732,7 +3743,7 @@ function PastActivitiesTab({
         <div className="flex items-center gap-4">
           <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
-            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
+            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
           {state && (
@@ -3913,7 +3924,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         const reschedWhy = reschedBlockReason(b);
         return (
           <div key={b.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink">
-            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
+            {/* A removed activity's own detail page is gone (unpublished,
+                slug renamed by unlinkWixActivities) — send those clicks to
+                the activities list instead of a dead link. */}
+            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
               <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
