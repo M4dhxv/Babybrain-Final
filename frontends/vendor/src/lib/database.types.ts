@@ -645,6 +645,15 @@ export type Database = {
         };
         Relationships: [];
       };
+      booking_policy_acceptances: {
+        Row: {
+          id: string; booking_id: string; policy_id: string; user_id: string | null;
+          policy_title: string; accepted_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       packages: {
         Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
         Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };

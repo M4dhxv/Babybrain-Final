@@ -77,6 +77,10 @@ export default function BookingsPage() {
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
+  // Which waivers/consents a booking actually accepted — fetched per booking
+  // (cached by booking_id) rather than bundled into the roster RPC, since
+  // this only needs to be looked at for the one booking currently open.
+  const [policyAcceptances, setPolicyAcceptances] = useState<Record<string, { policy_id: string; policy_title: string; accepted_at: string }[]>>({});
   const [loading, setLoading] = useState(true);
 
   // 2.1: manual booking entry (bookings taken outside BabyBrain)
@@ -239,6 +243,19 @@ export default function BookingsPage() {
 
   const sel = visibleBookings[selected];
 
+  useEffect(() => {
+    if (!sel || sel.policies_accepted === 0 || policyAcceptances[sel.booking_id]) return;
+    (async () => {
+      const { data } = await supabase
+        .from('booking_policy_acceptances')
+        .select('policy_id, policy_title, accepted_at')
+        .eq('booking_id', sel.booking_id)
+        .order('accepted_at');
+      setPolicyAcceptances((prev) => ({ ...prev, [sel.booking_id]: data ?? [] }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.booking_id]);
+
   return (
     <div className="relative">
       <div className="flex items-center justify-between px-8 py-5">
@@ -386,14 +403,42 @@ export default function BookingsPage() {
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Waivers &amp; consents</div>
-                      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg', sel.policies_accepted > 0 ? 'bg-green-50' : 'bg-gray-50')}>
-                        <FileCheck className={cn('w-4 h-4', sel.policies_accepted > 0 ? 'text-green-600' : 'text-gray-400')} />
-                        <span className={cn('text-sm', sel.policies_accepted > 0 ? 'text-green-700' : 'text-gray-500')}>
-                          {sel.policies_accepted > 0
-                            ? `${sel.policies_accepted} accepted at booking`
-                            : sel.is_manual ? 'Manual booking — collected offline' : 'None on file'}
-                        </span>
-                      </div>
+                      {sel.policies_accepted > 0 ? (
+                        <div className="rounded-lg bg-green-50 px-3 py-2 space-y-1.5">
+                          {(policyAcceptances[sel.booking_id] ?? []).length === 0 ? (
+                            <div className="flex items-center gap-2">
+                              <FileCheck className="w-4 h-4 text-green-600" />
+                              <span className="text-sm text-green-700">Loading…</span>
+                            </div>
+                          ) : (
+                            policyAcceptances[sel.booking_id].map((p) => (
+                              <div key={p.policy_id} className="flex items-start gap-2">
+                                <FileCheck className="w-4 h-4 mt-0.5 shrink-0 text-green-600" />
+                                <div className="text-sm text-green-700">
+                                  {p.policy_title}
+                                  <span className="block text-xs text-green-600/80">
+                                    Accepted {sgDateTime(p.accepted_at)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => navigate('/settings?tab=policies')}
+                            className="text-xs font-medium text-green-700 underline underline-offset-2 hover:text-green-800"
+                          >
+                            View waivers &amp; consents →
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
+                          <FileCheck className="w-4 h-4 text-gray-400" />
+                          <span className="text-sm text-gray-500">
+                            {sel.is_manual ? 'Manual booking — collected offline' : 'None on file'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Attendance</div>
