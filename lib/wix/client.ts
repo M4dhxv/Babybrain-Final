@@ -104,6 +104,11 @@ export interface WixService {
   id: string;
   name: string;
   type: string;
+  // Where the service is offered. Unlike WixLocation (from the separate
+  // Locations query, which has a name), this nested shape only carries an
+  // id/type/address — services-to-activities sync cross-references it
+  // against fetchWixLocations() by id to get the name.
+  locations?: { id: string; type: string; calculatedAddress?: { formattedAddress?: string; postalCode?: string } }[];
 }
 
 export interface WixResource {
@@ -220,6 +225,48 @@ export function encodeWixSlotKey(payload: WixSlotKey): string {
 
 export function decodeWixSlotKey(key: string): WixSlotKey {
   return JSON.parse(Buffer.from(key, 'base64url').toString('utf8'));
+}
+
+export interface WixLocation {
+  id: string;
+  name: string;
+  address: string | null;
+  postalCode: string | null;
+  isDefault: boolean;
+}
+
+/** The vendor's actual business address(es) on Wix — distinct from
+ *  `WixTimeSlot.location`/`LOCATION_TYPE_MAP` below, which is where a given
+ *  *slot* happens (business/custom/customer). Used by Settings -> Locations'
+ *  "Fetch from Wix" so a vendor doesn't have to retype an address already on
+ *  file with Wix. Only BUSINESS-type locations are returned — CUSTOM (a
+ *  one-off address set by the business) and CUSTOMER (the client's own
+ *  address, appointment services only) aren't a reusable "location" here. */
+export async function fetchWixLocations(creds: WixCredentials): Promise<WixLocation[]> {
+  interface RawLocation {
+    id: string;
+    type: string;
+    business?: {
+      id: string;
+      name: string;
+      default: boolean;
+      address?: { formattedAddress?: string; postalCode?: string };
+    };
+  }
+  const data = await wixFetch<{ businessLocations?: { locations?: RawLocation[] } }>(
+    creds,
+    '/bookings/v2/services/locations/query',
+    { filter: {} }
+  );
+  return (data.businessLocations?.locations ?? [])
+    .filter((l): l is RawLocation & { business: NonNullable<RawLocation['business']> } => l.type === 'BUSINESS' && !!l.business)
+    .map((l) => ({
+      id: l.business.id,
+      name: l.business.name,
+      address: l.business.address?.formattedAddress ?? null,
+      postalCode: l.business.address?.postalCode ?? null,
+      isDefault: l.business.default,
+    }));
 }
 
 const LOCATION_TYPE_MAP: Record<string, string> = {

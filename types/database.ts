@@ -659,6 +659,8 @@ export type Database = {
           created_at: string;
           // Derived from postal_code / coordinates by provider_locations_region_trg.
           region: string | null;
+          // Set when imported via Settings -> Locations "Fetch from Wix" (00066).
+          wix_location_id: string | null;
         };
         Insert: {
           provider_id: string;
@@ -669,6 +671,7 @@ export type Database = {
           longitude?: number | null;
           operating_hours?: Json;
           is_primary?: boolean;
+          wix_location_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['provider_locations']['Insert']>;
         Relationships: [];

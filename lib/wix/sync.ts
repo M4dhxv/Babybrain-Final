@@ -3,12 +3,15 @@ import type { Database } from '@/types/database';
 import {
   fetchWixServices,
   fetchWixResources,
+  fetchWixLocations,
   fetchWixAvailability,
   fetchWixClassSessions,
   createWixBooking,
   createWixClassBooking,
   decodeWixSlotKey,
   type WixCredentials,
+  type WixService,
+  type WixLocation,
 } from './client';
 
 /**
@@ -34,6 +37,63 @@ export interface WixServiceSyncResult {
   skipped: { name: string; reason: string }[];
 }
 
+/** A Wix service carries its own address via `service.locations` (its
+ *  BUSINESS-type entry), but that nested object has no name — only
+ *  id/type/address. Cross-referenced against a `fetchWixLocations()` lookup
+ *  (the dedicated Locations query, which does have a name) to name it
+ *  properly, find-or-creating the matching provider_locations row keyed on
+ *  wix_location_id so multiple services at the same address share one row
+ *  instead of a duplicate per service. Returns nulls when the service has no
+ *  BUSINESS location (e.g. CUSTOMER-location appointment services) — that's
+ *  not a failure, just nothing to link. */
+async function resolveWixServiceLocation(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  service: WixService,
+  wixLocationsById: Map<string, WixLocation>,
+  cache: Map<string, string | null>
+): Promise<{ locationId: string | null; address: string | null; postalCode: string | null }> {
+  const biz = service.locations?.find((l) => l.type === 'BUSINESS');
+  if (!biz) return { locationId: null, address: null, postalCode: null };
+
+  const known = wixLocationsById.get(biz.id);
+  const address = known?.address ?? biz.calculatedAddress?.formattedAddress ?? null;
+  const postalCode = known?.postalCode ?? biz.calculatedAddress?.postalCode ?? null;
+
+  if (cache.has(biz.id)) return { locationId: cache.get(biz.id)!, address, postalCode };
+
+  const { data: existing } = await admin
+    .from('provider_locations')
+    .select('id')
+    .eq('provider_id', providerId)
+    .eq('wix_location_id', biz.id)
+    .maybeSingle();
+  if (existing) {
+    cache.set(biz.id, existing.id);
+    return { locationId: existing.id, address, postalCode };
+  }
+
+  const { count } = await admin
+    .from('provider_locations')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider_id', providerId);
+
+  const { data: created } = await admin
+    .from('provider_locations')
+    .insert({
+      provider_id: providerId,
+      name: known?.name ?? 'Wix location',
+      address,
+      postal_code: postalCode,
+      wix_location_id: biz.id,
+      is_primary: (count ?? 0) === 0,
+    })
+    .select('id')
+    .single();
+  cache.set(biz.id, created?.id ?? null);
+  return { locationId: created?.id ?? null, address, postalCode };
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -47,15 +107,20 @@ export async function syncWixServicesToActivities(
   creds: WixCredentials,
   options?: { onlyServiceIds?: string[] }
 ): Promise<WixServiceSyncResult> {
-  const [services, resources] = await Promise.all([
+  const [services, resources, wixLocations] = await Promise.all([
     fetchWixServices(creds),
     fetchWixResources(creds),
+    // A failure here shouldn't sink the whole service sync — activities
+    // just come in without a location, same as before this existed.
+    fetchWixLocations(creds).catch(() => [] as WixLocation[]),
   ]);
   // Wix doesn't expose a service->resource mapping through this endpoint,
   // so every appointment service shares whichever staff/resource is
   // bookable first — good enough to make availability appear; a vendor
   // with several distinct staff calendars may want to fix this up later.
   const resource = resources.find((r) => r.bookable);
+  const wixLocationsById = new Map(wixLocations.map((l) => [l.id, l]));
+  const locationCache = new Map<string, string | null>();
 
   const { data: category } = await admin
     .from('activity_categories')
@@ -94,6 +159,14 @@ export async function syncWixServicesToActivities(
       .eq('wix_service_id', service.id)
       .maybeSingle();
 
+    // Kept in step on every sync (create and update alike) — unlike
+    // category/age/price/description, a Wix-linked activity's location
+    // isn't something a vendor sets by hand here; Wix stays the source of
+    // truth for it.
+    const { locationId, address, postalCode } = await resolveWixServiceLocation(
+      admin, providerId, service, wixLocationsById, locationCache
+    );
+
     if (existing) {
       await admin
         .from('activities')
@@ -101,6 +174,9 @@ export async function syncWixServicesToActivities(
           title: service.name,
           wix_service_type: type,
           wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+          location_id: locationId,
+          address,
+          postal_code: postalCode,
         })
         .eq('id', existing.id);
       result.updated++;
@@ -124,6 +200,9 @@ export async function syncWixServicesToActivities(
       wix_service_id: service.id,
       wix_service_type: type,
       wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+      location_id: locationId,
+      address,
+      postal_code: postalCode,
     });
     if (error) {
       result.skipped.push({ name: service.name, reason: error.message });

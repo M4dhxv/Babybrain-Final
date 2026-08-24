@@ -925,6 +925,72 @@ function LocationsManager({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // "Fetch from Wix" — pulls the vendor's real Wix business address(es)
+  // instead of retyping one. Independent of whether Wix is even connected;
+  // the fetch call itself reports that (409) with a friendly message.
+  const [showWixPicker, setShowWixPicker] = useState(false);
+  const [wixLocations, setWixLocations] = useState<
+    { id: string; name: string; address: string | null; postalCode: string | null; alreadyImported: boolean }[] | null
+  >(null);
+  const [wixLoading, setWixLoading] = useState(false);
+  const [wixError, setWixError] = useState<string | null>(null);
+  const [wixSelected, setWixSelected] = useState<Set<string>>(new Set());
+  const [wixImporting, setWixImporting] = useState(false);
+  const [wixNotice, setWixNotice] = useState<string | null>(null);
+
+  async function loadWixLocations() {
+    if (!provider) return;
+    setWixLoading(true);
+    setWixError(null);
+    setWixNotice(null);
+    try {
+      const res = await apiGet<{ locations: typeof wixLocations }>(`/api/vendor/wix-locations?providerId=${provider.id}`);
+      setWixLocations(res.locations);
+      setWixSelected(new Set());
+    } catch (e) {
+      setWixError(
+        e instanceof ApiError && e.status === 409
+          ? 'Connect your Wix account below first, then fetch your locations from it.'
+          : e instanceof Error ? e.message : 'Could not reach Wix'
+      );
+    } finally {
+      setWixLoading(false);
+    }
+  }
+
+  function openWixPicker() {
+    setShowWixPicker(true);
+    if (!wixLocations) loadWixLocations();
+  }
+
+  function toggleWixSelected(id: string) {
+    setWixNotice(null);
+    setWixSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function importWixLocations() {
+    if (!provider || wixSelected.size === 0) return;
+    setWixImporting(true);
+    setWixError(null);
+    setWixNotice(null);
+    try {
+      const res = await apiPost<{ imported: number }>('/api/vendor/wix-locations-import', {
+        provider_id: provider.id,
+        location_ids: Array.from(wixSelected),
+      });
+      setWixNotice(res.imported > 0 ? `Added ${res.imported} location${res.imported === 1 ? '' : 's'} from Wix.` : 'Nothing new to add.');
+      await Promise.all([loadWixLocations(), load()]);
+    } catch (e) {
+      setWixError(e instanceof Error ? e.message : 'Could not import from Wix');
+    } finally {
+      setWixImporting(false);
+    }
+  }
+
   async function load() {
     if (!provider) return;
     const { data } = await supabase
@@ -1010,11 +1076,74 @@ function LocationsManager({
           </div>
         </div>
         {canManage && !showForm && (
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
-            <Plus className="w-3.5 h-3.5" /> Add location
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
+              <RefreshCw className="w-3.5 h-3.5" /> Fetch from Wix
+            </button>
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
+              <Plus className="w-3.5 h-3.5" /> Add location
+            </button>
+          </div>
         )}
       </div>
+
+      {showWixPicker && canManage && (
+        <div className="mb-4 rounded-xl border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900">Fetch from Wix</h4>
+              <p className="text-xs text-gray-500">Import a business address already on file with your connected Wix account.</p>
+            </div>
+            <button onClick={() => setShowWixPicker(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100"><X className="w-4 h-4" /></button>
+          </div>
+
+          {wixError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{wixError}</div>}
+          {wixNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{wixNotice}</div>}
+          {wixLoading && <div className="text-sm text-gray-400">Loading Wix locations…</div>}
+
+          {!wixLoading && wixLocations && wixLocations.length === 0 && !wixError && (
+            <p className="text-sm text-gray-400">No business locations found on this Wix account.</p>
+          )}
+
+          {!wixLoading && wixLocations && wixLocations.length > 0 && (
+            <>
+              <div className="space-y-2">
+                {wixLocations.map((l) => (
+                  <label
+                    key={l.id}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl border',
+                      l.alreadyImported
+                        ? 'bg-green-50 border-green-100'
+                        : 'bg-gray-50 border-gray-100 cursor-pointer hover:bg-gray-100'
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                      checked={wixSelected.has(l.id)}
+                      disabled={l.alreadyImported}
+                      onChange={() => toggleWixSelected(l.id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-800 truncate">{l.name}</div>
+                      <div className="text-xs text-gray-400 truncate">{l.address ?? 'No address on file'}</div>
+                    </div>
+                    {l.alreadyImported && <span className="flex-shrink-0 text-xs font-semibold text-green-700">Added</span>}
+                  </label>
+                ))}
+              </div>
+              <Button
+                onClick={importWixLocations}
+                disabled={wixImporting || wixSelected.size === 0}
+                className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+              >
+                <Save className="w-4 h-4" /> {wixImporting ? 'Adding…' : `Add ${wixSelected.size || ''} location${wixSelected.size === 1 ? '' : 's'}`}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="space-y-3 mb-4">
         {locations.map((loc) => (
