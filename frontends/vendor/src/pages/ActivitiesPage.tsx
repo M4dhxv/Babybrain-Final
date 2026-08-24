@@ -81,7 +81,7 @@ export default function ActivitiesPage() {
 
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<ActivityCategory[]>([]);
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [locations, setLocations] = useState<{ id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]>([]);
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [bookingTotals, setBookingTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -253,12 +253,12 @@ export default function ActivitiesPage() {
     const [{ data: acts }, { data: cats }, { data: locs }, { count: packs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
-      supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
+      supabase.from('provider_locations').select('id, name, address, postal_code, latitude, longitude').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
       supabase.from('packages').select('id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('active', true),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
-    setLocations((locs ?? []) as { id: string; name: string }[]);
+    setLocations((locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]);
     setPackCount(packs ?? 0);
 
     // Upcoming session counts + total booking counts per activity.
@@ -402,6 +402,10 @@ export default function ActivitiesPage() {
     if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
     setSaving(true);
     setFormError(null);
+    // The activity's address/postal_code/lat/lng are denormalized from its
+    // location so the parent app can show "where to go" without an extra
+    // join — keep them in sync with whichever location the vendor picks.
+    const loc = locations.find((l) => l.id === form.location_id);
     const fields = {
       title: form.title,
       description: form.description,
@@ -413,6 +417,10 @@ export default function ActivitiesPage() {
       age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
       price: form.price ? Number(form.price) : null,
       location_id: form.location_id || null,
+      address: loc?.address ?? null,
+      postal_code: loc?.postal_code ?? null,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
       image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
       allow_cancellation: form.allow_cancellation,

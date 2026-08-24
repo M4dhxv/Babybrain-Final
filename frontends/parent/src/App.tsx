@@ -1715,7 +1715,7 @@ function ActivityDetailPage() {
             <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
               {activity.address && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="shrink-0">Location</strong>
+                  <strong className="flex shrink-0 items-center gap-1.5"><Icon name="pin" className="h-4 w-4 text-baby-lilac" /> Location</strong>
                   <span className="text-right">{activity.address}</span>
                 </p>
               )}

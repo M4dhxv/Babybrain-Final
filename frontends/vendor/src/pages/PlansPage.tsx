@@ -98,7 +98,14 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
-  const { session, provider } = useAuth();
+  const { session, provider, subscription } = useAuth();
+  // Legacy DB rows can carry the old 'premium' value for what the UI now
+  // calls the top tier ('pro' planKey), and the free tier's planKey is `null`
+  // rather than 'free' — normalize both sides before comparing. Only treat a
+  // plan as "current" once a subscription has actually loaded, so signed-out
+  // visitors (subscription === null) never match the free tier's null key.
+  const isCurrentPlan = (planKey: 'growth' | 'pro' | null) =>
+    subscription != null && (planKey ?? 'free') === (subscription.plan === 'premium' ? 'pro' : subscription.plan);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
   const [optedOut, setOptedOut] = useState(false);
@@ -130,6 +137,12 @@ export default function PlansPage() {
     if (!session) { navigate('/login'); return; }
     if (!provider) {
       setCheckoutError({ plan: planKey, message: 'Claim your business first, then come back to upgrade.' });
+      return;
+    }
+    if (isCurrentPlan(planKey)) {
+      // Already subscribed to this tier — nothing to check out, send them to
+      // Billing instead of starting a Stripe session for the plan they have.
+      navigate('/billing');
       return;
     }
     setCheckoutError(null);
@@ -266,7 +279,11 @@ export default function PlansPage() {
                   className={cn('w-full rounded-xl py-3 font-semibold bg-white', plan.buttonClass)}
                   variant="outline"
                 >
-                  {plan.planKey !== null && checkoutBusy === plan.planKey ? 'Redirecting to Stripe…' : plan.buttonText}
+                  {plan.planKey !== null && checkoutBusy === plan.planKey
+                    ? 'Redirecting to Stripe…'
+                    : isCurrentPlan(plan.planKey)
+                      ? 'Current plan'
+                      : plan.buttonText}
                 </Button>
                 {checkoutError?.plan === plan.planKey && (
                   <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
@@ -328,7 +345,11 @@ export default function PlansPage() {
                   className={cn('rounded-xl px-6 font-semibold bg-white', plan.buttonClass)}
                   variant="outline"
                 >
-                  {plan.planKey !== null && checkoutBusy === plan.planKey ? 'Redirecting…' : plan.buttonText}
+                  {plan.planKey !== null && checkoutBusy === plan.planKey
+                    ? 'Redirecting…'
+                    : isCurrentPlan(plan.planKey)
+                      ? 'Current plan'
+                      : plan.buttonText}
                 </Button>
               </div>
             ))}

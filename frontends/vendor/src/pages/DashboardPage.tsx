@@ -362,7 +362,7 @@ export default function DashboardPage() {
               })}
               {loaded && visibleUpcoming.length === 0 && <div className="text-sm text-gray-400">No sessions in this range.</div>}
             </div>
-            <button onClick={() => navigate('/activities')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View full schedule
               <ArrowRight className="w-3 h-3" />
             </button>
