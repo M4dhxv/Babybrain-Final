@@ -292,8 +292,16 @@ export default function ActivitiesPage() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
 
+  // Activities removed from the Wix import picker stay around (unpublished)
+  // only until their last booked upcoming session is over — the unbooked
+  // future sessions were already deleted at removal time, so once
+  // sessionCounts hits 0 the only thing left for it is past history.
+  const isFullyRemoved = (a: Activity) => !!a.wix_removed_at && (sessionCounts[a.id] ?? 0) === 0;
+
   const visible = useMemo(() => {
-    let list = activities.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
+    let list = activities
+      .filter((a) => !isFullyRemoved(a))
+      .filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
     if (fStatus) {
       list = list.filter((a) => {
         const s = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
@@ -309,7 +317,7 @@ export default function ActivitiesPage() {
     if (sortBy === 'name') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     else if (sortBy === 'rating') list = [...list].sort((a, b) => Number(b.rating_avg) - Number(a.rating_avg));
     return list;
-  }, [activities, search, fStatus, fLocation, fActivity, fAge, sortBy]);
+  }, [activities, sessionCounts, search, fStatus, fLocation, fActivity, fAge, sortBy]);
   const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? '—';
 
   // Themed placeholder per category so rows without photos still look distinct.
@@ -327,7 +335,7 @@ export default function ActivitiesPage() {
     { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
     { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
-    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a)).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
 
   async function archive(id: string) {

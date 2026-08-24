@@ -459,6 +459,15 @@ type WixStatus = {
   updated_at?: string;
 };
 
+type WixServiceOption = {
+  id: string;
+  name: string;
+  type: string;
+  importable: boolean;
+  reason: string | null;
+  alreadyImported: boolean;
+};
+
 /** Settings -> Integrate your Business. A vendor connects their own Wix
  *  account (API key + site ID) so their Schedule calendar, availability and
  *  bookings sync against their own Wix Bookings data instead of a shared
@@ -483,11 +492,25 @@ function WixIntegrationManager({
   const [revealing, setRevealing] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[] }) {
+  // "Import specific activities" — lets a vendor pick which Wix services
+  // become activities, instead of "Sync services" bringing in everything.
+  // `selectedIds` is the live checkbox state; `baselineIds` is what was
+  // actually imported as of the last load — the diff between the two is
+  // what "Save" sends and what drives the "you have unsaved changes" notice.
+  const [wixServices, setWixServices] = useState<WixServiceOption[] | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [baselineIds, setBaselineIds] = useState<Set<string>>(new Set());
+  const [importSaving, setImportSaving] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+
+  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number }) {
     const parts = [];
     if (sync.created) parts.push(`${sync.created} new`);
     if (sync.updated) parts.push(`${sync.updated} updated`);
-    if (!sync.created && !sync.updated) parts.push('nothing new');
+    if (sync.removed) parts.push(`${sync.removed} removed`);
+    if (!sync.created && !sync.updated && !sync.removed) parts.push('nothing new');
     let text = `Synced from Wix: ${parts.join(', ')}.`;
     if (sync.skipped.length) {
       text += ` ${sync.skipped.length} skipped — ${sync.skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
@@ -572,6 +595,61 @@ function WixIntegrationManager({
     }
   }
 
+  async function loadServices() {
+    if (!provider) return;
+    setServicesLoading(true);
+    setImportError(null);
+    try {
+      const res = await apiGet<{ services: WixServiceOption[] }>(`/api/vendor/wix-services?providerId=${provider.id}`);
+      setWixServices(res.services);
+      const imported = new Set(res.services.filter((s) => s.alreadyImported).map((s) => s.id));
+      setSelectedIds(imported);
+      setBaselineIds(imported);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Could not load Wix services');
+    } finally {
+      setServicesLoading(false);
+    }
+  }
+  useEffect(() => {
+    // Independent of the credentials card's `editing` state — this box
+    // loads and stays visible purely off whether Wix is connected, so
+    // clicking "Change key" doesn't yank it away.
+    if (status?.connected) loadServices();
+    // eslint-disable-next-line
+  }, [status?.connected]);
+
+  function toggleSelected(id: string) {
+    setImportNotice(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const hasSelectionChanges =
+    selectedIds.size !== baselineIds.size || [...selectedIds].some((id) => !baselineIds.has(id));
+
+  async function saveImport() {
+    if (!provider || !hasSelectionChanges) return;
+    setImportSaving(true);
+    setImportError(null);
+    setImportNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; skipped: { name: string; reason: string }[] } }>(
+        '/api/vendor/wix-services-import',
+        { provider_id: provider.id, service_ids: Array.from(selectedIds) }
+      );
+      setImportNotice(summarizeSync(res.sync));
+      await loadServices();
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Could not import the selected activities');
+    } finally {
+      setImportSaving(false);
+    }
+  }
+
   // Credential fields get a visibly heavier border than an ordinary text
   // input — these hold a secret and a site identifier, not "just a field".
   const inputCls = 'w-full px-3.5 py-2.5 border-2 border-indigo-200 bg-indigo-50/30 rounded-lg text-sm font-mono shadow-sm transition-colors focus:outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100';
@@ -641,6 +719,80 @@ function WixIntegrationManager({
                 Every service, class and appointment on this Wix account becomes an activity here — new ones land
                 unpublished until you fill in a category, age range and price.
               </p>
+              <a
+                href="https://support.wix.com/en/article/about-api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+              >
+                More on Wix API keys <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
+          {status?.connected && canManage && (
+            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Import specific activities</h4>
+                <p className="text-xs text-gray-500">Choose which Wix services should become activities on BabyBrain, then save.</p>
+              </div>
+
+              {importError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{importError}</div>}
+              {importNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{importNotice}</div>}
+              {!importNotice && hasSelectionChanges && (
+                <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                  The changes will reflect on Activities page
+                </div>
+              )}
+
+              {servicesLoading && <div className="text-sm text-gray-400">Loading Wix services…</div>}
+
+              {!servicesLoading && wixServices && wixServices.length === 0 && (
+                <p className="text-sm text-gray-400">No services found on this Wix account.</p>
+              )}
+
+              {!servicesLoading && wixServices && wixServices.length > 0 && (
+                <>
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {wixServices.map((s) => (
+                      <label
+                        key={s.id}
+                        className={cn(
+                          'flex items-center gap-3 p-3 rounded-xl border',
+                          s.alreadyImported
+                            ? 'bg-green-50 border-green-100'
+                            : s.importable
+                              ? 'bg-gray-50 border-gray-100 cursor-pointer hover:bg-gray-100'
+                              : 'bg-gray-50 border-gray-100 opacity-60 cursor-not-allowed'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                          checked={selectedIds.has(s.id)}
+                          disabled={!s.importable}
+                          onChange={() => toggleSelected(s.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-800 truncate">{s.name}</div>
+                          <div className="text-xs text-gray-400">{s.type}{s.reason ? ` — ${s.reason}` : ''}</div>
+                        </div>
+                        {s.alreadyImported && (
+                          <span className="flex-shrink-0 text-xs font-semibold text-green-700">Imported</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+
+                  <Button
+                    onClick={saveImport}
+                    disabled={importSaving || !hasSelectionChanges}
+                    className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+                  >
+                    <Save className="w-4 h-4" /> {importSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </>
+              )}
             </div>
           )}
 
@@ -709,17 +861,17 @@ function WixIntegrationManager({
                   </Button>
                 )}
               </div>
+
+              <a
+                href="https://support.wix.com/en/article/about-api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+              >
+                More on Wix API keys <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           )}
-
-          <a
-            href="https://support.wix.com/en/article/about-api-keys"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
-          >
-            More on Wix API keys <ExternalLink className="w-3 h-3" />
-          </a>
         </div>
       )}
     </>

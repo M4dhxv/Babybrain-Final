@@ -44,7 +44,8 @@ function slugify(s: string): string {
 export async function syncWixServicesToActivities(
   admin: SupabaseClient<Database>,
   providerId: string,
-  creds: WixCredentials
+  creds: WixCredentials,
+  options?: { onlyServiceIds?: string[] }
 ): Promise<WixServiceSyncResult> {
   const [services, resources] = await Promise.all([
     fetchWixServices(creds),
@@ -65,7 +66,14 @@ export async function syncWixServicesToActivities(
 
   const result: WixServiceSyncResult = { created: 0, updated: 0, skipped: [] };
 
+  // The "Import specific activities" picker calls this with onlyServiceIds
+  // set to just the services a vendor checked, instead of every service on
+  // the account — everything else about the sync (matching, category
+  // assignment, leaving edited fields alone) is identical either way.
+  const onlyIds = options?.onlyServiceIds ? new Set(options.onlyServiceIds) : null;
+
   for (const service of services) {
+    if (onlyIds && !onlyIds.has(service.id)) continue;
     const type =
       service.type === 'APPOINTMENT' || service.type === 'CLASS' || service.type === 'COURSE'
         ? service.type
@@ -125,6 +133,94 @@ export async function syncWixServicesToActivities(
   }
 
   return result;
+}
+
+/**
+ * Deletes the not-yet-started sessions of one activity that have no booking
+ * against them (locally, or on Wix itself via remaining capacity) — called
+ * right before an activity is unlinked, so unbooked future slots vanish from
+ * Schedule/Bookings immediately instead of lingering until they'd have
+ * started. Booked and past sessions are left alone.
+ *
+ * Deletes one row at a time and swallows individual failures: `bookings.
+ * session_id` has no cascade, so a session with even a *cancelled* booking
+ * against it (not counted as "booked" here, but still FK-referenced) would
+ * fail to delete — doing this per-row means that one blocked row doesn't
+ * roll back the rest.
+ */
+async function deleteUnbookedFutureSessions(admin: SupabaseClient<Database>, activityId: string): Promise<void> {
+  const { data: sessions } = await admin
+    .from('activity_sessions')
+    .select('id, capacity, wix_slot_key, wix_remaining_capacity')
+    .eq('activity_id', activityId)
+    .neq('status', 'cancelled')
+    .gte('starts_at', new Date().toISOString());
+  if (!sessions || sessions.length === 0) return;
+
+  const sessionIds = sessions.map((s) => s.id);
+  const { data: bookings } = await admin
+    .from('bookings')
+    .select('session_id, status')
+    .in('session_id', sessionIds);
+  const bookedIds = new Set(
+    (bookings ?? []).filter((b) => b.status !== 'cancelled').map((b) => b.session_id)
+  );
+
+  for (const s of sessions) {
+    if (bookedIds.has(s.id)) continue;
+    const bookedOnWix = !!s.wix_slot_key && s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
+    if (bookedOnWix) continue;
+    await admin.from('activity_sessions').delete().eq('id', s.id);
+  }
+}
+
+/**
+ * Unchecking a previously-imported service in the "Import specific
+ * activities" picker calls this — it deletes that activity's unbooked
+ * future sessions, un-publishes it, clears its wix_service_id/type/
+ * resource_id so it stops being touched by future syncs, and stamps
+ * wix_removed_at (ActivitiesPage hides it once no upcoming — i.e. booked —
+ * sessions remain, see that page's `visible` filter). It does NOT delete the
+ * activity row itself: activity_sessions/bookings reference activities with
+ * `on delete cascade`, so a hard delete here would silently wipe any real
+ * booking history against it.
+ *
+ * The slug gets a `-removed-<id>` suffix so it's out of the way of
+ * `activities.slug`'s unique constraint if the vendor re-checks the same
+ * service later — sync's insert path uses a slug derived from the Wix
+ * service id, which would otherwise collide with this now-orphaned row.
+ */
+export async function unlinkWixActivities(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  serviceIds: string[]
+): Promise<number> {
+  if (serviceIds.length === 0) return 0;
+
+  const { data: rows } = await admin
+    .from('activities')
+    .select('id, slug')
+    .eq('provider_id', providerId)
+    .in('wix_service_id', serviceIds);
+  if (!rows || rows.length === 0) return 0;
+
+  let removed = 0;
+  for (const row of rows) {
+    await deleteUnbookedFutureSessions(admin, row.id);
+    const { error } = await admin
+      .from('activities')
+      .update({
+        is_published: false,
+        wix_service_id: null,
+        wix_service_type: null,
+        wix_resource_id: null,
+        wix_removed_at: new Date().toISOString(),
+        slug: `${row.slug}-removed-${row.id.slice(0, 6)}`,
+      })
+      .eq('id', row.id);
+    if (!error) removed++;
+  }
+  return removed;
 }
 
 export interface WixSlotActivity {
