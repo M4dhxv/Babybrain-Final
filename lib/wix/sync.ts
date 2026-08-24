@@ -136,11 +136,12 @@ export async function syncWixServicesToActivities(
 }
 
 /**
- * Deletes the not-yet-started sessions of one activity that have no booking
- * against them (locally, or on Wix itself via remaining capacity) — called
- * right before an activity is unlinked, so unbooked future slots vanish from
- * Schedule/Bookings immediately instead of lingering until they'd have
- * started. Booked and past sessions are left alone.
+ * Deletes every session of one activity — past or future — that has no
+ * booking against it (locally, or on Wix itself via remaining capacity,
+ * however partial: even 1 of 10 filled counts as booked) — called right
+ * before an activity is unlinked, so unbooked slots vanish from
+ * Schedule/Bookings immediately. Any session with a real booking is
+ * preserved regardless of how long ago it happened.
  *
  * Deletes one row at a time and swallows individual failures: `bookings.
  * session_id` has no cascade, so a session with even a *cancelled* booking
@@ -148,13 +149,12 @@ export async function syncWixServicesToActivities(
  * fail to delete — doing this per-row means that one blocked row doesn't
  * roll back the rest.
  */
-async function deleteUnbookedFutureSessions(admin: SupabaseClient<Database>, activityId: string): Promise<void> {
+async function deleteUnbookedSessions(admin: SupabaseClient<Database>, activityId: string): Promise<void> {
   const { data: sessions } = await admin
     .from('activity_sessions')
     .select('id, capacity, wix_slot_key, wix_remaining_capacity')
     .eq('activity_id', activityId)
-    .neq('status', 'cancelled')
-    .gte('starts_at', new Date().toISOString());
+    .neq('status', 'cancelled');
   if (!sessions || sessions.length === 0) return;
 
   const sessionIds = sessions.map((s) => s.id);
@@ -177,8 +177,8 @@ async function deleteUnbookedFutureSessions(admin: SupabaseClient<Database>, act
 /**
  * Unchecking a previously-imported service in the "Import specific
  * activities" picker calls this — it deletes that activity's unbooked
- * future sessions, un-publishes it, clears its wix_service_id/type/
- * resource_id so it stops being touched by future syncs, and stamps
+ * sessions (past and future), un-publishes it, clears its wix_service_id/
+ * type/resource_id so it stops being touched by future syncs, and stamps
  * wix_removed_at (ActivitiesPage hides it once no upcoming — i.e. booked —
  * sessions remain, see that page's `visible` filter). It does NOT delete the
  * activity row itself: activity_sessions/bookings reference activities with
@@ -206,7 +206,7 @@ export async function unlinkWixActivities(
 
   let removed = 0;
   for (const row of rows) {
-    await deleteUnbookedFutureSessions(admin, row.id);
+    await deleteUnbookedSessions(admin, row.id);
     const { error } = await admin
       .from('activities')
       .update({
