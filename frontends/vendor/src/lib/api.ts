@@ -1,5 +1,22 @@
 import { supabase } from './supabase';
 
+/** Thrown by apiGet/apiPost/apiDelete on a non-2xx response — carries the
+ *  HTTP status so callers can special-case e.g. 401 (expired session)
+ *  without string-matching the error message. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+async function errorFor(res: Response): Promise<ApiError> {
+  const message = (await res.json().catch(() => ({})))?.error ?? res.statusText;
+  return new ApiError(message, res.status);
+}
+
 /**
  * Calls a Next.js backend route (Stripe / chat token / staff invite),
  * attaching the Supabase access token as a Bearer header. The routes
@@ -18,7 +35,7 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+  if (!res.ok) throw await errorFor(res);
   return res.json() as Promise<T>;
 }
 
@@ -33,7 +50,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+  if (!res.ok) throw await errorFor(res);
   return res.json() as Promise<T>;
 }
 
@@ -49,6 +66,6 @@ export async function apiDelete<T = unknown>(path: string): Promise<T> {
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+  if (!res.ok) throw await errorFor(res);
   return res.json() as Promise<T>;
 }

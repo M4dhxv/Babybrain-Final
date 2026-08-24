@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiPost, apiGet } from '@/lib/api';
+import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderLocation, ProviderPolicy, VendorCategory } from '@/lib/database.types';
 
@@ -505,6 +505,17 @@ function WixIntegrationManager({
   const [importError, setImportError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
 
+  // A 401 here almost always means the browser's session has quietly
+  // expired (long-lived tab, refresh token aged out) — "Not authenticated"
+  // on its own reads like a permissions bug, so point the vendor at the fix
+  // (sign out/in) and an escape hatch if that doesn't clear it up.
+  function describeWixError(e: unknown, fallback: string): string {
+    if (e instanceof ApiError && e.status === 401) {
+      return 'Your session has expired. Please sign out and sign back in — if this keeps happening, contact support.';
+    }
+    return e instanceof Error ? e.message : fallback;
+  }
+
   function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number }) {
     const parts = [];
     if (sync.created) parts.push(`${sync.created} new`);
@@ -528,7 +539,7 @@ function WixIntegrationManager({
       setSiteId(s.wix_site_id ?? '');
       setRevealedKey(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load Wix integration status');
+      setError(describeWixError(e, 'Could not load Wix integration status'));
       // Status is unknown, not necessarily "connected" — still let a manager
       // attempt to (re)connect rather than leaving them with a dead end.
       setEditing(true);
@@ -556,7 +567,7 @@ function WixIntegrationManager({
       setNotice(`Wix account connected. ${summarizeSync(res.sync)}`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save these credentials');
+      setError(describeWixError(e, 'Could not save these credentials'));
     } finally {
       setSaving(false);
     }
@@ -574,7 +585,7 @@ function WixIntegrationManager({
       );
       setNotice(summarizeSync(res.sync));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not sync services');
+      setError(describeWixError(e, 'Could not sync services'));
     } finally {
       setSyncing(false);
     }
@@ -589,7 +600,7 @@ function WixIntegrationManager({
       const { wix_api_key } = await apiGet<{ wix_api_key: string }>(`/api/vendor/wix-integration/reveal?providerId=${provider.id}`);
       setRevealedKey(wix_api_key);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not reveal the key');
+      setError(describeWixError(e, 'Could not reveal the key'));
     } finally {
       setRevealing(false);
     }
@@ -606,7 +617,7 @@ function WixIntegrationManager({
       setSelectedIds(imported);
       setBaselineIds(imported);
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Could not load Wix services');
+      setImportError(describeWixError(e, 'Could not load Wix services'));
     } finally {
       setServicesLoading(false);
     }
@@ -644,7 +655,7 @@ function WixIntegrationManager({
       setImportNotice(summarizeSync(res.sync));
       await loadServices();
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Could not import the selected activities');
+      setImportError(describeWixError(e, 'Could not import the selected activities'));
     } finally {
       setImportSaving(false);
     }
