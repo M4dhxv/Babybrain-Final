@@ -17,12 +17,13 @@ import {
   ImageUp,
   Pause,
   Play,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
@@ -299,6 +300,39 @@ export default function ActivitiesPage() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
 
+  // Same action as Settings -> Integrate your Business's "Sync services"
+  // button, surfaced here too so a vendor reviewing this list doesn't have
+  // to leave it to pick up Wix-side changes (new services, price/capacity
+  // edits, a service going missing).
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  async function syncServices() {
+    if (!provider) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+        '/api/vendor/wix-services-sync',
+        { provider_id: provider.id }
+      );
+      const { sync } = res;
+      const parts = [];
+      if (sync.created) parts.push(`${sync.created} new`);
+      if (sync.updated) parts.push(`${sync.updated} updated`);
+      if (sync.revived) parts.push(`${sync.revived} restored`);
+      if (sync.removed) parts.push(`${sync.removed} removed`);
+      setSyncNotice(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
+      await load();
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Could not sync services');
+    } finally {
+      setSyncing(false);
+      window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);
+    }
+  }
+
   // Activities removed from the Wix import picker stay around (unpublished)
   // only until their last booked upcoming session is over — the unbooked
   // future sessions were already deleted at removal time, so once
@@ -530,6 +564,17 @@ export default function ActivitiesPage() {
               ))}
             </div>
             <div className="flex items-center gap-3">
+              {provider?.wix_site_id && (
+                <button
+                  onClick={syncServices}
+                  disabled={syncing}
+                  title="Pull the latest services, prices, capacities and removals from your connected Wix account"
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+                  {syncing ? 'Syncing…' : 'Sync services'}
+                </button>
+              )}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -561,6 +606,12 @@ export default function ActivitiesPage() {
               )}
             </div>
           </div>
+
+          {(syncNotice || syncError) && (
+            <div className={cn('px-5 py-2.5 text-sm font-medium border-b border-gray-200', syncError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+              {syncError ?? syncNotice}
+            </div>
+          )}
 
           {/* Filter bar */}
           {showFilters && (
