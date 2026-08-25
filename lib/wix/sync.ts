@@ -12,6 +12,7 @@ import {
   wixServicePrice,
   wixServiceCapacity,
   wixServiceImageUrl,
+  wixLocalToUtcIso,
   type WixCredentials,
   type WixService,
   type WixLocation,
@@ -489,7 +490,18 @@ async function resolveWixSlot(
       if (!slot) {
         return { ok: false, status: 409, error: 'That slot is no longer available' };
       }
-      return { ok: true, key, startsAt: slot.localStartDate, endsAt: slot.localEndDate, capacity: 1, resolved: { kind: 'appointment', slot } };
+      // startsAt/endsAt here end up in activity_sessions (ensureLocalWixSession)
+      // and must be true UTC — slot.localStartDate/localEndDate themselves stay
+      // untouched on `resolved.slot` since createWixBooking sends those exact
+      // site-local strings back to Wix's own create-booking call.
+      return {
+        ok: true,
+        key,
+        startsAt: wixLocalToUtcIso(slot.localStartDate, slot.timeZone ?? 'UTC'),
+        endsAt: wixLocalToUtcIso(slot.localEndDate, slot.timeZone ?? 'UTC'),
+        capacity: 1,
+        resolved: { kind: 'appointment', slot },
+      };
     }
   } catch (e) {
     console.error('Wix availability check failed', e);

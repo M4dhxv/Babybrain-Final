@@ -6,6 +6,7 @@ import {
   fetchWixConfirmedAppointmentBookings,
   encodeWixSlotKey,
   getProviderWixCredentials,
+  wixLocalToUtcIso,
 } from '@/lib/wix/client';
 
 /**
@@ -103,22 +104,31 @@ export async function GET(request: Request) {
       // not offered right now. Never blocks the availability fetch above.
       fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
     ]);
-    // `localStartDate` was requested (and is stored/keyed) as a UTC instant
-    // with no offset suffix — appending "Z" makes it parseable as the same
-    // absolute moment a confirmed booking's own ISO timestamp represents,
-    // so the two can be compared regardless of the site's local timezone.
+    // `b.start` (from the real bookings resource) is a genuine UTC
+    // timestamp; comparing it against a slot means first converting that
+    // slot's own site-local `localStartDate` the same way — see
+    // wixLocalToUtcIso and the comment on fetchWixAvailability for why that
+    // conversion can't be skipped just because there's no offset suffix.
     const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
 
     if (slots.length > 0) {
       const { error: syncError } = await admin.from('activity_sessions').upsert(
-        slots.map((s) => ({
-          activity_id: activity.id,
-          starts_at: s.localStartDate,
-          ends_at: s.localEndDate,
-          capacity: 1,
-          wix_remaining_capacity: bookedStarts.has(new Date(`${s.localStartDate}Z`).toISOString()) ? 0 : 1,
-          wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
-        })),
+        slots.map((s) => {
+          const startsAtUtc = wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC');
+          const endsAtUtc = wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC');
+          return {
+            activity_id: activity.id,
+            starts_at: startsAtUtc,
+            ends_at: endsAtUtc,
+            capacity: 1,
+            wix_remaining_capacity: bookedStarts.has(new Date(startsAtUtc).toISOString()) ? 0 : 1,
+            // The slot key is Wix's own round-trip identifier — stays the raw
+            // site-local strings Wix gave us, since re-fetching availability
+            // and creating the actual booking both compare/send this exact
+            // same untouched value back to Wix.
+            wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+          };
+        }),
         { onConflict: 'activity_id,wix_slot_key' }
       );
       if (syncError) console.error('Wix appointment slot sync failed', syncError);
@@ -129,8 +139,8 @@ export async function GET(request: Request) {
         .filter((s) => s.bookable)
         .map((s) => ({
           id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate })}`,
-          starts_at: s.localStartDate,
-          ends_at: s.localEndDate,
+          starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
+          ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
           capacity: 1,
         })),
     });

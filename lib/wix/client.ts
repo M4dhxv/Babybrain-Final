@@ -201,6 +201,39 @@ export interface WixTimeSlot {
   localEndDate: string;
   bookable: boolean;
   location?: { locationType?: string };
+  // The IANA zone localStartDate/localEndDate are wall-clock time IN — see
+  // the comment on fetchWixAvailability. Kept alongside the raw values
+  // (rather than converting them in place) because those raw strings are
+  // also the exact payload Wix's own create-booking call expects back
+  // verbatim; only a caller that needs a true UTC instant (to store or
+  // display) should touch this.
+  timeZone?: string;
+}
+
+/** Turns a naive "wall-clock in some IANA zone" string (no offset — e.g. Wix's
+ *  `localStartDate`) into the true UTC instant it represents, via the
+ *  standard round-trip-through-Intl trick (no date library needed): read the
+ *  string's digits as if they were already UTC, ask Intl what that instant
+ *  reads as printed in `timeZone`, and the gap between the two is the zone's
+ *  offset at that moment (DST-safe) — subtract it to land on the real UTC
+ *  instant. `timeZone` is normally the response's own `timeZone` field, so
+ *  this works for whatever zone a given Wix site is actually configured
+ *  with, not just Singapore. */
+export function wixLocalToUtcIso(naiveLocal: string, timeZone: string): string {
+  if (timeZone === 'UTC') return `${naiveLocal}Z`;
+  const assumedUtc = new Date(`${naiveLocal}Z`);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).formatToParts(assumedUtc).map((p) => [p.type, p.value])
+  );
+  // Midnight prints as "24" in this locale/format — Date.UTC expects 0.
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const readAsUtc = Date.UTC(+parts.year, Number(parts.month) - 1, +parts.day, hour, +parts.minute, +parts.second);
+  const offsetMs = readAsUtc - assumedUtc.getTime();
+  return new Date(assumedUtc.getTime() - offsetMs).toISOString();
 }
 
 export async function fetchWixServices(creds: WixCredentials): Promise<WixService[]> {
@@ -221,19 +254,34 @@ export async function fetchWixResources(creds: WixCredentials): Promise<WixResou
  *  bookable or not. Callers that only want to offer a slot for booking
  *  (the parent picker, the re-validation in app/api/wix/bookings) must
  *  filter on `.bookable` themselves — kept unfiltered here so the vendor
- *  calendar can also show already-booked/blocked slots. */
+ *  calendar can also show already-booked/blocked slots.
+ *
+ *  `localStartDate`/`localEndDate` are naive wall-clock strings with no UTC
+ *  offset — confirmed empirically that they're in the *site's own configured
+ *  business timezone* (the response's own `timeZone` field, e.g.
+ *  "Asia/Kolkata" for a vendor who set their Wix site up from India),
+ *  regardless of the `timezone` request param below: passing `'UTC'` there
+ *  does not make Wix return UTC-normalized values — a real Wix site
+ *  returned "11:00:00" for an 11:00 AM Kolkata slot either way. Sent anyway
+ *  in case some accounts do honor it; every caller must treat the response's
+ *  `timeZone` field, not this param, as ground truth (see
+ *  {@link wixLocalToUtcIso}). Only correct for storage/display when
+ *  converted through that — the raw strings are still exactly what Wix's
+ *  own create-booking call expects back, so they're deliberately left
+ *  untouched here rather than pre-converted. */
 export async function fetchWixAvailability(creds: WixCredentials, serviceId: string, days = 7): Promise<WixTimeSlot[]> {
   const now = new Date();
   const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const localDate = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, '');
 
-  const data = await wixFetch<{ timeSlots?: WixTimeSlot[] }>(creds, '/_api/service-availability/v2/time-slots', {
+  const data = await wixFetch<{ timeSlots?: WixTimeSlot[]; timeZone?: string }>(creds, '/_api/service-availability/v2/time-slots', {
     serviceId,
     fromLocalDate: localDate(now),
     toLocalDate: localDate(to),
     timezone: 'UTC',
   });
-  return data.timeSlots ?? [];
+  const timeZone = data.timeZone ?? 'UTC';
+  return (data.timeSlots ?? []).map((s) => ({ ...s, timeZone }));
 }
 
 export interface WixClassSession {
