@@ -1615,7 +1615,11 @@ function ActivityDetailPage() {
         </div>
         <aside className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:col-start-2 lg:row-start-1">
             {activity.price != null ? (
-              <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
+              Number(activity.price) <= 0 ? (
+                <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
+              ) : (
+                <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
+              )
             ) : (
               <>
                 <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>

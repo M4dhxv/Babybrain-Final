@@ -9,6 +9,7 @@ import {
   createWixBooking,
   createWixClassBooking,
   decodeWixSlotKey,
+  wixServicePrice,
   type WixCredentials,
   type WixService,
   type WixLocation,
@@ -21,14 +22,18 @@ import {
  *
  * Safe to call repeatedly — matched on (provider_id, wix_service_id), so a
  * re-sync after new Wix services are added only creates the new ones.
- * Existing rows only get their name/resource kept in step; whatever the
- * vendor has since edited (category, age range, price, description,
- * publish state) is left alone rather than being silently overwritten.
+ * Existing rows only get their name/resource/price kept in step; whatever
+ * the vendor has since edited (category, age range, description, publish
+ * state) is left alone rather than being silently overwritten. Price is the
+ * one exception that *is* kept in step on every sync, same as location —
+ * Wix stays the source of truth for it, same as a vendor's actual Wix
+ * dashboard. It's only overwritten when Wix has a definite number to give
+ * (a fixed price, or free); see {@link wixServicePrice}.
  *
  * New rows land unpublished (activities.is_published defaults to false) —
- * imported straight from Wix, a listing has no category, age range or
- * price a parent could search by, so it needs a vendor's review before it
- * goes live on the marketplace.
+ * imported straight from Wix, a listing has no category or age range a
+ * parent could search by, so it needs a vendor's review before it goes live
+ * on the marketplace.
  */
 
 export interface WixServiceSyncResult {
@@ -166,6 +171,10 @@ export async function syncWixServicesToActivities(
     const { locationId, address, postalCode } = await resolveWixServiceLocation(
       admin, providerId, service, wixLocationsById, locationCache
     );
+    // null means Wix has no single number for this service (varied/custom
+    // rate) — leave whatever price is already on the activity alone rather
+    // than blanking out a vendor-entered value.
+    const price = wixServicePrice(service);
 
     if (existing) {
       await admin
@@ -177,6 +186,7 @@ export async function syncWixServicesToActivities(
           location_id: locationId,
           address,
           postal_code: postalCode,
+          ...(price != null ? { price } : {}),
         })
         .eq('id', existing.id);
       result.updated++;
@@ -193,7 +203,7 @@ export async function syncWixServicesToActivities(
       slug,
       title: service.name,
       description:
-        'Imported from Wix. Finish this listing — category, age range, price and description — then publish it when ready.',
+        'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.',
       category_id: category.id,
       provider_id: providerId,
       is_published: false,
@@ -203,6 +213,7 @@ export async function syncWixServicesToActivities(
       location_id: locationId,
       address,
       postal_code: postalCode,
+      price,
     });
     if (error) {
       result.skipped.push({ name: service.name, reason: error.message });
