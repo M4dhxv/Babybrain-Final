@@ -498,3 +498,94 @@ export async function fetchWixBusyRanges(creds: WixCredentials, days = 14): Prom
 
   return [...bookingRanges, ...sessionRanges];
 }
+
+export interface WixEvent {
+  id: string;
+  title: string;
+  slug: string;
+  status: string; // UPCOMING | STARTED | ENDED | CANCELED | DRAFT
+  startDate: string; // ISO timestamp
+  endDate: string; // ISO timestamp
+  timeZoneId?: string;
+  location: {
+    name: string | null;
+    type: string | null; // VENUE | ONLINE
+    city: string | null;
+    formattedAddress: string | null;
+    locationTbd: boolean;
+  };
+  mainImageUrl: string | null;
+}
+
+/** Wix Events & Tickets — a separate Wix app/API from Bookings (everything
+ *  else in this file), with its own `SCOPE.DC-EVENTS.READ-EVENTS`
+ *  permission on the API key and its own install requirement on the site.
+ *  A vendor connected for Bookings only won't have either, so this throws
+ *  the same {@link WixApiError} as everything else here on a 403/404 —
+ *  callers that want to treat "no Events access" as empty rather than a
+ *  hard failure should catch it themselves, same as {@link fetchWixLocations}
+ *  is already handled at its call site in lib/wix/sync.ts.
+ *
+ * Status and the `days` date-range are both applied client-side, not via
+ * the query's own `filter` — confirmed empirically against a real Events
+ * site that Wix's date-range filter operators reject
+ * `dateAndTimeSettings.startDate` ("invalid for field start of type
+ * DateTime") despite that being the field name the API's own docs list as
+ * filterable; sorting and unfiltered paging both work fine, so this fetches
+ * the account's events (up to the 100-row page size) and narrows down
+ * after the fact instead of fighting that filter's real syntax. Draft
+ * events are excluded server-side (the query's `includeDrafts` defaults to
+ * false); cancelled ones and anything outside `days` are excluded here. */
+export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<WixEvent[]> {
+  const now = new Date();
+  const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  interface RawEvent {
+    id: string;
+    title: string;
+    slug: string;
+    status: string;
+    dateAndTimeSettings?: { startDate?: string; endDate?: string; timeZoneId?: string };
+    location?: {
+      name?: string;
+      type?: string;
+      locationTbd?: boolean;
+      address?: { city?: string; formattedAddress?: string };
+    };
+    mainImage?: { url?: string };
+  }
+
+  const data = await wixFetch<{ events?: RawEvent[] }>(creds, '/events/v3/events/query', {
+    query: {
+      paging: { limit: 100 },
+      sort: [{ fieldName: 'dateAndTimeSettings.startDate', order: 'ASC' }],
+    },
+  });
+
+  return (data.events ?? [])
+    .filter((e) => e.status !== 'CANCELED')
+    .filter((e) => {
+      const start = e.dateAndTimeSettings?.startDate;
+      const end = e.dateAndTimeSettings?.endDate;
+      if (!start || !end) return false;
+      const startMs = new Date(start).getTime();
+      return startMs >= now.getTime() && startMs <= to.getTime();
+    })
+    .map((e) => ({
+      id: e.id,
+      title: e.title,
+      slug: e.slug,
+      status: e.status,
+      startDate: e.dateAndTimeSettings!.startDate!,
+      endDate: e.dateAndTimeSettings!.endDate!,
+      timeZoneId: e.dateAndTimeSettings?.timeZoneId,
+      location: {
+        name: e.location?.name ?? null,
+        type: e.location?.type ?? null,
+        city: e.location?.address?.city ?? null,
+        formattedAddress: e.location?.address?.formattedAddress ?? null,
+        locationTbd: e.location?.locationTbd ?? false,
+      },
+      mainImageUrl: e.mainImage?.url ?? null,
+    }));
+}
