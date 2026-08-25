@@ -1510,21 +1510,23 @@ function ActivityDetailPage() {
       <main className="mx-auto grid max-w-[1180px] items-start gap-5 px-6 py-5 lg:grid-cols-[1fr_295px]">
         <div className="grid gap-5">
         <section className="grid gap-5 lg:grid-cols-[285px_1fr]">
-          <div>
+          <div className="flex flex-col">
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
-            <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
-            {activity.provider_name &&
-              activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
-                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
-                  <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
-                </p>
+            <div className="flex flex-1 flex-col justify-center">
+              <h1 className="text-[29px] font-black">{activity.title}</h1>
+              {activity.provider_name &&
+                activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
+                    <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
+                  </p>
+                )}
+              {activity.category_name && (
+                <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
               )}
-            {activity.category_name && (
-              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
-            )}
-            {activity.rating_count > 0 && (
-              <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
-            )}
+              {activity.rating_count > 0 && (
+                <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
+              )}
+            </div>
           </div>
           <div>
             <div className="relative">
