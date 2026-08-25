@@ -1586,7 +1586,7 @@ function ActivityDetailPage() {
                         <h3 className="font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
                       </div>
-                      <Button type="button" variant="blue" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                      <Button type="button" variant="pink" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
                         {buyingPack === p.id ? "…" : "Buy pack"}
                       </Button>
                     </div>
@@ -1640,7 +1640,7 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
             ) : (
-              <Button href={`/book?slug=${activity.slug}`} variant="blue" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              <Button href={`/book?slug=${activity.slug}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
                 a listing that books on the provider's own site has no chat to
@@ -1811,7 +1811,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
-      <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
+      <Button type="submit" variant="pink" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
 }
@@ -4678,7 +4678,7 @@ function PackageOption({
       {action && (
         <Button
           type="button"
-          variant="blue"
+          variant="pink"
           size="sm"
           className={action.busy ? "shrink-0 opacity-60" : "shrink-0"}
           onClick={() => {
