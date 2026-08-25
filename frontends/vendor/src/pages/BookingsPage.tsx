@@ -16,6 +16,10 @@ const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-y
 
 const sgDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+// YYYY-MM-DD in Singapore time — matches what a <input type="date"> both
+// stores and expects, so a session's calendar day (not just its UTC one,
+// which can differ around midnight SGT) can be compared against the filter.
+const sgDateKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const ageLabel = (m: number | null) => (m == null ? '' : m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
@@ -72,6 +76,24 @@ export default function BookingsPage() {
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
   const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
   const [sessionId, setSessionId] = useState<string>('');
+  // Narrows the session picker to one calendar day — useful once a Wix-linked
+  // activity's half-hourly slots push everything else off the (soonest-50)
+  // list. Empty string = no filter, matching <input type="date">'s own "no
+  // value" state.
+  const [dateFilter, setDateFilter] = useState('');
+  const filteredSessions = useMemo(
+    () => (dateFilter ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter) : sessions),
+    [sessions, dateFilter]
+  );
+  // Switching (or clearing) the date filter can leave the current selection
+  // out of view — jump to the first session that's still in it rather than
+  // showing a roster for a session no longer in the visible list.
+  useEffect(() => {
+    if (filteredSessions.length && !filteredSessions.some((s) => s.id === sessionId)) {
+      setSessionId(filteredSessions[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredSessions]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [selected, setSelected] = useState(0);
   const [search, setSearch] = useState('');
@@ -271,11 +293,26 @@ export default function BookingsPage() {
           <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
             <Baby className="w-4 h-4 text-[#C90044]" />
             <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="bg-transparent font-medium focus:outline-none">
-              {sessions.length === 0 && <option>No sessions yet</option>}
-              {sessions.map((s) => (
+              {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
+              {filteredSessions.map((s) => (
                 <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
               ))}
             </select>
+          </div>
+          <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
+            <CalendarDays className="w-4 h-4 text-[#C90044]" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="bg-transparent font-medium focus:outline-none"
+              aria-label="Filter sessions by date"
+            />
+            {dateFilter && (
+              <button onClick={() => setDateFilter('')} className="text-xs font-medium text-gray-400 hover:text-gray-600">
+                Clear
+              </button>
+            )}
           </div>
           {canManage && sessionId && (
             <button
