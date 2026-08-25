@@ -27,12 +27,13 @@ import {
  * Safe to call repeatedly — matched on (provider_id, wix_service_id), so a
  * re-sync after new Wix services are added only creates the new ones.
  * Existing rows only get their name/resource kept in step; whatever the
- * vendor has since edited (category, age range, description, publish state)
- * is left alone rather than being silently overwritten. Price and capacity
- * are the exceptions that *are* kept in step on every sync, same as
- * location — Wix stays the source of truth for them, same as a vendor's
- * actual Wix dashboard. Each is only overwritten when Wix has a definite
- * value to give; see {@link wixServicePrice} and {@link wixServiceCapacity}.
+ * vendor has since edited on BabyBrain itself (category, age range, publish
+ * state) is left alone rather than being silently overwritten. Price,
+ * capacity, location, photo and description are the exceptions that *are*
+ * kept in step on every sync — Wix stays the source of truth for them, same
+ * as a vendor's actual Wix dashboard. Each is only overwritten when Wix has
+ * a definite value to give; see {@link wixServicePrice} and
+ * {@link wixServiceCapacity}.
  *
  * New rows land unpublished (activities.is_published defaults to false) —
  * imported straight from Wix, a listing has no category or age range a
@@ -197,10 +198,16 @@ export async function syncWixServicesToActivities(
     // Same reasoning for capacity — null means Wix didn't give one (e.g. an
     // appointment service), so an existing vendor-set value is left alone.
     const capacity = wixServiceCapacity(service);
-    // Unlike description, the photo *is* kept in step on every sync — a
-    // vendor who updates their cover shot on Wix expects "Sync services" to
-    // pick it up, not just the very first import.
+    // The photo is kept in step on every sync — a vendor who updates their
+    // cover shot on Wix expects "Sync services" to pick it up, not just the
+    // very first import.
     const imageUrl = wixServiceImageUrl(service);
+    // Same for description, despite the comment this used to carry: a
+    // vendor editing their description on Wix (not on BabyBrain) expects a
+    // re-sync to bring the update in, same as the photo. Null (Wix has
+    // nothing to give) leaves whatever's already stored alone rather than
+    // blanking it — the placeholder below is only ever used on first import.
+    const wixDescription = service.description?.trim() || null;
 
     if (existing) {
       await admin
@@ -215,6 +222,7 @@ export async function syncWixServicesToActivities(
           ...(price != null ? { price } : {}),
           ...(capacity != null ? { default_capacity: capacity } : {}),
           ...(imageUrl ? { image_urls: [imageUrl] } : {}),
+          ...(wixDescription ? { description: wixDescription } : {}),
           // Wix knows about this service again (this fetch found it), so any
           // earlier "gone missing" flag no longer applies.
           wix_missing_since: null,
@@ -231,13 +239,10 @@ export async function syncWixServicesToActivities(
     }
 
     const slug = `${slugify(service.name)}-${service.id.slice(0, 6)}`;
-    // Wix's own description, if the vendor wrote one on their end — saves
-    // re-typing it here. Only used on first import: like category/age range,
-    // description is the vendor's to edit afterwards, so a re-sync never
-    // overwrites it (see the reconciliation pass below, which touches
-    // neither). Falls back to the old placeholder when Wix has nothing.
+    // Falls back to the old placeholder only here, on first import — a
+    // re-sync above always prefers a real Wix description once one exists.
     const description =
-      service.description?.trim() ||
+      wixDescription ||
       'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.';
     const { error } = await admin.from('activities').insert({
       slug,
