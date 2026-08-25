@@ -875,14 +875,9 @@ function EmailCapturePopup() {
           </div>
         ) : (
           <>
-            {/* This captures a plain mailing-list signup, and everyone who
-                lands here is on Free — where curated, child-matched picks are
-                not included. So the copy promises only what Free gives: word
-                of new listings. Anything about "curated for your little one"
-                belongs on the Plus card, not here. */}
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-cta"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
-            <h2 className="text-2xl font-black leading-tight">Hear about new activities first</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll let you know as new classes, play spaces and holiday camps are added to BabyBrain — no spam, unsubscribe anytime.</p>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-cta"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
+            <h2 className="text-2xl font-black leading-tight">Explore activities for your little one</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email to find classes, playspaces, holiday camps and more that meet your exact needs.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
               <input
                 type="email"
@@ -893,7 +888,7 @@ function EmailCapturePopup() {
                 className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Keep me posted"}</Button>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Get started"}</Button>
             </form>
             <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
           </>
@@ -5506,14 +5501,15 @@ function AboutPage() {
             <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">We curate options based on your children's age, interests and your location, making it quicker and easier to find great activities and less overwhelming to adjust plans when the schedule changes.</p>
             <Button href="/explore" className="mt-6">Explore →</Button>
           </div>
-          {/* Square source (see scripts/hide-face.py) — the frame matches so
-              nothing is cropped away. */}
+          {/* Portrait source cropped into the square frame — positioned low
+              (10% from top) so Katie's head clears the top edge instead of
+              the default center-crop cutting into her hair. */}
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/about-family.jpg`}
             alt="Katie, BabyBrain's founder, holding her son"
             width={1000}
             height={1000}
-            className="relative z-10 mx-auto aspect-square w-full max-w-[460px] rounded-[24px] object-cover shadow-soft"
+            className="relative z-10 mx-auto aspect-square w-full max-w-[460px] rounded-[24px] object-cover object-[50%_10%] shadow-soft"
           />
         </section>
 
