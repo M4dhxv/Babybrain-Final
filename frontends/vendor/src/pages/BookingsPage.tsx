@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
@@ -81,6 +81,7 @@ export default function BookingsPage() {
   // list. Empty string = no filter, matching <input type="date">'s own "no
   // value" state.
   const [dateFilter, setDateFilter] = useState('');
+  const dateFilterRef = useRef<HTMLInputElement>(null);
   const filteredSessions = useMemo(
     () => (dateFilter ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter) : sessions),
     [sessions, dateFilter]
@@ -298,14 +299,20 @@ export default function BookingsPage() {
                 <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
               ))}
             </select>
-          </div>
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-            <CalendarDays className="w-4 h-4 text-[#C90044]" />
+            <div className="h-4 w-px bg-gray-200" />
+            {/* The input's own native picker-indicator icon is hidden — this
+                icon opens the same picker instead, so there's only one
+                calendar symbol instead of two. */}
+            <CalendarDays
+              className="w-4 h-4 text-[#C90044] cursor-pointer"
+              onClick={() => dateFilterRef.current?.showPicker?.()}
+            />
             <input
+              ref={dateFilterRef}
               type="date"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="bg-transparent font-medium focus:outline-none"
+              className="bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden"
               aria-label="Filter sessions by date"
             />
             {dateFilter && (
