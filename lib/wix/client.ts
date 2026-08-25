@@ -112,16 +112,25 @@ export interface WixService {
   payment?: {
     rateType?: string; // FIXED | CUSTOM | VARIED | NO_FEE | SUBSCRIPTION
     fixed?: { price?: { value?: string; currency?: string } };
+    // Wix's own representative price for a per-variant rate (e.g. a camp
+    // priced 99-459 depending on which week/add-ons) — not necessarily what
+    // every booking costs, but the closest thing to a single number Wix has.
+    varied?: { defaultPrice?: { value?: string; currency?: string } };
   };
+  defaultCapacity?: number;
 }
 
 /** The service's price in the service's own currency, or:
  *  - `0` for a NO_FEE service (parent-facing pages render 0 as "Free")
- *  - `null` when Wix has no single number to give — VARIED (depends on a
- *    variant), CUSTOM (a free-text rate like "Contact us"), SUBSCRIPTION, or
- *    a missing/malformed `payment` block. Callers should leave whatever
- *    price is already on the activity alone in this case rather than
- *    clobbering a vendor-entered value with nothing. */
+ *  - Wix's own `defaultPrice` for a VARIED service (the real price still
+ *    depends on which variant a customer picks — this is a representative
+ *    starting point, same as what Wix's own dashboard shows as the
+ *    service's price)
+ *  - `null` when Wix has no number to give at all — CUSTOM (a free-text
+ *    rate like "Contact us"), SUBSCRIPTION, or a missing/malformed
+ *    `payment` block. Callers should leave whatever price is already on
+ *    the activity alone in this case rather than clobbering a
+ *    vendor-entered value with nothing. */
 export function wixServicePrice(service: WixService): number | null {
   const rateType = service.payment?.rateType;
   if (rateType === 'NO_FEE') return 0;
@@ -129,7 +138,20 @@ export function wixServicePrice(service: WixService): number | null {
     const value = Number(service.payment?.fixed?.price?.value);
     return Number.isFinite(value) ? value : null;
   }
+  if (rateType === 'VARIED') {
+    const value = Number(service.payment?.varied?.defaultPrice?.value);
+    return Number.isFinite(value) ? value : null;
+  }
   return null;
+}
+
+/** The service's default booking capacity, or `null` when Wix doesn't
+ *  return one (an appointment service, or a class/course that's never had
+ *  it set) — callers should leave whatever capacity is already on the
+ *  activity alone in this case, same reasoning as {@link wixServicePrice}. */
+export function wixServiceCapacity(service: WixService): number | null {
+  const value = service.defaultCapacity;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export interface WixResource {

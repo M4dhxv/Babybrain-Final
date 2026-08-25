@@ -10,6 +10,7 @@ import {
   createWixClassBooking,
   decodeWixSlotKey,
   wixServicePrice,
+  wixServiceCapacity,
   type WixCredentials,
   type WixService,
   type WixLocation,
@@ -24,13 +25,13 @@ import {
  *
  * Safe to call repeatedly — matched on (provider_id, wix_service_id), so a
  * re-sync after new Wix services are added only creates the new ones.
- * Existing rows only get their name/resource/price kept in step; whatever
- * the vendor has since edited (category, age range, description, publish
- * state) is left alone rather than being silently overwritten. Price is the
- * one exception that *is* kept in step on every sync, same as location —
- * Wix stays the source of truth for it, same as a vendor's actual Wix
- * dashboard. It's only overwritten when Wix has a definite number to give
- * (a fixed price, or free); see {@link wixServicePrice}.
+ * Existing rows only get their name/resource kept in step; whatever the
+ * vendor has since edited (category, age range, description, publish state)
+ * is left alone rather than being silently overwritten. Price and capacity
+ * are the exceptions that *are* kept in step on every sync, same as
+ * location — Wix stays the source of truth for them, same as a vendor's
+ * actual Wix dashboard. Each is only overwritten when Wix has a definite
+ * value to give; see {@link wixServicePrice} and {@link wixServiceCapacity}.
  *
  * New rows land unpublished (activities.is_published defaults to false) —
  * imported straight from Wix, a listing has no category or age range a
@@ -192,6 +193,9 @@ export async function syncWixServicesToActivities(
     // rate) — leave whatever price is already on the activity alone rather
     // than blanking out a vendor-entered value.
     const price = wixServicePrice(service);
+    // Same reasoning for capacity — null means Wix didn't give one (e.g. an
+    // appointment service), so an existing vendor-set value is left alone.
+    const capacity = wixServiceCapacity(service);
 
     if (existing) {
       await admin
@@ -204,6 +208,7 @@ export async function syncWixServicesToActivities(
           address,
           postal_code: postalCode,
           ...(price != null ? { price } : {}),
+          ...(capacity != null ? { default_capacity: capacity } : {}),
           // Wix knows about this service again (this fetch found it), so any
           // earlier "gone missing" flag no longer applies.
           wix_missing_since: null,
@@ -235,6 +240,7 @@ export async function syncWixServicesToActivities(
       address,
       postal_code: postalCode,
       price,
+      default_capacity: capacity,
     });
     if (error) {
       result.skipped.push({ name: service.name, reason: error.message });
