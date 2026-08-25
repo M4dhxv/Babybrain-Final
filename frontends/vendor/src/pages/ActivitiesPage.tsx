@@ -311,7 +311,7 @@ export default function ActivitiesPage() {
       .filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
     if (fStatus) {
       list = list.filter((a) => {
-        const s = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+        const s = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
         return s === fStatus;
       });
     }
@@ -342,7 +342,7 @@ export default function ActivitiesPage() {
     { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
     { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
-    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a)).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
 
   async function archive(id: string) {
@@ -451,6 +451,10 @@ export default function ActivitiesPage() {
   }
 
   async function togglePublish(a: Activity) {
+    // Locked while Wix has lost track of this service (wrong/changed
+    // account, or deleted on Wix) — reconnecting the right account, or the
+    // service reappearing, is what clears this on the next sync.
+    if (a.wix_missing_since) return;
     await supabase.from('activities').update({ is_published: !a.is_published, archived_at: null }).eq('id', a.id);
     setShowMenu(null);
     load();
@@ -563,7 +567,7 @@ export default function ActivitiesPage() {
           <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
               <option value="">All Status</option>
-              {['Live', 'Draft', 'Archived'].map((s) => <option key={s} value={s}>{s}</option>)}
+              {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={filterCls}>
               <option value="">All Locations</option>
@@ -610,7 +614,7 @@ export default function ActivitiesPage() {
             <div className="px-5 py-10 text-center text-sm text-gray-400">No activities yet. Create your first one.</div>
           )}
           {visible.map((a) => {
-            const status = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+            const status = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
             return (
               <div
                 key={a.id}
@@ -646,9 +650,12 @@ export default function ActivitiesPage() {
                 <div className="flex flex-col items-start gap-1">
                   <span className={cn(
                     'inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full',
-                    status === 'Live' ? 'bg-green-300 text-green-800' : status === 'Draft' ? 'bg-yellow-300 text-yellow-800' : 'bg-gray-100 text-gray-600'
-                  )}>
-                    <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : 'bg-gray-400')} />
+                    status === 'Live' ? 'bg-green-300 text-green-800'
+                      : status === 'Draft' ? 'bg-yellow-300 text-yellow-800'
+                      : status === 'Removed' ? 'bg-red-100 text-red-700'
+                      : 'bg-gray-100 text-gray-600'
+                  )} title={status === 'Removed' ? "Not found on the currently connected Wix account — reconnect the right account, or re-add this service, to restore it." : undefined}>
+                    <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : status === 'Removed' ? 'bg-red-500' : 'bg-gray-400')} />
                     {status}
                   </span>
                   {a.bookings_paused && (
@@ -672,7 +679,12 @@ export default function ActivitiesPage() {
                         <Clock className="w-3.5 h-3.5" />
                         Manage schedule
                       </button>
-                      <button onClick={() => togglePublish(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                      <button
+                        onClick={() => togglePublish(a)}
+                        disabled={!!a.wix_missing_since}
+                        title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
                         <CalendarCheck className="w-3.5 h-3.5" />
                         {a.is_published ? 'Unpublish' : 'Publish'}
                       </button>

@@ -36,12 +36,27 @@ import {
  * imported straight from Wix, a listing has no category or age range a
  * parent could search by, so it needs a vendor's review before it goes live
  * on the marketplace.
+ *
+ * Also reconciles which already-linked activities Wix still actually knows
+ * about: any activity whose wix_service_id isn't in this fetch gets marked
+ * `wix_missing_since` (and force-unpublished) — covers both a service
+ * deleted on Wix and the vendor swapping in an API key for a different
+ * site/account. Unlike {@link unlinkWixActivities}, this never clears
+ * wix_service_id, so the very next sync that finds the same id again (the
+ * right account gets reconnected, or the service comes back) clears it
+ * automatically — see the reconciliation pass at the end of this function.
  */
 
 export interface WixServiceSyncResult {
   created: number;
   updated: number;
   skipped: { name: string; reason: string }[];
+  /** Previously-linked activities whose wix_service_id disappeared from this
+   *  fetch — now `wix_missing_since`-flagged and unpublished. */
+  removed: number;
+  /** The reverse: activities that were `wix_missing_since`-flagged and whose
+   *  service reappeared in this fetch — flag cleared. */
+  revived: number;
 }
 
 /** A Wix service carries its own address via `service.locations` (its
@@ -136,7 +151,7 @@ export async function syncWixServicesToActivities(
     .limit(1)
     .single();
 
-  const result: WixServiceSyncResult = { created: 0, updated: 0, skipped: [] };
+  const result: WixServiceSyncResult = { created: 0, updated: 0, skipped: [], removed: 0, revived: 0 };
 
   // The "Import specific activities" picker calls this with onlyServiceIds
   // set to just the services a vendor checked, instead of every service on
@@ -161,7 +176,7 @@ export async function syncWixServicesToActivities(
 
     const { data: existing } = await admin
       .from('activities')
-      .select('id')
+      .select('id, wix_missing_since')
       .eq('provider_id', providerId)
       .eq('wix_service_id', service.id)
       .maybeSingle();
@@ -189,8 +204,12 @@ export async function syncWixServicesToActivities(
           address,
           postal_code: postalCode,
           ...(price != null ? { price } : {}),
+          // Wix knows about this service again (this fetch found it), so any
+          // earlier "gone missing" flag no longer applies.
+          wix_missing_since: null,
         })
         .eq('id', existing.id);
+      if (existing.wix_missing_since) result.revived++;
       result.updated++;
       continue;
     }
@@ -222,6 +241,32 @@ export async function syncWixServicesToActivities(
       continue;
     }
     result.created++;
+  }
+
+  // Anything still linked (wix_service_id set) that this fetch didn't
+  // return is no longer on the account BabyBrain is actually connected to
+  // right now — either deleted on Wix, or (the case that prompted this)
+  // the vendor swapped in an API key for a different site. `services` here
+  // is always the *complete* fetch regardless of `onlyServiceIds` (that
+  // option only filters which ones get created/updated above), so this
+  // reconciliation is accurate even from the "import specific activities"
+  // picker's save. Sessions/bookings are left completely alone — only
+  // wix_missing_since and is_published change.
+  const fetchedServiceIds = new Set(services.map((s) => s.id));
+  const { data: linked } = await admin
+    .from('activities')
+    .select('id, wix_service_id')
+    .eq('provider_id', providerId)
+    .not('wix_service_id', 'is', null)
+    .is('wix_missing_since', null);
+  for (const act of linked ?? []) {
+    if (act.wix_service_id && !fetchedServiceIds.has(act.wix_service_id)) {
+      await admin
+        .from('activities')
+        .update({ wix_missing_since: new Date().toISOString(), is_published: false })
+        .eq('id', act.id);
+      result.removed++;
+    }
   }
 
   return result;

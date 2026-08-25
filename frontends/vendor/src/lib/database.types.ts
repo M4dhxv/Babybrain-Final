@@ -188,6 +188,7 @@ export type Database = {
           wix_resource_id: string | null;
           wix_service_type: string | null;
           wix_removed_at: string | null;
+          wix_missing_since: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -226,6 +227,7 @@ export type Database = {
           archived_at?: string | null;
           boosted_until?: string | null;
           wix_removed_at?: string | null;
+          wix_missing_since?: string | null;
         };
               Relationships: [
           {

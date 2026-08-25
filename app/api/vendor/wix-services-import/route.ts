@@ -45,10 +45,13 @@ export async function POST(request: Request) {
 
     const sync = toAdd.length
       ? await syncWixServicesToActivities(admin, providerId, creds, { onlyServiceIds: toAdd })
-      : { created: 0, updated: 0, skipped: [] };
-    const removed = toRemove.length ? await unlinkWixActivities(admin, providerId, toRemove) : 0;
+      : { created: 0, updated: 0, skipped: [], removed: 0, revived: 0 };
+    // Distinct from `sync.removed` (services the reconciliation pass inside
+    // syncWixServicesToActivities found missing from the account entirely) —
+    // `unlinked` is a vendor's own deliberate uncheck in this picker.
+    const unlinked = toRemove.length ? await unlinkWixActivities(admin, providerId, toRemove) : 0;
 
-    return NextResponse.json({ ok: true, sync: { ...sync, removed } });
+    return NextResponse.json({ ok: true, sync: { ...sync, unlinked } });
   } catch (e) {
     console.error('Wix selective import failed', e);
     return NextResponse.json({ error: 'Could not reach Wix' }, { status: 502 });

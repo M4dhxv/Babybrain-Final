@@ -516,12 +516,14 @@ function WixIntegrationManager({
     return e instanceof Error ? e.message : fallback;
   }
 
-  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number }) {
+  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number; revived?: number; unlinked?: number }) {
     const parts = [];
     if (sync.created) parts.push(`${sync.created} new`);
     if (sync.updated) parts.push(`${sync.updated} updated`);
+    if (sync.revived) parts.push(`${sync.revived} restored`);
     if (sync.removed) parts.push(`${sync.removed} removed`);
-    if (!sync.created && !sync.updated && !sync.removed) parts.push('nothing new');
+    if (sync.unlinked) parts.push(`${sync.unlinked} unlinked`);
+    if (!sync.created && !sync.updated && !sync.removed && !sync.revived && !sync.unlinked) parts.push('nothing new');
     let text = `Synced from Wix: ${parts.join(', ')}.`;
     if (sync.skipped.length) {
       text += ` ${sync.skipped.length} skipped — ${sync.skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
@@ -558,7 +560,7 @@ function WixIntegrationManager({
     setError(null);
     setNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[] } }>(
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
         '/api/vendor/wix-integration',
         { provider_id: provider.id, wix_site_id: siteId.trim(), wix_api_key: apiKey.trim() }
       );
@@ -579,7 +581,7 @@ function WixIntegrationManager({
     setError(null);
     setNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[] } }>(
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
         '/api/vendor/wix-services-sync',
         { provider_id: provider.id }
       );
@@ -648,7 +650,7 @@ function WixIntegrationManager({
     setImportError(null);
     setImportNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; skipped: { name: string; reason: string }[] } }>(
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number; unlinked: number } }>(
         '/api/vendor/wix-services-import',
         { provider_id: provider.id, service_ids: Array.from(selectedIds) }
       );

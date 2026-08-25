@@ -2761,6 +2761,7 @@ function ProfilePage() {
             allow_cancellation: boolean; allow_rescheduling: boolean;
             cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
             wix_removed_at: string | null;
+            wix_missing_since: string | null;
           } | null;
         } | null;
       }>;
@@ -2789,7 +2790,7 @@ function ProfilePage() {
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
-              removed: act?.wix_removed_at != null,
+              removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
             };
           })
         );
