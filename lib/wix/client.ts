@@ -222,7 +222,7 @@ export async function fetchWixResources(creds: WixCredentials): Promise<WixResou
  *  (the parent picker, the re-validation in app/api/wix/bookings) must
  *  filter on `.bookable` themselves — kept unfiltered here so the vendor
  *  calendar can also show already-booked/blocked slots. */
-export async function fetchWixAvailability(creds: WixCredentials, serviceId: string, days = 14): Promise<WixTimeSlot[]> {
+export async function fetchWixAvailability(creds: WixCredentials, serviceId: string, days = 7): Promise<WixTimeSlot[]> {
   const now = new Date();
   const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const localDate = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, '');
@@ -253,7 +253,7 @@ export interface WixClassSession {
  *  here isn't scoped by serviceId server-side — the query returns sessions
  *  for every service, each carrying `scheduleOwnerId` (= the service id),
  *  so we filter client-side. */
-export async function fetchWixClassSessions(creds: WixCredentials, serviceId: string, days = 14): Promise<WixClassSession[]> {
+export async function fetchWixClassSessions(creds: WixCredentials, serviceId: string, days = 7): Promise<WixClassSession[]> {
   const now = new Date();
   const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const iso = (d: Date) => d.toISOString();
