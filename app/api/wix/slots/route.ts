@@ -29,7 +29,7 @@ import {
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const activityId = params.get('activityId');
-  const days = Math.min(Math.max(Number(params.get('days')) || 7, 1), 60);
+  let days = Math.min(Math.max(Number(params.get('days')) || 7, 1), 60);
   if (!activityId) {
     return NextResponse.json({ error: 'activityId required' }, { status: 400 });
   }
@@ -44,6 +44,14 @@ export async function GET(request: Request) {
   if (!activity?.wix_service_id || !activity.provider_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
   }
+  // A COURSE (e.g. a holiday camp) is typically scheduled months ahead and
+  // gets viewed far less often than an APPOINTMENT/CLASS — every other
+  // caller here passes whatever near-term window is currently on screen
+  // (a week or a month), which routinely misses a course's one occurrence
+  // sitting 40-50 days out until someone happens to page the calendar that
+  // far forward. Always use the app's existing 60-day ceiling for courses
+  // instead, regardless of what the caller asked for.
+  if (activity.wix_service_type === 'COURSE') days = 60;
   const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
   if (!isClass && !activity.wix_resource_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });

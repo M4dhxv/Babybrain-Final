@@ -156,16 +156,30 @@ export default function BookingsPage() {
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const ids = [...map.keys()];
       if (!ids.length) { setSessions([]); setLoading(false); return; }
-      // Soonest-first, and never further back than now — a Wix-linked
-      // activity alone can generate hundreds of rows (30-min slots over
-      // weeks), so sorting the wrong way here silently pushed every
-      // near-term session out of the 50-row cap.
-      const { data: sess } = await supabase
-        .from('activity_sessions').select('id, starts_at, capacity, activity_id')
-        .in('activity_id', ids).gte('starts_at', new Date().toISOString())
-        .order('starts_at', { ascending: true }).limit(50);
-      const opts = (sess ?? []).map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
-      setSessionActivity(Object.fromEntries((sess ?? []).map((s) => [s.id, s.activity_id])));
+      // Capped per activity, not globally — a single high-frequency
+      // Wix-linked activity can generate hundreds of rows (30-min slots
+      // over weeks), which under one shared cap silently squeezed every
+      // other activity's sessions out entirely. A low-frequency one (a
+      // once-off course, a monthly class) could vanish from the picker
+      // even though it's genuinely upcoming. One query per activity,
+      // each capped, guarantees every activity gets a fair share.
+      const perActivityCap = 20;
+      const results = await Promise.all(
+        ids.map((id) =>
+          supabase
+            .from('activity_sessions')
+            .select('id, starts_at, capacity, activity_id')
+            .eq('activity_id', id)
+            .gte('starts_at', new Date().toISOString())
+            .order('starts_at', { ascending: true })
+            .limit(perActivityCap)
+        )
+      );
+      const sess = results
+        .flatMap((r) => r.data ?? [])
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+      const opts = sess.map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
+      setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
       setSessions(opts);
       // The Schedule tab deep-links here with ?session=, so a click on a
       // calendar session lands straight on its roster instead of whichever
