@@ -391,6 +391,39 @@ export async function createWixClassBooking(
   return confirmWixBooking(creds, data.booking);
 }
 
+export interface WixConfirmedBooking {
+  start: string; // ISO timestamp
+  end: string; // ISO timestamp
+}
+
+/** Real confirmed bookings against one APPOINTMENT service — the
+ *  unambiguous "a customer actually holds this exact time" signal, unlike
+ *  `WixTimeSlot.bookable`. Wix returns `bookable: false` for a slot for any
+ *  reason it won't offer that slot to a *new* customer right now — a real
+ *  booking, but also e.g. the service's own minimum-notice booking policy
+ *  blocking same-day slots, or the resource simply being off work. Treating
+ *  `!bookable` as "booked" (as the naive capacity math does) shows a vendor
+ *  their own booking-window policy as a phantom customer booking. Used by
+ *  /api/wix/slots to derive the vendor Schedule page's booked/Full count
+ *  instead. Doesn't affect what a parent can actually book — that path
+ *  filters on `bookable` directly, same as before. */
+export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials, serviceId: string): Promise<WixConfirmedBooking[]> {
+  interface RawBooking {
+    status: string;
+    startDate?: string;
+    endDate?: string;
+  }
+  const data = await wixFetch<{ bookings?: RawBooking[] }>(creds, '/bookings/v2/bookings/query', {
+    query: {
+      filter: { 'bookedEntity.slot.serviceId': serviceId },
+      paging: { limit: 100 },
+    },
+  });
+  return (data.bookings ?? [])
+    .filter((b) => b.status === 'CONFIRMED' && b.startDate && b.endDate)
+    .map((b) => ({ start: b.startDate!, end: b.endDate! }));
+}
+
 export interface WixBusyRange {
   start: string; // ISO timestamp
   end: string; // ISO timestamp

@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchWixAvailability, fetchWixClassSessions, encodeWixSlotKey, getProviderWixCredentials } from '@/lib/wix/client';
+import {
+  fetchWixAvailability,
+  fetchWixClassSessions,
+  fetchWixConfirmedAppointmentBookings,
+  encodeWixSlotKey,
+  getProviderWixCredentials,
+} from '@/lib/wix/client';
 
 /**
  * Live Wix availability for a Wix-linked activity. Used by the parent
@@ -79,7 +85,21 @@ export async function GET(request: Request) {
       });
     }
 
-    const slots = await fetchWixAvailability(creds, activity.wix_service_id, days);
+    const [slots, confirmedBookings] = await Promise.all([
+      fetchWixAvailability(creds, activity.wix_service_id, days),
+      // A slot's own `bookable` flag conflates "a customer holds this time"
+      // with every other reason Wix won't offer it to someone new (e.g. the
+      // service's minimum-notice booking policy blocking same-day slots) —
+      // cross-checking against real confirmed bookings is what actually
+      // tells the vendor Schedule page whether a slot is booked vs. simply
+      // not offered right now. Never blocks the availability fetch above.
+      fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
+    ]);
+    // `localStartDate` was requested (and is stored/keyed) as a UTC instant
+    // with no offset suffix — appending "Z" makes it parseable as the same
+    // absolute moment a confirmed booking's own ISO timestamp represents,
+    // so the two can be compared regardless of the site's local timezone.
+    const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
 
     if (slots.length > 0) {
       const { error: syncError } = await admin.from('activity_sessions').upsert(
@@ -88,7 +108,7 @@ export async function GET(request: Request) {
           starts_at: s.localStartDate,
           ends_at: s.localEndDate,
           capacity: 1,
-          wix_remaining_capacity: s.bookable ? 1 : 0,
+          wix_remaining_capacity: bookedStarts.has(new Date(`${s.localStartDate}Z`).toISOString()) ? 0 : 1,
           wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
         })),
         { onConflict: 'activity_id,wix_slot_key' }
