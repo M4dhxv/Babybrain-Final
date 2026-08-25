@@ -13,6 +13,8 @@ import {
   type WixCredentials,
   type WixService,
   type WixLocation,
+  type WixClassSession,
+  type WixTimeSlot,
 } from './client';
 
 /**
@@ -327,28 +329,49 @@ export interface WixContact {
   phone: string;
 }
 
-/**
- * Shared middle of every "book a Wix slot" flow, whichever way it's being
- * paid for: re-validates the slot against live Wix availability (never
- * trusts client-supplied slot times) to close the race where a slot fills
- * between the picker loading and "Book" being clicked, creates the real
- * booking in Wix, then materializes exactly one activity_sessions row for
- * it (find-or-create, keyed on wix_slot_key — a second parent booking the
- * same class occurrence must not reset capacity back to "before their
- * booking" on top of the first parent's already-counted seat).
- *
- * Callers only need to decide how the resulting local `bookings` row itself
- * gets created (a free booking, a Stripe-paid one, a package credit, ...).
- */
-export async function createWixBookingAndSession(
-  admin: SupabaseClient<Database>,
+/** Builds the contact BabyBrain hands to Wix when creating a booking on a
+ *  parent's behalf. Reads parent_profiles first, falling back to the auth
+ *  admin API for anything missing there — needed at Stripe-webhook time,
+ *  when there's no request-scoped session to read a logged-in user's email
+ *  from directly (unlike the free/credit booking routes, which have one). */
+export async function resolveWixContact(admin: SupabaseClient<Database>, userId: string): Promise<WixContact> {
+  const { data: parent } = await admin
+    .from('parent_profiles')
+    .select('full_name, email, phone')
+    .eq('id', userId)
+    .maybeSingle();
+  let email = parent?.email ?? '';
+  let fullName = parent?.full_name ?? '';
+  if (!email || !fullName) {
+    const { data: authUser } = await admin.auth.admin.getUserById(userId);
+    email = email || authUser.user?.email || '';
+    fullName = fullName || (authUser.user?.user_metadata?.full_name as string | undefined) || '';
+  }
+  const [firstName, ...rest] = (fullName || 'Parent').trim().split(/\s+/);
+  return {
+    firstName: firstName || 'Parent',
+    lastName: rest.join(' ') || '-',
+    email,
+    phone: parent?.phone || '',
+  };
+}
+
+type ResolvedWixSlot =
+  | { kind: 'class'; session: WixClassSession }
+  | { kind: 'appointment'; slot: WixTimeSlot };
+
+/** Re-validates a chosen slot against *live* Wix availability (never trusts
+ *  client-supplied slot times) to close the race where a slot fills between
+ *  the picker loading and "Book" being clicked — shared by both the
+ *  immediate booking path and the pre-payment reservation path below, since
+ *  both need this same check before doing anything else. */
+async function resolveWixSlot(
   creds: WixCredentials,
   activity: WixSlotActivity,
   wixSlotId: string,
-  contact: WixContact,
-  participants = 1
+  participants: number
 ): Promise<
-  | { ok: true; sessionId: string; wixBookingId: string }
+  | { ok: true; key: string; startsAt: string; endsAt: string; capacity: number; resolved: ResolvedWixSlot }
   | { ok: false; status: number; error: string }
 > {
   const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
@@ -368,11 +391,6 @@ export async function createWixBookingAndSession(
     return { ok: false, status: 400, error: 'Slot does not match this activity' };
   }
 
-  let startsAt: string;
-  let endsAt: string;
-  let capacity: number;
-  let wixBookingId: string;
-
   try {
     if (slotKey.kind === 'class') {
       const sessions = await fetchWixClassSessions(creds, activity.wix_service_id);
@@ -384,24 +402,97 @@ export async function createWixBookingAndSession(
           error: participants > 1 ? 'Not enough spots left for that many children' : 'That class is no longer available',
         };
       }
-      const booking = await createWixClassBooking(creds, session, contact, participants);
-      startsAt = session.start;
-      endsAt = session.end;
-      // The session's actual total capacity, not what's currently remaining
-      // — activity_sessions.capacity is meant to be the fixed seat count the
-      // local waitlist trigger compares bookings against.
-      capacity = session.capacity;
-      wixBookingId = booking.id;
+      return {
+        ok: true,
+        key,
+        startsAt: session.start,
+        endsAt: session.end,
+        // The session's actual total capacity, not what's currently remaining
+        // — activity_sessions.capacity is meant to be the fixed seat count
+        // the local waitlist trigger compares bookings against.
+        capacity: session.capacity,
+        resolved: { kind: 'class', session },
+      };
     } else {
       const available = await fetchWixAvailability(creds, activity.wix_service_id);
       const slot = available.find((s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e);
       if (!slot) {
         return { ok: false, status: 409, error: 'That slot is no longer available' };
       }
-      const booking = await createWixBooking(creds, slot, activity.wix_resource_id!, contact, participants);
-      startsAt = slot.localStartDate;
-      endsAt = slot.localEndDate;
-      capacity = 1;
+      return { ok: true, key, startsAt: slot.localStartDate, endsAt: slot.localEndDate, capacity: 1, resolved: { kind: 'appointment', slot } };
+    }
+  } catch (e) {
+    console.error('Wix availability check failed', e);
+    return { ok: false, status: 502, error: 'Could not reach Wix' };
+  }
+}
+
+/** Find-or-create the local activity_sessions row for a resolved slot, keyed
+ *  on wix_slot_key — a second parent booking the same class occurrence must
+ *  not reset capacity back to "before their booking" on top of the first
+ *  parent's already-counted seat. */
+async function ensureLocalWixSession(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  key: string,
+  startsAt: string,
+  endsAt: string,
+  capacity: number
+): Promise<string | null> {
+  const { data: existingSession } = await admin
+    .from('activity_sessions')
+    .select('id')
+    .eq('activity_id', activityId)
+    .eq('wix_slot_key', key)
+    .maybeSingle();
+  if (existingSession) return existingSession.id;
+
+  const { data: newSession, error } = await admin
+    .from('activity_sessions')
+    .insert({ activity_id: activityId, starts_at: startsAt, ends_at: endsAt, capacity, wix_slot_key: key })
+    .select('id')
+    .single();
+  if (error || !newSession) {
+    console.error('Failed to materialize the local Wix session', error);
+    return null;
+  }
+  return newSession.id;
+}
+
+/**
+ * Shared middle of every *immediate* "book a Wix slot" flow (free, or paid
+ * with a package credit): re-validates against live availability, creates
+ * the real booking in Wix, then materializes the local session. Also used
+ * to finalize a paid-by-Stripe booking once payment has actually succeeded
+ * (see /api/wix/bookings/checkout + the webhook's `wix_booking` handler) —
+ * at that point this does exactly what it does for a free booking, just
+ * later, so a real Wix reservation only ever gets made once BabyBrain is
+ * sure it'll be paid for.
+ *
+ * Callers only need to decide how the resulting local `bookings` row itself
+ * gets created (a free booking, a Stripe-paid one, a package credit, ...).
+ */
+export async function createWixBookingAndSession(
+  admin: SupabaseClient<Database>,
+  creds: WixCredentials,
+  activity: WixSlotActivity,
+  wixSlotId: string,
+  contact: WixContact,
+  participants = 1
+): Promise<
+  | { ok: true; sessionId: string; wixBookingId: string }
+  | { ok: false; status: number; error: string }
+> {
+  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants);
+  if (!resolved.ok) return resolved;
+
+  let wixBookingId: string;
+  try {
+    if (resolved.resolved.kind === 'class') {
+      const booking = await createWixClassBooking(creds, resolved.resolved.session, contact, participants);
+      wixBookingId = booking.id;
+    } else {
+      const booking = await createWixBooking(creds, resolved.resolved.slot, activity.wix_resource_id!, contact, participants);
       wixBookingId = booking.id;
     }
   } catch (e) {
@@ -409,30 +500,37 @@ export async function createWixBookingAndSession(
     return { ok: false, status: 502, error: 'Could not create the booking in Wix' };
   }
 
-  const { data: existingSession } = await admin
-    .from('activity_sessions')
-    .select('id')
-    .eq('activity_id', activity.id)
-    .eq('wix_slot_key', key)
-    .maybeSingle();
-  if (existingSession) {
-    return { ok: true, sessionId: existingSession.id, wixBookingId };
-  }
-
-  const { data: newSession, error: sessionError } = await admin
-    .from('activity_sessions')
-    .insert({
-      activity_id: activity.id,
-      starts_at: startsAt,
-      ends_at: endsAt,
-      capacity,
-      wix_slot_key: key,
-    })
-    .select('id')
-    .single();
-  if (sessionError || !newSession) {
-    console.error('Booked in Wix but failed to materialize the local session', wixBookingId, sessionError);
+  const sessionId = await ensureLocalWixSession(admin, activity.id, resolved.key, resolved.startsAt, resolved.endsAt, resolved.capacity);
+  if (!sessionId) {
+    console.error('Booked in Wix but failed to materialize the local session', wixBookingId);
     return { ok: false, status: 500, error: 'Booked in Wix but failed to save locally — contact support' };
   }
-  return { ok: true, sessionId: newSession.id, wixBookingId };
+  return { ok: true, sessionId, wixBookingId };
+}
+
+/**
+ * Pre-payment step for a paid Wix-linked class: confirms the slot is still
+ * live on Wix and ensures a local activity_sessions row exists for it to
+ * attach a pending `bookings` row to — but deliberately does NOT reserve
+ * anything on Wix itself yet. The real Wix reservation only happens once
+ * Stripe confirms payment (createWixBookingAndSession runs again then, see
+ * /api/wix/bookings/checkout), so a parent who starts checkout and never
+ * completes it never leaves a live unpaid hold on the vendor's Wix calendar.
+ */
+export async function reserveWixSlotForCheckout(
+  admin: SupabaseClient<Database>,
+  creds: WixCredentials,
+  activity: WixSlotActivity,
+  wixSlotId: string,
+  participants = 1
+): Promise<
+  | { ok: true; sessionId: string }
+  | { ok: false; status: number; error: string }
+> {
+  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants);
+  if (!resolved.ok) return resolved;
+
+  const sessionId = await ensureLocalWixSession(admin, activity.id, resolved.key, resolved.startsAt, resolved.endsAt, resolved.capacity);
+  if (!sessionId) return { ok: false, status: 500, error: 'Could not prepare this session — contact support' };
+  return { ok: true, sessionId };
 }

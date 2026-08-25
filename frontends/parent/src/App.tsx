@@ -4879,16 +4879,35 @@ function BookingPage() {
     } else if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
       // creating the booking there (and materializing the local session) is
-      // handled server-side.
+      // handled server-side. Paid → hand off to Stripe Checkout same as a
+      // native paid class; the real Wix reservation isn't made until the
+      // webhook confirms payment (see /api/wix/bookings/checkout). Free
+      // stays the direct, immediate booking it always was.
+      const wixBody = {
+        activityId: activity?.id,
+        wixSlotId: sessionId,
+        childId: bookChildId,
+        policiesAccepted: acceptedPolicies,
+        count,
+        ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+      };
+      if (activity?.price != null && Number(activity.price) > 0) {
+        try {
+          const { url } = await apiPost<{ url?: string }>("/api/wix/bookings/checkout", wixBody);
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not start payment");
+          return;
+        }
+        setBusy(false);
+        return;
+      }
       try {
-        const data = await apiPost<{ id: string; status: string }>("/api/wix/bookings", {
-          activityId: activity?.id,
-          wixSlotId: sessionId,
-          childId: bookChildId,
-          policiesAccepted: acceptedPolicies,
-          count,
-          ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
-        });
+        const data = await apiPost<{ id: string; status: string }>("/api/wix/bookings", wixBody);
         status = data.status;
       } catch (e) {
         setBusy(false);

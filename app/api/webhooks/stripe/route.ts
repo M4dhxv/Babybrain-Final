@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -143,6 +144,10 @@ export async function POST(request: Request) {
             stripe_payment_intent: (session.payment_intent as string) ?? null,
           })
           .eq('id', session.metadata.booking_id);
+      }
+
+      if (kind === 'wix_booking') {
+        await finalizeWixBookingCheckout(admin, session);
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {

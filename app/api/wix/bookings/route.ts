@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { createWixBookingAndSession } from '@/lib/wix/sync';
+import { createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
 
 /**
  * Parent books a Wix-sourced slot for free (no package, no payment — see
@@ -47,18 +47,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
   }
 
-  const { data: parent } = await admin
-    .from('parent_profiles')
-    .select('full_name, email, phone')
-    .eq('id', user.id)
-    .maybeSingle();
-  const [firstName, ...rest] = (parent?.full_name || user.email || 'Parent').trim().split(/\s+/);
-  const contact = {
-    firstName: firstName || 'Parent',
-    lastName: rest.join(' ') || '-',
-    email: parent?.email || user.email || '',
-    phone: parent?.phone || '',
-  };
+  const contact = await resolveWixContact(admin, user.id);
 
   const result = await createWixBookingAndSession(
     admin,

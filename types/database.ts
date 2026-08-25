@@ -496,6 +496,7 @@ export type Database = {
           payment_status?: PaymentStatus;
           amount?: number | null;
           stripe_payment_intent?: string | null;
+          wix_booking_id?: string | null;
         };
               Relationships: [
           {
