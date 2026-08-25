@@ -24,12 +24,12 @@ import {
  * picker's "spots left" number (id stays `wix:`-prefixed so booking still
  * routes through /api/wix/bookings).
  *
- * Query: ?activityId=<uuid>&days=<int, default 7>
+ * Query: ?activityId=<uuid>&days=<int, default 14>
  */
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const activityId = params.get('activityId');
-  let days = Math.min(Math.max(Number(params.get('days')) || 7, 1), 60);
+  let days = Math.min(Math.max(Number(params.get('days')) || 14, 1), 60);
   if (!activityId) {
     return NextResponse.json({ error: 'activityId required' }, { status: 400 });
   }
