@@ -163,6 +163,18 @@ export function wixServiceCapacity(service: WixService): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/** Bookings' `image.url` isn't actually a URL — it's either the bare Wix
+ *  Media filename (`d93c31_...~mv2.jpg`, as returned here) or, elsewhere in
+ *  Wix's APIs, a `wix:image://v1/<that same filename>/...` URI. Either way
+ *  the real, publicly-loadable photo lives at
+ *  `static.wixstatic.com/media/<filename>` — already-absolute http(s) URLs
+ *  are passed through untouched in case some account ever returns one. */
+function resolveWixMediaUrl(raw: string): string {
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const filename = raw.replace(/^wix:image:\/\/v1\//i, '').split('/')[0].split('#')[0];
+  return `https://static.wixstatic.com/media/${filename}`;
+}
+
 /** The service's cover photo, or `null` when Wix has none — mainMedia first
  *  (the photo a vendor picked as the cover), falling back to coverMedia then
  *  the first gallery item, since not every account's response populates all
@@ -172,7 +184,8 @@ export function wixServiceImageUrl(service: WixService): string | null {
     service.media?.mainMedia?.image?.url ??
     service.media?.coverMedia?.image?.url ??
     service.media?.items?.find((i) => i.image?.url)?.image?.url;
-  return url?.trim() || null;
+  const trimmed = url?.trim();
+  return trimmed ? resolveWixMediaUrl(trimmed) : null;
 }
 
 export interface WixResource {
