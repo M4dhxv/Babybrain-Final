@@ -681,9 +681,9 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
-        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
+        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
         Relationships: [];
       };
       package_purchases: {

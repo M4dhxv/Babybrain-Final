@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
+import { ChevronDown, Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -10,7 +10,7 @@ const tabs = ['Packs', 'Purchases'];
 
 type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
-  activity_id: string | null; validity_days: number | null;
+  activity_ids: string[] | null; validity_days: number | null;
   allowed_weekday: number | null; allowed_start_time: string | null;
 };
 type Purchase = {
@@ -19,7 +19,7 @@ type Purchase = {
   created_at: string; expires_at: string | null;
 };
 
-const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' };
+const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '' };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function PackagesPage() {
@@ -39,13 +39,14 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
 
   async function load() {
     if (!provider) return;
     setLoading(true);
     const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
       supabase.from('activities').select('id, title').eq('provider_id', provider.id).is('archived_at', null),
-      supabase.from('packages').select('id, name, credits, price_cents, active, activity_id, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
+      supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
       supabase.rpc('provider_package_purchases', { p_provider: provider.id }),
     ]);
     setActivities(acts ?? []);
@@ -69,7 +70,10 @@ export default function PackagesPage() {
 
   const packRestriction = (p: Pack) => {
     const parts: string[] = [];
-    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One activity');
+    if (p.activity_ids && p.activity_ids.length > 0) {
+      const names = p.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? 'one activity');
+      parts.push(names.length <= 2 ? names.join(' & ') : `${names.length} activities`);
+    }
     if (p.allowed_weekday != null) {
       const t = p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : '';
       parts.push(`${WEEKDAY_NAMES[p.allowed_weekday]}${t} only`);
@@ -89,7 +93,7 @@ export default function PackagesPage() {
       credits: String(p.credits),
       price: String(p.price_cents / 100),
       validity_days: p.validity_days != null ? String(p.validity_days) : '',
-      activity_id: p.activity_id ?? '',
+      activity_ids: p.activity_ids ?? [],
       allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
       allowed_start_time: p.allowed_start_time ?? '',
     });
@@ -131,7 +135,7 @@ export default function PackagesPage() {
       credits,
       price_cents: Math.round((price || 0) * 100),
       validity_days: packForm.validity_days ? Number(packForm.validity_days) : null,
-      activity_id: packForm.activity_id || null,
+      activity_ids: packForm.activity_ids.length ? packForm.activity_ids : null,
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
     };
@@ -143,6 +147,7 @@ export default function PackagesPage() {
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
     setEditingPackId(null);
     setPackForm(emptyPack);
+    setActivityPickerOpen(false);
     load();
   }
 
@@ -236,7 +241,7 @@ export default function PackagesPage() {
                   </button>
                   {editingPackId && (
                     <button
-                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
+                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); setActivityPickerOpen(false); }}
                       className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700"
                     >
                       Cancel
@@ -249,12 +254,55 @@ export default function PackagesPage() {
                   </p>
                 )}
                 <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to activity (optional)</label>
-                    <select value={packForm.activity_id} onChange={(e) => setPackForm({ ...packForm, activity_id: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                      <option value="">Any of my activities</option>
-                      {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-                    </select>
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to activities (optional)</label>
+                    <button
+                      type="button"
+                      onClick={() => setActivityPickerOpen((v) => !v)}
+                      className="flex h-9 w-56 items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm"
+                    >
+                      <span className="truncate text-left">
+                        {packForm.activity_ids.length === 0
+                          ? 'Any of my activities'
+                          : packForm.activity_ids.length <= 2
+                            ? packForm.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? '').join(' & ')
+                            : `${packForm.activity_ids.length} activities selected`}
+                      </span>
+                      <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                    </button>
+                    {activityPickerOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
+                        <div className="absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                          <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                            <input
+                              type="checkbox"
+                              checked={packForm.activity_ids.length === 0}
+                              onChange={() => setPackForm({ ...packForm, activity_ids: [] })}
+                            />
+                            Any of my activities
+                          </label>
+                          <div className="my-1 border-t border-gray-100" />
+                          {activities.map((a) => (
+                            <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                              <input
+                                type="checkbox"
+                                checked={packForm.activity_ids.includes(a.id)}
+                                onChange={(e) =>
+                                  setPackForm({
+                                    ...packForm,
+                                    activity_ids: e.target.checked
+                                      ? [...packForm.activity_ids, a.id]
+                                      : packForm.activity_ids.filter((id) => id !== a.id),
+                                  })
+                                }
+                              />
+                              <span className="truncate">{a.title}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to weekly slot (optional)</label>

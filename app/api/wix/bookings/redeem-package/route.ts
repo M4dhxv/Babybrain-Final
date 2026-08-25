@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   // Fail fast on an obviously-unusable credit before ever touching Wix.
   const { data: purchase } = await admin
     .from('package_purchases')
-    .select('id, provider_id, status, credits_remaining, expires_at, packages(activity_id)')
+    .select('id, provider_id, status, credits_remaining, expires_at, packages(activity_ids)')
     .eq('id', packagePurchaseId)
     .eq('user_id', user.id)
     .maybeSingle();
@@ -77,9 +77,9 @@ export async function POST(request: Request) {
   if (purchase.provider_id !== activity.provider_id) {
     return NextResponse.json({ error: "This package can only be used for its provider's classes" }, { status: 409 });
   }
-  const pkgActivityId = (purchase.packages as unknown as { activity_id: string | null } | null)?.activity_id;
-  if (pkgActivityId && pkgActivityId !== activityId) {
-    return NextResponse.json({ error: 'This package is limited to a specific class' }, { status: 409 });
+  const pkgActivityIds = (purchase.packages as unknown as { activity_ids: string[] | null } | null)?.activity_ids;
+  if (pkgActivityIds && pkgActivityIds.length > 0 && !pkgActivityIds.includes(activityId)) {
+    return NextResponse.json({ error: 'This package is limited to specific classes' }, { status: 409 });
   }
 
   const creds = await getProviderWixCredentials(admin, activity.provider_id);

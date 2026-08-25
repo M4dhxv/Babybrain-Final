@@ -788,7 +788,7 @@ export type Database = {
         Row: {
           id: string;
           provider_id: string;
-          activity_id: string | null;
+          activity_ids: string[] | null;
           name: string;
           credits: number;
           price_cents: number;
@@ -800,13 +800,13 @@ export type Database = {
         };
         Insert: {
           provider_id: string;
-          activity_id?: string | null;
+          activity_ids?: string[] | null;
           name: string;
           credits: number;
           price_cents: number;
           active?: boolean;
         };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null };
         Relationships: [];
       };
       package_purchases: {

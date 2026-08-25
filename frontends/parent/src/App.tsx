@@ -1419,12 +1419,12 @@ function ActivityDetailPage() {
     if (!activity?.provider_id) return;
     supabase
       .from("packages")
-      .select("id, name, credits, price_cents, activity_id")
+      .select("id, name, credits, price_cents, activity_ids")
       .eq("provider_id", activity.provider_id)
       .eq("active", true)
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
-        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
+        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
       });
   }, [activity?.provider_id, activity?.id]);
 
@@ -4704,7 +4704,7 @@ function BookingPage() {
   const [err, setErr] = useState<string | null>(null);
   type CreditPurchase = {
     id: string; remaining: number; expires_at: string | null;
-    activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null;
+    activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null;
   };
   const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
@@ -4744,12 +4744,12 @@ function BookingPage() {
     if (!activity?.provider_id) return;
     supabase
       .from("packages")
-      .select("id, name, credits, price_cents, activity_id")
+      .select("id, name, credits, price_cents, activity_ids")
       .eq("provider_id", activity.provider_id)
       .eq("active", true)
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
-        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
+        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
       });
   }, [activity?.provider_id, activity?.id]);
 
@@ -4772,7 +4772,7 @@ function BookingPage() {
     if (!auth || !activity?.provider_id) return;
     supabase
       .from("package_purchases")
-      .select("id, credits_remaining, expires_at, packages(activity_id, allowed_weekday, allowed_start_time)")
+      .select("id, credits_remaining, expires_at, packages(activity_ids, allowed_weekday, allowed_start_time)")
       .eq("provider_id", activity.provider_id)
       .eq("status", "active")
       .gt("credits_remaining", 0)
@@ -4780,7 +4780,7 @@ function BookingPage() {
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string; credits_remaining: number; expires_at: string | null;
-          packages: { activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
+          packages: { activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
         }>;
         setPurchases(
           rows
@@ -4789,7 +4789,7 @@ function BookingPage() {
               id: r.id,
               remaining: r.credits_remaining,
               expires_at: r.expires_at,
-              activity_id: r.packages?.activity_id ?? null,
+              activity_ids: r.packages?.activity_ids ?? null,
               allowed_weekday: r.packages?.allowed_weekday ?? null,
               allowed_start_time: r.packages?.allowed_start_time ?? null,
             }))
@@ -4800,7 +4800,7 @@ function BookingPage() {
   // 1.2: a credit is only offered when the package's restrictions match the
   // chosen class and session slot (e.g. "Monday 4:00 pm only").
   function creditMatches(p: CreditPurchase, sess: ActivitySession | null) {
-    if (p.activity_id && p.activity_id !== activity?.id) return false;
+    if (p.activity_ids && p.activity_ids.length > 0 && !p.activity_ids.includes(activity?.id ?? "")) return false;
     if (!sess) return p.allowed_weekday == null && !p.allowed_start_time;
     const sg = new Date(sess.starts_at);
     const sgWeekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
@@ -5277,7 +5277,7 @@ function BookingPage() {
                         {restrictedCredit && !packageCredit && (
                           <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
                             You have package credits with this provider, but they can't be used for this{" "}
-                            {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
+                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "class" : "session slot"} — check your package's designated class or weekly slot.
                           </p>
                         )}
                       </section>
