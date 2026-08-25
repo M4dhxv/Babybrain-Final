@@ -582,7 +582,8 @@ export default function ActivitiesPage() {
             </select>
             <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={filterCls}>
               <option value="">All activities</option>
-              {[...activities]
+              {activities
+                .filter((a) => !isFullyRemoved(a))
                 .sort((a, b) => a.title.localeCompare(b.title))
                 .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
             </select>
