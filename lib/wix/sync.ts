@@ -197,6 +197,10 @@ export async function syncWixServicesToActivities(
     // Same reasoning for capacity — null means Wix didn't give one (e.g. an
     // appointment service), so an existing vendor-set value is left alone.
     const capacity = wixServiceCapacity(service);
+    // Unlike description, the photo *is* kept in step on every sync — a
+    // vendor who updates their cover shot on Wix expects "Sync services" to
+    // pick it up, not just the very first import.
+    const imageUrl = wixServiceImageUrl(service);
 
     if (existing) {
       await admin
@@ -210,6 +214,7 @@ export async function syncWixServicesToActivities(
           postal_code: postalCode,
           ...(price != null ? { price } : {}),
           ...(capacity != null ? { default_capacity: capacity } : {}),
+          ...(imageUrl ? { image_urls: [imageUrl] } : {}),
           // Wix knows about this service again (this fetch found it), so any
           // earlier "gone missing" flag no longer applies.
           wix_missing_since: null,
@@ -234,10 +239,6 @@ export async function syncWixServicesToActivities(
     const description =
       service.description?.trim() ||
       'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.';
-    // Same reasoning as description — a starting point pulled from Wix, not
-    // kept in lockstep on later syncs, so a vendor who swaps in their own
-    // photo doesn't get it silently replaced on the next sync.
-    const imageUrl = wixServiceImageUrl(service);
     const { error } = await admin.from('activities').insert({
       slug,
       title: service.name,
