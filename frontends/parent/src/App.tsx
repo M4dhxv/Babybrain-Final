@@ -1178,16 +1178,23 @@ function ExplorePage() {
             </div>
           </section>
           <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
-            </div>
-            <div className="grid gap-2.5 xl:grid-cols-2">
-              {shown.map((activity) => (
-                <ActivityRow key={activity.id} activity={activity} />
-              ))}
-            </div>
-            {!loading && shown.length === 0 && (
-              <p className="mt-6 rounded-[12px] bg-[#FFF5F8] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+            {!loading && shown.length === 0 ? (
+              <div className="rounded-[12px] bg-[#FFF5F8] p-5 text-center font-bold text-black">
+                <p>No activities match these filters — try widening your search.</p>
+                <p className="mt-3">We are looking for quality providers in this space, if there is a vendor you would like to see listed here please let us know.</p>
+                <p className="mt-1"><a href="/contact" className="font-black text-baby-pink hover:underline">Contact us</a></p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
+                </div>
+                <div className="grid gap-2.5 xl:grid-cols-2">
+                  {shown.map((activity) => (
+                    <ActivityRow key={activity.id} activity={activity} />
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </div>
