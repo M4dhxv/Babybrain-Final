@@ -104,6 +104,7 @@ export interface WixService {
   id: string;
   name: string;
   type: string;
+  description?: string;
   // Where the service is offered. Unlike WixLocation (from the separate
   // Locations query, which has a name), this nested shape only carries an
   // id/type/address — services-to-activities sync cross-references it
@@ -118,6 +119,14 @@ export interface WixService {
     varied?: { defaultPrice?: { value?: string; currency?: string } };
   };
   defaultCapacity?: number;
+  // Wix's Media object — same mainMedia/coverMedia/items shape used across
+  // its APIs (Stores, Bookings, ...). A service normally has at most a
+  // handful of photos; only the cover shot is worth pulling in here.
+  media?: {
+    mainMedia?: { image?: { url?: string } };
+    coverMedia?: { image?: { url?: string } };
+    items?: { image?: { url?: string } }[];
+  };
 }
 
 /** The service's price in the service's own currency, or:
@@ -152,6 +161,18 @@ export function wixServicePrice(service: WixService): number | null {
 export function wixServiceCapacity(service: WixService): number | null {
   const value = service.defaultCapacity;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** The service's cover photo, or `null` when Wix has none — mainMedia first
+ *  (the photo a vendor picked as the cover), falling back to coverMedia then
+ *  the first gallery item, since not every account's response populates all
+ *  three the same way. */
+export function wixServiceImageUrl(service: WixService): string | null {
+  const url =
+    service.media?.mainMedia?.image?.url ??
+    service.media?.coverMedia?.image?.url ??
+    service.media?.items?.find((i) => i.image?.url)?.image?.url;
+  return url?.trim() || null;
 }
 
 export interface WixResource {

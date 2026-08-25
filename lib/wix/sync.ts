@@ -11,6 +11,7 @@ import {
   decodeWixSlotKey,
   wixServicePrice,
   wixServiceCapacity,
+  wixServiceImageUrl,
   type WixCredentials,
   type WixService,
   type WixLocation,
@@ -225,11 +226,22 @@ export async function syncWixServicesToActivities(
     }
 
     const slug = `${slugify(service.name)}-${service.id.slice(0, 6)}`;
+    // Wix's own description, if the vendor wrote one on their end — saves
+    // re-typing it here. Only used on first import: like category/age range,
+    // description is the vendor's to edit afterwards, so a re-sync never
+    // overwrites it (see the reconciliation pass below, which touches
+    // neither). Falls back to the old placeholder when Wix has nothing.
+    const description =
+      service.description?.trim() ||
+      'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.';
+    // Same reasoning as description — a starting point pulled from Wix, not
+    // kept in lockstep on later syncs, so a vendor who swaps in their own
+    // photo doesn't get it silently replaced on the next sync.
+    const imageUrl = wixServiceImageUrl(service);
     const { error } = await admin.from('activities').insert({
       slug,
       title: service.name,
-      description:
-        'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.',
+      description,
       category_id: category.id,
       provider_id: providerId,
       is_published: false,
@@ -241,6 +253,7 @@ export async function syncWixServicesToActivities(
       postal_code: postalCode,
       price,
       default_capacity: capacity,
+      image_urls: imageUrl ? [imageUrl] : [],
     });
     if (error) {
       result.skipped.push({ name: service.name, reason: error.message });
