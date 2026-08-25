@@ -1522,7 +1522,6 @@ function ActivityDetailPage() {
             {activity.category_name && (
               <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
             )}
-            <p className="mt-3 text-[15px] font-semibold leading-6 text-[#34406f]">{activity.description}</p>
             {activity.rating_count > 0 && (
               <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
             )}
