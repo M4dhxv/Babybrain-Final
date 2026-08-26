@@ -522,6 +522,8 @@ export type Database = {
           sale_end_date: string | null;
           sale_status: string;
           hidden: boolean;
+          fee_type: string | null;
+          fee_rate_percent: number | null;
           created_at: string;
           updated_at: string;
         };

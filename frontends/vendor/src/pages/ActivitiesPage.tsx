@@ -303,7 +303,11 @@ export default function ActivitiesPage() {
   // Same action as Settings -> Integrate your Business's "Sync services"
   // button, surfaced here too so a vendor reviewing this list doesn't have
   // to leave it to pick up Wix-side changes (new services, price/capacity
-  // edits, a service going missing).
+  // edits, a service going missing). Runs the Bookings sync AND the Events
+  // sync together — a vendor with only one app connected still gets a
+  // correct combined result, since wix-events-sync degrades to a harmless
+  // no-op (eventsAppNotInstalled: true) rather than erroring when the
+  // Events & Tickets app isn't installed on their site.
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -313,16 +317,25 @@ export default function ActivitiesPage() {
     setSyncError(null);
     setSyncNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
-        '/api/vendor/wix-services-sync',
-        { provider_id: provider.id }
-      );
-      const { sync } = res;
+      const [servicesRes, eventsRes] = await Promise.all([
+        apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+          '/api/vendor/wix-services-sync',
+          { provider_id: provider.id }
+        ),
+        apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+          '/api/vendor/wix-events-sync',
+          { provider_id: provider.id }
+        ),
+      ]);
+      const created = servicesRes.sync.created + eventsRes.sync.created;
+      const updated = servicesRes.sync.updated + eventsRes.sync.updated;
+      const revived = servicesRes.sync.revived + eventsRes.sync.revived;
+      const removed = servicesRes.sync.removed + eventsRes.sync.removed;
       const parts = [];
-      if (sync.created) parts.push(`${sync.created} new`);
-      if (sync.updated) parts.push(`${sync.updated} updated`);
-      if (sync.revived) parts.push(`${sync.revived} restored`);
-      if (sync.removed) parts.push(`${sync.removed} removed`);
+      if (created) parts.push(`${created} new`);
+      if (updated) parts.push(`${updated} updated`);
+      if (revived) parts.push(`${revived} restored`);
+      if (removed) parts.push(`${removed} removed`);
       setSyncNotice(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
       await load();
     } catch (e) {
@@ -568,7 +581,7 @@ export default function ActivitiesPage() {
                 <button
                   onClick={syncServices}
                   disabled={syncing}
-                  title="Pull the latest services, prices, capacities and removals from your connected Wix account"
+                  title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />

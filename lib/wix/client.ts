@@ -699,6 +699,11 @@ export interface WixTicketDefinition {
   /** null = unlimited. */
   unsoldCount: number | null;
   soldOut: boolean;
+  /** FEE_ADDED_AT_CHECKOUT means the real charge is higher than `priceValue`
+   *  alone — see computeWixCheckoutTotal. The definition never carries the
+   *  actual fee *rate*, only this type; the rate is only known once a real
+   *  reservation is made. */
+  feeType: string | null;
 }
 
 /** Ticket Definitions V3 — confirmed live that *querying* (not just writing)
@@ -722,6 +727,7 @@ export async function fetchWixTicketDefinitions(
     salePeriod?: { startDate?: string; endDate?: string };
     saleStatus?: string;
     salesDetails?: { unsoldCount?: number | null; soldOut?: boolean };
+    feeType?: string;
   }
   const data = await wixFetch<{ ticketDefinitions?: RawTicketDefinition[] }>(
     creds,
@@ -746,6 +752,7 @@ export async function fetchWixTicketDefinitions(
     initialLimit: t.initialLimit ?? null,
     unsoldCount: t.salesDetails?.unsoldCount ?? null,
     soldOut: t.salesDetails?.soldOut ?? false,
+    feeType: t.feeType ?? null,
   }));
 }
 
@@ -824,6 +831,41 @@ export function computeWixCheckoutTotal(lines: WixTicketReservationLine[]): { va
     total += subTotal + fee;
   }
   return { value: Math.round(total * 100) / 100, currency };
+}
+
+/** Discovers the actual fee rate a FEE_ADDED_AT_CHECKOUT ticket type carries
+ *  by making a throwaway quantity-1 reservation and reading its
+ *  serviceFee.rate — the only place Wix ever exposes the number (see
+ *  {@link WixTicketDefinition.feeType}). The hold releases itself in
+ *  20-30 min since it's never checked out; lib/wix/events-sync.ts calls
+ *  this only once per ticket type (caching the result) rather than on every
+ *  sync, so this doesn't tie up inventory repeatedly. Returns null if the
+ *  type turns out not to carry a fee after all (e.g. sold out, or Wix's
+ *  fee config changed since the definition was fetched). */
+export async function fetchTicketFeeRatePercent(
+  creds: WixCredentials,
+  ticketDefinitionId: string
+): Promise<number | null> {
+  const reservation = await createWixTicketReservation(creds, ticketDefinitionId, 1);
+  const line = reservation.lines.find((l) => l.ticketDefinitionId === ticketDefinitionId);
+  return line?.serviceFee ? Number(line.serviceFee.rate) : null;
+}
+
+/** The real price to show anywhere ahead of checkout — base ticket price
+ *  plus Wix's own service fee when it applies, so nobody (buyer or vendor)
+ *  is shown a total lower than what actually gets charged. Falls back to
+ *  the bare price when the rate hasn't been discovered yet (see
+ *  {@link fetchTicketFeeRatePercent}) — happens only for the brief window
+ *  before a ticket type's first sync completes. */
+export function ticketPriceWithFeeCents(
+  priceCents: number,
+  feeType: string | null,
+  feeRatePercent: number | null
+): number {
+  if (feeType === 'FEE_ADDED_AT_CHECKOUT' && feeRatePercent != null) {
+    return Math.round(priceCents * (1 + feeRatePercent / 100));
+  }
+  return priceCents;
 }
 
 export interface WixCheckoutGuest {

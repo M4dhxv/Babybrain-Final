@@ -4732,7 +4732,7 @@ function BookingPage() {
   // only ever one session, the event's own occurrence) and which endpoint
   // gets called to actually purchase it.
   const isEvent = activity?.wix_service_type === "EVENT";
-  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean };
+  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
 
@@ -4854,7 +4854,7 @@ function BookingPage() {
     if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
     supabase
       .from("event_ticket_types")
-      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden")
+      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent")
       .eq("event_id", activity.wix_event_id)
       .eq("hidden", false)
       .order("price_cents")
@@ -4886,11 +4886,18 @@ function BookingPage() {
     childAgeMonths != null &&
     (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
   const selectedTicketType = isEvent ? ticketTypes.find((t) => t.id === ticketTypeId) ?? null : null;
-  // Display only — the real charge is always recomputed server-side from a
-  // live Wix reservation (computeWixCheckoutTotal in lib/wix/client.ts),
-  // which can differ slightly (Wix's own service fee) from this estimate.
+  // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
+  // discovered once per ticket type by lib/wix/events-sync.ts and cached —
+  // see ticketPriceWithFeeCents there) so this matches the real charge
+  // instead of understating it; the actual amount is still always
+  // recomputed server-side from a live Wix reservation
+  // (computeWixCheckoutTotal in lib/wix/client.ts) at checkout time.
+  const ticketPriceCents = (t: EventTicketType) =>
+    t.fee_type === "FEE_ADDED_AT_CHECKOUT" && t.fee_rate_percent != null
+      ? Math.round(t.price_cents * (1 + t.fee_rate_percent / 100))
+      : t.price_cents;
   const price = isEvent
-    ? selectedTicketType != null ? selectedTicketType.price_cents / 100 : null
+    ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
     : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
@@ -5312,7 +5319,7 @@ function BookingPage() {
                               selected={ticketTypeId === t.id}
                               onSelect={() => setTicketTypeId(t.id)}
                               title={t.name}
-                              price={t.is_free ? "Free" : `${t.currency} ${(t.price_cents / 100).toFixed(2)}`}
+                              price={t.is_free ? "Free" : `${t.currency} ${(ticketPriceCents(t) / 100).toFixed(2)}`}
                             />
                           ))}
                         </div>

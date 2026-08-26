@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import {
+  fetchTicketFeeRatePercent,
   fetchWixEvents,
   fetchWixTicketDefinitions,
+  ticketPriceWithFeeCents,
   WixApiError,
   type WixCredentials,
   type WixEvent,
@@ -117,11 +119,19 @@ async function syncEventActivityMirror(
   // were simply left as they were.
   const { data: ticketTypes } = await admin
     .from('event_ticket_types')
-    .select('price_cents, capacity_total')
+    .select('price_cents, capacity_total, fee_type, fee_rate_percent')
     .eq('event_id', localEventId)
     .eq('hidden', false)
     .order('price_cents', { ascending: true });
-  const price = ticketTypes && ticketTypes.length > 0 ? ticketTypes[0].price_cents / 100 : null;
+  // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
+  // discovered once per ticket type, see fetchTicketFeeRatePercent) — so
+  // this mirrored price, which both the parent explore/detail pages and the
+  // vendor's own activity price field read directly, is never an
+  // understatement of the real charge.
+  const price =
+    ticketTypes && ticketTypes.length > 0
+      ? ticketPriceWithFeeCents(ticketTypes[0].price_cents, ticketTypes[0].fee_type, ticketTypes[0].fee_rate_percent) / 100
+      : null;
   const capacity =
     ticketTypes && ticketTypes.length > 0 && ticketTypes.every((t) => t.capacity_total != null)
       ? ticketTypes.reduce((sum, t) => sum + (t.capacity_total as number), 0)
@@ -384,6 +394,25 @@ export async function syncProviderWixEvents(
       const defs = await fetchWixTicketDefinitions(creds, event.id);
       for (const def of defs) {
         const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+
+        // The fee *rate* only ever comes from a live reservation, so it's
+        // discovered once (a throwaway hold, see fetchTicketFeeRatePercent)
+        // and cached rather than re-reserved on every sync.
+        const { data: existingType } = await admin
+          .from('event_ticket_types')
+          .select('fee_rate_percent')
+          .eq('event_id', localEventId)
+          .eq('wix_ticket_definition_id', def.id)
+          .maybeSingle();
+        let feeRatePercent = existingType?.fee_rate_percent ?? null;
+        if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
+          try {
+            feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
+          } catch {
+            // best-effort — display falls back to the bare price this run, retried next sync
+          }
+        }
+
         await admin
           .from('event_ticket_types')
           .upsert(
@@ -401,6 +430,8 @@ export async function syncProviderWixEvents(
               sale_end_date: def.saleEndDate,
               sale_status: def.saleStatus,
               hidden: def.hidden,
+              fee_type: def.feeType,
+              fee_rate_percent: feeRatePercent,
             },
             { onConflict: 'event_id,wix_ticket_definition_id' }
           );
