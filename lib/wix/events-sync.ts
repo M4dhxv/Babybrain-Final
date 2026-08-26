@@ -45,6 +45,47 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'wix-event';
 }
 
+/** Wix Events embed their location inline with no stable id the way a Wix
+ *  Bookings service has via `service.locations[].id` (see
+ *  resolveWixServiceLocation in sync.ts, which dedupes on that id) — so this
+ *  dedupes on matching formatted-address text against this provider's
+ *  existing locations instead. Returns null for an ONLINE or TBD event, or
+ *  one with no address at all — nothing real to link. */
+async function resolveEventLocation(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  event: WixEvent
+): Promise<string | null> {
+  if (event.location.locationTbd || event.location.type === 'ONLINE' || !event.location.formattedAddress) {
+    return null;
+  }
+  const { data: existing } = await admin
+    .from('provider_locations')
+    .select('id')
+    .eq('provider_id', providerId)
+    .eq('address', event.location.formattedAddress)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const { count } = await admin
+    .from('provider_locations')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider_id', providerId);
+
+  const { data: created } = await admin
+    .from('provider_locations')
+    .insert({
+      provider_id: providerId,
+      name: event.location.name || event.location.city || 'Event location',
+      address: event.location.formattedAddress,
+      postal_code: event.location.postalCode,
+      is_primary: (count ?? 0) === 0,
+    })
+    .select('id')
+    .single();
+  return created?.id ?? null;
+}
+
 /** Mirrors a synced Wix Event into `activities` (+ one `activity_sessions`
  *  row for its date) so it appears in the exact same listing/search/detail/
  *  booking page every other activity already uses — see
@@ -62,22 +103,36 @@ async function syncEventActivityMirror(
   localEventId: string,
   event: WixEvent
 ): Promise<void> {
-  // Cheapest non-hidden ticket type stands in for `activities.price` (a
-  // single flat number) — the real per-type prices live on
+  // Cheapest non-hidden ticket type's price stands in for `activities.price`
+  // (a single flat number) — the real per-type prices live on
   // event_ticket_types and are what the booking page's ticket picker
-  // actually reads. Re-selected fresh rather than threaded through from the
-  // caller's ticket-definitions fetch, so this stays correct even on a run
-  // where that fetch failed/was skipped (see isMissingEventsApp above) and
-  // existing ticket_types rows were simply left as they were.
-  const { data: primaryTicket } = await admin
+  // actually reads. Total capacity across every non-hidden ticket type
+  // stands in for `activities.default_capacity`/`activity_sessions.capacity`
+  // similarly — null (unknown, or genuinely unlimited on Wix) leaves
+  // whatever's already there alone rather than blanking it, same convention
+  // wixServiceCapacity/wixServicePrice use for Bookings. Both re-selected
+  // fresh rather than threaded through from the caller's ticket-definitions
+  // fetch, so this stays correct even on a run where that fetch failed/was
+  // skipped (see isMissingEventsApp above) and existing ticket_types rows
+  // were simply left as they were.
+  const { data: ticketTypes } = await admin
     .from('event_ticket_types')
-    .select('price_cents')
+    .select('price_cents, capacity_total')
     .eq('event_id', localEventId)
     .eq('hidden', false)
-    .order('price_cents', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const price = primaryTicket ? primaryTicket.price_cents / 100 : null;
+    .order('price_cents', { ascending: true });
+  const price = ticketTypes && ticketTypes.length > 0 ? ticketTypes[0].price_cents / 100 : null;
+  const capacity =
+    ticketTypes && ticketTypes.length > 0 && ticketTypes.every((t) => t.capacity_total != null)
+      ? ticketTypes.reduce((sum, t) => sum + (t.capacity_total as number), 0)
+      : null;
+
+  // Wix stays the source of truth for location/capacity/price/photo/
+  // description on every sync (create AND update) — same philosophy
+  // syncWixServicesToActivities documents for Bookings-linked activities.
+  // Category, age range and publish state are the vendor's own to set and
+  // are never touched here past first import.
+  const locationId = await resolveEventLocation(admin, providerId, event);
 
   const { data: existing } = await admin
     .from('activities')
@@ -93,8 +148,11 @@ async function syncEventActivityMirror(
       .update({
         title: event.title,
         ...(price != null ? { price } : {}),
+        ...(capacity != null ? { default_capacity: capacity } : {}),
         ...(event.description ? { description: event.description } : {}),
+        location_id: locationId,
         address: event.location.formattedAddress,
+        postal_code: event.location.postalCode,
         ...(event.mainImageUrl ? { image_urls: [event.mainImageUrl] } : {}),
         // Wix knows about this event again (this fetch found it) — same
         // revival rule the wix_events row itself just got above.
@@ -121,8 +179,11 @@ async function syncEventActivityMirror(
         is_published: false,
         wix_event_id: localEventId,
         wix_service_type: 'EVENT',
+        location_id: locationId,
         address: event.location.formattedAddress,
+        postal_code: event.location.postalCode,
         price,
+        default_capacity: capacity,
         image_urls: event.mainImageUrl ? [event.mainImageUrl] : [],
       })
       .select('id')
@@ -137,9 +198,14 @@ async function syncEventActivityMirror(
   // One session row = the event's own occurrence — this is what makes it
   // show up in the existing "upcoming sessions" list and lets `bookings`
   // (written per-ticket by finalizeWixEventTicketCheckout / the RSVP route)
-  // FK to something real. Capacity stays null (unlimited to the local
-  // capacity/waitlist trigger) — Wix's own live ticket reservation, made at
-  // checkout time, is the actual gate; see app/api/wix/events/{checkout,rsvp}.
+  // FK to something real. `capacity` here is display/vendor-facing only
+  // (same total computed above) — it's never what actually gates a
+  // purchase. Wix's own live ticket reservation, made at checkout time, is
+  // the real gate (app/api/wix/events/{checkout,rsvp}), and every local
+  // `bookings` row is only ever written *after* Wix has already confirmed
+  // the ticket — so the local capacity/waitlist trigger can never see more
+  // confirmed bookings than Wix actually sold, and this number is safe to
+  // set precisely rather than left null "to be safe".
   const { data: existingSession } = await admin
     .from('activity_sessions')
     .select('id')
@@ -148,13 +214,14 @@ async function syncEventActivityMirror(
   if (existingSession) {
     await admin
       .from('activity_sessions')
-      .update({ starts_at: event.startDate, ends_at: event.endDate })
+      .update({ starts_at: event.startDate, ends_at: event.endDate, ...(capacity != null ? { capacity } : {}) })
       .eq('id', existingSession.id);
   } else {
     await admin.from('activity_sessions').insert({
       activity_id: activityId,
       starts_at: event.startDate,
       ends_at: event.endDate,
+      capacity,
     });
   }
 }

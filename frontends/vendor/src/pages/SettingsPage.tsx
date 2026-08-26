@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
-  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -491,6 +491,9 @@ function WixIntegrationManager({
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [eventsSyncing, setEventsSyncing] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventsNotice, setEventsNotice] = useState<string | null>(null);
 
   // "Import specific activities" — lets a vendor pick which Wix services
   // become activities, instead of "Sync services" bringing in everything.
@@ -590,6 +593,46 @@ function WixIntegrationManager({
       setError(describeWixError(e, 'Could not sync services'));
     } finally {
       setSyncing(false);
+    }
+  }
+
+  // Wix Events & Tickets — a separate app/API from Bookings (see
+  // lib/wix/events-sync.ts), so this is deliberately a second, independent
+  // sync action rather than folded into "Sync services" above: a vendor
+  // connected for Bookings only won't have the Events app installed at all,
+  // and this call just reports that back rather than erroring.
+  function summarizeEventSync(sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean }) {
+    if (sync.eventsAppNotInstalled) {
+      return 'This Wix account doesn’t have the Events & Tickets app installed, so there’s nothing to sync yet.';
+    }
+    const parts = [];
+    if (sync.created) parts.push(`${sync.created} new`);
+    if (sync.updated) parts.push(`${sync.updated} updated`);
+    if (sync.revived) parts.push(`${sync.revived} restored`);
+    if (sync.removed) parts.push(`${sync.removed} removed`);
+    if (!sync.created && !sync.updated && !sync.removed && !sync.revived) parts.push('nothing new');
+    let text = `Synced from Wix Events: ${parts.join(', ')}.`;
+    if (sync.ticketPricingSkipped.length) {
+      text += ` Ticket pricing couldn’t be read for: ${sync.ticketPricingSkipped.join(', ')}.`;
+    }
+    return text;
+  }
+
+  async function syncEvents() {
+    if (!provider) return;
+    setEventsSyncing(true);
+    setEventsError(null);
+    setEventsNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+        '/api/vendor/wix-events-sync',
+        { provider_id: provider.id }
+      );
+      setEventsNotice(summarizeEventSync(res.sync));
+    } catch (e) {
+      setEventsError(describeWixError(e, 'Could not sync events'));
+    } finally {
+      setEventsSyncing(false);
     }
   }
 
@@ -806,6 +849,30 @@ function WixIntegrationManager({
                   </Button>
                 </>
               )}
+            </div>
+          )}
+
+          {status?.connected && canManage && (
+            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0"><Calendar className="w-5 h-5 text-indigo-600" /></div>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900">Wix Events &amp; Tickets</h4>
+                  <p className="text-xs text-gray-500">A separate Wix app from Bookings — one-off events with ticket types become activities here too.</p>
+                </div>
+              </div>
+
+              {eventsError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{eventsError}</div>}
+              {eventsNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{eventsNotice}</div>}
+
+              <Button onClick={syncEvents} disabled={eventsSyncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
+                <RefreshCw className={cn('w-3.5 h-3.5', eventsSyncing && 'animate-spin')} /> {eventsSyncing ? 'Syncing…' : 'Sync Wix Events'}
+              </Button>
+              <p className="text-xs text-gray-400">
+                Every upcoming event on this Wix account (with the Events &amp; Tickets app installed) becomes an
+                activity here — new ones land unpublished until you fill in a category and age range, same as
+                imported services.
+              </p>
             </div>
           )}
 

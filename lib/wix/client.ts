@@ -593,6 +593,7 @@ export interface WixEvent {
     name: string | null;
     type: string | null; // VENUE | ONLINE
     city: string | null;
+    postalCode: string | null;
     formattedAddress: string | null;
     locationTbd: boolean;
   };
@@ -633,7 +634,7 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
       name?: string;
       type?: string;
       locationTbd?: boolean;
-      address?: { city?: string; formattedAddress?: string };
+      address?: { city?: string; postalCode?: string; formattedAddress?: string };
     };
     mainImage?: { url?: string };
     shortDescription?: string;
@@ -668,6 +669,7 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
         name: e.location?.name ?? null,
         type: e.location?.type ?? null,
         city: e.location?.address?.city ?? null,
+        postalCode: e.location?.address?.postalCode ?? null,
         formattedAddress: e.location?.address?.formattedAddress ?? null,
         locationTbd: e.location?.locationTbd ?? false,
       },
