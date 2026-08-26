@@ -4,6 +4,7 @@ import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
+import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -148,6 +149,10 @@ export async function POST(request: Request) {
 
       if (kind === 'wix_booking') {
         await finalizeWixBookingCheckout(admin, session);
+      }
+
+      if (kind === 'wix_event_ticket') {
+        await finalizeWixEventTicketCheckout(admin, session);
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {

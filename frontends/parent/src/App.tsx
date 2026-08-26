@@ -4726,6 +4726,16 @@ function BookingPage() {
   const [existingBookings, setExistingBookings] = useState<Set<string>>(new Set());
   const [dupPrompt, setDupPrompt] = useState<null | { childName: string; proceed: () => void }>(null);
 
+  // A Wix Event–backed activity (wix_service_type='EVENT', see
+  // 00070_wix_events_as_activities.sql) reuses this whole page — the only
+  // difference is what's picked (a ticket type, not a date/time — there's
+  // only ever one session, the event's own occurrence) and which endpoint
+  // gets called to actually purchase it.
+  const isEvent = activity?.wix_service_type === "EVENT";
+  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean };
+  const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
+  const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!activity?.provider_id) return;
     supabase
@@ -4832,6 +4842,29 @@ function BookingPage() {
     if (dates.length && !dateKey) setDateKey(dates[0]);
   }, [dates, dateKey]);
 
+  // Events skip the date/time picker entirely — there's exactly one session
+  // (materialized by lib/wix/events-sync.ts), so it's auto-selected the
+  // moment it loads rather than making the parent click through a picker
+  // with only one option in it.
+  useEffect(() => {
+    if (isEvent && sessions.length > 0 && !sessionId) setSessionId(sessions[0].id);
+  }, [isEvent, sessions, sessionId]);
+
+  useEffect(() => {
+    if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
+    supabase
+      .from("event_ticket_types")
+      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden")
+      .eq("event_id", activity.wix_event_id)
+      .eq("hidden", false)
+      .order("price_cents")
+      .then(({ data }) => setTicketTypes((data ?? []) as EventTicketType[]));
+  }, [isEvent, activity?.wix_event_id]);
+
+  useEffect(() => {
+    if (ticketTypes.length > 0 && !ticketTypeId) setTicketTypeId(ticketTypes[0].id);
+  }, [ticketTypes, ticketTypeId]);
+
   // Default to an available credit — it's the cheapest option for the parent.
   useEffect(() => {
     if (packageCredit && payWith === "single") setPayWith("credit");
@@ -4852,8 +4885,17 @@ function BookingPage() {
     !!activity &&
     childAgeMonths != null &&
     (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
-  const price = activity?.price != null ? Number(activity.price) : null;
+  const selectedTicketType = isEvent ? ticketTypes.find((t) => t.id === ticketTypeId) ?? null : null;
+  // Display only — the real charge is always recomputed server-side from a
+  // live Wix reservation (computeWixCheckoutTotal in lib/wix/client.ts),
+  // which can differ slightly (Wix's own service fee) from this estimate.
+  const price = isEvent
+    ? selectedTicketType != null ? selectedTicketType.price_cents / 100 : null
+    : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
+  const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
+    ? Math.min(selectedTicketType.limit_per_checkout, 20)
+    : 6;
 
   async function pay() {
     setErr(null);
@@ -4862,12 +4904,55 @@ function BookingPage() {
       return;
     }
     if (!sessionId) {
-      setErr("Please choose a date and time first.");
+      setErr(isEvent ? "This event isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
+      return;
+    }
+    if (isEvent && !ticketTypeId) {
+      setErr("Please choose a ticket type first.");
       return;
     }
     setBusy(true);
     let status: string | null = null;
-    if (redeemToken) {
+    if (isEvent) {
+      // Wix Event ticket: a real reservation is made against Wix's own
+      // inventory server-side (the authoritative availability check — there's
+      // no local capacity to double-check against, see
+      // app/api/wix/events/checkout). Free tickets confirm synchronously;
+      // paid ones hand off to Stripe same as every other paid path here, and
+      // the real Wix order isn't created until that payment is confirmed
+      // (lib/wix/finalize-event-checkout.ts).
+      const eventBody = {
+        eventId: activity?.wix_event_id,
+        ticketTypeId,
+        quantity: count,
+        childId: bookChildId,
+      };
+      if (selectedTicketType?.is_free) {
+        try {
+          const data = await apiPost<{ status: string }>("/api/wix/events/rsvp", eventBody);
+          status = data.status;
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not reserve this ticket");
+          return;
+        }
+        setBusy(false);
+      } else {
+        try {
+          const { url } = await apiPost<{ url?: string }>("/api/wix/events/checkout", eventBody);
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not start payment");
+          return;
+        }
+        setBusy(false);
+        return;
+      }
+    } else if (redeemToken) {
       // Redeeming a make-up token: books the session and consumes the token atomically.
       const { data, error } = await supabase.rpc("redeem_make_up_token", {
         p_token_id: redeemToken,
@@ -5110,15 +5195,21 @@ function BookingPage() {
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
   const payLabel = !auth
     ? "Log in to book"
-    : redeemToken
-      ? "Confirm with make-up token"
-      : payWith === "credit"
-        ? "Confirm with a package credit"
-        : selectedPack
-          ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
-          : total != null && total > 0
-            ? `Pay $${total.toFixed(2)}`
-            : "Confirm booking";
+    : isEvent
+      ? selectedTicketType?.is_free
+        ? "Reserve free ticket"
+        : total != null
+          ? `Get ${count > 1 ? `${count} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
+          : "Get ticket"
+      : redeemToken
+        ? "Confirm with make-up token"
+        : payWith === "credit"
+          ? "Confirm with a package credit"
+          : selectedPack
+            ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
+            : total != null && total > 0
+              ? `Pay $${total.toFixed(2)}`
+              : "Confirm booking";
 
   if (loading) {
     return (
@@ -5172,36 +5263,61 @@ function BookingPage() {
                   <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
                 ) : (
                   <>
-                    <section>
-                      <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                        {/* Split "Tue, 25 Aug" into two fixed lines rather than
-                            letting it wrap naturally — a plain text wrap broke
-                            differently per weekday's width, so cards ended up
-                            one or two lines tall depending on which day it was. */}
-                        {dates.map((d) => {
-                          const [weekday, dayMonth] = d.split(", ");
-                          return (
-                            <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
-                              <span className="block whitespace-nowrap">{weekday},</span>
-                              <span className="block whitespace-nowrap">{dayMonth}</span>
-                              <span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                    <section>
-                      <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                        {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
-                            <span className="block whitespace-nowrap">{sgTime(s.starts_at)}</span>
-                            <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </section>
+                    {!isEvent && (
+                      <>
+                        <section>
+                          <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                            {/* Split "Tue, 25 Aug" into two fixed lines rather than
+                                letting it wrap naturally — a plain text wrap broke
+                                differently per weekday's width, so cards ended up
+                                one or two lines tall depending on which day it was. */}
+                            {dates.map((d) => {
+                              const [weekday, dayMonth] = d.split(", ");
+                              return (
+                                <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                                  <span className="block whitespace-nowrap">{weekday},</span>
+                                  <span className="block whitespace-nowrap">{dayMonth}</span>
+                                  <span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                        <section>
+                          <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                            {times.map((s) => (
+                              <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                                <span className="block whitespace-nowrap">{sgTime(s.starts_at)}</span>
+                                <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      </>
+                    )}
+                    {/* Events skip straight to a ticket-type picker — there's
+                        only ever one occurrence (auto-selected above), so
+                        "date/time" is nothing to choose. Only shown when
+                        there's more than one type; a single type is
+                        auto-selected silently. */}
+                    {isEvent && ticketTypes.length > 1 && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">Choose your ticket</h3>
+                        <div className="space-y-3">
+                          {ticketTypes.map((t) => (
+                            <PackageOption
+                              key={t.id}
+                              selected={ticketTypeId === t.id}
+                              onSelect={() => setTicketTypeId(t.id)}
+                              title={t.name}
+                              price={t.is_free ? "Free" : `${t.currency} ${(t.price_cents / 100).toFixed(2)}`}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     {kids.length > 1 && (
                       <section>
                         <h3 className="mb-4 text-xl font-black">Who's this class for?</h3>
@@ -5232,16 +5348,18 @@ function BookingPage() {
                       </p>
                     )}
                     <section>
-                      <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
+                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : "3. Number of children"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
-                        <button type="button" onClick={() => setCount((c) => Math.min(6, c + 1))} className="h-12 w-12">+</button>
+                        <button type="button" onClick={() => setCount((c) => Math.min(isEvent ? ticketQuantityCap : 6, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
                     {/* Step 4: how to pay for the class — a single drop-in, an
-                        unused credit from a pack, or buying a pack now. */}
-                    {!redeemToken && (
+                        unused credit from a pack, or buying a pack now. Not
+                        applicable to a Wix Event ticket — payment is always a
+                        single purchase (see the isEvent branch in pay()). */}
+                    {!redeemToken && !isEvent && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">4. Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>

@@ -4,6 +4,7 @@ import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
+import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
 /**
  * Apply the effect of a completed Stripe Checkout Session on return from
@@ -124,6 +125,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not your checkout session' }, { status: 403 });
     }
     await finalizeWixBookingCheckout(admin, session);
+    return NextResponse.json({ applied: true, kind });
+  }
+
+  if (kind === 'wix_event_ticket' && session.metadata?.order_id) {
+    // Same ownership rule as wix_booking above.
+    const { data: owned } = await admin
+      .from('event_ticket_orders')
+      .select('id')
+      .eq('id', session.metadata.order_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (!owned) {
+      return NextResponse.json({ error: 'Not your checkout session' }, { status: 403 });
+    }
+    await finalizeWixEventTicketCheckout(admin, session);
     return NextResponse.json({ applied: true, kind });
   }
 

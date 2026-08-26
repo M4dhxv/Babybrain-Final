@@ -196,7 +196,11 @@ export type Database = {
           reschedule_cutoff_hours: number | null;
           wix_service_id: string | null;
           wix_resource_id: string | null;
-          wix_service_type: 'APPOINTMENT' | 'CLASS' | 'COURSE' | null;
+          wix_service_type: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
+          // Set only for wix_service_type = 'EVENT' rows — see
+          // lib/wix/events-sync.ts and 00070_wix_events_as_activities.sql.
+          // wix_service_id is deliberately left null for these.
+          wix_event_id: string | null;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
           created_at: string;
@@ -233,7 +237,8 @@ export type Database = {
           reschedule_cutoff_hours?: number | null;
           wix_service_id?: string | null;
           wix_resource_id?: string | null;
-          wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | null;
+          wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
+          wix_event_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -474,6 +479,11 @@ export type Database = {
           package_purchase_id: string | null;
           policies_accepted: string[];
           wix_booking_id: string | null;
+          // Which event_ticket_types row this booking is for — set only when
+          // session_id points at a wix_service_type='EVENT' activity's
+          // session; wix_booking_id on that same row holds the Wix order
+          // number (see 00070_wix_events_as_activities.sql).
+          wix_ticket_type_id: string | null;
         };
         Insert: {
           id?: string;
@@ -484,6 +494,7 @@ export type Database = {
           package_purchase_id?: string | null;
           policies_accepted?: string[];
           wix_booking_id?: string | null;
+          wix_ticket_type_id?: string | null;
           // provider_id / waitlist_position set by trigger either way.
           // status / payment_status: the trigger sets these for normal
           // (non-service-role) inserts and ignores whatever's passed; a
@@ -492,6 +503,15 @@ export type Database = {
           // explicitly skips its own defaults for that path.
           status?: BookingStatus;
           payment_status?: PaymentStatus;
+          // Same "service-role is trusted" carve-out as status/payment_status
+          // above — needed so an event ticket's local booking mirror can be
+          // inserted already-paid/confirmed in one write instead of the
+          // insert-then-update two-step native/Wix-Bookings checkout uses
+          // (that two-step exists only because THOSE bookings are created
+          // before payment; an event ticket's mirror is written after Wix
+          // already confirmed the order, so everything is known upfront).
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
         };
         Update: {
           status?: BookingStatus;
@@ -624,6 +644,171 @@ export type Database = {
             columns: ['provider_id'];
             isOneToOne: true;
             referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      // Wix Events & Tickets — separate app/API from Bookings (migration
+      // 00069). Public read of published/live rows via RLS; every write goes
+      // through the service-role admin client (sync, checkout, webhook).
+      wix_events: {
+        Row: {
+          id: string;
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug: string;
+          description: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id: string | null;
+          location_name: string | null;
+          location_type: string | null;
+          city: string | null;
+          formatted_address: string | null;
+          location_tbd: boolean;
+          main_image_url: string | null;
+          wix_status: string;
+          is_published: boolean;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug?: string;
+          description?: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id?: string | null;
+          location_name?: string | null;
+          location_type?: string | null;
+          city?: string | null;
+          formatted_address?: string | null;
+          location_tbd?: boolean;
+          main_image_url?: string | null;
+          wix_status?: string;
+          is_published?: boolean;
+          wix_removed_at?: string | null;
+          wix_missing_since?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['wix_events']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'wix_events_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_types: {
+        Row: {
+          id: string;
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents: number;
+          currency: string;
+          is_free: boolean;
+          capacity_total: number | null;
+          capacity_remaining: number | null;
+          limit_per_checkout: number | null;
+          sale_start_date: string | null;
+          sale_end_date: string | null;
+          sale_status: string;
+          hidden: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents?: number;
+          currency?: string;
+          is_free?: boolean;
+          capacity_total?: number | null;
+          capacity_remaining?: number | null;
+          limit_per_checkout?: number | null;
+          sale_start_date?: string | null;
+          sale_end_date?: string | null;
+          sale_status?: string;
+          hidden?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['event_ticket_types']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_types_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_orders: {
+        Row: {
+          id: string;
+          user_id: string;
+          child_id: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity: number;
+          status: 'pending' | 'confirmed' | 'cancelled';
+          payment_status: PaymentStatus;
+          amount: number | null;
+          stripe_payment_intent: string | null;
+          wix_reservation_id: string | null;
+          wix_order_number: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          child_id?: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity?: number;
+          status?: 'pending' | 'confirmed' | 'cancelled';
+          payment_status?: PaymentStatus;
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
+          wix_reservation_id?: string | null;
+          wix_order_number?: string | null;
+        };
+        Update: {
+          status?: 'pending' | 'confirmed' | 'cancelled';
+          payment_status?: PaymentStatus;
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
+          wix_reservation_id?: string | null;
+          wix_order_number?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_orders_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'parent_profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_ticket_type_id_fkey';
+            columns: ['ticket_type_id'];
+            isOneToOne: false;
+            referencedRelation: 'event_ticket_types';
             referencedColumns: ['id'];
           },
         ];

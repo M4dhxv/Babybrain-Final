@@ -201,6 +201,7 @@ export type Database = {
           wix_service_id: string | null;
           wix_resource_id: string | null;
           wix_service_type: string | null;
+          wix_event_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -469,6 +470,109 @@ export type Database = {
           },
         ];
       };
+      wix_events: {
+        Row: {
+          id: string;
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug: string;
+          description: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id: string | null;
+          location_name: string | null;
+          location_type: string | null;
+          city: string | null;
+          formatted_address: string | null;
+          location_tbd: boolean;
+          main_image_url: string | null;
+          wix_status: string;
+          is_published: boolean;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { provider_id: string; wix_event_id: string; title: string; start_date: string; end_date: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'wix_events_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_types: {
+        Row: {
+          id: string;
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents: number;
+          currency: string;
+          is_free: boolean;
+          capacity_total: number | null;
+          capacity_remaining: number | null;
+          limit_per_checkout: number | null;
+          sale_start_date: string | null;
+          sale_end_date: string | null;
+          sale_status: string;
+          hidden: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { event_id: string; wix_ticket_definition_id: string; name: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_types_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_orders: {
+        Row: {
+          id: string;
+          user_id: string;
+          child_id: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity: number;
+          status: 'pending' | 'confirmed' | 'cancelled';
+          payment_status: PaymentStatus;
+          amount: number | null;
+          stripe_payment_intent: string | null;
+          wix_reservation_id: string | null;
+          wix_order_number: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { user_id: string; event_id: string; ticket_type_id: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_orders_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_ticket_type_id_fkey';
+            columns: ['ticket_type_id'];
+            isOneToOne: false;
+            referencedRelation: 'event_ticket_types';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       bookings: {
         Row: {
           id: string;
@@ -488,6 +592,7 @@ export type Database = {
           reminded_at: string | null;
           followed_up_at: string | null;
           wix_booking_id: string | null;
+          wix_ticket_type_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -499,6 +604,7 @@ export type Database = {
           medical_disclosure?: string | null;
           policies_accepted?: string[];
           wix_booking_id?: string | null;
+          wix_ticket_type_id?: string | null;
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {

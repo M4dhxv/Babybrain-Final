@@ -597,6 +597,7 @@ export interface WixEvent {
     locationTbd: boolean;
   };
   mainImageUrl: string | null;
+  description: string;
 }
 
 /** Wix Events & Tickets — a separate Wix app/API from Bookings (everything
@@ -635,6 +636,8 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
       address?: { city?: string; formattedAddress?: string };
     };
     mainImage?: { url?: string };
+    shortDescription?: string;
+    detailedDescription?: string;
   }
 
   const data = await wixFetch<{ events?: RawEvent[] }>(creds, '/events/v3/events/query', {
@@ -669,5 +672,239 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
         locationTbd: e.location?.locationTbd ?? false,
       },
       mainImageUrl: e.mainImage?.url ?? null,
+      description: e.detailedDescription?.trim() || e.shortDescription?.trim() || '',
     }));
+}
+
+export interface WixTicketDefinition {
+  id: string;
+  eventId: string;
+  name: string;
+  free: boolean;
+  /** Decimal string (e.g. "100.00"), null for free/guest-price tickets. */
+  priceValue: string | null;
+  /** ISO 4217 code as set on the *event's own* Wix site — not assumed to
+   *  match the platform's default currency. Confirmed live: a vendor's
+   *  event can be priced in a different currency than everything else. */
+  currency: string | null;
+  limitPerCheckout: number | null;
+  hidden: boolean;
+  saleStatus: string; // SALE_SCHEDULED | SALE_STARTED | SALE_ENDED
+  saleStartDate: string | null;
+  saleEndDate: string | null;
+  /** null = unlimited total tickets for this definition. */
+  initialLimit: number | null;
+  /** null = unlimited. */
+  unsoldCount: number | null;
+  soldOut: boolean;
+}
+
+/** Ticket Definitions V3 — confirmed live that *querying* (not just writing)
+ *  requires `SCOPE.DC-EVENTS.MANAGE-TICKET-DEF` on the API key; there is no
+ *  separate read-only scope for ticket prices the way there is for events
+ *  themselves (`READ-EVENTS`). `fields: ['SALES_DETAILS']` is required to
+ *  get `unsoldCount`/`soldOut` at all — omitted, Wix leaves them out of the
+ *  response entirely rather than returning nulls. */
+export async function fetchWixTicketDefinitions(
+  creds: WixCredentials,
+  eventId: string
+): Promise<WixTicketDefinition[]> {
+  interface RawTicketDefinition {
+    id: string;
+    eventId: string;
+    name: string;
+    hidden?: boolean;
+    limitPerCheckout?: number;
+    initialLimit?: number;
+    pricingMethod?: { fixedPrice?: { value: string; currency: string }; free?: boolean };
+    salePeriod?: { startDate?: string; endDate?: string };
+    saleStatus?: string;
+    salesDetails?: { unsoldCount?: number | null; soldOut?: boolean };
+  }
+  const data = await wixFetch<{ ticketDefinitions?: RawTicketDefinition[] }>(
+    creds,
+    '/events/v3/ticket-definitions/query',
+    {
+      query: { filter: { eventId }, paging: { limit: 100 } },
+      fields: ['SALES_DETAILS'],
+    }
+  );
+  return (data.ticketDefinitions ?? []).map((t) => ({
+    id: t.id,
+    eventId: t.eventId,
+    name: t.name,
+    free: t.pricingMethod?.free ?? false,
+    priceValue: t.pricingMethod?.fixedPrice?.value ?? null,
+    currency: t.pricingMethod?.fixedPrice?.currency ?? null,
+    limitPerCheckout: t.limitPerCheckout ?? null,
+    hidden: t.hidden ?? false,
+    saleStatus: t.saleStatus ?? 'SALE_SCHEDULED',
+    saleStartDate: t.salePeriod?.startDate ?? null,
+    saleEndDate: t.salePeriod?.endDate ?? null,
+    initialLimit: t.initialLimit ?? null,
+    unsoldCount: t.salesDetails?.unsoldCount ?? null,
+    soldOut: t.salesDetails?.soldOut ?? false,
+  }));
+}
+
+export interface WixTicketReservationLine {
+  ticketDefinitionId: string;
+  quantity: number;
+  price: { value: string; currency: string };
+  subTotal: { value: string; currency: string };
+  /** Present only when the ticket type adds its fee at checkout rather than
+   *  absorbing it into the price — see {@link computeWixCheckoutTotal}. */
+  serviceFee: { type: string; rate: string } | null;
+}
+
+export interface WixTicketReservation {
+  id: string;
+  status: string; // PENDING | CONFIRMED | CANCELED | CANCELED_MANUALLY | EXPIRED
+  expirationDate: string | null;
+  lines: WixTicketReservationLine[];
+}
+
+/** Reserves tickets for up to ~20-30 minutes (event-configured — confirmed
+ *  live as 20 on a real event; there is no fixed platform-wide constant).
+ *  Reservation, not payment: the hold is released automatically if never
+ *  checked out. See app/api/wix/events/checkout for why the real Stripe
+ *  charge amount is computed from this response's line items rather than
+ *  from the ticket definition's price alone. */
+export async function createWixTicketReservation(
+  creds: WixCredentials,
+  ticketDefinitionId: string,
+  quantity: number
+): Promise<WixTicketReservation> {
+  interface RawLine {
+    ticketDefinitionId: string;
+    quantity: number;
+    price: { value: string; currency: string };
+    subTotal: { value: string; currency: string };
+    serviceFee?: { type: string; rate: string };
+  }
+  const data = await wixFetch<{
+    ticketReservation: { id: string; status: string; expirationDate?: string; tickets?: RawLine[] };
+  }>(creds, '/events/v1/ticket-reservations', {
+    ticketReservation: { tickets: [{ ticketDefinitionId, quantity }] },
+  });
+  const r = data.ticketReservation;
+  return {
+    id: r.id,
+    status: r.status,
+    expirationDate: r.expirationDate ?? null,
+    lines: (r.tickets ?? []).map((t) => ({
+      ticketDefinitionId: t.ticketDefinitionId,
+      quantity: t.quantity,
+      price: t.price,
+      subTotal: t.subTotal,
+      serviceFee: t.serviceFee ?? null,
+    })),
+  };
+}
+
+/** Sums a reservation's line items into the true amount to charge — Wix
+ *  adds a service fee ON TOP of ticket price at checkout for
+ *  FEE_ADDED_AT_CHECKOUT ticket types (confirmed live: a 100.00 ticket
+ *  became a 102.50 order total at a 2.5% rate). FEE_INCLUDED/NO_FEE types
+ *  charge exactly subTotal. Charging anything other than this exact number
+ *  via Stripe would under- or over-collect relative to what Wix's own
+ *  Confirm Order later records. Assumes a single currency across all lines
+ *  (true for our one-ticket-type-per-checkout flow). */
+export function computeWixCheckoutTotal(lines: WixTicketReservationLine[]): { value: number; currency: string } {
+  let total = 0;
+  let currency = 'SGD';
+  for (const line of lines) {
+    currency = line.subTotal.currency;
+    const subTotal = Number(line.subTotal.value);
+    const fee = line.serviceFee?.type === 'FEE_ADDED_AT_CHECKOUT'
+      ? subTotal * (Number(line.serviceFee.rate) / 100)
+      : 0;
+    total += subTotal + fee;
+  }
+  return { value: Math.round(total * 100) / 100, currency };
+}
+
+export interface WixCheckoutGuest {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface WixCheckoutResult {
+  orderNumber: string;
+  status: string; // FREE | INITIATED | PAID | ...
+  ticketsQuantity: number;
+}
+
+/** Converts a reservation into an order. Confirmed live that
+ *  `options.markAsPaid: true` does NOT reliably move a paid ticket straight
+ *  to `PAID` (it stayed `INITIATED` against a real event) — despite that
+ *  being the documented behavior — so this never relies on it. A free
+ *  ticket type (subTotal 0) comes back `FREE`/confirmed immediately with no
+ *  further action needed; a paid one comes back `INITIATED` and needs
+ *  {@link confirmWixEventOrder} once payment actually clears. `silent: true`
+ *  suppresses Wix's own guest confirmation email — we send our own. */
+export async function checkoutWixEventOrder(
+  creds: WixCredentials,
+  params: { eventId: string; reservationId: string; guest: WixCheckoutGuest }
+): Promise<WixCheckoutResult> {
+  const data = await wixFetch<{ order: { orderNumber: string; status: string; ticketsQuantity: number } }>(
+    creds,
+    '/events/v1/checkout',
+    {
+      eventId: params.eventId,
+      reservationId: params.reservationId,
+      buyer: {
+        firstName: params.guest.firstName,
+        lastName: params.guest.lastName,
+        email: params.guest.email,
+      },
+      guests: [
+        {
+          form: {
+            inputValues: [
+              { inputName: 'firstName', value: params.guest.firstName },
+              { inputName: 'lastName', value: params.guest.lastName },
+              { inputName: 'email', value: params.guest.email },
+            ],
+          },
+        },
+      ],
+      options: { silent: true },
+    }
+  );
+  return {
+    orderNumber: data.order.orderNumber,
+    status: data.order.status,
+    ticketsQuantity: data.order.ticketsQuantity,
+  };
+}
+
+export interface WixConfirmedOrder {
+  orderNumber: string;
+  status: string;
+  tickets: { ticketNumber: string; checkInUrl: string | null }[];
+}
+
+/** Moves an INITIATED/PENDING/OFFLINE_PENDING order to PAID — the real
+ *  "payment cleared" signal for a Wix-linked ticket, called only from the
+ *  Stripe webhook/reconcile once Stripe itself confirms the charge. Throws
+ *  {@link WixApiError} with status 428 (ORDER_ACTION_NOT_AVAILABLE) if the
+ *  order's reservation already expired or was otherwise no longer
+ *  confirmable — callers must treat that as the same "paid but Wix lost the
+ *  hold" race Bookings already handles, not a hard failure. */
+export async function confirmWixEventOrder(
+  creds: WixCredentials,
+  eventId: string,
+  orderNumber: string
+): Promise<WixConfirmedOrder> {
+  const data = await wixFetch<{
+    orders: { orderNumber: string; status: string; tickets?: { ticketNumber: string; checkInUrl?: string }[] }[];
+  }>(creds, `/events/v1/events/${eventId}/orders/confirm`, { orderNumber: [orderNumber] });
+  const order = data.orders[0];
+  return {
+    orderNumber: order.orderNumber,
+    status: order.status,
+    tickets: (order.tickets ?? []).map((t) => ({ ticketNumber: t.ticketNumber, checkInUrl: t.checkInUrl ?? null })),
+  };
 }
