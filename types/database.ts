@@ -1131,6 +1131,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      wix_sync_runs: {
+        Row: {
+          id: string;
+          trigger: 'cron' | 'manual';
+          status: 'running' | 'success' | 'error';
+          triggered_by: string | null;
+          providers_checked: number;
+          providers_failed: number;
+          services_created: number;
+          services_updated: number;
+          events_created: number;
+          events_updated: number;
+          results: Json;
+          error: string | null;
+          started_at: string;
+          finished_at: string | null;
+        };
+        Insert: {
+          trigger?: 'cron' | 'manual';
+          status?: 'running' | 'success' | 'error';
+          triggered_by?: string | null;
+        };
+        Update: {
+          status?: 'running' | 'success' | 'error';
+          providers_checked?: number;
+          providers_failed?: number;
+          services_created?: number;
+          services_updated?: number;
+          events_created?: number;
+          events_updated?: number;
+          results?: Json;
+          error?: string | null;
+          finished_at?: string | null;
+        };
+        Relationships: [];
+      };
       /** Contact-form submissions, stored so none are lost when email fails. */
       contact_messages: {
         Row: {
