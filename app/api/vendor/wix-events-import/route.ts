@@ -48,10 +48,23 @@ export async function POST(request: Request) {
     // instead, since that's recoverable rather than a deliberate uncheck.
     const toRemove = [...currentIds].filter((id) => wixVisibleIds.has(id) && !selected.has(id));
 
-    const sync = await syncProviderWixEvents(admin, providerId, creds, { onlyEventIds: eventIds });
-    const unlinked = toRemove.length ? await unlinkWixEventActivities(admin, providerId, toRemove) : 0;
+    // Unlink attempt runs BEFORE the mirror sync below, not after — an event
+    // with real bookings on it gets refused (see unlinkWixEventActivities)
+    // and needs to stay in the sync's own onlyEventIds so it keeps getting
+    // updated like any other still-listed activity, instead of silently
+    // falling out of step because the vendor tried to uncheck it.
+    const unlinkResult = toRemove.length
+      ? await unlinkWixEventActivities(admin, providerId, toRemove)
+      : { removed: 0, protectedEvents: [] };
+    const effectiveEventIds = [...new Set([...eventIds, ...unlinkResult.protectedEvents.map((p) => p.wixEventId)])];
 
-    return NextResponse.json({ ok: true, sync: { ...sync, unlinked } });
+    const sync = await syncProviderWixEvents(admin, providerId, creds, { onlyEventIds: effectiveEventIds });
+
+    return NextResponse.json({
+      ok: true,
+      sync: { ...sync, unlinked: unlinkResult.removed },
+      protectedEvents: unlinkResult.protectedEvents,
+    });
   } catch (e) {
     console.error('Wix selective event import failed', e);
     return NextResponse.json({ error: 'Could not reach Wix' }, { status: 502 });

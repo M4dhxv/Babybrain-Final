@@ -233,31 +233,56 @@ async function syncEventActivityMirror(
  *  which stays revivable if the event reappears), this is permanent: the
  *  next sync will never re-link this activity even if the same event is
  *  still on the account. The wix_events/event_ticket_types rows themselves
- *  are left untouched — this only detaches the activities mirror. */
+ *  are left untouched — this only detaches the activities mirror.
+ *
+ * Refuses to unlink an activity that already has a real (non-cancelled)
+ * booking on its session — confirmed live that unchecking an event with a
+ * genuine paid ticket on it silently detached that ticket's activity from
+ * Wix (still recorded, still valid, but orphaned from any future sync, and
+ * a fresh re-import created an unrelated duplicate instead of reviving it).
+ * A vendor's own "stop listing this" click shouldn't be able to strand a
+ * parent's ticket that way — those go back in `protectedTitles` instead of
+ * being unlinked, so the caller can tell the vendor why. */
 export async function unlinkWixEventActivities(
   admin: SupabaseClient<Database>,
   providerId: string,
   wixEventIds: string[]
-): Promise<number> {
-  if (wixEventIds.length === 0) return 0;
+): Promise<{ removed: number; protectedEvents: { wixEventId: string; title: string }[] }> {
+  if (wixEventIds.length === 0) return { removed: 0, protectedEvents: [] };
 
   const { data: rows } = await admin
     .from('wix_events')
-    .select('id')
+    .select('id, wix_event_id')
     .eq('provider_id', providerId)
     .in('wix_event_id', wixEventIds);
-  const localEventIds = (rows ?? []).map((r) => r.id);
-  if (localEventIds.length === 0) return 0;
+  const localIdToWixId = new Map((rows ?? []).map((r) => [r.id, r.wix_event_id]));
+  const localEventIds = [...localIdToWixId.keys()];
+  if (localEventIds.length === 0) return { removed: 0, protectedEvents: [] };
 
   const { data: activityRows } = await admin
     .from('activities')
-    .select('id, slug')
+    .select('id, slug, title, wix_event_id')
     .eq('provider_id', providerId)
     .in('wix_event_id', localEventIds);
-  if (!activityRows || activityRows.length === 0) return 0;
+  if (!activityRows || activityRows.length === 0) return { removed: 0, protectedEvents: [] };
 
   let removed = 0;
+  const protectedEvents: { wixEventId: string; title: string }[] = [];
   for (const row of activityRows) {
+    const { data: sessions } = await admin.from('activity_sessions').select('id').eq('activity_id', row.id);
+    const sessionIds = (sessions ?? []).map((s) => s.id);
+    const { count } = sessionIds.length
+      ? await admin
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .in('session_id', sessionIds)
+          .neq('status', 'cancelled')
+      : { count: 0 };
+    if ((count ?? 0) > 0) {
+      protectedEvents.push({ wixEventId: localIdToWixId.get(row.wix_event_id as string) as string, title: row.title });
+      continue;
+    }
+
     const { error } = await admin
       .from('activities')
       .update({
@@ -270,7 +295,7 @@ export async function unlinkWixEventActivities(
       .eq('id', row.id);
     if (!error) removed++;
   }
-  return removed;
+  return { removed, protectedEvents };
 }
 
 export async function syncProviderWixEvents(

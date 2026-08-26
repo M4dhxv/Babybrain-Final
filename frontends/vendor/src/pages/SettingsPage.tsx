@@ -738,12 +738,16 @@ function WixIntegrationManager({
     setEventImportError(null);
     setEventImportNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean; unlinked: number } }>(
-        '/api/vendor/wix-events-import',
-        { provider_id: provider.id, event_ids: Array.from(selectedEventIds) }
-      );
-      setEventImportNotice(summarizeEventSync(res.sync));
-      await loadWixEvents();
+      const res = await apiPost<{
+        sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean; unlinked: number };
+        protectedEvents: { wixEventId: string; title: string }[];
+      }>('/api/vendor/wix-events-import', { provider_id: provider.id, event_ids: Array.from(selectedEventIds) });
+      let notice = summarizeEventSync(res.sync);
+      if (res.protectedEvents.length > 0) {
+        notice += ` ${res.protectedEvents.map((p) => `"${p.title}"`).join(', ')} already ${res.protectedEvents.length > 1 ? 'have' : 'has'} bookings, so ${res.protectedEvents.length > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${res.protectedEvents.length > 1 ? 'them' : 'it'}.`;
+      }
+      setEventImportNotice(notice);
+      await loadWixEvents(); // re-checks anything that was protected, since it's still really linked
     } catch (e) {
       setEventImportError(describeWixError(e, 'Could not import the selected events'));
     } finally {
