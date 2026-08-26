@@ -2,16 +2,18 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
-  CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
+  CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
   Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderLocation, ProviderPolicy, VendorCategory } from '@/lib/database.types';
+import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -34,15 +36,19 @@ const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-// Compliance acceptances aren't modelled as a table in the MVP backend — kept static.
+// Acceptance itself still isn't tracked as real per-vendor data (no
+// acceptance table/timestamp exists yet — see complianceTerms.ts) — every
+// vendor who got through listing setup ticked both boxes, so "Accepted" is
+// shown for all of them, but what's now real is the actual content behind
+// it: clicking a row opens the exact agreement text from complianceTerms.ts
+// instead of a dead end. "Refund Policy" isn't a fixed BabyBrain document at
+// all — it's whatever the vendor wrote themselves under Waivers & Consents
+// (provider_policies), so it links there instead of a static viewer.
 const complianceItems = [
-  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Clock, label: 'PDPA Acknowledgement', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Store, label: 'Child Photo Consent Warranty', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Shield, label: 'Review Policy', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false },
-  { icon: MessageSquare, label: 'Messaging Rules', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Star, label: 'Featured Placement Disclosure', status: 'N/A until Boost', statusColor: 'text-gray-500', bg: 'bg-gray-100', accepted: false },
+  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: VENDOR_TERMS },
+  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: BOOKING_MESSAGING_TERMS },
+  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies' as const, doc: null },
+  { icon: Star, label: 'Featured Placement Disclosure', status: 'N/A until Boost', statusColor: 'text-gray-500', bg: 'bg-gray-100', accepted: false, kind: 'none' as const, doc: null },
 ];
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
@@ -77,6 +83,7 @@ export default function SettingsPage() {
   // add-location form opens immediately instead of just landing on the tab.
   const wantsNewLocation = searchParams.get('new') === 'location';
 
+  const [viewingDoc, setViewingDoc] = useState<ComplianceDocument | null>(null);
   const [team, setTeam] = useState<Member[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [form, setForm] = useState(emptyProfileForm);
@@ -425,22 +432,62 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="space-y-3">
-              {complianceItems.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
-                  <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
-                  {item.accepted ? (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
-                  ) : item.status === 'Edit' ? (
-                    <button className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"><Pencil className="w-3 h-3" />Edit</button>
-                  ) : (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
-                  )}
-                </div>
-              ))}
+              {complianceItems.map((item, idx) => {
+                const clickable = item.kind === 'view' || item.kind === 'edit-policies';
+                const onClick = () => {
+                  if (item.kind === 'view' && item.doc) setViewingDoc(item.doc);
+                  else if (item.kind === 'edit-policies') selectTab('policies');
+                };
+                return (
+                  <div
+                    key={idx}
+                    onClick={clickable ? onClick : undefined}
+                    className={cn('flex items-center gap-3 p-3 bg-gray-50 rounded-xl', clickable && 'cursor-pointer hover:bg-gray-100')}
+                  >
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
+                    <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
+                    {item.accepted ? (
+                      <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
+                    ) : item.status === 'Edit' ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); selectTab('policies'); }}
+                        className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"
+                      >
+                        <Pencil className="w-3 h-3" />Edit
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
+
+        <Sheet open={!!viewingDoc} onOpenChange={(open) => { if (!open) setViewingDoc(null); }}>
+          <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+            {viewingDoc && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{viewingDoc.title}</SheetTitle>
+                  <SheetDescription>{viewingDoc.summary}</SheetDescription>
+                </SheetHeader>
+                <div className="px-4 pb-6 space-y-5">
+                  <p className="text-xs text-gray-400 -mt-2">
+                    This is the agreement you accepted when setting up your listing — shown here exactly as it was presented then.
+                  </p>
+                  {viewingDoc.sections.map((s) => (
+                    <div key={s.heading} className="rounded-xl border-2 border-gray-300 bg-white p-4 shadow-sm">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-1">{s.heading}</h4>
+                      <p className="text-sm text-gray-600 leading-relaxed">{s.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
 
         {activeTab === 'integrations' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
@@ -465,6 +512,13 @@ type WixServiceOption = {
   type: string;
   importable: boolean;
   reason: string | null;
+  alreadyImported: boolean;
+};
+
+type WixEventOption = {
+  id: string;
+  name: string;
+  startDate: string;
   alreadyImported: boolean;
 };
 
@@ -494,6 +548,17 @@ function WixIntegrationManager({
   const [eventsSyncing, setEventsSyncing] = useState(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [eventsNotice, setEventsNotice] = useState<string | null>(null);
+
+  // "Import specific events" — same shape as the services picker above, one
+  // Wix app over (Events & Tickets, not Bookings).
+  const [wixEvents, setWixEvents] = useState<WixEventOption[] | null>(null);
+  const [eventsListLoading, setEventsListLoading] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const [baselineEventIds, setBaselineEventIds] = useState<Set<string>>(new Set());
+  const [eventImportSaving, setEventImportSaving] = useState(false);
+  const [eventImportError, setEventImportError] = useState<string | null>(null);
+  const [eventImportNotice, setEventImportNotice] = useState<string | null>(null);
+  const [eventsAppNotInstalled, setEventsAppNotInstalled] = useState(false);
 
   // "Import specific activities" — lets a vendor pick which Wix services
   // become activities, instead of "Sync services" bringing in everything.
@@ -629,10 +694,60 @@ function WixIntegrationManager({
         { provider_id: provider.id }
       );
       setEventsNotice(summarizeEventSync(res.sync));
+      await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
     } catch (e) {
       setEventsError(describeWixError(e, 'Could not sync events'));
     } finally {
       setEventsSyncing(false);
+    }
+  }
+
+  async function loadWixEvents() {
+    if (!provider) return;
+    setEventsListLoading(true);
+    setEventImportError(null);
+    try {
+      const res = await apiGet<{ events: WixEventOption[]; eventsAppNotInstalled: boolean }>(`/api/vendor/wix-events?providerId=${provider.id}`);
+      setWixEvents(res.events);
+      setEventsAppNotInstalled(res.eventsAppNotInstalled);
+      const imported = new Set(res.events.filter((e) => e.alreadyImported).map((e) => e.id));
+      setSelectedEventIds(imported);
+      setBaselineEventIds(imported);
+    } catch (e) {
+      setEventImportError(describeWixError(e, 'Could not load Wix events'));
+    } finally {
+      setEventsListLoading(false);
+    }
+  }
+
+  function toggleEventSelected(id: string) {
+    setEventImportNotice(null);
+    setSelectedEventIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const hasEventSelectionChanges =
+    selectedEventIds.size !== baselineEventIds.size || [...selectedEventIds].some((id) => !baselineEventIds.has(id));
+
+  async function saveEventImport() {
+    if (!provider || !hasEventSelectionChanges) return;
+    setEventImportSaving(true);
+    setEventImportError(null);
+    setEventImportNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean; unlinked: number } }>(
+        '/api/vendor/wix-events-import',
+        { provider_id: provider.id, event_ids: Array.from(selectedEventIds) }
+      );
+      setEventImportNotice(summarizeEventSync(res.sync));
+      await loadWixEvents();
+    } catch (e) {
+      setEventImportError(describeWixError(e, 'Could not import the selected events'));
+    } finally {
+      setEventImportSaving(false);
     }
   }
 
@@ -672,6 +787,11 @@ function WixIntegrationManager({
     // loads and stays visible purely off whether Wix is connected, so
     // clicking "Change key" doesn't yank it away.
     if (status?.connected) loadServices();
+    // eslint-disable-next-line
+  }, [status?.connected]);
+
+  useEffect(() => {
+    if (status?.connected) loadWixEvents();
     // eslint-disable-next-line
   }, [status?.connected]);
 
@@ -873,6 +993,69 @@ function WixIntegrationManager({
                 activity here — new ones land unpublished until you fill in a category and age range, same as
                 imported services.
               </p>
+            </div>
+          )}
+
+          {status?.connected && canManage && !eventsAppNotInstalled && (
+            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Import specific events</h4>
+                <p className="text-xs text-gray-500">Choose which Wix events should become activities on BabyBrain, then save.</p>
+              </div>
+
+              {eventImportError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{eventImportError}</div>}
+              {eventImportNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{eventImportNotice}</div>}
+              {!eventImportNotice && hasEventSelectionChanges && (
+                <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                  The changes will reflect on Activities page
+                </div>
+              )}
+
+              {eventsListLoading && <div className="text-sm text-gray-400">Loading Wix events…</div>}
+
+              {!eventsListLoading && wixEvents && wixEvents.length === 0 && (
+                <p className="text-sm text-gray-400">No upcoming events found on this Wix account.</p>
+              )}
+
+              {!eventsListLoading && wixEvents && wixEvents.length > 0 && (
+                <>
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {wixEvents.map((e) => (
+                      <label
+                        key={e.id}
+                        className={cn(
+                          'flex items-center gap-3 p-3 rounded-xl border cursor-pointer',
+                          e.alreadyImported ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                          checked={selectedEventIds.has(e.id)}
+                          onChange={() => toggleEventSelected(e.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-800 truncate">{e.name}</div>
+                          <div className="text-xs text-gray-400">
+                            {new Date(e.startDate).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}
+                          </div>
+                        </div>
+                        {e.alreadyImported && (
+                          <span className="flex-shrink-0 text-xs font-semibold text-green-700">Imported</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+
+                  <Button
+                    onClick={saveEventImport}
+                    disabled={eventImportSaving || !hasEventSelectionChanges}
+                    className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+                  >
+                    <Save className="w-4 h-4" /> {eventImportSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </>
+              )}
             </div>
           )}
 

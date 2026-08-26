@@ -226,11 +226,65 @@ async function syncEventActivityMirror(
   }
 }
 
+/** A vendor deliberately unchecking an event in the "Import specific
+ *  events" picker — mirrors unlinkWixActivities in sync.ts (unpublish,
+ *  clear the link, rename the slug out of the way) but for wix_event_id.
+ *  Unlike syncProviderWixEvents's own reconciliation (wix_missing_since,
+ *  which stays revivable if the event reappears), this is permanent: the
+ *  next sync will never re-link this activity even if the same event is
+ *  still on the account. The wix_events/event_ticket_types rows themselves
+ *  are left untouched — this only detaches the activities mirror. */
+export async function unlinkWixEventActivities(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  wixEventIds: string[]
+): Promise<number> {
+  if (wixEventIds.length === 0) return 0;
+
+  const { data: rows } = await admin
+    .from('wix_events')
+    .select('id')
+    .eq('provider_id', providerId)
+    .in('wix_event_id', wixEventIds);
+  const localEventIds = (rows ?? []).map((r) => r.id);
+  if (localEventIds.length === 0) return 0;
+
+  const { data: activityRows } = await admin
+    .from('activities')
+    .select('id, slug')
+    .eq('provider_id', providerId)
+    .in('wix_event_id', localEventIds);
+  if (!activityRows || activityRows.length === 0) return 0;
+
+  let removed = 0;
+  for (const row of activityRows) {
+    const { error } = await admin
+      .from('activities')
+      .update({
+        is_published: false,
+        wix_event_id: null,
+        wix_service_type: null,
+        wix_removed_at: new Date().toISOString(),
+        slug: `${row.slug}-removed-${row.id.slice(0, 6)}`,
+      })
+      .eq('id', row.id);
+    if (!error) removed++;
+  }
+  return removed;
+}
+
 export async function syncProviderWixEvents(
   admin: SupabaseClient<Database>,
   providerId: string,
-  creds: WixCredentials
+  creds: WixCredentials,
+  options?: { onlyEventIds?: string[] }
 ): Promise<WixEventsSyncResult> {
+  // wix_events/event_ticket_types stay in step for every fetched event
+  // regardless — that's just keeping BabyBrain's cache of what's on the
+  // account correct, not exposing anything to parents. `onlyEventIds` only
+  // gates the *activities* mirror below (the part a parent can actually
+  // see/book), matching syncWixServicesToActivities's onlyServiceIds.
+  const onlyIds = options?.onlyEventIds ? new Set(options.onlyEventIds) : null;
   const result: WixEventsSyncResult = {
     created: 0,
     updated: 0,
@@ -334,7 +388,9 @@ export async function syncProviderWixEvents(
       }
     }
 
-    await syncEventActivityMirror(admin, providerId, localEventId, event);
+    if (!onlyIds || onlyIds.has(event.id)) {
+      await syncEventActivityMirror(admin, providerId, localEventId, event);
+    }
   }
 
   // Reconciliation only covers events that SHOULD have appeared in this
