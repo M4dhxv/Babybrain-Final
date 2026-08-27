@@ -725,7 +725,6 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                   })}
                 </div>
               )}
-              <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
             {child && (
               <article className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card">
@@ -760,7 +759,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {shown && shown.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
+          <a href="/explore" className="mt-4 block text-left font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
@@ -3084,7 +3083,7 @@ function ProfilePage() {
           switching tabs shows the content straight away instead of burying it
           under the promo blocks. On desktop both sidebar cards stack on the
           left with the content beside them. */}
-      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:items-start">
+      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
         <aside className="order-1 lg:col-start-1 lg:row-start-1">
           <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <div className="flex items-center gap-3">
@@ -3365,7 +3364,7 @@ function ProfilePage() {
           {tab === "makeup" && !isPlus && (
             <PlusLock
               title="Make-up tokens are a Plus feature"
-              copy="With Plus, tokens from every provider are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
+              copy="With Plus, make-up tokens from every provider who issues through BabyBrain are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
             />
           )}
           {tab === "makeup" && isPlus && (
@@ -3422,7 +3421,7 @@ function ProfilePage() {
           {tab === "favorites" && !isPlus && (
             <PlusLock
               title="Saved favourites are a Plus feature"
-              copy="Upgrade to keep your favourite activities and providers on your own list and map, so you can come back to them any time."
+              copy="Upgrade to keep your favourite activities and providers on your own list, so you can come back to them any time."
             />
           )}
           {tab === "favorites" && isPlus && (
@@ -4573,19 +4572,6 @@ function PricingPage() {
             </p>
           </article>
         </section>
-
-        <section className="mt-5 grid gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card md:grid-cols-3">
-          {[
-            ["store", "Corporate discounts", "available for bulk packages"],
-            ["calendar", "Monthly or annual billing", "Choose the plan that works for you"],
-            ["shield", "Cancel anytime", "Manage your subscription from your profile"],
-          ].map(([icon, title, copy]) => (
-            <div key={title} className="flex items-center gap-4">
-              <Icon name={icon} className="h-8 w-8 text-baby-pink" />
-              <p><strong className="block">{title}</strong><span className="text-sm font-semibold text-[#59658d]">{copy}</span></p>
-            </div>
-          ))}
-        </section>
       </main>
     </PageShell>
   );
@@ -5580,7 +5566,7 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early", "Enable your child to get comfortable"], ["shoe", "Dress comfortably", "Allow for movement and potential mess"], ["bottle", "Bring essentials", "Socks, water and wipes encouraged"]].map(([icon, title, note]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">{note}</p></div>)}
               </div>
             </article>
           </div>
