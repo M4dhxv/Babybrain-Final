@@ -849,7 +849,7 @@ function WixIntegrationManager({
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-1">
+      <div className="mb-1 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
         <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Plug className="w-5 h-5 text-indigo-600" /></div>
         <div>
           <h3 className="font-semibold text-gray-900">WIX Integration</h3>
