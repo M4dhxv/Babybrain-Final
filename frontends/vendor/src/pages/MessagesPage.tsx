@@ -58,7 +58,7 @@ export default function MessagesPage() {
     return (
       <div className="p-8">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-        <p className="mt-1 text-sm text-gray-500">Parents and providers, in one inbox.</p>
+        <p className="mt-1 text-sm text-gray-500">Every parent enquiry, across all your services, in one inbox.</p>
         <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
           <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-300 text-purple-800">
             <Crown className="h-7 w-7" />
@@ -100,7 +100,7 @@ export default function MessagesPage() {
       <div className="flex items-center justify-between px-8 py-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-          <p className="text-sm text-gray-500 mt-1">Parents and providers, in one inbox.</p>
+          <p className="text-sm text-gray-500 mt-1">Every parent enquiry, across all your services, in one inbox.</p>
         </div>
       </div>
       <div className="min-h-0 flex-1 px-6 pb-6">

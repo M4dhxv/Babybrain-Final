@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield,
@@ -9,6 +10,8 @@ import {
   Heart,
   Sparkles,
   Cloud,
+  Menu,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import SiteFooter from '@/components/SiteFooter';
@@ -17,6 +20,7 @@ import { HeroDashboardPreview } from '@/components/HeroDashboardPreview';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="bg-white overflow-x-hidden">
@@ -25,7 +29,7 @@ export default function LandingPage() {
           height never eats into the free space this needs to center in —
           it always starts at or after the fold, however tall it is. */}
       <div className="flex min-h-screen flex-col">
-      <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
+      <header className="relative flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
         <BrandLogo className="h-9 sm:h-10" />
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Home</button>
@@ -46,7 +50,35 @@ export default function LandingPage() {
           >
             Upgrade your listing
           </Button>
+          {/* Mobile menu toggle — below md the nav links have nowhere to sit,
+              so they collapse behind this. */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 md:hidden"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+
+        {/* Mobile dropdown */}
+        {menuOpen && (
+          <div className="absolute inset-x-0 top-full z-40 border-b border-gray-100 bg-white shadow-lg md:hidden">
+            <nav className="flex flex-col px-4 py-1">
+              <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-semibold text-[#FA4D8D]">Home</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Plans</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/contact'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
+              <button
+                onClick={() => { setMenuOpen(false); navigate('/plans'); }}
+                className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
+              >
+                Upgrade your listing
+              </button>
+            </nav>
+          </div>
+        )}
       </header>
 
       {/* Fold — sized to exactly fill the space below the header and

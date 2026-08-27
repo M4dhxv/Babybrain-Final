@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Star } from 'lucide-react';
+import { Check, Star, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SiteFooter from '@/components/SiteFooter';
@@ -106,6 +106,7 @@ export default function PlansPage() {
   // visitors (subscription === null) never match the free tier's null key.
   const isCurrentPlan = (planKey: 'growth' | 'pro' | null) =>
     subscription != null && (planKey ?? 'free') === (subscription.plan === 'premium' ? 'pro' : subscription.plan);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
   const [optedOut, setOptedOut] = useState(false);
@@ -193,27 +194,53 @@ export default function PlansPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
+      <header className="relative flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
         <div
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => navigate('/')}
         >
-          <BrandLogo className="h-10" />
-          
+          <BrandLogo className="h-9 sm:h-10" />
         </div>
-        <nav className="flex items-center gap-10">
+        <nav className="hidden items-center gap-10 md:flex">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Plans</button>
           <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
             Sign in
           </Button>
-          <Button onClick={() => navigate('/login')} className="rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 border-0">
+          <Button onClick={() => navigate('/login')} className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 border-0 sm:inline-flex">
             Upgrade your listing
           </Button>
+          {/* Mobile menu toggle */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 md:hidden"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+
+        {/* Mobile dropdown */}
+        {menuOpen && (
+          <div className="absolute inset-x-0 top-full z-40 border-b border-gray-100 bg-white shadow-lg md:hidden">
+            <nav className="flex flex-col px-4 py-1">
+              <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-medium text-gray-700">Home</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-semibold text-[#FA4D8D]">Plans</button>
+              <button onClick={() => { setMenuOpen(false); window.location.href = 'mailto:hello@babybrain.sg'; }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
+              <button
+                onClick={() => { setMenuOpen(false); navigate('/login'); }}
+                className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
+              >
+                Upgrade your listing
+              </button>
+            </nav>
+          </div>
+        )}
       </header>
 
       {/* Pricing Section */}
