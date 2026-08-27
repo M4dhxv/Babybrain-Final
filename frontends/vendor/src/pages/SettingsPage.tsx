@@ -251,8 +251,20 @@ export default function SettingsPage() {
                     </label>
                   )}
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{form.business_name || 'Your business'}</h3>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-gray-900">{form.business_name || 'Your business'}</h3>
+                    {canManage && !isEditingProfile && (
+                      <button
+                        onClick={() => setIsEditingProfile(true)}
+                        title="Edit profile"
+                        aria-label="Edit profile"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 sm:hidden"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   {categoryLabel && <p className="text-sm text-gray-500">{categoryLabel}</p>}
                   <div className="flex items-center gap-2 mt-1.5">
                     <Progress value={completion(form)} className="w-32 h-2" />
@@ -261,7 +273,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               {canManage && !isEditingProfile && (
-                <button onClick={() => setIsEditingProfile(true)} title="Edit profile" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                <button onClick={() => setIsEditingProfile(true)} title="Edit profile" className="hidden items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:flex">
                   <Pencil className="w-3.5 h-3.5" /> Edit
                 </button>
               )}
