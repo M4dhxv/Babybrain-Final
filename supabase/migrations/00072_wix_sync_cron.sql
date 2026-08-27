@@ -14,12 +14,17 @@
 -- read from the same Vault entry ('cron_shared_secret') the vendor-refresh
 -- cron already relies on — no new secret to configure.
 --
--- Every 5 minutes: Wix API calls are direct HTTP so a run across all
--- providers finishes in seconds — safe at this scale. Only real cost of
--- going tighter than this: the first sync of a FEE_ADDED_AT_CHECKOUT ticket
--- type briefly reserves one unit of live inventory to discover the fee rate
--- (see fetchTicketFeeRatePercent in lib/wix/client.ts), and a provider with
--- a bad/revoked key retries that discovery every tick until fixed.
+-- Every minute: the cron fires exactly one fire-and-forget net.http_post
+-- per tick — the per-provider fan-out happens inside
+-- /api/cron/refresh-wix on Vercel — so tightening the schedule does not
+-- scale with vendor count, and near-real-time price/capacity/location
+-- freshness on the parent site is worth more as the marketplace grows.
+-- The one real cost of going this tight: a provider with a bad/revoked
+-- key re-attempts FEE_ADDED_AT_CHECKOUT fee discovery (which briefly
+-- reserves one unit of live inventory to discover the fee rate — see
+-- fetchTicketFeeRatePercent in lib/wix/client.ts) on every tick until the
+-- key is fixed. For a gentler cadence, use '90 seconds' below (needs
+-- pg_cron >= 1.5, which Supabase runs).
 
 create table if not exists public.wix_sync_runs (
   id                 uuid primary key default gen_random_uuid(),
@@ -52,7 +57,7 @@ select cron.unschedule(jobid) from cron.job where jobname = 'wix-sync';
 
 select cron.schedule(
   'wix-sync',
-  '*/5 * * * *',                         -- every 5 minutes
+  '* * * * *',                           -- every minute
   $$
   select net.http_post(
     url     := 'https://babybrain-final.vercel.app/api/cron/refresh-wix',
