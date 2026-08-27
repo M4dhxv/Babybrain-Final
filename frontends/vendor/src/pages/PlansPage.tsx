@@ -322,9 +322,11 @@ export default function PlansPage() {
           })}
         </div>
 
-        {/* Comparison Table */}
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <div className="grid grid-cols-4 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
+        {/* Comparison Table — four fixed columns don't fit a phone, so it
+            scrolls sideways below its natural width rather than crushing the
+            plan buttons into each other. */}
+        <div className="border border-gray-200 rounded-xl overflow-x-auto">
+          <div className="grid min-w-[600px] grid-cols-4 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
             <div>Features</div>
             <div className="text-center text-blue-600">Pay as you grow</div>
             <div className="text-center text-purple-600">Pro</div>
@@ -334,7 +336,7 @@ export default function PlansPage() {
             <div
               key={feature.name}
               className={cn(
-                'grid grid-cols-4 px-6 py-3 text-sm items-center',
+                'grid min-w-[600px] grid-cols-4 px-6 py-3 text-sm items-center',
                 idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
               )}
             >
@@ -362,14 +364,14 @@ export default function PlansPage() {
               </div>
             </div>
           ))}
-          <div className="grid grid-cols-4 px-6 py-4 bg-white">
+          <div className="grid min-w-[600px] grid-cols-4 items-stretch px-6 py-4 bg-white">
             <div />
             {plans.map((plan) => (
-              <div key={plan.name} className="flex justify-center">
+              <div key={plan.name} className="flex px-1">
                 <Button
                   onClick={() => selectPlan(plan.planKey)}
                   disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
-                  className={cn('rounded-xl px-6 font-semibold bg-white', plan.buttonClass)}
+                  className={cn('h-full w-full whitespace-normal rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight bg-white sm:text-sm', plan.buttonClass)}
                   variant="outline"
                 >
                   {plan.planKey !== null && checkoutBusy === plan.planKey
