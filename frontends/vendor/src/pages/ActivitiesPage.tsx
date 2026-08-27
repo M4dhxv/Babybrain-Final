@@ -386,10 +386,10 @@ export default function ActivitiesPage() {
   };
 
   const stats = [
-    { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
+    { icon: CalendarCheck, label: 'Active activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
     { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
-    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    { icon: CalendarDays, label: 'Draft activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
 
   async function archive(id: string) {
@@ -518,7 +518,7 @@ export default function ActivitiesPage() {
       <div className="flex items-center justify-between px-8 py-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your activities, packages and locations.</p>
+          <p className="text-sm text-gray-500 mt-1">Manage your activities and schedule</p>
         </div>
       </div>
 
@@ -531,15 +531,15 @@ export default function ActivitiesPage() {
             className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
           >
             <CalendarPlus className="w-4 h-4" />
-            New Activity
+            New activity
           </button>
           <button onClick={() => navigate('/packages?new=pack')} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
             <Package className="w-4 h-4" />
-            New Package
+            New package
           </button>
           <button onClick={() => navigate('/settings?tab=locations&new=location')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
             <MapPin className="w-4 h-4" />
-            New Location
+            New location
           </button>
         </div>
 
@@ -630,15 +630,15 @@ export default function ActivitiesPage() {
           {showFilters && (
           <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
-              <option value="">All Status</option>
+              <option value="">All statuses</option>
               {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={filterCls}>
-              <option value="">All Locations</option>
+              <option value="">All locations</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
             <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={filterCls}>
-              <option value="">All Age Groups</option>
+              <option value="">All age groups</option>
               <option value="0-18">0 – 18 months</option>
               <option value="18-36">18m – 3 years</option>
               <option value="36-60">3 – 5 years</option>
@@ -664,7 +664,7 @@ export default function ActivitiesPage() {
             <div>Activity</div>
             <div>Category</div>
             <div>Location</div>
-            <div>Age Group</div>
+            <div>Age group</div>
             <div>Sessions</div>
             <div>Bookings</div>
             <div>Rating</div>
