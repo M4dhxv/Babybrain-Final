@@ -424,11 +424,11 @@ export default function SettingsPage() {
 
         {activeTab === 'compliance' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="mb-5 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
               <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Shield className="w-5 h-5 text-purple-600" /></div>
               <div>
                 <h3 className="font-semibold text-gray-900">Compliance</h3>
-                <p className="text-xs text-gray-500">Keep your profile compliant and up to date.</p>
+                <p className="text-xs text-gray-500">Ensure your profile is compliant and up to date.</p>
               </div>
             </div>
             <div className="space-y-3">
@@ -1580,8 +1580,8 @@ function PoliciesManager({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div className="flex items-center gap-3">
+      <div className="mb-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
           <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><FileText className="w-5 h-5 text-amber-600" /></div>
           <div>
             <h3 className="font-semibold text-gray-900">Waivers &amp; Consents</h3>
