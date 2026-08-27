@@ -186,7 +186,7 @@ export default function SchedulePage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -208,7 +208,7 @@ export default function SchedulePage() {
         )}
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 pb-8 sm:px-8">
         {wixError && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{wixError}</div>
         )}
@@ -284,7 +284,8 @@ export default function SchedulePage() {
         )}
 
         {!loading && activities.length > 0 && view === 'week' && (
-          <div className="grid grid-cols-7 gap-3">
+          <div className="overflow-x-auto">
+          <div className="grid min-w-[900px] grid-cols-7 gap-3">
             {weekDays.map((d) => {
               const daySessions = sessionsFor(d);
               return (
@@ -310,18 +311,19 @@ export default function SchedulePage() {
               );
             })}
           </div>
+          </div>
         )}
 
         {!loading && activities.length > 0 && view === 'month' && (
-          <div>
-            <div className="grid grid-cols-7 gap-px overflow-hidden rounded-t-xl border border-b-0 border-gray-200 bg-gray-200">
+          <div className="overflow-x-auto">
+            <div className="grid min-w-[760px] grid-cols-7 gap-px overflow-hidden rounded-t-xl border border-b-0 border-gray-200 bg-gray-200">
               {weekDays.map((d) => (
                 <div key={d.toISOString()} className="bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500">
                   {format(d, 'EEE')}
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-7 gap-px overflow-hidden rounded-b-xl border border-gray-200 bg-gray-200">
+            <div className="grid min-w-[760px] grid-cols-7 gap-px overflow-hidden rounded-b-xl border border-gray-200 bg-gray-200">
               {monthDays.map((d) => {
                 const daySessions = sessionsFor(d);
                 const visible = daySessions.slice(0, 3);

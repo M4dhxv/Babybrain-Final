@@ -515,16 +515,16 @@ export default function ActivitiesPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
           <p className="text-sm text-gray-500 mt-1">Manage your activities and schedule</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 pb-8 sm:px-8">
         {/* Action Buttons */}
-        <div className="flex justify-center gap-4 mb-6">
+        <div className="flex flex-wrap justify-center gap-3 mb-6 sm:gap-4">
           <button
             onClick={() => canManage && openCreate()}
             disabled={!canManage}
@@ -544,7 +544,7 @@ export default function ActivitiesPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-4">
           {stats.map((stat) => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -561,7 +561,7 @@ export default function ActivitiesPage() {
 
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-gray-200">
             <div className="flex gap-6">
               {tabs.map((tab) => (
                 <button
@@ -576,7 +576,7 @@ export default function ActivitiesPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {provider?.wix_site_id && (
                 <button
                   onClick={syncServices}
@@ -588,14 +588,14 @@ export default function ActivitiesPage() {
                   {syncing ? 'Syncing…' : 'Sync services'}
                 </button>
               )}
-              <div className="relative">
+              <div className="relative flex-1 sm:flex-none">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search activities..."
-                  className="pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300 w-48"
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300 sm:w-48"
                 />
               </div>
               <button
@@ -628,7 +628,7 @@ export default function ActivitiesPage() {
 
           {/* Filter bar */}
           {showFilters && (
-          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
+          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-gray-200">
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
               <option value="">All statuses</option>
               {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
@@ -659,8 +659,10 @@ export default function ActivitiesPage() {
           </div>
           )}
 
+          {/* Table (horizontal scroll below its natural width on small screens) */}
+          <div className="overflow-x-auto">
           {/* Table Header */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="grid min-w-[980px] grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
             <div>Activity</div>
             <div>Category</div>
             <div>Location</div>
@@ -683,7 +685,7 @@ export default function ActivitiesPage() {
             return (
               <div
                 key={a.id}
-                className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
+                className="grid min-w-[980px] grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
@@ -767,6 +769,7 @@ export default function ActivitiesPage() {
               </div>
             );
           })}
+          </div>
 
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200">
             <span className="text-sm text-gray-500">Showing {visible.length} of {activities.length} activities</span>
@@ -777,7 +780,7 @@ export default function ActivitiesPage() {
 
       {/* Create Activity Drawer */}
       {showDrawer && (
-        <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
             <h3 className="font-semibold text-gray-900">{editingId ? 'Edit Activity' : 'Create Activity'}</h3>
             <button onClick={() => setShowDrawer(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -915,7 +918,7 @@ export default function ActivitiesPage() {
 
       {/* Schedule Drawer — the bookable dates/times for one activity */}
       {scheduleFor && (
-        <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
             <div>
               <h3 className="font-semibold text-gray-900">Schedule</h3>

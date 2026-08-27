@@ -295,14 +295,14 @@ export default function BookingsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage bookings for your sessions.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 pb-8 sm:px-8">
         {/* Session Selector (real sessions) */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
@@ -373,7 +373,7 @@ export default function BookingsPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-gray-200 mb-6">
+        <div className="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
           {bookingsTabs.map((tab) => (
             <button key={tab} onClick={() => selectTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
@@ -388,9 +388,9 @@ export default function BookingsPage() {
 
         {loading && <div className="text-sm text-gray-400">Loading…</div>}
 
-        <div className="flex gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row">
           {/* Booking list */}
-          <div className="w-80 flex-shrink-0">
+          <div className="w-full flex-shrink-0 lg:w-80">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bookings..."
@@ -610,15 +610,15 @@ export default function BookingsPage() {
                 </div>
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
               </div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden mb-5">
-                <div className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
+              <div className="border border-gray-200 rounded-xl overflow-x-auto mb-5">
+                <div className="grid min-w-[520px] grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
                   <div>Present</div><div>Child</div><div>Status</div><div>Make-up token</div>
                 </div>
                 {booked.map((c) => {
                   const cur = attDraft[c.booking_id] ?? c.attendance_status;
                   const tok = tokenStatus[c.booking_id];
                   return (
-                    <div key={c.booking_id} className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
+                    <div key={c.booking_id} className="grid min-w-[520px] grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
                       <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
                       <div className="flex items-center gap-2">
