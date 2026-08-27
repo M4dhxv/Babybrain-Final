@@ -1605,21 +1605,31 @@ function PoliciesManager({
       <div className="space-y-3">
         {policies.map((p) => (
           <div key={p.id} className={cn('rounded-xl border p-4', p.active ? 'border-gray-200' : 'border-dashed border-gray-300 bg-gray-50 opacity-70')}>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="font-medium text-gray-900">
                   {p.title}
-                  <span className={cn('ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
+                  <span className={cn('mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold sm:ml-2 sm:mt-0 sm:inline', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
                     {p.required ? 'Required to book' : 'Optional'}
                   </span>
-                  {!p.active && <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Off</span>}
+                  {!p.active && <span className="mt-1 block w-fit rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 sm:ml-2 sm:mt-0 sm:inline">Off</span>}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">
+                {canManage && (
+                  <div className="mt-3 flex gap-2 sm:hidden">
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setActive(p.id, !p.active)}>
+                      {p.active ? 'Turn off' : 'Turn on'}
+                    </Button>
+                  </div>
+                )}
+                <p className="mt-3 text-xs text-gray-500 sm:mt-1">
                   {p.activity_id
                     ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one activity'}`
                     : 'All of your activities'}
                 </p>
-                {p.body && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{p.body}</p>}
+                {p.body && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{p.body}</p>}
                 {p.document_url && (
                   <a href={p.document_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-medium text-[#C90044] underline">
                     View uploaded document
@@ -1627,7 +1637,7 @@ function PoliciesManager({
                 )}
               </div>
               {canManage && (
-                <div className="flex shrink-0 gap-2">
+                <div className="hidden shrink-0 gap-2 sm:flex">
                   <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
