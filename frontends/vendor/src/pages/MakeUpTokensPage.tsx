@@ -88,13 +88,13 @@ export default function MakeUpTokensPage() {
           Issue a new token from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token".
         </p>
 
-        <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-white p-1">
+        <div className="mb-4 flex w-full rounded-xl border border-gray-200 bg-white p-1 sm:inline-flex sm:w-auto">
           {statusFilters.map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={cn(
-                'px-3 h-8 text-sm font-medium rounded-lg transition-colors',
+                'h-8 flex-1 px-3 text-sm font-medium rounded-lg transition-colors sm:flex-none',
                 filter === f ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-100'
               )}
             >

@@ -219,30 +219,30 @@ export default function PackagesPage() {
 
             {canManage && (
               <>
-                <div className="mt-5 flex flex-wrap items-end gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
-                    <input id="pack-name-input" value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
+                <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Pack name</label>
+                    <input id="pack-name-input" value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-auto" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
-                    <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Classes</label>
+                    <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-24" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
-                    <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
+                    <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
-                    <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Valid for (days)</label>
+                    <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
-                  <button onClick={createPack} disabled={savingPack} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
+                  <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
                     {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
                   </button>
                   {editingPackId && (
                     <button
                       onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); setActivityPickerOpen(false); }}
-                      className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700"
+                      className="h-9 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 sm:w-auto"
                     >
                       Cancel
                     </button>
@@ -253,13 +253,13 @@ export default function PackagesPage() {
                     {packError ?? packNotice}
                   </p>
                 )}
-                <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <div className="relative">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to activities (optional)</label>
+                <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="relative w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to activities (optional)</label>
                     <button
                       type="button"
                       onClick={() => setActivityPickerOpen((v) => !v)}
-                      className="flex h-9 w-56 items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm"
+                      className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:w-56"
                     >
                       <span className="truncate text-left">
                         {packForm.activity_ids.length === 0
@@ -273,7 +273,7 @@ export default function PackagesPage() {
                     {activityPickerOpen && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
-                        <div className="absolute z-20 mt-1 max-h-64 w-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg sm:w-64">
                           <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
                             <input
                               type="checkbox"
@@ -304,14 +304,14 @@ export default function PackagesPage() {
                       </>
                     )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to weekly slot (optional)</label>
-                    <div className="flex gap-2">
-                      <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>
+                    <div className="flex w-full gap-2">
+                      <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:flex-none">
                         <option value="">Any day</option>
                         {WEEKDAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
                       </select>
-                      <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 rounded-lg border border-gray-300 px-3 text-sm" title="Session start time (SGT); leave blank for any time" />
+                      <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm sm:flex-none" title="Session start time (SGT); leave blank for any time" />
                     </div>
                   </div>
                 </div>
