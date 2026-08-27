@@ -511,6 +511,13 @@ export default function ActivitiesPage() {
   const [showFilters, setShowFilters] = useState(true);
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
   const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-300';
+  // Mobile: full-width selects with centred text and a custom chevron held
+  // a little off the right edge (the native one sits flush). Reverts to the
+  // OS control from sm up.
+  const filterMobileCls =
+    "w-full max-w-xs text-center appearance-none bg-no-repeat bg-[length:14px] bg-[right_0.9rem_center] pl-9 pr-9 " +
+    "bg-[url(\"data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='14'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%239ca3af'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E\")] " +
+    "sm:w-auto sm:max-w-none sm:text-left sm:appearance-auto sm:bg-none sm:pl-3 sm:pr-3";
 
   return (
     <div className="relative">
@@ -634,29 +641,29 @@ export default function ActivitiesPage() {
               all the same size) and centre; on desktop they sit inline. */}
           {showFilters && (
           <div className="flex flex-col items-center gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center">
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All statuses</option>
               {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
+            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All locations</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
-            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
+            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All age groups</option>
               <option value="0-18">0 – 18 months</option>
               <option value="18-36">18m – 3 years</option>
               <option value="36-60">3 – 5 years</option>
               <option value="60-216">5+ years</option>
             </select>
-            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
+            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All activities</option>
               {activities
                 .filter((a) => !isFullyRemoved(a))
                 .sort((a, b) => a.title.localeCompare(b.title))
                 .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
             </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none sm:ml-auto')}>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, filterMobileCls, 'sm:ml-auto')}>
               <option value="updated">Sort by: Recently updated</option>
               <option value="name">Sort by: Name</option>
               <option value="rating">Sort by: Rating</option>
