@@ -1618,16 +1618,16 @@ function PoliciesManager({
         {policies.map((p) => (
           <div key={p.id} className={cn('rounded-xl border p-4', p.active ? 'border-gray-200' : 'border-dashed border-gray-300 bg-gray-50 opacity-70')}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
+              <div className="min-w-0 text-center sm:text-left">
                 <p className="font-medium text-gray-900">
                   {p.title}
-                  <span className={cn('mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold sm:ml-2 sm:mt-0 sm:inline', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
+                  <span className={cn('mx-auto mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold sm:mx-0 sm:ml-2 sm:mt-0 sm:inline', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
                     {p.required ? 'Required to book' : 'Optional'}
                   </span>
-                  {!p.active && <span className="mt-1 block w-fit rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 sm:ml-2 sm:mt-0 sm:inline">Off</span>}
+                  {!p.active && <span className="mx-auto mt-1 block w-fit rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 sm:mx-0 sm:ml-2 sm:mt-0 sm:inline">Off</span>}
                 </p>
                 {canManage && (
-                  <div className="mt-3 flex gap-2 sm:hidden">
+                  <div className="mt-3 flex justify-center gap-2 sm:hidden">
                     <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
