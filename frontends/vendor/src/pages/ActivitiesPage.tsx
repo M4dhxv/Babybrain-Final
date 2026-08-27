@@ -561,8 +561,8 @@ export default function ActivitiesPage() {
 
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-gray-200">
-            <div className="flex gap-6">
+          <div className="flex flex-col gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex justify-center gap-6 sm:justify-start">
               {tabs.map((tab) => (
                 <button
                   key={tab}
@@ -576,47 +576,51 @@ export default function ActivitiesPage() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {provider?.wix_site_id && (
-                <button
-                  onClick={syncServices}
-                  disabled={syncing}
-                  title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
-                  {syncing ? 'Syncing…' : 'Sync services'}
-                </button>
-              )}
-              <div className="relative flex-1 sm:flex-none">
+            {/* Mobile: search on its own row, then Sync services + Filters
+                side by side. Desktop: all inline. */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="relative w-full sm:order-2 sm:w-48">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search activities..."
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300 sm:w-48"
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300"
                 />
               </div>
-              <button
-                onClick={() => setShowFilters((v) => !v)}
-                aria-expanded={showFilters}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50',
-                  activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+              <div className="flex justify-center gap-3 sm:contents">
+                {provider?.wix_site_id && (
+                  <button
+                    onClick={syncServices}
+                    disabled={syncing}
+                    title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:order-1"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+                    {syncing ? 'Syncing…' : 'Sync services'}
+                  </button>
                 )}
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
-              </button>
-              {activeFilterCount > 0 && (
                 <button
-                  onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
-                  className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044]"
+                  onClick={() => setShowFilters((v) => !v)}
+                  aria-expanded={showFilters}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50 sm:order-3',
+                    activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+                  )}
                 >
-                  Clear
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
                 </button>
-              )}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044] sm:order-4"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -626,32 +630,33 @@ export default function ActivitiesPage() {
             </div>
           )}
 
-          {/* Filter bar */}
+          {/* Filter bar — on mobile the selects stack full-width (so they're
+              all the same size) and centre; on desktop they sit inline. */}
           {showFilters && (
-          <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-gray-200">
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
+          <div className="flex flex-col items-center gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center">
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
               <option value="">All statuses</option>
               {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={filterCls}>
+            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
               <option value="">All locations</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
-            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={filterCls}>
+            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
               <option value="">All age groups</option>
               <option value="0-18">0 – 18 months</option>
               <option value="18-36">18m – 3 years</option>
               <option value="36-60">3 – 5 years</option>
               <option value="60-216">5+ years</option>
             </select>
-            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={filterCls}>
+            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none')}>
               <option value="">All activities</option>
               {activities
                 .filter((a) => !isFullyRemoved(a))
                 .sort((a, b) => a.title.localeCompare(b.title))
                 .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
             </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'ml-auto')}>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'w-full max-w-xs sm:w-auto sm:max-w-none sm:ml-auto')}>
               <option value="updated">Sort by: Recently updated</option>
               <option value="name">Sort by: Name</option>
               <option value="rating">Sort by: Rating</option>

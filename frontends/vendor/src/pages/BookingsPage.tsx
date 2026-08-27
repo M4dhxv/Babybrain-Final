@@ -303,42 +303,49 @@ export default function BookingsPage() {
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {/* Session Selector (real sessions) */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-            <Baby className="w-4 h-4 text-[#C90044]" />
-            <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="bg-transparent font-medium focus:outline-none">
-              {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
-              {filteredSessions.map((s) => (
-                <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
-              ))}
-            </select>
-            <div className="h-4 w-px bg-gray-200" />
-            {/* The input's own native picker-indicator icon is hidden — this
-                icon opens the same picker instead, so there's only one
-                calendar symbol instead of two. */}
-            <CalendarDays
-              className="w-4 h-4 text-[#C90044] cursor-pointer"
-              onClick={() => dateFilterRef.current?.showPicker?.()}
-            />
-            <input
-              ref={dateFilterRef}
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden"
-              aria-label="Filter sessions by date"
-            />
-            {dateFilter && (
-              <button onClick={() => setDateFilter('')} className="text-xs font-medium text-gray-400 hover:text-gray-600">
-                Clear
-              </button>
-            )}
+        {/* Session Selector (real sessions). One pill: on mobile it stacks so
+            the date filter sits on its own row below the session box (it used
+            to be crammed alongside and overflow); on desktop it's the same
+            single inline pill as before. */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex w-full flex-col gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:w-auto sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-2">
+              <Baby className="w-4 h-4 shrink-0 text-[#C90044]" />
+              <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
+                {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
+                {filteredSessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="h-px w-full bg-gray-200 sm:h-4 sm:w-px" />
+            <div className="flex min-w-0 items-center gap-2">
+              {/* The input's own native picker-indicator icon is hidden — this
+                  icon opens the same picker instead, so there's only one
+                  calendar symbol instead of two. */}
+              <CalendarDays
+                className="w-4 h-4 shrink-0 text-[#C90044] cursor-pointer"
+                onClick={() => dateFilterRef.current?.showPicker?.()}
+              />
+              <input
+                ref={dateFilterRef}
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:flex-none"
+                aria-label="Filter sessions by date"
+              />
+              {dateFilter && (
+                <button onClick={() => setDateFilter('')} className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
           {canManage && sessionId && (
             <button
               onClick={() => { setShowManual((v) => !v); setManualError(null); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100"
+              className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 sm:w-auto"
             >
               <UserPlus className="w-4 h-4" /> Add booking
             </button>

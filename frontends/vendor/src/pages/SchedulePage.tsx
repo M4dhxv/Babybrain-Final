@@ -200,7 +200,7 @@ export default function SchedulePage() {
           <button
             onClick={() => setSyncNonce((n) => n + 1)}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="hidden items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:inline-flex"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh Wix
@@ -213,63 +213,84 @@ export default function SchedulePage() {
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{wixError}</div>
         )}
 
-        {/* Controls */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1">
+        {/* Controls. Mobile stacks them one per row, centred, in the order
+            Refresh Wix → activities → locations → week/month → date nav →
+            date range. Desktop keeps the original single-row layout via
+            sm:order overrides. */}
+        <div className="mb-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          {/* Refresh Wix — mobile only; desktop keeps it in the page header */}
+          {wixLinkedIds.length > 0 && (
+            <button
+              onClick={() => setSyncNonce((n) => n + 1)}
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:hidden"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Wix
+            </button>
+          )}
+
+          {/* All activities */}
+          <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-3 sm:ml-auto sm:w-auto">
+            <CalendarRange className="w-4 h-4 shrink-0 text-[#C90044]" />
+            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
+              <option value="">All activities</option>
+              {activities.map((a) => (
+                <option key={a.id} value={a.id}>{a.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* All locations */}
+          <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-4 sm:w-auto">
+            <MapPin className="w-4 h-4 shrink-0 text-[#C90044]" />
+            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
+              <option value="">All locations</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Week / Month */}
+          <div className="flex w-full rounded-xl border border-gray-200 bg-white p-1 sm:order-5 sm:inline-flex sm:w-auto">
+            {(['week', 'month'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={cn(
+                  'h-8 flex-1 px-3 text-sm font-medium rounded-lg capitalize transition-colors sm:flex-none',
+                  view === v ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+
+          {/* Date nav — 80% of the row on mobile, centred; auto on desktop */}
+          <div className="flex w-4/5 justify-center rounded-xl border border-gray-200 bg-white p-1 sm:order-1 sm:inline-flex sm:w-auto">
             <button
               onClick={goPrev}
               aria-label={view === 'week' ? 'Previous week' : 'Previous month'}
-              className="grid h-8 w-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button onClick={goToday} className="px-3 h-8 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+            <button onClick={goToday} className="h-8 flex-1 px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg sm:flex-none">
               Today
             </button>
             <button
               onClick={goNext}
               aria-label={view === 'week' ? 'Next week' : 'Next month'}
-              className="grid h-8 w-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <div className="text-sm font-semibold text-gray-900">{rangeLabel}</div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-3">
-            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-              <CalendarRange className="w-4 h-4 text-[#C90044]" />
-              <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className="bg-transparent font-medium focus:outline-none">
-                <option value="">All activities</option>
-                {activities.map((a) => (
-                  <option key={a.id} value={a.id}>{a.title}</option>
-                ))}
-              </select>
-            </div>
-            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-              <MapPin className="w-4 h-4 text-[#C90044]" />
-              <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className="bg-transparent font-medium focus:outline-none">
-                <option value="">All locations</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1">
-              {(['week', 'month'] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    'px-3 h-8 text-sm font-medium rounded-lg capitalize transition-colors',
-                    view === v ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-100'
-                  )}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Date range */}
+          <div className="text-sm font-semibold text-gray-900 sm:order-2">{rangeLabel}</div>
         </div>
 
         {loading && <div className="text-sm text-gray-400">Loading…</div>}
