@@ -10,12 +10,98 @@ import {
   MessageList,
   MessageInput,
   Thread,
+  useChatContext,
 } from 'stream-chat-react';
-import { MessageSquare, Loader2, Crown } from 'lucide-react';
+import { MessageSquare, Loader2, Crown, ArrowLeft } from 'lucide-react';
 import 'stream-chat-react/dist/css/v2/index.css';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+/**
+ * The list + conversation panes. On desktop both are always visible
+ * (list fixed-width, conversation fills the rest). On mobile it behaves
+ * like WhatsApp: the conversation list is full-width until you tap a
+ * conversation, which then takes over the screen with a "back" button;
+ * ChannelList's mount auto-select is off on mobile so you land on the
+ * list, not straight inside a chat.
+ */
+function ChatPanes({
+  userId,
+  deepLinkChannel,
+  isMobile,
+}: {
+  userId: string;
+  deepLinkChannel?: string;
+  isMobile: boolean;
+}) {
+  const { channel, setActiveChannel } = useChatContext();
+  const chatOpen = !!channel;
+
+  return (
+    <div className="flex h-full">
+      <div
+        className={cn(
+          'w-full overflow-y-auto border-r border-gray-200 md:block md:w-80',
+          chatOpen ? 'hidden md:block' : 'block'
+        )}
+      >
+        <ChannelList
+          filters={{ type: 'messaging', members: { $in: [userId] } }}
+          sort={{ last_message_at: -1 }}
+          options={{ state: true, watch: true, presence: true }}
+          /* QA: "the search messages function ... doesn't work". There was
+             no search at all — this turns on Stream's own, which queries
+             the server rather than filtering only what's loaded. */
+          showChannelSearch
+          additionalChannelSearchProps={{
+            searchForChannels: true,
+            placeholder: 'Search conversations',
+          }}
+          customActiveChannel={deepLinkChannel}
+          /* Mobile lands on the list (WhatsApp-style); desktop still
+             opens the most recent conversation on mount. */
+          setActiveChannelOnMount={!isMobile || !!deepLinkChannel}
+          EmptyStateIndicator={() => (
+            <div className="p-8 text-center text-sm text-gray-400">
+              No conversations yet. Parents' enquiries will appear here.
+            </div>
+          )}
+        />
+      </div>
+      <div
+        className={cn(
+          'min-w-0 flex-1 md:block',
+          chatOpen ? 'block' : 'hidden md:block'
+        )}
+      >
+        <Channel>
+          <Window>
+            <button
+              type="button"
+              onClick={() => setActiveChannel?.(undefined)}
+              className="flex w-full items-center gap-2 border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 md:hidden"
+            >
+              <ArrowLeft className="h-4 w-4" /> All conversations
+            </button>
+            <ChannelHeader />
+            {/* QA: "not sure what the pen edit button would be intended
+                to do under messages but currently doesn't work". It's
+                Stream's stock "edit my own message" action (hover a
+                sent message → "…" → the pencil) — it does work, but
+                editing a message after a parent has read it isn't a
+                function that makes sense for booking conversations, so
+                it's dropped rather than kept as a confusing no-op. */}
+            <MessageList messageActions={['delete', 'flag', 'quote', 'react', 'reply']} />
+            <MessageInput />
+          </Window>
+          <Thread />
+        </Channel>
+      </div>
+    </div>
+  );
+}
 
 export default function MessagesPage() {
   const { session, subscription } = useAuth();
@@ -33,6 +119,18 @@ export default function MessagesPage() {
   // instead of ChannelList's default "select the first channel" behavior.
   const [params, setParams] = useSearchParams();
   const [deepLinkChannel] = useState(() => params.get('channel') ?? undefined);
+  // Resolved synchronously so ChannelList reads the right
+  // setActiveChannelOnMount on its first render (no mobile-flash of an
+  // auto-opened conversation). Kept reactive for orientation changes.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const on = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
 
   useEffect(() => {
     if (!params.get('channel')) return;
@@ -106,46 +204,7 @@ export default function MessagesPage() {
       <div className="min-h-0 flex-1 px-4 pb-6 sm:px-6">
       <div className="h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
         <Chat client={client}>
-          <div className="flex h-full">
-            <div className="w-80 border-r border-gray-200 overflow-y-auto">
-              <ChannelList
-                filters={{ type: 'messaging', members: { $in: [userId] } }}
-                sort={{ last_message_at: -1 }}
-                options={{ state: true, watch: true, presence: true }}
-                /* QA: "the search messages function ... doesn't work". There was
-                   no search at all — this turns on Stream's own, which queries
-                   the server rather than filtering only what's loaded. */
-                showChannelSearch
-                additionalChannelSearchProps={{
-                  searchForChannels: true,
-                  placeholder: 'Search conversations',
-                }}
-                customActiveChannel={deepLinkChannel}
-                EmptyStateIndicator={() => (
-                  <div className="p-8 text-center text-sm text-gray-400">
-                    No conversations yet. Parents' enquiries will appear here.
-                  </div>
-                )}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <Channel>
-                <Window>
-                  <ChannelHeader />
-                  {/* QA: "not sure what the pen edit button would be intended
-                      to do under messages but currently doesn't work". It's
-                      Stream's stock "edit my own message" action (hover a
-                      sent message → "…" → the pencil) — it does work, but
-                      editing a message after a parent has read it isn't a
-                      function that makes sense for booking conversations, so
-                      it's dropped rather than kept as a confusing no-op. */}
-                  <MessageList messageActions={['delete', 'flag', 'quote', 'react', 'reply']} />
-                  <MessageInput />
-                </Window>
-                <Thread />
-              </Channel>
-            </div>
-          </div>
+          <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} />
         </Chat>
       </div>
       </div>
