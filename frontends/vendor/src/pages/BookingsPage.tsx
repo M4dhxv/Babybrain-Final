@@ -296,7 +296,7 @@ export default function BookingsPage() {
   return (
     <div className="relative">
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
-        <div>
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage bookings for your sessions.</p>
         </div>

@@ -50,17 +50,17 @@ export default function BillingPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col items-center gap-3 px-4 py-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-8">
+        <div className="flex w-full items-center justify-center gap-3 sm:w-auto sm:justify-start">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
-          <div>
+          <div className="text-center sm:text-left">
             <h1 className="text-2xl font-bold text-gray-900">Manage Subscription</h1>
             <p className="text-sm text-gray-500 mt-1">View and manage your subscription details.</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
           <span className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-full ${active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
             <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
             {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}

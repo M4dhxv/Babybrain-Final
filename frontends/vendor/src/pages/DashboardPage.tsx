@@ -212,8 +212,8 @@ export default function DashboardPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div>
+      <div className="flex flex-col items-center gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
           <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
         </div>

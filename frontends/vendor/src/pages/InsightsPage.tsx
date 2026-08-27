@@ -126,7 +126,7 @@ export default function InsightsPage() {
 
   if (!unlocked) {
     return (
-      <div className="p-4 sm:p-8">
+      <div className="p-4 text-center sm:p-8 sm:text-left">
         <h1 className="text-2xl font-bold text-gray-900">Insights</h1>
         <p className="mt-1 text-sm text-gray-500">See what's driving your bookings.</p>
         <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
@@ -173,8 +173,8 @@ export default function InsightsPage() {
 
   return (
     <div className="p-4 sm:p-8">
-      <h1 className="text-2xl font-bold text-gray-900">Insights</h1>
-      <p className="mt-1 text-sm text-gray-500">Based on your bookings over the last 30 days.</p>
+      <h1 className="text-2xl font-bold text-gray-900 text-center sm:text-left">Insights</h1>
+      <p className="mt-1 text-sm text-gray-500 text-center sm:text-left">Based on your bookings over the last 30 days.</p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {[

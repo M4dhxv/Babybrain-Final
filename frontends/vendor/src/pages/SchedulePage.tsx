@@ -187,7 +187,7 @@ export default function SchedulePage() {
   return (
     <div className="relative">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
-        <div>
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
           <p className="text-sm text-gray-500 mt-1">
             Every upcoming session — site bookings and live Wix availability, together.

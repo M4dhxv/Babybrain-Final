@@ -56,7 +56,7 @@ export default function MessagesPage() {
 
   if (!canMessage) {
     return (
-      <div className="p-4 sm:p-8">
+      <div className="p-4 text-center sm:p-8 sm:text-left">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <p className="mt-1 text-sm text-gray-500">Every parent enquiry, across all your services, in one inbox.</p>
         <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
@@ -98,7 +98,7 @@ export default function MessagesPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
-        <div>
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
           <p className="text-sm text-gray-500 mt-1">Every parent enquiry, across all your services, in one inbox.</p>
         </div>
