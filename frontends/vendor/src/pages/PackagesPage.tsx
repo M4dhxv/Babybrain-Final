@@ -158,15 +158,15 @@ export default function PackagesPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Packages</h1>
           <p className="text-sm text-gray-500 mt-1">Multi-session packs parents can buy, and who's bought them.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="flex gap-6 border-b border-gray-200 mb-6">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab}
@@ -192,7 +192,7 @@ export default function PackagesPage() {
             {packs.length > 0 && (
               <div className="space-y-2">
                 {packs.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+                  <div key={p.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <span className="font-medium text-gray-900">{p.name}</span>
                       <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
@@ -322,12 +322,12 @@ export default function PackagesPage() {
         )}
 
         {!loading && activeTab === 'Purchases' && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <div className="grid min-w-[720px] grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
               <div>Buyer</div><div>Pack</div><div>Credits</div><div>Status</div><div>Purchased / Expires</div>
             </div>
             {purchases.map((p) => (
-              <div key={p.purchase_id} className="grid grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 border-t border-gray-100 items-center">
+              <div key={p.purchase_id} className="grid min-w-[720px] grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 border-t border-gray-100 items-center">
                 <div className="text-sm font-medium text-gray-900">{p.buyer_name}</div>
                 <div className="text-sm text-gray-700">{p.package_name}</div>
                 <div className="text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>

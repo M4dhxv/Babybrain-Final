@@ -209,7 +209,7 @@ export default function SettingsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage your business profile, locations, team and compliance.</p>
@@ -224,11 +224,11 @@ export default function SettingsPage() {
         </Button>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 overflow-x-auto">
           {settingsTabs.map((tab) => (
             <button key={tab.id} onClick={() => selectTab(tab.id)}
-              className={cn('flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              className={cn('flex shrink-0 items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 activeTab === tab.id ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               <tab.icon className="w-4 h-4" />
               {tab.label}
@@ -275,20 +275,20 @@ export default function SettingsPage() {
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">About</h4>
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{form.description || <span className="text-gray-400">No description yet.</span>}</p>
                 </section>
-                <section className="grid grid-cols-2 gap-4">
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ReadField icon={Phone} label="Phone" value={form.contact_phone} />
                   <ReadField icon={Mail} label="Email" value={form.contact_email} />
                   <ReadField icon={MessageCircle} label="WhatsApp" value={form.whatsapp} />
                   <ReadField icon={Globe} label="Website" value={form.website} />
                 </section>
-                <section className="grid grid-cols-2 gap-4">
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ReadField icon={MapPin} label="Address" value={form.address} />
                   <ReadField icon={Hash} label="UEN" value={form.uen} />
                 </section>
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Business Name</label>
                     <input className={inputCls} value={form.business_name} onChange={(e) => setForm({ ...form, business_name: e.target.value })} />
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                   <label className="text-xs text-gray-500 mb-1 block">Business Description</label>
                   <textarea rows={3} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Phone Number</label>
                     <input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
@@ -323,7 +323,7 @@ export default function SettingsPage() {
                     <input className={inputCls} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Address</label>
                     <input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
@@ -1323,7 +1323,7 @@ function LocationsManager({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><MapPin className="w-5 h-5 text-purple-600" /></div>
           <div>
@@ -1407,7 +1407,7 @@ function LocationsManager({
             <div key={loc.id} className="rounded-xl border border-pink-300 bg-pink-50/30 p-3 space-y-2">
               {editError && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{editError}</div>}
               <input className={inputCls} placeholder="Location name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className={inputCls} placeholder="Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
                 <input className={inputCls} placeholder="Postal code" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} />
               </div>
@@ -1455,7 +1455,7 @@ function LocationsManager({
             <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#C90044]">*</span></label>
             <input className={inputCls} placeholder="e.g. Suntec City Studio" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Address</label>
               <input className={inputCls} placeholder="Street & unit" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
@@ -1580,7 +1580,7 @@ function PoliciesManager({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><FileText className="w-5 h-5 text-amber-600" /></div>
           <div>

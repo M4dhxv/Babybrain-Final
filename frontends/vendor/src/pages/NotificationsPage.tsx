@@ -53,14 +53,14 @@ export default function NotificationsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
           <p className="text-sm text-gray-500 mt-1">Recent activity across your bookings, waitlist, reviews and tokens.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 pb-8 sm:px-8">
         {loading && <div className="text-sm text-gray-400">Loading…</div>}
 
         {!loading && (

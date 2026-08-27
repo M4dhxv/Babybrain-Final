@@ -56,7 +56,7 @@ export default function MessagesPage() {
 
   if (!canMessage) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <p className="mt-1 text-sm text-gray-500">Every parent enquiry, across all your services, in one inbox.</p>
         <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
@@ -77,7 +77,7 @@ export default function MessagesPage() {
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="max-w-md mx-auto text-center bg-white rounded-xl border border-gray-200 p-10">
           <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <h3 className="font-semibold text-gray-900">Messages unavailable</h3>
@@ -97,13 +97,13 @@ export default function MessagesPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
           <p className="text-sm text-gray-500 mt-1">Every parent enquiry, across all your services, in one inbox.</p>
         </div>
       </div>
-      <div className="min-h-0 flex-1 px-6 pb-6">
+      <div className="min-h-0 flex-1 px-4 pb-6 sm:px-6">
       <div className="h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
         <Chat client={client}>
           <div className="flex h-full">

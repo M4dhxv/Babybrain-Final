@@ -61,15 +61,15 @@ export default function MakeUpTokensPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Make-up Tokens</h1>
           <p className="text-sm text-gray-500 mt-1">Every make-up token you've issued, and where it stands.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <div className="text-2xl font-bold text-gray-900">{counts.issued}</div>
             <div className="text-sm text-gray-500">Outstanding</div>
@@ -106,12 +106,12 @@ export default function MakeUpTokensPage() {
         {loading && <div className="text-sm text-gray-400">Loading…</div>}
 
         {!loading && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr_0.8fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <div className="grid min-w-[720px] grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr_0.8fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
               <div>Family</div><div>Original class</div><div>Status</div><div>Issued</div><div>Expires</div>
             </div>
             {visible.map((t) => (
-              <div key={t.token_id} className="grid grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr_0.8fr] px-5 py-3 border-t border-gray-100 items-center">
+              <div key={t.token_id} className="grid min-w-[720px] grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr_0.8fr] px-5 py-3 border-t border-gray-100 items-center">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
                     <Gift className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />

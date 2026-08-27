@@ -50,7 +50,7 @@ export default function BillingPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-8 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
@@ -60,7 +60,7 @@ export default function BillingPage() {
             <p className="text-sm text-gray-500 mt-1">View and manage your subscription details.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-full ${active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
             <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
             {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}
@@ -79,19 +79,19 @@ export default function BillingPage() {
       </div>
 
       {msg && (
-        <div className="mx-8 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800">
+        <div className="mx-4 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800 sm:mx-8">
           {msg}
         </div>
       )}
 
-      <div className="px-8 pb-8 space-y-6">
-        <div className="grid grid-cols-2 gap-6">
+      <div className="px-4 pb-8 space-y-6 sm:px-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Compare & Upgrade */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h3 className="font-semibold text-gray-900 mb-1">Compare & upgrade</h3>
             <p className="text-xs text-gray-500 mb-4">Choose the right plan as you grow.</p>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 gap-4 mb-4 sm:grid-cols-2">
               <div className="p-4 border-2 border-[#C90044] rounded-xl relative bg-pink-50/30">
                 <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#C90044] text-xs font-medium rounded">
                   Current plan
@@ -129,7 +129,7 @@ export default function BillingPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-gray-500">
                 {upgrade ? `Need more exposure? Upgrade to ${upgrade.label}.` : 'You have access to every feature.'}
               </p>
@@ -159,7 +159,7 @@ export default function BillingPage() {
             {plan.isPaid && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-gray-600">Manage your card and invoices in the Stripe billing portal.</div>
                   <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm flex-shrink-0">
                     {busy === 'card' ? 'Opening…' : 'Manage billing'}
@@ -178,7 +178,7 @@ export default function BillingPage() {
                   <h3 className="font-semibold text-gray-900">Stripe payouts</h3>
                 </div>
               </div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Payout account status</div>
                   {/* Was hardcoded to "Connected / Pending" regardless of
@@ -211,7 +211,7 @@ export default function BillingPage() {
 
             {/* Boost Visibility */}
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
-              <div className="flex items-start gap-4">
+              <div className="flex flex-col items-start gap-4 sm:flex-row">
                 <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
                   <Rocket className="w-6 h-6 text-purple-600" />
                 </div>
@@ -231,7 +231,7 @@ export default function BillingPage() {
         {/* Cancel Subscription — only relevant on a paid plan */}
         {plan.isPaid && (
           <div className="bg-red-50 rounded-xl border border-red-200 p-6">
-            <div className="flex items-start gap-4">
+            <div className="flex flex-col items-start gap-4 sm:flex-row">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
