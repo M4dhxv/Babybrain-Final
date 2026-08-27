@@ -14,17 +14,18 @@
 -- read from the same Vault entry ('cron_shared_secret') the vendor-refresh
 -- cron already relies on — no new secret to configure.
 --
--- Every minute: the cron fires exactly one fire-and-forget net.http_post
--- per tick — the per-provider fan-out happens inside
--- /api/cron/refresh-wix on Vercel — so tightening the schedule does not
--- scale with vendor count, and near-real-time price/capacity/location
--- freshness on the parent site is worth more as the marketplace grows.
--- The one real cost of going this tight: a provider with a bad/revoked
--- key re-attempts FEE_ADDED_AT_CHECKOUT fee discovery (which briefly
--- reserves one unit of live inventory to discover the fee rate — see
--- fetchTicketFeeRatePercent in lib/wix/client.ts) on every tick until the
--- key is fixed. For a gentler cadence, use '90 seconds' below (needs
--- pg_cron >= 1.5, which Supabase runs).
+-- Every 5 minutes. Do NOT tighten this yet: syncProviderWixEvents
+-- (lib/wix/events-sync.ts) walks a 365-day window with a serial Wix API
+-- call + Supabase round-trips per event, so a single run already takes
+-- ~55-65s for just two providers and frequently hits the route's
+-- maxDuration cap, orphaning its wix_sync_runs row at status='running'.
+-- A tick interval shorter than the run time just stacks overlapping runs
+-- that time out. Once events-sync is parallelised (concurrency-capped
+-- per-event fan-out, bulk reads, shorter window) a run drops to a few
+-- seconds and a 1-minute schedule becomes safe.
+--
+-- 00073 adds a sweep that closes out orphaned 'running' rows, so a
+-- timed-out run no longer sits visible forever.
 
 create table if not exists public.wix_sync_runs (
   id                 uuid primary key default gen_random_uuid(),
@@ -57,7 +58,7 @@ select cron.unschedule(jobid) from cron.job where jobname = 'wix-sync';
 
 select cron.schedule(
   'wix-sync',
-  '* * * * *',                           -- every minute
+  '*/5 * * * *',                         -- every 5 minutes (see note above)
   $$
   select net.http_post(
     url     := 'https://babybrain-final.vercel.app/api/cron/refresh-wix',
