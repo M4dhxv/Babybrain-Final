@@ -5,6 +5,7 @@ import {
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -393,7 +394,7 @@ export default function BookingsPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading bookings" />}
 
         <div className="flex flex-col gap-6 lg:flex-row">
           {/* Booking list */}
@@ -471,10 +472,7 @@ export default function BookingsPage() {
                       {sel.policies_accepted > 0 ? (
                         <div className="rounded-lg bg-green-50 px-3 py-2 space-y-1.5">
                           {(policyAcceptances[sel.booking_id] ?? []).length === 0 ? (
-                            <div className="flex items-center gap-2">
-                              <FileCheck className="w-4 h-4 text-green-600" />
-                              <span className="text-sm text-green-700">Loading…</span>
-                            </div>
+                            <RainbowLoader size="sm" className="justify-start py-0.5" label="Loading waivers" />
                           ) : (
                             policyAcceptances[sel.booking_id].map((p) => (
                               <div key={p.policy_id} className="flex items-start gap-2">

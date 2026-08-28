@@ -4,6 +4,7 @@ import { ChevronDown, Package as PackageIcon, Pencil, Trash2, Users } from 'luci
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const tabs = ['Packs', 'Purchases'];
@@ -182,7 +183,7 @@ export default function PackagesPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading packages" />}
 
         {!loading && activeTab === 'Packs' && (
           <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">

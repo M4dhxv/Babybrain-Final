@@ -12,11 +12,12 @@ import {
   Thread,
   useChatContext,
 } from 'stream-chat-react';
-import { MessageSquare, Loader2, Crown, ArrowLeft } from 'lucide-react';
+import { MessageSquare, Crown, ArrowLeft } from 'lucide-react';
 import 'stream-chat-react/dist/css/v2/index.css';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 
 /**
@@ -187,8 +188,9 @@ export default function MessagesPage() {
 
   if (!client || !userId) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 gap-2">
-        <Loader2 className="w-5 h-5 animate-spin" /> Connecting to messages…
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
+        <RainbowLoader label="Connecting to messages" />
+        <span className="text-sm">Connecting to messages…</span>
       </div>
     );
   }

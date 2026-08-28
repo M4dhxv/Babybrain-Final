@@ -126,3 +126,9 @@
 @media (prefers-reduced-motion: reduce) {
   .bb-wave-dot { animation-duration: 2.4s; }
 }
+
+/* Tighter wave loader for single-line / inline spots. */
+.bb-wave-dot--sm {
+  width: 0.4375rem;
+  height: 0.4375rem;
+}

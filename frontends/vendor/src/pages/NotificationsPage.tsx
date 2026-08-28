@@ -4,6 +4,7 @@ import { CalendarCheck, UserPlus, CalendarX, Star, Gift, Bell } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 type Event = {
   kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
@@ -61,7 +62,7 @@ export default function NotificationsPage() {
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading notifications" />}
 
         {!loading && (
           <div className="max-w-2xl rounded-xl border border-gray-200 bg-white">

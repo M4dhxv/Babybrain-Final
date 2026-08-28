@@ -20,6 +20,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -688,7 +689,7 @@ export default function ActivitiesPage() {
           </div>
 
           {/* Table Rows */}
-          {loading && <div className="px-5 py-10 text-center text-sm text-gray-400">Loading activities…</div>}
+          {loading && <RainbowLoader className="px-5 py-10" label="Loading activities" />}
           {!loading && visible.length === 0 && (
             <div className="px-5 py-10 text-center text-sm text-gray-400">No activities yet. Create your first one.</div>
           )}

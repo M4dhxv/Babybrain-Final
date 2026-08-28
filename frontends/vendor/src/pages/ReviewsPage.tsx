@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Star, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -121,7 +122,7 @@ export default function ReviewsPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading reviews…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading reviews" />}
         {!loading && visible.length === 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
             {filter === 'unanswered' ? "You're all caught up — no unanswered reviews." : 'No reviews yet.'}

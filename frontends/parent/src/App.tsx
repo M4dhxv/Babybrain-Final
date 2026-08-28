@@ -751,7 +751,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             {child ? `Matching activities for ${child.name}` : "Matching activities"}
           </SectionTitle>
           {recsLoading ? (
-            <p className="font-bold text-[#5a6690]">Loading matches…</p>
+            <RainbowLoader className="py-6" label="Loading matches" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {(shown?.recs ?? []).slice(0, 4).map((r) =>
@@ -1187,7 +1187,9 @@ function ExplorePage() {
             ) : (
               <>
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
+                  {loading
+                    ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
+                    : <p className="text-sm font-black">{`${shown.length} activities found`}</p>}
                 </div>
                 <div className="grid gap-2.5 xl:grid-cols-2">
                   {shown.map((activity) => (

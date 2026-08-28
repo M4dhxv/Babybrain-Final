@@ -6,6 +6,7 @@ import {
   Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -857,7 +858,7 @@ function WixIntegrationManager({
         </div>
       </div>
 
-      {loading && <div className="mt-5 text-sm text-gray-400">Loading…</div>}
+      {loading && <RainbowLoader className="mt-5 py-4" label="Loading settings" />}
 
       {!loading && (
         <div className="mt-5">
@@ -937,7 +938,7 @@ function WixIntegrationManager({
                 </div>
               )}
 
-              {servicesLoading && <div className="text-sm text-gray-400">Loading Wix services…</div>}
+              {servicesLoading && <RainbowLoader className="py-4" label="Loading Wix services" />}
 
               {!servicesLoading && wixServices && wixServices.length === 0 && (
                 <p className="text-sm text-gray-400">No services found on this Wix account.</p>
@@ -1027,7 +1028,7 @@ function WixIntegrationManager({
                 </div>
               )}
 
-              {eventsListLoading && <div className="text-sm text-gray-400">Loading Wix events…</div>}
+              {eventsListLoading && <RainbowLoader className="py-4" label="Loading Wix events" />}
 
               {!eventsListLoading && wixEvents && wixEvents.length === 0 && (
                 <p className="text-sm text-gray-400">No upcoming events found on this Wix account.</p>
@@ -1367,7 +1368,7 @@ function LocationsManager({
 
           {wixError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{wixError}</div>}
           {wixNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{wixNotice}</div>}
-          {wixLoading && <div className="text-sm text-gray-400">Loading Wix locations…</div>}
+          {wixLoading && <RainbowLoader className="py-4" label="Loading Wix locations" />}
 
           {!wixLoading && wixLocations && wixLocations.length === 0 && !wixError && (
             <p className="text-sm text-gray-400">No business locations found on this Wix account.</p>

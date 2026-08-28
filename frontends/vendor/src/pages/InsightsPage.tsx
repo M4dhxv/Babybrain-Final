@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, TrendingUp, Users, CalendarDays, Eye, Star, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -202,7 +203,7 @@ export default function InsightsPage() {
           class pack. Last 90 days.
         </p>
         {loading ? (
-          <p className="text-sm text-gray-400">…</p>
+          <RainbowLoader className="py-6" label="Loading insights" />
         ) : !trial || trial.trials === 0 ? (
           <p className="text-sm text-gray-400">No first-time bookings in the last 90 days yet.</p>
         ) : (

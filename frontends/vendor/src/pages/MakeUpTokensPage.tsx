@@ -4,6 +4,7 @@ import { Gift } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 type Token = {
   token_id: string;
@@ -103,7 +104,7 @@ export default function MakeUpTokensPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading make-up tokens" />}
 
         {!loading && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">

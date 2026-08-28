@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -293,7 +294,7 @@ export default function SchedulePage() {
           <div className="text-sm font-semibold text-gray-900 sm:order-2">{rangeLabel}</div>
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading schedule" />}
 
         {!loading && activities.length === 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
