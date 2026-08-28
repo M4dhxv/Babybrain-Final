@@ -1116,6 +1116,11 @@ function WixIntegrationManager({
             <div className="rounded-xl border border-gray-200 p-4 space-y-5">
               <div>
                 <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix API Key</label>
+                {/* Instructions sit above the field: the vendor has to go and
+                    fetch the key before there is anything to type here. */}
+                <p className="mb-2 text-xs text-gray-500">
+                  In your Wix dashboard: <strong>Settings → Development &amp; Integrations → Headless Settings → Manage API Key → Generate API Key → All site permissions → Generate Key</strong>. Copy this key immediately — Wix only shows it once.
+                </p>
                 <div className="flex items-center gap-2">
                   <input
                     type={showKey ? 'text' : 'password'}
@@ -1134,10 +1139,6 @@ function WixIntegrationManager({
                     {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  In your Wix dashboard: <strong>Settings → API Keys</strong> → Generate API Key. Give it Bookings
-                  permissions (read + write), then copy the key immediately — Wix only shows it once.
-                </p>
               </div>
 
               <div>
