@@ -1184,7 +1184,7 @@ function ExplorePage() {
                 <p className="mt-3">
                   We are looking for quality providers in this space, if there is a vendor you would like to see listed here please{" "}
                   <a href="/contact" className="font-black text-baby-cta hover:opacity-80">
-                    <span className="underline underline-offset-2">let us know.</span>
+                    let us know.
                     <Icon name="open" className="ml-0.5 inline h-3.5 w-3.5 align-[-0.125em]" />
                   </a>
                 </p>
