@@ -15,7 +15,7 @@ import { goTo } from "../lib/nav";
  *  activity never appeared under Favourites. Free parents get this instead. */
 export function PlusFeatureDialog({
   title = "Favourites are a Plus feature",
-  copy = "Save the classes you love and come back to them any time — on your own list and map.",
+  copy = "Save the classes you love and come back to them any time — on your own list.",
   onClose,
 }: {
   title?: string;
