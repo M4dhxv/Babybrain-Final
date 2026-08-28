@@ -1685,7 +1685,7 @@ function ActivityDetailPage() {
                     ? `mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`
                     : null
                 }
-                tone={{ border: "border-baby-blue", text: "text-[#A7D8F8]", hover: "hover:bg-[#EDF7FD]" }}
+                tone={{ border: "border-[#A7D8F8]", text: "text-[#A7D8F8]", hover: "hover:bg-[#EDF7FD]" }}
                 unavailableReason="We don't have an email address for this provider."
               />
               <ContactLink
@@ -4487,19 +4487,19 @@ function PricingPage() {
             <button
               type="button"
               onClick={() => setBilling("monthly")}
-              className={billing === "monthly" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "monthly" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setBilling("annual")}
-              className={billing === "annual" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "annual" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
             >
               {/* The mock only shows the Monthly-active state. Once Annual is
-                  selected the pill turns blue, and pink-on-blue is ~1.5:1, so
-                  the nudge goes white against the selected fill. */}
-              Annual <span className={billing === "annual" ? "text-white" : "text-baby-pink"}>(1 month free)</span>
+                  selected the pill fills pastel blue, so the nudge takes the
+                  same readable blue ink as the label. */}
+              Annual <span className={billing === "annual" ? "text-palette-blueInk" : "text-baby-pink"}>(1 month free)</span>
             </button>
           </div>
         </section>
@@ -4513,7 +4513,7 @@ function PricingPage() {
         <section className="mt-7 grid gap-5 md:grid-cols-2">
           {/* Free */}
           <article className="relative rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-baby-blue">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-palette-blueInk">
               <Icon name="heart" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
@@ -4525,7 +4525,7 @@ function PricingPage() {
             <div className="space-y-3">
               {freeItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-palette-blue text-palette-blueInk">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
@@ -4535,8 +4535,8 @@ function PricingPage() {
           </article>
 
           {/* Plus */}
-          <article className="relative rounded-[18px] border border-baby-blue bg-white p-6 shadow-card ring-1 ring-baby-blue/20">
-            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
+          <article className="relative rounded-[18px] border border-palette-blue bg-white p-6 shadow-card ring-1 ring-palette-blue/40">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-palette-blue px-8 py-2 text-sm font-black text-palette-blueInk">
               MOST POPULAR
             </span>
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F4F0FA] text-baby-lilac">
@@ -4553,7 +4553,7 @@ function PricingPage() {
             <div className="space-y-3">
               {plusItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-palette-blue text-palette-blueInk">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
