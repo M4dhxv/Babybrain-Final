@@ -183,7 +183,7 @@ export default function ClaimBusinessPage() {
 
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full flex-shrink-0 lg:w-64">
-            <img src={`${import.meta.env.BASE_URL}assets/shop-illustration.png`} alt="" className="mb-4 h-auto w-40" />
+            <img src={`${import.meta.env.BASE_URL}assets/playcentre-illustration.svg`} alt="" className="mb-4 h-auto w-44" />
             <h3 className="mb-4 text-lg font-bold text-[#FA4D8D]">Why verify your business?</h3>
             <div className="space-y-4">
               {whyVerify.map((item) => (
