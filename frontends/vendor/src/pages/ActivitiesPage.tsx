@@ -605,7 +605,7 @@ export default function ActivitiesPage() {
                     title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:order-1"
                   >
-                    <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+                    <RefreshCw className="w-4 h-4" />
                     {syncing ? 'Syncing…' : 'Sync services'}
                   </button>
                 )}

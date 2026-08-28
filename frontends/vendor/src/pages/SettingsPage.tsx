@@ -901,7 +901,7 @@ function WixIntegrationManager({
               {canManage && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button onClick={syncServices} disabled={syncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
-                    <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} /> {syncing ? 'Syncing…' : 'Sync services'}
+                    <RefreshCw className="w-3.5 h-3.5" /> {syncing ? 'Syncing…' : 'Sync services'}
                   </Button>
                   <Button variant="outline" onClick={() => { setEditing(true); setRevealedKey(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
                     <Pencil className="w-3.5 h-3.5" /> Change key
@@ -1003,7 +1003,7 @@ function WixIntegrationManager({
               {eventsNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{eventsNotice}</div>}
 
               <Button onClick={syncEvents} disabled={eventsSyncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
-                <RefreshCw className={cn('w-3.5 h-3.5', eventsSyncing && 'animate-spin')} /> {eventsSyncing ? 'Syncing…' : 'Sync Wix Events'}
+                <RefreshCw className="w-3.5 h-3.5" /> {eventsSyncing ? 'Syncing…' : 'Sync Wix Events'}
               </Button>
               <p className="text-xs text-gray-400">
                 Every upcoming event on this Wix account (with the Events &amp; Tickets app installed) becomes an
