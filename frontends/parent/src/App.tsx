@@ -869,8 +869,8 @@ function EmailCapturePopup() {
         {done ? (
           <div className="py-4 text-center">
             <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#A8E59A]"><Icon name="check" className="h-8 w-8" /></div>
-            <h2 className="text-xl font-black">You're on the list! 🎉</h2>
-            <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll email you when new activities and providers join BabyBrain.</p>
+            <h2 className="text-xl font-black">You're in! 🎉</h2>
+            <p className="mt-2 text-sm font-semibold text-[#59658d]">Enjoy discovering activities for your family.</p>
             <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
           </div>
         ) : (
