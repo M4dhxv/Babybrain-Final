@@ -23,7 +23,7 @@ const plans = [
     price: '0',
     color: 'text-[#A7D8F8]',
     buttonText: 'Start growing',
-    buttonClass: 'border-blue-500 text-blue-600 hover:bg-blue-50',
+    buttonClass: 'border-blue-300 text-blue-700 hover:bg-blue-50',
     featured: false,
     commission: '12% commission on classes booked + Stripe fees',
     perks: [
@@ -44,7 +44,7 @@ const plans = [
     price: '99',
     color: 'text-[#C7B1E6]',
     buttonText: 'Go Pro',
-    buttonClass: 'border-purple-500 text-purple-600 hover:bg-purple-50',
+    buttonClass: 'border-purple-300 text-purple-700 hover:bg-purple-50',
     featured: true,
     yearlyPrice: '1,089/year (1 month free)',
     commission: '10% commission on classes booked + Stripe fees',
@@ -61,7 +61,7 @@ const plans = [
     price: '199',
     color: 'text-[#FFC1D6]',
     buttonText: 'Be Premium',
-    buttonClass: 'border-[#FA4D8D] text-[#FA4D8D] hover:bg-pink-50',
+    buttonClass: 'border-pink-300 text-pink-600 hover:bg-pink-50',
     featured: false,
     yearlyPrice: '2,189/year (1 month free)',
     commission: '8% commission on classes booked + Stripe fees',
@@ -330,7 +330,7 @@ export default function PlansPage() {
             <div>Features</div>
             <div className="text-center text-blue-600">Pay as you grow</div>
             <div className="text-center text-purple-600">Pro</div>
-            <div className="text-center text-[#FA4D8D]">Premium</div>
+            <div className="text-center text-pink-600">Premium</div>
           </div>
           {features.map((feature, idx) => (
             <div
@@ -343,21 +343,21 @@ export default function PlansPage() {
               <div className="text-gray-800 font-medium">{feature.name}</div>
               <div className="flex justify-center">
                 {feature.grow ? (
-                  <Check className="w-4 h-4 text-blue-500" />
+                  <Check className="w-4 h-4 text-blue-400" />
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
               </div>
               <div className="flex justify-center">
                 {feature.pro ? (
-                  <Check className="w-4 h-4 text-purple-500" />
+                  <Check className="w-4 h-4 text-purple-400" />
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
               </div>
               <div className="flex justify-center">
                 {feature.premium ? (
-                  <Check className="w-4 h-4 text-[#FA4D8D]" />
+                  <Check className="w-4 h-4 text-pink-400" />
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
@@ -398,7 +398,6 @@ export default function PlansPage() {
             </p>
           ) : !optOutOpen ? (
             <div className="text-center">
-              <p className="text-sm text-gray-500 mb-2">Don't want to be listed on BabyBrain?</p>
               <button
                 onClick={() => setOptOutOpen(true)}
                 className="text-sm font-semibold text-red-400 hover:text-red-500 underline underline-offset-4"
