@@ -59,8 +59,8 @@ export async function POST(request: Request) {
       activity_id: activityId,
       days: String(days),
     },
-    success_url: `${appUrl}/vendor/boost?status=success`,
-    cancel_url: `${appUrl}/vendor/boost?status=cancelled`,
+    success_url: `${appUrl}/vendor/#/billing?boost=success`,
+    cancel_url: `${appUrl}/vendor/#/billing?boost=cancelled`,
   });
 
   return NextResponse.json({ url: session.url });

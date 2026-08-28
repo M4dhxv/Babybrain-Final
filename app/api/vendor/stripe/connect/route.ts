@@ -50,8 +50,8 @@ export async function POST(request: Request) {
 
   const link = await stripe.accountLinks.create({
     account: accountId,
-    refresh_url: `${appUrl}/vendor/billing?connect=refresh`,
-    return_url: `${appUrl}/vendor/billing?connect=done`,
+    refresh_url: `${appUrl}/vendor/#/billing?connect=refresh`,
+    return_url: `${appUrl}/vendor/#/billing?connect=done`,
     type: 'account_onboarding',
   });
 

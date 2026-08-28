@@ -23,6 +23,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import ReviewsPage from './pages/ReviewsPage';
 import SettingsPage from './pages/SettingsPage';
 import BillingPage from './pages/BillingPage';
+import NotFoundPage from './pages/NotFoundPage';
 import PortalLayout from './layouts/PortalLayout';
 
 /**
@@ -101,8 +102,9 @@ function App() {
             </Route>
           </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Branded 404 — also reachable directly at #/404 */}
+          <Route path="/404" element={<NotFoundPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </HashRouter>
     </AuthProvider>

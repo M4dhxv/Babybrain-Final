@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CalendarDays,
   Crown,
@@ -21,9 +21,20 @@ const sgDate = (iso: string) =>
 
 export default function BillingPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const { provider, subscription } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Stripe hosted checkout / Connect onboarding drops the vendor back here with
+  // a query flag (see app/api/vendor/stripe/*). Turn it into a clear banner.
+  const returned =
+    params.get('status') === 'success' ? { ok: true, text: 'Payment received — your plan is updating now.' }
+    : params.get('status') === 'cancelled' ? { ok: false, text: 'Checkout cancelled — you have not been charged.' }
+    : params.get('connect') === 'done' ? { ok: true, text: 'Payout account connected.' }
+    : params.get('boost') === 'success' ? { ok: true, text: 'Boost purchased — your listing is now promoted.' }
+    : params.get('boost') === 'cancelled' ? { ok: false, text: 'Boost checkout cancelled — you have not been charged.' }
+    : null;
 
   const plan = planMeta(subscription?.plan);
   const upgrade = nextPlan(subscription?.plan);
@@ -77,6 +88,29 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+
+      {returned && (
+        <div
+          className={`mx-4 mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm sm:mx-8 ${
+            returned.ok
+              ? 'border-green-300 bg-green-50 text-green-800'
+              : 'border-yellow-300 bg-yellow-50 text-yellow-800'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            {returned.ok && <CheckCircle className="h-4 w-4 shrink-0" />}
+            {returned.text}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setParams({}, { replace: true })}
+            className="shrink-0 text-base leading-none opacity-70 hover:opacity-100"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {msg && (
         <div className="mx-4 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800 sm:mx-8">

@@ -93,8 +93,8 @@ export async function POST(request: Request) {
       metadata: { provider_id: providerId, plan },
     },
     metadata: { provider_id: providerId, kind: 'subscription', plan },
-    success_url: `${appUrl}/vendor/billing?status=success`,
-    cancel_url: `${appUrl}/vendor/billing?status=cancelled`,
+    success_url: `${appUrl}/vendor/#/billing?status=success`,
+    cancel_url: `${appUrl}/vendor/#/billing?status=cancelled`,
   });
 
   return NextResponse.json({ url: session.url });
