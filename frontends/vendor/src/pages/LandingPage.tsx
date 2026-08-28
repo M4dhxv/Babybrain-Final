@@ -193,7 +193,7 @@ export default function LandingPage() {
       </section>
 
       {/* Trust Banner */}
-      <section className="bg-white py-1.5 px-8 mt-7">
+      <section className="bg-white py-1.5 px-8 mt-5 mb-1">
         <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
           <Heart className="w-5 h-5 text-pink-400" />
           <span className="text-base text-gray-600">
