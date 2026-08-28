@@ -1143,6 +1143,19 @@ function WixIntegrationManager({
 
               <div>
                 <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix Site ID</label>
+                {/* Same as the API key above: tell them where to find it before
+                    they reach the field they are meant to fill in. */}
+                <p className="text-xs text-gray-500">
+                  Open your Wix dashboard and look at the browser's address bar — it follows this pattern:
+                </p>
+                <p className="mt-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700">
+                  wix.com/dashboard/<span className="font-bold text-[#C90044]">SITE_ID</span>/home
+                </p>
+                <p className="mt-1.5 mb-2 text-xs text-gray-500">
+                  Copy just the <span className="font-bold text-[#C90044]">SITE_ID</span> part — the segment between{' '}
+                  <span className="font-mono">/dashboard/</span> and <span className="font-mono">/home</span> — and
+                  paste it below.
+                </p>
                 <input
                   type="text"
                   className={inputCls}
@@ -1151,17 +1164,6 @@ function WixIntegrationManager({
                   onChange={(e) => setSiteId(e.target.value)}
                   autoComplete="off"
                 />
-                <p className="mt-1.5 text-xs text-gray-500">
-                  Open your Wix dashboard and look at the browser's address bar — it follows this pattern:
-                </p>
-                <p className="mt-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700">
-                  wix.com/dashboard/<span className="font-bold text-[#C90044]">SITE_ID</span>/home
-                </p>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  Copy just the <span className="font-bold text-[#C90044]">SITE_ID</span> part — the segment between{' '}
-                  <span className="font-mono">/dashboard/</span> and <span className="font-mono">/home</span> — and
-                  paste it above.
-                </p>
               </div>
 
               <div className="flex gap-2 pt-1">
