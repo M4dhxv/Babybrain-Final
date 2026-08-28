@@ -584,9 +584,6 @@ function WixIntegrationManager({
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [eventsSyncing, setEventsSyncing] = useState(false);
-  const [eventsError, setEventsError] = useState<string | null>(null);
-  const [eventsNotice, setEventsNotice] = useState<string | null>(null);
 
   // "Import specific events" — same shape as the services picker above, one
   // Wix app over (Events & Tickets, not Bookings).
@@ -692,7 +689,22 @@ function WixIntegrationManager({
         '/api/vendor/wix-services-sync',
         { provider_id: provider.id }
       );
-      setNotice(summarizeSync(res.sync));
+      // Events are a second Wix app and a second call, but a vendor thinks of
+      // this as one "pull everything in from Wix" button, so it fires both.
+      // Events failing shouldn't discard the services result that already
+      // landed, hence the inner catch: it's reported alongside, not thrown.
+      let eventsLine: string;
+      try {
+        const ev = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+          '/api/vendor/wix-events-sync',
+          { provider_id: provider.id }
+        );
+        eventsLine = summarizeEventSync(ev.sync);
+        await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
+      } catch (e) {
+        eventsLine = `Events couldn’t be synced — ${describeWixError(e, 'please try again.')}`;
+      }
+      setNotice(`${summarizeSync(res.sync)} ${eventsLine}`);
     } catch (e) {
       setError(describeWixError(e, 'Could not sync services'));
     } finally {
@@ -701,10 +713,10 @@ function WixIntegrationManager({
   }
 
   // Wix Events & Tickets — a separate app/API from Bookings (see
-  // lib/wix/events-sync.ts), so this is deliberately a second, independent
-  // sync action rather than folded into "Sync services" above: a vendor
-  // connected for Bookings only won't have the Events app installed at all,
-  // and this call just reports that back rather than erroring.
+  // lib/wix/events-sync.ts), so it stays a second call even though "Sync
+  // services" above fires both: a vendor connected for Bookings only won't
+  // have the Events app installed at all, and that call reports it back
+  // rather than erroring, which is why this reads as a normal outcome.
   function summarizeEventSync(sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean }) {
     if (sync.eventsAppNotInstalled) {
       return 'This Wix account doesn’t have the Events & Tickets app installed, so there’s nothing to sync yet.';
@@ -720,25 +732,6 @@ function WixIntegrationManager({
       text += ` Ticket pricing couldn’t be read for: ${sync.ticketPricingSkipped.join(', ')}.`;
     }
     return text;
-  }
-
-  async function syncEvents() {
-    if (!provider) return;
-    setEventsSyncing(true);
-    setEventsError(null);
-    setEventsNotice(null);
-    try {
-      const res = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
-        '/api/vendor/wix-events-sync',
-        { provider_id: provider.id }
-      );
-      setEventsNotice(summarizeEventSync(res.sync));
-      await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
-    } catch (e) {
-      setEventsError(describeWixError(e, 'Could not sync events'));
-    } finally {
-      setEventsSyncing(false);
-    }
   }
 
   async function loadWixEvents() {
@@ -941,8 +934,9 @@ function WixIntegrationManager({
                 </div>
               )}
               <p className="text-xs text-gray-400">
-                Every service, class and appointment on this Wix account becomes an activity here — new ones land
-                unpublished until you fill in a category, age range and price.
+                Every service, class and appointment on this Wix account becomes an activity here — along with every
+                upcoming event, if the Events &amp; Tickets app is installed. New ones land unpublished until you fill
+                in a category, age range and price.
               </p>
               <a
                 href="https://support.wix.com/en/article/about-api-keys"
@@ -1018,30 +1012,6 @@ function WixIntegrationManager({
                   </Button>
                 </>
               )}
-            </div>
-          )}
-
-          {status?.connected && canManage && (
-            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0"><Calendar className="w-5 h-5 text-indigo-600" /></div>
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900">Wix Events &amp; Tickets</h4>
-                  <p className="text-xs text-gray-500">A separate Wix app from Bookings — one-off events with ticket types become activities here too.</p>
-                </div>
-              </div>
-
-              {eventsError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{eventsError}</div>}
-              {eventsNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{eventsNotice}</div>}
-
-              <Button onClick={syncEvents} disabled={eventsSyncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
-                <RefreshCw className="w-3.5 h-3.5" /> {eventsSyncing ? 'Syncing…' : 'Sync Wix Events'}
-              </Button>
-              <p className="text-xs text-gray-400">
-                Every upcoming event on this Wix account (with the Events &amp; Tickets app installed) becomes an
-                activity here — new ones land unpublished until you fill in a category and age range, same as
-                imported services.
-              </p>
             </div>
           )}
 
