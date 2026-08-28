@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
-  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar, Copy, Check,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Copy, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
