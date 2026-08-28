@@ -239,7 +239,7 @@ export function HeroDashboardPreview() {
             <div className="space-y-1 sm:space-y-1.5">
               {[
                 { name: 'Tinkers Playdate', booked: '5 / 20' },
-                { name: 'Hatha Yoga', booked: '1 / 1' },
+                { name: 'Kids Yoga', booked: '1 / 1' },
               ].map((s, i) => (
                 <div key={i} className={`items-center gap-1 ${i === 0 ? 'flex' : 'hidden sm:flex'}`}>
                   <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-pink-100">
