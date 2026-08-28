@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
-  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Calendar, Copy, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -535,6 +535,32 @@ type WixEventOption = {
   alreadyImported: boolean;
 };
 
+/** Small inline "copy to clipboard" control — swaps to a tick for ~1.5s. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable (insecure context / denied) — no-op */
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={`Copy ${label}`}
+      aria-label={`Copy ${label}`}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
 /** Settings -> Integrate your Business. A vendor connects their own Wix
  *  account (API key + site ID) so their Schedule calendar, availability and
  *  bookings sync against their own Wix Bookings data instead of a shared
@@ -876,11 +902,17 @@ function WixIntegrationManager({
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Site ID</label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500">Site ID</label>
+                  {status.wix_site_id && <CopyButton value={status.wix_site_id} label="Site ID" />}
+                </div>
                 <div className={readOnlyCls}>{status.wix_site_id}</div>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">API Key</label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500">API Key</label>
+                  {revealedKey && <CopyButton value={revealedKey} label="API Key" />}
+                </div>
                 <div className="flex items-center gap-2">
                   <div className={cn(readOnlyCls, 'flex-1 truncate')}>
                     {revealedKey ?? status.wix_api_key_preview}
