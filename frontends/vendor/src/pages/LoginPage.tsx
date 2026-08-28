@@ -37,8 +37,8 @@ export default function LoginPage() {
       {/* Marketing header over the sign-in card. Mirrors the landing-page nav
           but drops the parent site's "Explore Activities" link and search bar —
           neither belongs on the vendor portal. */}
-      <header className="flex items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3 sm:px-8">
-        <button onClick={() => navigate('/')} aria-label="BabyBrain home">
+      <header className="flex items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3 sm:px-8 md:grid md:grid-cols-[1fr_auto_1fr]">
+        <button onClick={() => navigate('/')} aria-label="BabyBrain home" className="justify-self-start">
           <BrandLogo className="h-9 sm:h-10" />
         </button>
         <nav className="hidden items-center gap-10 md:flex">
@@ -52,7 +52,7 @@ export default function LoginPage() {
             Contact
           </button>
         </nav>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center justify-self-end gap-2 sm:gap-3">
           <Button
             variant="outline"
             onClick={() => navigate('/login')}

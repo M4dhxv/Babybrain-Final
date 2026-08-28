@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import SiteFooter from '@/components/SiteFooter';
-import { BrandLogo } from '@/components/BrandLogo';
+import { AuthHeader } from '@/components/AuthHeader';
 
 /**
  * Claim Your Business.
@@ -157,16 +157,23 @@ export default function ClaimBusinessPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
-        <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
-          <BrandLogo className="h-10" />
-          
-        </button>
-        <Button variant="outline" className="gap-2 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => navigate('/')}>
+      <AuthHeader>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/login')}
+          className="rounded-full border-blue-300 bg-blue-50 px-4 text-blue-700 hover:bg-blue-100 sm:px-6"
+        >
+          Login
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/')}
+          className="gap-2 rounded-full border-blue-300 px-4 text-blue-700 hover:bg-blue-50 sm:px-6"
+        >
           <ArrowLeft className="h-4 w-4" />
           Save &amp; exit
         </Button>
-      </header>
+      </AuthHeader>
 
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <div className="mb-8 text-center">

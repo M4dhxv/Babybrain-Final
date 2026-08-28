@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/auth/AuthProvider';
-import { BrandLogo } from '@/components/BrandLogo';
+import { AuthHeader } from '@/components/AuthHeader';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -28,14 +28,18 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+    <div className="flex min-h-screen flex-col bg-gray-50">
+      <AuthHeader>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/login')}
+          className="rounded-full border-blue-300 bg-blue-50 px-4 text-blue-700 hover:bg-blue-100 sm:px-6"
+        >
+          Sign in
+        </Button>
+      </AuthHeader>
+      <div className="flex flex-1 items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <BrandLogo className="h-8" />
-          <div>
-            <div className="text-lg font-bold text-[#0E6FAF]">BabyBrain</div>
-          </div>
-        </div>
         <h1 className="mb-1 text-xl font-bold text-gray-900">Reset your password</h1>
         {sent ? (
           <>
@@ -69,6 +73,7 @@ export default function ForgotPasswordPage() {
             </p>
           </>
         )}
+      </div>
       </div>
     </div>
   );
