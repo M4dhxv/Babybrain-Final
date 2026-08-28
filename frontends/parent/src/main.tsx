@@ -6,6 +6,12 @@ import { initPostHog } from "./lib/posthog";
 import { goTo } from "./lib/nav";
 import "./styles/index.css";
 
+// Signals the boot-splash watchdog in index.html. `__BB_BOOT_JS__` means the
+// entry bundle executed (so a stale/failed asset is ruled out and it stops
+// reloading); `__BB_BOOTED__` below means React actually rendered.
+const bootWin = window as unknown as { __BB_BOOT_JS__?: boolean; __BB_BOOTED__?: boolean };
+bootWin.__BB_BOOT_JS__ = true;
+
 initPostHog();
 
 // This app has no client router — every internal link is a plain `<a href="/x">`
@@ -34,3 +40,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </AuthProvider>
   </React.StrictMode>,
 );
+
+bootWin.__BB_BOOTED__ = true;

@@ -47,6 +47,7 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { SupportChat } from "./components/SupportChat";
+import { RainbowLoader } from "./components/RainbowLoader";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -1444,7 +1445,7 @@ function ActivityDetailPage() {
   if (loading) {
     return (
       <PageShell active="/explore">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center font-bold text-[#5a6690]">Loading…</main>
+        <main className="mx-auto max-w-[1180px] px-6 py-16"><RainbowLoader className="py-4" label="Loading activity" /></main>
       </PageShell>
     );
   }
@@ -5207,7 +5208,7 @@ function BookingPage() {
   if (loading) {
     return (
       <PageShell active="/book">
-        <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">Loading…</main>
+        <main className="mx-auto max-w-[1024px] px-6 py-16"><RainbowLoader className="py-4" label="Loading booking" /></main>
       </PageShell>
     );
   }

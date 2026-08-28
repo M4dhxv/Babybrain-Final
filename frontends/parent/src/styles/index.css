@@ -57,3 +57,21 @@
     font-weight: 700;
   }
 }
+
+/* Rainbow wave loader — the six brand pastels bouncing in sequence. Drives the
+   <RainbowLoader> component (components/RainbowLoader.tsx) used for inline and
+   in-card loading states. Keyframes live here because Tailwind can't emit them
+   from an arbitrary `animate-[...]` value. */
+@keyframes bb-wave {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(-10px); opacity: 1; }
+}
+.bb-wave-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  animation: bb-wave 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-wave-dot { animation-duration: 2.4s; }
+}

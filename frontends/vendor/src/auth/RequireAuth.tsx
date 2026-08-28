@@ -1,14 +1,15 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import NoBusinessGate from './NoBusinessGate';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 /** Gate the vendor portal: must be signed in AND a member of a business. */
 export default function RequireAuth() {
   const { session, provider, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center text-gray-500">
-        Loading…
+      <div className="flex h-screen items-center justify-center">
+        <RainbowLoader label="Loading your portal" />
       </div>
     );
   }
