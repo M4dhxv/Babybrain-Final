@@ -176,9 +176,8 @@ export function HeroDashboardPreview() {
       <div className={`${CARD_CLASS} ${POSITIONS[2]}`}>
         <div className="mb-1.5">
           <div className="text-[13px] font-bold text-gray-900">Messages</div>
-          <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
-            <span className="sm:hidden">One inbox, all parents</span>
-            <span className="hidden sm:inline">Parents and providers, one inbox</span>
+          <div className="text-[9.5px] font-medium leading-tight text-gray-500">
+            Every parent enquiry, across all your services, in one inbox.
           </div>
         </div>
         <div className="flex gap-2">
