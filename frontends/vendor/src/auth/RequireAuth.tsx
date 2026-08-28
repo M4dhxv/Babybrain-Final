@@ -8,7 +8,7 @@ export default function RequireAuth() {
   const { session, provider, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div data-bb-loading className="flex h-screen items-center justify-center">
         <RainbowLoader label="Loading your portal" />
       </div>
     );

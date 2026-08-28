@@ -72,20 +72,24 @@
     <script>
       /* Self-heal a stale tab so it never just sits there looking idle.
        *
-       * After a browser restart or a dev/deploy server restart, a restored tab
-       * often keeps a dead module graph: the entry script never executes,
-       * React never mounts, and nothing shows but this splash until a manual
-       * hard refresh. We reload the tab ourselves until it actually boots.
+       * Two failure modes after a browser or dev/deploy server restart:
+       *   1. The restored tab keeps a dead module graph — the entry script
+       *      never runs, React never mounts, nothing shows but this splash.
+       *   2. React DOES mount but then wedges on an in-app loading gate (a
+       *      hung auth/network call), showing "Loading…" forever.
+       * Both used to need a manual hard refresh. We reload the tab ourselves.
        *
-       * Two signals set by the app (see main.tsx):
-       *   window.__BB_BOOT_JS__  the entry module started running. Once set, a
-       *                          stale/failed asset is ruled out, so reloading
-       *                          can't help and we stop.
-       *   window.__BB_BOOTED__   React finished its first render. Clears the
-       *                          retry counter and the "stuck" state.
+       * Signals set by the app:
+       *   window.__BB_BOOT_JS__      entry module started running (main.tsx).
+       *                              Rules out a stale asset, so we stop
+       *                              reloading for mode 1.
+       *   window.__BB_BOOTED__       React finished its first render (main.tsx).
+       *   [data-bb-loading] in DOM   a top-level loading gate is on screen
+       *                              (RequireAuth / the page shells).
        */
       (function () {
         var CNT = "bb-boot-tries";
+        var GATE = "bb-gate-retry";
         var SOFT = 3;    // after this many tries, also reveal the manual Reload button
         var SLOW = 6;    // after this many tries, back off to a slow retry
         var ABORT = 40;  // after this many tries, give up (~20 min of a dead server)
@@ -94,19 +98,24 @@
 
         function jsRan()  { return window.__BB_BOOT_JS__ === true; }
         function booted() { return window.__BB_BOOTED__ === true; }
+        function stillLoading() { return !!document.querySelector("[data-bb-loading]"); }
         function n() {
           try { var v = sessionStorage.getItem(CNT); return v == null ? mem : (+v || 0); }
           catch (e) { return mem; }
         }
         function setN(v) { mem = v; try { sessionStorage.setItem(CNT, v); } catch (e) {} }
-        function reset() { mem = 0; try { sessionStorage.removeItem(CNT); } catch (e) {} }
+        function reset() {
+          mem = 0;
+          try { sessionStorage.removeItem(CNT); } catch (e) {}
+          try { sessionStorage.removeItem(GATE); } catch (e) {}
+        }
         function markStuck() {
           var b = document.getElementById("bb-boot");
           if (b) b.classList.add("bb-stuck");
         }
 
         function heal() {
-          if (booted()) { reset(); return; }
+          if (booted()) { if (!stillLoading()) reset(); return; }
           // Bundle executed but never rendered — a code fault, not a stale
           // asset. Reloading would only loop, so surface it instead.
           if (jsRan()) { markStuck(); return; }
@@ -122,18 +131,28 @@
           var delay = tries < SLOW ? Math.min(tries * 1500, 6000) : 30000;
           setTimeout(function () {
             if (!booted()) location.reload();
-            else { pending = false; reset(); }
+            else { pending = false; if (!stillLoading()) reset(); }
           }, delay);
+        }
+
+        // Mode 2: booted, but still wedged on a top-level loading gate well
+        // past the app's own 8s auth failsafe. One reload usually clears it.
+        function healGate() {
+          var done = 0;
+          try { done = +sessionStorage.getItem(GATE) || 0; } catch (e) {}
+          if (done >= 1) { markStuck(); return; }
+          try { sessionStorage.setItem(GATE, 1); } catch (e) {}
+          location.reload();
         }
 
         // Clear the counter once the tab has been happily booted for a moment,
         // so a later stall starts counting from zero.
         window.addEventListener("load", function () {
-          setTimeout(function () { if (booted()) reset(); }, 2500);
+          setTimeout(function () { if (booted() && !stillLoading()) reset(); }, 2500);
         });
         // Browser restored the tab from bfcache — cheap and safe to reload.
         window.addEventListener("pageshow", function (e) {
-          if (e.persisted && !booted()) location.reload();
+          if (e.persisted && (!booted() || stillLoading())) location.reload();
         });
         // A lazily-restored tab that only really loads when it's looked at.
         document.addEventListener("visibilitychange", function () {
@@ -147,12 +166,15 @@
           if (t && t.tagName === "SCRIPT" && !booted()) heal();
         }, true);
 
-        // Watchdog: if nothing has mounted shortly after load, start healing
-        // and keep rechecking so the tab recovers on its own once the server
-        // is back.
+        // Watchdog: keep rechecking so the tab recovers on its own whether it
+        // never mounted (mode 1) or mounted and wedged on a gate (mode 2).
         function tick() {
-          if (booted()) { reset(); return; }
-          heal();
+          if (booted()) {
+            if (!stillLoading()) { reset(); return; }
+            if (performance.now() > 20000) healGate();
+          } else {
+            heal();
+          }
           setTimeout(tick, 15000);
         }
         function arm() { setTimeout(tick, 7000); }

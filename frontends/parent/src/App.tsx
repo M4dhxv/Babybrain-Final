@@ -1445,7 +1445,7 @@ function ActivityDetailPage() {
   if (loading) {
     return (
       <PageShell active="/explore">
-        <main className="mx-auto max-w-[1180px] px-6 py-16"><RainbowLoader className="py-4" label="Loading activity" /></main>
+        <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16"><RainbowLoader className="py-4" label="Loading activity" /></main>
       </PageShell>
     );
   }
@@ -5208,7 +5208,7 @@ function BookingPage() {
   if (loading) {
     return (
       <PageShell active="/book">
-        <main className="mx-auto max-w-[1024px] px-6 py-16"><RainbowLoader className="py-4" label="Loading booking" /></main>
+        <main data-bb-loading className="mx-auto max-w-[1024px] px-6 py-16"><RainbowLoader className="py-4" label="Loading booking" /></main>
       </PageShell>
     );
   }

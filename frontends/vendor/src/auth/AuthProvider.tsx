@@ -62,28 +62,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session) {
-        identifyUser(data.session.user.id, data.session.user.email);
-        await loadProvider();
+    let alive = true;
+    const settle = () => { if (alive) setLoading(false); };
+
+    // Never let the portal sit on its "Loading…" gate because a restored
+    // tab's auth/network call hung — clear `loading` no matter what within 8s.
+    const failsafe = setTimeout(settle, 8000);
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!alive) return;
+        setSession(data.session);
+        if (data.session) {
+          identifyUser(data.session.user.id, data.session.user.email);
+          await loadProvider();
+        }
+      } catch (err) {
+        console.warn('[auth] session init failed', err);
+      } finally {
+        clearTimeout(failsafe);
+        settle();
       }
-      setLoading(false);
-    });
+    })();
+
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
+      if (!alive) return;
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(s);
-      if (s) {
-        identifyUser(s.user.id, s.user.email);
-        await loadProvider();
-      } else {
-        resetUser();
-        setProvider(null);
-        setRole(null);
-        setSubscription(null);
+      try {
+        if (s) {
+          identifyUser(s.user.id, s.user.email);
+          await loadProvider();
+        } else {
+          resetUser();
+          setProvider(null);
+          setRole(null);
+          setSubscription(null);
+        }
+      } catch (err) {
+        console.warn('[auth] auth-state change failed', err);
+      } finally {
+        clearTimeout(failsafe);
+        settle();
       }
     });
-    return () => sub.subscription.unsubscribe();
+
+    // A tab woken from a browser restart / bfcache can hold a stale session
+    // view; re-check when it comes back so it recovers without a hard refresh.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      supabase.auth.getSession()
+        .then(({ data }) => { if (alive) setSession(data.session); })
+        .catch(() => {})
+        .finally(settle);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      alive = false;
+      clearTimeout(failsafe);
+      document.removeEventListener('visibilitychange', onVisible);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const value: AuthState = {
