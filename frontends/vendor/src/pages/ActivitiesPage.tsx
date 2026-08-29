@@ -795,7 +795,7 @@ export default function ActivitiesPage() {
       {showDrawer && (
         <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit Activity' : 'Create Activity'}</h3>
+            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit activity' : 'Create activity'}</h3>
             <button onClick={() => setShowDrawer(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-600" />
             </button>
@@ -923,7 +923,7 @@ export default function ActivitiesPage() {
           <div className="p-5 border-t border-gray-200 flex gap-3">
             <Button variant="outline" onClick={() => setShowDrawer(false)} className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
             <Button onClick={saveActivity} disabled={saving} className="flex-1 gradient-primary text-white rounded-xl hover:opacity-90">
-              {saving ? 'Saving…' : 'Save Activity'}
+              {saving ? 'Saving…' : 'Save activity'}
             </Button>
           </div>
         </div>

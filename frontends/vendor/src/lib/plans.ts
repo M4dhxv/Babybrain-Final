@@ -3,7 +3,7 @@ import type { SubscriptionPlan } from './database.types';
 export interface PlanMeta {
   key: SubscriptionPlan;
   label: string;       // e.g. "Pro"
-  short: string;       // e.g. "Pro Plan"
+  short: string;       // e.g. "Pro plan"
   price: string;       // e.g. "SGD 99 / month"
   commission: string;  // e.g. "10% commission"
   tagline: string;
@@ -42,7 +42,7 @@ export const PLAN_META: Record<string, PlanMeta> = {
   growth: {
     key: 'growth',
     label: 'Pro',
-    short: 'Pro Plan',
+    short: 'Pro plan',
     price: 'SGD 99 / month',
     commission: '10% commission',
     tagline: 'Manage bookings & grow · all core features',
@@ -57,7 +57,7 @@ export const PLAN_META: Record<string, PlanMeta> = {
   pro: {
     key: 'pro',
     label: 'Premium',
-    short: 'Premium Plan',
+    short: 'Premium plan',
     price: 'SGD 199 / month',
     commission: '8% commission',
     tagline: 'Featured placement, priority ranking & advanced analytics',
@@ -67,7 +67,7 @@ export const PLAN_META: Record<string, PlanMeta> = {
   premium: {
     key: 'premium',
     label: 'Premium',
-    short: 'Premium Plan',
+    short: 'Premium plan',
     price: 'SGD 199 / month',
     commission: '8% commission',
     tagline: 'Featured placement, priority ranking & advanced analytics',

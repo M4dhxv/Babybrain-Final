@@ -285,7 +285,7 @@ export default function BillingPage() {
                 variant="outline"
                 className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
               >
-                {busy === 'cancel' ? 'Opening…' : 'Cancel Plan'}
+                {busy === 'cancel' ? 'Opening…' : 'Cancel plan'}
               </Button>
             </div>
           </div>

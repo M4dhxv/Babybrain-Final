@@ -348,7 +348,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center gap-3 pt-2">
                   <Button onClick={saveProfile} disabled={saving} className="gradient-primary text-white rounded-xl hover:opacity-90 px-6 gap-2">
-                    <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Changes'}
+                    <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save changes'}
                   </Button>
                   <Button variant="outline" onClick={cancelEditProfile} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
                     <X className="w-4 h-4" /> Cancel
@@ -1442,7 +1442,7 @@ function LocationsManager({
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
               <div className="text-xs text-gray-500 truncate">
-                {loc.is_primary ? 'Main Branch' : 'Branch'}{loc.address ? ` · ${loc.address}` : ''}
+                {loc.is_primary ? 'Main branch' : 'Branch'}{loc.address ? ` · ${loc.address}` : ''}
               </div>
             </div>
             {canManage && (
