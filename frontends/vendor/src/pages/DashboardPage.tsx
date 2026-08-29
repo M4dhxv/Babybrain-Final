@@ -448,7 +448,7 @@ export default function DashboardPage() {
           real inbox, with its own real unread count. */}
       <button
         onClick={() => navigate('/messages')}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-[#C90044] to-[#AE5000] rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 gradient-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity z-50"
         title="Open messages"
       >
         <MessageSquare className="w-6 h-6 text-white" />

@@ -1,6 +1,6 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import SiteFooter from '@/components/SiteFooter';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -62,6 +62,21 @@ export default function PortalLayout() {
     setMobileOpen(false);
     navigate(path);
   };
+
+  /* The portal owns its own scrolling: the root below is exactly one viewport
+     tall and <main> is the only thing that scrolls. The document therefore has
+     nothing to scroll — but it can still paint a scrollbar gutter beside the
+     real one (Windows' "always show scrollbars", or a reserved gutter), which
+     reads as a second, dead scrollbar running past the end of the content.
+     Locking the document while the portal is mounted leaves exactly one bar.
+     Public pages scroll the document normally and never render this layout,
+     so the cleanup on unmount matters. */
+  useEffect(() => {
+    const el = document.documentElement;
+    const previous = el.style.overflow;
+    el.style.overflow = 'hidden';
+    return () => { el.style.overflow = previous; };
+  }, []);
 
   return (
     <div className="flex h-screen bg-gray-50">
