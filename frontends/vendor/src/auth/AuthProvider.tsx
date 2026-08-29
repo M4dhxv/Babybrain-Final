@@ -17,6 +17,12 @@ interface AuthState {
   role: ProviderRole | null;
   subscription: Subscription | null;
   loading: boolean;
+  /** The membership lookup has answered — `provider: null` alongside this
+   *  means "no business", without it only means "we don't know yet". */
+  providerResolved: boolean;
+  /** The lookup kept failing (offline, RLS hiccup). Distinct from a clean
+   *  "no business" answer, so callers can offer a retry instead of a fork. */
+  providerError: boolean;
   recovery: boolean;             // true after a password-reset link is opened
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
@@ -27,6 +33,12 @@ interface AuthState {
 
 const Ctx = createContext<AuthState | undefined>(undefined);
 
+/** Resolves to `false` if `p` hasn't settled within `ms` — a hung lookup is a
+ *  failed lookup, not an answer to wait on indefinitely. */
+function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
+  return Promise.race([p, new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -34,15 +46,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [recovery, setRecovery] = useState(false);
+  const [providerResolved, setProviderResolved] = useState(false);
+  const [providerError, setProviderError] = useState(false);
 
-  async function loadProvider() {
+  /** Returns whether the lookup actually answered. A failed query is NOT an
+   *  answer: reporting it as "no business" is what dropped a real vendor onto
+   *  the NoBusinessGate after a refresh. */
+  async function loadProvider(): Promise<boolean> {
     // Resolve the user's first active membership → its provider (RLS-scoped).
-    const { data: member } = await supabase
+    const { data: member, error } = await supabase
       .from('provider_members')
       .select('role, provider:providers(*)')
       .eq('status', 'active')
       .limit(1)
       .maybeSingle();
+    if (error) return false;
     if (member?.provider) {
       const prov = member.provider as unknown as Provider;
       setProvider(prov);
@@ -59,6 +77,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRole(null);
       setSubscription(null);
     }
+    return true;
+  }
+
+  /** A page load can fire the lookup while the access token is still being
+   *  renewed, and that first query comes back empty-handed. One miss isn't a
+   *  verdict — retry briefly before settling on anything. */
+  async function resolveProvider(attempts = 3) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        // Bounded: a request that never settles would otherwise hold the portal
+        // on its spinner forever, which is the failure the 8s failsafe below
+        // was there to prevent before this gate learned to wait.
+        if (await withTimeout(loadProvider(), 6000)) {
+          setProviderResolved(true);
+          setProviderError(false);
+          return true;
+        }
+      } catch (err) {
+        console.warn('[auth] provider lookup failed', err);
+      }
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+    setProviderError(true);
+    return false;
   }
 
   useEffect(() => {
@@ -76,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         if (data.session) {
           identifyUser(data.session.user.id, data.session.user.email);
-          await loadProvider();
+          await resolveProvider();
         }
       } catch (err) {
         console.warn('[auth] session init failed', err);
@@ -93,12 +135,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         if (s) {
           identifyUser(s.user.id, s.user.email);
-          await loadProvider();
+          await resolveProvider();
         } else {
           resetUser();
           setProvider(null);
           setRole(null);
           setSubscription(null);
+          setProviderResolved(false);
+          setProviderError(false);
         }
       } catch (err) {
         console.warn('[auth] auth-state change failed', err);
@@ -113,7 +157,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       supabase.auth.getSession()
-        .then(({ data }) => { if (alive) setSession(data.session); })
+        .then(({ data }) => {
+          if (!alive) return;
+          setSession(data.session);
+          // Coming back to a tab whose lookup had failed is the natural moment
+          // to try again, rather than leaving it stuck on the retry panel.
+          if (data.session && !providerResolved) void resolveProvider();
+        })
         .catch(() => {})
         .finally(settle);
     };
@@ -133,6 +183,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role,
     subscription,
     loading,
+    providerResolved,
+    providerError,
     recovery,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -152,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut: async () => {
       await supabase.auth.signOut();
     },
-    refreshProvider: loadProvider,
+    refreshProvider: async () => { await resolveProvider(); },
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
