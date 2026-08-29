@@ -133,28 +133,39 @@ export default function ActivitiesPage() {
      public site in another tab to check; this shows the same information
      without leaving the table. Read-only — the CTAs are rendered inert. */
   const [previewFor, setPreviewFor] = useState<Activity | null>(null);
-  // Keyed by activity so a slow response for one preview can't land on another.
-  const [previewDuration, setPreviewDuration] = useState<{ id: string; mins: number } | null>(null);
+  const [previewDuration, setPreviewDuration] = useState<number | 'loading' | null>('loading');
 
-  /* Nothing stores a duration on the activity — the parent page derives it
-     from the next session, so this reads that single row to match. Deliberately
-     not the sessions list, which the preview doesn't show. */
-  async function openPreview(a: Activity) {
+  function openPreview(a: Activity) {
     setShowMenu(null);
     setPreviewFor(a);
-    setPreviewDuration(null);
-    const { data } = await supabase
-      .from('activity_sessions')
-      .select('starts_at, ends_at')
-      .eq('activity_id', a.id)
-      .gte('starts_at', new Date().toISOString())
-      .order('starts_at')
-      .limit(1)
-      .maybeSingle();
-    if (!data) return;
-    const mins = Math.round((new Date(data.ends_at).getTime() - new Date(data.starts_at).getTime()) / 60000);
-    if (mins > 0) setPreviewDuration({ id: a.id, mins });
   }
+
+  /* Nothing stores a duration on the activity — the parent page derives it
+     from the next session, so this reads that single row to match. Kept in an
+     effect rather than the open handler so it re-runs whenever the previewed
+     activity changes or its session count moves (adding or deleting sessions
+     refreshes sessionCounts), and the stale guard drops a slow response that
+     lands after the vendor has moved on. */
+  useEffect(() => {
+    if (!previewFor) return;
+    let stale = false;
+    setPreviewDuration('loading');
+    (async () => {
+      const { data } = await supabase
+        .from('activity_sessions')
+        .select('starts_at, ends_at')
+        .eq('activity_id', previewFor.id)
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at')
+        .limit(1)
+        .maybeSingle();
+      if (stale) return;
+      if (!data) { setPreviewDuration(null); return; }
+      const mins = Math.round((new Date(data.ends_at).getTime() - new Date(data.starts_at).getTime()) / 60000);
+      setPreviewDuration(mins > 0 ? mins : null);
+    })();
+    return () => { stale = true; };
+  }, [previewFor, sessionCounts]);
 
   /* The activity's own address is often blank on Wix-synced rows, which left
      the parent view with no Location at all. Fall back to the linked venue. */
@@ -1004,7 +1015,11 @@ export default function ActivitiesPage() {
             </div>
 
             {/* pointer-events-none: nothing in the preview is clickable. */}
-            <div className="pointer-events-none select-none overflow-y-auto p-5 text-[#111A4C]">
+            {/* The scroller keeps its pointer events — putting them on this
+                element made it transparent to the wheel, so a long description
+                or address could not be reached. The inert layer is inside it. */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="pointer-events-none select-none p-5 text-[#111A4C]">
               {!previewFor.is_published && (
                 <p className="mb-4 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                   Not published yet — families can&rsquo;t find this. This is how it would look once it is.
@@ -1089,14 +1104,19 @@ export default function ActivitiesPage() {
                         {previewLocation(previewFor) ?? 'No location set'}
                       </span>
                     </div>
-                    {previewDuration?.id === previewFor.id && (
-                      <div>
-                        <strong className="block">Duration</strong>
-                        <span className="mt-1 block text-[#34406f]">{formatDuration(previewDuration.mins)}</span>
-                      </div>
-                    )}
+                    <div>
+                      <strong className="block">Duration</strong>
+                      <span className="mt-1 block text-[#34406f]">
+                        {previewDuration === 'loading'
+                          ? 'Checking…'
+                          : previewDuration
+                            ? formatDuration(previewDuration)
+                            : 'No sessions scheduled yet'}
+                      </span>
+                    </div>
                   </div>
                 </aside>
+              </div>
               </div>
             </div>
 
