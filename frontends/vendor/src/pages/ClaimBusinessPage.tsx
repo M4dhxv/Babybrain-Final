@@ -183,7 +183,20 @@ export default function ClaimBusinessPage() {
 
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full flex-shrink-0 lg:w-64">
-            <img src={`${import.meta.env.BASE_URL}assets/playcentre-illustration.svg`} alt="" className="mb-4 h-auto w-44" />
+            {/* The artwork is a square raster on a cream ground. `multiply` drops its
+                near-white ground into the page and the mask feathers the four edges, so it
+                sits on the white column with no visible picture frame. */}
+            <img
+              src={`${import.meta.env.BASE_URL}assets/playcentre-illustration.webp`}
+              alt=""
+              className="-mt-6 mb-2 h-auto w-full max-w-60 mix-blend-multiply lg:-mt-8 min-[1060px]:-mt-16"
+              style={{
+                WebkitMaskImage:
+                  'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
+                maskImage:
+                  'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
+              }}
+            />
             <h3 className="mb-4 text-lg font-bold text-[#FA4D8D]">Why verify your business?</h3>
             <div className="space-y-4">
               {whyVerify.map((item) => (
