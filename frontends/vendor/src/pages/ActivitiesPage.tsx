@@ -18,6 +18,14 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Eye,
+  Store,
+  Music,
+  ExternalLink,
+  Mail,
+  MessageCircle,
+  Users,
+  Heart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -111,6 +119,24 @@ export default function ActivitiesPage() {
   const [editingSessId, setEditingSessId] = useState<string | null>(null);
   const [sessEditForm, setSessEditForm] = useState({ teacher: '', studio: '' });
   const [savingSessEdit, setSavingSessEdit] = useState(false);
+
+  /* Parent-view preview. Vendors kept publishing blind and then opening the
+     public site in another tab to check; this shows the same information
+     without leaving the table. Read-only — the CTAs are rendered inert. */
+  const [previewFor, setPreviewFor] = useState<Activity | null>(null);
+
+  function openPreview(a: Activity) {
+    setShowMenu(null);
+    setPreviewFor(a);
+  }
+
+  // Escape closes the preview, like every other dialog on the platform.
+  useEffect(() => {
+    if (!previewFor) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewFor(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewFor]);
 
   async function openSchedule(a: Activity) {
     setShowMenu(null);
@@ -729,6 +755,10 @@ export default function ActivitiesPage() {
                   </button>
                   {showMenu === a.id && canManage && (
                     <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
+                      <button onClick={() => openPreview(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                      </button>
                       <button onClick={() => openEdit(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <Pencil className="w-3.5 h-3.5" />
                         Edit
@@ -903,6 +933,133 @@ export default function ActivitiesPage() {
             <Button onClick={saveActivity} disabled={saving} className="flex-1 gradient-primary text-white rounded-xl hover:opacity-90">
               {saving ? 'Saving…' : 'Save activity'}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Parent-view preview. Deliberately a copy of the parent activity page
+          (frontends/parent App.tsx) rather than a vendor-styled summary — the
+          point is to show exactly what a family sees, so the palette, radii
+          and Nunito face are the parent app's, not this one's. Everything is
+          inert; the sessions and reviews blocks are left out. */}
+      {previewFor && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/25 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewFor(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Parent view of ${previewFor.title}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-[#FFFCF8] shadow-2xl"
+            style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+          >
+            <div className="flex items-center justify-between border-b border-[#EBE3E5] bg-white px-5 py-3">
+              <div className="flex items-center gap-2.5">
+                <Eye className="h-4 w-4 flex-shrink-0 text-[#FA4D8D]" />
+                <div>
+                  <h3 className="text-sm font-bold text-[#111A4C]">Parent view</h3>
+                  <p className="text-xs text-gray-500">How this looks to families on BabyBrain.sg</p>
+                </div>
+              </div>
+              <button onClick={() => setPreviewFor(null)} aria-label="Close preview" className="rounded-lg p-1.5 hover:bg-gray-100">
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+
+            {/* pointer-events-none: nothing in the preview is clickable. */}
+            <div className="pointer-events-none select-none overflow-y-auto p-5 text-[#111A4C]">
+              {!previewFor.is_published && (
+                <p className="mb-4 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  Not published yet — families can&rsquo;t find this. This is how it would look once it is.
+                </p>
+              )}
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="flex flex-col gap-5">
+                  <div className="grid gap-5 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[#C7B1E6]">← Back to results</span>
+                      <div className="flex flex-1 flex-col justify-center">
+                        <h1 className="text-[29px] font-black leading-tight">{previewFor.title}</h1>
+                        {provider?.business_name && (
+                          <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
+                            <Store className="h-4 w-4" /> {provider.business_name}
+                          </p>
+                        )}
+                        <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-[#FA4D8D]">
+                          <Music className="h-4 w-4" /> {categoryName(previewFor.category_id)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <img
+                        src={previewFor.image_urls?.[0] || fallbackImage(previewFor)}
+                        alt={previewFor.title}
+                        className="h-[240px] w-full rounded-[18px] object-cover lg:h-[305px]"
+                      />
+                      <span className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-[#111A4C] shadow">
+                        <ExternalLink className="h-3.5 w-3.5" /> View photo
+                      </span>
+                    </div>
+                  </div>
+
+                  {previewFor.description && (
+                    <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
+                      <h2 className="mb-3 text-xl font-black">About</h2>
+                      <p className="font-semibold text-[#34406f]">{previewFor.description}</p>
+                    </section>
+                  )}
+                </div>
+
+                <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">
+                  {previewFor.price != null && Number(previewFor.price) > 0 ? (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">${Number(previewFor.price)}</strong> <span className="font-bold">/ class</span></p>
+                  ) : (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">Free</strong></p>
+                  )}
+
+                  <span className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white" style={{ boxShadow: '0 8px 20px rgba(250,93,147,.32)' }}>
+                    <CalendarDays className="h-4 w-4" /> Book a class
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
+                    <Mail className="h-4 w-4" /> Chat with provider
+                  </span>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#A8E59A] px-3 py-2.5 text-[13px] font-extrabold text-[#A8E59A]">
+                      <MessageCircle className="h-4 w-4" /> WhatsApp
+                    </span>
+                    <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#A7D8F8] px-3 py-2.5 text-[13px] font-extrabold text-[#A7D8F8]">
+                      <Mail className="h-4 w-4" /> Email
+                    </span>
+                  </div>
+                  <span className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[11px] border border-[#C7B1E6] px-3 py-2.5 text-[13px] font-extrabold text-[#C7B1E6]">
+                    <ExternalLink className="h-4 w-4" /> Website
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
+                    <Users className="h-4 w-4" /> Class group chat
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] bg-[#FEEBF2] px-6 py-3 text-[15px] font-extrabold text-[#FFC1D6]">
+                    <Heart className="h-4 w-4" /> Save to favourites
+                  </span>
+
+                  {previewFor.address && (
+                    <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
+                      <p className="flex items-start justify-between gap-3">
+                        <strong className="shrink-0">Location</strong>
+                        <span className="text-right">{previewFor.address}</span>
+                      </p>
+                    </div>
+                  )}
+                </aside>
+              </div>
+            </div>
+
+            <div className="border-t border-[#EBE3E5] bg-white px-5 py-2.5 text-center text-xs text-gray-500">
+              Preview only — nothing here is clickable.
+            </div>
           </div>
         </div>
       )}
