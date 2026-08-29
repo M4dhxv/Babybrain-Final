@@ -46,6 +46,15 @@ const fmtDate = (iso: string) =>
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
+/** Matches formatDuration in the parent app, so the preview reads identically. */
+const formatDuration = (mins: number | null | undefined): string => {
+  if (!mins || mins <= 0) return '';
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+};
+
 /** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
 
@@ -124,11 +133,37 @@ export default function ActivitiesPage() {
      public site in another tab to check; this shows the same information
      without leaving the table. Read-only — the CTAs are rendered inert. */
   const [previewFor, setPreviewFor] = useState<Activity | null>(null);
+  // Keyed by activity so a slow response for one preview can't land on another.
+  const [previewDuration, setPreviewDuration] = useState<{ id: string; mins: number } | null>(null);
 
-  function openPreview(a: Activity) {
+  /* Nothing stores a duration on the activity — the parent page derives it
+     from the next session, so this reads that single row to match. Deliberately
+     not the sessions list, which the preview doesn't show. */
+  async function openPreview(a: Activity) {
     setShowMenu(null);
     setPreviewFor(a);
+    setPreviewDuration(null);
+    const { data } = await supabase
+      .from('activity_sessions')
+      .select('starts_at, ends_at')
+      .eq('activity_id', a.id)
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at')
+      .limit(1)
+      .maybeSingle();
+    if (!data) return;
+    const mins = Math.round((new Date(data.ends_at).getTime() - new Date(data.starts_at).getTime()) / 60000);
+    if (mins > 0) setPreviewDuration({ id: a.id, mins });
   }
+
+  /* The activity's own address is often blank on Wix-synced rows, which left
+     the parent view with no Location at all. Fall back to the linked venue. */
+  const previewLocation = (a: Activity) => {
+    if (a.address) return [a.address, a.postal_code].filter(Boolean).join(', ');
+    const l = locations.find((x) => x.id === a.location_id);
+    if (!l) return null;
+    return [l.name, l.address, l.postal_code].filter(Boolean).join(', ');
+  };
 
   // Escape closes the preview, like every other dialog on the platform.
   useEffect(() => {
@@ -1045,14 +1080,22 @@ export default function ActivitiesPage() {
                     <Heart className="h-4 w-4" /> Save to favourites
                   </span>
 
-                  {previewFor.address && (
-                    <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
-                      <p className="flex items-start justify-between gap-3">
-                        <strong className="shrink-0">Location</strong>
-                        <span className="text-right">{previewFor.address}</span>
-                      </p>
+                  <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
+                    {/* Label and value stack rather than sharing a row: a full
+                        address squeezed beside the label wrapped to a sliver. */}
+                    <div>
+                      <strong className="block">Location</strong>
+                      <span className="mt-1 block break-words text-[#34406f]">
+                        {previewLocation(previewFor) ?? 'No location set'}
+                      </span>
                     </div>
-                  )}
+                    {previewDuration?.id === previewFor.id && (
+                      <div>
+                        <strong className="block">Duration</strong>
+                        <span className="mt-1 block text-[#34406f]">{formatDuration(previewDuration.mins)}</span>
+                      </div>
+                    )}
+                  </div>
                 </aside>
               </div>
             </div>
