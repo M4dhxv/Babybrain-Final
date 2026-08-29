@@ -101,10 +101,13 @@ export default function PortalLayout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar. The whole column scrolls as one — the nav keeps flex-1 so on
+          a tall screen the plan card and Help still sit at the bottom, and the
+          blocks below it are shrink-0 so a short screen overflows into a scroll
+          rather than squashing them. */}
       <aside
         className={cn(
-          'flex flex-col bg-white border-r border-gray-200 h-full transition-transform duration-300',
+          'flex flex-col overflow-y-auto overscroll-contain bg-white border-r border-gray-200 h-full transition-transform duration-300',
           'fixed inset-y-0 left-0 z-50 md:static md:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           isSidebarCollapsed ? 'w-20' : 'w-64'
@@ -127,12 +130,8 @@ export default function PortalLayout() {
           )}
         </div>
 
-        {/* Navigation. min-h-0 lets this shrink inside the flex column — without
-            it a flex item refuses to go below its content height, so on a short
-            viewport the nav pushed the plan card and Help off the bottom of an
-            aside that has no scroll of its own. It scrolls instead, which keeps
-            those two pinned and reachable. */}
-        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 space-y-1">
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
             // Pro-only / paid-only tabs stay visible but greyed, so the
