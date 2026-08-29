@@ -151,7 +151,7 @@ export default function SaveListingPage() {
         </div>
         <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
           <ArrowLeft className="w-4 h-4" />
-          Save & Exit
+          Save & exit
         </Button>
       </header>
 
@@ -281,7 +281,7 @@ export default function SaveListingPage() {
                     Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
                   </p>
                 </div>
-                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View terms</span>
               </div>
             </div>
 
@@ -306,7 +306,7 @@ export default function SaveListingPage() {
                     Covers messaging rules, cancellation/rescheduling and refund policies.
                   </p>
                 </div>
-                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View terms</span>
               </div>
             </div>
           </div>

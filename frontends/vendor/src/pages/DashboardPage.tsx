@@ -321,7 +321,7 @@ export default function DashboardPage() {
               )}
               {!stat.change && <div className="mb-3" />}
               <button onClick={() => navigate(stat.to)} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
-                View Details
+                View details
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
