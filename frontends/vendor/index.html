@@ -6,6 +6,16 @@
     <link rel="icon" type="image/png" href="/vendor/assets/brand/logo-icon.png" />
     <title>BabyBrain Vendor Portal</title>
 
+    <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
+         the favicon (it is 385x256, not square) and draws a grey letter tile
+         instead. The icons below are square crops of the same brand mark. -->
+    <link rel="manifest" href="/vendor/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/vendor/assets/brand/apple-touch-icon.png" />
+    <meta name="theme-color" content="#FA4D8D" />
+    <meta name="apple-mobile-web-app-title" content="BabyBrain" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
     <!-- Boot splash: inline CSS so it paints before any bundle loads. A stale
          or half-restored tab (browser restart, dev-server restart) can keep a
          dead module graph and never mount React — this replaces the old blank
