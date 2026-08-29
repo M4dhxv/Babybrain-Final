@@ -195,11 +195,14 @@ export default function LandingPage() {
       {/* Trust Banner */}
       <section className="bg-white py-1.5 px-8 mt-5 mb-1">
         <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
-          <Heart className="w-5 h-5 text-pink-400" />
-          <span className="text-base text-gray-600">
+          <Heart className="w-5 h-5 flex-shrink-0 text-pink-400" />
+          {/* Centred, not just centred-as-a-block: on a narrow screen this wraps
+              to two lines, and left-aligned text there reads as off-centre
+              between the two icons. */}
+          <span className="text-center text-base text-gray-600">
             Trusted by playspaces, classes and event co-ordinators nationwide.
           </span>
-          <Sparkles className="w-5 h-5 text-purple-400" />
+          <Sparkles className="w-5 h-5 flex-shrink-0 text-purple-400" />
         </div>
       </section>
       </div>
