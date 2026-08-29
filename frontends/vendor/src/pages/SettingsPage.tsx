@@ -926,7 +926,7 @@ function WixIntegrationManager({
               {canManage && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button onClick={syncServices} disabled={syncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
-                    <RefreshCw className="w-3.5 h-3.5" /> {syncing ? 'Syncing…' : 'Sync services'}
+                    <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} /> {syncing ? 'Syncing…' : 'Sync services'}
                   </Button>
                   <Button variant="outline" onClick={() => { setEditing(true); setRevealedKey(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
                     <Pencil className="w-3.5 h-3.5" /> Change key
@@ -1346,13 +1346,13 @@ function LocationsManager({
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><MapPin className="w-5 h-5 text-purple-600" /></div>
           <div>
             <h3 className="font-semibold text-gray-900">Locations</h3>
-            <p className="text-xs text-gray-500">{locations.length} Active Location{locations.length === 1 ? '' : 's'}</p>
+            <p className="text-xs text-gray-500">{locations.length} active location{locations.length === 1 ? '' : 's'}</p>
           </div>
         </div>
         {canManage && !showForm && (
           <div className="flex items-center gap-2">
             <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
-              <RefreshCw className="w-3.5 h-3.5" /> Fetch from Wix
+              <RefreshCw className={cn('w-3.5 h-3.5', wixLoading && 'animate-spin')} /> Fetch from Wix
             </button>
             <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
               <Plus className="w-3.5 h-3.5" /> Add location
