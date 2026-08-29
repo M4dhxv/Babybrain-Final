@@ -32,7 +32,7 @@ const sidebarItems = [
   { icon: CalendarRange, label: 'Schedule', path: '/schedule' },
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: Package, label: 'Packages', path: '/packages' },
-  { icon: Gift, label: 'Make-up Tokens', path: '/make-up-tokens' },
+  { icon: Gift, label: 'Make-up tokens', path: '/make-up-tokens' },
   // Messaging is a Growth-and-above perk (see plans.ts PLAN_META) — locked
   // on Pay As You Grow, same "visible but greyed" treatment as Insights.
   { icon: MessageSquare, label: 'Messages', path: '/messages', paidOnly: true },
@@ -152,7 +152,7 @@ export default function PortalLayout() {
                 <Crown className="w-4 h-4 text-white" />
               </div>
             </div>
-            <div className="text-xs text-gray-500 mb-0.5">Current Plan</div>
+            <div className="text-xs text-gray-500 mb-0.5">Current plan</div>
             <div className="text-sm font-bold text-gray-900 mb-1">{plan.short}</div>
             <div className="text-xs text-gray-500 mb-3">
               {plan.isPaid && subscription?.current_period_end
@@ -163,7 +163,7 @@ export default function PortalLayout() {
               onClick={() => go('/billing')}
               className="flex items-center justify-center w-full gap-1 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {location.pathname === '/billing' ? 'Manage Subscription' : plan.isPaid ? 'Manage Plan' : 'Upgrade Plan'}
+              {location.pathname === '/billing' ? 'Manage subscription' : plan.isPaid ? 'Manage plan' : 'Upgrade plan'}
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>

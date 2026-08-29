@@ -64,7 +64,7 @@ export default function MakeUpTokensPage() {
     <div className="relative">
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
-          <h1 className="text-2xl font-bold text-gray-900">Make-up Tokens</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Make-up tokens</h1>
           <p className="text-sm text-gray-500 mt-1">Every make-up token you've issued, and where it stands.</p>
         </div>
       </div>

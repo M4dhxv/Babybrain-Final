@@ -67,7 +67,7 @@ export default function BillingPage() {
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
           <div className="text-center sm:text-left">
-            <h1 className="text-2xl font-bold text-gray-900">Manage Subscription</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Manage subscription</h1>
             <p className="text-sm text-gray-500 mt-1">View and manage your subscription details.</p>
           </div>
         </div>
@@ -192,7 +192,7 @@ export default function BillingPage() {
             {/* Payment Method — only on a paid plan (a card is on file) */}
             {plan.isPaid && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
+                <h3 className="font-semibold text-gray-900 mb-4">Payment method</h3>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-gray-600">Manage your card and invoices in the Stripe billing portal.</div>
                   <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm flex-shrink-0">
@@ -270,7 +270,7 @@ export default function BillingPage() {
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-red-600 mb-1">Cancel Subscription</h3>
+                <h3 className="font-semibold text-red-600 mb-1">Cancel subscription</h3>
                 <p className="text-sm text-gray-600">
                   If you cancel, your subscription will remain active until the end of your current billing period.
                 </p>

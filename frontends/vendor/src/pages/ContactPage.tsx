@@ -54,7 +54,7 @@ const FAQS: [string, ReactNode][] = [
     'How do I edit my profile?',
     <>
       If we’ve already listed your business using publicly available information, use{' '}
-      <Link to="/claim-business" className={faqLink}>Claim Your Business</Link> to take ownership of the listing.
+      <Link to="/claim-business" className={faqLink}>Claim your business</Link> to take ownership of the listing.
       Once claimed, you can edit your business information, upload photos and your logo, add or amend activities,
       schedules and locations, and update your packages and pricing.
     </>,

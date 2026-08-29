@@ -21,8 +21,8 @@ export interface PlanMeta {
 export const PLAN_META: Record<string, PlanMeta> = {
   free: {
     key: 'free',
-    label: 'Pay As You Grow',
-    short: 'Pay As You Grow',
+    label: 'Pay as you grow',
+    short: 'Pay as you grow',
     price: 'SGD 0 / month',
     commission: '12% commission',
     tagline: 'Take bookings & manage classes with no monthly fee',

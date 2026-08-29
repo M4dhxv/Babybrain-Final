@@ -188,7 +188,7 @@ export default function PackagesPage() {
         {!loading && activeTab === 'Packs' && (
           <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-xs text-gray-500 mb-4">
-              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#C90044] hover:underline">Make-up Tokens</button>.
+              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#C90044] hover:underline">Make-up tokens</button>.
             </p>
             {packs.length > 0 && (
               <div className="space-y-2">

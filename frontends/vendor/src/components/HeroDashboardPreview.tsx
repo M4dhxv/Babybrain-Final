@@ -233,7 +233,7 @@ export function HeroDashboardPreview() {
           {/* Upcoming Sessions */}
           <div className="rounded-md bg-gray-50 p-1 sm:p-1.5">
             <div className="mb-1 flex items-center justify-between gap-0.5 sm:mb-1.5">
-              <span className="truncate text-[7px] font-bold text-gray-900">Upcoming Sessions</span>
+              <span className="truncate text-[7px] font-bold text-gray-900">Upcoming sessions</span>
               <span className="flex-shrink-0 text-[6.5px] font-semibold text-[#FA4D8D]">View all</span>
             </div>
             <div className="space-y-1 sm:space-y-1.5">
@@ -255,7 +255,7 @@ export function HeroDashboardPreview() {
           {/* Recent Bookings */}
           <div className="rounded-md bg-gray-50 p-1 sm:p-1.5">
             <div className="mb-1 flex items-center justify-between gap-0.5 sm:mb-1.5">
-              <span className="truncate text-[7px] font-bold text-gray-900">Recent Bookings</span>
+              <span className="truncate text-[7px] font-bold text-gray-900">Recent bookings</span>
               <span className="flex-shrink-0 text-[6.5px] font-semibold text-[#FA4D8D]">View all</span>
             </div>
             <div className="space-y-1 sm:space-y-1.5">

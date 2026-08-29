@@ -847,7 +847,7 @@ export default function ActivitiesPage() {
               <p className="mt-1 text-xs text-gray-500">Pre-fills the capacity when you add new sessions for this activity.</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity Image</label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity image</label>
               <label className={cn(
                 'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 px-4 py-6 cursor-pointer hover:border-pink-300 transition-colors',
                 uploading && 'opacity-60 pointer-events-none'

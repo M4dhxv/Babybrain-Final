@@ -23,9 +23,9 @@ const settingsTabs = [
   // QA: "each vendor will have their own consents, waivers, disclosures they
   // want accepted so need a way to make this bespoke" + "there needs to be an
   // option to toggle on and upload the relevant material".
-  { id: 'policies', label: 'Waivers & Consents', icon: FileText },
+  { id: 'policies', label: 'Waivers & consents', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: Shield },
-  { id: 'integrations', label: 'Integrate your Business', icon: Plug },
+  { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
 const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
@@ -303,7 +303,7 @@ export default function SettingsPage() {
               <div className="space-y-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Business Name</label>
+                    <label className="text-xs text-gray-500 mb-1 block">Business name</label>
                     <input className={inputCls} value={form.business_name} onChange={(e) => setForm({ ...form, business_name: e.target.value })} />
                   </div>
                   <div>
@@ -315,12 +315,12 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Business Description</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Business description</label>
                   <textarea rows={3} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Phone Number</label>
+                    <label className="text-xs text-gray-500 mb-1 block">Phone number</label>
                     <input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
                   </div>
                   <div>
@@ -377,7 +377,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center"><Users className="w-5 h-5 text-green-600" /></div>
               <div>
-                <h3 className="font-semibold text-gray-900">Team Members</h3>
+                <h3 className="font-semibold text-gray-900">Team members</h3>
                 <p className="text-xs text-gray-500">{team.length} Team Member{team.length === 1 ? '' : 's'}</p>
               </div>
             </div>
@@ -872,7 +872,7 @@ function WixIntegrationManager({
       <div className="mb-1 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
         <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Plug className="w-5 h-5 text-indigo-600" /></div>
         <div>
-          <h3 className="font-semibold text-gray-900">WIX Integration</h3>
+          <h3 className="font-semibold text-gray-900">Wix integration</h3>
           <p className="text-xs text-gray-500">Connect your own Wix Bookings account to sync availability and bookings.</p>
         </div>
       </div>
@@ -1602,7 +1602,7 @@ function PoliciesManager({
         <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
           <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><FileText className="w-5 h-5 text-amber-600" /></div>
           <div>
-            <h3 className="font-semibold text-gray-900">Waivers &amp; Consents</h3>
+            <h3 className="font-semibold text-gray-900">Waivers &amp; consents</h3>
             <p className="text-xs text-gray-500">Parents accept these before their booking is confirmed</p>
           </div>
         </div>

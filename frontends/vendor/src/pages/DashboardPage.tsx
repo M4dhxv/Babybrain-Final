@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
    an analytic", and a count of replies owed is something a vendor acts on. */
 const statsCards = [
   { icon: CalendarDays, label: 'Bookings', value: '28', sub: 'this week', change: '22%', color: 'text-pink-600', bg: 'bg-pink-100', to: '/bookings' },
-  { icon: Users, label: 'Attendance Rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100', to: '/bookings?tab=Attendance' },
+  { icon: Users, label: 'Attendance rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100', to: '/bookings?tab=Attendance' },
   { icon: MessageSquare, label: 'Messages to reply', value: '0', sub: 'awaiting a response', change: null, color: 'text-yellow-600', bg: 'bg-yellow-100', to: '/messages' },
   { icon: UserPlus, label: 'Waitlist', value: '14', sub: 'children', change: null, color: 'text-blue-600', bg: 'bg-blue-100', to: '/bookings?tab=Waitlist' },
   { icon: DollarSign, label: 'Revenue', value: '$3,240', sub: 'this month', change: '18%', color: 'text-green-600', bg: 'bg-green-100', to: '/billing' },
@@ -274,7 +274,7 @@ export default function DashboardPage() {
               <CalendarPlus className="w-6 h-6 text-[#C90044]" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Add an Activity</div>
+              <div className="font-semibold text-gray-900">Add an activity</div>
               <div className="text-xs text-gray-500">Create a new class<br/>or activity</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -284,7 +284,7 @@ export default function DashboardPage() {
               <Package className="w-6 h-6 text-purple-600" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Create a Package</div>
+              <div className="font-semibold text-gray-900">Create a package</div>
               <div className="text-xs text-gray-500">Bundle your activities<br/>together</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -294,7 +294,7 @@ export default function DashboardPage() {
               <MapPin className="w-6 h-6 text-blue-600" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Add a Location</div>
+              <div className="font-semibold text-gray-900">Add a location</div>
               <div className="text-xs text-gray-500">Add a new venue<br/>or location</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -333,7 +333,7 @@ export default function DashboardPage() {
           {/* Upcoming Sessions */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Upcoming Sessions</h3>
+              <h3 className="font-semibold text-gray-900">Upcoming sessions</h3>
               <button onClick={() => navigate('/schedule')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
@@ -371,7 +371,7 @@ export default function DashboardPage() {
           {/* Recent Bookings */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Recent Bookings</h3>
+              <h3 className="font-semibold text-gray-900">Recent bookings</h3>
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
