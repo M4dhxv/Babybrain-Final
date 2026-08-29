@@ -119,7 +119,7 @@ export default function PortalLayout() {
           <X className="h-5 w-5" />
         </button>
         {/* Logo */}
-        <div className="px-5 py-4">
+        <div className="shrink-0 px-5 py-4">
           {isSidebarCollapsed ? (
             <BrandIcon className="h-8 w-8" />
           ) : (
@@ -127,8 +127,12 @@ export default function PortalLayout() {
           )}
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        {/* Navigation. min-h-0 lets this shrink inside the flex column — without
+            it a flex item refuses to go below its content height, so on a short
+            viewport the nav pushed the plan card and Help off the bottom of an
+            aside that has no scroll of its own. It scrolls instead, which keeps
+            those two pinned and reachable. */}
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
             // Pro-only / paid-only tabs stay visible but greyed, so the
@@ -161,7 +165,7 @@ export default function PortalLayout() {
 
         {/* Current Plan Card */}
         {!isSidebarCollapsed && (
-          <div className="mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100">
+          <div className="shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-500 rounded-lg flex items-center justify-center">
                 <Crown className="w-4 h-4 text-white" />
@@ -185,7 +189,7 @@ export default function PortalLayout() {
         )}
 
         {/* Help */}
-        <div className="px-5 py-4 border-t border-gray-100">
+        <div className="shrink-0 px-5 py-4 border-t border-gray-100">
           {/* Both of these were inert. They go to Contact, which is the help
               page this portal actually has. */}
           <button onClick={() => navigate('/contact')} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
