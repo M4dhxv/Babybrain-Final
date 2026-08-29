@@ -189,7 +189,7 @@ export default function ClaimBusinessPage() {
             <img
               src={`${import.meta.env.BASE_URL}assets/playcentre-illustration.webp`}
               alt=""
-              className="-mt-6 mb-2 h-auto w-full max-w-60 mix-blend-multiply lg:-mt-8 min-[1060px]:-mt-16"
+              className="-mt-6 mb-2 h-auto w-full max-w-60 mix-blend-multiply mx-auto lg:mx-0 lg:-mt-8 min-[1060px]:-mt-16"
               style={{
                 WebkitMaskImage:
                   'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
@@ -197,11 +197,20 @@ export default function ClaimBusinessPage() {
                   'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
               }}
             />
-            <h3 className="mb-4 text-lg font-bold text-[#FA4D8D]">Why verify your business?</h3>
-            <div className="space-y-4">
+            {/* Centred on a phone to line up with the page heading above it;
+                left-aligned again from lg, where this is a side column. */}
+            <h3 className="mb-4 text-center text-lg font-bold text-[#FA4D8D] lg:text-left">Why verify your business?</h3>
+            {/* Centred on a phone, the icon sits above the text rather than
+                beside it. Centring an icon-and-text row as a unit left the
+                icons at a different x on every row — and a long label pushed
+                one of them off the edge of the column entirely. */}
+            <div className="space-y-6 lg:space-y-4">
               {whyVerify.map((item) => (
-                <div key={item.title} className="flex gap-3">
-                  <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50">
+                <div
+                  key={item.title}
+                  className="flex flex-col items-center gap-2 text-center lg:flex-row lg:items-start lg:gap-3 lg:text-left"
+                >
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50 lg:mt-0.5">
                     <item.icon className="h-4 w-4 text-[#FA4D8D]" />
                   </div>
                   <div>

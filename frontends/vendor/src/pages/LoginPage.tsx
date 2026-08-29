@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/auth/AuthProvider';
-import { BrandLogo } from '@/components/BrandLogo';
+import { AuthHeader } from '@/components/AuthHeader';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -34,40 +34,23 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* Marketing header over the sign-in card. Mirrors the landing-page nav
-          but drops the parent site's "Explore Activities" link and search bar —
-          neither belongs on the vendor portal. */}
-      <header className="flex items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3 sm:px-8 md:grid md:grid-cols-[1fr_auto_1fr]">
-        <button onClick={() => navigate('/')} aria-label="BabyBrain home" className="justify-self-start">
-          <BrandLogo className="h-9 sm:h-10" />
-        </button>
-        <nav className="hidden items-center gap-10 md:flex">
-          <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">
-            Home
-          </button>
-          <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">
-            Plans
-          </button>
-          <button onClick={() => navigate('/contact')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">
-            Contact
-          </button>
-        </nav>
-        <div className="flex items-center justify-self-end gap-2 sm:gap-3">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/login')}
-            className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            Log in
-          </Button>
-          <Button
-            onClick={() => navigate('/claim-business')}
-            className="rounded-full px-6 border-0 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] transition hover:brightness-105"
-          >
-            Sign up
-          </Button>
-        </div>
-      </header>
+      {/* Was an inline copy of AuthHeader. Shared now, so the mobile nav
+          dropdown only has to exist in one place. */}
+      <AuthHeader>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/login')}
+          className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
+        >
+          Log in
+        </Button>
+        <Button
+          onClick={() => navigate('/claim-business')}
+          className="rounded-full px-6 border-0 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] transition hover:brightness-105"
+        >
+          Sign up
+        </Button>
+      </AuthHeader>
 
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">

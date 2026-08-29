@@ -204,7 +204,7 @@ export default function PlansPage() {
         <nav className="hidden items-center gap-10 md:flex">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Plans</button>
-          <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
+          <button onClick={() => { navigate('/contact'); }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-2 sm:gap-3">
           <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
@@ -231,7 +231,7 @@ export default function PlansPage() {
             <nav className="flex flex-col px-4 py-1">
               <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-medium text-gray-700">Home</button>
               <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-semibold text-[#FA4D8D]">Plans</button>
-              <button onClick={() => { setMenuOpen(false); window.location.href = 'mailto:hello@babybrain.sg'; }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/contact'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
               <button
                 onClick={() => { setMenuOpen(false); navigate('/login'); }}
                 className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
