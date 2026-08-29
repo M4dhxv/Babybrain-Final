@@ -132,3 +132,37 @@
   width: 0.4375rem;
   height: 0.4375rem;
 }
+
+/* Scrollbars.
+ *
+ * The portal has two of its own — the sidebar and <main> — and at the OS
+ * default width (~17px on Windows) they read as heavy slabs against chrome
+ * this light. Thin and warm-grey instead: still clearly visible and grabbable,
+ * but no longer the loudest thing on the page. The thumb picks up the palette's
+ * hairline rather than the browser's blue-grey.
+ *
+ * Firefox uses scrollbar-width/-color; Chromium and Safari need the
+ * ::-webkit-scrollbar pseudo-elements, so both are declared.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #D5C9CE transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #D5C9CE;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #B9A9B1;
+}
+/* Chromium draws a filled square where the two bars meet without this. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
