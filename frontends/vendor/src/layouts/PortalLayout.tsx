@@ -181,7 +181,7 @@ export default function PortalLayout() {
             <div className="mt-1 text-xs text-gray-500">
               Visit our{' '}
               <button onClick={() => navigate('/contact')} className="text-pink-600 hover:underline">
-                Help center
+                Help centre
               </button>
             </div>
           )}

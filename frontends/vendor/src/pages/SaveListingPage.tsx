@@ -48,7 +48,7 @@ const whyMatters = [
   { icon: Heart, text: 'Ensures accurate information for parents' },
   { icon: Shield, text: 'Builds trust and credibility for your business' },
   { icon: Heart, text: 'Helps parents discover and connect with you' },
-  { icon: Bell, text: 'Keep your schedule and programs up to date' },
+  { icon: Bell, text: 'Keep your schedule and programmes up to date' },
 ];
 
 export default function SaveListingPage() {
