@@ -654,23 +654,29 @@ function OnboardingPage() {
   );
 }
 
+/** No session (signed out, or the refresh token expired while the tab sat
+ *  open): leave for the public landing page instead of showing a signed-in
+ *  page's logged-out panel. Rendered as a placeholder while the hard
+ *  navigation this fires actually happens. */
+function RedirectToLanding() {
+  useEffect(() => { goTo("/"); }, []);
+  return (
+    <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
+      <RainbowLoader className="py-4" label="Taking you back" />
+    </main>
+  );
+}
+
 function MatchesPage({ active = "/matches" }: { active?: string }) {
-  const { session, profile, children, loading } = useAuth();
+  const { session, profile, children, loading, dataResolved } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   // Which child's suggestions are on screen; defaults to the first.
   const [homeChildId, setHomeChildId] = useState<string | null>(null);
 
-  if (!loading && !session) {
-    return (
-      <PageShell active={active}>
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to see your matches.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
-  if (!loading && children.length === 0) {
+  if (!loading && !session) return <RedirectToLanding />;
+  // Only claim there are no children once the fetch has actually answered —
+  // an unresolved lookup used to send signed-in parents to onboarding.
+  if (!loading && dataResolved && children.length === 0) {
     return (
       <PageShell active={active}>
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
@@ -2609,16 +2615,7 @@ function EditProfilePage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  if (!loading && !session) {
-    return (
-      <PageShell active="/profile">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to edit your profile.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
+  if (!loading && !session) return <RedirectToLanding />;
 
   return (
     <PageShell active="/profile">
@@ -3004,16 +3001,7 @@ function ProfilePage() {
     }
   }, [session]);
 
-  if (!loading && !session) {
-    return (
-      <PageShell active="/profile">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to view your dashboard.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
+  if (!loading && !session) return <RedirectToLanding />;
 
   const recs =
     recsByChild.find((r) => r.child.id === journeyChild?.id)?.recs ?? recsByChild[0]?.recs ?? [];

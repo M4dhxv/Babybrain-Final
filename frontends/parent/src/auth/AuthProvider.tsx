@@ -10,6 +10,9 @@ interface AuthState {
   profile: ParentProfile | null;
   children: Child[];
   loading: boolean;
+  /** The profile/children fetch has answered — an empty `children` alongside
+   *  this means "no children yet", without it only means "we don't know yet". */
+  dataResolved: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (
     email: string,
@@ -53,27 +56,60 @@ export interface SignupOnboarding {
 
 const Ctx = createContext<AuthState | undefined>(undefined);
 
+/** Resolves to `false` if `p` hasn't settled within `ms` — a hung lookup is a
+ *  failed lookup, not an answer to wait on indefinitely. */
+function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
+  return Promise.race([p, new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ParentProfile | null>(null);
   const [kids, setKids] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataResolved, setDataResolved] = useState(false);
 
-  async function load() {
+  /** Returns whether the fetch actually answered. A failed query is NOT an
+   *  answer — reporting it as "no profile, no children" is what showed signed-in
+   *  parents the logged-out and "tell us about your child" screens on refresh. */
+  async function load(): Promise<boolean> {
     const {
       data: { user },
+      error: userErr,
     } = await supabase.auth.getUser();
+    if (userErr) return false;
     if (!user) {
       setProfile(null);
       setKids([]);
-      return;
+      return true;
     }
-    const [{ data: p }, { data: c }] = await Promise.all([
+    const [{ data: p, error: pErr }, { data: c, error: cErr }] = await Promise.all([
       supabase.from("parent_profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase.from("children").select("*").order("created_at"),
     ]);
+    if (pErr || cErr) return false;
     setProfile(p ?? null);
     setKids(c ?? []);
+    return true;
+  }
+
+  /** A page load can fire these while the access token is still being renewed,
+   *  and they come back empty. One miss isn't a verdict — retry briefly. */
+  async function resolveData(attempts = 3) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        // Bounded, so a request that never settles can't hold a signed-in page
+        // on its loader forever.
+        if (await withTimeout(load(), 6000)) {
+          setDataResolved(true);
+          return true;
+        }
+      } catch (err) {
+        console.warn("[auth] profile lookup failed", err);
+      }
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+    return false;
   }
 
   useEffect(() => {
@@ -91,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         if (data.session) {
           identifyUser(data.session.user.id, data.session.user.email);
-          await load();
+          await resolveData();
         }
       } catch (err) {
         console.warn("[auth] session init failed", err);
@@ -107,11 +143,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         if (s) {
           identifyUser(s.user.id, s.user.email);
-          await load();
+          await resolveData();
         } else {
           resetUser();
           setProfile(null);
           setKids([]);
+          setDataResolved(false);
         }
       } catch (err) {
         console.warn("[auth] auth-state change failed", err);
@@ -127,7 +164,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState !== "visible") return;
       supabase.auth
         .getSession()
-        .then(({ data }) => { if (alive) setSession(data.session); })
+        .then(({ data }) => {
+          if (!alive) return;
+          setSession(data.session);
+          // Coming back to a tab whose fetch had failed is the natural moment
+          // to try again rather than leaving it on a logged-out-looking page.
+          if (data.session && !dataResolved) void resolveData();
+        })
         .catch(() => {})
         .finally(settle);
     };
@@ -146,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     children: kids,
     loading,
+    dataResolved,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return error ? { error: error.message } : {};
@@ -183,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       goTo("/");
     },
-    refresh: load,
+    refresh: async () => { await resolveData(); },
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
