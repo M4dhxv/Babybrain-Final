@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarPlus,
-  Package,
   MapPin,
   CalendarDays,
+  CalendarClock,
   Search,
   SlidersHorizontal,
   MoreVertical,
@@ -28,7 +28,6 @@ import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
-const tabs = ['Activities', 'Locations'];
 
 const ageLabel = (min: number, max: number) => {
   const f = (m: number) => (m < 24 ? `${m}m` : `${Math.round((m / 12) * 10) / 10}y`);
@@ -55,19 +54,11 @@ export default function ActivitiesPage() {
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState('Activities');
   const [showDrawer, setShowDrawer] = useState(false);
   /* The dashboard's shortcuts used to drop the vendor on this page's default
      view and leave them to find the right form. `?new=activity|package` opens
      it directly. */
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Packages now live on their own sidebar page — Locations already
-  // redirected to Settings the same way.
-  function onTab(tab: string) {
-    if (tab === 'Locations') { navigate('/settings?tab=locations'); return; }
-    setActiveTab(tab);
-  }
 
   // Act on ?new=activity once, then strip it so a refresh doesn't reopen the
   // form. (?new=pack is handled by PackagesPage now.)
@@ -248,23 +239,17 @@ export default function ActivitiesPage() {
     load();
   }
 
-  // Class-pack management now lives on its own page (PackagesPage) — this
-  // page just shows an "Active Packages" count via packCount below.
-  const [packCount, setPackCount] = useState(0);
-
   async function load() {
     if (!provider) return;
     setLoading(true);
-    const [{ data: acts }, { data: cats }, { data: locs }, { count: packs }] = await Promise.all([
+    const [{ data: acts }, { data: cats }, { data: locs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
       supabase.from('provider_locations').select('id, name, address, postal_code, latitude, longitude').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
-      supabase.from('packages').select('id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('active', true),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
     setLocations((locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]);
-    setPackCount(packs ?? 0);
 
     // Upcoming session counts + total booking counts per activity.
     const ids = (acts ?? []).map((a) => a.id);
@@ -386,11 +371,15 @@ export default function ActivitiesPage() {
     return `${import.meta.env.BASE_URL}assets/${img}`;
   };
 
+  // Reads left to right as the life of an activity: live → still a draft →
+  // actually on the calendar → the venues it all runs at.
   const stats = [
     { icon: CalendarCheck, label: 'Active activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
-    { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
-    { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
     { icon: CalendarDays, label: 'Draft activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    // "Scheduled" = has at least one session still in the future, which is the
+    // same count the Sessions column shows per row.
+    { icon: CalendarClock, label: 'Activities scheduled', value: String(activities.filter((a) => !a.archived_at && !isFullyRemoved(a) && (sessionCounts[a.id] ?? 0) > 0).length), sub: 'With upcoming sessions', color: 'text-purple-600', bg: 'bg-purple-100' },
+    { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
   ];
 
   async function archive(id: string) {
@@ -526,31 +515,11 @@ export default function ActivitiesPage() {
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your activities and schedule</p>
+          <p className="text-sm text-gray-500 mt-1">Manage your activities, schedule and locations</p>
         </div>
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {/* Action Buttons */}
-        <div className="flex flex-wrap justify-center gap-3 mb-6 sm:gap-4">
-          <button
-            onClick={() => canManage && openCreate()}
-            disabled={!canManage}
-            className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
-          >
-            <CalendarPlus className="w-4 h-4" />
-            New activity
-          </button>
-          <button onClick={() => navigate('/packages?new=pack')} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
-            <Package className="w-4 h-4" />
-            New package
-          </button>
-          <button onClick={() => navigate('/settings?tab=locations&new=location')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
-            <MapPin className="w-4 h-4" />
-            New location
-          </button>
-        </div>
-
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-4">
           {stats.map((stat) => (
@@ -570,24 +539,33 @@ export default function ActivitiesPage() {
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="flex flex-col gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div className="flex justify-center gap-6 sm:justify-start">
-              {tabs.map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => onTab(tab)}
-                  className={cn(
-                    'text-sm font-medium pb-2 border-b-2 transition-colors',
-                    activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
+            {/* One section left, so this is a label rather than a tab strip.
+                Centred on a phone, where it sits above the toolbar. */}
+            <div className="flex justify-center sm:justify-start">
+              <span className="text-sm font-medium pb-2 border-b-2 text-[#C90044] border-[#C90044]">Activities</span>
             </div>
-            {/* Mobile: search on its own row, then Sync services + Filters
-                side by side. Desktop: all inline. */}
+            {/* Mobile: the two create buttons on one row, search on its own,
+                then Sync services + Filters. Desktop: all inline, creates
+                first so the actions sit left of the tools. */}
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="relative w-full sm:order-2 sm:w-48">
+              <div className="flex justify-center gap-3 sm:contents">
+                <button
+                  onClick={() => canManage && openCreate()}
+                  disabled={!canManage}
+                  className="flex items-center gap-2 px-4 py-2 bg-pink-50 border border-pink-200 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50 sm:order-1"
+                >
+                  <CalendarPlus className="w-4 h-4" />
+                  New activity
+                </button>
+                <button
+                  onClick={() => navigate('/settings?tab=locations&new=location')}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors sm:order-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  New location
+                </button>
+              </div>
+              <div className="relative w-full sm:order-4 sm:w-48">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
@@ -603,7 +581,7 @@ export default function ActivitiesPage() {
                     onClick={syncServices}
                     disabled={syncing}
                     title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:order-1"
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:order-3"
                   >
                     <RefreshCw className="w-4 h-4" />
                     {syncing ? 'Syncing…' : 'Sync services'}
@@ -613,7 +591,7 @@ export default function ActivitiesPage() {
                   onClick={() => setShowFilters((v) => !v)}
                   aria-expanded={showFilters}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50 sm:order-3',
+                    'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50 sm:order-5',
                     activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
                   )}
                 >
@@ -623,7 +601,7 @@ export default function ActivitiesPage() {
                 {activeFilterCount > 0 && (
                   <button
                     onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
-                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044] sm:order-4"
+                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044] sm:order-6"
                   >
                     Clear
                   </button>
