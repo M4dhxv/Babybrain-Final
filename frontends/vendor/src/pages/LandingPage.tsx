@@ -33,8 +33,15 @@ export default function LandingPage() {
           and the button group rather than on the page — same fix as Plans
           (see PlansPage.tsx's header comment). grid-cols-[1fr_auto_1fr]
           centers the middle column by construction regardless of how wide
-          the two side columns are. */}
-      <header className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
+          the two side columns are.
+
+          Grid only applies from md: up, matching AuthHeader — below md the
+          nav is `hidden` and drops out of grid auto-placement entirely,
+          which shifts the buttons group into the vacated middle column
+          instead of the true right edge. Below md, plain flex
+          justify-between over the 2 remaining children already places them
+          correctly without a grid. */}
+      <header className="relative flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 sm:px-8 md:grid md:grid-cols-[1fr_auto_1fr]">
         <BrandLogo className="h-9 sm:h-10 justify-self-start" />
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Home</button>

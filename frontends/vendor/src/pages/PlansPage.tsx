@@ -267,8 +267,17 @@ export default function PlansPage() {
           the two visibly disagreed. A 1fr/auto/1fr grid centers the middle
           column by construction, independent of what the side columns
           weigh, and unlike absolute-centering it can't ever overlap the
-          buttons at narrower widths since grid columns never overlap. */}
-      <header className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
+          buttons at narrower widths since grid columns never overlap.
+
+          The grid only applies from md: up, matching AuthHeader's own
+          pattern — below md the nav is `hidden` (display:none), which
+          removes it from grid auto-placement entirely, so the buttons group
+          would auto-flow into the vacated middle column instead of staying
+          in column 3 (shifted left, with dead space at the true right edge).
+          Below md there are only 2 real children, so plain flex
+          justify-between already puts them correctly at the two ends
+          without needing a grid at all. */}
+      <header className="relative flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8 md:grid md:grid-cols-[1fr_auto_1fr]">
         <div
           className="flex items-center gap-2 cursor-pointer justify-self-start"
           onClick={() => navigate('/')}
