@@ -166,3 +166,34 @@
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Stream Chat's own theme, repainted in the brand's CTA pink.
+   `stream-chat-react`'s v2 stylesheet defaults `--str-chat__primary-color` and
+   its neighbours to a blue scale, which drove the send button, the selected
+   conversation, unread badges and the sender's own bubbles — the one surface in
+   the portal still off-brand.
+
+   The pink is the filled-button pink (#FA4D8D), not the darker #C90044 ink, so
+   the chat reads as the same colour as the "Book a class" style CTAs rather
+   than a deeper crimson.
+
+   Pinned to literals rather than `hsl(var(--primary))` for the same reason
+   `.gradient-primary` above is: that token is an HSL approximation that
+   resolves a step off (rgb 249,77,140 vs 250,77,141), and these values have to
+   match the parent app's chat exactly.
+
+   Deliberately NOT inside `@layer`, and deliberately a two-class selector:
+   Stream defines these variables on `.str-chat` itself, so a value set on an
+   ancestor is overridden rather than inherited, and a single-class rule of ours
+   would only tie on specificity. `.bb-chat .str-chat` (0,2,0) beats Stream's
+   `.str-chat` (0,1,0) whichever order the bundler emits them in. */
+.bb-chat .str-chat,
+.bb-chat.str-chat {
+  --str-chat__primary-color: #fa4d8d;
+  /* Pressed/active state — the same step down `.gradient-primary-hover` uses. */
+  --str-chat__active-primary-color: #f03d7e;
+  --str-chat__primary-color-low-emphasis: #ffc1d6;
+  --str-chat__primary-surface-color: #fed7e4;
+  --str-chat__primary-surface-color-low-emphasis: #feebf2;
+  --str-chat__primary-overlay-color: rgba(250, 77, 141, 0.6);
+}

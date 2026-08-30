@@ -158,8 +158,8 @@ export default function MessagesPage() {
       <div className="p-4 text-center sm:p-8 sm:text-left">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <p className="mt-1 text-sm text-gray-500">Every parent enquiry, across all your services, in one inbox.</p>
-        <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-300 text-purple-800">
+        <div className="mt-6 rounded-xl border border-dashed border-primary/30 bg-bb-pink-light/60 p-10 text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground">
             <Crown className="h-7 w-7" />
           </span>
           <h2 className="mt-4 text-xl font-bold text-gray-900">Messaging is a Pro feature</h2>
@@ -204,7 +204,8 @@ export default function MessagesPage() {
         </div>
       </div>
       <div className="min-h-0 flex-1 px-4 pb-6 sm:px-6">
-      <div className="h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
+      {/* `bb-chat` is what the dark-pink Stream override in index.css hangs off. */}
+      <div className="bb-chat h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
         <Chat client={client}>
           <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} />
         </Chat>

@@ -51,7 +51,7 @@ export function MessagesTab({ userId }: { userId: string }) {
   }
 
   return (
-    <div className="h-[600px] overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card str-chat__theme-light">
+    <div className="bb-chat h-[600px] overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card str-chat__theme-light">
       <Chat client={client}>
         <div className="flex h-full">
           <div className="w-72 flex-shrink-0 overflow-y-auto border-r border-[#F4EFF0]">
