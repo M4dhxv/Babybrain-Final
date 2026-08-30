@@ -7,6 +7,7 @@ import SiteFooter from '@/components/SiteFooter';
 import { apiPost } from '@/lib/api';
 import { BrandLogo } from '@/components/BrandLogo';
 import { useAuth } from '@/auth/AuthProvider';
+import { PLAN_META } from '@/lib/plans';
 
 /* The three tiers, per the founder's revised pricing deck.
  *
@@ -98,7 +99,7 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
-  const { session, provider, subscription } = useAuth();
+  const { session, provider, subscription, refreshProvider } = useAuth();
   // Legacy DB rows can carry the old 'premium' value for what the UI now
   // calls the top tier ('pro' planKey), and the free tier's planKey is `null`
   // rather than 'free' — normalize both sides before comparing. Only treat a
@@ -109,6 +110,7 @@ export default function PlansPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
+  const [switched, setSwitched] = useState<string | null>(null);
   const [optedOut, setOptedOut] = useState(false);
   const [optOutOpen, setOptOutOpen] = useState(false);
   const [optOutName, setOptOutName] = useState('');
@@ -116,6 +118,38 @@ export default function PlansPage() {
   const [optOutNote, setOptOutNote] = useState('');
   const [optOutBusy, setOptOutBusy] = useState(false);
   const [optOutError, setOptOutError] = useState<string | null>(null);
+
+  /* QA 23/08: "If you are already on the Pro plan, you shouldn't be able to get
+     to stripe payment to upgrade to the plan you are already on." Every plan
+     button used to read "Start Growing" / "Go Pro" and start a fresh checkout
+     no matter what the vendor was already paying for — which stacked a second
+     subscription rather than doing nothing. The cards now know the current
+     plan, so the one you're on is marked and inert, and the others read as an
+     upgrade or a downgrade. */
+  // Rank for deciding whether a tier is a step up or down. 'premium' shares
+  // the top rank with 'pro': it's a legacy alias on the same Stripe price and
+  // there is a live provider on it.
+  const RANK: Record<string, number> = { free: 0, growth: 1, pro: 2, premium: 2 };
+  const currentRank = RANK[subscription?.plan ?? 'free'] ?? 0;
+  const isPaid = currentRank > 0;
+
+  /* Tier names come from PLAN_META rather than being spelled out here, so the
+     Pay As You Grow / Pro / Premium naming stays in one place. */
+  const tierName = (key: 'growth' | 'pro') => PLAN_META[key].label;
+
+  /* What a plan's button should say. Every button used to read "Start
+     growing" / "Go Pro" no matter what the vendor was already paying for, and
+     clicking one opened a fresh Stripe checkout — which stacked a second
+     subscription instead of moving tier. */
+  function ctaFor(plan: (typeof plans)[number]): string {
+    if (!session || !provider) return plan.buttonText;
+    if (isCurrentPlan(plan.planKey)) return 'Current plan';
+    if (!plan.planKey) return isPaid ? 'Downgrade to Pay as you grow' : plan.buttonText;
+    if (!isPaid) return plan.buttonText;
+    return RANK[plan.planKey] < currentRank
+      ? `Downgrade to ${tierName(plan.planKey)}`
+      : `Upgrade to ${tierName(plan.planKey)}`;
+  }
 
   /* QA: "click upgrade to growth and then start growing and it just takes me
      back to the dashboard still on the free plan." Every paid-plan button sent
@@ -143,18 +177,36 @@ export default function PlansPage() {
     if (isCurrentPlan(planKey)) {
       // Already subscribed to this tier — nothing to check out, send them to
       // Billing instead of starting a Stripe session for the plan they have.
+      // The route refuses it as well (409), so a stale tab can't stack one.
       navigate('/billing');
       return;
     }
+    // A real tier change moves the existing subscription and prorates, so say
+    // what will happen to the money before doing it.
+    if (isPaid && !window.confirm(
+      planKey === 'growth'
+        ? `Move down to the ${tierName('growth')} plan? Stripe will credit the unused part of your current plan against your next invoice.`
+        : `Move up to the ${tierName('pro')} plan? Stripe will charge the difference for the rest of this billing period.`
+    )) return;
+
+
     setCheckoutError(null);
+    setSwitched(null);
     setCheckoutBusy(planKey);
     try {
-      const { url } = await apiPost<{ url?: string }>('/api/vendor/stripe/subscription', {
-        provider_id: provider.id,
-        plan: planKey,
-      });
-      if (url) window.location.href = url;
-      else setCheckoutError({ plan: planKey, message: 'Could not start checkout — please try again.' });
+      const { url, switched: didSwitch } = await apiPost<{ url?: string; switched?: boolean }>(
+        '/api/vendor/stripe/subscription',
+        { provider_id: provider.id, plan: planKey }
+      );
+      if (didSwitch) {
+        // Changed on the subscription they already have — no Stripe redirect.
+        await refreshProvider();
+        setSwitched(planKey);
+      } else if (url) {
+        window.location.href = url;
+      } else {
+        setCheckoutError({ plan: planKey, message: 'Could not start checkout — please try again.' });
+      }
     } catch (e) {
       setCheckoutError({ plan: planKey, message: e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.' });
     } finally {
@@ -265,14 +317,24 @@ export default function PlansPage() {
                     : 'border-gray-200'
                 )}
               >
-                {plan.featured && (
+                {/* The tier you're on is called out ahead of MOST POPULAR —
+                    every button used to read "Start growing" / "Go pro"
+                    regardless of what the vendor was already paying for. */}
+                {isCurrentPlan(plan.planKey) ? (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">
+                      <Check className="w-3 h-3" />
+                      CURRENT PLAN
+                    </div>
+                  </div>
+                ) : plan.featured ? (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-purple-500 text-white text-xs font-semibold rounded-full">
                       <Star className="w-3 h-3" />
                       MOST POPULAR
                     </div>
                   </div>
-                )}
+                ) : null}
                 <h3 className={cn('text-lg font-bold mb-1', plan.color, (plan.name === 'PRO' || plan.name === 'PREMIUM') && '-translate-x-1.5')}>{plan.name}</h3>
                 <div className="flex items-baseline justify-center gap-1 mb-2">
                   <span className={cn('text-sm font-medium', plan.color)}>SGD</span>
@@ -303,17 +365,23 @@ export default function PlansPage() {
                 <Button
                   onClick={() => selectPlan(plan.planKey)}
                   disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
-                  className={cn('w-full rounded-xl py-3 font-semibold bg-white', plan.buttonClass)}
+                  className={cn(
+                    'w-full rounded-xl py-3 font-semibold bg-white',
+                    isCurrentPlan(plan.planKey) ? 'border-gray-300 text-gray-500' : plan.buttonClass
+                  )}
                   variant="outline"
                 >
                   {plan.planKey !== null && checkoutBusy === plan.planKey
-                    ? 'Redirecting to Stripe…'
-                    : isCurrentPlan(plan.planKey)
-                      ? 'Current plan'
-                      : plan.buttonText}
+                    ? 'Working…'
+                    : ctaFor(plan)}
                 </Button>
                 {checkoutError?.plan === plan.planKey && (
                   <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
+                )}
+                {switched === plan.planKey && (
+                  <p className="mt-2 text-xs font-medium text-green-700">
+                    Done — you're on {plan.name.charAt(0) + plan.name.slice(1).toLowerCase()} now.
+                  </p>
                 )}
               </div>
             );

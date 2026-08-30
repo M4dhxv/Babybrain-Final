@@ -31,6 +31,15 @@ export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
 // 'premium' is a legacy value from before the Plans page's pro/premium
 // rename (see vendor's lib/plans.ts) — pre-existing rows can still carry it.
 export type SubscriptionPlan = 'free' | 'growth' | 'pro' | 'premium';
+/** Who absorbs Stripe's processing fee on a booking. */
+export type FeePayer = 'platform' | 'vendor';
+export type EarningSource = 'booking' | 'package';
+export type EarningStatus =
+  | 'pending'         // in the vendor's Stripe balance, not yet paid out
+  | 'in_transit'      // Stripe has a payout on the way
+  | 'paid_out'        // landed in their bank
+  | 'platform_owed'   // BabyBrain collected it; settled off-Stripe
+  | 'refunded';
 export type VendorCategory =
   | 'baby-toddler-classes' | 'playspaces' | 'camps-holiday'
   | 'community-events' | 'mum-bub-exercise' | 'other';
@@ -925,7 +934,13 @@ export type Database = {
           status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
           current_period_end: string | null;
           cancel_at_period_end: boolean;
+          // Commercial terms — negotiable per vendor, see lib/commercials.ts.
           commission_rate: number;
+          commission_flat_cents: number;
+          fee_payer: FeePayer;
+          commission_on_packages: boolean;
+          /** Terms negotiated by hand — plan changes stop driving the rate. */
+          custom_terms: boolean;
           updated_at: string;
         };
         Insert: { provider_id: string; plan?: SubscriptionPlan };
@@ -936,6 +951,63 @@ export type Database = {
           status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
           current_period_end?: string | null;
           cancel_at_period_end?: boolean;
+          commission_rate?: number;
+          commission_flat_cents?: number;
+          fee_payer?: FeePayer;
+          commission_on_packages?: boolean;
+          custom_terms?: boolean;
+        };
+        Relationships: [];
+      };
+      provider_earnings: {
+        Row: {
+          id: string;
+          provider_id: string;
+          source: EarningSource;
+          booking_id: string | null;
+          package_purchase_id: string | null;
+          currency: string;
+          gross_cents: number;
+          commission_cents: number;
+          stripe_fee_cents: number | null;
+          net_cents: number;
+          commission_rate: number;
+          commission_flat_cents: number;
+          fee_payer: FeePayer;
+          routed_to_connect: boolean;
+          stripe_payment_intent: string | null;
+          stripe_transfer_id: string | null;
+          stripe_payout_id: string | null;
+          paid_out_at: string | null;
+          status: EarningStatus;
+          created_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          source: EarningSource;
+          booking_id?: string | null;
+          package_purchase_id?: string | null;
+          currency?: string;
+          gross_cents: number;
+          commission_cents?: number;
+          stripe_fee_cents?: number | null;
+          net_cents: number;
+          commission_rate: number;
+          commission_flat_cents?: number;
+          fee_payer: FeePayer;
+          routed_to_connect?: boolean;
+          stripe_payment_intent?: string | null;
+          stripe_transfer_id?: string | null;
+          stripe_payout_id?: string | null;
+          paid_out_at?: string | null;
+          status?: EarningStatus;
+        };
+        Update: {
+          stripe_fee_cents?: number | null;
+          stripe_transfer_id?: string | null;
+          stripe_payout_id?: string | null;
+          paid_out_at?: string | null;
+          status?: EarningStatus;
         };
         Relationships: [];
       };

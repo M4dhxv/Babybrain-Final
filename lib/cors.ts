@@ -60,3 +60,16 @@ export function corsHeaders(request: Request): Record<string, string> {
     Vary: 'Origin',
   };
 }
+
+/**
+ * Absolute URL of a page inside the vendor SPA, for Stripe to redirect back
+ * to. The portal is a Vite app served under `/vendor/` and routed with a
+ * HashRouter, so its real URLs look like `<origin>/vendor/#/billing` — a
+ * plain `<origin>/vendor/billing` is a 404. Origin comes from
+ * {@link appOrigin}, so the vendor returns to whichever deployment (or local
+ * dev server) they started from.
+ */
+export function vendorPageUrl(request: Request, path: string, query?: string): string {
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return `${appOrigin(request)}/vendor/#${clean}${query ? `?${query}` : ''}`;
+}

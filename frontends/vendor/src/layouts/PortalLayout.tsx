@@ -20,6 +20,7 @@ import {
   Star,
   TrendingUp,
   Lock,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
@@ -41,6 +42,7 @@ const sidebarItems = [
   // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
   { icon: TrendingUp, label: 'Insights', path: '/insights', proOnly: true },
   { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: Wallet, label: 'Earnings', path: '/earnings' },
   { icon: CreditCard, label: 'Billing', path: '/billing' },
 ];
 
@@ -177,11 +179,18 @@ export default function PortalLayout() {
                 ? <>{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}<br />{renewLabel}</>
                 : plan.price}
             </div>
+            {/* QA 24/08: "When click 'Upgrade Plan' under current plan bottom
+                left it just jumps up to current plan." It always went to
+                /billing, which opens on the Current Plan card — so an
+                "Upgrade" button showed you the plan you were already on, and
+                reaching the tiers took a second click. An upgrade now goes
+                straight to /plans; managing an existing paid plan still goes
+                to /billing, which is where the card and invoices live. */}
             <button
-              onClick={() => go('/billing')}
+              onClick={() => go(plan.isPaid ? '/billing' : '/plans')}
               className="flex items-center justify-center w-full gap-1 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {location.pathname === '/billing' ? 'Manage subscription' : plan.isPaid ? 'Manage plan' : 'Upgrade plan'}
+              {plan.isPaid ? (location.pathname === '/billing' ? 'Manage subscription' : 'Manage plan') : 'Upgrade plan'}
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>

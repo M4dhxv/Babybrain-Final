@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import type Stripe from 'stripe';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { computeSplit, getTerms } from '@/lib/commercials';
 
 /**
  * Parent pays for a booking. The price is resolved server-side from the
@@ -62,10 +62,7 @@ export async function POST(request: Request) {
 
   const params = {
     mode: 'payment' as const,
-    // Order is the order Checkout renders them in: PayNow first (the default
-    // for Singapore parents), then card — which also surfaces the Apple Pay /
-    // Google Pay wallet buttons — then GrabPay.
-    payment_method_types: ['paynow', 'card', 'grabpay'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+    payment_method_types: ONE_OFF_PAYMENT_METHODS,
     line_items: [
       {
         price_data: {
@@ -84,7 +81,8 @@ export async function POST(request: Request) {
   };
 
   // Split to the provider's connected account when they're set up; otherwise
-  // the charge stays on the platform account so payment still works.
+  // the charge stays on the platform account so payment still works — and the
+  // webhook records what BabyBrain then owes them.
   let connect = {};
   if (activity?.provider_id) {
     const { data: provider } = await admin
@@ -93,15 +91,11 @@ export async function POST(request: Request) {
       .eq('id', activity.provider_id)
       .maybeSingle();
     if (provider?.stripe_account_id && provider.payouts_enabled) {
-      const { data: sub } = await admin
-        .from('subscriptions')
-        .select('commission_rate')
-        .eq('provider_id', activity.provider_id)
-        .maybeSingle();
-      const commission = sub?.commission_rate ?? 0.15;
+      const terms = await getTerms(admin, activity.provider_id);
+      const split = computeSplit(amountCents, terms);
       connect = {
         payment_intent_data: {
-          application_fee_amount: Math.round(amountCents * commission),
+          application_fee_amount: split.applicationFeeCents,
           transfer_data: { destination: provider.stripe_account_id },
         },
       };

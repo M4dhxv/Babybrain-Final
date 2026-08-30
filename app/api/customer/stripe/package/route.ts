@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { computeSplit, getTerms } from '@/lib/commercials';
 
 /**
  * Parent buys a class package (multi-session pack). One-off Stripe Checkout;
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: pkg } = await admin
     .from('packages')
-    .select('id, name, credits, price_cents, active')
+    .select('id, name, credits, price_cents, active, provider_id')
     .eq('id', packageId)
     .maybeSingle();
   if (!pkg || !pkg.active) {
@@ -43,10 +44,34 @@ export async function POST(request: Request) {
   }
 
   const origin = appOrigin(request);
+
+  // Class packs are vendor revenue, but this checkout never split them: the
+  // whole purchase landed on the platform account with nothing transferred to
+  // the provider. Split it the same way a booking is split, unless the
+  // vendor's terms exempt packages.
+  let connect = {};
+  const { data: provider } = await admin
+    .from('providers')
+    .select('stripe_account_id, payouts_enabled')
+    .eq('id', pkg.provider_id)
+    .maybeSingle();
+  if (provider?.stripe_account_id && provider.payouts_enabled) {
+    const terms = await getTerms(admin, pkg.provider_id);
+    const split = terms.commissionOnPackages
+      ? computeSplit(pkg.price_cents, terms)
+      : computeSplit(pkg.price_cents, { ...terms, commissionRate: 0, commissionFlatCents: 0 });
+    connect = {
+      payment_intent_data: {
+        application_fee_amount: split.applicationFeeCents,
+        transfer_data: { destination: provider.stripe_account_id },
+      },
+    };
+  }
+
   const session = await getStripe().checkout.sessions.create({
     mode: 'payment',
-    // PayNow first, then card (which also offers Apple Pay / Google Pay).
-    payment_method_types: ['paynow', 'card', 'grabpay'],
+    ...connect,
+    payment_method_types: ONE_OFF_PAYMENT_METHODS,
     line_items: [
       {
         price_data: {

@@ -3,6 +3,7 @@ import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { recordSale } from '@/lib/commercials';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
     }
     const { data: pkg } = await admin
       .from('packages')
-      .select('id, provider_id, credits')
+      .select('id, provider_id, credits, price_cents')
       .eq('id', session.metadata.package_id)
       .maybeSingle();
     if (!pkg) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
@@ -106,6 +107,15 @@ export async function POST(request: Request) {
         userId: user.id,
         activitySessionId: session.metadata.activity_session_id,
         childId: session.metadata.child_id ?? null,
+      });
+    }
+    if (purchase) {
+      await recordSale(admin, {
+        providerId: pkg.provider_id,
+        source: 'package',
+        packagePurchaseId: purchase.id,
+        grossCents: pkg.price_cents,
+        paymentIntentId: paymentIntent,
       });
     }
     return NextResponse.json({ applied: true, kind, credits: pkg.credits });
@@ -144,16 +154,36 @@ export async function POST(request: Request) {
   }
 
   if (kind === 'booking' && session.metadata?.booking_id) {
+    const bookingId = session.metadata.booking_id;
+    const paymentIntent = (session.payment_intent as string) ?? null;
     // RLS is bypassed by the admin client, so scope the write to this parent.
     await admin
       .from('bookings')
       .update({
         payment_status: 'paid',
         status: 'confirmed',
-        stripe_payment_intent: (session.payment_intent as string) ?? null,
+        stripe_payment_intent: paymentIntent,
       })
-      .eq('id', session.metadata.booking_id)
+      .eq('id', bookingId)
       .eq('user_id', user.id);
+
+    // Same ledger entry the webhook would have written. recordSale is
+    // idempotent on the payment intent, so whichever path runs first wins.
+    const { data: booked } = await admin
+      .from('bookings')
+      .select('amount, provider_id')
+      .eq('id', bookingId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (booked?.provider_id) {
+      await recordSale(admin, {
+        providerId: booked.provider_id,
+        source: 'booking',
+        bookingId,
+        grossCents: Math.round(Number(booked.amount ?? 0) * 100),
+        paymentIntentId: paymentIntent,
+      });
+    }
     return NextResponse.json({ applied: true, kind });
   }
 

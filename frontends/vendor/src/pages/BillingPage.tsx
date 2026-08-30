@@ -5,7 +5,6 @@ import {
   Crown,
   CheckCircle,
   ChevronRight,
-  Lock,
   AlertTriangle,
   Star,
   Rocket,
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta, nextPlan } from '@/lib/plans';
+import PayoutsCard from '@/components/PayoutsCard';
 
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'long', year: 'numeric' });
@@ -157,18 +157,27 @@ export default function BillingPage() {
                   </div>
                 </div>
               ) : (
-                <div className="p-4 border border-gray-200 rounded-xl flex items-center justify-center text-center">
+                <div className="p-4 border border-gray-200 rounded-xl flex flex-col items-center justify-center text-center">
                   <p className="text-xs text-gray-500">You’re on our top plan 🎉</p>
+                  {/* QA 23/08: "Can't downgrade anywhere." On the top tier this
+                      card was a dead end — the only ways out were cancelling
+                      outright or the Stripe portal, which had plan switching
+                      disabled. */}
+                  <button onClick={() => navigate('/plans')} className="mt-2 text-xs font-semibold text-gray-600 hover:underline">
+                    Change plan →
+                  </button>
                 </div>
               )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-gray-500">
-                {upgrade ? `Need more exposure? Upgrade to ${upgrade.label}.` : 'You have access to every feature.'}
+                {upgrade
+                  ? `Need more exposure? Upgrade to ${upgrade.label}.`
+                  : 'You have access to every feature. Stripe prorates the difference if you change tier.'}
               </p>
               <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
-                Learn more about plans
+                {plan.isPaid ? 'Compare & change plan' : 'Learn more about plans'}
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
@@ -202,46 +211,7 @@ export default function BillingPage() {
               </div>
             )}
 
-            {/* Stripe Payouts */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <span className="text-purple-600 font-bold text-sm">S</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Stripe payouts</h3>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-xs text-gray-500 mb-1">Payout account status</div>
-                  {/* Was hardcoded to "Connected / Pending" regardless of
-                      whether the vendor had ever even started onboarding —
-                      now reflects the real stripe_account_id/payouts_enabled
-                      state on the provider row. */}
-                  {provider?.payouts_enabled ? (
-                    <span className="inline-flex items-center px-2.5 py-1 bg-green-300 text-green-800 text-xs font-medium rounded-full">
-                      Active — payouts on
-                    </span>
-                  ) : provider?.stripe_account_id ? (
-                    <span className="inline-flex items-center px-2.5 py-1 bg-yellow-300 text-yellow-800 text-xs font-medium rounded-full">
-                      Connected / Pending
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                      Not connected
-                    </span>
-                  )}
-                </div>
-                <Button onClick={() => stripe('/api/vendor/stripe/connect', 'payouts')} disabled={busy === 'payouts'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">
-                  {busy === 'payouts' ? 'Opening…' : provider?.stripe_account_id ? 'Manage payouts' : 'Connect payouts'}
-                </Button>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <Lock className="w-3.5 h-3.5" />
-                Your payout information is secure and encrypted.
-              </div>
-            </div>
+            <PayoutsCard />
 
             {/* Boost Visibility */}
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
