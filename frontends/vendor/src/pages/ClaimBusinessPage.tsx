@@ -465,7 +465,7 @@ export default function ClaimBusinessPage() {
                     <button
                       type="button"
                       onClick={() => navigate('/login')}
-                      className="mt-3 w-full text-center text-xs font-medium text-gray-500 hover:text-gray-700"
+                      className="mt-3 w-full text-center text-xs font-semibold text-[#A7D8F8]"
                     >
                       Already have a BabyBrain log-in? Sign in instead
                     </button>

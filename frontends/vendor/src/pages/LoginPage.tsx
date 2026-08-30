@@ -69,7 +69,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="password">Password</Label>
-                <button type="button" className="text-xs font-semibold text-[#0E6FAF]" onClick={() => navigate('/forgot-password')}>
+                <button type="button" className="text-xs font-semibold text-[#A7D8F8]" onClick={() => navigate('/forgot-password')}>
                   Forgot password?
                 </button>
               </div>
@@ -81,7 +81,7 @@ export default function LoginPage() {
           </form>
           <p className="mt-4 text-center text-xs text-gray-500">
             New here?{' '}
-            <button className="font-semibold text-[#0E6FAF]" onClick={() => navigate('/claim-business')}>
+            <button className="font-semibold text-[#A7D8F8]" onClick={() => navigate('/claim-business')}>
               Claim your business
             </button>
           </p>

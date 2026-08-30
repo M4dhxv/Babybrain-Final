@@ -46,7 +46,7 @@ export default function ForgotPasswordPage() {
             <div className="mt-4 rounded-lg bg-green-50 px-3 py-3 text-sm font-medium text-green-700">
               If an account exists for <strong>{email}</strong>, we've sent a reset link. Check your inbox and spam folder.
             </div>
-            <button className="mt-4 w-full text-center text-xs font-semibold text-[#0E6FAF]" onClick={() => navigate('/login')}>
+            <button className="mt-4 w-full text-center text-xs font-semibold text-[#A7D8F8]" onClick={() => navigate('/login')}>
               ← Back to sign in
             </button>
           </>
@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
             </form>
             <p className="mt-4 text-center text-xs text-gray-500">
               Remembered it?{' '}
-              <button className="font-semibold text-[#0E6FAF]" onClick={() => navigate('/login')}>
+              <button className="font-semibold text-[#A7D8F8]" onClick={() => navigate('/login')}>
                 Sign in
               </button>
             </p>
