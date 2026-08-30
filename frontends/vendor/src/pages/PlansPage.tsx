@@ -257,10 +257,20 @@ export default function PlansPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="relative flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
+      {/* Header
+          Logo / nav / buttons used to be a 3-child flex row with
+          justify-between, which centers the nav in the *gap* between the
+          other two — not on the page. The logo (~103px) and the button
+          group (~283px) aren't the same width, so that gap's midpoint sits
+          well left of true center; the "Something for everyone" title below
+          it, in its own centered container, does not share that skew, so
+          the two visibly disagreed. A 1fr/auto/1fr grid centers the middle
+          column by construction, independent of what the side columns
+          weigh, and unlike absolute-centering it can't ever overlap the
+          buttons at narrower widths since grid columns never overlap. */}
+      <header className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
         <div
-          className="flex items-center gap-2 cursor-pointer"
+          className="flex items-center gap-2 cursor-pointer justify-self-start"
           onClick={() => navigate('/')}
         >
           <BrandLogo className="h-9 sm:h-10" />
@@ -270,7 +280,7 @@ export default function PlansPage() {
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Plans</button>
           <button onClick={() => { navigate('/contact'); }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 justify-self-end">
           <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
             Sign in
           </Button>
@@ -334,7 +344,7 @@ export default function PlansPage() {
                     regardless of what the vendor was already paying for. */}
                 {isCurrentPlan(plan.planKey) ? (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">
+                    <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-green-300 text-white text-xs font-semibold rounded-full">
                       <Check className="w-3 h-3" />
                       CURRENT PLAN
                     </div>
