@@ -37,13 +37,8 @@ export default function LoginPage() {
       {/* Was an inline copy of AuthHeader. Shared now, so the mobile nav
           dropdown only has to exist in one place. */}
       <AuthHeader>
-        <Button
-          variant="outline"
-          onClick={() => navigate('/login')}
-          className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
-        >
-          Log in
-        </Button>
+        {/* A "Log in" button here used to link right back to /login — this
+            page. Same dead-CTA shape as "Upgrade your listing" on Plans. */}
         <Button
           onClick={() => navigate('/claim-business')}
           className="rounded-full px-6 border-0 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] transition hover:brightness-105"

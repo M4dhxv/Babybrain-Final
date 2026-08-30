@@ -29,14 +29,19 @@ export default function LandingPage() {
           height never eats into the free space this needs to center in —
           it always starts at or after the fold, however tall it is. */}
       <div className="flex min-h-screen flex-col">
-      <header className="relative flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
-        <BrandLogo className="h-9 sm:h-10" />
+      {/* justify-between used to center the nav in the gap between the logo
+          and the button group rather than on the page — same fix as Plans
+          (see PlansPage.tsx's header comment). grid-cols-[1fr_auto_1fr]
+          centers the middle column by construction regardless of how wide
+          the two side columns are. */}
+      <header className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 border-b border-gray-100 sm:px-8">
+        <BrandLogo className="h-9 sm:h-10 justify-self-start" />
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Home</button>
           <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
           <button onClick={() => navigate('/contact')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 justify-self-end">
           <Button
             variant="outline"
             onClick={() => navigate('/login')}

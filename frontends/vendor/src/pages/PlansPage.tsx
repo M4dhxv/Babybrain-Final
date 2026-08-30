@@ -284,9 +284,6 @@ export default function PlansPage() {
           <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
             Sign in
           </Button>
-          <Button onClick={() => navigate('/login')} className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 border-0 sm:inline-flex">
-            Upgrade your listing
-          </Button>
           {/* Mobile menu toggle */}
           <button
             type="button"
@@ -306,12 +303,6 @@ export default function PlansPage() {
               <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-medium text-gray-700">Home</button>
               <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-semibold text-[#FA4D8D]">Plans</button>
               <button onClick={() => { setMenuOpen(false); navigate('/contact'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
-              <button
-                onClick={() => { setMenuOpen(false); navigate('/login'); }}
-                className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
-              >
-                Upgrade your listing
-              </button>
             </nav>
           </div>
         )}
