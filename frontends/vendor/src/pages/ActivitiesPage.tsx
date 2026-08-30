@@ -30,12 +30,36 @@ import {
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Switch } from '@/components/ui/switch';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
+
+/**
+ * The activities table's column tracks. The header and every body row are
+ * separate grids, so the track list has to be one shared string — they
+ * silently drift apart otherwise.
+ *
+ * Every track is `minmax(0, …)` rather than a bare `Nfr`: a bare `fr` floors
+ * at min-content, so a long category ("Community Events") or location
+ * ("Ind-SG Kids Center — Little India") grew its own track, pushed that row's
+ * later columns sideways, and left the row misaligned with the header — which
+ * read as two columns bleeding into each other. minmax(0, …) holds every row
+ * to the same widths and lets long values wrap instead.
+ *
+ * `gap-x-4` is what actually keeps neighbouring text apart; without it the
+ * columns sat flush and "Community Events" ran straight into "Singapore Zoo".
+ */
+const TABLE_COLS =
+  'grid min-w-[1180px] gap-x-4 grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.35fr)]';
 
 const ageLabel = (min: number, max: number) => {
   const f = (m: number) => (m < 24 ? `${m}m` : `${Math.round((m / 12) * 10) / 10}y`);
@@ -725,7 +749,7 @@ export default function ActivitiesPage() {
           {/* Table (horizontal scroll below its natural width on small screens) */}
           <div className="overflow-x-auto">
           {/* Table Header */}
-          <div className="grid min-w-[980px] grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className={cn(TABLE_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
             <div>Activity</div>
             <div>Category</div>
             <div>Location</div>
@@ -748,22 +772,22 @@ export default function ActivitiesPage() {
             return (
               <div
                 key={a.id}
-                className="grid min-w-[980px] grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
+                className={cn(TABLE_COLS, 'px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors')}
               >
-                <div className="flex items-center gap-3">
-                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
-                  <div>
-                    <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                    <div className="text-xs text-gray-500">{a.vendor_category ?? ''}</div>
+                <div className="flex min-w-0 items-center gap-3">
+                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 flex-shrink-0 rounded-lg object-cover" />
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 text-sm break-words">{a.title}</div>
+                    <div className="text-xs text-gray-500 break-words">{a.vendor_category ?? ''}</div>
                   </div>
                 </div>
-                <div className="text-sm text-gray-700">{categoryName(a.category_id)}</div>
+                <div className="min-w-0 text-sm text-gray-700 break-words">{categoryName(a.category_id)}</div>
                 {/* QA: the table was missing location, so a multi-venue vendor
                     couldn't tell which of their sites a class runs at. */}
-                <div className="text-sm text-gray-700">
+                <div className="min-w-0 text-sm text-gray-700 break-words">
                   {locations.find((l) => l.id === a.location_id)?.name ?? <span className="text-gray-400">—</span>}
                 </div>
-                <div className="text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
+                <div className="min-w-0 text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
                 <div className="text-sm text-gray-700">{sessionCounts[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Upcoming</span></div>
                 <div className="text-sm text-gray-700">{bookingTotals[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Total</span></div>
                 <div>
@@ -794,44 +818,65 @@ export default function ActivitiesPage() {
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-gray-500">{fmtDate(a.updated_at)}</div>
-                <div className="relative">
-                  <button onClick={() => setShowMenu(showMenu === a.id ? null : a.id)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                    <MoreVertical className="w-4 h-4 text-gray-400" />
-                  </button>
-                  {showMenu === a.id && canManage && (
-                    <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
-                      <button onClick={() => openPreview(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Eye className="w-3.5 h-3.5" />
-                        Preview
+                <div className="min-w-0 text-sm text-gray-500">{fmtDate(a.updated_at)}</div>
+                {/* Radix rather than a hand-rolled absolute panel: the table
+                    scrolls inside `overflow-x-auto`, which also clips
+                    vertically, so an in-flow menu on the last rows was cut off
+                    by the table's own edge. This portals the panel to the body
+                    (escaping that clip), flips it above the trigger when there
+                    isn't room below, and closes on outside click / Escape —
+                    the old one only closed by hitting the same three dots. */}
+                <div className="flex justify-end">
+                  <DropdownMenu
+                    open={showMenu === a.id}
+                    onOpenChange={(open) => setShowMenu(open ? a.id : null)}
+                  >
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-1.5 hover:bg-gray-100 rounded-lg">
+                        <MoreVertical className="w-4 h-4 text-gray-400" />
                       </button>
-                      <button onClick={() => openEdit(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                      <button onClick={() => openSchedule(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Clock className="w-3.5 h-3.5" />
-                        Manage schedule
-                      </button>
-                      <button
-                        onClick={() => togglePublish(a)}
-                        disabled={!!a.wix_missing_since}
-                        title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    </DropdownMenuTrigger>
+                    {canManage && (
+                      <DropdownMenuContent
+                        align="end"
+                        // Radix flips to the opposite side on its own when the
+                        // preferred one doesn't fit; the collision padding just
+                        // stops the panel sitting flush against the viewport.
+                        collisionPadding={12}
+                        className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg"
                       >
-                        <CalendarCheck className="w-3.5 h-3.5" />
-                        {a.is_published ? 'Unpublish' : 'Publish'}
-                      </button>
-                      <button onClick={() => togglePause(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                        {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
-                      </button>
-                      <button onClick={() => archive(a.id)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Archive
-                      </button>
-                    </div>
-                  )}
+                        <DropdownMenuItem onSelect={() => openPreview(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openEdit(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openSchedule(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Clock className="w-3.5 h-3.5" />
+                          Manage schedule
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => togglePublish(a)}
+                          disabled={!!a.wix_missing_since}
+                          title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
+                          className="gap-2 px-3 py-2 text-sm text-gray-700"
+                        >
+                          <CalendarCheck className="w-3.5 h-3.5" />
+                          {a.is_published ? 'Unpublish' : 'Publish'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => togglePause(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                          {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    )}
+                  </DropdownMenu>
                 </div>
               </div>
             );
