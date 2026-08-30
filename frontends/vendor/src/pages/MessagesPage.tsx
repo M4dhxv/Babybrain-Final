@@ -158,8 +158,8 @@ export default function MessagesPage() {
       <div className="p-4 text-center sm:p-8 sm:text-left">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <p className="mt-1 text-sm text-gray-500">Every parent enquiry, across all your services, in one inbox.</p>
-        <div className="mt-6 rounded-xl border border-dashed border-bb-pink/30 bg-bb-pink-light/60 p-10 text-center">
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-bb-pink text-white">
+        <div className="mt-6 rounded-xl border border-dashed border-primary/30 bg-bb-pink-light/60 p-10 text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground">
             <Crown className="h-7 w-7" />
           </span>
           <h2 className="mt-4 text-xl font-bold text-gray-900">Messaging is a Pro feature</h2>

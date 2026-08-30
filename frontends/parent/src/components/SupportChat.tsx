@@ -48,7 +48,7 @@ export function SupportChat({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="flex h-[600px] w-full max-w-2xl flex-col overflow-hidden rounded-[16px] bg-white shadow-xl"
+        className="bb-chat flex h-[600px] w-full max-w-2xl flex-col overflow-hidden rounded-[16px] bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[#F4EFF0] px-5 py-3">
