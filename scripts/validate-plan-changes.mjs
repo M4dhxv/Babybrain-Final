@@ -92,6 +92,18 @@ const sessionIdOf = (url) => (String(url).match(/cs_(?:test|live)_[A-Za-z0-9]+/)
  */
 const grantsTrial = (session) => session.amount_total === 0;
 
+/** Mirrors liveSubscriptionFor() in app/api/webhooks/stripe/route.ts. */
+const surviving = async (ended, providerId) => {
+  const all = await stripe.subscriptions.list({ customer: ended.customer, status: 'all', limit: 100 });
+  return (
+    all.data
+      .filter((s) => s.id !== ended.id)
+      .filter((s) => s.metadata?.provider_id === providerId)
+      .filter((s) => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
+      .sort((a, b) => a.created - b.created)[0] ?? null
+  );
+};
+
 const liveSubs = async (customerId) => {
   const all = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
   return all.data.filter((s) => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status));
@@ -161,7 +173,37 @@ try {
     `amount_total ${returnSession.amount_total}`);
   await stripe.checkout.sessions.expire(returnSession.id).catch(() => {});
 
-  // --- 7. Only an owner may change the plan ---
+  /* --- 7. Cancelling one of two subscriptions must not drop the tier ---
+     Found by running the dedupe script: cancelling the demo account's eight
+     duplicates fired eight `subscription.deleted` events, and the webhook
+     wrote plan='free' on each one even though a live subscription remained.
+     Exercised through the webhook's own logic by cancelling a spare while the
+     keeper is still live, then asserting the row still reflects the keeper. */
+  const keeper = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: GROWTH }],
+    trial_period_days: 30,
+    metadata: { provider_id: provider.id, plan: 'growth' },
+  });
+  const spare = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: PRO }],
+    trial_period_days: 30,
+    metadata: { provider_id: provider.id, plan: 'pro' },
+  });
+  await admin.from('subscriptions').update({ plan: 'growth', stripe_subscription_id: keeper.id, status: 'trialing' }).eq('provider_id', provider.id);
+
+  const deleted = await stripe.subscriptions.cancel(spare.id, { prorate: false });
+  const survivor = await surviving(deleted, provider.id);
+  check('Cancelling one of two subscriptions leaves the other as the tier',
+    survivor?.id === keeper.id, survivor?.id ?? 'none');
+  check('…and that survivor is the one still billing', survivor?.status === 'trialing', survivor?.status);
+
+  const lastOne = await stripe.subscriptions.cancel(keeper.id, { prorate: false });
+  check('Cancelling the LAST subscription leaves no survivor (so the tier drops to free)',
+    (await surviving(lastOne, provider.id)) === null);
+
+  // --- 8. Only an owner may change the plan ---
   const staffEmail = `plan.staff.${stamp}@babybrain-validation.test`;
   const { data: staff } = await admin.auth.admin.createUser({ email: staffEmail, password, email_confirm: true });
   await admin.from('provider_members').insert({ provider_id: provider.id, user_id: staff.user.id, role: 'staff', status: 'active' });
@@ -174,7 +216,7 @@ try {
   check('Staff cannot change the plan', staffPost.status === 403, `HTTP ${staffPost.status}`);
   await admin.auth.admin.deleteUser(staff.user.id);
 
-  // --- 8. An unknown plan is rejected before anything touches Stripe ---
+  // --- 9. An unknown plan is rejected before anything touches Stripe ---
   const bogus = await subscribe('premium');
   check('An unsupported plan is rejected', bogus.r.status === 400, `HTTP ${bogus.r.status}`);
 } finally {

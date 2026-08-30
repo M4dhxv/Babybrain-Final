@@ -38,6 +38,36 @@ function signingSecrets(): string[] {
  * recognise (a legacy or hand-made one), so the caller can fall back to the
  * subscription's metadata rather than guessing a tier wrong.
  */
+/**
+ * Another still-live subscription for the same provider, when one ends.
+ *
+ * Only asked on a cancellation, so the common path costs no extra Stripe
+ * call. Restricted to this provider's own subscriptions so a customer record
+ * shared with anything else can't be mistaken for the vendor's plan.
+ */
+async function liveSubscriptionFor(
+  ended: Stripe.Subscription,
+  providerId: string
+): Promise<Stripe.Subscription | null> {
+  const customerId = typeof ended.customer === 'string' ? ended.customer : ended.customer?.id;
+  if (!customerId) return null;
+  try {
+    const all = await getStripe().subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+    return (
+      all.data
+        .filter((s) => s.id !== ended.id)
+        .filter((s) => s.metadata?.provider_id === providerId)
+        .filter((s) => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
+        .sort((a, b) => a.created - b.created)[0] ?? null
+    );
+  } catch {
+    // Bookkeeping detail — never fail the webhook over it. Falling through
+    // means the old behaviour (drop to Free), which is right far more often
+    // than not.
+    return null;
+  }
+}
+
 async function planForPrice(
   admin: ReturnType<typeof createAdminClient>,
   priceId: string | undefined
@@ -98,14 +128,30 @@ export async function POST(request: Request) {
       if (providerId) {
         const vendorPlan =
           (await planForPrice(admin, sub.items.data[0]?.price?.id)) ?? planFromMetadata(sub.metadata);
+
+        // A cancellation only drops the vendor to Free if it was their LAST
+        // live subscription. Writing 'free' unconditionally cost a paying
+        // vendor their tier whenever one of several subscriptions ended —
+        // which is exactly what happened when the eight duplicates the demo
+        // account had accumulated were cancelled: eight `deleted` events
+        // landed and left a still-subscribed vendor recorded as Free.
+        const survivor = active ? null : await liveSubscriptionFor(sub, providerId);
+        const row = survivor ?? sub;
+        const rowActive = active || Boolean(survivor);
+        const rowPlan = survivor
+          ? (await planForPrice(admin, survivor.items.data[0]?.price?.id)) ??
+            planFromMetadata(survivor.metadata)
+          : vendorPlan;
+        const rowPeriodEnd = (row as unknown as { current_period_end?: number }).current_period_end;
+
         await admin
           .from('subscriptions')
           .update({
-            plan: active ? vendorPlan : 'free',
-            stripe_subscription_id: sub.id,
-            status: dbStatus(sub.status) as never,
-            current_period_end: periodEndIso,
-            cancel_at_period_end: sub.cancel_at_period_end,
+            plan: rowActive ? rowPlan : 'free',
+            stripe_subscription_id: row.id,
+            status: dbStatus(row.status) as never,
+            current_period_end: rowPeriodEnd ? new Date(rowPeriodEnd * 1000).toISOString() : null,
+            cancel_at_period_end: row.cancel_at_period_end,
           })
           .eq('provider_id', providerId);
       }
