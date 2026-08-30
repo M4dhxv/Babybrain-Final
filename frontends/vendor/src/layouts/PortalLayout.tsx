@@ -1,6 +1,6 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import SiteFooter from '@/components/SiteFooter';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -33,8 +33,10 @@ const sidebarItems = [
   { icon: CalendarRange, label: 'Schedule', path: '/schedule' },
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: Package, label: 'Packages', path: '/packages' },
-  { icon: Gift, label: 'Make-up Tokens', path: '/make-up-tokens' },
-  { icon: MessageSquare, label: 'Messages', path: '/messages' },
+  { icon: Gift, label: 'Make-up tokens', path: '/make-up-tokens' },
+  // Messaging is a Growth-and-above perk (see plans.ts PLAN_META) — locked
+  // on Pay As You Grow, same "visible but greyed" treatment as Insights.
+  { icon: MessageSquare, label: 'Messages', path: '/messages', paidOnly: true },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
   // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
@@ -63,6 +65,21 @@ export default function PortalLayout() {
     navigate(path);
   };
 
+  /* The portal owns its own scrolling: the root below is exactly one viewport
+     tall and <main> is the only thing that scrolls. The document therefore has
+     nothing to scroll — but it can still paint a scrollbar gutter beside the
+     real one (Windows' "always show scrollbars", or a reserved gutter), which
+     reads as a second, dead scrollbar running past the end of the content.
+     Locking the document while the portal is mounted leaves exactly one bar.
+     Public pages scroll the document normally and never render this layout,
+     so the cleanup on unmount matters. */
+  useEffect(() => {
+    const el = document.documentElement;
+    const previous = el.style.overflow;
+    el.style.overflow = 'hidden';
+    return () => { el.style.overflow = previous; };
+  }, []);
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Mobile top bar */}
@@ -86,10 +103,13 @@ export default function PortalLayout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar. The whole column scrolls as one — the nav keeps flex-1 so on
+          a tall screen the plan card and Help still sit at the bottom, and the
+          blocks below it are shrink-0 so a short screen overflows into a scroll
+          rather than squashing them. */}
       <aside
         className={cn(
-          'flex flex-col bg-white border-r border-gray-200 h-full transition-transform duration-300',
+          'flex flex-col overflow-y-auto overscroll-contain bg-white border-r border-gray-200 h-full transition-transform duration-300',
           'fixed inset-y-0 left-0 z-50 md:static md:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           isSidebarCollapsed ? 'w-20' : 'w-64'
@@ -104,14 +124,11 @@ export default function PortalLayout() {
           <X className="h-5 w-5" />
         </button>
         {/* Logo */}
-        <div className="px-5 py-4">
+        <div className="shrink-0 px-5 py-4">
           {isSidebarCollapsed ? (
             <BrandIcon className="h-8 w-8" />
           ) : (
-            <>
-              <BrandLogo className="h-9" />
-              <div className="mt-1 text-xs text-gray-500">Vendor Portal</div>
-            </>
+            <BrandLogo className="h-9" />
           )}
         </div>
 
@@ -119,15 +136,15 @@ export default function PortalLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
-            // Pro-only tabs stay visible but greyed, so the feature is
-            // discoverable rather than hidden. The page itself explains the
-            // upgrade, so the tab is still clickable.
-            const locked = item.proOnly && !isPro;
+            // Pro-only / paid-only tabs stay visible but greyed, so the
+            // feature is discoverable rather than hidden. The page itself
+            // explains the upgrade, so the tab is still clickable.
+            const locked = (item.proOnly && !isPro) || (item.paidOnly && !plan.isPaid);
             return (
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
-                title={locked ? 'Insights is a Pro feature' : undefined}
+                title={locked ? (item.proOnly ? 'Insights is a Pro feature' : 'Messaging is available on Pro and above') : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
@@ -149,13 +166,13 @@ export default function PortalLayout() {
 
         {/* Current Plan Card */}
         {!isSidebarCollapsed && (
-          <div className="mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100">
+          <div className="shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-500 rounded-lg flex items-center justify-center">
                 <Crown className="w-4 h-4 text-white" />
               </div>
             </div>
-            <div className="text-xs text-gray-500 mb-0.5">Current Plan</div>
+            <div className="text-xs text-gray-500 mb-0.5">Current plan</div>
             <div className="text-sm font-bold text-gray-900 mb-1">{plan.short}</div>
             <div className="text-xs text-gray-500 mb-3">
               {plan.isPaid && subscription?.current_period_end
@@ -173,14 +190,14 @@ export default function PortalLayout() {
               onClick={() => go(plan.isPaid ? '/billing' : '/plans')}
               className="flex items-center justify-center w-full gap-1 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {plan.isPaid ? (location.pathname === '/billing' ? 'Manage Subscription' : 'Manage Plan') : 'Upgrade Plan'}
+              {plan.isPaid ? (location.pathname === '/billing' ? 'Manage subscription' : 'Manage plan') : 'Upgrade plan'}
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>
         )}
 
         {/* Help */}
-        <div className="px-5 py-4 border-t border-gray-100">
+        <div className="shrink-0 px-5 py-4 border-t border-gray-100">
           {/* Both of these were inert. They go to Contact, which is the help
               page this portal actually has. */}
           <button onClick={() => navigate('/contact')} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
@@ -191,7 +208,7 @@ export default function PortalLayout() {
             <div className="mt-1 text-xs text-gray-500">
               Visit our{' '}
               <button onClick={() => navigate('/contact')} className="text-pink-600 hover:underline">
-                Help Center
+                Help centre
               </button>
             </div>
           )}

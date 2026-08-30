@@ -200,6 +200,10 @@ export type Database = {
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
           reschedule_cutoff_hours: number;
+          wix_service_id: string | null;
+          wix_resource_id: string | null;
+          wix_service_type: string | null;
+          wix_event_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -224,6 +228,9 @@ export type Database = {
           location_id?: string | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
+          wix_service_id?: string | null;
+          wix_resource_id?: string | null;
+          wix_service_type?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
@@ -248,6 +255,8 @@ export type Database = {
           capacity: number | null;
           location_id: string | null;
           status: 'scheduled' | 'cancelled';
+          wix_slot_key: string | null;
+          wix_remaining_capacity: number | null;
           created_at: string;
         };
         Insert: {
@@ -258,6 +267,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -265,6 +276,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
               Relationships: [
           {
@@ -459,6 +472,111 @@ export type Database = {
           },
         ];
       };
+      wix_events: {
+        Row: {
+          id: string;
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug: string;
+          description: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id: string | null;
+          location_name: string | null;
+          location_type: string | null;
+          city: string | null;
+          formatted_address: string | null;
+          location_tbd: boolean;
+          main_image_url: string | null;
+          wix_status: string;
+          is_published: boolean;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { provider_id: string; wix_event_id: string; title: string; start_date: string; end_date: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'wix_events_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_types: {
+        Row: {
+          id: string;
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents: number;
+          currency: string;
+          is_free: boolean;
+          capacity_total: number | null;
+          capacity_remaining: number | null;
+          limit_per_checkout: number | null;
+          sale_start_date: string | null;
+          sale_end_date: string | null;
+          sale_status: string;
+          hidden: boolean;
+          fee_type: string | null;
+          fee_rate_percent: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { event_id: string; wix_ticket_definition_id: string; name: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_types_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_orders: {
+        Row: {
+          id: string;
+          user_id: string;
+          child_id: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity: number;
+          status: 'pending' | 'confirmed' | 'cancelled';
+          payment_status: PaymentStatus;
+          amount: number | null;
+          stripe_payment_intent: string | null;
+          wix_reservation_id: string | null;
+          wix_order_number: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: { user_id: string; event_id: string; ticket_type_id: string };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_orders_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_ticket_type_id_fkey';
+            columns: ['ticket_type_id'];
+            isOneToOne: false;
+            referencedRelation: 'event_ticket_types';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       bookings: {
         Row: {
           id: string;
@@ -477,6 +595,8 @@ export type Database = {
           stripe_payment_intent: string | null;
           reminded_at: string | null;
           followed_up_at: string | null;
+          wix_booking_id: string | null;
+          wix_ticket_type_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -487,6 +607,8 @@ export type Database = {
           session_id: string;
           medical_disclosure?: string | null;
           policies_accepted?: string[];
+          wix_booking_id?: string | null;
+          wix_ticket_type_id?: string | null;
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {
@@ -544,6 +666,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          wix_site_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -566,6 +689,7 @@ export type Database = {
           longitude?: number | null;
           uen?: string | null;
           status?: ProviderStatus;
+          wix_site_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
@@ -667,9 +791,9 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
-        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
+        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
         Relationships: [];
       };
       package_purchases: {
@@ -795,6 +919,7 @@ export type Database = {
         Args: {
           p_purchase_id: string; p_session_id: string;
           p_child_id?: string | null; p_policies?: string[];
+          p_wix_booking_id?: string | null; p_quantity?: number;
         };
         Returns: string;
       };

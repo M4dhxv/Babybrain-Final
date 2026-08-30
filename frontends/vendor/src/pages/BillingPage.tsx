@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CalendarDays,
   Crown,
@@ -16,25 +16,25 @@ import { useAuth } from '@/auth/AuthProvider';
 import { planMeta, nextPlan } from '@/lib/plans';
 import PayoutsCard from '@/components/PayoutsCard';
 
-const includedFeatures = [
-  'Direct-to-user messaging',
-  'Booking & waitlist management',
-  'Attendance + make-up tokens',
-  'Stripe payments',
-  'Automated reminders',
-  'Analytics & insights',
-  'Featured-placement eligible',
-  'Multiple locations & team access',
-];
-
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'long', year: 'numeric' });
 
 export default function BillingPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const { provider, subscription } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Stripe hosted checkout / Connect onboarding drops the vendor back here with
+  // a query flag (see app/api/vendor/stripe/*). Turn it into a clear banner.
+  const returned =
+    params.get('status') === 'success' ? { ok: true, text: 'Payment received — your plan is updating now.' }
+    : params.get('status') === 'cancelled' ? { ok: false, text: 'Checkout cancelled — you have not been charged.' }
+    : params.get('connect') === 'done' ? { ok: true, text: 'Payout account connected.' }
+    : params.get('boost') === 'success' ? { ok: true, text: 'Boost purchased — your listing is now promoted.' }
+    : params.get('boost') === 'cancelled' ? { ok: false, text: 'Boost checkout cancelled — you have not been charged.' }
+    : null;
 
   const plan = planMeta(subscription?.plan);
   const upgrade = nextPlan(subscription?.plan);
@@ -61,17 +61,27 @@ export default function BillingPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-8 py-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col items-center gap-3 px-4 py-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-8">
+        <div className="flex w-full items-center justify-center gap-3 sm:w-auto sm:justify-start">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Manage Subscription</h1>
+          <div className="text-center sm:text-left">
+            <h1 className="text-2xl font-bold text-gray-900">Manage subscription</h1>
             <p className="text-sm text-gray-500 mt-1">View and manage your subscription details.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+          <span className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-full ${active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
+            {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}
+          </span>
+          {plan.isPaid && subscription?.current_period_end && (
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500">
+              <CalendarCheck className="w-4 h-4" />
+              {subscription.cancel_at_period_end ? 'Access until' : 'Renews'} {sgDate(subscription.current_period_end)}
+            </div>
+          )}
           <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500">
             <CalendarDays className="w-4 h-4" />
             {plan.short}
@@ -79,119 +89,109 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {returned && (
+        <div
+          className={`mx-4 mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm sm:mx-8 ${
+            returned.ok
+              ? 'border-green-300 bg-green-50 text-green-800'
+              : 'border-yellow-300 bg-yellow-50 text-yellow-800'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            {returned.ok && <CheckCircle className="h-4 w-4 shrink-0" />}
+            {returned.text}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setParams({}, { replace: true })}
+            className="shrink-0 text-base leading-none opacity-70 hover:opacity-100"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {msg && (
-        <div className="mx-8 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800">
+        <div className="mx-4 mb-4 rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800 sm:mx-8">
           {msg}
         </div>
       )}
 
-      <div className="px-8 pb-8 space-y-6">
-        {/* Current Plan Card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-start gap-6">
-            <div className="w-20 h-20 rounded-2xl bg-pink-100 flex items-center justify-center">
-              <Crown className="w-10 h-10 text-[#C90044]" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-xl font-bold text-gray-900">{plan.isPaid ? `${plan.short.replace(' Plan', '')} — ${plan.price}` : 'Free plan'}</h2>
-                <span className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full ${active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
-                  {subscription?.status === 'trialing' ? 'Trial' : active ? 'Active' : (subscription?.status ?? 'Inactive')}
-                </span>
-              </div>
-              <p className="text-sm text-gray-500">{plan.tagline}</p>
-            </div>
-            {plan.isPaid && subscription?.current_period_end && (
-              <div className="flex gap-8">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center">
-                    <CalendarCheck className="w-5 h-5 text-[#C90044]" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500">{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}</div>
-                    <div className="text-sm font-semibold text-gray-900">{sgDate(subscription.current_period_end)}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {!plan.isPaid && upgrade && (
-              <Button onClick={() => navigate('/plans')} className="gradient-primary text-white rounded-xl hover:opacity-90">
-                Upgrade to {upgrade.short.replace(' Plan', '')}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          {/* What's Included */}
+      <div className="px-4 pb-8 space-y-6 sm:px-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Compare & Upgrade */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">What's included</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {includedFeatures.map((feature, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                  <span className="text-sm text-gray-700">{feature}</span>
+            <h3 className="font-semibold text-gray-900 mb-1">Compare & upgrade</h3>
+            <p className="text-xs text-gray-500 mb-4">Choose the right plan as you grow.</p>
+
+            <div className="grid grid-cols-1 gap-4 mb-4 sm:grid-cols-2">
+              <div className="p-4 border-2 border-[#C90044] rounded-xl relative bg-pink-50/30">
+                <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#C90044] text-xs font-medium rounded">
+                  Current plan
                 </div>
-              ))}
-            </div>
-
-            {/* Compare & Upgrade */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <h4 className="font-semibold text-gray-900 mb-1">Compare & upgrade</h4>
-              <p className="text-xs text-gray-500 mb-4">Choose the right plan as you grow.</p>
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="p-4 border-2 border-[#C90044] rounded-xl relative bg-pink-50/30">
-                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#C90044] text-xs font-medium rounded">
-                    Current plan
+                <div className="flex items-center gap-2 mb-2">
+                  <Crown className="w-4 h-4 text-[#C90044]" />
+                  <span className="font-semibold text-gray-900 text-sm">{plan.label}</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
+                <div className="text-sm font-bold text-[#C90044]">{plan.price}</div>
+                <div className="text-xs text-gray-500">{plan.commission}</div>
+              </div>
+              {upgrade ? (
+                <div className="p-4 border border-purple-300 rounded-xl relative">
+                  <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-300 text-purple-800 text-xs font-medium rounded">
+                    Next step up
                   </div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Crown className="w-4 h-4 text-[#C90044]" />
-                    <span className="font-semibold text-gray-900 text-sm">{plan.label}</span>
+                    <Star className="w-4 h-4 text-purple-600" />
+                    <span className="font-semibold text-gray-900 text-sm">{upgrade.label}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
-                  <div className="text-sm font-bold text-[#C90044]">{plan.price}</div>
-                </div>
-                {upgrade ? (
-                  <div className="p-4 border border-purple-300 rounded-xl relative">
-                    <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-purple-300 text-purple-800 text-xs font-medium rounded">
-                      Next step up
-                    </div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Star className="w-4 h-4 text-purple-600" />
-                      <span className="font-semibold text-gray-900 text-sm">{upgrade.label}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-3">{upgrade.tagline}</p>
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-bold text-purple-600">{upgrade.price}</div>
-                      <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
-                        Upgrade →
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 border border-gray-200 rounded-xl flex flex-col items-center justify-center text-center">
-                    <p className="text-xs text-gray-500">You’re on our top plan 🎉</p>
-                    {/* QA 23/08: "Can't downgrade anywhere." On the top tier
-                        this card was a dead end — the only routes out were
-                        cancelling outright or the Stripe portal, which had
-                        plan switching disabled. */}
-                    <button onClick={() => navigate('/plans')} className="mt-2 text-xs font-semibold text-gray-600 hover:underline">
-                      Change plan →
+                  <p className="text-xs text-gray-500 mb-3">{upgrade.tagline}</p>
+                  <div className="text-sm font-bold text-purple-600">{upgrade.price}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-500">{upgrade.commission}</div>
+                    <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
+                      Upgrade →
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="p-4 border border-gray-200 rounded-xl flex flex-col items-center justify-center text-center">
+                  <p className="text-xs text-gray-500">You’re on our top plan 🎉</p>
+                  {/* QA 23/08: "Can't downgrade anywhere." On the top tier this
+                      card was a dead end — the only ways out were cancelling
+                      outright or the Stripe portal, which had plan switching
+                      disabled. */}
+                  <button onClick={() => navigate('/plans')} className="mt-2 text-xs font-semibold text-gray-600 hover:underline">
+                    Change plan →
+                  </button>
+                </div>
+              )}
+            </div>
 
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-500">
-                  {plan.isPaid ? 'Change tier any time — Stripe prorates the difference.' : 'Need more exposure? Upgrade to Boost.'}
-                </p>
-                <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
-                  {plan.isPaid ? 'Compare & change plan' : 'Learn more about plans'}
-                  <ChevronRight className="w-3 h-3" />
-                </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-gray-500">
+                {upgrade
+                  ? `Need more exposure? Upgrade to ${upgrade.label}.`
+                  : 'You have access to every feature. Stripe prorates the difference if you change tier.'}
+              </p>
+              <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
+                {plan.isPaid ? 'Compare & change plan' : 'Learn more about plans'}
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* What's Included */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h4 className="font-semibold text-gray-900 mb-4">What's included</h4>
+              <div className="space-y-2">
+                {(upgrade ?? plan).perks.map((perk) => (
+                  <div key={perk} className="flex items-start gap-2">
+                    <CheckCircle className="mt-0.5 w-4 h-4 text-green-500 flex-shrink-0" />
+                    <span className="text-sm text-gray-700">{perk}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -201,8 +201,8 @@ export default function BillingPage() {
             {/* Payment Method — only on a paid plan (a card is on file) */}
             {plan.isPaid && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
-                <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 mb-4">Payment method</h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-gray-600">Manage your card and invoices in the Stripe billing portal.</div>
                   <Button onClick={() => stripe('/api/vendor/stripe/portal', 'card')} disabled={busy === 'card'} variant="outline" className="rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50 text-sm flex-shrink-0">
                     {busy === 'card' ? 'Opening…' : 'Manage billing'}
@@ -215,7 +215,7 @@ export default function BillingPage() {
 
             {/* Boost Visibility */}
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
-              <div className="flex items-start gap-4">
+              <div className="flex flex-col items-start gap-4 sm:flex-row">
                 <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
                   <Rocket className="w-6 h-6 text-purple-600" />
                 </div>
@@ -224,8 +224,8 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-500 mb-1">Pay for featured / prime placement</p>
                   <p className="text-xs text-gray-500 mb-3">Get more views and grow faster.</p>
                 </div>
-                <Button onClick={() => navigate('/activities')} variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
-                  Set up Boost
+                <Button onClick={() => navigate('/plans')} variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
+                  Go Premium
                 </Button>
               </div>
             </div>
@@ -235,12 +235,12 @@ export default function BillingPage() {
         {/* Cancel Subscription — only relevant on a paid plan */}
         {plan.isPaid && (
           <div className="bg-red-50 rounded-xl border border-red-200 p-6">
-            <div className="flex items-start gap-4">
+            <div className="flex flex-col items-start gap-4 sm:flex-row">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-red-600 mb-1">Cancel Subscription</h3>
+                <h3 className="font-semibold text-red-600 mb-1">Cancel subscription</h3>
                 <p className="text-sm text-gray-600">
                   If you cancel, your subscription will remain active until the end of your current billing period.
                 </p>
@@ -255,7 +255,7 @@ export default function BillingPage() {
                 variant="outline"
                 className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
               >
-                {busy === 'cancel' ? 'Opening…' : 'Cancel Plan'}
+                {busy === 'cancel' ? 'Opening…' : 'Cancel plan'}
               </Button>
             </div>
           </div>

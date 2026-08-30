@@ -28,7 +28,9 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' 
 export type PaymentStatus = 'none' | 'paid' | 'refunded';
 export type ProviderRole = 'owner' | 'manager' | 'staff';
 export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
-export type SubscriptionPlan = 'free' | 'growth' | 'pro';
+// 'premium' is a legacy value from before the Plans page's pro/premium
+// rename (see vendor's lib/plans.ts) — pre-existing rows can still carry it.
+export type SubscriptionPlan = 'free' | 'growth' | 'pro' | 'premium';
 /** Who absorbs Stripe's processing fee on a booking. */
 export type FeePayer = 'platform' | 'vendor';
 export type EarningSource = 'booking' | 'package';
@@ -188,6 +190,7 @@ export type Database = {
           popularity: number;
           provider_id: string | null;
           location_id: string | null;
+          default_capacity: number | null;
           vendor_category: VendorCategory | null;
           requires_medical_disclosure: boolean;
           archived_at: string | null;
@@ -200,6 +203,15 @@ export type Database = {
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number | null;
           reschedule_cutoff_hours: number | null;
+          wix_service_id: string | null;
+          wix_resource_id: string | null;
+          wix_service_type: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
+          // Set only for wix_service_type = 'EVENT' rows — see
+          // lib/wix/events-sync.ts and 00070_wix_events_as_activities.sql.
+          // wix_service_id is deliberately left null for these.
+          wix_event_id: string | null;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -222,6 +234,7 @@ export type Database = {
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;
+          default_capacity?: number | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
           // Directory listings link out to the vendor's own booking page.
@@ -231,10 +244,16 @@ export type Database = {
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number | null;
           reschedule_cutoff_hours?: number | null;
+          wix_service_id?: string | null;
+          wix_resource_id?: string | null;
+          wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
+          wix_event_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
           boosted_until?: string | null;
+          wix_removed_at?: string | null;
+          wix_missing_since?: string | null;
         };
               Relationships: [
           {
@@ -259,6 +278,10 @@ export type Database = {
           teacher_name: string | null;
           studio: string | null;
           created_at: string;
+          // Wix-sourced sessions only (migrations 00050, 00052) — null for
+          // ordinary site-native sessions.
+          wix_slot_key: string | null;
+          wix_remaining_capacity: number | null;
         };
         Insert: {
           id?: string;
@@ -270,6 +293,8 @@ export type Database = {
           studio?: string | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -277,6 +302,8 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
               Relationships: [
           {
@@ -459,6 +486,13 @@ export type Database = {
           created_at: string;
           updated_at: string;
           package_purchase_id: string | null;
+          policies_accepted: string[];
+          wix_booking_id: string | null;
+          // Which event_ticket_types row this booking is for — set only when
+          // session_id points at a wix_service_type='EVENT' activity's
+          // session; wix_booking_id on that same row holds the Wix order
+          // number (see 00070_wix_events_as_activities.sql).
+          wix_ticket_type_id: string | null;
         };
         Insert: {
           id?: string;
@@ -467,6 +501,9 @@ export type Database = {
           session_id: string;
           medical_disclosure?: string | null;
           package_purchase_id?: string | null;
+          policies_accepted?: string[];
+          wix_booking_id?: string | null;
+          wix_ticket_type_id?: string | null;
           // provider_id / waitlist_position set by trigger either way.
           // status / payment_status: the trigger sets these for normal
           // (non-service-role) inserts and ignores whatever's passed; a
@@ -475,12 +512,22 @@ export type Database = {
           // explicitly skips its own defaults for that path.
           status?: BookingStatus;
           payment_status?: PaymentStatus;
+          // Same "service-role is trusted" carve-out as status/payment_status
+          // above — needed so an event ticket's local booking mirror can be
+          // inserted already-paid/confirmed in one write instead of the
+          // insert-then-update two-step native/Wix-Bookings checkout uses
+          // (that two-step exists only because THOSE bookings are created
+          // before payment; an event ticket's mirror is written after Wix
+          // already confirmed the order, so everything is known upfront).
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
         };
         Update: {
           status?: BookingStatus;
           payment_status?: PaymentStatus;
           amount?: number | null;
           stripe_payment_intent?: string | null;
+          wix_booking_id?: string | null;
         };
               Relationships: [
           {
@@ -537,6 +584,7 @@ export type Database = {
           // Derived by the providers_region_trg trigger from postal_code /
           // coordinates — never written directly.
           region: string | null;
+          wix_site_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -564,14 +612,219 @@ export type Database = {
           is_auto_listed?: boolean;
           source_url?: string | null;
           synced_at?: string | null;
+          wix_site_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
           verification_status?: 'unverified' | 'pending' | 'verified';
           stripe_account_id?: string | null;
           payouts_enabled?: boolean;
+          wix_site_id?: string | null;
         };
         Relationships: [];
+      };
+      // Per-vendor Wix credentials (migration 00053). No RLS policies at
+      // all — only the service-role admin client may touch this table, via
+      // app/api/vendor/wix-integration.
+      provider_wix_credentials: {
+        Row: {
+          provider_id: string;
+          wix_site_id: string;
+          wix_api_key: string;
+          wix_api_key_preview: string;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          wix_site_id: string;
+          wix_api_key: string;
+          wix_api_key_preview: string;
+          updated_at?: string;
+        };
+        Update: {
+          wix_site_id?: string;
+          wix_api_key?: string;
+          wix_api_key_preview?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'provider_wix_credentials_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: true;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      // Wix Events & Tickets — separate app/API from Bookings (migration
+      // 00069). Public read of published/live rows via RLS; every write goes
+      // through the service-role admin client (sync, checkout, webhook).
+      wix_events: {
+        Row: {
+          id: string;
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug: string;
+          description: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id: string | null;
+          location_name: string | null;
+          location_type: string | null;
+          city: string | null;
+          formatted_address: string | null;
+          location_tbd: boolean;
+          main_image_url: string | null;
+          wix_status: string;
+          is_published: boolean;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          wix_event_id: string;
+          title: string;
+          slug?: string;
+          description?: string;
+          start_date: string;
+          end_date: string;
+          time_zone_id?: string | null;
+          location_name?: string | null;
+          location_type?: string | null;
+          city?: string | null;
+          formatted_address?: string | null;
+          location_tbd?: boolean;
+          main_image_url?: string | null;
+          wix_status?: string;
+          is_published?: boolean;
+          wix_removed_at?: string | null;
+          wix_missing_since?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['wix_events']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'wix_events_provider_id_fkey';
+            columns: ['provider_id'];
+            isOneToOne: false;
+            referencedRelation: 'providers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_types: {
+        Row: {
+          id: string;
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents: number;
+          currency: string;
+          is_free: boolean;
+          capacity_total: number | null;
+          capacity_remaining: number | null;
+          limit_per_checkout: number | null;
+          sale_start_date: string | null;
+          sale_end_date: string | null;
+          sale_status: string;
+          hidden: boolean;
+          fee_type: string | null;
+          fee_rate_percent: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          event_id: string;
+          wix_ticket_definition_id: string;
+          name: string;
+          price_cents?: number;
+          currency?: string;
+          is_free?: boolean;
+          capacity_total?: number | null;
+          capacity_remaining?: number | null;
+          limit_per_checkout?: number | null;
+          sale_start_date?: string | null;
+          sale_end_date?: string | null;
+          sale_status?: string;
+          hidden?: boolean;
+          fee_type?: string | null;
+          fee_rate_percent?: number | null;
+        };
+        Update: Partial<Database['public']['Tables']['event_ticket_types']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_types_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      event_ticket_orders: {
+        Row: {
+          id: string;
+          user_id: string;
+          child_id: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity: number;
+          status: 'pending' | 'confirmed' | 'cancelled';
+          payment_status: PaymentStatus;
+          amount: number | null;
+          stripe_payment_intent: string | null;
+          wix_reservation_id: string | null;
+          wix_order_number: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          child_id?: string | null;
+          event_id: string;
+          ticket_type_id: string;
+          quantity?: number;
+          status?: 'pending' | 'confirmed' | 'cancelled';
+          payment_status?: PaymentStatus;
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
+          wix_reservation_id?: string | null;
+          wix_order_number?: string | null;
+        };
+        Update: {
+          status?: 'pending' | 'confirmed' | 'cancelled';
+          payment_status?: PaymentStatus;
+          amount?: number | null;
+          stripe_payment_intent?: string | null;
+          wix_reservation_id?: string | null;
+          wix_order_number?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_ticket_orders_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'parent_profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_ticket_orders_ticket_type_id_fkey';
+            columns: ['ticket_type_id'];
+            isOneToOne: false;
+            referencedRelation: 'event_ticket_types';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       provider_members: {
         Row: {
@@ -607,6 +860,8 @@ export type Database = {
           created_at: string;
           // Derived from postal_code / coordinates by provider_locations_region_trg.
           region: string | null;
+          // Set when imported via Settings -> Locations "Fetch from Wix" (00066).
+          wix_location_id: string | null;
         };
         Insert: {
           provider_id: string;
@@ -617,6 +872,7 @@ export type Database = {
           longitude?: number | null;
           operating_hours?: Json;
           is_primary?: boolean;
+          wix_location_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['provider_locations']['Insert']>;
         Relationships: [];
@@ -793,7 +1049,7 @@ export type Database = {
         Row: {
           id: string;
           provider_id: string;
-          activity_id: string | null;
+          activity_ids: string[] | null;
           name: string;
           credits: number;
           price_cents: number;
@@ -805,13 +1061,13 @@ export type Database = {
         };
         Insert: {
           provider_id: string;
-          activity_id?: string | null;
+          activity_ids?: string[] | null;
           name: string;
           credits: number;
           price_cents: number;
           active?: boolean;
         };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null };
         Relationships: [];
       };
       package_purchases: {
@@ -947,6 +1203,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      wix_sync_runs: {
+        Row: {
+          id: string;
+          trigger: 'cron' | 'manual';
+          status: 'running' | 'success' | 'error';
+          triggered_by: string | null;
+          providers_checked: number;
+          providers_failed: number;
+          services_created: number;
+          services_updated: number;
+          events_created: number;
+          events_updated: number;
+          results: Json;
+          error: string | null;
+          started_at: string;
+          finished_at: string | null;
+        };
+        Insert: {
+          trigger?: 'cron' | 'manual';
+          status?: 'running' | 'success' | 'error';
+          triggered_by?: string | null;
+        };
+        Update: {
+          status?: 'running' | 'success' | 'error';
+          providers_checked?: number;
+          providers_failed?: number;
+          services_created?: number;
+          services_updated?: number;
+          events_created?: number;
+          events_updated?: number;
+          results?: Json;
+          error?: string | null;
+          finished_at?: string | null;
+        };
+        Relationships: [];
+      };
       /** Contact-form submissions, stored so none are lost when email fails. */
       contact_messages: {
         Row: {
@@ -978,6 +1270,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      redeem_package_credit: {
+        Args: { p_purchase_id: string; p_session_id: string; p_child_id?: string | null; p_policies?: string[]; p_wix_booking_id?: string | null; p_quantity?: number };
+        Returns: string;
+      };
       provider_overview: {
         Args: { p_provider: string };
         Returns: {

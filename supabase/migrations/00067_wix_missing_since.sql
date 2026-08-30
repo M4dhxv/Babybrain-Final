@@ -1,0 +1,16 @@
+-- 00067_wix_missing_since.sql
+--
+-- Distinguishes an activity that's still Wix-linked but whose service has
+-- disappeared from the vendor's *currently connected* Wix account — either
+-- deleted on Wix, or the vendor swapped in an API key for a different
+-- site/account entirely — from `wix_removed_at`'s existing meaning (a
+-- vendor deliberately unchecking the service in the import picker, which
+-- also clears wix_service_id so it can never re-link on its own).
+--
+-- Unlike wix_removed_at, wix_missing_since deliberately leaves
+-- wix_service_id/wix_service_type/wix_resource_id untouched: the next sync
+-- that finds this same service id again (the vendor reconnects the right
+-- account, or restores the deleted service) clears it automatically, and
+-- nothing else about the row — sessions, bookings — is touched while it's
+-- set. See lib/wix/sync.ts's reconciliation pass in syncWixServicesToActivities.
+alter table public.activities add column if not exists wix_missing_since timestamptz;

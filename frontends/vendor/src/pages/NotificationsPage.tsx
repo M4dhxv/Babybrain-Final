@@ -4,6 +4,7 @@ import { CalendarCheck, UserPlus, CalendarX, Star, Gift, Bell } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 type Event = {
   kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
@@ -26,7 +27,7 @@ function message(e: Event): string {
     case 'booking':
       return `${e.actor_name} booked ${e.activity_title ?? 'a session'}.`;
     case 'waitlist':
-      return `${e.actor_name} joined the waitlist for ${e.activity_title ?? 'a class'}.`;
+      return `${e.actor_name} joined the waitlist for ${e.activity_title ?? 'an activity'}.`;
     case 'cancellation':
       return `${e.actor_name}'s booking for ${e.activity_title ?? 'a session'} was cancelled.`;
     case 'review':
@@ -53,15 +54,15 @@ export default function NotificationsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
           <p className="text-sm text-gray-500 mt-1">Recent activity across your bookings, waitlist, reviews and tokens.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+      <div className="px-4 pb-8 sm:px-8">
+        {loading && <RainbowLoader className="py-6" label="Loading notifications" />}
 
         {!loading && (
           <div className="max-w-2xl rounded-xl border border-gray-200 bg-white">

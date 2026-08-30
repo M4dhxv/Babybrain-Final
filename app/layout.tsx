@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import './globals.css';
 import { createClient } from '@/lib/supabase/server';
@@ -10,6 +10,23 @@ export const metadata: Metadata = {
   title: 'BabyBrain.sg — Curated activities that fit your child',
   description:
     'Discover activities and play spaces that match your child’s age, interests and stage of growth.',
+  // Favicon only. The installable site at `/` is the parent SPA (see the
+  // beforeFiles rewrite in next.config.mjs), so it carries the web app
+  // manifest; a manifest route here would be shadowed by that rewrite and
+  // never reached. These pages — /admin, /auth — just need a real icon.
+  icons: {
+    icon: [
+      { url: '/assets/brand/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/assets/brand/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/assets/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+  appleWebApp: { capable: true, title: 'BabyBrain', statusBarStyle: 'default' },
+};
+
+// Next 15 wants themeColor on the viewport export, not metadata.
+export const viewport: Viewport = {
+  themeColor: '#FA4D8D',
 };
 
 const BRAND_COLORS = ['#f59f0a', '#ef5a9a', '#2b6fe3', '#27a45f', '#8a6de9', '#ef5a9a', '#2b6fe3', '#f59f0a', '#27a45f'];
@@ -60,7 +77,6 @@ export default async function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap"
           rel="stylesheet"
         />
-        <link rel="icon" href="/assets/mascot-face.png" />
       </head>
       <body>
         <header className="nav">

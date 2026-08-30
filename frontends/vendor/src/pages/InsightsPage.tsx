@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, TrendingUp, Users, CalendarDays, Eye, Star, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -126,7 +127,7 @@ export default function InsightsPage() {
 
   if (!unlocked) {
     return (
-      <div className="p-8">
+      <div className="p-4 text-center sm:p-8 sm:text-left">
         <h1 className="text-2xl font-bold text-gray-900">Insights</h1>
         <p className="mt-1 text-sm text-gray-500">See what's driving your bookings.</p>
         <div className="mt-6 rounded-xl border border-dashed border-purple-300 bg-purple-50/40 p-10 text-center">
@@ -135,7 +136,7 @@ export default function InsightsPage() {
           </span>
           <h2 className="mt-4 text-xl font-bold text-gray-900">Insights is a Pro feature</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">
-            Find out which classes convert, which age groups book most, and the days,
+            Find out which activities convert, which age groups book most, and the days,
             times and locations parents actually choose.
           </p>
           <Button onClick={() => navigate('/plans')} className="mt-5 gradient-primary text-white">
@@ -172,9 +173,9 @@ export default function InsightsPage() {
   );
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold text-gray-900">Insights</h1>
-      <p className="mt-1 text-sm text-gray-500">Based on your bookings over the last 30 days.</p>
+    <div className="p-4 sm:p-8">
+      <h1 className="text-2xl font-bold text-gray-900 text-center sm:text-left">Insights</h1>
+      <p className="mt-1 text-sm text-gray-500 text-center sm:text-left">Based on your bookings over the last 30 days.</p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {[
@@ -202,7 +203,7 @@ export default function InsightsPage() {
           class pack. Last 90 days.
         </p>
         {loading ? (
-          <p className="text-sm text-gray-400">…</p>
+          <RainbowLoader className="py-6" label="Loading insights" />
         ) : !trial || trial.trials === 0 ? (
           <p className="text-sm text-gray-400">No first-time bookings in the last 90 days yet.</p>
         ) : (

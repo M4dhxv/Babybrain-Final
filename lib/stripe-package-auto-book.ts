@@ -39,7 +39,7 @@ export async function autoBookPackageSession(
 
     const { data: pkg } = await admin
       .from('packages')
-      .select('activity_id, allowed_weekday, allowed_start_time')
+      .select('activity_ids, allowed_weekday, allowed_start_time')
       .eq('id', params.packageId)
       .maybeSingle();
     if (!pkg) return;
@@ -52,7 +52,7 @@ export async function autoBookPackageSession(
     if (!session) return;
     const activity = session.activities as unknown as { provider_id: string | null; bookings_paused: boolean | null } | null;
     if (!activity || activity.provider_id !== params.providerId || activity.bookings_paused) return;
-    if (pkg.activity_id && pkg.activity_id !== session.activity_id) return;
+    if (pkg.activity_ids && pkg.activity_ids.length > 0 && !pkg.activity_ids.includes(session.activity_id)) return;
 
     if (pkg.allowed_weekday != null || pkg.allowed_start_time != null) {
       const sgt = new Date(

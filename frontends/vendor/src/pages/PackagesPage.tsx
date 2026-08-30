@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
+import { ChevronDown, Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
+
+/**
+ * The package purchases table's column tracks. Header and body rows are separate grids, so the
+ * track list is shared to keep them in step, and every track is
+ * `minmax(0, …)` rather than a bare `Nfr` — a bare fr floors at min-content,
+ * so one long buyer or pack name widened that row's track and left the row
+ * misaligned against the header. `gap-x-4` keeps neighbouring values from
+ * sitting flush. Same fix as the activities table.
+ */
+const PURCHASE_COLS =
+  'grid min-w-[790px] gap-x-4 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const tabs = ['Packs', 'Purchases'];
 
 type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
-  activity_id: string | null; validity_days: number | null;
+  activity_ids: string[] | null; validity_days: number | null;
   allowed_weekday: number | null; allowed_start_time: string | null;
 };
 type Purchase = {
@@ -19,7 +31,7 @@ type Purchase = {
   created_at: string; expires_at: string | null;
 };
 
-const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_id: '', allowed_weekday: '', allowed_start_time: '' };
+const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '' };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function PackagesPage() {
@@ -39,13 +51,14 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
 
   async function load() {
     if (!provider) return;
     setLoading(true);
     const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
       supabase.from('activities').select('id, title').eq('provider_id', provider.id).is('archived_at', null),
-      supabase.from('packages').select('id, name, credits, price_cents, active, activity_id, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
+      supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
       supabase.rpc('provider_package_purchases', { p_provider: provider.id }),
     ]);
     setActivities(acts ?? []);
@@ -69,7 +82,10 @@ export default function PackagesPage() {
 
   const packRestriction = (p: Pack) => {
     const parts: string[] = [];
-    if (p.activity_id) parts.push(activities.find((a) => a.id === p.activity_id)?.title ?? 'One class');
+    if (p.activity_ids && p.activity_ids.length > 0) {
+      const names = p.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? 'one activity');
+      parts.push(names.length <= 2 ? names.join(' & ') : `${names.length} activities`);
+    }
     if (p.allowed_weekday != null) {
       const t = p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : '';
       parts.push(`${WEEKDAY_NAMES[p.allowed_weekday]}${t} only`);
@@ -89,7 +105,7 @@ export default function PackagesPage() {
       credits: String(p.credits),
       price: String(p.price_cents / 100),
       validity_days: p.validity_days != null ? String(p.validity_days) : '',
-      activity_id: p.activity_id ?? '',
+      activity_ids: p.activity_ids ?? [],
       allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
       allowed_start_time: p.allowed_start_time ?? '',
     });
@@ -131,7 +147,7 @@ export default function PackagesPage() {
       credits,
       price_cents: Math.round((price || 0) * 100),
       validity_days: packForm.validity_days ? Number(packForm.validity_days) : null,
-      activity_id: packForm.activity_id || null,
+      activity_ids: packForm.activity_ids.length ? packForm.activity_ids : null,
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
     };
@@ -143,6 +159,7 @@ export default function PackagesPage() {
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
     setEditingPackId(null);
     setPackForm(emptyPack);
+    setActivityPickerOpen(false);
     load();
   }
 
@@ -153,15 +170,15 @@ export default function PackagesPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Packages</h1>
           <p className="text-sm text-gray-500 mt-1">Multi-session packs parents can buy, and who's bought them.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="flex gap-6 border-b border-gray-200 mb-6">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab}
@@ -177,17 +194,17 @@ export default function PackagesPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading packages" />}
 
         {!loading && activeTab === 'Packs' && (
           <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-xs text-gray-500 mb-4">
-              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#C90044] hover:underline">Make-up Tokens</button>.
+              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#C90044] hover:underline">Make-up tokens</button>.
             </p>
             {packs.length > 0 && (
               <div className="space-y-2">
                 {packs.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+                  <div key={p.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <span className="font-medium text-gray-900">{p.name}</span>
                       <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
@@ -214,30 +231,30 @@ export default function PackagesPage() {
 
             {canManage && (
               <>
-                <div className="mt-5 flex flex-wrap items-end gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Pack name</label>
-                    <input id="pack-name-input" value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 rounded-lg border border-gray-300 px-3 text-sm" />
+                <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Pack name</label>
+                    <input id="pack-name-input" value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-auto" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Classes</label>
-                    <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-24 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Classes</label>
+                    <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-24" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Price (SGD)</label>
-                    <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
+                    <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Valid for (days)</label>
-                    <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-28 rounded-lg border border-gray-300 px-3 text-sm" />
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Valid for (days)</label>
+                    <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
-                  <button onClick={createPack} disabled={savingPack} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
+                  <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
                     {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
                   </button>
                   {editingPackId && (
                     <button
-                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
-                      className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700"
+                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); setActivityPickerOpen(false); }}
+                      className="h-9 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 sm:w-auto"
                     >
                       Cancel
                     </button>
@@ -248,22 +265,65 @@ export default function PackagesPage() {
                     {packError ?? packNotice}
                   </p>
                 )}
-                <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to class (optional)</label>
-                    <select value={packForm.activity_id} onChange={(e) => setPackForm({ ...packForm, activity_id: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                      <option value="">Any of my classes</option>
-                      {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-                    </select>
+                <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="relative w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to activities (optional)</label>
+                    <button
+                      type="button"
+                      onClick={() => setActivityPickerOpen((v) => !v)}
+                      className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:w-56"
+                    >
+                      <span className="truncate text-left">
+                        {packForm.activity_ids.length === 0
+                          ? 'Any of my activities'
+                          : packForm.activity_ids.length <= 2
+                            ? packForm.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? '').join(' & ')
+                            : `${packForm.activity_ids.length} activities selected`}
+                      </span>
+                      <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                    </button>
+                    {activityPickerOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
+                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg sm:w-64">
+                          <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                            <input
+                              type="checkbox"
+                              checked={packForm.activity_ids.length === 0}
+                              onChange={() => setPackForm({ ...packForm, activity_ids: [] })}
+                            />
+                            Any of my activities
+                          </label>
+                          <div className="my-1 border-t border-gray-100" />
+                          {activities.map((a) => (
+                            <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                              <input
+                                type="checkbox"
+                                checked={packForm.activity_ids.includes(a.id)}
+                                onChange={(e) =>
+                                  setPackForm({
+                                    ...packForm,
+                                    activity_ids: e.target.checked
+                                      ? [...packForm.activity_ids, a.id]
+                                      : packForm.activity_ids.filter((id) => id !== a.id),
+                                  })
+                                }
+                              />
+                              <span className="truncate">{a.title}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Restrict to weekly slot (optional)</label>
-                    <div className="flex gap-2">
-                      <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>
+                    <div className="flex w-full gap-2">
+                      <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:flex-none">
                         <option value="">Any day</option>
                         {WEEKDAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
                       </select>
-                      <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 rounded-lg border border-gray-300 px-3 text-sm" title="Session start time (SGT); leave blank for any time" />
+                      <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm sm:flex-none" title="Session start time (SGT); leave blank for any time" />
                     </div>
                   </div>
                 </div>
@@ -274,15 +334,15 @@ export default function PackagesPage() {
         )}
 
         {!loading && activeTab === 'Purchases' && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <div className={cn(PURCHASE_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
               <div>Buyer</div><div>Pack</div><div>Credits</div><div>Status</div><div>Purchased / Expires</div>
             </div>
             {purchases.map((p) => (
-              <div key={p.purchase_id} className="grid grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 border-t border-gray-100 items-center">
-                <div className="text-sm font-medium text-gray-900">{p.buyer_name}</div>
-                <div className="text-sm text-gray-700">{p.package_name}</div>
-                <div className="text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
+              <div key={p.purchase_id} className={cn(PURCHASE_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
+                <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
+                <div className="min-w-0 text-sm text-gray-700 break-words">{p.package_name}</div>
+                <div className="min-w-0 text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
                 <div><span className={statusBadge(p.status)}>{p.status}</span></div>
                 <div className="text-xs text-gray-500">{fmtDate(p.created_at)}{p.expires_at ? ` · expires ${fmtDate(p.expires_at)}` : ''}</div>
               </div>

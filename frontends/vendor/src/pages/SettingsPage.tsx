@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
-  CheckCircle, Clock, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
+  CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
+  Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Copy, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Progress } from '@/components/ui/progress';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderLocation, ProviderPolicy, VendorCategory } from '@/lib/database.types';
+import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -19,8 +23,9 @@ const settingsTabs = [
   // QA: "each vendor will have their own consents, waivers, disclosures they
   // want accepted so need a way to make this bespoke" + "there needs to be an
   // option to toggle on and upload the relevant material".
-  { id: 'policies', label: 'Waivers & Consents', icon: FileText },
+  { id: 'policies', label: 'Waivers & consents', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: Shield },
+  { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
 const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
@@ -32,15 +37,19 @@ const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-// Compliance acceptances aren't modelled as a table in the MVP backend — kept static.
+// Acceptance itself still isn't tracked as real per-vendor data (no
+// acceptance table/timestamp exists yet — see complianceTerms.ts) — every
+// vendor who got through listing setup ticked both boxes, so "Accepted" is
+// shown for all of them, but what's now real is the actual content behind
+// it: clicking a row opens the exact agreement text from complianceTerms.ts
+// instead of a dead end. "Refund Policy" isn't a fixed BabyBrain document at
+// all — it's whatever the vendor wrote themselves under Waivers & Consents
+// (provider_policies), so it links there instead of a static viewer.
 const complianceItems = [
-  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Clock, label: 'PDPA Acknowledgement', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Store, label: 'Child Photo Consent Warranty', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Shield, label: 'Review Policy', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false },
-  { icon: MessageSquare, label: 'Messaging Rules', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true },
-  { icon: Star, label: 'Featured Placement Disclosure', status: 'N/A until Boost', statusColor: 'text-gray-500', bg: 'bg-gray-100', accepted: false },
+  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: VENDOR_TERMS },
+  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: BOOKING_MESSAGING_TERMS },
+  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies' as const, doc: null },
+  { icon: Star, label: 'Featured Placement Disclosure', status: 'N/A until Boost', statusColor: 'text-gray-500', bg: 'bg-gray-100', accepted: false, kind: 'none' as const, doc: null },
 ];
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
@@ -52,7 +61,7 @@ const emptyProfileForm = {
 };
 
 export default function SettingsPage() {
-  const { provider, role, session, refreshProvider } = useAuth();
+  const { provider, role, session, refreshProvider, signOut } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
 
   /* Deep-linkable: "Add a Location" on the dashboard and the Locations tab in
@@ -75,6 +84,7 @@ export default function SettingsPage() {
   // add-location form opens immediately instead of just landing on the tab.
   const wantsNewLocation = searchParams.get('new') === 'location';
 
+  const [viewingDoc, setViewingDoc] = useState<ComplianceDocument | null>(null);
   const [team, setTeam] = useState<Member[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [form, setForm] = useState(emptyProfileForm);
@@ -200,18 +210,26 @@ export default function SettingsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex flex-col items-center gap-3 px-4 py-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage your business profile, locations, team and compliance.</p>
         </div>
+        <Button
+          variant="outline"
+          onClick={() => signOut()}
+          className="gap-2 rounded-full border-gray-300 text-gray-700 hover:bg-gray-50"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </Button>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 overflow-x-auto">
           {settingsTabs.map((tab) => (
             <button key={tab.id} onClick={() => selectTab(tab.id)}
-              className={cn('flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              className={cn('flex shrink-0 items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 activeTab === tab.id ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               <tab.icon className="w-4 h-4" />
               {tab.label}
@@ -234,8 +252,20 @@ export default function SettingsPage() {
                     </label>
                   )}
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{form.business_name || 'Your business'}</h3>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-gray-900">{form.business_name || 'Your business'}</h3>
+                    {canManage && !isEditingProfile && (
+                      <button
+                        onClick={() => setIsEditingProfile(true)}
+                        title="Edit profile"
+                        aria-label="Edit profile"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 sm:hidden"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   {categoryLabel && <p className="text-sm text-gray-500">{categoryLabel}</p>}
                   <div className="flex items-center gap-2 mt-1.5">
                     <Progress value={completion(form)} className="w-32 h-2" />
@@ -244,7 +274,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               {canManage && !isEditingProfile && (
-                <button onClick={() => setIsEditingProfile(true)} title="Edit profile" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                <button onClick={() => setIsEditingProfile(true)} title="Edit profile" className="hidden items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:flex">
                   <Pencil className="w-3.5 h-3.5" /> Edit
                 </button>
               )}
@@ -258,22 +288,22 @@ export default function SettingsPage() {
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">About</h4>
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{form.description || <span className="text-gray-400">No description yet.</span>}</p>
                 </section>
-                <section className="grid grid-cols-2 gap-4">
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ReadField icon={Phone} label="Phone" value={form.contact_phone} />
                   <ReadField icon={Mail} label="Email" value={form.contact_email} />
                   <ReadField icon={MessageCircle} label="WhatsApp" value={form.whatsapp} />
                   <ReadField icon={Globe} label="Website" value={form.website} />
                 </section>
-                <section className="grid grid-cols-2 gap-4">
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ReadField icon={MapPin} label="Address" value={form.address} />
                   <ReadField icon={Hash} label="UEN" value={form.uen} />
                 </section>
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Business Name</label>
+                    <label className="text-xs text-gray-500 mb-1 block">Business name</label>
                     <input className={inputCls} value={form.business_name} onChange={(e) => setForm({ ...form, business_name: e.target.value })} />
                   </div>
                   <div>
@@ -285,12 +315,12 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Business Description</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Business description</label>
                   <textarea rows={3} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Phone Number</label>
+                    <label className="text-xs text-gray-500 mb-1 block">Phone number</label>
                     <input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
                   </div>
                   <div>
@@ -306,7 +336,7 @@ export default function SettingsPage() {
                     <input className={inputCls} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Address</label>
                     <input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
@@ -318,7 +348,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center gap-3 pt-2">
                   <Button onClick={saveProfile} disabled={saving} className="gradient-primary text-white rounded-xl hover:opacity-90 px-6 gap-2">
-                    <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Changes'}
+                    <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save changes'}
                   </Button>
                   <Button variant="outline" onClick={cancelEditProfile} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
                     <X className="w-4 h-4" /> Cancel
@@ -347,7 +377,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center"><Users className="w-5 h-5 text-green-600" /></div>
               <div>
-                <h3 className="font-semibold text-gray-900">Team Members</h3>
+                <h3 className="font-semibold text-gray-900">Team members</h3>
                 <p className="text-xs text-gray-500">{team.length} Team Member{team.length === 1 ? '' : 's'}</p>
               </div>
             </div>
@@ -407,32 +437,743 @@ export default function SettingsPage() {
 
         {activeTab === 'compliance' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="mb-5 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
               <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Shield className="w-5 h-5 text-purple-600" /></div>
               <div>
                 <h3 className="font-semibold text-gray-900">Compliance</h3>
-                <p className="text-xs text-gray-500">Keep your profile compliant and up to date.</p>
+                <p className="text-xs text-gray-500">Ensure your profile is compliant and up to date.</p>
               </div>
             </div>
             <div className="space-y-3">
-              {complianceItems.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
-                  <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
-                  {item.accepted ? (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
-                  ) : item.status === 'Edit' ? (
-                    <button className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"><Pencil className="w-3 h-3" />Edit</button>
-                  ) : (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
-                  )}
-                </div>
-              ))}
+              {complianceItems.map((item, idx) => {
+                const clickable = item.kind === 'view' || item.kind === 'edit-policies';
+                const onClick = () => {
+                  if (item.kind === 'view' && item.doc) setViewingDoc(item.doc);
+                  else if (item.kind === 'edit-policies') selectTab('policies');
+                };
+                return (
+                  <div
+                    key={idx}
+                    onClick={clickable ? onClick : undefined}
+                    className={cn('flex items-center gap-3 p-3 bg-gray-50 rounded-xl', clickable && 'cursor-pointer hover:bg-gray-100')}
+                  >
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
+                    <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
+                    {item.accepted ? (
+                      <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
+                    ) : item.status === 'Edit' ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); selectTab('policies'); }}
+                        className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"
+                      >
+                        <Pencil className="w-3 h-3" />Edit
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          </div>
+        )}
+
+        <Sheet open={!!viewingDoc} onOpenChange={(open) => { if (!open) setViewingDoc(null); }}>
+          <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+            {viewingDoc && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{viewingDoc.title}</SheetTitle>
+                  <SheetDescription>{viewingDoc.summary}</SheetDescription>
+                </SheetHeader>
+                <div className="px-4 pb-6 space-y-5">
+                  <p className="text-xs text-gray-400 -mt-2">
+                    This is the agreement you accepted when setting up your listing — shown here exactly as it was presented then.
+                  </p>
+                  {viewingDoc.sections.map((s) => (
+                    <div key={s.heading} className="rounded-xl border-2 border-gray-300 bg-white p-4 shadow-sm">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-1">{s.heading}</h4>
+                      <p className="text-sm text-gray-600 leading-relaxed">{s.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
+
+        {activeTab === 'integrations' && (
+          <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
+            <WixIntegrationManager provider={provider} canManage={canManage} />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+type WixStatus = {
+  connected: boolean;
+  wix_site_id?: string;
+  wix_api_key_preview?: string;
+  updated_at?: string;
+};
+
+type WixServiceOption = {
+  id: string;
+  name: string;
+  type: string;
+  importable: boolean;
+  reason: string | null;
+  alreadyImported: boolean;
+};
+
+type WixEventOption = {
+  id: string;
+  name: string;
+  startDate: string;
+  alreadyImported: boolean;
+};
+
+/** Small inline "copy to clipboard" control — swaps to a tick for ~1.5s. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable (insecure context / denied) — no-op */
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={`Copy ${label}`}
+      aria-label={`Copy ${label}`}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+/** Settings -> Integrate your Business. A vendor connects their own Wix
+ *  account (API key + site ID) so their Schedule calendar, availability and
+ *  bookings sync against their own Wix Bookings data instead of a shared
+ *  one. The key is never sent to the browser on page load — only a masked
+ *  preview — and the eye button fetches the full value on demand via a
+ *  separate, explicitly-called route. */
+function WixIntegrationManager({
+  provider, canManage,
+}: {
+  provider: { id: string } | null; canManage: boolean;
+}) {
+  const [status, setStatus] = useState<WixStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [siteId, setSiteId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // "Import specific events" — same shape as the services picker above, one
+  // Wix app over (Events & Tickets, not Bookings).
+  const [wixEvents, setWixEvents] = useState<WixEventOption[] | null>(null);
+  const [eventsListLoading, setEventsListLoading] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const [baselineEventIds, setBaselineEventIds] = useState<Set<string>>(new Set());
+  const [eventImportSaving, setEventImportSaving] = useState(false);
+  const [eventImportError, setEventImportError] = useState<string | null>(null);
+  const [eventImportNotice, setEventImportNotice] = useState<string | null>(null);
+  const [eventsAppNotInstalled, setEventsAppNotInstalled] = useState(false);
+
+  // "Import specific activities" — lets a vendor pick which Wix services
+  // become activities, instead of "Sync services" bringing in everything.
+  // `selectedIds` is the live checkbox state; `baselineIds` is what was
+  // actually imported as of the last load — the diff between the two is
+  // what "Save" sends and what drives the "you have unsaved changes" notice.
+  const [wixServices, setWixServices] = useState<WixServiceOption[] | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [baselineIds, setBaselineIds] = useState<Set<string>>(new Set());
+  const [importSaving, setImportSaving] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+
+  // A 401 here almost always means the browser's session has quietly
+  // expired (long-lived tab, refresh token aged out) — "Not authenticated"
+  // on its own reads like a permissions bug, so point the vendor at the fix
+  // (sign out/in) and an escape hatch if that doesn't clear it up.
+  function describeWixError(e: unknown, fallback: string): string {
+    if (e instanceof ApiError && e.status === 401) {
+      return 'Your session has expired. Please sign out and sign back in — if this keeps happening, contact support.';
+    }
+    return e instanceof Error ? e.message : fallback;
+  }
+
+  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number; revived?: number; unlinked?: number }) {
+    const parts = [];
+    if (sync.created) parts.push(`${sync.created} new`);
+    if (sync.updated) parts.push(`${sync.updated} updated`);
+    if (sync.revived) parts.push(`${sync.revived} restored`);
+    if (sync.removed) parts.push(`${sync.removed} removed`);
+    if (sync.unlinked) parts.push(`${sync.unlinked} unlinked`);
+    if (!sync.created && !sync.updated && !sync.removed && !sync.revived && !sync.unlinked) parts.push('nothing new');
+    let text = `Synced from Wix: ${parts.join(', ')}.`;
+    if (sync.skipped.length) {
+      text += ` ${sync.skipped.length} skipped — ${sync.skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
+    }
+    return text;
+  }
+
+  async function load() {
+    if (!provider) return;
+    setLoading(true);
+    try {
+      const s = await apiGet<WixStatus>(`/api/vendor/wix-integration?providerId=${provider.id}`);
+      setStatus(s);
+      setEditing(!s.connected);
+      setSiteId(s.wix_site_id ?? '');
+      setRevealedKey(null);
+    } catch (e) {
+      setError(describeWixError(e, 'Could not load Wix integration status'));
+      // Status is unknown, not necessarily "connected" — still let a manager
+      // attempt to (re)connect rather than leaving them with a dead end.
+      setEditing(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+
+  async function save() {
+    if (!provider || !siteId.trim() || !apiKey.trim()) {
+      setError('Both the API key and site ID are required.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+        '/api/vendor/wix-integration',
+        { provider_id: provider.id, wix_site_id: siteId.trim(), wix_api_key: apiKey.trim() }
+      );
+      setApiKey('');
+      setShowKey(false);
+      setNotice(`Wix account connected. ${summarizeSync(res.sync)}`);
+      await load();
+    } catch (e) {
+      setError(describeWixError(e, 'Could not save these credentials'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function syncServices() {
+    if (!provider) return;
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+        '/api/vendor/wix-services-sync',
+        { provider_id: provider.id }
+      );
+      // Events are a second Wix app and a second call, but a vendor thinks of
+      // this as one "pull everything in from Wix" button, so it fires both.
+      // Events failing shouldn't discard the services result that already
+      // landed, hence the inner catch: it's reported alongside, not thrown.
+      let eventsLine: string;
+      try {
+        const ev = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+          '/api/vendor/wix-events-sync',
+          { provider_id: provider.id }
+        );
+        eventsLine = summarizeEventSync(ev.sync);
+        await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
+      } catch (e) {
+        eventsLine = `Events couldn’t be synced — ${describeWixError(e, 'please try again.')}`;
+      }
+      setNotice(`${summarizeSync(res.sync)} ${eventsLine}`);
+    } catch (e) {
+      setError(describeWixError(e, 'Could not sync services'));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // Wix Events & Tickets — a separate app/API from Bookings (see
+  // lib/wix/events-sync.ts), so it stays a second call even though "Sync
+  // services" above fires both: a vendor connected for Bookings only won't
+  // have the Events app installed at all, and that call reports it back
+  // rather than erroring, which is why this reads as a normal outcome.
+  function summarizeEventSync(sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean }) {
+    if (sync.eventsAppNotInstalled) {
+      return 'This Wix account doesn’t have the Events & Tickets app installed, so there’s nothing to sync yet.';
+    }
+    const parts = [];
+    if (sync.created) parts.push(`${sync.created} new`);
+    if (sync.updated) parts.push(`${sync.updated} updated`);
+    if (sync.revived) parts.push(`${sync.revived} restored`);
+    if (sync.removed) parts.push(`${sync.removed} removed`);
+    if (!sync.created && !sync.updated && !sync.removed && !sync.revived) parts.push('nothing new');
+    let text = `Synced from Wix Events: ${parts.join(', ')}.`;
+    if (sync.ticketPricingSkipped.length) {
+      text += ` Ticket pricing couldn’t be read for: ${sync.ticketPricingSkipped.join(', ')}.`;
+    }
+    return text;
+  }
+
+  async function loadWixEvents() {
+    if (!provider) return;
+    setEventsListLoading(true);
+    setEventImportError(null);
+    try {
+      const res = await apiGet<{ events: WixEventOption[]; eventsAppNotInstalled: boolean }>(`/api/vendor/wix-events?providerId=${provider.id}`);
+      setWixEvents(res.events);
+      setEventsAppNotInstalled(res.eventsAppNotInstalled);
+      const imported = new Set(res.events.filter((e) => e.alreadyImported).map((e) => e.id));
+      setSelectedEventIds(imported);
+      setBaselineEventIds(imported);
+    } catch (e) {
+      setEventImportError(describeWixError(e, 'Could not load Wix events'));
+    } finally {
+      setEventsListLoading(false);
+    }
+  }
+
+  function toggleEventSelected(id: string) {
+    setEventImportNotice(null);
+    setSelectedEventIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const hasEventSelectionChanges =
+    selectedEventIds.size !== baselineEventIds.size || [...selectedEventIds].some((id) => !baselineEventIds.has(id));
+
+  async function saveEventImport() {
+    if (!provider || !hasEventSelectionChanges) return;
+    setEventImportSaving(true);
+    setEventImportError(null);
+    setEventImportNotice(null);
+    try {
+      const res = await apiPost<{
+        sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean; unlinked: number };
+        protectedEvents: { wixEventId: string; title: string }[];
+      }>('/api/vendor/wix-events-import', { provider_id: provider.id, event_ids: Array.from(selectedEventIds) });
+      let notice = summarizeEventSync(res.sync);
+      if (res.protectedEvents.length > 0) {
+        notice += ` ${res.protectedEvents.map((p) => `"${p.title}"`).join(', ')} already ${res.protectedEvents.length > 1 ? 'have' : 'has'} bookings, so ${res.protectedEvents.length > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${res.protectedEvents.length > 1 ? 'them' : 'it'}.`;
+      }
+      setEventImportNotice(notice);
+      await loadWixEvents(); // re-checks anything that was protected, since it's still really linked
+    } catch (e) {
+      setEventImportError(describeWixError(e, 'Could not import the selected events'));
+    } finally {
+      setEventImportSaving(false);
+    }
+  }
+
+  async function toggleReveal() {
+    if (revealedKey) { setRevealedKey(null); return; }
+    if (!provider) return;
+    setRevealing(true);
+    setError(null);
+    try {
+      const { wix_api_key } = await apiGet<{ wix_api_key: string }>(`/api/vendor/wix-integration/reveal?providerId=${provider.id}`);
+      setRevealedKey(wix_api_key);
+    } catch (e) {
+      setError(describeWixError(e, 'Could not reveal the key'));
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  async function loadServices() {
+    if (!provider) return;
+    setServicesLoading(true);
+    setImportError(null);
+    try {
+      const res = await apiGet<{ services: WixServiceOption[] }>(`/api/vendor/wix-services?providerId=${provider.id}`);
+      setWixServices(res.services);
+      const imported = new Set(res.services.filter((s) => s.alreadyImported).map((s) => s.id));
+      setSelectedIds(imported);
+      setBaselineIds(imported);
+    } catch (e) {
+      setImportError(describeWixError(e, 'Could not load Wix services'));
+    } finally {
+      setServicesLoading(false);
+    }
+  }
+  useEffect(() => {
+    // Independent of the credentials card's `editing` state — this box
+    // loads and stays visible purely off whether Wix is connected, so
+    // clicking "Change key" doesn't yank it away.
+    if (status?.connected) loadServices();
+    // eslint-disable-next-line
+  }, [status?.connected]);
+
+  useEffect(() => {
+    if (status?.connected) loadWixEvents();
+    // eslint-disable-next-line
+  }, [status?.connected]);
+
+  function toggleSelected(id: string) {
+    setImportNotice(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const hasSelectionChanges =
+    selectedIds.size !== baselineIds.size || [...selectedIds].some((id) => !baselineIds.has(id));
+
+  async function saveImport() {
+    if (!provider || !hasSelectionChanges) return;
+    setImportSaving(true);
+    setImportError(null);
+    setImportNotice(null);
+    try {
+      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number; unlinked: number } }>(
+        '/api/vendor/wix-services-import',
+        { provider_id: provider.id, service_ids: Array.from(selectedIds) }
+      );
+      setImportNotice(summarizeSync(res.sync));
+      await loadServices();
+    } catch (e) {
+      setImportError(describeWixError(e, 'Could not import the selected activities'));
+    } finally {
+      setImportSaving(false);
+    }
+  }
+
+  // Credential fields get a visibly heavier border than an ordinary text
+  // input — these hold a secret and a site identifier, not "just a field".
+  const inputCls = 'w-full px-3.5 py-2.5 border-2 border-indigo-200 bg-indigo-50/30 rounded-lg text-sm font-mono shadow-sm transition-colors focus:outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100';
+  const readOnlyCls = 'w-full px-3.5 py-2.5 border-2 border-gray-200 bg-gray-50 rounded-lg text-sm font-mono text-gray-700';
+
+  return (
+    <>
+      {/* Wix is the only integration built so far, so a vendor on any other
+          platform otherwise has no signal that asking for theirs is an option
+          — this points them at support rather than leaving them at a dead end. */}
+      <p className="mb-4 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
+        Don't see your platform here?{' '}
+        <Link to="/contact" className="font-medium text-[#C90044] hover:underline">Contact us</Link>{' '}
+        to request the integration to be built.
+      </p>
+
+      <div className="mb-1 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
+        <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Plug className="w-5 h-5 text-indigo-600" /></div>
+        <div>
+          <h3 className="font-semibold text-gray-900">Wix integration</h3>
+          <p className="text-xs text-gray-500">Connect your own Wix account to sync availability.</p>
+        </div>
+      </div>
+
+      {loading && <RainbowLoader className="mt-5 py-4" label="Loading settings" />}
+
+      {!loading && (
+        <div className="mt-5">
+          {error && <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+          {notice && <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div>}
+
+          {status?.connected && !editing && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  <CheckCircle className="w-3.5 h-3.5" /> Connected
+                </span>
+                {status.updated_at && (
+                  <span className="text-xs text-gray-400">since {new Date(status.updated_at).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                )}
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500">Site ID</label>
+                  {status.wix_site_id && <CopyButton value={status.wix_site_id} label="Site ID" />}
+                </div>
+                <div className={readOnlyCls}>{status.wix_site_id}</div>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500">API Key</label>
+                  {revealedKey && <CopyButton value={revealedKey} label="API Key" />}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={cn(readOnlyCls, 'flex-1 truncate')}>
+                    {revealedKey ?? status.wix_api_key_preview}
+                  </div>
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={toggleReveal}
+                      disabled={revealing}
+                      title={revealedKey ? 'Hide key' : 'Show full key'}
+                      className="flex-shrink-0 grid h-9 w-9 place-items-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {revealedKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {canManage && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button onClick={syncServices} disabled={syncing} className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2">
+                    <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} /> {syncing ? 'Syncing…' : 'Sync services'}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setEditing(true); setRevealedKey(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 gap-2">
+                    <Pencil className="w-3.5 h-3.5" /> Change key
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-gray-400">
+                Every activity on this Wix account can become an activity here — they land unpublished so you can
+                review and make any edits required before they go live.
+              </p>
+              <a
+                href="https://support.wix.com/en/article/about-api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+              >
+                More on Wix API keys <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
+          {status?.connected && canManage && (
+            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Import specific activities</h4>
+              </div>
+
+              {importError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{importError}</div>}
+              {importNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{importNotice}</div>}
+              {!importNotice && hasSelectionChanges && (
+                <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                  The changes will reflect on Activities page
+                </div>
+              )}
+
+              {servicesLoading && <RainbowLoader className="py-4" label="Loading Wix services" />}
+
+              {!servicesLoading && wixServices && wixServices.length === 0 && (
+                <p className="text-sm text-gray-400">No services found on this Wix account.</p>
+              )}
+
+              {!servicesLoading && wixServices && wixServices.length > 0 && (
+                <>
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {wixServices.map((s) => (
+                      <label
+                        key={s.id}
+                        className={cn(
+                          'flex items-center gap-3 p-3 rounded-xl border',
+                          s.alreadyImported
+                            ? 'bg-green-50 border-green-100'
+                            : s.importable
+                              ? 'bg-gray-50 border-gray-100 cursor-pointer hover:bg-gray-100'
+                              : 'bg-gray-50 border-gray-100 opacity-60 cursor-not-allowed'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                          checked={selectedIds.has(s.id)}
+                          disabled={!s.importable}
+                          onChange={() => toggleSelected(s.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-800 truncate">{s.name}</div>
+                          <div className="text-xs text-gray-400">{s.type}{s.reason ? ` — ${s.reason}` : ''}</div>
+                        </div>
+                        {s.alreadyImported && (
+                          <span className="flex-shrink-0 text-xs font-semibold text-green-700">Imported</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    Choose which of your activities you would like to display through BabyBrain and click save.
+                  </p>
+
+                  <Button
+                    onClick={saveImport}
+                    disabled={importSaving || !hasSelectionChanges}
+                    className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+                  >
+                    <Save className="w-4 h-4" /> {importSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
+          {status?.connected && canManage && !eventsAppNotInstalled && (
+            <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Import specific events</h4>
+              </div>
+
+              {eventImportError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{eventImportError}</div>}
+              {eventImportNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{eventImportNotice}</div>}
+              {!eventImportNotice && hasEventSelectionChanges && (
+                <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600">
+                  The changes will reflect on Activities page
+                </div>
+              )}
+
+              {eventsListLoading && <RainbowLoader className="py-4" label="Loading Wix events" />}
+
+              {!eventsListLoading && wixEvents && wixEvents.length === 0 && (
+                <p className="text-sm text-gray-400">No upcoming events found on this Wix account.</p>
+              )}
+
+              {!eventsListLoading && wixEvents && wixEvents.length > 0 && (
+                <>
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {wixEvents.map((e) => (
+                      <label
+                        key={e.id}
+                        className={cn(
+                          'flex items-center gap-3 p-3 rounded-xl border cursor-pointer',
+                          e.alreadyImported ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                          checked={selectedEventIds.has(e.id)}
+                          onChange={() => toggleEventSelected(e.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-800 truncate">{e.name}</div>
+                          <div className="text-xs text-gray-400">
+                            {new Date(e.startDate).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}
+                          </div>
+                        </div>
+                        {e.alreadyImported && (
+                          <span className="flex-shrink-0 text-xs font-semibold text-green-700">Imported</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    Choose which of your events you would like to display through BabyBrain and click save.
+                  </p>
+
+                  <Button
+                    onClick={saveEventImport}
+                    disabled={eventImportSaving || !hasEventSelectionChanges}
+                    className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+                  >
+                    <Save className="w-4 h-4" /> {eventImportSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
+          {!status?.connected && !canManage && (
+            <p className="text-sm text-gray-400">This business hasn't connected a Wix account yet. Ask an owner or manager to set it up.</p>
+          )}
+
+          {editing && canManage && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-5">
+              <div>
+                <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix API Key</label>
+                {/* Instructions sit above the field: the vendor has to go and
+                    fetch the key before there is anything to type here. */}
+                <p className="mb-2 text-xs text-gray-500">
+                  In your Wix dashboard: <strong>Settings → Development &amp; Integrations → Headless Settings → Manage API Key → Generate API Key → All site permissions → Generate Key</strong>. Copy this key immediately — Wix only shows it once.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    className={cn(inputCls, 'flex-1')}
+                    placeholder="IST.eyJra..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((v) => !v)}
+                    title={showKey ? 'Hide' : 'Show'}
+                    className="flex-shrink-0 grid h-9 w-9 place-items-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix Site ID</label>
+                {/* Same as the API key above: tell them where to find it before
+                    they reach the field they are meant to fill in. */}
+                <p className="text-xs text-gray-500">
+                  Open your Wix dashboard and look at the browser's address bar — it follows this pattern:
+                </p>
+                <p className="mt-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700">
+                  wix.com/dashboard/<span className="font-bold text-[#C90044]">SITE_ID</span>/home
+                </p>
+                <p className="mt-1.5 mb-2 text-xs text-gray-500">
+                  Copy just the <span className="font-bold text-[#C90044]">SITE_ID</span> part — the segment between{' '}
+                  <span className="font-mono">/dashboard/</span> and <span className="font-mono">/home</span> — and
+                  paste it below.
+                </p>
+                <input
+                  type="text"
+                  className={inputCls}
+                  placeholder="e.g. a240b75d-88bb-414a-bf15-01f112022e66"
+                  value={siteId}
+                  onChange={(e) => setSiteId(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button onClick={save} disabled={saving || !siteId.trim() || !apiKey.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5 gap-2">
+                  <Save className="w-4 h-4" /> {saving ? 'Connecting…' : 'Save & connect'}
+                </Button>
+                {status?.connected && (
+                  <Button variant="outline" onClick={() => { setEditing(false); setApiKey(''); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </Button>
+                )}
+              </div>
+
+              <a
+                href="https://support.wix.com/en/article/about-api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+              >
+                More on Wix API keys <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -471,6 +1212,72 @@ function LocationsManager({
   const [editForm, setEditForm] = useState({ name: '', address: '', postal_code: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // "Fetch from Wix" — pulls the vendor's real Wix business address(es)
+  // instead of retyping one. Independent of whether Wix is even connected;
+  // the fetch call itself reports that (409) with a friendly message.
+  const [showWixPicker, setShowWixPicker] = useState(false);
+  const [wixLocations, setWixLocations] = useState<
+    { id: string; name: string; address: string | null; postalCode: string | null; alreadyImported: boolean }[] | null
+  >(null);
+  const [wixLoading, setWixLoading] = useState(false);
+  const [wixError, setWixError] = useState<string | null>(null);
+  const [wixSelected, setWixSelected] = useState<Set<string>>(new Set());
+  const [wixImporting, setWixImporting] = useState(false);
+  const [wixNotice, setWixNotice] = useState<string | null>(null);
+
+  async function loadWixLocations() {
+    if (!provider) return;
+    setWixLoading(true);
+    setWixError(null);
+    setWixNotice(null);
+    try {
+      const res = await apiGet<{ locations: typeof wixLocations }>(`/api/vendor/wix-locations?providerId=${provider.id}`);
+      setWixLocations(res.locations);
+      setWixSelected(new Set());
+    } catch (e) {
+      setWixError(
+        e instanceof ApiError && e.status === 409
+          ? 'Connect your Wix account below first, then fetch your locations from it.'
+          : e instanceof Error ? e.message : 'Could not reach Wix'
+      );
+    } finally {
+      setWixLoading(false);
+    }
+  }
+
+  function openWixPicker() {
+    setShowWixPicker(true);
+    if (!wixLocations) loadWixLocations();
+  }
+
+  function toggleWixSelected(id: string) {
+    setWixNotice(null);
+    setWixSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function importWixLocations() {
+    if (!provider || wixSelected.size === 0) return;
+    setWixImporting(true);
+    setWixError(null);
+    setWixNotice(null);
+    try {
+      const res = await apiPost<{ imported: number }>('/api/vendor/wix-locations-import', {
+        provider_id: provider.id,
+        location_ids: Array.from(wixSelected),
+      });
+      setWixNotice(res.imported > 0 ? `Added ${res.imported} location${res.imported === 1 ? '' : 's'} from Wix.` : 'Nothing new to add.');
+      await Promise.all([loadWixLocations(), load()]);
+    } catch (e) {
+      setWixError(e instanceof Error ? e.message : 'Could not import from Wix');
+    } finally {
+      setWixImporting(false);
+    }
+  }
 
   async function load() {
     if (!provider) return;
@@ -548,20 +1355,83 @@ function LocationsManager({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><MapPin className="w-5 h-5 text-purple-600" /></div>
           <div>
             <h3 className="font-semibold text-gray-900">Locations</h3>
-            <p className="text-xs text-gray-500">{locations.length} Active Location{locations.length === 1 ? '' : 's'}</p>
+            <p className="text-xs text-gray-500">{locations.length} active location{locations.length === 1 ? '' : 's'}</p>
           </div>
         </div>
         {canManage && !showForm && (
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
-            <Plus className="w-3.5 h-3.5" /> Add location
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
+              <RefreshCw className={cn('w-3.5 h-3.5', wixLoading && 'animate-spin')} /> Fetch from Wix
+            </button>
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
+              <Plus className="w-3.5 h-3.5" /> Add location
+            </button>
+          </div>
         )}
       </div>
+
+      {showWixPicker && canManage && (
+        <div className="mb-4 rounded-xl border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900">Fetch from Wix</h4>
+              <p className="text-xs text-gray-500">Import a business address already on file with your connected Wix account.</p>
+            </div>
+            <button onClick={() => setShowWixPicker(false)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100"><X className="w-4 h-4" /></button>
+          </div>
+
+          {wixError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{wixError}</div>}
+          {wixNotice && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{wixNotice}</div>}
+          {wixLoading && <RainbowLoader className="py-4" label="Loading Wix locations" />}
+
+          {!wixLoading && wixLocations && wixLocations.length === 0 && !wixError && (
+            <p className="text-sm text-gray-400">No business locations found on this Wix account.</p>
+          )}
+
+          {!wixLoading && wixLocations && wixLocations.length > 0 && (
+            <>
+              <div className="space-y-2">
+                {wixLocations.map((l) => (
+                  <label
+                    key={l.id}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl border',
+                      l.alreadyImported
+                        ? 'bg-green-50 border-green-100'
+                        : 'bg-gray-50 border-gray-100 cursor-pointer hover:bg-gray-100'
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-pink-500 focus:ring-pink-300"
+                      checked={wixSelected.has(l.id)}
+                      disabled={l.alreadyImported}
+                      onChange={() => toggleWixSelected(l.id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-800 truncate">{l.name}</div>
+                      <div className="text-xs text-gray-400 truncate">{l.address ?? 'No address on file'}</div>
+                    </div>
+                    {l.alreadyImported && <span className="flex-shrink-0 text-xs font-semibold text-green-700">Added</span>}
+                  </label>
+                ))}
+              </div>
+              <Button
+                onClick={importWixLocations}
+                disabled={wixImporting || wixSelected.size === 0}
+                className="gradient-primary text-white rounded-xl hover:opacity-90 gap-2"
+              >
+                <Save className="w-4 h-4" /> {wixImporting ? 'Adding…' : `Add ${wixSelected.size || ''} location${wixSelected.size === 1 ? '' : 's'}`}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="space-y-3 mb-4">
         {locations.map((loc) => (
@@ -569,7 +1439,7 @@ function LocationsManager({
             <div key={loc.id} className="rounded-xl border border-pink-300 bg-pink-50/30 p-3 space-y-2">
               {editError && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{editError}</div>}
               <input className={inputCls} placeholder="Location name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className={inputCls} placeholder="Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
                 <input className={inputCls} placeholder="Postal code" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} />
               </div>
@@ -586,7 +1456,7 @@ function LocationsManager({
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
               <div className="text-xs text-gray-500 truncate">
-                {loc.is_primary ? 'Main Branch' : 'Branch'}{loc.address ? ` · ${loc.address}` : ''}
+                {loc.is_primary ? 'Main branch' : 'Branch'}{loc.address ? ` · ${loc.address}` : ''}
               </div>
             </div>
             {canManage && (
@@ -617,7 +1487,7 @@ function LocationsManager({
             <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#C90044]">*</span></label>
             <input className={inputCls} placeholder="e.g. Suntec City Studio" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Address</label>
               <input className={inputCls} placeholder="Street & unit" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
@@ -742,11 +1612,11 @@ function PoliciesManager({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
+      <div className="mb-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
           <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><FileText className="w-5 h-5 text-amber-600" /></div>
           <div>
-            <h3 className="font-semibold text-gray-900">Waivers &amp; Consents</h3>
+            <h3 className="font-semibold text-gray-900">Waivers &amp; consents</h3>
             <p className="text-xs text-gray-500">Parents accept these before their booking is confirmed</p>
           </div>
         </div>
@@ -767,21 +1637,31 @@ function PoliciesManager({
       <div className="space-y-3">
         {policies.map((p) => (
           <div key={p.id} className={cn('rounded-xl border p-4', p.active ? 'border-gray-200' : 'border-dashed border-gray-300 bg-gray-50 opacity-70')}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 text-center sm:text-left">
                 <p className="font-medium text-gray-900">
                   {p.title}
-                  <span className={cn('ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
+                  <span className={cn('mx-auto mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold sm:mx-0 sm:ml-2 sm:mt-0 sm:inline', p.required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600')}>
                     {p.required ? 'Required to book' : 'Optional'}
                   </span>
-                  {!p.active && <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Off</span>}
+                  {!p.active && <span className="mx-auto mt-1 block w-fit rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 sm:mx-0 sm:ml-2 sm:mt-0 sm:inline">Off</span>}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">
+                {canManage && (
+                  <div className="mt-3 flex justify-center gap-2 sm:hidden">
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setActive(p.id, !p.active)}>
+                      {p.active ? 'Turn off' : 'Turn on'}
+                    </Button>
+                  </div>
+                )}
+                <p className="mt-3 text-xs text-gray-500 sm:mt-1">
                   {p.activity_id
-                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one class'}`
-                    : 'All of your classes'}
+                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one activity'}`
+                    : 'All of your activities'}
                 </p>
-                {p.body && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{p.body}</p>}
+                {p.body && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{p.body}</p>}
                 {p.document_url && (
                   <a href={p.document_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-medium text-[#C90044] underline">
                     View uploaded document
@@ -789,7 +1669,7 @@ function PoliciesManager({
                 )}
               </div>
               {canManage && (
-                <div className="flex shrink-0 gap-2">
+                <div className="hidden shrink-0 gap-2 sm:flex">
                   <Button variant="outline" size="sm" className="rounded-lg" onClick={() => startEdit(p)}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
@@ -818,7 +1698,7 @@ function PoliciesManager({
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
               <select className={inputCls} value={form.activity_id} onChange={(e) => setForm({ ...form, activity_id: e.target.value })}>
-                <option value="">All of my classes</option>
+                <option value="">All of my activities</option>
                 {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
               </select>
             </div>

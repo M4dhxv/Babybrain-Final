@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, X, Star } from 'lucide-react';
+import { Check, Star, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SiteFooter from '@/components/SiteFooter';
@@ -9,115 +9,105 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { useAuth } from '@/auth/AuthProvider';
 import { PLAN_META } from '@/lib/plans';
 
-/* The four tiers, per the founder's pricing deck.
+/* The three tiers, per the founder's revised pricing deck.
  *
- * Pay As You Go sits between Free and Growth: it unlocks taking bookings and
- * payments with no monthly fee, but not the admin suite (waitlist, packages,
- * make-up tokens, consent tracking, reminders, attendance) which is what Growth
- * is for. Without that split PAYG would strictly dominate Growth — same 10%
- * commission as Pro, and no monthly fee against Growth's $99 + 15%. Flagged for
- * confirmation. */
+ * "Pay As You Grow" now bundles the full admin suite (waitlist, packages,
+ * make-up tokens, consent tracking, reminders, attendance) with no monthly
+ * fee — it's funded entirely through the higher 12% commission. Pro and
+ * Premium keep their $99/$199 price points from the old Growth/Pro tiers
+ * (mapped to the existing 'growth'/'pro' planKeys and Stripe price configs
+ * below) but drop the commission as the fee climbs. */
 const plans = [
   {
-    name: 'FREE',
+    name: 'PAY AS YOU GROW',
     planKey: null as 'growth' | 'pro' | null,
     price: '0',
-    color: 'text-green-600',
-    tagline: 'Improve trust with parents',
-    buttonText: 'Claim Listing',
-    buttonVariant: 'outline' as const,
-    buttonClass: 'border-green-500 text-green-600 hover:bg-green-50',
+    color: 'text-[#A7D8F8]',
+    buttonText: 'Start growing',
+    buttonClass: 'border-blue-300 text-blue-700 hover:bg-blue-50',
     featured: false,
-    commission: 'Listing only — no booking fees',
-    perks: ['Edit profile', 'Upload photos', 'Increase website traffic', 'Parents can leave reviews'],
-  },
-  {
-    name: 'PAY AS YOU GO',
-    planKey: null as 'growth' | 'pro' | null,
-    price: '0',
-    color: 'text-blue-600',
-    tagline: 'Take bookings without a monthly fee',
-    buttonText: 'Start Selling',
-    buttonVariant: 'outline' as const,
-    buttonClass: 'border-blue-500 text-blue-600 hover:bg-blue-50',
-    featured: false,
-    commission: '10% of each booked class + Stripe platform costs + GST',
+    commission: '12% commission on classes booked + Stripe fees',
     perks: [
-      'Everything in Free',
-      'Take bookings on BabyBrain',
-      'Stripe payments',
-      'Pay only when you get booked',
-    ],
-  },
-  {
-    name: 'GROWTH',
-    planKey: 'growth' as 'growth' | 'pro' | null,
-    price: '99',
-    color: 'text-[#C90044]',
-    tagline: 'Turn discovery into bookings & reduce admin',
-    buttonText: 'Start Growing',
-    buttonVariant: 'default' as const,
-    buttonClass: 'gradient-primary text-white hover:opacity-90',
-    featured: true,
-    badge: 'MOST POPULAR',
-    yearlyPrice: '1,089/year (1 month free)',
-    commission: '15% booking commission + Stripe platform costs + GST',
-    perks: [
-      'Everything in Free',
-      'Onboarding and ongoing support',
-      'Direct to user messaging',
-      'Availability, booking & waitlist management, package and make up token allocation either hosted on BabyBrain or integrated to your site',
-      'Ability to track medical disclosures, collect consent, agree terms, warranties, waivers',
-      'Stripe payments with promotions enabled',
-      'Automated reminders, weekly class availability etc',
+      'Create bespoke class schedule, package, pricing structure',
+      'Custom integrations with existing platforms',
+      'Availability, booking, waitlist, re-schedule and cancellation management',
+      'Online waiver & policy management',
+      'Stripe payment integration',
+      'Package and make up token allocation',
+      'Automated confirmations, reminders, follow ups etc',
       'Attendance tracking',
+      'Onboarding and ongoing support',
     ],
   },
   {
     name: 'PRO',
+    planKey: 'growth' as 'growth' | 'pro' | null,
+    price: '99',
+    color: 'text-[#C7B1E6]',
+    buttonText: 'Go Pro',
+    buttonClass: 'border-purple-300 text-purple-700 hover:bg-purple-50',
+    featured: true,
+    yearlyPrice: '1,089/year (1 month free)',
+    commission: '10% commission on classes booked + Stripe fees',
+    perks: [
+      'Everything in Pay as you grow',
+      'Direct to user messaging and user to user messaging on booked activities',
+      'E-mails blasts with class availability twice a week',
+      '1 bespoke marketing e-mail and 1 instagram post each month',
+    ],
+  },
+  {
+    name: 'PREMIUM',
     planKey: 'pro' as 'growth' | 'pro' | null,
     price: '199',
-    color: 'text-purple-600',
-    tagline: 'Gain clear insight & accelerate growth',
-    buttonText: 'Go Pro',
-    buttonVariant: 'outline' as const,
-    buttonClass: 'border-purple-500 text-purple-600 hover:bg-purple-50',
+    color: 'text-[#FFC1D6]',
+    buttonText: 'Be Premium',
+    buttonClass: 'border-pink-300 text-pink-600 hover:bg-pink-50',
     featured: false,
     yearlyPrice: '2,189/year (1 month free)',
-    commission: '10% booking commission + Stripe platform costs + GST',
+    commission: '8% commission on classes booked + Stripe fees',
     perks: [
-      'Everything in Growth',
+      'Everything in Pro',
       'Featured placement',
       'Priority ranking',
-      'E-mail blasts with class availability three times a week',
-      'Advanced analytics',
+      'Activity performance analytics',
+      'Priority support',
     ],
   },
 ];
 
 const features = [
-  { name: 'Edit Profile & Upload Photos', free: true, payg: true, growth: true, pro: true },
-  { name: 'Website Traffic', free: true, payg: true, growth: true, pro: true },
-  { name: 'Reviews', free: true, payg: true, growth: true, pro: true },
-  { name: 'Take Bookings', free: false, payg: true, growth: true, pro: true },
-  { name: 'Stripe Payments', free: false, payg: true, growth: true, pro: true },
-  { name: 'Onboarding & Ongoing Support', free: false, payg: false, growth: true, pro: true },
-  { name: 'Direct to User Messaging', free: false, payg: false, growth: true, pro: true },
-  { name: 'Waitlist Management', free: false, payg: false, growth: true, pro: true },
-  { name: 'Package & Make-up Tokens', free: false, payg: false, growth: true, pro: true },
-  { name: 'Medical Disclosures, Consent & Waivers', free: false, payg: false, growth: true, pro: true },
-  { name: 'Promotions on Stripe Payments', free: false, payg: false, growth: true, pro: true },
-  { name: 'Automated Reminders', free: false, payg: false, growth: true, pro: true },
-  { name: 'Attendance Tracking', free: false, payg: false, growth: true, pro: true },
-  { name: 'Featured Placement', free: false, payg: false, growth: false, pro: true },
-  { name: 'Priority Ranking', free: false, payg: false, growth: false, pro: true },
-  { name: 'Email Blasts (3x weekly)', free: false, payg: false, growth: false, pro: true },
-  { name: 'Advanced Analytics', free: false, payg: false, growth: false, pro: true },
+  { name: 'Edit custom built profile', grow: true, pro: true, premium: true },
+  { name: 'Bespoke integrations', grow: true, pro: true, premium: true },
+  { name: 'Take bookings', grow: true, pro: true, premium: true },
+  { name: 'Availability, waitlist, cancellation and re-schedule management', grow: true, pro: true, premium: true },
+  { name: 'Online waiver & policy management', grow: true, pro: true, premium: true },
+  { name: 'Stripe payment integration', grow: true, pro: true, premium: true },
+  { name: 'Automated confirmations, reminders, follow ups etc', grow: true, pro: true, premium: true },
+  { name: 'Package and make up token allocation', grow: true, pro: true, premium: true },
+  { name: 'Attendance tracking', grow: true, pro: true, premium: true },
+  { name: 'Receive reviews', grow: true, pro: true, premium: true },
+  { name: 'Onboarding and ongoing support', grow: true, pro: true, premium: true },
+  { name: 'Direct to user messaging and user to user messaging on booked activities', grow: false, pro: true, premium: true },
+  { name: 'E-mails blasts with class availability twice a week', grow: false, pro: true, premium: true },
+  { name: '1 bespoke marketing e-mail and 1 instagram post each month', grow: false, pro: true, premium: true },
+  { name: 'Featured placement', grow: false, pro: false, premium: true },
+  { name: 'Priority ranking', grow: false, pro: false, premium: true },
+  { name: 'Activity performance analytics', grow: false, pro: false, premium: true },
+  { name: 'Priority support', grow: false, pro: false, premium: true },
 ];
 
 export default function PlansPage() {
   const navigate = useNavigate();
   const { session, provider, subscription, refreshProvider } = useAuth();
+  // Legacy DB rows can carry the old 'premium' value for what the UI now
+  // calls the top tier ('pro' planKey), and the free tier's planKey is `null`
+  // rather than 'free' — normalize both sides before comparing. Only treat a
+  // plan as "current" once a subscription has actually loaded, so signed-out
+  // visitors (subscription === null) never match the free tier's null key.
+  const isCurrentPlan = (planKey: 'growth' | 'pro' | null) =>
+    subscription != null && (planKey ?? 'free') === (subscription.plan === 'premium' ? 'pro' : subscription.plan);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
   const [switched, setSwitched] = useState<string | null>(null);
@@ -136,32 +126,29 @@ export default function PlansPage() {
      subscription rather than doing nothing. The cards now know the current
      plan, so the one you're on is marked and inert, and the others read as an
      upgrade or a downgrade. */
-  // 'premium' is a legacy alias for the top tier and shares Pro's Stripe
-  // price, so it has to compare equal to 'pro' — there is a live provider on
-  // that value. Without this, a premium vendor was offered an "upgrade" to
-  // the plan they were already paying for.
-  const currentPlan = subscription?.plan === 'premium' ? 'pro' : subscription?.plan ?? null;
-  const isPaid = currentPlan === 'growth' || currentPlan === 'pro';
-  const RANK: Record<string, number> = { free: 0, growth: 1, pro: 2 };
+  // Rank for deciding whether a tier is a step up or down. 'premium' shares
+  // the top rank with 'pro': it's a legacy alias on the same Stripe price and
+  // there is a live provider on it.
+  const RANK: Record<string, number> = { free: 0, growth: 1, pro: 2, premium: 2 };
+  const currentRank = RANK[subscription?.plan ?? 'free'] ?? 0;
+  const isPaid = currentRank > 0;
 
-  /* Tier names come from PLAN_META rather than being written out here, so the
-     rename the founder is asking for in the 24/08 QA rows ("It is Premium —
-     please update copy and CTA") is a single edit in one file. NOTE: the live
-     database already uses the new vocabulary — its `plan_commission_rate`
-     function labels 'growth' as "Pro" and 'pro' as "Premium" — while this
-     frontend still says Growth/Pro throughout. Deliberately left consistent
-     with the rest of this app rather than half-renamed. */
-  const tierName = (key: 'growth' | 'pro') => PLAN_META[key].short.replace(' Plan', '');
+  /* Tier names come from PLAN_META rather than being spelled out here, so the
+     Pay As You Grow / Pro / Premium naming stays in one place. */
+  const tierName = (key: 'growth' | 'pro') => PLAN_META[key].label;
 
-  function ctaFor(plan: (typeof plans)[number]): { label: string; disabled: boolean } {
-    if (!plan.planKey || !session || !provider) return { label: plan.buttonText, disabled: false };
-    if (plan.planKey === currentPlan) return { label: 'Your current plan', disabled: true };
-    if (isPaid) {
-      return RANK[plan.planKey] < RANK[currentPlan ?? 'free']
-        ? { label: `Downgrade to ${tierName(plan.planKey)}`, disabled: false }
-        : { label: `Upgrade to ${tierName(plan.planKey)}`, disabled: false };
-    }
-    return { label: plan.buttonText, disabled: false };
+  /* What a plan's button should say. Every button used to read "Start
+     growing" / "Go Pro" no matter what the vendor was already paying for, and
+     clicking one opened a fresh Stripe checkout — which stacked a second
+     subscription instead of moving tier. */
+  function ctaFor(plan: (typeof plans)[number]): string {
+    if (!session || !provider) return plan.buttonText;
+    if (isCurrentPlan(plan.planKey)) return 'Current plan';
+    if (!plan.planKey) return isPaid ? 'Downgrade to Pay as you grow' : plan.buttonText;
+    if (!isPaid) return plan.buttonText;
+    return RANK[plan.planKey] < currentRank
+      ? `Downgrade to ${tierName(plan.planKey)}`
+      : `Upgrade to ${tierName(plan.planKey)}`;
   }
 
   /* QA: "click upgrade to growth and then start growing and it just takes me
@@ -173,13 +160,13 @@ export default function PlansPage() {
      A signed-in owner now starts real Stripe checkout for the plan clicked;
      a signed-out visitor still goes to /login, which is the correct behaviour
      for them. */
-  async function selectPlan(planKey: 'growth' | 'pro' | null, planName: string) {
+  async function selectPlan(planKey: 'growth' | 'pro' | null) {
     if (!planKey) {
-      // FREE -> claim a listing. PAYG has no subscription (it's commission-only),
-      // so an existing owner goes to Billing to turn on Stripe payouts; a guest
-      // signs in first.
-      if (planName === 'PAY AS YOU GO' && session) { navigate('/billing'); return; }
-      navigate(session ? (provider ? '/dashboard' : '/claim-business') : (planName === 'FREE' ? '/claim-business' : '/login'));
+      // Pay As You Grow has no subscription (it's commission-only) — an
+      // existing owner goes to Billing to turn on Stripe payouts, a signed-in
+      // guest without a claimed business claims one, and a guest signs in first.
+      if (session) { navigate(provider ? '/billing' : '/claim-business'); return; }
+      navigate('/login');
       return;
     }
     if (!session) { navigate('/login'); return; }
@@ -187,16 +174,21 @@ export default function PlansPage() {
       setCheckoutError({ plan: planKey, message: 'Claim your business first, then come back to upgrade.' });
       return;
     }
-    // Already on it — the button says so and is disabled, so this is only
-    // reachable if the plan changed in another tab. The backend refuses it
-    // too; this just avoids a pointless round trip.
-    if (planKey === currentPlan) return;
-
+    if (isCurrentPlan(planKey)) {
+      // Already subscribed to this tier — nothing to check out, send them to
+      // Billing instead of starting a Stripe session for the plan they have.
+      // The route refuses it as well (409), so a stale tab can't stack one.
+      navigate('/billing');
+      return;
+    }
+    // A real tier change moves the existing subscription and prorates, so say
+    // what will happen to the money before doing it.
     if (isPaid && !window.confirm(
       planKey === 'growth'
         ? `Move down to the ${tierName('growth')} plan? Stripe will credit the unused part of your current plan against your next invoice.`
         : `Move up to the ${tierName('pro')} plan? Stripe will charge the difference for the rest of this billing period.`
     )) return;
+
 
     setCheckoutError(null);
     setSwitched(null);
@@ -254,89 +246,114 @@ export default function PlansPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
+      <header className="relative flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100 sm:px-8">
         <div
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => navigate('/')}
         >
-          <BrandLogo className="h-10" />
-          
+          <BrandLogo className="h-9 sm:h-10" />
         </div>
-        <nav className="flex items-center gap-10">
+        <nav className="hidden items-center gap-10 md:flex">
           <button onClick={() => navigate('/')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Home</button>
-          <button className="text-sm font-medium text-[#C90044] border-b-2 border-[#C90044] pb-1">Plans</button>
-          <button onClick={() => { window.location.href = 'mailto:hello@babybrain.sg'; }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
+          <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Plans</button>
+          <button onClick={() => { navigate('/contact'); }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
-            Sign In
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
+            Sign in
           </Button>
-          <Button onClick={() => navigate('/login')} className="rounded-full px-6 gradient-primary text-white hover:opacity-90 border-0">
-            Upgrade Your Listing
+          <Button onClick={() => navigate('/login')} className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 border-0 sm:inline-flex">
+            Upgrade your listing
           </Button>
+          {/* Mobile menu toggle */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 md:hidden"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+
+        {/* Mobile dropdown */}
+        {menuOpen && (
+          <div className="absolute inset-x-0 top-full z-40 border-b border-gray-100 bg-white shadow-lg md:hidden">
+            <nav className="flex flex-col px-4 py-1">
+              <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-medium text-gray-700">Home</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-semibold text-[#FA4D8D]">Plans</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/contact'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
+              <button
+                onClick={() => { setMenuOpen(false); navigate('/login'); }}
+                className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
+              >
+                Upgrade your listing
+              </button>
+            </nav>
+          </div>
+        )}
       </header>
 
       {/* Pricing Section */}
       <div className="max-w-5xl mx-auto px-8 py-12">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-[#111A4C] mb-3">Simple pricing</h1>
-          <p className="text-gray-600 mb-6">Choose the plan that fits your business.</p>
-          <Button onClick={() => navigate('/login')} className="gradient-primary text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90">
-            Upgrade Your Listing
-          </Button>
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-bold text-[#111A4C] mb-3">Something for everyone</h1>
+          <p className="text-gray-600">Choose a plan that enables your business to achieve it's goals.</p>
         </div>
 
-        {/* Pricing Cards */}
-        <div className="grid gap-5 mb-10 md:grid-cols-2 xl:grid-cols-4 items-start">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={cn(
-                'relative rounded-2xl p-6',
-                plan.featured
-                  ? 'border-2 border-[#C90044] bg-gradient-to-b from-pink-50/50 to-white'
-                  : 'border border-gray-200 bg-white'
-              )}
-            >
-              {plan.planKey && plan.planKey === currentPlan ? (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">
-                    <Check className="w-3 h-3" />
-                    CURRENT PLAN
+        {/* Pricing Cards — all three boxes share the same height; the featured
+            Pro card carries a "MOST POPULAR" badge overlapping its top border. */}
+        <div className="grid gap-5 mb-10 md:grid-cols-3 items-stretch">
+          {plans.map((plan) => {
+            const card = (
+              <div
+                key={plan.name}
+                className={cn(
+                  'relative h-full rounded-2xl p-6 border bg-white flex flex-col text-center shadow-[0_4px_16px_rgba(17,26,76,0.06)]',
+                  plan.featured
+                    ? 'border-2 border-[#C7B1E6] bg-gradient-to-b from-[#C7B1E6]/10 to-white'
+                    : 'border-gray-200'
+                )}
+              >
+                {/* The tier you're on is called out ahead of MOST POPULAR —
+                    every button used to read "Start growing" / "Go pro"
+                    regardless of what the vendor was already paying for. */}
+                {isCurrentPlan(plan.planKey) ? (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">
+                      <Check className="w-3 h-3" />
+                      CURRENT PLAN
+                    </div>
                   </div>
-                </div>
-              ) : plan.badge ? (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1 px-3 py-1 bg-[#C90044] text-white text-xs font-semibold rounded-full">
-                    <Star className="w-3 h-3" />
-                    {plan.badge}
+                ) : plan.featured ? (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <div className="flex items-center gap-1 whitespace-nowrap px-3 py-1 bg-purple-500 text-white text-xs font-semibold rounded-full">
+                      <Star className="w-3 h-3" />
+                      MOST POPULAR
+                    </div>
                   </div>
-                </div>
-              ) : null}
-
-              <div className="text-center pt-2">
-                <h3 className={cn('text-lg font-bold mb-4', plan.color)}>{plan.name}</h3>
+                ) : null}
+                <h3 className={cn('text-lg font-bold mb-1', plan.color, (plan.name === 'PRO' || plan.name === 'PREMIUM') && '-translate-x-1.5')}>{plan.name}</h3>
                 <div className="flex items-baseline justify-center gap-1 mb-2">
                   <span className={cn('text-sm font-medium', plan.color)}>SGD</span>
-                  <span className={cn('text-5xl font-extrabold', plan.color)}>{plan.price}</span>
+                  <span className={cn('font-extrabold', plan.color, plan.featured ? 'text-6xl' : 'text-5xl')}>
+                    {plan.price}
+                  </span>
                   <span className="text-gray-500 text-sm">/month</span>
                 </div>
                 {plan.yearlyPrice ? (
                   <p className="text-xs text-gray-500 mb-1">
-                    or SGD <span className="text-[#C90044] font-medium">{plan.yearlyPrice}</span>
+                    or SGD <span className="text-gray-500 font-medium">{plan.yearlyPrice}</span>
                   </p>
                 ) : (
                   <div className="mb-1" />
                 )}
                 {plan.commission && (
-                  <p className="text-[11px] text-gray-400 mb-3">{plan.commission}</p>
+                  <p className="text-[13px] font-semibold text-[#FFB77A] mb-4">{plan.commission}</p>
                 )}
-                {plan.tagline && (
-                  <p className="text-[13px] font-semibold text-gray-700 mb-3">{plan.tagline}</p>
-                )}
-                <ul className="mb-4 space-y-1.5 text-left">
+                <ul className="mb-4 space-y-1.5 text-left flex-1">
                   {plan.perks.map((perk) => (
                     <li key={perk} className="flex gap-2 text-[12.5px] leading-5 text-gray-600">
                       <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
@@ -345,24 +362,21 @@ export default function PlansPage() {
                   ))}
                 </ul>
 
-                {(() => {
-                  const cta = ctaFor(plan);
-                  return (
-                    <Button
-                      onClick={() => selectPlan(plan.planKey, plan.name)}
-                      disabled={checkoutBusy === plan.planKey || cta.disabled}
-                      className={cn(
-                        'w-full rounded-xl py-3 font-semibold',
-                        cta.disabled ? 'border-gray-300 text-gray-500' : plan.buttonClass
-                      )}
-                      variant={cta.disabled ? 'outline' : plan.buttonVariant}
-                    >
-                      {checkoutBusy === plan.planKey ? 'Working…' : cta.label}
-                    </Button>
-                  );
-                })()}
+                <Button
+                  onClick={() => selectPlan(plan.planKey)}
+                  disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
+                  className={cn(
+                    'w-full rounded-xl py-3 font-semibold bg-white',
+                    isCurrentPlan(plan.planKey) ? 'border-gray-300 text-gray-500' : plan.buttonClass
+                  )}
+                  variant="outline"
+                >
+                  {plan.planKey !== null && checkoutBusy === plan.planKey
+                    ? 'Working…'
+                    : ctaFor(plan)}
+                </Button>
                 {checkoutError?.plan === plan.planKey && (
-                  <p className="mt-2 text-xs font-medium text-red-600">{checkoutError.message}</p>
+                  <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
                 )}
                 {switched === plan.planKey && (
                   <p className="mt-2 text-xs font-medium text-green-700">
@@ -370,58 +384,73 @@ export default function PlansPage() {
                   </p>
                 )}
               </div>
-            </div>
-          ))}
+            );
+
+            return card;
+          })}
         </div>
 
-        {/* Comparison Table */}
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <div className="grid grid-cols-5 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
-            <div>Compare Plans</div>
-            <div className="text-center text-green-600">Free</div>
-            <div className="text-center text-blue-600">Pay As You Go</div>
-            <div className="text-center text-[#C90044]">Growth</div>
+        {/* Comparison Table — four fixed columns don't fit a phone, so it
+            scrolls sideways below its natural width rather than crushing the
+            plan buttons into each other. */}
+        <div className="border border-gray-200 rounded-xl overflow-x-auto">
+          <div className="grid min-w-[600px] grid-cols-4 bg-gray-50 px-6 py-3 text-sm font-semibold text-gray-700">
+            <div>Features</div>
+            <div className="text-center text-blue-600">Pay as you grow</div>
             <div className="text-center text-purple-600">Pro</div>
+            <div className="text-center text-pink-600">Premium</div>
           </div>
           {features.map((feature, idx) => (
             <div
               key={feature.name}
               className={cn(
-                'grid grid-cols-5 px-6 py-3 text-sm',
+                'grid min-w-[600px] grid-cols-4 px-6 py-3 text-sm items-center',
                 idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
               )}
             >
               <div className="text-gray-800 font-medium">{feature.name}</div>
               <div className="flex justify-center">
-                {feature.free ? (
-                  <Check className="w-4 h-4 text-green-500" />
+                {feature.grow ? (
+                  <Check className="w-4 h-4 text-blue-400" />
                 ) : (
-                  <X className="w-4 h-4 text-red-400" />
-                )}
-              </div>
-              <div className="flex justify-center">
-                {feature.payg ? (
-                  <Check className="w-4 h-4 text-blue-500" />
-                ) : (
-                  <X className="w-4 h-4 text-red-400" />
-                )}
-              </div>
-              <div className="flex justify-center">
-                {feature.growth ? (
-                  <Check className="w-4 h-4 text-[#C90044]" />
-                ) : (
-                  <X className="w-4 h-4 text-red-400" />
+                  <span className="text-gray-300">—</span>
                 )}
               </div>
               <div className="flex justify-center">
                 {feature.pro ? (
-                  <Check className="w-4 h-4 text-purple-500" />
+                  <Check className="w-4 h-4 text-purple-400" />
                 ) : (
-                  <X className="w-4 h-4 text-red-400" />
+                  <span className="text-gray-300">—</span>
+                )}
+              </div>
+              <div className="flex justify-center">
+                {feature.premium ? (
+                  <Check className="w-4 h-4 text-pink-400" />
+                ) : (
+                  <span className="text-gray-300">—</span>
                 )}
               </div>
             </div>
           ))}
+          <div className="grid min-w-[600px] grid-cols-4 items-stretch px-6 py-4 bg-white">
+            <div />
+            {plans.map((plan) => (
+              <div key={plan.name} className="flex px-1">
+                <Button
+                  onClick={() => selectPlan(plan.planKey)}
+                  disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
+                  className={cn('h-full w-full whitespace-normal rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight bg-white sm:text-sm', plan.buttonClass)}
+                  variant="outline"
+                >
+                  {plan.planKey !== null && checkoutBusy === plan.planKey
+                    ? 'Redirecting…'
+                    : isCurrentPlan(plan.planKey)
+                      ? 'Current plan'
+                      : plan.buttonText}
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Opt out / remove listing.
@@ -437,10 +466,9 @@ export default function PlansPage() {
             </p>
           ) : !optOutOpen ? (
             <div className="text-center">
-              <p className="text-sm text-gray-500 mb-2">Don't want to be listed on BabyBrain?</p>
               <button
                 onClick={() => setOptOutOpen(true)}
-                className="text-sm font-semibold text-red-500 hover:text-red-600 underline underline-offset-4"
+                className="text-sm font-semibold text-red-400 hover:text-red-500 underline underline-offset-4"
               >
                 Opt out / remove my listing
               </button>
@@ -473,7 +501,7 @@ export default function PlansPage() {
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                 />
               </div>
-              {optOutError && <p className="mt-2 text-sm font-semibold text-red-600">{optOutError}</p>}
+              {optOutError && <p className="mt-2 text-sm font-semibold text-red-400">{optOutError}</p>}
               <div className="mt-4 flex gap-3">
                 <Button type="submit" disabled={optOutBusy} className="flex-1">
                   {optOutBusy ? 'Sending…' : 'Send request'}

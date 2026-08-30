@@ -48,7 +48,7 @@ const whyMatters = [
   { icon: Heart, text: 'Ensures accurate information for parents' },
   { icon: Shield, text: 'Builds trust and credibility for your business' },
   { icon: Heart, text: 'Helps parents discover and connect with you' },
-  { icon: Bell, text: 'Keep your schedule and programs up to date' },
+  { icon: Bell, text: 'Keep your schedule and programmes up to date' },
 ];
 
 export default function SaveListingPage() {
@@ -151,7 +151,7 @@ export default function SaveListingPage() {
         </div>
         <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
           <ArrowLeft className="w-4 h-4" />
-          Save & Exit
+          Save & exit
         </Button>
       </header>
 
@@ -256,7 +256,7 @@ export default function SaveListingPage() {
                 ))}
               </div>
               <p className="text-[11px] text-gray-400 mt-2">
-                Different classes can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
+                Different activities can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
               </p>
             </div>
 
@@ -281,7 +281,7 @@ export default function SaveListingPage() {
                     Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
                   </p>
                 </div>
-                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View terms</span>
               </div>
             </div>
 
@@ -306,7 +306,7 @@ export default function SaveListingPage() {
                     Covers messaging rules, cancellation/rescheduling and refund policies.
                   </p>
                 </div>
-                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View Terms</span>
+                <span className="text-xs text-[#C90044] cursor-pointer flex-shrink-0">View terms</span>
               </div>
             </div>
           </div>

@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
    an analytic", and a count of replies owed is something a vendor acts on. */
 const statsCards = [
   { icon: CalendarDays, label: 'Bookings', value: '28', sub: 'this week', change: '22%', color: 'text-pink-600', bg: 'bg-pink-100', to: '/bookings' },
-  { icon: Users, label: 'Attendance Rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100', to: '/bookings?tab=Attendance' },
+  { icon: Users, label: 'Attendance rate', value: '92%', sub: 'this week', change: '8%', color: 'text-purple-600', bg: 'bg-purple-100', to: '/bookings?tab=Attendance' },
   { icon: MessageSquare, label: 'Messages to reply', value: '0', sub: 'awaiting a response', change: null, color: 'text-yellow-600', bg: 'bg-yellow-100', to: '/messages' },
   { icon: UserPlus, label: 'Waitlist', value: '14', sub: 'children', change: null, color: 'text-blue-600', bg: 'bg-blue-100', to: '/bookings?tab=Waitlist' },
   { icon: DollarSign, label: 'Revenue', value: '$3,240', sub: 'this month', change: '18%', color: 'text-green-600', bg: 'bg-green-100', to: '/billing' },
@@ -212,8 +212,8 @@ export default function DashboardPage() {
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div>
+      <div className="flex flex-col items-center gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
           <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
         </div>
@@ -274,7 +274,7 @@ export default function DashboardPage() {
               <CalendarPlus className="w-6 h-6 text-[#C90044]" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Add a Class</div>
+              <div className="font-semibold text-gray-900">Add an activity</div>
               <div className="text-xs text-gray-500">Create a new class<br/>or activity</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -284,8 +284,8 @@ export default function DashboardPage() {
               <Package className="w-6 h-6 text-purple-600" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Create a Package</div>
-              <div className="text-xs text-gray-500">Bundle your classes<br/>together</div>
+              <div className="font-semibold text-gray-900">Create a package</div>
+              <div className="text-xs text-gray-500">Bundle your activities<br/>together</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
@@ -294,7 +294,7 @@ export default function DashboardPage() {
               <MapPin className="w-6 h-6 text-blue-600" />
             </div>
             <div className="flex-1">
-              <div className="font-semibold text-gray-900">Add a Location</div>
+              <div className="font-semibold text-gray-900">Add a location</div>
               <div className="text-xs text-gray-500">Add a new venue<br/>or location</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
@@ -321,7 +321,7 @@ export default function DashboardPage() {
               )}
               {!stat.change && <div className="mb-3" />}
               <button onClick={() => navigate(stat.to)} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
-                View Details
+                View details
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -333,8 +333,8 @@ export default function DashboardPage() {
           {/* Upcoming Sessions */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Upcoming Sessions</h3>
-              <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
+              <h3 className="font-semibold text-gray-900">Upcoming sessions</h3>
+              <button onClick={() => navigate('/schedule')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
               {visibleUpcoming.map((session, idx) => {
@@ -362,7 +362,7 @@ export default function DashboardPage() {
               })}
               {loaded && visibleUpcoming.length === 0 && <div className="text-sm text-gray-400">No sessions in this range.</div>}
             </div>
-            <button onClick={() => navigate('/activities')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
               View full schedule
               <ArrowRight className="w-3 h-3" />
             </button>
@@ -371,7 +371,7 @@ export default function DashboardPage() {
           {/* Recent Bookings */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Recent Bookings</h3>
+              <h3 className="font-semibold text-gray-900">Recent bookings</h3>
               <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
             </div>
             <div className="space-y-4">
@@ -427,7 +427,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-900 mb-2">Insights</h3>
             <p className="text-sm text-gray-500">
-              Which classes convert, which age groups book, and the days and times parents choose.
+              Which activities convert, which age groups book, and the days and times parents choose.
             </p>
             <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#C90044]">
               Open Insights
@@ -448,7 +448,7 @@ export default function DashboardPage() {
           real inbox, with its own real unread count. */}
       <button
         onClick={() => navigate('/messages')}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-[#C90044] to-[#AE5000] rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 gradient-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity z-50"
         title="Open messages"
       >
         <MessageSquare className="w-6 h-6 text-white" />

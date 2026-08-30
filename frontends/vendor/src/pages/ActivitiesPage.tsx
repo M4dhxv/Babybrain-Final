@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarPlus,
-  Package,
   MapPin,
   CalendarDays,
+  CalendarClock,
   Search,
   SlidersHorizontal,
   MoreVertical,
@@ -17,15 +17,49 @@ import {
   ImageUp,
   Pause,
   Play,
+  RefreshCw,
+  Eye,
+  Store,
+  Music,
+  ExternalLink,
+  Mail,
+  MessageCircle,
+  Users,
+  Heart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Switch } from '@/components/ui/switch';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
-const tabs = ['Activities', 'Locations'];
+
+/**
+ * The activities table's column tracks. The header and every body row are
+ * separate grids, so the track list has to be one shared string — they
+ * silently drift apart otherwise.
+ *
+ * Every track is `minmax(0, …)` rather than a bare `Nfr`: a bare `fr` floors
+ * at min-content, so a long category ("Community Events") or location
+ * ("Ind-SG Kids Center — Little India") grew its own track, pushed that row's
+ * later columns sideways, and left the row misaligned with the header — which
+ * read as two columns bleeding into each other. minmax(0, …) holds every row
+ * to the same widths and lets long values wrap instead.
+ *
+ * `gap-x-4` is what actually keeps neighbouring text apart; without it the
+ * columns sat flush and "Community Events" ran straight into "Singapore Zoo".
+ */
+const TABLE_COLS =
+  'grid min-w-[1180px] gap-x-4 grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.35fr)]';
 
 const ageLabel = (min: number, max: number) => {
   const f = (m: number) => (m < 24 ? `${m}m` : `${Math.round((m / 12) * 10) / 10}y`);
@@ -33,11 +67,25 @@ const ageLabel = (min: number, max: number) => {
 };
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/** Matches formatDuration in the parent app, so the preview reads identically. */
+const formatDuration = (mins: number | null | undefined): string => {
+  if (!mins || mins <= 0) return '';
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+};
+
+/** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
+const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
 
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
-  location_id: '', image_url: '', requires_medical_disclosure: true,
+  location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: true,
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
 };
@@ -47,19 +95,11 @@ export default function ActivitiesPage() {
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState('Activities');
   const [showDrawer, setShowDrawer] = useState(false);
   /* The dashboard's shortcuts used to drop the vendor on this page's default
      view and leave them to find the right form. `?new=activity|package` opens
      it directly. */
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Packages now live on their own sidebar page — Locations already
-  // redirected to Settings the same way.
-  function onTab(tab: string) {
-    if (tab === 'Locations') { navigate('/settings?tab=locations'); return; }
-    setActiveTab(tab);
-  }
 
   // Act on ?new=activity once, then strip it so a refresh doesn't reopen the
   // form. (?new=pack is handled by PackagesPage now.)
@@ -75,7 +115,7 @@ export default function ActivitiesPage() {
 
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<ActivityCategory[]>([]);
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [locations, setLocations] = useState<{ id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]>([]);
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [bookingTotals, setBookingTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -113,10 +153,68 @@ export default function ActivitiesPage() {
   const [sessEditForm, setSessEditForm] = useState({ teacher: '', studio: '' });
   const [savingSessEdit, setSavingSessEdit] = useState(false);
 
+  /* Parent-view preview. Vendors kept publishing blind and then opening the
+     public site in another tab to check; this shows the same information
+     without leaving the table. Read-only — the CTAs are rendered inert. */
+  const [previewFor, setPreviewFor] = useState<Activity | null>(null);
+  const [previewDuration, setPreviewDuration] = useState<number | 'loading' | null>('loading');
+
+  function openPreview(a: Activity) {
+    setShowMenu(null);
+    setPreviewFor(a);
+  }
+
+  /* Nothing stores a duration on the activity — the parent page derives it
+     from the next session, so this reads that single row to match. Kept in an
+     effect rather than the open handler so it re-runs whenever the previewed
+     activity changes or its session count moves (adding or deleting sessions
+     refreshes sessionCounts), and the stale guard drops a slow response that
+     lands after the vendor has moved on. */
+  useEffect(() => {
+    if (!previewFor) return;
+    let stale = false;
+    setPreviewDuration('loading');
+    (async () => {
+      const { data } = await supabase
+        .from('activity_sessions')
+        .select('starts_at, ends_at')
+        .eq('activity_id', previewFor.id)
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at')
+        .limit(1)
+        .maybeSingle();
+      if (stale) return;
+      if (!data) { setPreviewDuration(null); return; }
+      const mins = Math.round((new Date(data.ends_at).getTime() - new Date(data.starts_at).getTime()) / 60000);
+      setPreviewDuration(mins > 0 ? mins : null);
+    })();
+    return () => { stale = true; };
+  }, [previewFor, sessionCounts]);
+
+  /* The activity's own address is often blank on Wix-synced rows, which left
+     the parent view with no Location at all. Fall back to the linked venue. */
+  const previewLocation = (a: Activity) => {
+    if (a.address) return [a.address, a.postal_code].filter(Boolean).join(', ');
+    const l = locations.find((x) => x.id === a.location_id);
+    if (!l) return null;
+    return [l.name, l.address, l.postal_code].filter(Boolean).join(', ');
+  };
+
+  // Escape closes the preview, like every other dialog on the platform.
+  useEffect(() => {
+    if (!previewFor) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewFor(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewFor]);
+
   async function openSchedule(a: Activity) {
     setShowMenu(null);
     setScheduleFor(a);
     setSessError(null);
+    // Pre-fill from the activity's default capacity so a vendor adding
+    // sessions doesn't have to retype the same number every time.
+    setSessForm((f) => ({ ...f, capacity: a.default_capacity != null ? String(a.default_capacity) : f.capacity }));
     await loadSessions(a.id);
   }
 
@@ -147,6 +245,10 @@ export default function ActivitiesPage() {
       setSessError('Pick a date and start time.');
       return;
     }
+    if (!sessForm.capacity || Number(sessForm.capacity) < 1) {
+      setSessError('Set a capacity for this session.');
+      return;
+    }
     setSavingSess(true);
     setSessError(null);
     const durationMins = Math.max(15, Number(sessForm.duration) || 45);
@@ -168,6 +270,32 @@ export default function ActivitiesPage() {
         studio: sessForm.studio.trim() || null,
       };
     });
+    // A Wix-connected vendor's real-world time is already spoken for by
+    // anything on their Wix calendar — check every proposed slot (the
+    // weekly-repeat loop can produce several) against everything Wix has
+    // them committed to before saving any of them.
+    if (provider?.wix_site_id) {
+      try {
+        const { ranges } = await apiGet<{ ranges: { start: string; end: string }[] }>(`/api/wix/busy?providerId=${provider.id}`);
+        for (const row of rows) {
+          const start = new Date(row.starts_at);
+          const end = new Date(row.ends_at);
+          const clash = ranges.find((r) => rangesOverlap(start, end, new Date(r.start), new Date(r.end)));
+          if (clash) {
+            setSavingSess(false);
+            setSessError(
+              `That clashes with something already on your Wix calendar (${fmtDateTime(clash.start)}–${new Date(clash.end).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' })}). Pick a different time, or update it in Wix first.`
+            );
+            return;
+          }
+        }
+      } catch {
+        setSavingSess(false);
+        setSessError("Couldn't check your Wix calendar for clashes — try again in a moment.");
+        return;
+      }
+    }
+
     const { error } = await supabase.from('activity_sessions').insert(rows);
     setSavingSess(false);
     if (error) {
@@ -207,23 +335,17 @@ export default function ActivitiesPage() {
     load();
   }
 
-  // Class-pack management now lives on its own page (PackagesPage) — this
-  // page just shows an "Active Packages" count via packCount below.
-  const [packCount, setPackCount] = useState(0);
-
   async function load() {
     if (!provider) return;
     setLoading(true);
-    const [{ data: acts }, { data: cats }, { data: locs }, { count: packs }] = await Promise.all([
+    const [{ data: acts }, { data: cats }, { data: locs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
-      supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
-      supabase.from('packages').select('id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('active', true),
+      supabase.from('provider_locations').select('id, name, address, postal_code, latitude, longitude').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
-    setLocations((locs ?? []) as { id: string; name: string }[]);
-    setPackCount(packs ?? 0);
+    setLocations((locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]);
 
     // Upcoming session counts + total booking counts per activity.
     const ids = (acts ?? []).map((a) => a.id);
@@ -260,11 +382,65 @@ export default function ActivitiesPage() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
 
+  // Same action as Settings -> Integrate your Business's "Sync services"
+  // button, surfaced here too so a vendor reviewing this list doesn't have
+  // to leave it to pick up Wix-side changes (new services, price/capacity
+  // edits, a service going missing). Runs the Bookings sync AND the Events
+  // sync together — a vendor with only one app connected still gets a
+  // correct combined result, since wix-events-sync degrades to a harmless
+  // no-op (eventsAppNotInstalled: true) rather than erroring when the
+  // Events & Tickets app isn't installed on their site.
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  async function syncServices() {
+    if (!provider) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncNotice(null);
+    try {
+      const [servicesRes, eventsRes] = await Promise.all([
+        apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+          '/api/vendor/wix-services-sync',
+          { provider_id: provider.id }
+        ),
+        apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+          '/api/vendor/wix-events-sync',
+          { provider_id: provider.id }
+        ),
+      ]);
+      const created = servicesRes.sync.created + eventsRes.sync.created;
+      const updated = servicesRes.sync.updated + eventsRes.sync.updated;
+      const revived = servicesRes.sync.revived + eventsRes.sync.revived;
+      const removed = servicesRes.sync.removed + eventsRes.sync.removed;
+      const parts = [];
+      if (created) parts.push(`${created} new`);
+      if (updated) parts.push(`${updated} updated`);
+      if (revived) parts.push(`${revived} restored`);
+      if (removed) parts.push(`${removed} removed`);
+      setSyncNotice(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
+      await load();
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Could not sync services');
+    } finally {
+      setSyncing(false);
+      window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);
+    }
+  }
+
+  // Activities removed from the Wix import picker stay around (unpublished)
+  // only until their last booked upcoming session is over — the unbooked
+  // future sessions were already deleted at removal time, so once
+  // sessionCounts hits 0 the only thing left for it is past history.
+  const isFullyRemoved = (a: Activity) => !!a.wix_removed_at && (sessionCounts[a.id] ?? 0) === 0;
+
   const visible = useMemo(() => {
-    let list = activities.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
+    let list = activities
+      .filter((a) => !isFullyRemoved(a))
+      .filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
     if (fStatus) {
       list = list.filter((a) => {
-        const s = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+        const s = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
         return s === fStatus;
       });
     }
@@ -277,7 +453,7 @@ export default function ActivitiesPage() {
     if (sortBy === 'name') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
     else if (sortBy === 'rating') list = [...list].sort((a, b) => Number(b.rating_avg) - Number(a.rating_avg));
     return list;
-  }, [activities, search, fStatus, fLocation, fActivity, fAge, sortBy]);
+  }, [activities, sessionCounts, search, fStatus, fLocation, fActivity, fAge, sortBy]);
   const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? '—';
 
   // Themed placeholder per category so rows without photos still look distinct.
@@ -291,11 +467,15 @@ export default function ActivitiesPage() {
     return `${import.meta.env.BASE_URL}assets/${img}`;
   };
 
+  // Reads left to right as the life of an activity: live → still a draft →
+  // actually on the calendar → the venues it all runs at.
   const stats = [
-    { icon: CalendarCheck, label: 'Active Activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
-    { icon: Package, label: 'Packages', value: String(packCount), sub: 'Active packages', color: 'text-purple-600', bg: 'bg-purple-100' },
+    { icon: CalendarCheck, label: 'Active activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
+    { icon: CalendarDays, label: 'Draft activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    // "Scheduled" = has at least one session still in the future, which is the
+    // same count the Sessions column shows per row.
+    { icon: CalendarClock, label: 'Activities scheduled', value: String(activities.filter((a) => !a.archived_at && !isFullyRemoved(a) && (sessionCounts[a.id] ?? 0) > 0).length), sub: 'With upcoming sessions', color: 'text-purple-600', bg: 'bg-purple-100' },
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
-    { icon: CalendarDays, label: 'Draft Activities', value: String(activities.filter((a) => !a.is_published).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
   ];
 
   async function archive(id: string) {
@@ -323,6 +503,7 @@ export default function ActivitiesPage() {
       age_max_months: String(a.age_max_months ?? ''),
       price: a.price != null ? String(a.price) : '',
       location_id: a.location_id ?? '',
+      default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_url: a.image_urls?.[0] ?? '',
       requires_medical_disclosure: a.requires_medical_disclosure ?? true,
       allow_cancellation: a.allow_cancellation ?? true,
@@ -356,8 +537,13 @@ export default function ActivitiesPage() {
   async function saveActivity() {
     if (!provider) return;
     if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
+    if (!form.default_capacity || Number(form.default_capacity) < 1) { setFormError('Set a capacity for this activity.'); return; }
     setSaving(true);
     setFormError(null);
+    // The activity's address/postal_code/lat/lng are denormalized from its
+    // location so the parent app can show "where to go" without an extra
+    // join — keep them in sync with whichever location the vendor picks.
+    const loc = locations.find((l) => l.id === form.location_id);
     const fields = {
       title: form.title,
       description: form.description,
@@ -369,6 +555,11 @@ export default function ActivitiesPage() {
       age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
       price: form.price ? Number(form.price) : null,
       location_id: form.location_id || null,
+      default_capacity: Number(form.default_capacity),
+      address: loc?.address ?? null,
+      postal_code: loc?.postal_code ?? null,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
       image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
       allow_cancellation: form.allow_cancellation,
@@ -393,6 +584,10 @@ export default function ActivitiesPage() {
   }
 
   async function togglePublish(a: Activity) {
+    // Locked while Wix has lost track of this service (wrong/changed
+    // account, or deleted on Wix) — reconnecting the right account, or the
+    // service reappearing, is what clears this on the next sync.
+    if (a.wix_missing_since) return;
     await supabase.from('activities').update({ is_published: !a.is_published, archived_at: null }).eq('id', a.id);
     setShowMenu(null);
     load();
@@ -402,40 +597,27 @@ export default function ActivitiesPage() {
   const [showFilters, setShowFilters] = useState(true);
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
   const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-300';
+  // Mobile: full-width selects with centred text and a custom chevron held
+  // a little off the right edge (the native one sits flush). Reverts to the
+  // OS control from sm up.
+  const filterMobileCls =
+    "w-full max-w-xs text-center appearance-none bg-no-repeat bg-[length:14px] bg-[right_0.9rem_center] pl-9 pr-9 " +
+    "bg-[url(\"data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='14'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%239ca3af'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E\")] " +
+    "sm:w-auto sm:max-w-none sm:text-left sm:appearance-auto sm:bg-none sm:pl-3 sm:pr-3";
 
   return (
     <div className="relative">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your classes, packages and locations.</p>
+          <p className="text-sm text-gray-500 mt-1">Manage your activities, schedule and locations</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        {/* Action Buttons */}
-        <div className="flex justify-center gap-4 mb-6">
-          <button
-            onClick={() => canManage && openCreate()}
-            disabled={!canManage}
-            className="flex items-center gap-2 px-5 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50"
-          >
-            <CalendarPlus className="w-4 h-4" />
-            New Activity
-          </button>
-          <button onClick={() => navigate('/packages?new=pack')} disabled={!canManage} className="flex items-center gap-2 px-5 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50">
-            <Package className="w-4 h-4" />
-            New Package
-          </button>
-          <button onClick={() => navigate('/settings?tab=locations&new=location')} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
-            <MapPin className="w-4 h-4" />
-            New Location
-          </button>
-        </div>
-
+      <div className="px-4 pb-8 sm:px-8">
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-4">
           {stats.map((stat) => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -452,79 +634,111 @@ export default function ActivitiesPage() {
 
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-            <div className="flex gap-6">
-              {tabs.map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => onTab(tab)}
-                  className={cn(
-                    'text-sm font-medium pb-2 border-b-2 transition-colors',
-                    activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
+          <div className="flex flex-col gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            {/* One section left, so this is a label rather than a tab strip.
+                Centred on a phone, where it sits above the toolbar. */}
+            <div className="flex justify-center sm:justify-start">
+              <span className="text-sm font-medium pb-2 border-b-2 text-[#C90044] border-[#C90044]">Activities</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
+            {/* Mobile: the two create buttons on one row, search on its own,
+                then Sync services + Filters. Desktop: all inline, creates
+                first so the actions sit left of the tools. */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex justify-center gap-3 sm:contents">
+                <button
+                  onClick={() => canManage && openCreate()}
+                  disabled={!canManage}
+                  className="flex items-center gap-2 px-4 py-2 bg-pink-50 border border-pink-200 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50 sm:order-1"
+                >
+                  <CalendarPlus className="w-4 h-4" />
+                  New activity
+                </button>
+                <button
+                  onClick={() => navigate('/settings?tab=locations&new=location')}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors sm:order-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  New location
+                </button>
+              </div>
+              <div className="relative w-full sm:order-4 sm:w-48">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search activities..."
-                  className="pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300 w-48"
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 rounded-xl text-sm border-0 focus:outline-none focus:ring-2 focus:ring-pink-300"
                 />
               </div>
-              <button
-                onClick={() => setShowFilters((v) => !v)}
-                aria-expanded={showFilters}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50',
-                  activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+              <div className="flex justify-center gap-3 sm:contents">
+                {provider?.wix_site_id && (
+                  <button
+                    onClick={syncServices}
+                    disabled={syncing}
+                    title="Pull the latest services and events — prices, capacities, locations, images and removals — from your connected Wix account"
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:order-3"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+                    {syncing ? 'Syncing…' : 'Sync services'}
+                  </button>
                 )}
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
-              </button>
-              {activeFilterCount > 0 && (
                 <button
-                  onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
-                  className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044]"
+                  onClick={() => setShowFilters((v) => !v)}
+                  aria-expanded={showFilters}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50 sm:order-5',
+                    activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+                  )}
                 >
-                  Clear
+                  <SlidersHorizontal className="w-4 h-4" />
+                  Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
                 </button>
-              )}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
+                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044] sm:order-6"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Filter bar */}
+          {(syncNotice || syncError) && (
+            <div className={cn('px-5 py-2.5 text-sm font-medium border-b border-gray-200', syncError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+              {syncError ?? syncNotice}
+            </div>
+          )}
+
+          {/* Filter bar — on mobile the selects stack full-width (so they're
+              all the same size) and centre; on desktop they sit inline. */}
           {showFilters && (
-          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200">
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={filterCls}>
-              <option value="">All Status</option>
-              {['Live', 'Draft', 'Archived'].map((s) => <option key={s} value={s}>{s}</option>)}
+          <div className="flex flex-col items-center gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center">
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, filterMobileCls)}>
+              <option value="">All statuses</option>
+              {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={filterCls}>
-              <option value="">All Locations</option>
+            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={cn(filterCls, filterMobileCls)}>
+              <option value="">All locations</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
-            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={filterCls}>
-              <option value="">All Age Groups</option>
+            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={cn(filterCls, filterMobileCls)}>
+              <option value="">All age groups</option>
               <option value="0-18">0 – 18 months</option>
               <option value="18-36">18m – 3 years</option>
               <option value="36-60">3 – 5 years</option>
               <option value="60-216">5+ years</option>
             </select>
-            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={filterCls}>
+            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All activities</option>
-              {[...activities]
+              {activities
+                .filter((a) => !isFullyRemoved(a))
                 .sort((a, b) => a.title.localeCompare(b.title))
                 .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
             </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, 'ml-auto')}>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, filterMobileCls, 'sm:ml-auto')}>
               <option value="updated">Sort by: Recently updated</option>
               <option value="name">Sort by: Name</option>
               <option value="rating">Sort by: Rating</option>
@@ -532,12 +746,14 @@ export default function ActivitiesPage() {
           </div>
           )}
 
+          {/* Table (horizontal scroll below its natural width on small screens) */}
+          <div className="overflow-x-auto">
           {/* Table Header */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+          <div className={cn(TABLE_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
             <div>Activity</div>
             <div>Category</div>
             <div>Location</div>
-            <div>Age Group</div>
+            <div>Age group</div>
             <div>Sessions</div>
             <div>Bookings</div>
             <div>Rating</div>
@@ -547,31 +763,31 @@ export default function ActivitiesPage() {
           </div>
 
           {/* Table Rows */}
-          {loading && <div className="px-5 py-10 text-center text-sm text-gray-400">Loading activities…</div>}
+          {loading && <RainbowLoader className="px-5 py-10" label="Loading activities" />}
           {!loading && visible.length === 0 && (
             <div className="px-5 py-10 text-center text-sm text-gray-400">No activities yet. Create your first one.</div>
           )}
           {visible.map((a) => {
-            const status = a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+            const status = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
             return (
               <div
                 key={a.id}
-                className="grid grid-cols-[2fr_1fr_1fr_1fr_0.7fr_0.7fr_1fr_0.8fr_1fr_0.4fr] px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors"
+                className={cn(TABLE_COLS, 'px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors')}
               >
-                <div className="flex items-center gap-3">
-                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 rounded-lg object-cover" />
-                  <div>
-                    <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                    <div className="text-xs text-gray-500">{a.vendor_category ?? ''}</div>
+                <div className="flex min-w-0 items-center gap-3">
+                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 flex-shrink-0 rounded-lg object-cover" />
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 text-sm break-words">{a.title}</div>
+                    <div className="text-xs text-gray-500 break-words">{a.vendor_category ?? ''}</div>
                   </div>
                 </div>
-                <div className="text-sm text-gray-700">{categoryName(a.category_id)}</div>
+                <div className="min-w-0 text-sm text-gray-700 break-words">{categoryName(a.category_id)}</div>
                 {/* QA: the table was missing location, so a multi-venue vendor
                     couldn't tell which of their sites a class runs at. */}
-                <div className="text-sm text-gray-700">
+                <div className="min-w-0 text-sm text-gray-700 break-words">
                   {locations.find((l) => l.id === a.location_id)?.name ?? <span className="text-gray-400">—</span>}
                 </div>
-                <div className="text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
+                <div className="min-w-0 text-sm text-gray-700">{ageLabel(a.age_min_months, a.age_max_months)}</div>
                 <div className="text-sm text-gray-700">{sessionCounts[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Upcoming</span></div>
                 <div className="text-sm text-gray-700">{bookingTotals[a.id] ?? 0}<br /><span className="text-xs text-gray-500">Total</span></div>
                 <div>
@@ -588,9 +804,12 @@ export default function ActivitiesPage() {
                 <div className="flex flex-col items-start gap-1">
                   <span className={cn(
                     'inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full',
-                    status === 'Live' ? 'bg-green-300 text-green-800' : status === 'Draft' ? 'bg-yellow-300 text-yellow-800' : 'bg-gray-100 text-gray-600'
-                  )}>
-                    <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : 'bg-gray-400')} />
+                    status === 'Live' ? 'bg-green-300 text-green-800'
+                      : status === 'Draft' ? 'bg-yellow-300 text-yellow-800'
+                      : status === 'Removed' ? 'bg-red-100 text-red-700'
+                      : 'bg-gray-100 text-gray-600'
+                  )} title={status === 'Removed' ? "Not found on the currently connected Wix account — reconnect the right account, or re-add this service, to restore it." : undefined}>
+                    <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : status === 'Removed' ? 'bg-red-500' : 'bg-gray-400')} />
                     {status}
                   </span>
                   {a.bookings_paused && (
@@ -599,39 +818,70 @@ export default function ActivitiesPage() {
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-gray-500">{fmtDate(a.updated_at)}</div>
-                <div className="relative">
-                  <button onClick={() => setShowMenu(showMenu === a.id ? null : a.id)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                    <MoreVertical className="w-4 h-4 text-gray-400" />
-                  </button>
-                  {showMenu === a.id && canManage && (
-                    <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
-                      <button onClick={() => openEdit(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
+                <div className="min-w-0 text-sm text-gray-500">{fmtDate(a.updated_at)}</div>
+                {/* Radix rather than a hand-rolled absolute panel: the table
+                    scrolls inside `overflow-x-auto`, which also clips
+                    vertically, so an in-flow menu on the last rows was cut off
+                    by the table's own edge. This portals the panel to the body
+                    (escaping that clip), flips it above the trigger when there
+                    isn't room below, and closes on outside click / Escape —
+                    the old one only closed by hitting the same three dots. */}
+                <div className="flex justify-end">
+                  <DropdownMenu
+                    open={showMenu === a.id}
+                    onOpenChange={(open) => setShowMenu(open ? a.id : null)}
+                  >
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-1.5 hover:bg-gray-100 rounded-lg">
+                        <MoreVertical className="w-4 h-4 text-gray-400" />
                       </button>
-                      <button onClick={() => openSchedule(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Clock className="w-3.5 h-3.5" />
-                        Manage schedule
-                      </button>
-                      <button onClick={() => togglePublish(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <CalendarCheck className="w-3.5 h-3.5" />
-                        {a.is_published ? 'Unpublish' : 'Publish'}
-                      </button>
-                      <button onClick={() => togglePause(a)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                        {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
-                      </button>
-                      <button onClick={() => archive(a.id)} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Archive
-                      </button>
-                    </div>
-                  )}
+                    </DropdownMenuTrigger>
+                    {canManage && (
+                      <DropdownMenuContent
+                        align="end"
+                        // Radix flips to the opposite side on its own when the
+                        // preferred one doesn't fit; the collision padding just
+                        // stops the panel sitting flush against the viewport.
+                        collisionPadding={12}
+                        className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg"
+                      >
+                        <DropdownMenuItem onSelect={() => openPreview(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openEdit(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => openSchedule(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Clock className="w-3.5 h-3.5" />
+                          Manage schedule
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => togglePublish(a)}
+                          disabled={!!a.wix_missing_since}
+                          title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
+                          className="gap-2 px-3 py-2 text-sm text-gray-700"
+                        >
+                          <CalendarCheck className="w-3.5 h-3.5" />
+                          {a.is_published ? 'Unpublish' : 'Publish'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => togglePause(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                          {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    )}
+                  </DropdownMenu>
                 </div>
               </div>
             );
           })}
+          </div>
 
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200">
             <span className="text-sm text-gray-500">Showing {visible.length} of {activities.length} activities</span>
@@ -642,9 +892,9 @@ export default function ActivitiesPage() {
 
       {/* Create Activity Drawer */}
       {showDrawer && (
-        <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit Activity' : 'Create Activity'}</h3>
+            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit activity' : 'Create activity'}</h3>
             <button onClick={() => setShowDrawer(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-600" />
             </button>
@@ -691,7 +941,12 @@ export default function ActivitiesPage() {
               <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity Image</label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#C90044]">*</span></label>
+              <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
+              <p className="mt-1 text-xs text-gray-500">Pre-fills the capacity when you add new sessions for this activity.</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity image</label>
               <label className={cn(
                 'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 px-4 py-6 cursor-pointer hover:border-pink-300 transition-colors',
                 uploading && 'opacity-60 pointer-events-none'
@@ -725,7 +980,7 @@ export default function ActivitiesPage() {
               <div>
                 <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
                 <div className="text-xs text-gray-500">
-                  Parents must fill in a health declaration before this class can be booked. For your own
+                  Parents must fill in a health declaration before this activity can be booked. For your own
                   waivers and consents, use Settings → Waivers &amp; Consents.
                 </div>
               </div>
@@ -767,15 +1022,159 @@ export default function ActivitiesPage() {
           <div className="p-5 border-t border-gray-200 flex gap-3">
             <Button variant="outline" onClick={() => setShowDrawer(false)} className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
             <Button onClick={saveActivity} disabled={saving} className="flex-1 gradient-primary text-white rounded-xl hover:opacity-90">
-              {saving ? 'Saving…' : 'Save Activity'}
+              {saving ? 'Saving…' : 'Save activity'}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Parent-view preview. Deliberately a copy of the parent activity page
+          (frontends/parent App.tsx) rather than a vendor-styled summary — the
+          point is to show exactly what a family sees, so the palette, radii
+          and Nunito face are the parent app's, not this one's. Everything is
+          inert; the sessions and reviews blocks are left out. */}
+      {previewFor && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/25 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewFor(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Parent view of ${previewFor.title}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-[#FFFCF8] shadow-2xl"
+            style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+          >
+            <div className="flex items-center justify-between border-b border-[#EBE3E5] bg-white px-5 py-3">
+              <div className="flex items-center gap-2.5">
+                <Eye className="h-4 w-4 flex-shrink-0 text-[#FA4D8D]" />
+                <div>
+                  <h3 className="text-sm font-bold text-[#111A4C]">Parent view</h3>
+                  <p className="text-xs text-gray-500">How this looks to families on BabyBrain.sg</p>
+                </div>
+              </div>
+              <button onClick={() => setPreviewFor(null)} aria-label="Close preview" className="rounded-lg p-1.5 hover:bg-gray-100">
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+
+            {/* pointer-events-none: nothing in the preview is clickable. */}
+            {/* The scroller keeps its pointer events — putting them on this
+                element made it transparent to the wheel, so a long description
+                or address could not be reached. The inert layer is inside it. */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="pointer-events-none select-none p-5 text-[#111A4C]">
+              {!previewFor.is_published && (
+                <p className="mb-4 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  Not published yet — families can&rsquo;t find this. This is how it would look once it is.
+                </p>
+              )}
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="flex flex-col gap-5">
+                  <div className="grid gap-5 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[#C7B1E6]">← Back to results</span>
+                      <div className="flex flex-1 flex-col justify-center">
+                        <h1 className="text-[29px] font-black leading-tight">{previewFor.title}</h1>
+                        {provider?.business_name && (
+                          <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
+                            <Store className="h-4 w-4" /> {provider.business_name}
+                          </p>
+                        )}
+                        <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-[#FA4D8D]">
+                          <Music className="h-4 w-4" /> {categoryName(previewFor.category_id)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <img
+                        src={previewFor.image_urls?.[0] || fallbackImage(previewFor)}
+                        alt={previewFor.title}
+                        className="h-[240px] w-full rounded-[18px] object-cover lg:h-[305px]"
+                      />
+                      <span className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-[#111A4C] shadow">
+                        <ExternalLink className="h-3.5 w-3.5" /> View photo
+                      </span>
+                    </div>
+                  </div>
+
+                  {previewFor.description && (
+                    <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
+                      <h2 className="mb-3 text-xl font-black">About</h2>
+                      <p className="font-semibold text-[#34406f]">{previewFor.description}</p>
+                    </section>
+                  )}
+                </div>
+
+                <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">
+                  {previewFor.price != null && Number(previewFor.price) > 0 ? (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">${Number(previewFor.price)}</strong> <span className="font-bold">/ class</span></p>
+                  ) : (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">Free</strong></p>
+                  )}
+
+                  <span className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white" style={{ boxShadow: '0 8px 20px rgba(250,93,147,.32)' }}>
+                    <CalendarDays className="h-4 w-4" /> Book a class
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
+                    <Mail className="h-4 w-4" /> Chat with provider
+                  </span>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#A8E59A] px-3 py-2.5 text-[13px] font-extrabold text-[#A8E59A]">
+                      <MessageCircle className="h-4 w-4" /> WhatsApp
+                    </span>
+                    <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#A7D8F8] px-3 py-2.5 text-[13px] font-extrabold text-[#A7D8F8]">
+                      <Mail className="h-4 w-4" /> Email
+                    </span>
+                  </div>
+                  <span className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[11px] border border-[#C7B1E6] px-3 py-2.5 text-[13px] font-extrabold text-[#C7B1E6]">
+                    <ExternalLink className="h-4 w-4" /> Website
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
+                    <Users className="h-4 w-4" /> Class group chat
+                  </span>
+                  <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] bg-[#FEEBF2] px-6 py-3 text-[15px] font-extrabold text-[#FFC1D6]">
+                    <Heart className="h-4 w-4" /> Save to favourites
+                  </span>
+
+                  <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
+                    {/* Label and value stack rather than sharing a row: a full
+                        address squeezed beside the label wrapped to a sliver. */}
+                    <div>
+                      <strong className="block">Location</strong>
+                      <span className="mt-1 block break-words text-[#34406f]">
+                        {previewLocation(previewFor) ?? 'No location set'}
+                      </span>
+                    </div>
+                    <div>
+                      <strong className="block">Duration</strong>
+                      <span className="mt-1 block text-[#34406f]">
+                        {previewDuration === 'loading'
+                          ? 'Checking…'
+                          : previewDuration
+                            ? formatDuration(previewDuration)
+                            : 'No sessions scheduled yet'}
+                      </span>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+              </div>
+            </div>
+
+            <div className="border-t border-[#EBE3E5] bg-white px-5 py-2.5 text-center text-xs text-gray-500">
+              Preview only — nothing here is clickable.
+            </div>
           </div>
         </div>
       )}
 
       {/* Schedule Drawer — the bookable dates/times for one activity */}
       {scheduleFor && (
-        <div className="fixed top-0 right-0 w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
             <div>
               <h3 className="font-semibold text-gray-900">Schedule</h3>
@@ -803,8 +1202,8 @@ export default function ActivitiesPage() {
                   <input type="number" min="15" step="15" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity (blank = unlimited)</label>
-                  <input type="number" min="1" placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity *</label>
+                  <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>

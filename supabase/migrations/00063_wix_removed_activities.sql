@@ -1,0 +1,11 @@
+-- 00063_wix_removed_activities.sql
+--
+-- Unchecking a service in the "Import specific activities" picker
+-- (Settings -> Integrate your Business) needs to mark that the activity was
+-- deliberately removed, not just unpublished — a vendor can unpublish a
+-- normal draft too, and that should keep showing on the Activities page as
+-- a draft. `wix_removed_at` is set only by that removal action, and lets
+-- ActivitiesPage compute "gone once its last booked slot has passed"
+-- without a background job: it just excludes any activity with
+-- wix_removed_at set and no more upcoming sessions from the list it shows.
+alter table public.activities add column if not exists wix_removed_at timestamptz;

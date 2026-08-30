@@ -175,6 +175,7 @@ export type Database = {
           popularity: number;
           provider_id: string | null;
           location_id: string | null;
+          default_capacity: number | null;
           vendor_category: VendorCategory | null;
           requires_medical_disclosure: boolean;
           archived_at: string | null;
@@ -185,6 +186,11 @@ export type Database = {
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
           reschedule_cutoff_hours: number;
+          wix_service_id: string | null;
+          wix_resource_id: string | null;
+          wix_service_type: string | null;
+          wix_removed_at: string | null;
+          wix_missing_since: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -207,6 +213,7 @@ export type Database = {
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;
+          default_capacity?: number | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;
           bookings_paused?: boolean;
@@ -214,10 +221,15 @@ export type Database = {
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number;
           reschedule_cutoff_hours?: number;
+          wix_service_id?: string | null;
+          wix_resource_id?: string | null;
+          wix_service_type?: string | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
           boosted_until?: string | null;
+          wix_removed_at?: string | null;
+          wix_missing_since?: string | null;
         };
               Relationships: [
           {
@@ -240,6 +252,8 @@ export type Database = {
           status: 'scheduled' | 'cancelled';
           teacher_name: string | null;
           studio: string | null;
+          wix_slot_key: string | null;
+          wix_remaining_capacity: number | null;
           created_at: string;
         };
         Insert: {
@@ -252,6 +266,8 @@ export type Database = {
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
           studio?: string | null;
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -261,6 +277,8 @@ export type Database = {
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
           studio?: string | null;
+          wix_slot_key?: string | null;
+          wix_remaining_capacity?: number | null;
         };
               Relationships: [
           {
@@ -444,6 +462,7 @@ export type Database = {
           followed_up_at: string | null;
           guest_name: string | null;
           guest_contact: string | null;
+          wix_booking_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -456,6 +475,7 @@ export type Database = {
           guest_name?: string | null;
           guest_contact?: string | null;
           payment_status?: PaymentStatus;
+          wix_booking_id?: string | null;
           // provider_id / status / waitlist_position set by trigger
         };
         Update: {
@@ -513,6 +533,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          wix_site_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -535,6 +556,7 @@ export type Database = {
           longitude?: number | null;
           uen?: string | null;
           status?: ProviderStatus;
+          wix_site_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
@@ -576,6 +598,8 @@ export type Database = {
           operating_hours: Json;
           is_primary: boolean;
           created_at: string;
+          // Set when imported via Settings -> Locations "Fetch from Wix" (00066).
+          wix_location_id: string | null;
         };
         Insert: {
           provider_id: string;
@@ -586,6 +610,7 @@ export type Database = {
           longitude?: number | null;
           operating_hours?: Json;
           is_primary?: boolean;
+          wix_location_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['provider_locations']['Insert']>;
         Relationships: [];
@@ -627,10 +652,19 @@ export type Database = {
         };
         Relationships: [];
       };
+      booking_policy_acceptances: {
+        Row: {
+          id: string; booking_id: string; policy_id: string; user_id: string | null;
+          policy_title: string; accepted_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       packages: {
-        Row: { id: string; provider_id: string; activity_id: string | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
-        Insert: { provider_id: string; activity_id?: string | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_id?: string | null; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; allowed_weekday: number | null; allowed_start_time: string | null };
+        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
         Relationships: [];
       };
       child_skill_levels: {

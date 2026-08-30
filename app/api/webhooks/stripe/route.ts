@@ -7,6 +7,8 @@ import { recordSale } from '@/lib/commercials';
 import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
 import { dbStatus, planFromMetadata, type PaidPlan } from '@/lib/plans';
+import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
+import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -258,6 +260,14 @@ export async function POST(request: Request) {
             paymentIntentId: paymentIntent,
           });
         }
+      }
+
+      if (kind === 'wix_booking') {
+        await finalizeWixBookingCheckout(admin, session);
+      }
+
+      if (kind === 'wix_event_ticket') {
+        await finalizeWixEventTicketCheckout(admin, session);
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {

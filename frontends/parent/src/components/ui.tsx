@@ -7,6 +7,7 @@ import { useActivities } from "../lib/useActivities";
 import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
+import { goTo } from "../lib/nav";
 
 /** "That's a Plus feature" prompt.
  *
@@ -14,7 +15,7 @@ import { formatDuration, regionLabel } from "../lib/database.types";
  *  activity never appeared under Favourites. Free parents get this instead. */
 export function PlusFeatureDialog({
   title = "Favourites are a Plus feature",
-  copy = "Save the classes you love and come back to them any time — on your own list and map.",
+  copy = "Save the classes you love and come back to them any time — on your own list.",
   onClose,
 }: {
   title?: string;
@@ -236,8 +237,11 @@ const iconPaths: Record<IconName, string> = {
     "M10 5.5h4M11 5.5V9l-1.5 2v8.5h5V11L13 9V5.5M10 14h4",
   target:
     "M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17Zm0-3.5a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm2-2 5-5",
+  // The cog ring is Lucide's `settings` glyph (proven to stroke cleanly);
+  // the old hand-drawn outline was a filled-icon silhouette being stroked
+  // instead of filled, which rendered as a tangle of overlapping curves.
   gear:
-    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3c0-.5 0-1-.1-1.4l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.5-1.4L11.9 2H8l-.5 2.8a7 7 0 0 0-2.5 1.4l-2.4-1-2 3.4 2 1.6c-.1.4-.1.9-.1 1.4s0 1 .1 1.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.5 1.4L8 22h4l.5-2.8a7 7 0 0 0 2.5-1.4l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.4Z",
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915Z",
   clock:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13.5V12l3.5 2",
   menu: "M4 7h16M4 12h16M4 17h16",
@@ -363,7 +367,7 @@ function SearchBox({ className = "", autoFocus = false }: { className?: string; 
       onSubmit={(e) => {
         e.preventDefault();
         const q = term.trim();
-        window.location.href = q ? `/explore?q=${encodeURIComponent(q)}` : "/explore";
+        goTo(q ? `/explore?q=${encodeURIComponent(q)}` : "/explore");
       }}
       className={`relative ${className}`}
     >
@@ -538,17 +542,18 @@ export function Button({
   const variantClass = {
     primary:
       "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink hover:brightness-105",
-    // Only the filled CTAs (`primary`, `pink`, `blue`) keep the brighter
-    // non-palette hues; the quieter variants sit on palette tokens.
+    // The pink CTAs (`primary`, `pink`) keep the brighter marketing gradient;
+    // every other variant, blue included, sits on palette tokens.
     outline:
       "border-palette-pink bg-white text-palette-pink hover:bg-palette-pinkTint",
     soft: "border-transparent bg-palette-pinkTint text-baby-cta hover:bg-palette-pinkSoft",
     pink: "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
     ghost: "border-transparent bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
-    // for marketing CTAs and the final confirm step.
-    blue: "border-transparent bg-baby-blue text-white shadow-blue hover:brightness-105",
-    blueOutline: "border-baby-blue bg-white text-palette-blue hover:bg-palette-blueTint",
+    // for marketing CTAs and the final confirm step. Pastel fill with the
+    // readable blue ink on top — no electric `baby-blue`.
+    blue: "border-transparent bg-palette-blue text-palette-blueInk shadow-sm hover:brightness-95",
+    blueOutline: "border-palette-blue bg-white text-palette-blueInk hover:bg-palette-blueTint",
   }[variant];
   // `border` here is the WIDTH only, so every variant is the same height.
   const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;
@@ -978,7 +983,7 @@ export function CategoryTile({
   return (
     <button
       type="button"
-      onClick={onClick ?? (href ? () => { window.location.href = href; } : undefined)}
+      onClick={onClick ?? (href ? () => goTo(href) : undefined)}
       className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#EBE3E5] bg-white px-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
       <span className="grid h-12 w-12 place-items-center rounded-[14px] bg-gradient-to-br from-[#F1FBEF] to-[#F1FBEF] text-baby-green">
         <Icon name={icon} className="h-7 w-7" />

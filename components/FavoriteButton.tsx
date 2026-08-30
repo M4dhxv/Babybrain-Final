@@ -15,7 +15,7 @@ export default function FavoriteButton({
   initialFavorited: boolean;
   authed: boolean;
   /** heart = circle overlay on images, bookmark = square icon button,
-      block = full-width "Save to Favorites", remove = danger text button */
+      block = full-width "Save to favourites", remove = danger text button */
   variant?: 'heart' | 'bookmark' | 'block' | 'remove';
 }) {
   const router = useRouter();
@@ -59,7 +59,7 @@ export default function FavoriteButton({
         className={`icon-btn round${favorited ? ' on' : ''}`}
         onClick={toggle}
         disabled={busy}
-        aria-label={favorited ? 'Remove from favorites' : 'Save to favorites'}
+        aria-label={favorited ? 'Remove from favourites' : 'Save to favourites'}
         style={!favorited ? { color: 'var(--muted)' } : undefined}
       >
         <IconHeart size={18} filled={favorited} />
@@ -72,7 +72,7 @@ export default function FavoriteButton({
         className={`icon-btn${favorited ? ' on' : ''}`}
         onClick={toggle}
         disabled={busy}
-        aria-label={favorited ? 'Remove from favorites' : 'Save to favorites'}
+        aria-label={favorited ? 'Remove from favourites' : 'Save to favourites'}
       >
         <IconBookmark size={17} filled={favorited} />
       </button>
@@ -92,7 +92,7 @@ export default function FavoriteButton({
       disabled={busy}
     >
       <IconHeart size={17} filled={favorited} />
-      {favorited ? 'Saved to Favorites' : 'Save to Favorites'}
+      {favorited ? 'Saved to favourites' : 'Save to favourites'}
     </button>
   );
 }

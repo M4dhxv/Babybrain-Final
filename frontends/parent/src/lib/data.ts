@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { apiGet } from "./api";
 import { useAuth } from "../auth/AuthProvider";
+import { goTo } from "./nav";
 import {
   formatAgeRange,
   type Activity as ActivityRow,
@@ -65,8 +66,38 @@ export interface ProviderContact {
   website: string | null;
 }
 
+/**
+ * A locally-recorded session's `capacity` is the class's total capacity, not
+ * what's left — "10 spots" stayed 10 even once 3 families had booked it.
+ * Subtracts each session's confirmed/completed booking count (fetched via
+ * the public booked-counts route, since "select own bookings" RLS blocks a
+ * parent from counting other families' bookings directly) to get what's
+ * actually still open. Wix-sourced slots already carry Wix's own remaining
+ * count and are left alone — pass only locally-recorded sessions in.
+ */
+async function withRemainingCapacity<T extends { id: string; capacity: number | null }>(
+  sessions: T[]
+): Promise<T[]> {
+  const ids = sessions.filter((s) => s.capacity != null).map((s) => s.id);
+  if (ids.length === 0) return sessions;
+  const { counts } = await apiGet<{ counts: Record<string, number> }>(
+    `/api/public/booked-counts?sessionIds=${ids.join(",")}`
+  ).catch(() => ({ counts: {} as Record<string, number> }));
+  return sessions.map((s) =>
+    s.capacity == null ? s : { ...s, capacity: Math.max(0, s.capacity - (counts[s.id] ?? 0)) }
+  );
+}
+
 export interface ActivityDetail {
-  activity: (ActivityRow & { category_name: string | null; provider_contact: ProviderContact | null }) | null;
+  activity:
+    | (ActivityRow & {
+        category_name: string | null;
+        provider_contact: ProviderContact | null;
+        // Messaging is a Growth-and-above perk — a Pay As You Grow provider
+        // isn't reachable via chat, so the buttons grey out instead.
+        provider_can_message: boolean;
+      })
+    | null;
   sessions: ActivitySession[];
   reviews: Review[];
   loading: boolean;
@@ -110,20 +141,74 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
             .then(() => undefined)
         );
       }
-      const [{ data: sessions }, { data: reviews }] = await Promise.all([
-        supabase
-          .from("activity_sessions")
-          .select("*")
-          .eq("activity_id", act.id)
-          .gte("starts_at", new Date().toISOString())
-          .order("starts_at")
-          .limit(8),
+      // A Wix-linked activity's availability comes from two places: slots
+      // live from Wix, PLUS any independent (non-Wix) slots the vendor added
+      // directly on BabyBrain for this same listing — those are ordinary
+      // activity_sessions rows with no wix_slot_key (a Wix-materialized row
+      // always has one, so this excludes it and avoids double-listing).
+      // /api/wix/bookings materializes a session row only once a Wix slot is
+      // actually booked.
+      const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
+        ? Promise.all([
+            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[] }>(
+              `/api/wix/slots?activityId=${act.id}`
+            )
+              .then((r) =>
+                r.slots.map((s) => ({
+                  id: s.id,
+                  activity_id: act.id,
+                  starts_at: s.starts_at,
+                  ends_at: s.ends_at,
+                  // 1 for an appointment; a class's real remaining capacity.
+                  capacity: s.capacity,
+                  location_id: null,
+                  status: "scheduled" as const,
+                  wix_slot_key: null,
+                  wix_remaining_capacity: null,
+                  created_at: new Date().toISOString(),
+                }))
+              )
+              .catch(() => []),
+            supabase
+              .from("activity_sessions")
+              .select("*")
+              .eq("activity_id", act.id)
+              .is("wix_slot_key", null)
+              .gte("starts_at", new Date().toISOString())
+              .order("starts_at")
+              .limit(8)
+              .then((r) => r.data ?? [])
+              .then(withRemainingCapacity),
+          ]).then(([wixSlots, independentSlots]) =>
+            [...wixSlots, ...independentSlots].sort(
+              (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+            )
+          )
+        : Promise.resolve(
+            supabase
+              .from("activity_sessions")
+              .select("*")
+              .eq("activity_id", act.id)
+              .gte("starts_at", new Date().toISOString())
+              .order("starts_at")
+              .limit(8)
+              .then((r) => r.data ?? [])
+              .then(withRemainingCapacity)
+          );
+
+      const [sessions, { data: reviews }, providerCanMessage] = await Promise.all([
+        sessionsPromise,
         supabase
           .from("reviews")
           .select("*")
           .eq("activity_id", act.id)
           .order("created_at", { ascending: false })
           .limit(10),
+        act.provider_id
+          ? apiGet<{ canMessage: boolean }>(`/api/public/provider-plan?providerId=${act.provider_id}`)
+              .then((r) => r.canMessage)
+              .catch(() => false)
+          : Promise.resolve(false),
       ]);
       if (!cancelled)
         setState({
@@ -132,8 +217,9 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
             category_name:
               (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
             provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
+            provider_can_message: providerCanMessage,
           },
-          sessions: sessions ?? [],
+          sessions,
           reviews: reviews ?? [],
           loading: false,
         });
@@ -166,7 +252,7 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
   async function toggle() {
     if (!providerId) return;
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     setBusy(true);
@@ -215,7 +301,7 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
   async function toggle(): Promise<boolean> {
     if (!activityId) return true;
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return true;
     }
     if (locked) return false;

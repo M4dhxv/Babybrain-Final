@@ -30,6 +30,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
+import { goTo } from "./lib/nav";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { downloadSchedulePdf, withinRange } from "./lib/schedule-pdf";
 import { formatChildAge, formatAgeRange, formatDuration, regionLabel, ageInMonths } from "./lib/database.types";
@@ -46,9 +47,32 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { SupportChat } from "./components/SupportChat";
+import { RainbowLoader } from "./components/RainbowLoader";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
+}
+
+/**
+ * RPC errors are sometimes wrapped with a short label before the actual
+ * text (e.g. a Postgres error code) — strip that if present. A *raw*
+ * Postgres error (a type-cast failure, a constraint violation) has its own
+ * colon-shaped formatting too and can quote the offending value verbatim
+ * (seen for real: redeeming a package credit against a Wix slot id sent
+ * "wix:<encoded slot>" where a session uuid was expected, and the naive
+ * strip-up-to-the-first-colon this used to do stopped at *that* inner
+ * colon, leaving the raw encoded value on screen). So this only strips a
+ * prefix that looks like a genuine short label, and never surfaces a
+ * quoted/oversized remainder to the user.
+ */
+function cleanRpcErrorMessage(message: string): string {
+  const m = message.match(/^([A-Za-z0-9 _.'()-]{1,60}):\s*(.*)$/s);
+  if (!m) return message;
+  const rest = m[2];
+  if (rest.startsWith('"') || rest.length > 200) {
+    return "Something went wrong — please try again or contact support.";
+  }
+  return rest;
 }
 
 function HomePage() {
@@ -374,6 +398,7 @@ function OnboardingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
+  const [emailExists, setEmailExists] = useState(false);
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
@@ -429,7 +454,7 @@ function OnboardingPage() {
     // Send the whole form with the sign-up. When confirmation is required there
     // is no session to write with, so the trigger persists this server-side —
     // QA: "the children hadn't been saved and I had to add them again".
-    const { error: signErr } = await signUp(email, password, fullName, {
+    const { error: signErr, emailExists: alreadyExists } = await signUp(email, password, fullName, {
       full_name: fullName,
       phone: phone || null,
       postal_code: postcode.trim(),
@@ -444,6 +469,10 @@ function OnboardingPage() {
       },
       children: draftKids,
     });
+    if (alreadyExists) {
+      setBusy(false);
+      return setEmailExists(true);
+    }
     if (signErr) {
       setBusy(false);
       return setError(signErr);
@@ -486,7 +515,7 @@ function OnboardingPage() {
         }))
       );
     }
-    window.location.href = "/matches";
+    goTo("/matches");
   }
 
   if (confirmSent) {
@@ -497,6 +526,23 @@ function OnboardingPage() {
           <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
           <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam folder.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
+        </main>
+      </PageShell>
+    );
+  }
+
+  if (emailExists) {
+    return (
+      <PageShell active="/onboarding">
+        <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
+          <h1 className="text-2xl font-black">Account already exists</h1>
+          <p className="mt-3 font-semibold text-[#44507b]">An account with <strong>{email}</strong> already exists. Log in instead, or use a different email to sign up.</p>
+          <Button href="/login" className="mt-5">Go to log in</Button>
+          <p className="mt-4 text-sm font-semibold text-[#5a6690]">
+            <button type="button" onClick={() => setEmailExists(false)} className="font-black text-baby-pink underline">
+              Use a different email
+            </button>
+          </p>
         </main>
       </PageShell>
     );
@@ -608,23 +654,29 @@ function OnboardingPage() {
   );
 }
 
+/** No session (signed out, or the refresh token expired while the tab sat
+ *  open): leave for the public landing page instead of showing a signed-in
+ *  page's logged-out panel. Rendered as a placeholder while the hard
+ *  navigation this fires actually happens. */
+function RedirectToLanding() {
+  useEffect(() => { goTo("/"); }, []);
+  return (
+    <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
+      <RainbowLoader className="py-4" label="Taking you back" />
+    </main>
+  );
+}
+
 function MatchesPage({ active = "/matches" }: { active?: string }) {
-  const { session, profile, children, loading } = useAuth();
+  const { session, profile, children, loading, dataResolved } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   // Which child's suggestions are on screen; defaults to the first.
   const [homeChildId, setHomeChildId] = useState<string | null>(null);
 
-  if (!loading && !session) {
-    return (
-      <PageShell active={active}>
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to see your matches.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
-  if (!loading && children.length === 0) {
+  if (!loading && !session) return <RedirectToLanding />;
+  // Only claim there are no children once the fetch has actually answered —
+  // an unresolved lookup used to send signed-in parents to onboarding.
+  if (!loading && dataResolved && children.length === 0) {
     return (
       <PageShell active={active}>
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
@@ -680,7 +732,6 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                   })}
                 </div>
               )}
-              <Button href="/explore" className="mt-5">Explore activities →</Button>
             </div>
             {child && (
               <article className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card">
@@ -706,7 +757,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             {child ? `Matching activities for ${child.name}` : "Matching activities"}
           </SectionTitle>
           {recsLoading ? (
-            <p className="font-bold text-[#5a6690]">Loading matches…</p>
+            <RainbowLoader className="py-6" label="Loading matches" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {(shown?.recs ?? []).slice(0, 4).map((r) =>
@@ -715,7 +766,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {shown && shown.recs.length === 0 && <p className="font-semibold text-[#68718f]">No matches yet — new activities are added regularly.</p>}
             </div>
           )}
-          <a href="/explore" className="mt-4 block text-center font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
+          <a href="/explore" className="mt-4 block text-left font-bold text-[#FFC1D6] sm:hidden">Explore more activities →</a>
         </section>
 
         <section className="mt-6">
@@ -758,6 +809,16 @@ const REGION_FILTERS: [string, string][] = [
   ["west", "West"],
   ["sentosa", "Sentosa"],
 ];
+/** Same centroids as `sg_region()` in migration 00032, for parents who deny
+ *  (or don't have) precise geolocation — picking an area beats no sort at all. */
+const REGION_CENTROIDS: Record<string, { lat: number; lng: number }> = {
+  central: { lat: 1.300, lng: 103.830 },
+  east: { lat: 1.335, lng: 103.940 },
+  "north-east": { lat: 1.385, lng: 103.895 },
+  north: { lat: 1.430, lng: 103.820 },
+  west: { lat: 1.335, lng: 103.720 },
+  sentosa: { lat: 1.2494, lng: 103.8303 },
+};
 /** Hour of day (0–23) of an ISO timestamp, in Singapore time. */
 function sgHour(iso?: string | null): number | null {
   if (!iso) return null;
@@ -814,20 +875,15 @@ function EmailCapturePopup() {
         {done ? (
           <div className="py-4 text-center">
             <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[#F1FBEF] text-[#A8E59A]"><Icon name="check" className="h-8 w-8" /></div>
-            <h2 className="text-xl font-black">You're on the list! 🎉</h2>
-            <p className="mt-2 text-sm font-semibold text-[#59658d]">We'll email you when new activities and providers join BabyBrain.</p>
+            <h2 className="text-xl font-black">You're in! 🎉</h2>
+            <p className="mt-2 text-sm font-semibold text-[#59658d]">Enjoy discovering activities for your family.</p>
             <Button className="mt-5 w-full" onClick={dismiss}>Start exploring</Button>
           </div>
         ) : (
           <>
-            {/* This captures a plain mailing-list signup, and everyone who
-                lands here is on Free — where curated, child-matched picks are
-                not included. So the copy promises only what Free gives: word
-                of new listings. Anything about "curated for your little one"
-                belongs on the Plus card, not here. */}
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-cta"><Icon name="bell" className="h-3.5 w-3.5" /> Stay in the loop</div>
-            <h2 className="text-2xl font-black leading-tight">Hear about new activities first</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email and we'll let you know as new classes, play spaces and holiday camps are added to BabyBrain — no spam, unsubscribe anytime.</p>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-3 py-1.5 text-xs font-bold text-baby-cta"><Icon name="heart" className="h-3.5 w-3.5" /> Made for your family</div>
+            <h2 className="text-2xl font-black leading-tight">Explore activities for your little one</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">Pop in your email to find classes, playspaces, holiday camps and more that meet your exact needs.</p>
             <form onSubmit={submit} className="mt-5 space-y-3">
               <input
                 type="email"
@@ -838,7 +894,7 @@ function EmailCapturePopup() {
                 className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Keep me posted"}</Button>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Get started"}</Button>
             </form>
             <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
           </>
@@ -1078,8 +1134,21 @@ function ExplorePage() {
           </div>
 
           {sort === "distance" && !here && (
-            <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
-              Allow location access to sort by how near activities are to you.
+            <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
+              <span>Allow location access to sort by how near activities are to you, or</span>
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  const centroid = REGION_CENTROIDS[e.target.value];
+                  if (centroid) setHere(centroid);
+                }}
+                className="h-7 rounded-[8px] border border-[#EBE3E5] bg-white px-2 text-xs font-bold text-[#4a5680] focus:border-baby-pink focus:outline-none"
+              >
+                <option value="" disabled>pick your area</option>
+                {REGION_FILTERS.map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
             </p>
           )}
 
@@ -1115,16 +1184,30 @@ function ExplorePage() {
             </div>
           </section>
           <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-black">{loading ? "Loading…" : `${shown.length} activities found`}</p>
-            </div>
-            <div className="grid gap-2.5 xl:grid-cols-2">
-              {shown.map((activity) => (
-                <ActivityRow key={activity.id} activity={activity} />
-              ))}
-            </div>
-            {!loading && shown.length === 0 && (
-              <p className="mt-6 rounded-[12px] bg-[#FFF5F8] p-5 text-center font-semibold text-[#68718f]">No activities match these filters — try widening your search.</p>
+            {!loading && shown.length === 0 ? (
+              <div className="rounded-[12px] bg-[#FFF5F8] p-5 text-center font-bold text-black">
+                <p>No activities match these filters — try widening your search.</p>
+                <p className="mt-3">
+                  We are looking for quality providers in this space, if there is a vendor you would like to see listed here please{" "}
+                  <a href="/contact" className="font-black text-baby-cta hover:opacity-80">
+                    let us know.
+                    <Icon name="open" className="ml-0.5 inline h-3.5 w-3.5 align-[-0.125em]" />
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  {loading
+                    ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
+                    : <p className="text-sm font-black">{`${shown.length} activities found`}</p>}
+                </div>
+                <div className="grid gap-2.5 xl:grid-cols-2">
+                  {shown.map((activity) => (
+                    <ActivityRow key={activity.id} activity={activity} />
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </div>
@@ -1349,18 +1432,18 @@ function ActivityDetailPage() {
     if (!activity?.provider_id) return;
     supabase
       .from("packages")
-      .select("id, name, credits, price_cents, activity_id")
+      .select("id, name, credits, price_cents, activity_ids")
       .eq("provider_id", activity.provider_id)
       .eq("active", true)
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
-        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
+        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
       });
   }, [activity?.provider_id, activity?.id]);
 
   async function buyPack(packageId: string) {
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     setBuyingPack(packageId);
@@ -1375,7 +1458,7 @@ function ActivityDetailPage() {
   if (loading) {
     return (
       <PageShell active="/explore">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center font-bold text-[#5a6690]">Loading…</main>
+        <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16"><RainbowLoader className="py-4" label="Loading activity" /></main>
       </PageShell>
     );
   }
@@ -1396,15 +1479,18 @@ function ActivityDetailPage() {
     : null;
   const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
 
-  // Messaging needs both an integrated provider and a Plus subscription.
-  // Signed-out visitors still get a live button — it sends them to log in.
+  // Messaging needs an integrated provider on Growth-and-above, and a Plus
+  // subscription on the parent's side. Signed-out visitors still get a live
+  // button — it sends them to log in.
   const chatBlockedReason = activity.external_booking_url
     ? "This provider takes bookings on their own site, so messaging isn't available here. Use the WhatsApp or email buttons to reach them."
-    : session && !isPlus
-      ? "Messaging providers and other parents is a BabyBrain Plus feature."
-      : null;
+    : !activity.provider_can_message
+      ? "This provider hasn't enabled parent messaging yet. Use the WhatsApp or email buttons to reach them."
+      : session && !isPlus
+        ? "Messaging providers and other parents is a BabyBrain Plus feature."
+        : null;
   const requireLogin = (open: () => void) => () => {
-    if (!session) window.location.href = "/login";
+    if (!session) goTo("/login");
     else open();
   };
 
@@ -1437,22 +1523,23 @@ function ActivityDetailPage() {
       <main className="mx-auto grid max-w-[1180px] items-start gap-5 px-6 py-5 lg:grid-cols-[1fr_295px]">
         <div className="grid gap-5">
         <section className="grid gap-5 lg:grid-cols-[285px_1fr]">
-          <div>
+          <div className="flex flex-col">
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
-            <h1 className="mt-5 text-[29px] font-black">{activity.title}</h1>
-            {activity.provider_name &&
-              activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
-                <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
-                  <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
-                </p>
+            <div className="flex flex-1 flex-col justify-center">
+              <h1 className="text-[29px] font-black">{activity.title}</h1>
+              {activity.provider_name &&
+                activity.provider_name.trim().toLowerCase() !== activity.title.trim().toLowerCase() && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-bold text-[#C7B1E6]">
+                    <Icon name="store" className="h-4 w-4" /> {activity.provider_name}
+                  </p>
+                )}
+              {activity.category_name && (
+                <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
               )}
-            {activity.category_name && (
-              <span className="mt-4 inline-flex items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
-            )}
-            <p className="mt-3 text-[15px] font-semibold leading-6 text-[#34406f]">{activity.description}</p>
-            {activity.rating_count > 0 && (
-              <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
-            )}
+              {activity.rating_count > 0 && (
+                <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>
+              )}
+            </div>
           </div>
           <div>
             <div className="relative">
@@ -1513,7 +1600,7 @@ function ActivityDetailPage() {
                         <h3 className="font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
                       </div>
-                      <Button type="button" variant="blue" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                      <Button type="button" variant="pink" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
                         {buyingPack === p.id ? "…" : "Buy pack"}
                       </Button>
                     </div>
@@ -1544,7 +1631,11 @@ function ActivityDetailPage() {
         </div>
         <aside className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:col-start-2 lg:row-start-1">
             {activity.price != null ? (
-              <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
+              Number(activity.price) <= 0 ? (
+                <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
+              ) : (
+                <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
+              )
             ) : (
               <>
                 <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
@@ -1563,7 +1654,7 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
             ) : (
-              <Button href={`/book?slug=${activity.slug}`} variant="blue" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              <Button href={`/book?slug=${activity.slug}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
                 a listing that books on the provider's own site has no chat to
@@ -1600,7 +1691,7 @@ function ActivityDetailPage() {
                     ? `mailto:${activity.provider_contact.contact_email}?subject=${encodeURIComponent(`Enquiry about ${activity.title}`)}`
                     : null
                 }
-                tone={{ border: "border-baby-blue", text: "text-[#A7D8F8]", hover: "hover:bg-[#EDF7FD]" }}
+                tone={{ border: "border-[#A7D8F8]", text: "text-[#A7D8F8]", hover: "hover:bg-[#EDF7FD]" }}
                 unavailableReason="We don't have an email address for this provider."
               />
               <ContactLink
@@ -1734,7 +1825,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}
-      <Button type="submit" variant="blue" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
+      <Button type="submit" variant="pink" className="mt-3">{busy ? "Posting…" : "Submit review"}</Button>
     </form>
   );
 }
@@ -1756,6 +1847,10 @@ type BookingItem = {
   activityId: string | null; childId: string | null; packagePurchaseId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
+  // Set once the vendor removes the activity (unlinkWixActivities stamps
+  // wix_removed_at) — its own detail page is gone, so booking cards for it
+  // route back to the activities list instead of a dead link.
+  removed: boolean;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -2227,7 +2322,7 @@ function ChildForm({
 
 function ChildClassRow({ b }: { b: BookingItem }) {
   return (
-    <a href={b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
+    <a href={b.removed ? "/explore" : b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
       <img src={b.image} alt="" className="h-14 w-14 rounded-[10px] object-cover" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate font-black">{b.title}</h4>
@@ -2520,16 +2615,7 @@ function EditProfilePage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  if (!loading && !session) {
-    return (
-      <PageShell active="/profile">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to edit your profile.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
+  if (!loading && !session) return <RedirectToLanding />;
 
   return (
     <PageShell active="/profile">
@@ -2659,28 +2745,35 @@ function ProfilePage() {
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
 
+  // Goes through the /api/customer/bookings backend route (service role)
+  // instead of querying `bookings` directly from the browser — a direct
+  // client-side query is subject to RLS's "published activities are public"
+  // policy on the nested activities/activity_sessions join, which has no
+  // exception for a parent viewing their own past booking. Once a vendor
+  // removes/unpublishes an activity, that join silently came back null and
+  // My Bookings fell back to a bare "Class" placeholder with no date.
   function loadBookings() {
-    supabase
-      .from("bookings")
-      .select("id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours))")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          status: string;
-          child_id: string | null;
-          package_purchase_id: string | null;
-          activity_sessions: {
-            starts_at: string;
-            ends_at: string | null;
-            activity_id: string;
-            activities: {
-              title: string; slug: string; image_urls: string[]; address: string | null;
-              allow_cancellation: boolean; allow_rescheduling: boolean;
-              cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
-            } | null;
+    apiGet<{
+      bookings: Array<{
+        id: string;
+        status: string;
+        child_id: string | null;
+        package_purchase_id: string | null;
+        activity_sessions: {
+          starts_at: string;
+          ends_at: string | null;
+          activity_id: string;
+          activities: {
+            title: string; slug: string; image_urls: string[]; address: string | null;
+            allow_cancellation: boolean; allow_rescheduling: boolean;
+            cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
+            wix_removed_at: string | null;
+            wix_missing_since: string | null;
           } | null;
-        }>;
+        } | null;
+      }>;
+    }>("/api/customer/bookings")
+      .then(({ bookings: rows }) => {
         setBookings(
           rows.map((r) => {
             const s = r.activity_sessions;
@@ -2704,6 +2797,7 @@ function ProfilePage() {
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
+              removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
             };
           })
         );
@@ -2907,16 +3001,7 @@ function ProfilePage() {
     }
   }, [session]);
 
-  if (!loading && !session) {
-    return (
-      <PageShell active="/profile">
-        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
-          <p className="text-xl font-black">Log in to view your dashboard.</p>
-          <Button href="/login" className="mt-4">Log in</Button>
-        </main>
-      </PageShell>
-    );
-  }
+  if (!loading && !session) return <RedirectToLanding />;
 
   const recs =
     recsByChild.find((r) => r.child.id === journeyChild?.id)?.recs ?? recsByChild[0]?.recs ?? [];
@@ -2994,7 +3079,7 @@ function ProfilePage() {
           switching tabs shows the content straight away instead of burying it
           under the promo blocks. On desktop both sidebar cards stack on the
           left with the content beside them. */}
-      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:items-start">
+      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
         <aside className="order-1 lg:col-start-1 lg:row-start-1">
           <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <div className="flex items-center gap-3">
@@ -3275,7 +3360,7 @@ function ProfilePage() {
           {tab === "makeup" && !isPlus && (
             <PlusLock
               title="Make-up tokens are a Plus feature"
-              copy="With Plus, tokens from every provider are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
+              copy="With Plus, make-up tokens from every provider who issues through BabyBrain are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
             />
           )}
           {tab === "makeup" && isPlus && (
@@ -3332,7 +3417,7 @@ function ProfilePage() {
           {tab === "favorites" && !isPlus && (
             <PlusLock
               title="Saved favourites are a Plus feature"
-              copy="Upgrade to keep your favourite activities and providers on your own list and map, so you can come back to them any time."
+              copy="Upgrade to keep your favourite activities and providers on your own list, so you can come back to them any time."
             />
           )}
           {tab === "favorites" && isPlus && (
@@ -3540,7 +3625,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
     try {
       await apiPost("/api/customer/account", { confirm: "DELETE" });
       await supabase.auth.signOut();
-      window.location.href = "/?deleted=1";
+      goTo("/?deleted=1");
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : "We couldn't delete your account — please contact hello@babybrain.sg.");
@@ -3647,7 +3732,7 @@ function PastActivitiesTab({
     });
     setBusyId(null);
     if (err) {
-      setError(err.message.replace(/^.*?:\s*/, ""));
+      setError(cleanRpcErrorMessage(err.message));
       return;
     }
     setMarks((m) => ({ ...m, [b.id]: status }));
@@ -3664,7 +3749,7 @@ function PastActivitiesTab({
         <div className="flex items-center gap-4">
           <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
-            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
+            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
           {state && (
@@ -3782,7 +3867,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: b.id });
     setBusyId(null);
-    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    if (error) setNotice(cleanRpcErrorMessage(error.message));
     else onChanged?.();
   }
 
@@ -3805,7 +3890,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     const { error } = await supabase.rpc("reschedule_booking", { p_booking_id: reschedFor.id, p_new_session_id: newSessionId });
     setBusyId(null);
     setReschedFor(null);
-    if (error) setNotice(error.message.replace(/^.*?:\s*/, ""));
+    if (error) setNotice(cleanRpcErrorMessage(error.message));
     else onChanged?.();
   }
 
@@ -3845,7 +3930,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         const reschedWhy = reschedBlockReason(b);
         return (
           <div key={b.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink">
-            <a href={b.slug ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
+            {/* A removed activity's own detail page is gone (unpublished,
+                slug renamed by unlinkWixActivities) — send those clicks to
+                the activities list instead of a dead link. */}
+            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
               <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
@@ -4103,7 +4191,7 @@ function ContactPage() {
   const { session } = useAuth();
   const [support, setSupport] = useState(false);
   const openSupport = () => {
-    if (!session) { window.location.href = "/login"; return; }
+    if (!session) { goTo("/login"); return; }
     setSupport(true);
   };
 
@@ -4320,7 +4408,7 @@ function PricingPage() {
 
   async function upgrade() {
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     setError(null);
@@ -4387,19 +4475,19 @@ function PricingPage() {
             <button
               type="button"
               onClick={() => setBilling("monthly")}
-              className={billing === "monthly" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "monthly" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setBilling("annual")}
-              className={billing === "annual" ? "rounded-full bg-baby-blue text-white" : "text-[#59658d]"}
+              className={billing === "annual" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
             >
               {/* The mock only shows the Monthly-active state. Once Annual is
-                  selected the pill turns blue, and pink-on-blue is ~1.5:1, so
-                  the nudge goes white against the selected fill. */}
-              Annual <span className={billing === "annual" ? "text-white" : "text-baby-pink"}>(1 month free)</span>
+                  selected the pill fills pastel blue, so the nudge takes the
+                  same readable blue ink as the label. */}
+              Annual <span className={billing === "annual" ? "text-palette-blueInk" : "text-baby-pink"}>(1 month free)</span>
             </button>
           </div>
         </section>
@@ -4413,7 +4501,7 @@ function PricingPage() {
         <section className="mt-7 grid gap-5 md:grid-cols-2">
           {/* Free */}
           <article className="relative rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-baby-blue">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-palette-blueInk">
               <Icon name="heart" className="h-8 w-8" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
@@ -4425,7 +4513,7 @@ function PricingPage() {
             <div className="space-y-3">
               {freeItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-palette-blue text-palette-blueInk">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
@@ -4435,8 +4523,8 @@ function PricingPage() {
           </article>
 
           {/* Plus */}
-          <article className="relative rounded-[18px] border border-baby-blue bg-white p-6 shadow-card ring-1 ring-baby-blue/20">
-            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-baby-blue px-8 py-2 text-sm font-black text-white">
+          <article className="relative rounded-[18px] border border-palette-blue bg-white p-6 shadow-card ring-1 ring-palette-blue/40">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-palette-blue px-8 py-2 text-sm font-black text-palette-blueInk">
               MOST POPULAR
             </span>
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F4F0FA] text-baby-lilac">
@@ -4453,7 +4541,7 @@ function PricingPage() {
             <div className="space-y-3">
               {plusItems.map((item) => (
                 <p key={item} className="flex gap-3 text-sm font-semibold leading-5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-baby-blue text-baby-blue">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-palette-blue text-palette-blueInk">
                     <Icon name="check" className="h-3 w-3" />
                   </span>
                   {item}
@@ -4480,19 +4568,6 @@ function PricingPage() {
             </p>
           </article>
         </section>
-
-        <section className="mt-5 grid gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card md:grid-cols-3">
-          {[
-            ["store", "Corporate discounts", "available for bulk packages"],
-            ["calendar", "Monthly or annual billing", "Choose the plan that works for you"],
-            ["shield", "Cancel anytime", "Manage your subscription from your profile"],
-          ].map(([icon, title, copy]) => (
-            <div key={title} className="flex items-center gap-4">
-              <Icon name={icon} className="h-8 w-8 text-baby-pink" />
-              <p><strong className="block">{title}</strong><span className="text-sm font-semibold text-[#59658d]">{copy}</span></p>
-            </div>
-          ))}
-        </section>
       </main>
     </PageShell>
   );
@@ -4508,7 +4583,7 @@ function PaymentPage() {
   useEffect(() => {
     if (loading) return;
     if (!session) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     apiPost<{ url?: string }>("/api/customer/stripe/subscription", { billing: "monthly" })
@@ -4586,7 +4661,7 @@ function PackageOption({
       {action && (
         <Button
           type="button"
-          variant="blue"
+          variant="pink"
           size="sm"
           className={action.busy ? "shrink-0 opacity-60" : "shrink-0"}
           onClick={() => {
@@ -4613,7 +4688,7 @@ function BookingPage() {
   const [err, setErr] = useState<string | null>(null);
   type CreditPurchase = {
     id: string; remaining: number; expires_at: string | null;
-    activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null;
+    activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null;
   };
   const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
@@ -4632,6 +4707,16 @@ function BookingPage() {
      only drives a confirmation step, never a block. */
   const [existingBookings, setExistingBookings] = useState<Set<string>>(new Set());
   const [dupPrompt, setDupPrompt] = useState<null | { childName: string; proceed: () => void }>(null);
+
+  // A Wix Event–backed activity (wix_service_type='EVENT', see
+  // 00070_wix_events_as_activities.sql) reuses this whole page — the only
+  // difference is what's picked (a ticket type, not a date/time — there's
+  // only ever one session, the event's own occurrence) and which endpoint
+  // gets called to actually purchase it.
+  const isEvent = activity?.wix_service_type === "EVENT";
+  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
+  const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
+  const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activity?.provider_id) return;
@@ -4653,12 +4738,12 @@ function BookingPage() {
     if (!activity?.provider_id) return;
     supabase
       .from("packages")
-      .select("id, name, credits, price_cents, activity_id")
+      .select("id, name, credits, price_cents, activity_ids")
       .eq("provider_id", activity.provider_id)
       .eq("active", true)
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_id: string | null }>;
-        setPacks(rows.filter((p) => p.activity_id === null || p.activity_id === activity.id));
+        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
+        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
       });
   }, [activity?.provider_id, activity?.id]);
 
@@ -4681,7 +4766,7 @@ function BookingPage() {
     if (!auth || !activity?.provider_id) return;
     supabase
       .from("package_purchases")
-      .select("id, credits_remaining, expires_at, packages(activity_id, allowed_weekday, allowed_start_time)")
+      .select("id, credits_remaining, expires_at, packages(activity_ids, allowed_weekday, allowed_start_time)")
       .eq("provider_id", activity.provider_id)
       .eq("status", "active")
       .gt("credits_remaining", 0)
@@ -4689,7 +4774,7 @@ function BookingPage() {
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string; credits_remaining: number; expires_at: string | null;
-          packages: { activity_id: string | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
+          packages: { activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
         }>;
         setPurchases(
           rows
@@ -4698,7 +4783,7 @@ function BookingPage() {
               id: r.id,
               remaining: r.credits_remaining,
               expires_at: r.expires_at,
-              activity_id: r.packages?.activity_id ?? null,
+              activity_ids: r.packages?.activity_ids ?? null,
               allowed_weekday: r.packages?.allowed_weekday ?? null,
               allowed_start_time: r.packages?.allowed_start_time ?? null,
             }))
@@ -4709,7 +4794,7 @@ function BookingPage() {
   // 1.2: a credit is only offered when the package's restrictions match the
   // chosen class and session slot (e.g. "Monday 4:00 pm only").
   function creditMatches(p: CreditPurchase, sess: ActivitySession | null) {
-    if (p.activity_id && p.activity_id !== activity?.id) return false;
+    if (p.activity_ids && p.activity_ids.length > 0 && !p.activity_ids.includes(activity?.id ?? "")) return false;
     if (!sess) return p.allowed_weekday == null && !p.allowed_start_time;
     const sg = new Date(sess.starts_at);
     const sgWeekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
@@ -4739,6 +4824,29 @@ function BookingPage() {
     if (dates.length && !dateKey) setDateKey(dates[0]);
   }, [dates, dateKey]);
 
+  // Events skip the date/time picker entirely — there's exactly one session
+  // (materialized by lib/wix/events-sync.ts), so it's auto-selected the
+  // moment it loads rather than making the parent click through a picker
+  // with only one option in it.
+  useEffect(() => {
+    if (isEvent && sessions.length > 0 && !sessionId) setSessionId(sessions[0].id);
+  }, [isEvent, sessions, sessionId]);
+
+  useEffect(() => {
+    if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
+    supabase
+      .from("event_ticket_types")
+      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent")
+      .eq("event_id", activity.wix_event_id)
+      .eq("hidden", false)
+      .order("price_cents")
+      .then(({ data }) => setTicketTypes((data ?? []) as EventTicketType[]));
+  }, [isEvent, activity?.wix_event_id]);
+
+  useEffect(() => {
+    if (ticketTypes.length > 0 && !ticketTypeId) setTicketTypeId(ticketTypes[0].id);
+  }, [ticketTypes, ticketTypeId]);
+
   // Default to an available credit — it's the cheapest option for the parent.
   useEffect(() => {
     if (packageCredit && payWith === "single") setPayWith("credit");
@@ -4759,22 +4867,81 @@ function BookingPage() {
     !!activity &&
     childAgeMonths != null &&
     (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
-  const price = activity?.price != null ? Number(activity.price) : null;
+  const selectedTicketType = isEvent ? ticketTypes.find((t) => t.id === ticketTypeId) ?? null : null;
+  // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
+  // discovered once per ticket type by lib/wix/events-sync.ts and cached —
+  // see ticketPriceWithFeeCents there) so this matches the real charge
+  // instead of understating it; the actual amount is still always
+  // recomputed server-side from a live Wix reservation
+  // (computeWixCheckoutTotal in lib/wix/client.ts) at checkout time.
+  const ticketPriceCents = (t: EventTicketType) =>
+    t.fee_type === "FEE_ADDED_AT_CHECKOUT" && t.fee_rate_percent != null
+      ? Math.round(t.price_cents * (1 + t.fee_rate_percent / 100))
+      : t.price_cents;
+  const price = isEvent
+    ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
+    : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
+  const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
+    ? Math.min(selectedTicketType.limit_per_checkout, 20)
+    : 6;
 
   async function pay() {
     setErr(null);
     if (!auth) {
-      window.location.href = "/login";
+      goTo("/login");
       return;
     }
     if (!sessionId) {
-      setErr("Please choose a date and time first.");
+      setErr(isEvent ? "This event isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
+      return;
+    }
+    if (isEvent && !ticketTypeId) {
+      setErr("Please choose a ticket type first.");
       return;
     }
     setBusy(true);
     let status: string | null = null;
-    if (redeemToken) {
+    if (isEvent) {
+      // Wix Event ticket: a real reservation is made against Wix's own
+      // inventory server-side (the authoritative availability check — there's
+      // no local capacity to double-check against, see
+      // app/api/wix/events/checkout). Free tickets confirm synchronously;
+      // paid ones hand off to Stripe same as every other paid path here, and
+      // the real Wix order isn't created until that payment is confirmed
+      // (lib/wix/finalize-event-checkout.ts).
+      const eventBody = {
+        eventId: activity?.wix_event_id,
+        ticketTypeId,
+        quantity: count,
+        childId: bookChildId,
+      };
+      if (selectedTicketType?.is_free) {
+        try {
+          const data = await apiPost<{ status: string }>("/api/wix/events/rsvp", eventBody);
+          status = data.status;
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not reserve this ticket");
+          return;
+        }
+        setBusy(false);
+      } else {
+        try {
+          const { url } = await apiPost<{ url?: string }>("/api/wix/events/checkout", eventBody);
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not start payment");
+          return;
+        }
+        setBusy(false);
+        return;
+      }
+    } else if (redeemToken) {
       // Redeeming a make-up token: books the session and consumes the token atomically.
       const { data, error } = await supabase.rpc("redeem_make_up_token", {
         p_token_id: redeemToken,
@@ -4783,10 +4950,49 @@ function BookingPage() {
       });
       setBusy(false);
       if (error) {
-        setErr(error.message.replace(/^.*?:\s*/, ""));
+        setErr(cleanRpcErrorMessage(error.message));
         return;
       }
       status = (data as string | null) ?? "confirmed";
+    } else if (sessionId.startsWith("wix:")) {
+      // Wix-linked activity: the slot lives in Wix, not activity_sessions —
+      // creating the booking there (and materializing the local session) is
+      // handled server-side. Paid → hand off to Stripe Checkout same as a
+      // native paid class; the real Wix reservation isn't made until the
+      // webhook confirms payment (see /api/wix/bookings/checkout). Free
+      // stays the direct, immediate booking it always was.
+      const wixBody = {
+        activityId: activity?.id,
+        wixSlotId: sessionId,
+        childId: bookChildId,
+        policiesAccepted: acceptedPolicies,
+        count,
+        ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+      };
+      if (activity?.price != null && Number(activity.price) > 0) {
+        try {
+          const { url } = await apiPost<{ url?: string }>("/api/wix/bookings/checkout", wixBody);
+          if (url) {
+            window.location.href = url;
+            return;
+          }
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not start payment");
+          return;
+        }
+        setBusy(false);
+        return;
+      }
+      try {
+        const data = await apiPost<{ id: string; status: string }>("/api/wix/bookings", wixBody);
+        status = data.status;
+      } catch (e) {
+        setBusy(false);
+        setErr(e instanceof Error ? e.message : "Could not create the booking");
+        return;
+      }
+      setBusy(false);
     } else {
       const { data, error } = await supabase
         .from("bookings")
@@ -4833,39 +5039,69 @@ function BookingPage() {
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
     });
-    window.location.href = `/booked?${q.toString()}`;
+    goTo(`/booked?${q.toString()}`);
   }
 
   async function payWithPackage() {
-    if (!auth) { window.location.href = "/login"; return; }
+    if (!auth) { goTo("/login"); return; }
     if (!sessionId) { setErr("Please choose a date and time first."); return; }
     if (!packageCredit) return;
+    // 1 child = 1 credit = 1 spot — count is how many are attending.
+    if (packageCredit.remaining < count) {
+      setErr(`This pack only has ${packageCredit.remaining} credit${packageCredit.remaining === 1 ? "" : "s"} left — not enough for ${count} children.`);
+      return;
+    }
     setBusy(true);
-    const { data, error } = await supabase.rpc("redeem_package_credit", {
-      p_purchase_id: packageCredit.id,
-      p_session_id: sessionId,
-      // Was hard-coded to null server-side, which is why a class booked with
-      // a pack credit showed up as "Guest" on the vendor's roster.
-      p_child_id: bookChildId,
-      p_policies: acceptedPolicies,
-    });
+    let status: string;
+    if (sessionId.startsWith("wix:")) {
+      // Wix-linked activity: the slot lives in Wix, not activity_sessions —
+      // redeem_package_credit expects a real session id, so this goes
+      // through a route that creates the booking in Wix first (same as the
+      // free-booking path) and only then redeems the credit.
+      try {
+        const data = await apiPost<{ status: string }>("/api/wix/bookings/redeem-package", {
+          activityId: activity?.id,
+          wixSlotId: sessionId,
+          packagePurchaseId: packageCredit.id,
+          childId: bookChildId,
+          policiesAccepted: acceptedPolicies,
+          count,
+        });
+        status = data.status;
+      } catch (e) {
+        setBusy(false);
+        setErr(e instanceof Error ? e.message : "Could not redeem this credit");
+        return;
+      }
+    } else {
+      const { data, error } = await supabase.rpc("redeem_package_credit", {
+        p_purchase_id: packageCredit.id,
+        p_session_id: sessionId,
+        // Was hard-coded to null server-side, which is why a class booked with
+        // a pack credit showed up as "Guest" on the vendor's roster.
+        p_child_id: bookChildId,
+        p_policies: acceptedPolicies,
+        p_quantity: count,
+      });
+      if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error.message)); return; }
+      status = (data as string | null) ?? "confirmed";
+    }
     setBusy(false);
-    if (error) { setErr(error.message.replace(/^.*?:\s*/, "")); return; }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
       when: selected ? sgDateTime(selected.starts_at) : "",
-      status: (data as string | null) ?? "confirmed",
+      status,
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
       venue: activity?.address ?? "",
     });
-    window.location.href = `/booked?${q.toString()}`;
+    goTo(`/booked?${q.toString()}`);
   }
 
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
-    if (!auth) { window.location.href = "/login"; return; }
+    if (!auth) { goTo("/login"); return; }
     // Buying a pack books the selected class too, so the same paperwork applies.
     const consent = consentProblem();
     if (consent) { setErr(consent); return; }
@@ -4948,20 +5184,26 @@ function BookingPage() {
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
   const payLabel = !auth
     ? "Log in to book"
-    : redeemToken
-      ? "Confirm with make-up token"
-      : payWith === "credit"
-        ? "Confirm with a package credit"
-        : selectedPack
-          ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
-          : total != null && total > 0
-            ? `Pay $${total.toFixed(2)}`
-            : "Confirm booking";
+    : isEvent
+      ? selectedTicketType?.is_free
+        ? "Reserve free ticket"
+        : total != null
+          ? `Get ${count > 1 ? `${count} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
+          : "Get ticket"
+      : redeemToken
+        ? "Confirm with make-up token"
+        : payWith === "credit"
+          ? "Confirm with a package credit"
+          : selectedPack
+            ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
+            : total != null && total > 0
+              ? `Pay $${total.toFixed(2)}`
+              : "Confirm booking";
 
   if (loading) {
     return (
       <PageShell active="/book">
-        <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">Loading…</main>
+        <main data-bb-loading className="mx-auto max-w-[1024px] px-6 py-16"><RainbowLoader className="py-4" label="Loading booking" /></main>
       </PageShell>
     );
   }
@@ -5010,22 +5252,61 @@ function BookingPage() {
                   <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
                 ) : (
                   <>
-                    <section>
-                      <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                        {dates.map((d) => (
-                          <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>{d}<span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span></button>
-                        ))}
-                      </div>
-                    </section>
-                    <section>
-                      <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                        {times.map((s) => (
-                          <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>{sgTime(s.starts_at)}<span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span></button>
-                        ))}
-                      </div>
-                    </section>
+                    {!isEvent && (
+                      <>
+                        <section>
+                          <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                            {/* Split "Tue, 25 Aug" into two fixed lines rather than
+                                letting it wrap naturally — a plain text wrap broke
+                                differently per weekday's width, so cards ended up
+                                one or two lines tall depending on which day it was. */}
+                            {dates.map((d) => {
+                              const [weekday, dayMonth] = d.split(", ");
+                              return (
+                                <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                                  <span className="block whitespace-nowrap">{weekday},</span>
+                                  <span className="block whitespace-nowrap">{dayMonth}</span>
+                                  <span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                        <section>
+                          <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                            {times.map((s) => (
+                              <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                                <span className="block whitespace-nowrap">{sgTime(s.starts_at)}</span>
+                                <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      </>
+                    )}
+                    {/* Events skip straight to a ticket-type picker — there's
+                        only ever one occurrence (auto-selected above), so
+                        "date/time" is nothing to choose. Only shown when
+                        there's more than one type; a single type is
+                        auto-selected silently. */}
+                    {isEvent && ticketTypes.length > 1 && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">Choose your ticket</h3>
+                        <div className="space-y-3">
+                          {ticketTypes.map((t) => (
+                            <PackageOption
+                              key={t.id}
+                              selected={ticketTypeId === t.id}
+                              onSelect={() => setTicketTypeId(t.id)}
+                              title={t.name}
+                              price={t.is_free ? "Free" : `${t.currency} ${(ticketPriceCents(t) / 100).toFixed(2)}`}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     {kids.length > 1 && (
                       <section>
                         <h3 className="mb-4 text-xl font-black">Who's this class for?</h3>
@@ -5056,16 +5337,18 @@ function BookingPage() {
                       </p>
                     )}
                     <section>
-                      <h3 className="mb-2 text-xl font-black">3. Number of children</h3>
+                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : "3. Number of children"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
-                        <button type="button" onClick={() => setCount((c) => Math.min(6, c + 1))} className="h-12 w-12">+</button>
+                        <button type="button" onClick={() => setCount((c) => Math.min(isEvent ? ticketQuantityCap : 6, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
                     {/* Step 4: how to pay for the class — a single drop-in, an
-                        unused credit from a pack, or buying a pack now. */}
-                    {!redeemToken && (
+                        unused credit from a pack, or buying a pack now. Not
+                        applicable to a Wix Event ticket — payment is always a
+                        single purchase (see the isEvent branch in pay()). */}
+                    {!redeemToken && !isEvent && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">4. Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
@@ -5080,7 +5363,11 @@ function BookingPage() {
                             <PackageOption
                               selected={payWith === "credit"}
                               onSelect={() => setPayWith("credit")}
-                              title={`Use a package credit — ${packageCredit.remaining} left`}
+                              title={
+                                count > 1
+                                  ? `Use ${count} package credits — ${packageCredit.remaining} left`
+                                  : `Use a package credit — ${packageCredit.remaining} left`
+                              }
                               price="No charge"
                             />
                           )}
@@ -5099,7 +5386,7 @@ function BookingPage() {
                         {restrictedCredit && !packageCredit && (
                           <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
                             You have package credits with this provider, but they can't be used for this{" "}
-                            {restrictedCredit.activity_id && restrictedCredit.activity_id !== activity?.id ? "class" : "session slot"} — check your package's designated class or weekly slot.
+                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "class" : "session slot"} — check your package's designated class or weekly slot.
                           </p>
                         )}
                       </section>
@@ -5275,7 +5562,7 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring & know</h2>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early"], ["shoe", "Dress comfortably"], ["bottle", "Bring essentials"]].map(([icon, title]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">Helpful notes for a smooth class experience.</p></div>)}
+                {[["bell", "Arrive 10 mins early", "Enable your child to get comfortable"], ["shoe", "Dress comfortably", "Allow for movement and potential mess"], ["bottle", "Bring essentials", "Socks, water and wipes encouraged"]].map(([icon, title, note]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">{note}</p></div>)}
               </div>
             </article>
           </div>
@@ -5329,14 +5616,15 @@ function AboutPage() {
             <p className="mt-5 max-w-[420px] font-semibold leading-7 text-[#3f4b78]">We curate options based on your children's age, interests and your location, making it quicker and easier to find great activities and less overwhelming to adjust plans when the schedule changes.</p>
             <Button href="/explore" className="mt-6">Explore →</Button>
           </div>
-          {/* Square source (see scripts/hide-face.py) — the frame matches so
-              nothing is cropped away. */}
+          {/* Portrait source cropped into the square frame — positioned low
+              (10% from top) so Katie's head clears the top edge instead of
+              the default center-crop cutting into her hair. */}
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/about-family.jpg`}
             alt="Katie, BabyBrain's founder, holding her son"
             width={1000}
             height={1000}
-            className="relative z-10 mx-auto aspect-square w-full max-w-[460px] rounded-[24px] object-cover shadow-soft"
+            className="relative z-10 mx-auto aspect-square w-full max-w-[460px] rounded-[24px] object-cover object-[50%_10%] shadow-soft"
           />
         </section>
 
@@ -5389,7 +5677,7 @@ function LoginPage() {
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
     const next = getParam("next");
-    window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile";
+    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile");
   }
   return (
     <PageShell active="/login">
@@ -5507,7 +5795,7 @@ function ResetPasswordPage() {
     setBusy(false);
     if (error) return setError(error);
     setDone(true);
-    setTimeout(() => (window.location.href = "/profile"), 1500);
+    setTimeout(() => goTo("/profile"), 1500);
   }
 
   return (

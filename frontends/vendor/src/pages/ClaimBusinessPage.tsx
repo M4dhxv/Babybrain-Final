@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import SiteFooter from '@/components/SiteFooter';
-import { BrandLogo } from '@/components/BrandLogo';
+import { AuthHeader } from '@/components/AuthHeader';
 
 /**
  * Claim Your Business.
@@ -45,10 +45,10 @@ interface ClaimableVenue {
 
 const whyVerify = [
   { icon: MapPin, title: 'Claim your venue listing', desc: 'Take ownership of your business on BabyBrain.' },
-  { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programs up to date.' },
+  { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programmes up to date.' },
   { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Growth plan.' },
   { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Growth plan.' },
-  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your classes, timetable and holidays.' },
+  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your activities, timetable and holidays.' },
 ];
 
 const REGION_LABELS: Record<string, string> = {
@@ -157,16 +157,23 @@ export default function ClaimBusinessPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
-        <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
-          <BrandLogo className="h-10" />
-          
-        </button>
-        <Button variant="outline" className="gap-2 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => navigate('/')}>
+      <AuthHeader>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/login')}
+          className="rounded-full border-blue-300 bg-blue-50 px-4 text-blue-700 hover:bg-blue-100 sm:px-6"
+        >
+          Login
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/')}
+          className="gap-2 rounded-full border-blue-300 px-4 text-blue-700 hover:bg-blue-50 sm:px-6"
+        >
           <ArrowLeft className="h-4 w-4" />
           Save &amp; exit
         </Button>
-      </header>
+      </AuthHeader>
 
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <div className="mb-8 text-center">
@@ -176,13 +183,35 @@ export default function ClaimBusinessPage() {
 
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="w-full flex-shrink-0 lg:w-64">
-            <img src={`${import.meta.env.BASE_URL}assets/shop-illustration.png`} alt="" className="mb-4 h-auto w-40" />
-            <h3 className="mb-4 text-lg font-bold text-[#C90044]">Why verify your business?</h3>
-            <div className="space-y-4">
+            {/* The artwork is a square raster on a cream ground. `multiply` drops its
+                near-white ground into the page and the mask feathers the four edges, so it
+                sits on the white column with no visible picture frame. */}
+            <img
+              src={`${import.meta.env.BASE_URL}assets/playcentre-illustration.webp`}
+              alt=""
+              className="-mt-6 mb-2 h-auto w-full max-w-60 mix-blend-multiply mx-auto lg:mx-0 lg:-mt-8 min-[1060px]:-mt-16"
+              style={{
+                WebkitMaskImage:
+                  'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
+                maskImage:
+                  'radial-gradient(ellipse 80% 80% at 50% 50%, #000 74%, transparent 100%)',
+              }}
+            />
+            {/* Centred on a phone to line up with the page heading above it;
+                left-aligned again from lg, where this is a side column. */}
+            <h3 className="mb-4 text-center text-lg font-bold text-[#FA4D8D] lg:text-left">Why verify your business?</h3>
+            {/* Centred on a phone, the icon sits above the text rather than
+                beside it. Centring an icon-and-text row as a unit left the
+                icons at a different x on every row — and a long label pushed
+                one of them off the edge of the column entirely. */}
+            <div className="space-y-6 lg:space-y-4">
               {whyVerify.map((item) => (
-                <div key={item.title} className="flex gap-3">
-                  <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50">
-                    <item.icon className="h-4 w-4 text-[#C90044]" />
+                <div
+                  key={item.title}
+                  className="flex flex-col items-center gap-2 text-center lg:flex-row lg:items-start lg:gap-3 lg:text-left"
+                >
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-pink-50 lg:mt-0.5">
+                    <item.icon className="h-4 w-4 text-[#FA4D8D]" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-gray-900">{item.title}</div>
@@ -197,7 +226,7 @@ export default function ClaimBusinessPage() {
             {/* Step 1 — find the venue */}
             <div className="flex-1">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#C90044]">1</div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#FA4D8D]">1</div>
                 <div>
                   <h3 className="font-semibold text-gray-900">Find your venue</h3>
                   <p className="text-xs text-gray-500">Search our listings by business name, address or postcode.</p>
@@ -225,13 +254,13 @@ export default function ClaimBusinessPage() {
                       onClick={() => setSelected(venue)}
                       className={cn(
                         'flex w-full items-start gap-4 rounded-xl border-2 p-3 text-left transition-colors',
-                        on ? 'border-[#C90044] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
+                        on ? 'border-[#FA4D8D] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
                       )}
                     >
                       <div className="flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-semibold text-gray-900">{venue.business_name}</h4>
-                          {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#C90044]" />}
+                          {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#FA4D8D]" />}
                         </div>
                         {(venue.address || venue.postal_code) && (
                           <div className="mt-1 flex items-start gap-1 text-xs text-gray-500">
@@ -245,7 +274,7 @@ export default function ClaimBusinessPage() {
                               {REGION_LABELS[venue.region] ?? venue.region}
                             </span>
                           )}
-                          <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#C90044]">
+                          <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#FA4D8D]">
                             {venue.activity_count} {venue.activity_count === 1 ? 'listing' : 'listings'}
                           </span>
                         </div>
@@ -265,7 +294,7 @@ export default function ClaimBusinessPage() {
 
               <p className="text-sm text-gray-500">
                 Can't find your venue?{' '}
-                <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#C90044]">
+                <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#FA4D8D]">
                   Contact our support
                 </button>
               </p>
@@ -291,10 +320,10 @@ export default function ClaimBusinessPage() {
                 <div>
                   <div className="mb-2 flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-100">
-                      <Mail className="h-4 w-4 text-[#C90044]" />
+                      <Mail className="h-4 w-4 text-[#FA4D8D]" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-gray-900">Business email <span className="text-[#C90044]">*</span></label>
+                      <label className="text-sm font-semibold text-gray-900">Business email <span className="text-[#FA4D8D]">*</span></label>
                       <p className="text-xs text-gray-500">We'll send your code here.</p>
                     </div>
                   </div>
@@ -331,7 +360,7 @@ export default function ClaimBusinessPage() {
                       <CreditCard className="h-4 w-4 text-yellow-600" />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-gray-900">UEN <span className="text-[#C90044]">*</span></label>
+                      <label className="text-sm font-semibold text-gray-900">UEN <span className="text-[#FA4D8D]">*</span></label>
                       <p className="text-xs text-gray-500">Used to verify your registered business.</p>
                     </div>
                   </div>

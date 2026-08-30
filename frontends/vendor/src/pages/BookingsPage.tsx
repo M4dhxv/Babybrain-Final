@@ -1,21 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 
+/**
+ * The class roster table's column tracks. Header and body rows are separate grids, so the
+ * track list is shared to keep them in step, and every track is
+ * `minmax(0, …)` rather than a bare `Nfr` — a bare fr floors at min-content,
+ * so one long child name widened that row's track and left the row
+ * misaligned against the header. `gap-x-4` keeps neighbouring values from
+ * sitting flush. Same fix as the activities table.
+ */
+const ROSTER_COLS =
+  'grid min-w-[570px] gap-x-4 grid-cols-[minmax(0,0.5fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
+
 const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
 const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-yellow-300 text-yellow-800', 'bg-purple-300 text-purple-800', 'bg-green-300 text-green-800'];
 
 const sgDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+// YYYY-MM-DD in Singapore time — matches what a <input type="date"> both
+// stores and expects, so a session's calendar day (not just its UTC one,
+// which can differ around midnight SGT) can be compared against the filter.
+const sgDateKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const ageLabel = (m: number | null) => (m == null ? '' : m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
@@ -72,11 +88,34 @@ export default function BookingsPage() {
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
   const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
   const [sessionId, setSessionId] = useState<string>('');
+  // Narrows the session picker to one calendar day — useful once a Wix-linked
+  // activity's half-hourly slots push everything else off the (soonest-50)
+  // list. Empty string = no filter, matching <input type="date">'s own "no
+  // value" state.
+  const [dateFilter, setDateFilter] = useState('');
+  const dateFilterRef = useRef<HTMLInputElement>(null);
+  const filteredSessions = useMemo(
+    () => (dateFilter ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter) : sessions),
+    [sessions, dateFilter]
+  );
+  // Switching (or clearing) the date filter can leave the current selection
+  // out of view — jump to the first session that's still in it rather than
+  // showing a roster for a session no longer in the visible list.
+  useEffect(() => {
+    if (filteredSessions.length && !filteredSessions.some((s) => s.id === sessionId)) {
+      setSessionId(filteredSessions[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredSessions]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [selected, setSelected] = useState(0);
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
+  // Which waivers/consents a booking actually accepted — fetched per booking
+  // (cached by booking_id) rather than bundled into the roster RPC, since
+  // this only needs to be looked at for the one booking currently open.
+  const [policyAcceptances, setPolicyAcceptances] = useState<Record<string, { policy_id: string; policy_title: string; accepted_at: string }[]>>({});
   const [loading, setLoading] = useState(true);
 
   // 2.1: manual booking entry (bookings taken outside BabyBrain)
@@ -129,11 +168,30 @@ export default function BookingsPage() {
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const ids = [...map.keys()];
       if (!ids.length) { setSessions([]); setLoading(false); return; }
-      const { data: sess } = await supabase
-        .from('activity_sessions').select('id, starts_at, capacity, activity_id')
-        .in('activity_id', ids).order('starts_at', { ascending: false }).limit(50);
-      const opts = (sess ?? []).map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
-      setSessionActivity(Object.fromEntries((sess ?? []).map((s) => [s.id, s.activity_id])));
+      // Capped per activity, not globally — a single high-frequency
+      // Wix-linked activity can generate hundreds of rows (30-min slots
+      // over weeks), which under one shared cap silently squeezed every
+      // other activity's sessions out entirely. A low-frequency one (a
+      // once-off course, a monthly class) could vanish from the picker
+      // even though it's genuinely upcoming. One query per activity,
+      // each capped, guarantees every activity gets a fair share.
+      const perActivityCap = 20;
+      const results = await Promise.all(
+        ids.map((id) =>
+          supabase
+            .from('activity_sessions')
+            .select('id, starts_at, capacity, activity_id')
+            .eq('activity_id', id)
+            .gte('starts_at', new Date().toISOString())
+            .order('starts_at', { ascending: true })
+            .limit(perActivityCap)
+        )
+      );
+      const sess = results
+        .flatMap((r) => r.data ?? [])
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+      const opts = sess.map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
+      setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
       setSessions(opts);
       // The Schedule tab deep-links here with ?session=, so a click on a
       // calendar session lands straight on its roster instead of whichever
@@ -234,31 +292,72 @@ export default function BookingsPage() {
 
   const sel = visibleBookings[selected];
 
+  useEffect(() => {
+    if (!sel || sel.policies_accepted === 0 || policyAcceptances[sel.booking_id]) return;
+    (async () => {
+      const { data } = await supabase
+        .from('booking_policy_acceptances')
+        .select('policy_id, policy_title, accepted_at')
+        .eq('booking_id', sel.booking_id)
+        .order('accepted_at');
+      setPolicyAcceptances((prev) => ({ ...prev, [sel.booking_id]: data ?? [] }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.booking_id]);
+
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage bookings for your sessions.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        {/* Session Selector (real sessions) */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700">
-            <Baby className="w-4 h-4 text-[#C90044]" />
-            <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="bg-transparent font-medium focus:outline-none">
-              {sessions.length === 0 && <option>No sessions yet</option>}
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
-              ))}
-            </select>
+      <div className="px-4 pb-8 sm:px-8">
+        {/* Session Selector (real sessions). One pill: on mobile it stacks so
+            the date filter sits on its own row below the session box (it used
+            to be crammed alongside and overflow); on desktop it's the same
+            single inline pill as before. */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex w-full flex-col gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:w-auto sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-2">
+              <Baby className="w-4 h-4 shrink-0 text-[#C90044]" />
+              <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
+                {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
+                {filteredSessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="h-px w-full bg-gray-200 sm:h-4 sm:w-px" />
+            <div className="flex min-w-0 items-center gap-2">
+              {/* The input's own native picker-indicator icon is hidden — this
+                  icon opens the same picker instead, so there's only one
+                  calendar symbol instead of two. */}
+              <CalendarDays
+                className="w-4 h-4 shrink-0 text-[#C90044] cursor-pointer"
+                onClick={() => dateFilterRef.current?.showPicker?.()}
+              />
+              <input
+                ref={dateFilterRef}
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:flex-none"
+                aria-label="Filter sessions by date"
+              />
+              {dateFilter && (
+                <button onClick={() => setDateFilter('')} className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
           {canManage && sessionId && (
             <button
               onClick={() => { setShowManual((v) => !v); setManualError(null); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100"
+              className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 sm:w-auto"
             >
               <UserPlus className="w-4 h-4" /> Add booking
             </button>
@@ -293,7 +392,7 @@ export default function BookingsPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-gray-200 mb-6">
+        <div className="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
           {bookingsTabs.map((tab) => (
             <button key={tab} onClick={() => selectTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
@@ -306,11 +405,11 @@ export default function BookingsPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading bookings" />}
 
-        <div className="flex gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row">
           {/* Booking list */}
-          <div className="w-80 flex-shrink-0">
+          <div className="w-full flex-shrink-0 lg:w-80">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bookings..."
@@ -381,14 +480,39 @@ export default function BookingsPage() {
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Waivers &amp; consents</div>
-                      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg', sel.policies_accepted > 0 ? 'bg-green-50' : 'bg-gray-50')}>
-                        <FileCheck className={cn('w-4 h-4', sel.policies_accepted > 0 ? 'text-green-600' : 'text-gray-400')} />
-                        <span className={cn('text-sm', sel.policies_accepted > 0 ? 'text-green-700' : 'text-gray-500')}>
-                          {sel.policies_accepted > 0
-                            ? `${sel.policies_accepted} accepted at booking`
-                            : sel.is_manual ? 'Manual booking — collected offline' : 'None on file'}
-                        </span>
-                      </div>
+                      {sel.policies_accepted > 0 ? (
+                        <div className="rounded-lg bg-green-50 px-3 py-2 space-y-1.5">
+                          {(policyAcceptances[sel.booking_id] ?? []).length === 0 ? (
+                            <RainbowLoader size="sm" className="justify-start py-0.5" label="Loading waivers" />
+                          ) : (
+                            policyAcceptances[sel.booking_id].map((p) => (
+                              <div key={p.policy_id} className="flex items-start gap-2">
+                                <FileCheck className="w-4 h-4 mt-0.5 shrink-0 text-green-600" />
+                                <div className="text-sm text-green-700">
+                                  {p.policy_title}
+                                  <span className="block text-xs text-green-600/80">
+                                    Accepted {sgDateTime(p.accepted_at)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => navigate('/settings?tab=policies')}
+                            className="text-xs font-medium text-green-700 underline underline-offset-2 hover:text-green-800"
+                          >
+                            View waivers &amp; consents →
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
+                          <FileCheck className="w-4 h-4 text-gray-400" />
+                          <span className="text-sm text-gray-500">
+                            {sel.is_manual ? 'Manual booking — collected offline' : 'None on file'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Attendance</div>
@@ -421,9 +545,9 @@ export default function BookingsPage() {
                     <button
                       onClick={() => navigate('/plans')}
                       className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#C90044]"
-                      title="Messaging parents is available on Growth and above"
+                      title="Messaging parents is available on Pro and above"
                     >
-                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Growth
+                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Pro
                     </button>
                   ) : sel.user_id ? (
                     <button
@@ -502,21 +626,21 @@ export default function BookingsPage() {
                 </div>
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
               </div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden mb-5">
-                <div className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
+              <div className="border border-gray-200 rounded-xl overflow-x-auto mb-5">
+                <div className={cn(ROSTER_COLS, 'px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500')}>
                   <div>Present</div><div>Child</div><div>Status</div><div>Make-up token</div>
                 </div>
                 {booked.map((c) => {
                   const cur = attDraft[c.booking_id] ?? c.attendance_status;
                   const tok = tokenStatus[c.booking_id];
                   return (
-                    <div key={c.booking_id} className="grid grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
+                    <div key={c.booking_id} className={cn(ROSTER_COLS, 'px-4 py-3 border-t border-gray-100 items-center')}>
                       <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{c.child_name}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="w-8 h-8 flex-shrink-0 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 break-words">{c.child_name}</div>
                           <div className="text-xs text-gray-500">{ageLabel(c.child_age_months)}</div>
                         </div>
                       </div>

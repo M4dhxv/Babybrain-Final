@@ -5,9 +5,208 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/vendor/assets/brand/logo-icon.png" />
     <title>BabyBrain Vendor Portal</title>
+
+    <!-- Nunito is the parent app's face. The portal itself is Inter; this is
+         loaded only so the "Parent view" preview on Activities renders in the
+         same type as the page it is previewing. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+
+    <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
+         the favicon (it is 385x256, not square) and draws a grey letter tile
+         instead. The icons below are square crops of the same brand mark. -->
+    <link rel="manifest" href="/vendor/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/vendor/assets/brand/apple-touch-icon.png" />
+    <meta name="theme-color" content="#FA4D8D" />
+    <meta name="apple-mobile-web-app-title" content="BabyBrain" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!-- Boot splash: inline CSS so it paints before any bundle loads. A stale
+         or half-restored tab (browser restart, dev-server restart) can keep a
+         dead module graph and never mount React — this replaces the old blank
+         "Loading..." with the brand loader, and the script below keeps
+         reloading the tab until it actually boots and shows content. React
+         clears #root's children on first render, which removes the splash. -->
+    <style>
+      #bb-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: #fffcf8;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #bb-boot .bb-wave {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        height: 30px;
+      }
+      #bb-boot .bb-wave i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        animation: bb-boot-wave 1s ease-in-out infinite;
+      }
+      #bb-boot .bb-wave i:nth-child(1) { background: #ffc1d6; animation-delay: 0s; }
+      #bb-boot .bb-wave i:nth-child(2) { background: #ffb77a; animation-delay: 0.1s; }
+      #bb-boot .bb-wave i:nth-child(3) { background: #ffd77a; animation-delay: 0.2s; }
+      #bb-boot .bb-wave i:nth-child(4) { background: #a8e59a; animation-delay: 0.3s; }
+      #bb-boot .bb-wave i:nth-child(5) { background: #a7d8f8; animation-delay: 0.4s; }
+      #bb-boot .bb-wave i:nth-child(6) { background: #c7b1e6; animation-delay: 0.5s; }
+      #bb-boot .bb-word { font-size: 15px; font-weight: 800; color: #111a4c; letter-spacing: -0.01em; }
+      #bb-boot .bb-word span { font-weight: 600; color: #7b7278; }
+      #bb-boot .bb-retry {
+        display: none;
+        border: 0;
+        border-radius: 10px;
+        background: #fa4d8d;
+        color: #fff;
+        font: inherit;
+        font-weight: 800;
+        padding: 10px 18px;
+        cursor: pointer;
+      }
+      #bb-boot.bb-stuck .bb-wave i { animation-play-state: paused; opacity: 0.35; }
+      #bb-boot.bb-stuck .bb-retry { display: inline-block; }
+      #bb-boot.bb-stuck .bb-hint { display: block; }
+      #bb-boot .bb-hint { display: none; }
+      @keyframes bb-boot-wave {
+        0%, 100% { transform: translateY(0); opacity: 0.55; }
+        50% { transform: translateY(-14px); opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #bb-boot .bb-wave i { animation-duration: 2.4s; }
+      }
+    </style>
+    <script>
+      /* Self-heal a stale tab so it never just sits there looking idle.
+       *
+       * Two failure modes after a browser or dev/deploy server restart:
+       *   1. The restored tab keeps a dead module graph — the entry script
+       *      never runs, React never mounts, nothing shows but this splash.
+       *   2. React DOES mount but then wedges on an in-app loading gate (a
+       *      hung auth/network call), showing "Loading…" forever.
+       * Both used to need a manual hard refresh. We reload the tab ourselves.
+       *
+       * Signals set by the app:
+       *   window.__BB_BOOT_JS__      entry module started running (main.tsx).
+       *                              Rules out a stale asset, so we stop
+       *                              reloading for mode 1.
+       *   window.__BB_BOOTED__       React finished its first render (main.tsx).
+       *   [data-bb-loading] in DOM   a top-level loading gate is on screen
+       *                              (RequireAuth / the page shells).
+       */
+      (function () {
+        var CNT = "bb-boot-tries";
+        var GATE = "bb-gate-retry";
+        var SOFT = 3;    // after this many tries, also reveal the manual Reload button
+        var SLOW = 6;    // after this many tries, back off to a slow retry
+        var ABORT = 40;  // after this many tries, give up (~20 min of a dead server)
+        var mem = 0;     // fallback count when sessionStorage is unavailable
+        var pending = false;
+
+        function jsRan()  { return window.__BB_BOOT_JS__ === true; }
+        function booted() { return window.__BB_BOOTED__ === true; }
+        function stillLoading() { return !!document.querySelector("[data-bb-loading]"); }
+        function n() {
+          try { var v = sessionStorage.getItem(CNT); return v == null ? mem : (+v || 0); }
+          catch (e) { return mem; }
+        }
+        function setN(v) { mem = v; try { sessionStorage.setItem(CNT, v); } catch (e) {} }
+        function reset() {
+          mem = 0;
+          try { sessionStorage.removeItem(CNT); } catch (e) {}
+          try { sessionStorage.removeItem(GATE); } catch (e) {}
+        }
+        function markStuck() {
+          var b = document.getElementById("bb-boot");
+          if (b) b.classList.add("bb-stuck");
+        }
+
+        function heal() {
+          if (booted()) { if (!stillLoading()) reset(); return; }
+          // Bundle executed but never rendered — a code fault, not a stale
+          // asset. Reloading would only loop, so surface it instead.
+          if (jsRan()) { markStuck(); return; }
+          if (pending) return;
+          var tries = n();
+          if (tries >= SOFT) markStuck();   // show the button, but keep trying
+          if (tries >= ABORT) return;       // something is genuinely broken
+          setN(tries + 1);
+          pending = true;
+          // Back off fast for the first few tries, then settle into a slow
+          // retry so the tab still recovers once the server is back, without
+          // hammering it.
+          var delay = tries < SLOW ? Math.min(tries * 1500, 6000) : 30000;
+          setTimeout(function () {
+            if (!booted()) location.reload();
+            else { pending = false; if (!stillLoading()) reset(); }
+          }, delay);
+        }
+
+        // Mode 2: booted, but still wedged on a top-level loading gate well
+        // past the app's own 8s auth failsafe. One reload usually clears it.
+        function healGate() {
+          var done = 0;
+          try { done = +sessionStorage.getItem(GATE) || 0; } catch (e) {}
+          if (done >= 1) { markStuck(); return; }
+          try { sessionStorage.setItem(GATE, 1); } catch (e) {}
+          location.reload();
+        }
+
+        // Clear the counter once the tab has been happily booted for a moment,
+        // so a later stall starts counting from zero.
+        window.addEventListener("load", function () {
+          setTimeout(function () { if (booted() && !stillLoading()) reset(); }, 2500);
+        });
+        // Browser restored the tab from bfcache — cheap and safe to reload.
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted && (!booted() || stillLoading())) location.reload();
+        });
+        // A lazily-restored tab that only really loads when it's looked at.
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "visible" && !booted() && performance.now() > 4000) heal();
+        });
+        // Stale hashed chunk after a redeploy (prod build).
+        window.addEventListener("vite:preloadError", function (e) { e.preventDefault(); heal(); });
+        // The entry <script> itself failed to download (server restart / cold start).
+        window.addEventListener("error", function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === "SCRIPT" && !booted()) heal();
+        }, true);
+
+        // Watchdog: keep rechecking so the tab recovers on its own whether it
+        // never mounted (mode 1) or mounted and wedged on a gate (mode 2).
+        function tick() {
+          if (booted()) {
+            if (!stillLoading()) { reset(); return; }
+            if (performance.now() > 20000) healGate();
+          } else {
+            heal();
+          }
+          setTimeout(tick, 15000);
+        }
+        function arm() { setTimeout(tick, 7000); }
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", arm);
+        else arm();
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="bb-boot" role="status" aria-label="Loading BabyBrain">
+        <div class="bb-wave"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="bb-word">BabyBrain<span class="bb-hint"> &middot; still loading</span></div>
+        <button type="button" class="bb-retry" onclick="location.reload()">Reload</button>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

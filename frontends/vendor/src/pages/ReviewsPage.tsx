@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Star, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -85,15 +86,15 @@ export default function ReviewsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div>
+      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
+        <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
-          <p className="text-sm text-gray-500 mt-1">What parents are saying about your classes.</p>
+          <p className="text-sm text-gray-500 mt-1">What parents are saying about your activities.</p>
         </div>
       </div>
 
-      <div className="px-8 pb-8">
-        <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="px-4 pb-8 sm:px-8">
+        <div className="grid grid-cols-3 gap-3 mb-6 sm:gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-1">
               <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
@@ -121,7 +122,7 @@ export default function ReviewsPage() {
           ))}
         </div>
 
-        {loading && <div className="text-sm text-gray-400">Loading reviews…</div>}
+        {loading && <RainbowLoader className="py-6" label="Loading reviews" />}
         {!loading && visible.length === 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
             {filter === 'unanswered' ? "You're all caught up — no unanswered reviews." : 'No reviews yet.'}
@@ -136,7 +137,7 @@ export default function ReviewsPage() {
                   {initials(r.parent_name)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2">
                     <div>
                       <span className="font-medium text-gray-900 text-sm">{r.parent_name}</span>
                       <span className="text-sm text-gray-500"> · {r.activity_title}</span>
