@@ -39,7 +39,8 @@ const sidebarItems = [
   { icon: MessageSquare, label: 'Messages', path: '/messages', paidOnly: true },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
-  // Headline Pro feature, so it gets its own tab and shows a lock below Pro.
+  // Headline Premium feature ('pro'/'premium' in the DB), so it gets its own
+  // tab and shows a lock on every tier below it.
   { icon: TrendingUp, label: 'Insights', path: '/insights', proOnly: true },
   { icon: Settings, label: 'Settings', path: '/settings' },
   { icon: Wallet, label: 'Earnings', path: '/earnings' },
@@ -144,7 +145,7 @@ export default function PortalLayout() {
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
-                title={locked ? (item.proOnly ? 'Insights is a Pro feature' : 'Messaging is available on Pro and above') : undefined}
+                title={locked ? (item.proOnly ? 'Insights is a Premium feature' : 'Messaging is available on Pro and above') : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive

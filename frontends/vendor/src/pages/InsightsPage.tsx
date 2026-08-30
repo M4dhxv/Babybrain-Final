@@ -29,6 +29,19 @@ const ageBand = (min: number, max: number) => {
   return '7 yrs+';
 };
 
+/* QA 24/08: "on Premium, under insights it says based on the last 30 days but
+   then the Trial to package conversion says last 90 days — can we add a filter
+   top right so vendors can select the time frame?" One range now drives every
+   panel on the page, including the trial RPC, so the numbers are always over
+   the same window and the window is stated once. */
+const RANGES = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+  { days: 90, label: 'Last 90 days' },
+  { days: 180, label: 'Last 6 months' },
+  { days: 365, label: 'Last 12 months' },
+] as const;
+
 const top = (counts: Record<string, number>, n = 3): Row[] =>
   Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
@@ -42,6 +55,8 @@ export default function InsightsPage() {
   const unlocked = plan === 'pro' || plan === 'premium';
 
   const [loading, setLoading] = useState(true);
+  const [days, setDays] = useState<number>(30);
+  const rangeLabel = (RANGES.find((r) => r.days === days)?.label ?? `Last ${days} days`).toLowerCase();
   const [views30, setViews30] = useState<number | null>(null);
   const [bookings30, setBookings30] = useState(0);
   const [topActivities, setTopActivities] = useState<Row[]>([]);
@@ -58,8 +73,9 @@ export default function InsightsPage() {
 
   useEffect(() => {
     if (!provider || !unlocked) { setLoading(false); return; }
+    setLoading(true);
     (async () => {
-      const since = new Date(Date.now() - 30 * 864e5).toISOString();
+      const since = new Date(Date.now() - days * 864e5).toISOString();
 
       const { data: acts } = await supabase
         .from('activities')
@@ -117,13 +133,13 @@ export default function InsightsPage() {
       }
       const { data: conv } = await supabase.rpc('provider_trial_conversion', {
         p_provider: provider.id,
-        p_days: 90,
+        p_days: days,
       });
       setTrial((conv?.[0] as typeof trial) ?? null);
 
       setLoading(false);
     })();
-  }, [provider, unlocked]);
+  }, [provider, unlocked, days]);
 
   if (!unlocked) {
     return (
@@ -134,13 +150,17 @@ export default function InsightsPage() {
           <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-purple-300 text-purple-800">
             <Crown className="h-7 w-7" />
           </span>
-          <h2 className="mt-4 text-xl font-bold text-gray-900">Insights is a Pro feature</h2>
+          {/* QA 24/08: "On the insights tab it says it is a Pro feature and
+              'Go Pro' — it is Premium, please update copy and CTA." The gate is
+              on plan 'pro'/'premium', which the Plans page renames Premium, so
+              this was telling a Pro subscriber to buy the tier they were on. */}
+          <h2 className="mt-4 text-xl font-bold text-gray-900">Insights is a Premium feature</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">
             Find out which activities convert, which age groups book most, and the days,
             times and locations parents actually choose.
           </p>
           <Button onClick={() => navigate('/plans')} className="mt-5 gradient-primary text-white">
-            Go Pro
+            Upgrade to Premium
           </Button>
         </div>
       </div>
@@ -174,8 +194,26 @@ export default function InsightsPage() {
 
   return (
     <div className="p-4 sm:p-8">
-      <h1 className="text-2xl font-bold text-gray-900 text-center sm:text-left">Insights</h1>
-      <p className="mt-1 text-sm text-gray-500 text-center sm:text-left">Based on your bookings over the last 30 days.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 text-center sm:text-left">Insights</h1>
+          <p className="mt-1 text-sm text-gray-500 text-center sm:text-left">
+            Based on your bookings over the {rangeLabel}.
+          </p>
+        </div>
+        <label className="flex items-center justify-center gap-2 sm:justify-end">
+          <span className="text-xs text-gray-500">Time frame</span>
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
+          >
+            {RANGES.map((r) => (
+              <option key={r.days} value={r.days}>{r.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {[
@@ -192,20 +230,22 @@ export default function InsightsPage() {
         ))}
       </div>
 
-      {/* Trials look further back than 30 days: a parent who tries a class
-          rarely buys a pack the same month. */}
+      {/* Trial conversion used to be pinned at 90 days while everything else
+          on the page was 30 — the mismatch the QA row called out. It follows
+          the selected range now. Worth widening the range if it reads low: a
+          parent who tries a class rarely buys a pack the same month. */}
       <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-gray-900">
           <Repeat className="h-4 w-4 text-purple-600" /> Trial → package conversion
         </h3>
         <p className="mb-4 text-xs text-gray-500">
           Parents whose first booking with you was paid for on its own, and how many went on to buy a
-          class pack. Last 90 days.
+          class pack. {RANGES.find((r) => r.days === days)?.label ?? `Last ${days} days`}.
         </p>
         {loading ? (
           <RainbowLoader className="py-6" label="Loading insights" />
         ) : !trial || trial.trials === 0 ? (
-          <p className="text-sm text-gray-400">No first-time bookings in the last 90 days yet.</p>
+          <p className="text-sm text-gray-400">No first-time bookings in the {rangeLabel} yet.</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-4">
             {[
@@ -227,7 +267,7 @@ export default function InsightsPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Panel title="Top activities" icon={Star} rows={topActivities} empty="No bookings in the last 30 days." />
+        <Panel title="Top activities" icon={Star} rows={topActivities} empty={`No bookings in the ${rangeLabel}.`} />
         <Panel title="Top age groups" icon={Users} rows={topAges} empty="No bookings yet." />
         <Panel title="Most popular days" icon={CalendarDays} rows={topDays} empty="No bookings yet." />
         <Panel title="Most popular times" icon={TrendingUp} rows={topTimes} empty="No bookings yet." />

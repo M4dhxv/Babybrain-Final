@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import LocationsManager from '@/components/LocationsManager';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
 
@@ -115,6 +116,24 @@ export default function ActivitiesPage() {
 
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<ActivityCategory[]>([]);
+  /* QA 28/08: "It doesn't make sense to have locations in settings and weird
+     redirecting from activities to there — can location move to sit under the
+     'activities' tab." Venues now live here, next to the activities that use
+     them; Settings redirects its old tab across so existing links still land. */
+  const [pageTab, setPageTab] = useState<'activities' | 'locations'>('activities');
+  const [openNewLocation, setOpenNewLocation] = useState(false);
+
+  /* Deep-linkable: Settings forwards its retired ?tab=locations here, and the
+     dashboard's "Add a location" adds &new=location to open the form straight
+     away. Driven off the router's params rather than read once at mount, so
+     arriving from another page while already on /activities still switches. */
+  useEffect(() => {
+    if (searchParams.get('tab') === 'locations') {
+      setPageTab('locations');
+      if (searchParams.get('new') === 'location') setOpenNewLocation(true);
+    }
+  }, [searchParams]);
+
   const [locations, setLocations] = useState<{ id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]>([]);
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [bookingTotals, setBookingTotals] = useState<Record<string, number>>({});
@@ -150,7 +169,12 @@ export default function ActivitiesPage() {
   // Per-session teacher/studio can also be set after the fact (a substitute
   // teacher, or a room reassignment) without recreating the session.
   const [editingSessId, setEditingSessId] = useState<string | null>(null);
-  const [sessEditForm, setSessEditForm] = useState({ teacher: '', studio: '' });
+  /* QA 21/08: "under activities, manage schedule when you click edit upcoming
+     sessions, it only allows you to add teacher and studio details — it should
+     allow you to edit all the details." Date, start time, duration and capacity
+     are now editable too; changing any of them rewrites starts_at/ends_at. */
+  const [sessEditForm, setSessEditForm] = useState({ date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '' });
+  const [sessEditError, setSessEditError] = useState<string | null>(null);
   const [savingSessEdit, setSavingSessEdit] = useState(false);
 
   /* Parent-view preview. Vendors kept publishing blind and then opening the
@@ -309,19 +333,62 @@ export default function ActivitiesPage() {
 
   function startEditSess(s: Sess) {
     setEditingSessId(s.id);
-    setSessEditForm({ teacher: s.teacher_name ?? '', studio: s.studio ?? '' });
+    setSessEditError(null);
+    // Read the stored instant back out as Singapore wall-clock time, which is
+    // what the vendor typed in and what the list shows.
+    const sgt = new Date(new Date(s.starts_at).toLocaleString('en-US', { timeZone: 'Asia/Singapore' }));
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setSessEditForm({
+      date: `${sgt.getFullYear()}-${pad(sgt.getMonth() + 1)}-${pad(sgt.getDate())}`,
+      time: `${pad(sgt.getHours())}:${pad(sgt.getMinutes())}`,
+      duration: String(Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000) || 45),
+      capacity: s.capacity != null ? String(s.capacity) : '',
+      teacher: s.teacher_name ?? '',
+      studio: s.studio ?? '',
+    });
   }
 
   async function saveSessEdit(id: string) {
     if (!scheduleFor) return;
+    setSessEditError(null);
+    if (!sessEditForm.date || !sessEditForm.time) {
+      setSessEditError('Pick a date and start time.');
+      return;
+    }
+    // Capacity is mandatory here for the same reason it is on the add form:
+    // a blank one used to mean unlimited bookings.
+    if (!sessEditForm.capacity || Number(sessEditForm.capacity) < 1) {
+      setSessEditError('Set a capacity for this session.');
+      return;
+    }
+    const booked = sessions.find((s) => s.id === id)?.booked ?? 0;
+    if (Number(sessEditForm.capacity) < booked) {
+      setSessEditError(`This session already has ${booked} booking${booked > 1 ? 's' : ''} — capacity can't be lower than that.`);
+      return;
+    }
+    const durationMins = Math.max(15, Number(sessEditForm.duration) || 45);
+    // Same SGT pinning as addSessions().
+    const starts = new Date(`${sessEditForm.date}T${sessEditForm.time}:00+08:00`);
+    if (Number.isNaN(starts.getTime())) {
+      setSessEditError('That date and time could not be read.');
+      return;
+    }
     setSavingSessEdit(true);
-    await supabase.from('activity_sessions').update({
+    const { error } = await supabase.from('activity_sessions').update({
+      starts_at: starts.toISOString(),
+      ends_at: new Date(starts.getTime() + durationMins * 60000).toISOString(),
+      capacity: Number(sessEditForm.capacity),
       teacher_name: sessEditForm.teacher.trim() || null,
       studio: sessEditForm.studio.trim() || null,
     }).eq('id', id);
     setSavingSessEdit(false);
+    if (error) {
+      setSessEditError(error.message);
+      return;
+    }
     setEditingSessId(null);
     await loadSessions(scheduleFor.id);
+    load(); // the table's "next session" column can have moved
   }
 
   async function removeSession(s: Sess) {
@@ -635,10 +702,27 @@ export default function ActivitiesPage() {
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="flex flex-col gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            {/* One section left, so this is a label rather than a tab strip.
-                Centred on a phone, where it sits above the toolbar. */}
-            <div className="flex justify-center sm:justify-start">
-              <span className="text-sm font-medium pb-2 border-b-2 text-[#C90044] border-[#C90044]">Activities</span>
+            {/* Two sections now: the activities themselves and the venues they
+                run at. Centred on a phone, where it sits above the toolbar. */}
+            <div className="flex justify-center gap-6 sm:justify-start">
+              {(['activities', 'locations'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setPageTab(t);
+                    const next = new URLSearchParams(searchParams);
+                    if (t === 'locations') next.set('tab', 'locations');
+                    else { next.delete('tab'); next.delete('new'); }
+                    setSearchParams(next, { replace: true });
+                  }}
+                  className={cn(
+                    'text-sm font-medium pb-2 border-b-2 capitalize',
+                    pageTab === t ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
+                  )}
+                >
+                  {t === 'locations' ? `Locations (${locations.length})` : 'Activities'}
+                </button>
+              ))}
             </div>
             {/* Mobile: the two create buttons on one row, search on its own,
                 then Sync services + Filters. Desktop: all inline, creates
@@ -654,7 +738,13 @@ export default function ActivitiesPage() {
                   New activity
                 </button>
                 <button
-                  onClick={() => navigate('/settings?tab=locations&new=location')}
+                  onClick={() => {
+                    setPageTab('locations');
+                    setOpenNewLocation(true);
+                    const next = new URLSearchParams(searchParams);
+                    next.set('tab', 'locations');
+                    setSearchParams(next, { replace: true });
+                  }}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors sm:order-2"
                 >
                   <MapPin className="w-4 h-4" />
@@ -714,7 +804,7 @@ export default function ActivitiesPage() {
 
           {/* Filter bar — on mobile the selects stack full-width (so they're
               all the same size) and centre; on desktop they sit inline. */}
-          {showFilters && (
+          {showFilters && pageTab === 'activities' && (
           <div className="flex flex-col items-center gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center">
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, filterMobileCls)}>
               <option value="">All statuses</option>
@@ -746,6 +836,17 @@ export default function ActivitiesPage() {
           </div>
           )}
 
+          {pageTab === 'locations' ? (
+            <div className="p-5">
+              <LocationsManager
+                provider={provider}
+                canManage={canManage}
+                openOnMount={openNewLocation}
+                onOpened={() => setOpenNewLocation(false)}
+              />
+            </div>
+          ) : (
+          <>
           {/* Table (horizontal scroll below its natural width on small screens) */}
           <div className="overflow-x-auto">
           {/* Table Header */}
@@ -886,6 +987,8 @@ export default function ActivitiesPage() {
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200">
             <span className="text-sm text-gray-500">Showing {visible.length} of {activities.length} activities</span>
           </div>
+          </>
+          )}
         </div>
 
       </div>
@@ -1238,9 +1341,31 @@ export default function ActivitiesPage() {
                   editingSessId === s.id ? (
                     <div key={s.id} className="rounded-lg border border-pink-300 bg-pink-50/30 px-3 py-2.5 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Date</span>
+                          <input type="date" className={inputCls} value={sessEditForm.date} onChange={(e) => setSessEditForm({ ...sessEditForm, date: e.target.value })} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Start time (SGT)</span>
+                          <input type="time" className={inputCls} value={sessEditForm.time} onChange={(e) => setSessEditForm({ ...sessEditForm, time: e.target.value })} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Duration (mins)</span>
+                          <input type="number" min="15" step="5" className={inputCls} value={sessEditForm.duration} onChange={(e) => setSessEditForm({ ...sessEditForm, duration: e.target.value })} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Capacity</span>
+                          <input type="number" min="1" className={inputCls} value={sessEditForm.capacity} onChange={(e) => setSessEditForm({ ...sessEditForm, capacity: e.target.value })} />
+                        </label>
                         <input placeholder="Teacher (N/A if blank)" className={inputCls} value={sessEditForm.teacher} onChange={(e) => setSessEditForm({ ...sessEditForm, teacher: e.target.value })} />
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
                       </div>
+                      {sessEditError && <p className="text-xs font-medium text-red-600">{sessEditError}</p>}
+                      {s.booked > 0 && (
+                        <p className="text-xs text-gray-500">
+                          {s.booked} family{s.booked > 1 ? ' families have' : ' has'} booked this session — moving it doesn't notify them automatically.
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <button onClick={() => saveSessEdit(s.id)} disabled={savingSessEdit} className="px-3 py-1.5 bg-[#C90044] text-white rounded-lg text-xs font-medium disabled:opacity-50">
                           {savingSessEdit ? 'Saving…' : 'Save'}

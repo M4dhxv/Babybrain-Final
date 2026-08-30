@@ -27,6 +27,8 @@ function sampleData(type: string): EmailData {
       return { action_url: 'https://babybrain.sg/auth/callback' };
     case 'package_rebook':
       return { ...activity, provider_name: 'BabyBrain Demo Studio' };
+    case 'provider_claim_code':
+      return { code: '481920', business_name: 'Little Explorers Studio', expires_in_minutes: 30 };
     default:
       return activity;
   }

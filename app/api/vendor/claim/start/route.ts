@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { renderEmail } from '@/lib/emails/render';
 
 /**
  * Start a "Claim Your Business" attempt: generate one-time codes and send them
@@ -79,19 +80,25 @@ export async function POST(request: Request) {
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
+  // Rendered through the shared template so it carries the BabyBrain logo,
+  // typeface and footer like every other transactional email, instead of the
+  // bare block QA saw arriving (21/08).
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  const rendered = renderEmail(
+    'provider_claim_code',
+    {
+      code: emailCode,
+      business_name: provider.business_name,
+      expires_in_minutes: CODE_TTL_MINUTES,
+    },
+    { appUrl }
+  )!;
   const { error: sendError } = await resend.emails.send({
     from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
     replyTo: 'hello@babybrain.sg',
     to: email.trim(),
-    subject: `Your BabyBrain verification code: ${emailCode}`,
-    html: `
-      <div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;color:#1c2b61;max-width:520px">
-        <h2 style="margin:0 0 12px">Verify ${provider.business_name}</h2>
-        <p style="margin:0 0 16px">Enter this code on BabyBrain to confirm you manage this business:</p>
-        <p style="font-size:34px;font-weight:700;letter-spacing:7px;color:#FA5D93;margin:0 0 16px">${emailCode}</p>
-        <p style="margin:0 0 8px;color:#68718f">The code expires in ${CODE_TTL_MINUTES} minutes.</p>
-        <p style="margin:0;color:#68718f">If you didn't request this, you can ignore this email — nothing changes.</p>
-      </div>`,
+    subject: rendered.subject,
+    html: rendered.html,
   });
 
   if (sendError) {

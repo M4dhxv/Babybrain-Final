@@ -53,17 +53,38 @@ export default function BookingsPage() {
   const navigate = useNavigate();
   const [issuing, setIssuing] = useState(false);
   const [issuedFor, setIssuedFor] = useState<string | null>(null);
+  /* QA 24/08: "Can't currently adjust expiry on a make up token — need to be
+     able to set bespoke expiry." It was hardcoded to 60 days. Presets cover
+     the common cases; 'custom' takes a date, and 'none' issues a token that
+     never expires (the column is nullable and the UI already renders '—'). */
+  const [tokenExpiry, setTokenExpiry] = useState<string>('60');
+  const [tokenExpiryDate, setTokenExpiryDate] = useState<string>('');
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [messaging, setMessaging] = useState(false);
 
+  const [messageError, setMessageError] = useState<string | null>(null);
+
+  /* QA 24/08: "clicked message parent when both vendor and parent on paid tier
+     and nothing happened." The route's own 500 (Stream rejects addMembers for
+     members already in the channel) was fixed separately — but this had a
+     try/finally with no catch, so ANY failure was swallowed into an unhandled
+     rejection and the click genuinely looked like it did nothing. */
   async function messageParent(parentUserId: string) {
     if (!provider) return;
+    setMessageError(null);
     setMessaging(true);
     try {
       const { channelId } = await apiPost<{ channelId: string }>('/api/vendor/chat/open', {
         provider_id: provider.id,
         parent_user_id: parentUserId,
       });
+      if (!channelId) {
+        setMessageError('Chat could not be opened just now — please try again.');
+        return;
+      }
       navigate(`/messages?channel=${channelId}`);
+    } catch (e) {
+      setMessageError(e instanceof Error ? e.message : 'Could not open the chat — please try again.');
     } finally {
       setMessaging(false);
     }
@@ -242,24 +263,83 @@ export default function BookingsPage() {
     await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
     loadRoster(sessionId);
   }
+
+  /* Rendered wherever a token can be issued, so the expiry is set where the
+     decision is made rather than on another tab. */
+  const expiryPicker = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-gray-500">Expires</span>
+      <select
+        value={tokenExpiry}
+        onChange={(e) => setTokenExpiry(e.target.value)}
+        className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+      >
+        <option value="30">in 30 days</option>
+        <option value="60">in 60 days</option>
+        <option value="90">in 90 days</option>
+        <option value="180">in 6 months</option>
+        <option value="365">in 12 months</option>
+        <option value="custom">on a set date…</option>
+        <option value="none">never</option>
+      </select>
+      {tokenExpiry === 'custom' && (
+        <input
+          type="date"
+          value={tokenExpiryDate}
+          onChange={(e) => setTokenExpiryDate(e.target.value)}
+          className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+        />
+      )}
+    </div>
+  );
+
+  /** The chosen expiry as an ISO instant, or null for a token that never expires. */
+  function tokenExpiresAt(): string | null | 'invalid' {
+    if (tokenExpiry === 'none') return null;
+    if (tokenExpiry === 'custom') {
+      if (!tokenExpiryDate) return 'invalid';
+      // End of the chosen day in Singapore time, so a token dated "today" is
+      // still usable for the rest of today.
+      const d = new Date(`${tokenExpiryDate}T23:59:59+08:00`);
+      if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return 'invalid';
+      return d.toISOString();
+    }
+    return new Date(Date.now() + Number(tokenExpiry) * 864e5).toISOString();
+  }
+
   async function issueToken(bookingId: string) {
     if (!provider) return;
+    setTokenError(null);
+    const expiresAt = tokenExpiresAt();
+    if (expiresAt === 'invalid') {
+      setTokenError('Pick an expiry date in the future.');
+      return;
+    }
     setIssuing(true);
     const { data: bk } = await supabase.from('bookings').select('user_id, child_id').eq('id', bookingId).maybeSingle();
-    if (bk?.user_id) {
-      await supabase.from('make_up_tokens').insert({
-        provider_id: provider.id,
-        user_id: bk.user_id,
-        child_id: bk.child_id,
-        origin_booking_id: bookingId,
-        status: 'issued',
-        issued_by: session?.user.id ?? null,
-        expires_at: new Date(Date.now() + 60 * 864e5).toISOString(),
-      });
-      setIssuedFor(bookingId);
-      setTokenStatus((m) => ({ ...m, [bookingId]: 'issued' }));
+    if (!bk?.user_id) {
+      // Manual bookings have no parent account, so there is nobody to hold the
+      // token. Said out loud rather than silently doing nothing.
+      setTokenError('This booking has no parent account, so a token can\'t be issued for it.');
+      setIssuing(false);
+      return;
     }
+    const { error } = await supabase.from('make_up_tokens').insert({
+      provider_id: provider.id,
+      user_id: bk.user_id,
+      child_id: bk.child_id,
+      origin_booking_id: bookingId,
+      status: 'issued',
+      issued_by: session?.user.id ?? null,
+      expires_at: expiresAt,
+    });
     setIssuing(false);
+    if (error) {
+      setTokenError(error.message);
+      return;
+    }
+    setIssuedFor(bookingId);
+    setTokenStatus((m) => ({ ...m, [bookingId]: 'issued' }));
   }
   /* The button wrote the roster but said nothing, so it read as doing nothing.
      It now reports success or the actual error, and the confirmation clears
@@ -562,15 +642,25 @@ export default function BookingsPage() {
                       <MessageSquare className="w-4 h-4" /> Message parent
                     </button>
                   )}
+                  {messageError && (
+                    <p className="mt-2 text-xs font-medium text-red-600">{messageError}</p>
+                  )}
                   {canManage && (
-                    <button
-                      onClick={() => issueToken(sel.booking_id)}
-                      disabled={issuing || issuedFor === sel.booking_id || !!tokenStatus[sel.booking_id]}
-                      className="flex items-center gap-2 mt-3 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-60"
-                    >
-                      <Gift className="w-4 h-4" />
-                      {tokenStatus[sel.booking_id] === 'redeemed' ? 'Make-up token redeemed' : tokenStatus[sel.booking_id] || issuedFor === sel.booking_id ? 'Make-up token issued ✓' : issuing ? 'Issuing…' : 'Issue make-up token'}
-                    </button>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => issueToken(sel.booking_id)}
+                        disabled={issuing || issuedFor === sel.booking_id || !!tokenStatus[sel.booking_id]}
+                        className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-60"
+                      >
+                        <Gift className="w-4 h-4" />
+                        {tokenStatus[sel.booking_id] === 'redeemed' ? 'Make-up token redeemed' : tokenStatus[sel.booking_id] || issuedFor === sel.booking_id ? 'Make-up token issued ✓' : issuing ? 'Issuing…' : 'Issue make-up token'}
+                      </button>
+                      {/* Only worth showing while a token can still be issued. */}
+                      {!tokenStatus[sel.booking_id] && issuedFor !== sel.booking_id && (
+                        <div className="mt-2">{expiryPicker}</div>
+                      )}
+                      {tokenError && <p className="mt-2 text-xs font-medium text-red-600">{tokenError}</p>}
+                    </div>
                   )}
                 </>
               ) : (
@@ -625,6 +715,12 @@ export default function BookingsPage() {
                   <X className="w-4 h-4 text-red-600" /><span className="text-sm font-medium text-red-700">Absent {absentCount}</span>
                 </div>
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
+              </div>
+              {/* Absent families get a make-up token from this roster, so the
+                  expiry has to be settable here too. */}
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                {canManage && expiryPicker}
+                {tokenError && <p className="text-xs font-medium text-red-600">{tokenError}</p>}
               </div>
               <div className="border border-gray-200 rounded-xl overflow-x-auto mb-5">
                 <div className={cn(ROSTER_COLS, 'px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500')}>

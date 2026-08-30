@@ -377,6 +377,19 @@ const T: Record<string, Template> = {
   // be sent as a bare unstyled block; it now carries the same branding as every
   // other BabyBrain email. Reply-to is set to the sender by the route, so
   // replying from the inbox goes straight back to the parent.
+  /* QA 21/08: "when claiming business, verification code e-mail is not
+     BabyBrain branded — any customer facing e-mails need to be BabyBrain
+     branded." The claim route hand-rolled its own HTML, so it was the one
+     transactional email with no logo, no footer and the wrong typeface. */
+  provider_claim_code: (d, ctx) =>
+    wrap(ctx, `Your BabyBrain verification code: ${esc(str(d, 'code') ?? '')}`,
+      p(greet(ctx.recipientName)) +
+      p(`Enter this code on BabyBrain to confirm you manage ${bold(str(d, 'business_name') ?? 'this business')}:`) +
+      `<p style="font-size:34px;font-weight:400;letter-spacing:7px;color:${PINK};margin:0 0 16px">${esc(str(d, 'code') ?? '')}</p>` +
+      p(`The code expires in ${esc(str(d, 'expires_in_minutes') ?? '15')} minutes.`) +
+      p('If you didn’t request this, you can ignore this email — nothing changes.') +
+      sign),
+
   contact_received: (d, ctx) =>
     wrap(ctx, `[Contact] ${str(d, 'subject') ?? 'New contact form message'}`,
       p(bold(str(d, 'subject') ?? 'New contact form message')) +
