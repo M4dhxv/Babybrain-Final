@@ -73,6 +73,41 @@ try {
   check('Booking checkout offers PayNow first, then card, then GrabPay',
     JSON.stringify(bkMethods) === JSON.stringify(EXPECTED), JSON.stringify(bkMethods));
 
+  /* --- 1b. The checkout charges the SESSION's price when it has one ---
+     Migration 00074 lets one activity run at several prices (per venue), and
+     the checkout route resolves session-first. Reading activities.price alone
+     would charge the wrong amount for every overridden session, so assert the
+     amount Stripe was actually asked for. */
+  const { data: pricedSession } = await admin.from('activity_sessions')
+    .insert({
+      activity_id: activity.id,
+      starts_at: new Date(Date.now() + 10 * 864e5).toISOString(),
+      ends_at: new Date(Date.now() + 10 * 864e5 + 36e5).toISOString(),
+      price: 88,   // activity is 45
+    })
+    .select().single();
+  const { data: pricedBooking } = await admin.from('bookings')
+    .insert({ user_id: parentU.user.id, session_id: pricedSession.id }).select().single();
+  const overrideRes = await fetch(`${API}/api/bookings/checkout`, {
+    method: 'POST', headers: hdr(parentToken), body: JSON.stringify({ booking_id: pricedBooking.id }),
+  });
+  const overrideBody = await overrideRes.json();
+  check('Checkout created for a session-priced booking', overrideRes.ok, overrideBody.error ?? '');
+  if (overrideBody.url) {
+    const cs = await stripe.checkout.sessions.retrieve(
+      new URL(overrideBody.url).pathname.split('/').pop().split('#')[0]
+    );
+    check('…charges the session price, not the activity price',
+      cs.amount_total === 8800, `amount_total ${cs.amount_total} (activity is 4500)`);
+    await stripe.checkout.sessions.expire(cs.id).catch(() => {});
+  } else {
+    check('…charges the session price, not the activity price', false, 'no checkout url');
+  }
+  const { data: stamped } = await admin.from('bookings').select('amount').eq('id', pricedBooking.id).single();
+  check('…and stamps the session price on the booking', Number(stamped.amount) === 88, String(stamped.amount));
+  await admin.from('bookings').delete().eq('id', pricedBooking.id);
+  await admin.from('activity_sessions').delete().eq('id', pricedSession.id);
+
   // --- 2. Package checkout ---
   const pkRes = await fetch(`${API}/api/customer/stripe/package`, {
     method: 'POST', headers: hdr(parentToken), body: JSON.stringify({ package_id: pkg.id }),

@@ -39,16 +39,22 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   // Authoritative price + provider from the booked session's activity.
+  //
+  // The price is the SESSION's when it has one, falling back to the
+  // activity's (migration 00074) — a vendor running the same class at two
+  // venues can price them differently, so reading activities.price alone
+  // would have charged the wrong amount for one of them. Same resolution the
+  // booking trigger uses to decide free vs paid, so the two can't disagree.
   const { data: sess } = await admin
     .from('activity_sessions')
-    .select('activities(title, slug, price, provider_id)')
+    .select('price, activities(title, slug, price, provider_id)')
     .eq('id', booking.session_id)
     .maybeSingle();
   const activity = (sess?.activities ?? null) as unknown as
     | { title: string; slug: string; price: number | null; provider_id: string | null }
     | null;
 
-  const price = Number(activity?.price ?? 0);
+  const price = Number(sess?.price ?? activity?.price ?? 0);
   if (!price || price <= 0) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }

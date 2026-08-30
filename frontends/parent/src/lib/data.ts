@@ -162,6 +162,9 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   // 1 for an appointment; a class's real remaining capacity.
                   capacity: s.capacity,
                   location_id: null,
+                  // A Wix slot's price comes from the Wix service, not from a
+                  // BabyBrain per-session override, so it inherits.
+                  price: null,
                   status: "scheduled" as const,
                   wix_slot_key: null,
                   wix_remaining_capacity: null,

@@ -199,6 +199,11 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
+          booking_cutoff_minutes: number;
+          info_request_enabled: boolean;
+          info_request_prompt: string | null;
+          what_to_bring: string | null;
+          confirmation_message: string | null;
           reschedule_cutoff_hours: number;
           wix_service_id: string | null;
           wix_resource_id: string | null;
@@ -254,6 +259,7 @@ export type Database = {
           ends_at: string;
           capacity: number | null;
           location_id: string | null;
+          price: number | null;
           status: 'scheduled' | 'cancelled';
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
@@ -266,6 +272,7 @@ export type Database = {
           ends_at: string;
           capacity?: number | null;
           location_id?: string | null;
+          price?: number | null;
           status?: 'scheduled' | 'cancelled';
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
@@ -275,6 +282,7 @@ export type Database = {
           ends_at?: string;
           capacity?: number | null;
           location_id?: string | null;
+          price?: number | null;
           status?: 'scheduled' | 'cancelled';
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
@@ -587,6 +595,7 @@ export type Database = {
           status: BookingStatus;
           waitlist_position: number | null;
           medical_disclosure: string | null;
+          info_response: string | null;
           package_purchase_id: string | null;
           /** provider_policies ids the parent ticked at booking time. */
           policies_accepted: string[];
@@ -606,6 +615,7 @@ export type Database = {
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
+          info_response?: string | null;
           policies_accepted?: string[];
           wix_booking_id?: string | null;
           wix_ticket_type_id?: string | null;
@@ -651,6 +661,8 @@ export type Database = {
           vendor_category: VendorCategory | null;
           logo_url: string | null;
           cover_image_url: string | null;
+          gallery_urls: string[];
+          video_urls: string[];
           contact_email: string | null;
           contact_phone: string | null;
           whatsapp: string | null;
@@ -678,6 +690,8 @@ export type Database = {
           vendor_category?: VendorCategory | null;
           logo_url?: string | null;
           cover_image_url?: string | null;
+          gallery_urls?: string[];
+          video_urls?: string[];
           contact_email?: string | null;
           contact_phone?: string | null;
           whatsapp?: string | null;

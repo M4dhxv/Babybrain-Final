@@ -185,6 +185,11 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
+          booking_cutoff_minutes: number;
+          info_request_enabled: boolean;
+          info_request_prompt: string | null;
+          what_to_bring: string | null;
+          confirmation_message: string | null;
           reschedule_cutoff_hours: number;
           wix_service_id: string | null;
           wix_resource_id: string | null;
@@ -220,6 +225,11 @@ export type Database = {
           allow_cancellation?: boolean;
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number;
+          booking_cutoff_minutes?: number;
+          info_request_enabled?: boolean;
+          info_request_prompt?: string | null;
+          what_to_bring?: string | null;
+          confirmation_message?: string | null;
           reschedule_cutoff_hours?: number;
           wix_service_id?: string | null;
           wix_resource_id?: string | null;
@@ -251,6 +261,7 @@ export type Database = {
           location_id: string | null;
           status: 'scheduled' | 'cancelled';
           teacher_name: string | null;
+          price: number | null;
           studio: string | null;
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
@@ -265,6 +276,7 @@ export type Database = {
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
+          price?: number | null;
           studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
@@ -276,6 +288,7 @@ export type Database = {
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
           teacher_name?: string | null;
+          price?: number | null;
           studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
@@ -455,6 +468,7 @@ export type Database = {
           status: BookingStatus;
           waitlist_position: number | null;
           medical_disclosure: string | null;
+          info_response: string | null;
           payment_status: PaymentStatus;
           amount: number | null;
           stripe_payment_intent: string | null;
@@ -472,6 +486,7 @@ export type Database = {
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
+          info_response?: string | null;
           guest_name?: string | null;
           guest_contact?: string | null;
           payment_status?: PaymentStatus;
@@ -518,6 +533,8 @@ export type Database = {
           vendor_category: VendorCategory | null;
           logo_url: string | null;
           cover_image_url: string | null;
+          gallery_urls: string[];
+          video_urls: string[];
           contact_email: string | null;
           contact_phone: string | null;
           whatsapp: string | null;
@@ -545,6 +562,8 @@ export type Database = {
           vendor_category?: VendorCategory | null;
           logo_url?: string | null;
           cover_image_url?: string | null;
+          gallery_urls?: string[];
+          video_urls?: string[];
           contact_email?: string | null;
           contact_phone?: string | null;
           whatsapp?: string | null;
@@ -810,6 +829,7 @@ export type Database = {
           /** Falls back to this when there's no child on the booking. */
           parent_name: string | null;
           medical_disclosure: string | null;
+          info_response: string | null;
           /** How many of the provider's waivers this parent ticked. */
           policies_accepted: number;
         }[];

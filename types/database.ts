@@ -202,6 +202,11 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number | null;
+          booking_cutoff_minutes: number;
+          info_request_enabled: boolean;
+          info_request_prompt: string | null;
+          what_to_bring: string | null;
+          confirmation_message: string | null;
           reschedule_cutoff_hours: number | null;
           wix_service_id: string | null;
           wix_resource_id: string | null;
@@ -243,6 +248,11 @@ export type Database = {
           allow_cancellation?: boolean;
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number | null;
+          booking_cutoff_minutes?: number;
+          info_request_enabled?: boolean;
+          info_request_prompt?: string | null;
+          what_to_bring?: string | null;
+          confirmation_message?: string | null;
           reschedule_cutoff_hours?: number | null;
           wix_service_id?: string | null;
           wix_resource_id?: string | null;
@@ -276,6 +286,7 @@ export type Database = {
           status: 'scheduled' | 'cancelled';
           // Added by 00042 so a vendor can say who teaches and in which room.
           teacher_name: string | null;
+          price: number | null;
           studio: string | null;
           created_at: string;
           // Wix-sourced sessions only (migrations 00050, 00052) — null for
@@ -290,6 +301,7 @@ export type Database = {
           ends_at: string;
           capacity?: number | null;
           teacher_name?: string | null;
+          price?: number | null;
           studio?: string | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
@@ -478,6 +490,7 @@ export type Database = {
           status: BookingStatus;
           waitlist_position: number | null;
           medical_disclosure: string | null;
+          info_response: string | null;
           payment_status: PaymentStatus;
           amount: number | null;
           stripe_payment_intent: string | null;
@@ -500,6 +513,7 @@ export type Database = {
           child_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
+          info_response?: string | null;
           package_purchase_id?: string | null;
           policies_accepted?: string[];
           wix_booking_id?: string | null;
@@ -563,6 +577,8 @@ export type Database = {
           vendor_category: VendorCategory | null;
           logo_url: string | null;
           cover_image_url: string | null;
+          gallery_urls: string[];
+          video_urls: string[];
           contact_email: string | null;
           contact_phone: string | null;
           whatsapp: string | null;
@@ -596,6 +612,8 @@ export type Database = {
           vendor_category?: VendorCategory | null;
           logo_url?: string | null;
           cover_image_url?: string | null;
+          gallery_urls?: string[];
+          video_urls?: string[];
           contact_email?: string | null;
           contact_phone?: string | null;
           whatsapp?: string | null;

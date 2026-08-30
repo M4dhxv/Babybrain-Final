@@ -49,10 +49,16 @@ const complianceItems = [
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
 
+/* QA 21/08: "under settings, edit profile, there is nowhere to edit
+   photos/videos. Display photo will be the logo. More photos/videos will be on
+   the profile." logo_url was the only image anywhere in here — cover_image_url
+   existed on the row but was never editable, and there was nowhere at all for
+   extra photos or video. */
 const emptyProfileForm = {
   business_name: '', vendor_category: '' as VendorCategory | '', description: '',
-  logo_url: '', contact_phone: '', contact_email: '', whatsapp: '', website: '',
+  logo_url: '', cover_image_url: '', contact_phone: '', contact_email: '', whatsapp: '', website: '',
   address: '', postal_code: '', uen: '',
+  gallery_urls: [] as string[], video_urls: [] as string[],
 };
 
 export default function SettingsPage() {
@@ -95,6 +101,9 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [videoInput, setVideoInput] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
@@ -110,6 +119,7 @@ export default function SettingsPage() {
       vendor_category: (provider.vendor_category ?? '') as VendorCategory | '',
       description: provider.description ?? '',
       logo_url: provider.logo_url ?? '',
+      cover_image_url: provider.cover_image_url ?? '',
       contact_phone: provider.contact_phone ?? '',
       contact_email: provider.contact_email ?? '',
       whatsapp: provider.whatsapp ?? '',
@@ -117,21 +127,63 @@ export default function SettingsPage() {
       address: provider.address ?? '',
       postal_code: provider.postal_code ?? '',
       uen: provider.uen ?? '',
+      gallery_urls: provider.gallery_urls ?? [],
+      video_urls: provider.video_urls ?? [],
     });
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
       .then(({ data }) => setTeam((data as Member[]) ?? []));
   }, [provider]);
 
-  async function uploadLogo(file: File) {
-    if (!provider) return;
-    setUploadingLogo(true);
+  /** Uploads one image and returns its public URL, or null after reporting why. */
+  async function uploadImage(file: File, kind: string): Promise<string | null> {
+    if (!provider) return null;
     setProfileError(null);
-    const path = `${provider.id}/logo-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
+    const path = `${provider.id}/${kind}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
+    if (error) { setProfileError(`Upload failed: ${error.message}`); return null; }
+    return supabase.storage.from('activity-images').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function uploadLogo(file: File) {
+    setUploadingLogo(true);
+    const url = await uploadImage(file, 'logo');
     setUploadingLogo(false);
-    if (error) { setProfileError(`Logo upload failed: ${error.message}`); return; }
-    const { data } = supabase.storage.from('activity-images').getPublicUrl(path);
-    setForm((f) => ({ ...f, logo_url: data.publicUrl }));
+    if (url) setForm((f) => ({ ...f, logo_url: url }));
+  }
+
+  async function uploadCover(file: File) {
+    setUploadingCover(true);
+    const url = await uploadImage(file, 'cover');
+    setUploadingCover(false);
+    if (url) setForm((f) => ({ ...f, cover_image_url: url }));
+  }
+
+  async function uploadGallery(files: FileList) {
+    setUploadingGallery(true);
+    const urls: string[] = [];
+    for (const file of Array.from(files).slice(0, 12)) {
+      const url = await uploadImage(file, 'photo');
+      if (url) urls.push(url);
+    }
+    setUploadingGallery(false);
+    if (urls.length) setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, ...urls].slice(0, 24) }));
+  }
+
+  /* Accepts a YouTube/Vimeo/direct link. Validated as a URL so a typo doesn't
+     end up rendered as a broken embed on the public profile. */
+  function addVideo() {
+    const raw = videoInput.trim();
+    if (!raw) return;
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      new URL(withScheme);
+    } catch {
+      setProfileError('That video link doesn\'t look like a URL.');
+      return;
+    }
+    setProfileError(null);
+    setForm((f) => ({ ...f, video_urls: [...f.video_urls, withScheme].slice(0, 12) }));
+    setVideoInput('');
   }
 
   async function saveProfile() {
@@ -144,6 +196,9 @@ export default function SettingsPage() {
       vendor_category: form.vendor_category || null,
       description: form.description,
       logo_url: form.logo_url || null,
+      cover_image_url: form.cover_image_url || null,
+      gallery_urls: form.gallery_urls,
+      video_urls: form.video_urls,
       contact_phone: form.contact_phone || null,
       contact_email: form.contact_email || null,
       whatsapp: form.whatsapp || null,
@@ -167,6 +222,7 @@ export default function SettingsPage() {
         vendor_category: (provider.vendor_category ?? '') as VendorCategory | '',
         description: provider.description ?? '',
         logo_url: provider.logo_url ?? '',
+        cover_image_url: provider.cover_image_url ?? '',
         contact_phone: provider.contact_phone ?? '',
         contact_email: provider.contact_email ?? '',
         whatsapp: provider.whatsapp ?? '',
@@ -174,6 +230,8 @@ export default function SettingsPage() {
         address: provider.address ?? '',
         postal_code: provider.postal_code ?? '',
         uen: provider.uen ?? '',
+        gallery_urls: provider.gallery_urls ?? [],
+        video_urls: provider.video_urls ?? [],
       });
     }
     setProfileError(null);
@@ -350,6 +408,93 @@ export default function SettingsPage() {
                     <input className={inputCls} value={form.uen} onChange={(e) => setForm({ ...form, uen: e.target.value })} />
                   </div>
                 </div>
+                {/* Photos & videos (QA 21/08). The logo above is the display
+                    photo; everything here is the rest of the public profile. */}
+                <div className="space-y-4 border-t border-gray-100 pt-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">Photos &amp; videos</h4>
+                    <p className="text-xs text-gray-500">Your logo above is the display photo. These appear on your public profile.</p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Cover photo</label>
+                    <div className="flex items-center gap-3">
+                      <div className="relative h-20 w-36 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                        {form.cover_image_url
+                          ? <img src={form.cover_image_url} alt="" className="h-full w-full object-cover" />
+                          : <div className="grid h-full w-full place-items-center text-xs text-gray-400">None</div>}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50', uploadingCover && 'pointer-events-none opacity-60')}>
+                          <ImageUp className="h-3.5 w-3.5" /> {uploadingCover ? 'Uploading…' : form.cover_image_url ? 'Replace' : 'Upload'}
+                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); }} />
+                        </label>
+                        {form.cover_image_url && (
+                          <button type="button" onClick={() => setForm({ ...form, cover_image_url: '' })} className="text-left text-xs font-medium text-red-600 hover:underline">Remove</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">More photos ({form.gallery_urls.length})</label>
+                    {form.gallery_urls.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {form.gallery_urls.map((url, i) => (
+                          <div key={`${url}-${i}`} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-100">
+                            <img src={url} alt="" className="h-full w-full object-cover" />
+                            <button
+                              type="button"
+                              aria-label="Remove photo"
+                              onClick={() => setForm({ ...form, gallery_urls: form.gallery_urls.filter((_, j) => j !== i) })}
+                              className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50', uploadingGallery && 'pointer-events-none opacity-60')}>
+                      <Plus className="h-3.5 w-3.5" /> {uploadingGallery ? 'Uploading…' : 'Add photos'}
+                      <input type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const fs = e.target.files; if (fs?.length) uploadGallery(fs); }} />
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Videos ({form.video_urls.length})</label>
+                    {form.video_urls.length > 0 && (
+                      <ul className="mb-2 space-y-1.5">
+                        {form.video_urls.map((url, i) => (
+                          <li key={`${url}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-xs text-gray-700">{url}</span>
+                            <button
+                              type="button"
+                              aria-label="Remove video"
+                              onClick={() => setForm({ ...form, video_urls: form.video_urls.filter((_, j) => j !== i) })}
+                              className="text-xs font-medium text-red-600 hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        className={inputCls}
+                        placeholder="Paste a YouTube, Vimeo or video link"
+                        value={videoInput}
+                        onChange={(e) => setVideoInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVideo(); } }}
+                      />
+                      <Button type="button" variant="outline" onClick={addVideo} className="shrink-0 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-3 pt-2">
                   <Button onClick={saveProfile} disabled={saving} className="gradient-primary text-white rounded-xl hover:opacity-90 px-6 gap-2">
                     <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save changes'}
