@@ -4,11 +4,26 @@ import "leaflet/dist/leaflet.css";
 import type { LiveActivity } from "../lib/useActivities";
 import { formatDuration, regionLabel } from "../lib/database.types";
 
-// Singapore centre + a bounding box to keep the map on-country.
+// Singapore centre, and the area the map may be panned over.
 const SG_CENTER: [number, number] = [1.3521, 103.8198];
-const SG_BOUNDS: L.LatLngBoundsExpression = [
-  [1.15, 103.55],
-  [1.48, 104.15],
+/**
+ * Deliberately the island box (lat 1.15-1.48, lng 103.55-104.15) plus a
+ * margin, rather than the box itself.
+ *
+ * `maxBounds` hard-clamps *every* pan Leaflet makes — including the automatic
+ * one that brings a popup into view. Held to the tight box, the map at zoom 11
+ * is already against its limit, so that pan was refused: a popup opening near
+ * the top of the map stayed overhanging and its first entries were sliced off
+ * by the map's edge, title and all. Verified by removing maxBounds entirely,
+ * at which point the same popup landed fully inside the map.
+ *
+ * The margin is roughly one popup's worth of latitude at zoom 11 (~0.2°, about
+ * 280px) so that pan has somewhere to go, which still keeps the map on
+ * Singapore rather than letting it drift off into open sea.
+ */
+const SG_MAX_BOUNDS: L.LatLngBoundsExpression = [
+  [0.95, 103.4],
+  [1.68, 104.3],
 ];
 
 // Brand-pink teardrop pin (a DivIcon avoids Leaflet's bundler-broken PNG icons).
@@ -52,7 +67,7 @@ export function ExploreMap({
       center: SG_CENTER,
       zoom: 11,
       minZoom: 10,
-      maxBounds: SG_BOUNDS,
+      maxBounds: SG_MAX_BOUNDS,
       scrollWheelZoom: false,
       attributionControl: true,
     });
@@ -196,7 +211,17 @@ export function ExploreMap({
         rows +
         (g.items.length > 8 ? `<div style="color:#68718f;font-size:12px">+${g.items.length - 8} more</div>` : "") +
         `</div>`;
-      L.marker([g.lat, g.lng], { icon: pinIcon }).bindPopup(html).addTo(layer);
+      // Caps the popup so it can never be taller than the 395px map — eight
+      // activities with long titles would otherwise run to roughly 600px,
+      // which no amount of panning can fit. Works together with the margin on
+      // SG_MAX_BOUNDS: this keeps the popup small enough to fit, that lets
+      // Leaflet pan it fully into view.
+      //
+      // Leaflet's own `maxHeight` rather than CSS overflow, because it also
+      // stops scroll events inside the popup being swallowed by the map
+      // underneath, which plain `overflow-y: auto` would not. Nothing is
+      // hidden — anything past the cap is a scroll away.
+      L.marker([g.lat, g.lng], { icon: pinIcon }).bindPopup(html, { maxHeight: 240 }).addTo(layer);
     }
 
     if (bounds.length) {
