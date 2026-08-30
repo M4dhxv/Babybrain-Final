@@ -72,8 +72,11 @@ export function ExploreMap({
         { maxNativeZoom: 18, maxZoom: 19, ...opts }
       );
     esri("World_Light_Gray_Base", {
+      // Every data provider Esri requires is still credited; "Esri" simply
+      // isn't repeated twice. The map is only 395px tall, so on a phone the
+      // longer form wrapped onto a second line and ate a visible slice of it.
       attribution:
-        'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+        'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
     }).addTo(map);
     esri("World_Light_Gray_Reference").addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
