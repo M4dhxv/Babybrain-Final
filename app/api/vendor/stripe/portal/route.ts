@@ -6,10 +6,21 @@ import { vendorPageUrl } from '@/lib/cors';
 
 /**
  * Stripe Billing Portal link (manage/cancel subscription, invoices, card).
- * Owner-only. Body: { provider_id: string }
+ * Owner-only. Body: { provider_id: string, intent?: 'cancel' | 'card' }
+ *
+ * `intent` only changes which flag the portal hands back on `return_url` —
+ * Stripe's own portal decides what the vendor can actually do there. It lets
+ * Billing tell a return from "Cancel plan" apart from a return from "Manage
+ * billing", so the downgrade-to-free confirmation (added alongside the
+ * upgrade one already on this route's caller) can be honest about which
+ * button sent them there, without claiming a cancellation happened when they
+ * only went to update a card.
  */
 export async function POST(request: Request) {
-  const { provider_id: providerId } = (await request.json()) as { provider_id?: string };
+  const { provider_id: providerId, intent } = (await request.json()) as {
+    provider_id?: string;
+    intent?: 'cancel' | 'card';
+  };
   if (!providerId) {
     return NextResponse.json({ error: 'provider_id required' }, { status: 400 });
   }
@@ -40,7 +51,9 @@ export async function POST(request: Request) {
   const portal = await getStripe().billingPortal.sessions.create({
     customer: sub.stripe_customer_id,
     ...(cfg?.value ? { configuration: cfg.value } : {}),
-    return_url: vendorPageUrl(request, '/billing'),
+    return_url: intent === 'cancel'
+      ? vendorPageUrl(request, '/billing', 'status=cancel_returned')
+      : vendorPageUrl(request, '/billing'),
   });
   return NextResponse.json({ url: portal.url });
 }

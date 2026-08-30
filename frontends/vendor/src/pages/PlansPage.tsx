@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Star, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -111,6 +111,16 @@ export default function PlansPage() {
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
   const [switched, setSwitched] = useState<string | null>(null);
+  // "Done — you're on X now." used to render forever once set — nothing ever
+  // cleared it, so it sat under the button until the vendor navigated away.
+  // It's a one-time confirmation, not a status: auto-dismiss it after a
+  // while, and cancel any pending dismiss if another switch starts first so
+  // a fast second switch can't have its own confirmation cut short by the
+  // first one's leftover timer.
+  const switchedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (switchedTimeoutRef.current) clearTimeout(switchedTimeoutRef.current);
+  }, []);
   const [optedOut, setOptedOut] = useState(false);
   const [optOutOpen, setOptOutOpen] = useState(false);
   const [optOutName, setOptOutName] = useState('');
@@ -192,6 +202,7 @@ export default function PlansPage() {
 
     setCheckoutError(null);
     setSwitched(null);
+    if (switchedTimeoutRef.current) clearTimeout(switchedTimeoutRef.current);
     setCheckoutBusy(planKey);
     try {
       const { url, switched: didSwitch } = await apiPost<{ url?: string; switched?: boolean }>(
@@ -202,6 +213,7 @@ export default function PlansPage() {
         // Changed on the subscription they already have — no Stripe redirect.
         await refreshProvider();
         setSwitched(planKey);
+        switchedTimeoutRef.current = setTimeout(() => setSwitched(null), 40000);
       } else if (url) {
         window.location.href = url;
       } else {
@@ -378,7 +390,12 @@ export default function PlansPage() {
                 {checkoutError?.plan === plan.planKey && (
                   <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
                 )}
-                {switched === plan.planKey && (
+                {/* Tied to isCurrentPlan rather than the raw clicked key, so it can
+                    only ever land on the card that's actually current — the plan
+                    just switched to is normally the same card, but this way a
+                    switch that's already stale (subscription re-fetched to
+                    something else) can't leave the confirmation on the wrong box. */}
+                {switched !== null && isCurrentPlan(plan.planKey) && (
                   <p className="mt-2 text-xs font-medium text-green-700">
                     Done — you're on {plan.name.charAt(0) + plan.name.slice(1).toLowerCase()} now.
                   </p>

@@ -26,29 +26,49 @@ export default function BillingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // Stripe hosted checkout / Connect onboarding drops the vendor back here with
-  // a query flag (see app/api/vendor/stripe/*). Turn it into a clear banner.
+  const plan = planMeta(subscription?.plan);
+  const upgrade = nextPlan(subscription?.plan);
+  const active = (subscription?.status ?? 'active') === 'active' || subscription?.status === 'trialing';
+
+  // Stripe hosted checkout / portal / Connect onboarding drops the vendor
+  // back here with a query flag (see app/api/vendor/stripe/*). Turn it into a
+  // clear banner.
+  //
+  // The Stripe portal's return_url can't tell us what the vendor actually did
+  // in there — "Cancel plan" and "Manage billing" both land back on the same
+  // route, `?status=cancel_returned` only means they came from the *button*,
+  // not that a cancellation happened (they might have opened the portal,
+  // looked at invoices, and closed it). So this only claims a cancellation
+  // once `subscription.cancel_at_period_end` — refetched fresh on this full
+  // page reload — actually confirms one; otherwise it says nothing rather
+  // than guess. Never says "you're on Pay As You Grow now": a cancellation
+  // keeps the current paid plan's access until the period ends, exactly like
+  // the "Access until" date already shown in the header above.
   const returned =
     params.get('status') === 'success' ? { ok: true, text: 'Payment received — your plan is updating now.' }
     : params.get('status') === 'cancelled' ? { ok: false, text: 'Checkout cancelled — you have not been charged.' }
+    : params.get('status') === 'cancel_returned' && subscription?.cancel_at_period_end
+      ? {
+          ok: true,
+          text: subscription.current_period_end
+            ? `Cancellation scheduled — you'll keep ${plan.label} access until ${sgDate(subscription.current_period_end)}, then move to Pay As You Grow.`
+            : `Cancellation scheduled — you'll move to Pay As You Grow at the end of your billing period.`,
+        }
     : params.get('connect') === 'done' ? { ok: true, text: 'Payout account connected.' }
     : params.get('boost') === 'success' ? { ok: true, text: 'Boost purchased — your listing is now promoted.' }
     : params.get('boost') === 'cancelled' ? { ok: false, text: 'Boost checkout cancelled — you have not been charged.' }
     : null;
 
-  const plan = planMeta(subscription?.plan);
-  const upgrade = nextPlan(subscription?.plan);
-  const active = (subscription?.status ?? 'active') === 'active' || subscription?.status === 'trialing';
-
   // Redirects to the relevant Stripe hosted flow. Shows a clear message if
   // payments aren't configured yet (route returns an error) instead of a
-  // dead button.
-  async function stripe(path: string, label: string) {
+  // dead button. `extra` merges into the request body — the portal route
+  // uses `intent` to pick which flag it sends back on return.
+  async function stripe(path: string, label: string, extra?: Record<string, unknown>) {
     if (!provider) return;
     setMsg(null);
     setBusy(label);
     try {
-      const { url } = await apiPost<{ url?: string }>(path, { provider_id: provider.id });
+      const { url } = await apiPost<{ url?: string }>(path, { provider_id: provider.id, ...extra });
       if (url) window.location.href = url;
       else setMsg('Could not start that just now — please try again.');
     } catch (e) {
@@ -248,7 +268,7 @@ export default function BillingPage() {
               <Button
                 onClick={() => {
                   if (window.confirm(`Cancel your ${plan.short.replace(' Plan', '')} subscription? It stays active until the end of the current billing period.`)) {
-                    stripe('/api/vendor/stripe/portal', 'cancel');
+                    stripe('/api/vendor/stripe/portal', 'cancel', { intent: 'cancel' });
                   }
                 }}
                 disabled={busy === 'cancel'}
