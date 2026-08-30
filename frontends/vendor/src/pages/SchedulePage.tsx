@@ -233,7 +233,7 @@ export default function SchedulePage() {
 
           {/* All activities */}
           <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-3 sm:ml-auto sm:w-auto">
-            <CalendarRange className="w-4 h-4 shrink-0 text-[#C90044]" />
+            <CalendarRange className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
             <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
               <option value="">All activities</option>
               {activities.map((a) => (
@@ -244,7 +244,7 @@ export default function SchedulePage() {
 
           {/* All locations */}
           <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-4 sm:w-auto">
-            <MapPin className="w-4 h-4 shrink-0 text-[#C90044]" />
+            <MapPin className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
             <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
               <option value="">All locations</option>
               {locations.map((l) => (
@@ -261,7 +261,7 @@ export default function SchedulePage() {
                 onClick={() => setView(v)}
                 className={cn(
                   'h-8 flex-1 px-3 text-sm font-medium rounded-lg capitalize transition-colors sm:flex-none',
-                  view === v ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-100'
+                  view === v ? 'bg-pink-50 text-[#FA4D8D]' : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
                 {v}
@@ -299,7 +299,7 @@ export default function SchedulePage() {
         {!loading && activities.length === 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
             <p className="text-sm text-gray-500 mb-3">You don't have any activities yet, so there's nothing to schedule.</p>
-            <button onClick={() => navigate('/activities')} className="text-sm font-medium text-[#C90044] hover:underline">
+            <button onClick={() => navigate('/activities')} className="text-sm font-medium text-[#FA4D8D] hover:underline">
               Create an activity
             </button>
           </div>
@@ -373,7 +373,7 @@ export default function SchedulePage() {
                           key={s.id}
                           className={cn(
                             'truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
-                            s.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#C90044]'
+                            s.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
                           )}
                         >
                           {sgTime(s.starts_at)} {s.title}

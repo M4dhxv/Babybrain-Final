@@ -185,7 +185,7 @@ export default function PackagesPage() {
               onClick={() => setActiveTab(tab)}
               className={cn(
                 'flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
-                activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
+                activeTab === tab ? 'text-[#FA4D8D] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
               )}
             >
               {tab === 'Packs' ? <PackageIcon className="w-4 h-4" /> : <Users className="w-4 h-4" />}
@@ -199,7 +199,7 @@ export default function PackagesPage() {
         {!loading && activeTab === 'Packs' && (
           <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-xs text-gray-500 mb-4">
-              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#C90044] hover:underline">Make-up tokens</button>.
+              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#FA4D8D] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#FA4D8D] hover:underline">Make-up tokens</button>.
             </p>
             {packs.length > 0 && (
               <div className="space-y-2">

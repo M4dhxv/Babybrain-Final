@@ -97,7 +97,7 @@ export default function MakeUpTokensPage() {
         </div>
 
         <p className="mb-4 text-xs text-gray-500">
-          Issue a new token from <button onClick={() => navigate('/bookings')} className="font-medium text-[#C90044] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token".
+          Issue a new token from <button onClick={() => navigate('/bookings')} className="font-medium text-[#FA4D8D] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token".
         </p>
 
         <div className="mb-4 flex w-full rounded-xl border border-gray-200 bg-white p-1 sm:inline-flex sm:w-auto">
@@ -107,7 +107,7 @@ export default function MakeUpTokensPage() {
               onClick={() => setFilter(f)}
               className={cn(
                 'h-8 flex-1 px-3 text-sm font-medium rounded-lg transition-colors sm:flex-none',
-                filter === f ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-100'
+                filter === f ? 'bg-pink-50 text-[#FA4D8D]' : 'text-gray-600 hover:bg-gray-100'
               )}
             >
               {f}

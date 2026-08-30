@@ -717,7 +717,7 @@ export default function ActivitiesPage() {
                   }}
                   className={cn(
                     'text-sm font-medium pb-2 border-b-2 capitalize',
-                    pageTab === t ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
+                    pageTab === t ? 'text-[#FA4D8D] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
                   )}
                 >
                   {t === 'locations' ? `Locations (${locations.length})` : 'Activities'}
@@ -732,7 +732,7 @@ export default function ActivitiesPage() {
                 <button
                   onClick={() => canManage && openCreate()}
                   disabled={!canManage}
-                  className="flex items-center gap-2 px-4 py-2 bg-pink-50 border border-pink-200 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50 sm:order-1"
+                  className="flex items-center gap-2 px-4 py-2 bg-pink-50 border border-pink-200 text-[#FA4D8D] rounded-xl text-sm font-medium hover:bg-pink-100 transition-colors disabled:opacity-50 sm:order-1"
                 >
                   <CalendarPlus className="w-4 h-4" />
                   New activity
@@ -778,7 +778,7 @@ export default function ActivitiesPage() {
                   aria-expanded={showFilters}
                   className={cn(
                     'flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50 sm:order-5',
-                    activeFilterCount ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700'
+                    activeFilterCount ? 'border-[#C90044] text-[#FA4D8D]' : 'border-gray-200 text-gray-700'
                   )}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
@@ -787,7 +787,7 @@ export default function ActivitiesPage() {
                 {activeFilterCount > 0 && (
                   <button
                     onClick={() => { setFStatus(''); setFLocation(''); setFAge(''); setFActivity(''); }}
-                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#C90044] sm:order-6"
+                    className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-[#FA4D8D] sm:order-6"
                   >
                     Clear
                   </button>
@@ -1006,11 +1006,11 @@ export default function ActivitiesPage() {
           <div className="flex-1 overflow-auto p-5 space-y-5">
             {formError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</div>}
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#C90044]">*</span></label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#FA4D8D]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#C90044]">*</span></label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#FA4D8D]">*</span></label>
               <select className={inputCls} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
                 <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1036,7 +1036,7 @@ export default function ActivitiesPage() {
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
               {locations.length === 0 && (
-                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#C90044] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
+                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#FA4D8D] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
               )}
             </div>
             <div>
@@ -1044,7 +1044,7 @@ export default function ActivitiesPage() {
               <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#C90044]">*</span></label>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
               <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
               <p className="mt-1 text-xs text-gray-500">Pre-fills the capacity when you add new sessions for this activity.</p>
             </div>
@@ -1058,8 +1058,8 @@ export default function ActivitiesPage() {
                   <img src={form.image_url} alt="Activity" className="h-24 w-full rounded-lg object-cover" />
                 ) : (
                   <>
-                    <ImageUp className="w-6 h-6 text-[#C90044]" />
-                    <span className="text-sm font-medium text-[#C90044]">{uploading ? 'Uploading…' : 'Upload image'}</span>
+                    <ImageUp className="w-6 h-6 text-[#FA4D8D]" />
+                    <span className="text-sm font-medium text-[#FA4D8D]">{uploading ? 'Uploading…' : 'Upload image'}</span>
                     <span className="text-xs text-gray-500">PNG, JPG up to 5MB</span>
                   </>
                 )}

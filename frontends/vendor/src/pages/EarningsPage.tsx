@@ -216,7 +216,7 @@ export default function EarningsPage() {
           />
           <StatCard
             icon={Banknote}
-            accent="bg-pink-100 text-[#C90044]"
+            accent="bg-pink-100 text-[#FA4D8D]"
             label="Lifetime earnings"
             value={s ? money(s.lifetime_net_cents, currency) : '—'}
             hint={s ? `${s.sales_count} paid sale${s.sales_count === 1 ? '' : 's'}` : undefined}
