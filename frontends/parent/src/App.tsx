@@ -4701,6 +4701,9 @@ function BookingPage() {
   const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
   const [acceptedPolicies, setAcceptedPolicies] = useState<string[]>([]);
   const [medicalNote, setMedicalNote] = useState("");
+  /* The vendor's bespoke information request (migration 00074) — e.g. an
+     address when the class is hosted at the family's own condo. */
+  const [infoResponse, setInfoResponse] = useState("");
   /* Sessions this parent already holds a live booking on, as
      `${session_id}:${child_id}`. Booking the same child onto the same class
      twice is allowed — a parent may well want two slots for a friend — so this
@@ -4878,8 +4881,38 @@ function BookingPage() {
     t.fee_type === "FEE_ADDED_AT_CHECKOUT" && t.fee_rate_percent != null
       ? Math.round(t.price_cents * (1 + t.fee_rate_percent / 100))
       : t.price_cents;
+  /* A session can carry its own price, so the same class at two venues can
+     cost different amounts (migration 00074). Session first, activity as the
+     fallback — the same resolution the booking trigger and the checkout route
+     use, so all three agree on what this booking costs. */
+  const sessionPrice = selected?.price != null ? Number(selected.price) : null;
+
+  /* The chosen session's own venue, when it differs from the activity's
+     (migration 00074). Resolved lazily — most activities run at one venue, so
+     there is nothing to look up. */
+  const [sessionVenues, setSessionVenues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids = Array.from(new Set(sessions.map((x) => x.location_id).filter((v): v is string => !!v)));
+    if (ids.length === 0) return;
+    let cancelled = false;
+    supabase
+      .from("provider_locations")
+      .select("id, name, address")
+      .in("id", ids)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const l of (data ?? []) as Array<{ id: string; name: string; address: string | null }>) {
+          next[l.id] = [l.name, l.address].filter(Boolean).join(", ");
+        }
+        setSessionVenues(next);
+      });
+    return () => { cancelled = true; };
+  }, [sessions]);
+  const sessionVenueAddress = selected?.location_id ? sessionVenues[selected.location_id] ?? null : null;
   const price = isEvent
     ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
+    : sessionPrice != null ? sessionPrice
     : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
@@ -5004,6 +5037,10 @@ function BookingPage() {
           // can never exist without the provider's required consents.
           policies_accepted: acceptedPolicies,
           ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
+          // Whatever the vendor asked for on this activity. The insert trigger
+          // rejects a blank one when the request is switched on, so this is
+          // required rather than best-effort.
+          ...(infoResponse.trim() ? { info_response: infoResponse.trim() } : {}),
         })
         .select("id, status")
         .single();
@@ -5014,7 +5051,7 @@ function BookingPage() {
       }
       // Paid class → hand off to Stripe Checkout; the webhook confirms on payment.
       // Free class (no price) stays a direct confirmed/pending booking.
-      if (activity?.price != null && Number(activity.price) > 0 && data?.status !== "waitlisted") {
+      if (price != null && price > 0 && data?.status !== "waitlisted") {
         try {
           const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", { booking_id: data.id });
           if (url) {
@@ -5037,7 +5074,9 @@ function BookingPage() {
       status: status ?? "pending",
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
-      venue: activity?.address ?? "",
+      // A session can sit at a different venue from its activity (00074), so
+      // the address the parent is told to go to is the session's when it has one.
+      venue: sessionVenueAddress ?? activity?.address ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -5094,7 +5133,9 @@ function BookingPage() {
       status,
       start: selected?.starts_at ?? "",
       end: selected?.ends_at ?? "",
-      venue: activity?.address ?? "",
+      // A session can sit at a different venue from its activity (00074), so
+      // the address the parent is told to go to is the session's when it has one.
+      venue: sessionVenueAddress ?? activity?.address ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -5140,6 +5181,11 @@ function BookingPage() {
     }
     if (needsMedical && !medicalNote.trim()) {
       return "This provider asks for a medical and health disclosure before the class — add it above (write \u201cnone\u201d if there is nothing to declare).";
+    }
+    if (activity?.info_request_enabled && !infoResponse.trim()) {
+      return activity.info_request_prompt?.trim()
+        ? `This provider needs an answer to: \u201c${activity.info_request_prompt.trim()}\u201d`
+        : "This provider asks for some extra information before the class — add it above.";
     }
     return null;
   }
@@ -5442,6 +5488,24 @@ function BookingPage() {
                               </label>
                             );
                           })}
+                          {/* Whatever this vendor asks for on this activity —
+                              an address when they host at your condo, say.
+                              The wording is theirs (migration 00074). */}
+                          {activity?.info_request_enabled && (
+                            <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                              <p className="font-black">
+                                {activity.info_request_prompt?.trim() || "The provider needs some extra information"}{" "}
+                                <span className="text-baby-pink">*</span>
+                              </p>
+                              <textarea
+                                value={infoResponse}
+                                onChange={(e) => setInfoResponse(e.target.value)}
+                                rows={3}
+                                className="mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
+                                placeholder="Your answer"
+                              />
+                            </div>
+                          )}
                           {needsMedical && (
                             <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
                               <p className="font-black">Medical &amp; health disclosure <span className="text-baby-pink">*</span></p>
@@ -5529,6 +5593,30 @@ function BookedPage() {
   const slug = getParam("slug") || "";
   const waitlisted = status === "waitlisted";
 
+  /* QA 24/08 + 28/08: "you can't change the information on the activity
+     confirmation screen" and "vendors currently can't edit the message that is
+     displayed under what to bring & know". This page was entirely hardcoded —
+     every booking, whatever it was for, showed the same music-class blurb, the
+     same photo and the same three generic cards. It now reads the real
+     activity, including the two fields vendors can write (migration 00074). */
+  const [detail, setDetail] = useState<{
+    description: string | null;
+    image_urls: string[] | null;
+    what_to_bring: string | null;
+    confirmation_message: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    supabase
+      .from("activities")
+      .select("description, image_urls, what_to_bring, confirmation_message")
+      .eq("slug", slug)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled) setDetail(data ?? null); });
+    return () => { cancelled = true; };
+  }, [slug]);
+
   // Paid bookings come back through Stripe; apply the payment immediately
   // rather than waiting on the webhook.
   useEffect(() => {
@@ -5554,16 +5642,40 @@ function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Class details</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
-                <img src={`${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`} alt="" className="h-52 w-full rounded-[12px] object-cover" />
-                <div><h3 className="text-xl font-black">{title}</h3>{when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}</div>
+                <img
+                  src={detail?.image_urls?.[0] || `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`}
+                  alt=""
+                  className="h-52 w-full rounded-[12px] object-cover"
+                />
+                <div>
+                  <h3 className="text-xl font-black">{title}</h3>
+                  {when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}
+                  {venue && <p className="mt-3 font-semibold text-[#4a5685]"><Icon name="pin" className="mr-2 inline h-5 w-5 text-baby-lilac" />{venue}</p>}
+                </div>
               </div>
-              <div className="mt-5 border-t border-[#F4EFF0] pt-5"><h3 className="font-black">About this class</h3><p className="mt-3 font-semibold leading-7 text-[#3f4b78]">A fun and interactive music class that helps little ones explore rhythms, sounds, and movement while boosting coordination, listening skills and confidence.</p></div>
+              {detail?.description?.trim() && (
+                <div className="mt-5 border-t border-[#F4EFF0] pt-5">
+                  <h3 className="font-black">About this class</h3>
+                  <p className="mt-3 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{detail.description.trim()}</p>
+                </div>
+              )}
+              {detail?.confirmation_message?.trim() && (
+                <div className="mt-5 rounded-[12px] bg-[#F4F0FA] p-4">
+                  <h3 className="font-black text-baby-lilac">From {`“${title}”`}</h3>
+                  <p className="mt-2 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{detail.confirmation_message.trim()}</p>
+                </div>
+              )}
             </article>
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
-              <h2 className="text-xl font-black">What to bring & know</h2>
-              <div className="mt-5 grid gap-4 md:grid-cols-3">
-                {[["bell", "Arrive 10 mins early", "Enable your child to get comfortable"], ["shoe", "Dress comfortably", "Allow for movement and potential mess"], ["bottle", "Bring essentials", "Socks, water and wipes encouraged"]].map(([icon, title, note]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">{note}</p></div>)}
-              </div>
+              <h2 className="text-xl font-black">What to bring &amp; know</h2>
+              {detail?.what_to_bring?.trim() ? (
+                <p className="mt-5 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{detail.what_to_bring.trim()}</p>
+              ) : (
+                /* Fallback while a vendor hasn't written their own. */
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  {[["bell", "Arrive 10 mins early", "Enable your child to get comfortable"], ["shoe", "Dress comfortably", "Allow for movement and potential mess"], ["bottle", "Bring essentials", "Socks, water and wipes encouraged"]].map(([icon, title, note]) => <div key={title} className="text-center"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name={icon} className="h-8 w-8" /></span><h3 className="mt-3 font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-[#59658d]">{note}</p></div>)}
+                </div>
+              )}
             </article>
           </div>
           <aside className="space-y-5">

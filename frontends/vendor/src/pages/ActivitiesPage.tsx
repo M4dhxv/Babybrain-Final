@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams} from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   CalendarPlus,
   MapPin,
@@ -89,12 +89,16 @@ const emptyForm = {
   location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: true,
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
+  // 00074 — booking cut-off, the bespoke information request, and the copy
+  // parents see once they've booked.
+  booking_cutoff_minutes: '15',
+  info_request_enabled: false, info_request_prompt: '',
+  what_to_bring: '', confirmation_message: '',
 };
 
 export default function ActivitiesPage() {
   const { provider, role } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
-  const navigate = useNavigate();
 
   const [showDrawer, setShowDrawer] = useState(false);
   /* The dashboard's shortcuts used to drop the vendor on this page's default
@@ -158,11 +162,15 @@ export default function ActivitiesPage() {
   // Schedule manager (sessions = the bookable dates/times of an activity)
   type Sess = {
     id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number;
+    location_id: string | null; price: number | null;
     teacher_name: string | null; studio: string | null;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
-  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1', teacher: '', studio: '' });
+  /* QA 21/08: location and price move to the schedule, so the same class at
+     three venues (or three prices) is ONE activity. Blank inherits the
+     activity's own value. */
+  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1', teacher: '', studio: '', location_id: '', price: '' });
   const [savingSess, setSavingSess] = useState(false);
   const [sessError, setSessError] = useState<string | null>(null);
 
@@ -173,7 +181,7 @@ export default function ActivitiesPage() {
      sessions, it only allows you to add teacher and studio details — it should
      allow you to edit all the details." Date, start time, duration and capacity
      are now editable too; changing any of them rewrites starts_at/ends_at. */
-  const [sessEditForm, setSessEditForm] = useState({ date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '' });
+  const [sessEditForm, setSessEditForm] = useState({ date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '', location_id: '', price: '' });
   const [sessEditError, setSessEditError] = useState<string | null>(null);
   const [savingSessEdit, setSavingSessEdit] = useState(false);
 
@@ -238,14 +246,21 @@ export default function ActivitiesPage() {
     setSessError(null);
     // Pre-fill from the activity's default capacity so a vendor adding
     // sessions doesn't have to retype the same number every time.
-    setSessForm((f) => ({ ...f, capacity: a.default_capacity != null ? String(a.default_capacity) : f.capacity }));
+    setSessForm((f) => ({
+      ...f,
+      capacity: a.default_capacity != null ? String(a.default_capacity) : f.capacity,
+      // Start from the activity's own venue/price so the common case (all
+      // sessions the same) is still one click.
+      location_id: a.location_id ?? '',
+      price: a.price != null ? String(a.price) : '',
+    }));
     await loadSessions(a.id);
   }
 
   async function loadSessions(activityId: string) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, teacher_name, studio')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price')
       .eq('activity_id', activityId)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
@@ -292,6 +307,9 @@ export default function ActivitiesPage() {
         // community events) — that's what "N/A" means here.
         teacher_name: sessForm.teacher.trim() || null,
         studio: sessForm.studio.trim() || null,
+        // Blank inherits the activity's venue/price (migration 00074).
+        location_id: sessForm.location_id || null,
+        price: sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
       };
     });
     // A Wix-connected vendor's real-world time is already spoken for by
@@ -326,7 +344,7 @@ export default function ActivitiesPage() {
       setSessError(error.message);
       return;
     }
-    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1', teacher: sessForm.teacher, studio: sessForm.studio });
+    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1', teacher: sessForm.teacher, studio: sessForm.studio, location_id: sessForm.location_id, price: sessForm.price });
     await loadSessions(scheduleFor.id);
     load(); // refresh the upcoming counts in the table
   }
@@ -345,6 +363,8 @@ export default function ActivitiesPage() {
       capacity: s.capacity != null ? String(s.capacity) : '',
       teacher: s.teacher_name ?? '',
       studio: s.studio ?? '',
+      location_id: s.location_id ?? '',
+      price: s.price != null ? String(s.price) : '',
     });
   }
 
@@ -380,6 +400,8 @@ export default function ActivitiesPage() {
       capacity: Number(sessEditForm.capacity),
       teacher_name: sessEditForm.teacher.trim() || null,
       studio: sessEditForm.studio.trim() || null,
+      location_id: sessEditForm.location_id || null,
+      price: sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
     }).eq('id', id);
     setSavingSessEdit(false);
     if (error) {
@@ -577,6 +599,11 @@ export default function ActivitiesPage() {
       allow_rescheduling: a.allow_rescheduling ?? true,
       cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
       reschedule_cutoff_hours: String(a.reschedule_cutoff_hours ?? 24),
+      booking_cutoff_minutes: String(a.booking_cutoff_minutes ?? 15),
+      info_request_enabled: a.info_request_enabled ?? false,
+      info_request_prompt: a.info_request_prompt ?? '',
+      what_to_bring: a.what_to_bring ?? '',
+      confirmation_message: a.confirmation_message ?? '',
     });
     setFormError(null);
     setShowDrawer(true);
@@ -633,6 +660,15 @@ export default function ActivitiesPage() {
       allow_rescheduling: form.allow_rescheduling,
       cancellation_cutoff_hours: Math.max(0, Number(form.cancellation_cutoff_hours) || 24),
       reschedule_cutoff_hours: Math.max(0, Number(form.reschedule_cutoff_hours) || 24),
+      // 0 is meaningful here ("right up to the start time"), so an empty box
+      // falls back to 15 rather than being coerced to 0 by `|| 15`.
+      booking_cutoff_minutes: form.booking_cutoff_minutes === ''
+        ? 15
+        : Math.max(0, Math.min(20160, Number(form.booking_cutoff_minutes))),
+      info_request_enabled: form.info_request_enabled,
+      info_request_prompt: form.info_request_enabled ? (form.info_request_prompt.trim() || null) : null,
+      what_to_bring: form.what_to_bring.trim() || null,
+      confirmation_message: form.confirmation_message.trim() || null,
     };
     const { error } = editingId
       ? await supabase.from('activities').update(fields).eq('id', editingId)
@@ -1035,13 +1071,21 @@ export default function ActivitiesPage() {
                 <option value="">Select a location</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
-              {locations.length === 0 && (
-                <p className="mt-1 text-xs text-gray-500">No locations yet — add one in <button className="text-[#C90044] font-medium hover:underline" onClick={() => navigate('/settings')}>Settings</button>.</p>
+              {locations.length === 0 ? (
+                <p className="mt-1 text-xs text-gray-500">No locations yet — add one on the <button className="text-[#C90044] font-medium hover:underline" onClick={() => { setPageTab('locations'); setOpenNewLocation(true); setShowDrawer(false); }}>Locations tab</button>.</p>
+              ) : (
+                /* QA 21/08: "if they do the same class in 3 different locations
+                   they need to create it 3 times." Both this and the price below
+                   are now the DEFAULT for new sessions — Manage schedule can
+                   override either per session, so one activity covers every
+                   venue and price. */
+                <p className="mt-1 text-xs text-gray-500">Default venue. Any session can be moved to another one under Manage schedule.</p>
               )}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
               <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+              <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#C90044]">*</span></label>
@@ -1119,6 +1163,81 @@ export default function ActivitiesPage() {
                   <input type="number" min="0" className={inputCls} value={form.reschedule_cutoff_hours} onChange={(e) => setForm({ ...form, reschedule_cutoff_hours: e.target.value })} />
                 </div>
               )}
+
+              {/* QA 21/08: "parents can currently make bookings up until a
+                  minute before the class." 15 minutes is the default the
+                  founder asked for; a vendor who needs longer to set up sets
+                  their own. Enforced in the database, so it holds regardless
+                  of what the parent app does. */}
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Booking cut-off (minutes before session)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="20160"
+                  className={inputCls}
+                  value={form.booking_cutoff_minutes}
+                  onChange={(e) => setForm({ ...form, booking_cutoff_minutes: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {form.booking_cutoff_minutes === '0'
+                    ? 'Parents can book right up to the start time.'
+                    : `Parents can't book within ${form.booking_cutoff_minutes || '15'} minutes of the class starting.`}
+                </p>
+              </div>
+            </div>
+
+            {/* Bespoke information request (QA 21/08) */}
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Ask parents for extra information</div>
+                  <div className="text-xs text-gray-500">For anything you need before the class — e.g. an address when you host at their condo</div>
+                </div>
+                <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} className="data-[state=checked]:bg-[#C90044]" />
+              </div>
+              {form.info_request_enabled && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">What are you asking for?</label>
+                  <textarea
+                    rows={2}
+                    maxLength={300}
+                    placeholder="e.g. Which condo is the class at, and the unit number?"
+                    className={cn(inputCls, 'resize-none')}
+                    value={form.info_request_prompt}
+                    onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Parents can't book this activity without answering. You'll see the answer on the booking.</p>
+                </div>
+              )}
+            </div>
+
+            {/* What parents see after booking (QA 24/08 + 28/08) */}
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-1.5 block">What to bring &amp; know</label>
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="e.g. Wear socks, bring a water bottle and a change of clothes. Arrive 10 minutes early."
+                  className={cn(inputCls, 'resize-none')}
+                  value={form.what_to_bring}
+                  onChange={(e) => setForm({ ...form, what_to_bring: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-gray-500">Shown on the activity page and after booking. Leave blank for our general guidance.</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-1.5 block">Booking confirmation note</label>
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="e.g. Park in the basement and take lift lobby B to level 3."
+                  className={cn(inputCls, 'resize-none')}
+                  value={form.confirmation_message}
+                  onChange={(e) => setForm({ ...form, confirmation_message: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-gray-500">Shown on the confirmation screen once a parent has booked.</p>
+              </div>
             </div>
           </div>
 
@@ -1316,6 +1435,27 @@ export default function ActivitiesPage() {
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Studio / room (leave blank if N/A)</label>
                   <input placeholder="e.g. Room 2" className={inputCls} value={sessForm.studio} onChange={(e) => setSessForm({ ...sessForm, studio: e.target.value })} />
                 </div>
+                {/* Venue and price per session (QA 21/08) — this is what lets one
+                    activity run at three locations, or cost different amounts at
+                    each, instead of being created three times. */}
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Venue</label>
+                  <select className={inputCls} value={sessForm.location_id} onChange={(e) => setSessForm({ ...sessForm, location_id: e.target.value })}>
+                    <option value="">Same as the activity</option>
+                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Price (SGD)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'}
+                    className={inputCls}
+                    value={sessForm.price}
+                    onChange={(e) => setSessForm({ ...sessForm, price: e.target.value })}
+                  />
+                </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat weekly</label>
                   <select className={inputCls} value={sessForm.repeat} onChange={(e) => setSessForm({ ...sessForm, repeat: e.target.value })}>
@@ -1359,6 +1499,24 @@ export default function ActivitiesPage() {
                         </label>
                         <input placeholder="Teacher (N/A if blank)" className={inputCls} value={sessEditForm.teacher} onChange={(e) => setSessEditForm({ ...sessEditForm, teacher: e.target.value })} />
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Venue</span>
+                          <select className={inputCls} value={sessEditForm.location_id} onChange={(e) => setSessEditForm({ ...sessEditForm, location_id: e.target.value })}>
+                            <option value="">Same as the activity</option>
+                            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs text-gray-500">Price (SGD)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder={scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'}
+                            className={inputCls}
+                            value={sessEditForm.price}
+                            onChange={(e) => setSessEditForm({ ...sessEditForm, price: e.target.value })}
+                          />
+                        </label>
                       </div>
                       {sessEditError && <p className="text-xs font-medium text-red-600">{sessEditError}</p>}
                       {s.booked > 0 && (
@@ -1383,6 +1541,14 @@ export default function ActivitiesPage() {
                           {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
                           {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
                           {' · '}{s.booked} booked
+                          {/* Only called out when it differs from the activity,
+                              so the ordinary case stays quiet. */}
+                          {s.location_id && s.location_id !== scheduleFor?.location_id && (
+                            <>{' · '}<span className="text-blue-700">{locations.find((l) => l.id === s.location_id)?.name ?? 'Other venue'}</span></>
+                          )}
+                          {s.price != null && Number(s.price) !== Number(scheduleFor?.price ?? NaN) && (
+                            <>{' · '}<span className="text-blue-700">{Number(s.price) === 0 ? 'Free' : `SGD ${s.price}`}</span></>
+                          )}
                         </div>
                         {(s.teacher_name || s.studio) && (
                           <div className="text-xs text-purple-700 mt-0.5 truncate">

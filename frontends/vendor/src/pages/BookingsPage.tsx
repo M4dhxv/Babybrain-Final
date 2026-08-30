@@ -43,6 +43,8 @@ type RosterRow = {
   child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
   is_manual: boolean; user_id: string | null;
   parent_name: string | null; medical_disclosure: string | null; policies_accepted: number;
+  // The parent's answer to whatever this activity asks for (migration 00074).
+  info_response: string | null;
 };
 
 export default function BookingsPage() {
@@ -558,6 +560,18 @@ export default function BookingsPage() {
                         </span>
                       </div>
                     </div>
+                    {/* Whatever this activity asked the parent for (00074) —
+                        only rendered when there is an answer, so activities
+                        that ask nothing don't grow an empty row. */}
+                    {sel.info_response && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-2">Information you requested</div>
+                        <div className="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2">
+                          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                          <span className="whitespace-pre-wrap text-sm text-blue-800">{sel.info_response}</span>
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs text-gray-500 mb-2">Waivers &amp; consents</div>
                       {sel.policies_accepted > 0 ? (
