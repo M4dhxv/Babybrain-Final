@@ -966,17 +966,17 @@ export async function createWixTicketReservation(
  *  Confirm Order later records. Assumes a single currency across all lines
  *  (true for our one-ticket-type-per-checkout flow). */
 export function computeWixCheckoutTotal(lines: WixTicketReservationLine[]): { value: number; currency: string } {
-  let total = 0;
+  let totalCents = 0;
   let currency = 'SGD';
   for (const line of lines) {
     currency = line.subTotal.currency;
-    const subTotal = Number(line.subTotal.value);
-    const fee = line.serviceFee?.type === 'FEE_ADDED_AT_CHECKOUT'
-      ? subTotal * (Number(line.serviceFee.rate) / 100)
-      : 0;
-    total += subTotal + fee;
+    const subTotalCents = Math.round(Number(line.subTotal.value) * 100);
+    totalCents +=
+      line.serviceFee?.type === 'FEE_ADDED_AT_CHECKOUT'
+        ? addTicketFeeCents(subTotalCents, Number(line.serviceFee.rate))
+        : subTotalCents;
   }
-  return { value: Math.round(total * 100) / 100, currency };
+  return { value: totalCents / 100, currency };
 }
 
 /** Discovers the actual fee rate a FEE_ADDED_AT_CHECKOUT ticket type carries
@@ -997,6 +997,26 @@ export async function fetchTicketFeeRatePercent(
   return line?.serviceFee ? Number(line.serviceFee.rate) : null;
 }
 
+/** Wix's FEE_ADDED_AT_CHECKOUT service fee, applied to a cents amount and
+ *  rounded to whole cents. The single source of this arithmetic, because the
+ *  price a parent is *shown* and the amount Stripe actually *charges* are
+ *  computed in two different places and have to agree to the cent.
+ *
+ *  The fee is added to the base rather than scaling by `(1 + rate/100)`, and
+ *  multiplied before it is divided. Both matter: `1 + 2.5/100` is not exactly
+ *  representable in binary, so `3500 * 1.025` evaluates to 3587.4999999999995
+ *  and rounds DOWN to 3587, while adding the fee reaches an exact 3587.5 and
+ *  rounds UP to 3588. That one-cent gap was live — a $35.87 ticket charged
+ *  $35.88 at checkout.
+ *
+ *  Note this rounds per amount passed in, so a per-ticket price and a
+ *  multi-ticket subtotal can still differ by a cent from each other
+ *  (2 x round(35.875) = 71.76, round(71.75) = 71.75). Wix's own reservation
+ *  subtotal stays the authority for what gets charged. */
+function addTicketFeeCents(baseCents: number, feeRatePercent: number): number {
+  return Math.round(baseCents + (baseCents * feeRatePercent) / 100);
+}
+
 /** The real price to show anywhere ahead of checkout — base ticket price
  *  plus Wix's own service fee when it applies, so nobody (buyer or vendor)
  *  is shown a total lower than what actually gets charged. Falls back to
@@ -1009,7 +1029,7 @@ export function ticketPriceWithFeeCents(
   feeRatePercent: number | null
 ): number {
   if (feeType === 'FEE_ADDED_AT_CHECKOUT' && feeRatePercent != null) {
-    return Math.round(priceCents * (1 + feeRatePercent / 100));
+    return addTicketFeeCents(priceCents, feeRatePercent);
   }
   return priceCents;
 }
