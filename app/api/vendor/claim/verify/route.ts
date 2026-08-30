@@ -8,10 +8,23 @@ import { createAdminClient } from '@/lib/supabase/admin';
  *
  * Checks the one-time code(s) from /api/vendor/claim/start. When the caller is
  * signed in, a correct code hands them ownership of the provider so they can
- * edit the listing straight away; when they're not, the claim is marked
- * verified and completes as soon as they sign in and re-post with their token.
+ * edit the listing straight away.
  *
- * Body: { claim_id, email_code, phone_code? }
+ * QA 21/08: "once you enter the verification code it takes you to log in but no
+ * password has been set — flow doesn't work." A vendor claiming a business has
+ * no account yet, and the portal has no sign-up form at all, so verifying the
+ * code dropped them on a login page they could never get past. A signed-out
+ * caller can now send a `password` along with the code and gets an account
+ * created for the address the code was sent to, then owns the provider.
+ *
+ * The account is created already-confirmed: the emailed code has just proved
+ * the person controls that mailbox, which is the same thing the confirmation
+ * link exists to prove. It is only ever created for `claim.contact_email` —
+ * never an address supplied in this request — and never for an email that
+ * already has an account, so this cannot be used to set someone else's
+ * password.
+ *
+ * Body: { claim_id, email_code, phone_code?, password? }
  */
 
 const MAX_ATTEMPTS = 6;
@@ -22,10 +35,12 @@ export async function POST(request: Request) {
     claim_id: claimId,
     email_code: emailCode,
     phone_code: phoneCode,
+    password,
   } = (await request.json().catch(() => ({}))) as {
     claim_id?: string;
     email_code?: string;
     phone_code?: string;
+    password?: string;
   };
 
   if (!claimId || !emailCode) {
@@ -35,7 +50,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: claim } = await admin
     .from('provider_claims')
-    .select('id, provider_id, email_code_hash, phone_code_hash, expires_at, attempts, status')
+    .select('id, provider_id, contact_email, email_code_hash, phone_code_hash, expires_at, attempts, status')
     .eq('id', claimId)
     .maybeSingle();
 
@@ -68,7 +83,42 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const { user } = await getAuthedContext(request);
+  const { user: signedInUser } = await getAuthedContext(request);
+  let user = signedInUser;
+
+  /* Signed out: the code is right, so create the login they need. Without this
+     the flow ended on a sign-in page for an account that did not exist. */
+  let createdAccount = false;
+  if (!user && password) {
+    if (password.length < 8) {
+      return NextResponse.json({ error: 'Choose a password of at least 8 characters.' }, { status: 400 });
+    }
+    const email = claim.contact_email;
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // the emailed code already proved they hold this address
+      user_metadata: { claimed_provider_id: claim.provider_id },
+    });
+    if (createError || !created?.user) {
+      // Overwhelmingly the "already registered" case. Never touch an existing
+      // account's password — send them to sign in, and the signed-in branch
+      // below finishes the claim on their next post.
+      await admin
+        .from('provider_claims')
+        .update({ email_verified_at: now, phone_verified_at: phoneOk ? now : null, status: 'verified' })
+        .eq('id', claim.id);
+      return NextResponse.json({
+        verified: true,
+        claimed: false,
+        next: 'sign_in',
+        email,
+        error: 'You already have a BabyBrain login for this email — sign in and we’ll finish the claim.',
+      }, { status: 409 });
+    }
+    user = created.user;
+    createdAccount = true;
+  }
 
   await admin
     .from('provider_claims')
@@ -81,12 +131,12 @@ export async function POST(request: Request) {
     .eq('id', claim.id);
 
   if (!user) {
-    // Verified, but we can't attach an owner yet. The vendor signs up / logs in
-    // and the page re-posts with their token to finish.
+    // Verified but no password supplied — the page asks for one and re-posts.
     return NextResponse.json({
       verified: true,
       claimed: false,
-      next: 'sign_in',
+      next: 'set_password',
+      email: claim.contact_email,
       provider_id: claim.provider_id,
     });
   }
@@ -109,5 +159,13 @@ export async function POST(request: Request) {
     })
     .eq('id', claim.provider_id);
 
-  return NextResponse.json({ verified: true, claimed: true, provider_id: claim.provider_id });
+  return NextResponse.json({
+    verified: true,
+    claimed: true,
+    provider_id: claim.provider_id,
+    // The page signs in with the credentials it just set, so it needs to know
+    // an account was created rather than reused.
+    account_created: createdAccount,
+    email: claim.contact_email,
+  });
 }

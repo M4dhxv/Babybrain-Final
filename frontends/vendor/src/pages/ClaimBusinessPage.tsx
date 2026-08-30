@@ -58,7 +58,7 @@ const REGION_LABELS: Record<string, string> = {
 
 export default function ClaimBusinessPage() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, signIn } = useAuth();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ClaimableVenue[]>([]);
@@ -75,6 +75,15 @@ export default function ClaimBusinessPage() {
   const [emailCode, setEmailCode] = useState('');
   const [phoneCode, setPhoneCode] = useState('');
   const [emailVerified, setEmailVerified] = useState(false);
+
+  /* QA 21/08: "once you enter the verification code it takes you to log in but
+     no password has been set — flow doesn't work." A claimer has no account
+     yet and the portal has no sign-up form, so the old redirect to /login was
+     a dead end. The password is collected here instead, right after the code,
+     and the account is created against the address the code went to. */
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,27 +139,64 @@ export default function ClaimBusinessPage() {
     }
   }
 
-  async function verify() {
+  /**
+   * Checks the code, and — when the claimer has no account — creates one with
+   * the password they set, signs them in, and lands them on their listing.
+   * `withPassword` is only sent on the second pass, so a signed-in vendor
+   * never sees the password step at all.
+   */
+  async function verify(withPassword?: string) {
     if (!claimId) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await apiPost<{ verified: boolean; claimed: boolean; next?: string }>(
-        '/api/vendor/claim/verify',
-        { claim_id: claimId, email_code: emailCode, phone_code: phoneCode || undefined }
-      );
+      const res = await apiPost<{
+        verified: boolean; claimed: boolean; next?: string;
+        email?: string; account_created?: boolean;
+      }>('/api/vendor/claim/verify', {
+        claim_id: claimId,
+        email_code: emailCode,
+        phone_code: phoneCode || undefined,
+        ...(withPassword ? { password: withPassword } : {}),
+      });
       setEmailVerified(res.verified);
+
+      if (res.next === 'set_password') {
+        setNeedsPassword(true);
+        setNotice('Code confirmed. Set a password to finish claiming this business.');
+        return;
+      }
       if (res.claimed) {
+        // Sign the new account in so /save-listing loads as its owner rather
+        // than bouncing an anonymous visitor to the login page.
+        if (res.account_created && withPassword && res.email) {
+          const { error: signInError } = await signIn(res.email, withPassword);
+          if (signInError) {
+            setNeedsPassword(false);
+            setNotice(null);
+            setError(`Your business is claimed and your log-in is ready, but signing you in failed: ${signInError}. Please log in with ${res.email}.`);
+            return;
+          }
+        }
+        setNeedsPassword(false);
         navigate('/save-listing');
-      } else if (res.next === 'sign_in') {
-        setNotice('Code confirmed. Create your partner log-in to finish claiming this business.');
-        navigate('/login?claim=1');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'That code could not be verified.');
+      // The route returns 409 with a message when the email already has an
+      // account — show it and point them at the login page, where signing in
+      // finishes the claim on the next post.
+      const message = e instanceof Error ? e.message : 'That code could not be verified.';
+      setError(message);
+      if (/already have a BabyBrain login/i.test(message)) setNeedsPassword(false);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitPassword() {
+    if (password.length < 8) return setError('Choose a password of at least 8 characters.');
+    if (password !== password2) return setError('Those passwords don’t match.');
+    await verify(password);
   }
 
   const canSendCodes = Boolean(selected && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && uen.trim());
@@ -380,6 +426,50 @@ export default function ClaimBusinessPage() {
                   >
                     {busy ? 'Sending…' : 'Send verification code'}
                   </Button>
+                ) : needsPassword ? (
+                  /* Final step for a claimer with no BabyBrain account. The
+                     code has already proved they hold this mailbox, so all
+                     that's left is the password. */
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <h4 className="text-sm font-semibold text-gray-900">Create your partner log-in</h4>
+                    <p className="mt-1 text-xs text-gray-500">
+                      You'll sign in with <span className="font-medium text-gray-700">{email.trim()}</span>.
+                    </p>
+                    <label className="mt-3 block text-sm font-semibold text-gray-900" htmlFor="claim-password">Password</label>
+                    <Input
+                      id="claim-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      className="mt-2 rounded-xl border-gray-200"
+                    />
+                    <label className="mt-3 block text-sm font-semibold text-gray-900" htmlFor="claim-password-2">Confirm password</label>
+                    <Input
+                      id="claim-password-2"
+                      type="password"
+                      autoComplete="new-password"
+                      value={password2}
+                      onChange={(e) => setPassword2(e.target.value)}
+                      placeholder="Type it again"
+                      className="mt-2 rounded-xl border-gray-200"
+                    />
+                    <Button
+                      onClick={submitPassword}
+                      disabled={busy || password.length < 8 || password !== password2}
+                      className="gradient-primary mt-4 w-full rounded-xl text-white hover:opacity-90"
+                    >
+                      {busy ? 'Finishing…' : 'Finish claiming this business'}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/login')}
+                      className="mt-3 w-full text-center text-xs font-medium text-gray-500 hover:text-gray-700"
+                    >
+                      Already have a BabyBrain log-in? Sign in instead
+                    </button>
+                  </div>
                 ) : (
                   <div className="rounded-xl border border-gray-200 p-4">
                     <label className="text-sm font-semibold text-gray-900">Code from your email</label>
@@ -403,7 +493,7 @@ export default function ClaimBusinessPage() {
                       </>
                     )}
                     <div className="mt-4 flex gap-2">
-                      <Button onClick={verify} disabled={emailCode.length !== 6 || busy} className="gradient-primary flex-1 rounded-xl text-white hover:opacity-90">
+                      <Button onClick={() => verify()} disabled={emailCode.length !== 6 || busy} className="gradient-primary flex-1 rounded-xl text-white hover:opacity-90">
                         {busy ? 'Checking…' : 'Verify'}
                       </Button>
                       <Button variant="outline" onClick={() => { setClaimId(null); setEmailCode(''); setPhoneCode(''); }} className="rounded-xl">
