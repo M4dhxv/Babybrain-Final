@@ -93,14 +93,22 @@ try {
   check('Every non-bespoke vendor sits on their plan s advertised rate', stragglers === 0,
     `${stragglers} off-rate`);
 
-  check('A brand-new vendor gets their plan s rate, not the old 15% default',
-    Number(terms?.commission_rate) === 0.1, String(terms?.commission_rate));
+  /* The published rate card, per migration 00064. The DB keys predate the
+     Pay As You Grow / Pro / Premium rename and are deliberately unchanged, so
+     'growth' is the tier the Plans page calls Pro and 'pro' is Premium.
+     Written out rather than read from plan_commission_rate() on purpose: the
+     point of these two checks is to catch the function drifting away from
+     what the pricing page promises, which is exactly what 00064 had to fix. */
+  const RATES = { free: 0.12, growth: 0.1, pro: 0.08, premium: 0.08 };
+
+  check('A brand-new vendor gets their plan s advertised rate (Pay as you grow, 12%)',
+    Number(terms?.commission_rate) === RATES.free, String(terms?.commission_rate));
 
   // Upgrading a plan should move the rate with it...
   await sql`update subscriptions set plan = 'growth' where provider_id = ${provider.id}`;
   const [upgraded] = await sql`select commission_rate from subscriptions where provider_id = ${provider.id}`;
-  check('Upgrading to Growth moves the rate to 15%', Number(upgraded.commission_rate) === 0.15,
-    String(upgraded.commission_rate));
+  check('Upgrading to Pro (plan "growth") moves the rate to 10%',
+    Number(upgraded.commission_rate) === RATES.growth, String(upgraded.commission_rate));
 
   // ...unless a bespoke deal has been struck, which must survive plan changes.
   await sql`update subscriptions set commission_rate = 0.05, custom_terms = true

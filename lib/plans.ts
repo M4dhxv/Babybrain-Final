@@ -23,18 +23,17 @@ export type VendorPlan = 'free' | PaidPlan | 'premium';
 /**
  * Names shown to vendors.
  *
- * NOTE: the hosted database already uses a newer vocabulary — its
- * `plan_commission_rate` function labels 'growth' as "Pro" and 'pro' as
- * "Premium", matching the 24/08 QA rows — while the vendor frontend still
- * says Growth/Pro everywhere. These stay aligned with the frontend rather
- * than half-renamed; when the rename lands, it is this map and the frontend's
- * PLAN_META.
+ * The DB keys predate the rename and are deliberately left alone so the
+ * Stripe price-id config (`stripe_growth_price_id`, `stripe_pro_price_id`)
+ * keeps working: 'growth' IS the plan the Plans page calls Pro, and 'pro' IS
+ * the one it calls Premium. Kept in step with the vendor frontend's
+ * PLAN_META and with plan_commission_rate() in migration 00064.
  */
 const LABELS: Record<VendorPlan, string> = {
-  free: 'Free',
-  growth: 'Growth',
-  pro: 'Pro',
-  premium: 'Pro',
+  free: 'Pay as you grow',
+  growth: 'Pro',
+  pro: 'Premium',
+  premium: 'Premium',
 };
 
 export const planLabel = (plan: string): string => LABELS[plan as VendorPlan] ?? plan;
