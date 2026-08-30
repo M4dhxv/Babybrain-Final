@@ -16,7 +16,10 @@
     "validate:commercials": "node scripts/validate-commercials.mjs",
     "migrate": "node scripts/apply-migration.mjs",
     "stripe:webhooks": "node scripts/setup-stripe-webhooks.mjs",
-    "validate:payments": "node scripts/validate-payments.mjs"
+    "validate:payments": "node scripts/validate-payments.mjs",
+    "stripe:portal": "node scripts/setup-stripe-portal.mjs",
+    "stripe:dedupe": "node scripts/dedupe-vendor-subscriptions.mjs",
+    "validate:plan-changes": "node scripts/validate-plan-changes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

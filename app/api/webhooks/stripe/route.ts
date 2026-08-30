@@ -6,6 +6,7 @@ import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 import { recordSale } from '@/lib/commercials';
 import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
+import { dbStatus, planFromMetadata, type PaidPlan } from '@/lib/plans';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -27,6 +28,31 @@ function signingSecrets(): string[] {
   return [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET].filter(
     (secret): secret is string => Boolean(secret)
   );
+}
+
+/**
+ * Which tier a price belongs to, by looking it up in the same `app_config`
+ * catalog the checkout route buys from. Returns null for a price we don't
+ * recognise (a legacy or hand-made one), so the caller can fall back to the
+ * subscription's metadata rather than guessing a tier wrong.
+ */
+async function planForPrice(
+  admin: ReturnType<typeof createAdminClient>,
+  priceId: string | undefined
+): Promise<PaidPlan | null> {
+  if (!priceId) return null;
+  const { data } = await admin
+    .from('app_config')
+    .select('key, value')
+    .in('key', [
+      'stripe_growth_price_id',
+      'stripe_growth_price_id_annual',
+      'stripe_pro_price_id',
+      'stripe_pro_price_id_annual',
+    ]);
+  const match = data?.find((row) => row.value === priceId);
+  if (!match) return null;
+  return match.key.startsWith('stripe_pro_') ? 'pro' : 'growth';
 }
 
 export async function POST(request: Request) {
@@ -58,18 +84,24 @@ export async function POST(request: Request) {
       const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
       const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
-      // Vendor subscription — Growth or Pro. `plan` rides on the
-      // subscription's own metadata (set when checkout is created) rather
-      // than being assumed, so a Pro checkout isn't recorded as Growth.
+      // Vendor subscription — Growth or Pro.
+      //
+      // The tier is read off the PRICE the subscription is actually billing,
+      // falling back to its metadata. Metadata alone was wrong the moment a
+      // plan could change after checkout: a switch made in the Stripe billing
+      // portal moves the price but leaves `metadata.plan` on the old tier, so
+      // a vendor who downgraded Pro → Growth in the portal kept Pro in our
+      // database (and Pro's 10% commission) indefinitely.
       const providerId = sub.metadata?.provider_id;
       if (providerId) {
-        const vendorPlan = sub.metadata?.plan === 'pro' ? 'pro' : 'growth';
+        const vendorPlan =
+          (await planForPrice(admin, sub.items.data[0]?.price?.id)) ?? planFromMetadata(sub.metadata);
         await admin
           .from('subscriptions')
           .update({
             plan: active ? vendorPlan : 'free',
             stripe_subscription_id: sub.id,
-            status: sub.status as never,
+            status: dbStatus(sub.status) as never,
             current_period_end: periodEndIso,
             cancel_at_period_end: sub.cancel_at_period_end,
           })
@@ -84,7 +116,7 @@ export async function POST(request: Request) {
             user_id: customerUserId,
             plan: active ? 'plus' : 'free',
             stripe_subscription_id: sub.id,
-            status: sub.status as never,
+            status: dbStatus(sub.status) as never,
             current_period_end: periodEndIso,
             cancel_at_period_end: sub.cancel_at_period_end,
           },
@@ -122,7 +154,7 @@ export async function POST(request: Request) {
               body: isTrial
                 ? 'Add a payment method to keep your Growth features active.'
                 : 'We couldn’t process your subscription payment. Please update your card.',
-              data: { url: '/vendor/billing' },
+              data: { url: '/vendor/#/billing' },
             }))
           );
         }
@@ -175,7 +207,7 @@ export async function POST(request: Request) {
             body: enabled
               ? 'Stripe finished verifying your business — booking payments now go straight to your bank account.'
               : 'Stripe needs more information before it can pay you out. Open Billing to finish up.',
-            data: { url: '/vendor/billing' },
+            data: { url: '/vendor/#/billing' },
           }))
         );
       }
@@ -303,7 +335,7 @@ export async function POST(request: Request) {
             user_id: session.metadata.user_id,
             plan: active ? 'plus' : 'free',
             stripe_subscription_id: sub.id,
-            status: sub.status as never,
+            status: dbStatus(sub.status) as never,
             current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
             cancel_at_period_end: sub.cancel_at_period_end,
           },
@@ -366,7 +398,7 @@ export async function POST(request: Request) {
             type: 'payment_disputed',
             title: 'A parent disputed a payment',
             body: 'The amount has been held while the bank reviews it. We may ask you for class records as evidence.',
-            data: { url: '/vendor/earnings' },
+            data: { url: '/vendor/#/earnings' },
           }))
         );
       }

@@ -162,11 +162,18 @@ export default function PortalLayout() {
                 ? <>{subscription.cancel_at_period_end ? 'Access until' : 'Renews on'}<br />{renewLabel}</>
                 : plan.price}
             </div>
+            {/* QA 24/08: "When click 'Upgrade Plan' under current plan bottom
+                left it just jumps up to current plan." It always went to
+                /billing, which opens on the Current Plan card — so an
+                "Upgrade" button showed you the plan you were already on, and
+                reaching the tiers took a second click. An upgrade now goes
+                straight to /plans; managing an existing paid plan still goes
+                to /billing, which is where the card and invoices live. */}
             <button
-              onClick={() => go('/billing')}
+              onClick={() => go(plan.isPaid ? '/billing' : '/plans')}
               className="flex items-center justify-center w-full gap-1 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {location.pathname === '/billing' ? 'Manage Subscription' : plan.isPaid ? 'Manage Plan' : 'Upgrade Plan'}
+              {plan.isPaid ? (location.pathname === '/billing' ? 'Manage Subscription' : 'Manage Plan') : 'Upgrade Plan'}
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>

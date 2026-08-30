@@ -23,9 +23,19 @@ export const PLAN_META: Record<string, PlanMeta> = {
 
 export const planMeta = (plan: string | null | undefined): PlanMeta => PLAN_META[plan ?? 'free'] ?? PLAN_META.free;
 
-/** The next tier up from a given plan, for "upgrade" CTAs. */
+/**
+ * The next tier up from a given plan, for "upgrade" CTAs.
+ *
+ * The ladder stops at Pro on purpose. `premium` exists in PLAN_META so a row
+ * carrying that value still renders with a real name, but it has no Stripe
+ * price, no checkout, and isn't even allowed by the `subscriptions.plan` CHECK
+ * constraint (migration 00039). Including it here meant a Pro vendor was shown
+ * "Next step up: Premium" with an Upgrade button that could only ever 500 on
+ * a missing price id — and hid the "you're on our top plan" state that carries
+ * the downgrade link.
+ */
 export const nextPlan = (plan: string | null | undefined): PlanMeta | null => {
-  const order = ['free', 'growth', 'pro', 'premium'];
+  const order = ['free', 'growth', 'pro'];
   const i = order.indexOf(plan ?? 'free');
   return i >= 0 && i < order.length - 1 ? PLAN_META[order[i + 1]] : null;
 };

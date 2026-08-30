@@ -171,16 +171,25 @@ export default function BillingPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 border border-gray-200 rounded-xl flex items-center justify-center text-center">
+                  <div className="p-4 border border-gray-200 rounded-xl flex flex-col items-center justify-center text-center">
                     <p className="text-xs text-gray-500">You’re on our top plan 🎉</p>
+                    {/* QA 23/08: "Can't downgrade anywhere." On the top tier
+                        this card was a dead end — the only routes out were
+                        cancelling outright or the Stripe portal, which had
+                        plan switching disabled. */}
+                    <button onClick={() => navigate('/plans')} className="mt-2 text-xs font-semibold text-gray-600 hover:underline">
+                      Change plan →
+                    </button>
                   </div>
                 )}
               </div>
 
               <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-500">Need more exposure? Upgrade to Boost.</p>
+                <p className="text-xs text-gray-500">
+                  {plan.isPaid ? 'Change tier any time — Stripe prorates the difference.' : 'Need more exposure? Upgrade to Boost.'}
+                </p>
                 <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
-                  Learn more about plans
+                  {plan.isPaid ? 'Compare & change plan' : 'Learn more about plans'}
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>

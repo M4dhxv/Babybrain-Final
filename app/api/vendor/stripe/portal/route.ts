@@ -26,8 +26,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No billing account yet' }, { status: 400 });
   }
 
+  // Pin our own portal configuration when one has been set up. Stripe's
+  // default configuration has `subscription_update` disabled, which is why
+  // the portal offered cancel and invoices but no way to change tier
+  // ("Can't downgrade anywhere", QA 23/08). Created by `npm run stripe:portal`;
+  // if that hasn't been run the session still opens on Stripe's default.
+  const { data: cfg } = await admin
+    .from('app_config')
+    .select('value')
+    .eq('key', 'stripe_portal_configuration_id')
+    .maybeSingle();
+
   const portal = await getStripe().billingPortal.sessions.create({
     customer: sub.stripe_customer_id,
+    ...(cfg?.value ? { configuration: cfg.value } : {}),
     return_url: vendorPageUrl(request, '/billing'),
   });
   return NextResponse.json({ url: portal.url });
