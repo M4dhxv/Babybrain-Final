@@ -550,10 +550,10 @@ export function Button({
     pink: "border-transparent bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-white shadow-pink",
     ghost: "border-transparent bg-transparent text-baby-pink hover:bg-palette-pinkTint",
     // Blue carries the in-app actions (book, buy, submit, invite); pink stays
-    // for marketing CTAs and the final confirm step. Pastel fill with the
-    // readable blue ink on top — no electric `baby-blue`.
-    blue: "border-transparent bg-palette-blue text-palette-blueInk shadow-sm hover:brightness-95",
-    blueOutline: "border-palette-blue bg-white text-palette-blueInk hover:bg-palette-blueTint",
+    // for marketing CTAs and the final confirm step. Pastel fill, white text
+    // — no electric `baby-blue`.
+    blue: "border-transparent bg-palette-blue text-white shadow-sm hover:brightness-95",
+    blueOutline: "border-palette-blue bg-white text-palette-blue hover:bg-palette-blueTint",
   }[variant];
   // `border` here is the WIDTH only, so every variant is the same height.
   const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;

@@ -4516,19 +4516,19 @@ function PricingPage() {
             <button
               type="button"
               onClick={() => setBilling("monthly")}
-              className={billing === "monthly" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
+              className={billing === "monthly" ? "rounded-full bg-palette-blue text-white" : "text-[#59658d]"}
             >
               Monthly
             </button>
             <button
               type="button"
               onClick={() => setBilling("annual")}
-              className={billing === "annual" ? "rounded-full bg-palette-blue text-palette-blueInk" : "text-[#59658d]"}
+              className={billing === "annual" ? "rounded-full bg-palette-blue text-white" : "text-[#59658d]"}
             >
               {/* The mock only shows the Monthly-active state. Once Annual is
                   selected the pill fills pastel blue, so the nudge takes the
-                  same readable blue ink as the label. */}
-              Annual <span className={billing === "annual" ? "text-palette-blueInk" : "text-baby-pink"}>(1 month free)</span>
+                  same white label colour as the toggle text. */}
+              Annual <span className={billing === "annual" ? "text-white" : "text-baby-pink"}>(1 month free)</span>
             </button>
           </div>
         </section>
@@ -4565,7 +4565,7 @@ function PricingPage() {
 
           {/* Plus */}
           <article className="relative rounded-[18px] border border-palette-blue bg-white p-6 shadow-card ring-1 ring-palette-blue/40">
-            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-palette-blue px-8 py-2 text-sm font-black text-palette-blueInk">
+            <span className="absolute left-1/2 top-[-15px] -translate-x-1/2 rounded-full bg-palette-blue px-8 py-2 text-sm font-black text-white">
               MOST POPULAR
             </span>
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F4F0FA] text-baby-lilac">
@@ -4689,7 +4689,7 @@ function PackageOption({
         }
       }}
       className={`flex cursor-pointer items-center gap-4 rounded-[12px] border-2 p-4 transition ${
-        selected ? "border-baby-blue bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"
+        selected ? "border-[#A7D8F8] bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -5494,7 +5494,7 @@ function BookingPage() {
                             return (
                               <label
                                 key={p.id}
-                                className={`flex cursor-pointer gap-3 rounded-[12px] border-2 p-4 transition ${on ? "border-baby-blue bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"}`}
+                                className={`flex cursor-pointer gap-3 rounded-[12px] border-2 p-4 transition ${on ? "border-[#A7D8F8] bg-[#EDF7FD]" : "border-[#DCD2D5] bg-white hover:border-[#A7D8F8]"}`}
                               >
                                 <input
                                   type="checkbox"
