@@ -12,6 +12,17 @@ import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 
+/**
+ * The class roster table's column tracks. Header and body rows are separate grids, so the
+ * track list is shared to keep them in step, and every track is
+ * `minmax(0, …)` rather than a bare `Nfr` — a bare fr floors at min-content,
+ * so one long child name widened that row's track and left the row
+ * misaligned against the header. `gap-x-4` keeps neighbouring values from
+ * sitting flush. Same fix as the activities table.
+ */
+const ROSTER_COLS =
+  'grid min-w-[570px] gap-x-4 grid-cols-[minmax(0,0.5fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
+
 const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
 const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-yellow-300 text-yellow-800', 'bg-purple-300 text-purple-800', 'bg-green-300 text-green-800'];
 
@@ -616,20 +627,20 @@ export default function BookingsPage() {
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
               </div>
               <div className="border border-gray-200 rounded-xl overflow-x-auto mb-5">
-                <div className="grid min-w-[520px] grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500">
+                <div className={cn(ROSTER_COLS, 'px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500')}>
                   <div>Present</div><div>Child</div><div>Status</div><div>Make-up token</div>
                 </div>
                 {booked.map((c) => {
                   const cur = attDraft[c.booking_id] ?? c.attendance_status;
                   const tok = tokenStatus[c.booking_id];
                   return (
-                    <div key={c.booking_id} className="grid min-w-[520px] grid-cols-[0.5fr_1.4fr_0.8fr_1fr] px-4 py-3 border-t border-gray-100 items-center">
+                    <div key={c.booking_id} className={cn(ROSTER_COLS, 'px-4 py-3 border-t border-gray-100 items-center')}>
                       <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{c.child_name}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="w-8 h-8 flex-shrink-0 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 break-words">{c.child_name}</div>
                           <div className="text-xs text-gray-500">{ageLabel(c.child_age_months)}</div>
                         </div>
                       </div>

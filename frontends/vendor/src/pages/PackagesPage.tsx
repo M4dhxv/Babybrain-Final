@@ -6,6 +6,17 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
+/**
+ * The package purchases table's column tracks. Header and body rows are separate grids, so the
+ * track list is shared to keep them in step, and every track is
+ * `minmax(0, …)` rather than a bare `Nfr` — a bare fr floors at min-content,
+ * so one long buyer or pack name widened that row's track and left the row
+ * misaligned against the header. `gap-x-4` keeps neighbouring values from
+ * sitting flush. Same fix as the activities table.
+ */
+const PURCHASE_COLS =
+  'grid min-w-[790px] gap-x-4 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
+
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const tabs = ['Packs', 'Purchases'];
 
@@ -324,14 +335,14 @@ export default function PackagesPage() {
 
         {!loading && activeTab === 'Purchases' && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <div className="grid min-w-[720px] grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500">
+            <div className={cn(PURCHASE_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
               <div>Buyer</div><div>Pack</div><div>Credits</div><div>Status</div><div>Purchased / Expires</div>
             </div>
             {purchases.map((p) => (
-              <div key={p.purchase_id} className="grid min-w-[720px] grid-cols-[1.4fr_1fr_0.8fr_0.8fr_1fr] px-5 py-3 border-t border-gray-100 items-center">
-                <div className="text-sm font-medium text-gray-900">{p.buyer_name}</div>
-                <div className="text-sm text-gray-700">{p.package_name}</div>
-                <div className="text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
+              <div key={p.purchase_id} className={cn(PURCHASE_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
+                <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
+                <div className="min-w-0 text-sm text-gray-700 break-words">{p.package_name}</div>
+                <div className="min-w-0 text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
                 <div><span className={statusBadge(p.status)}>{p.status}</span></div>
                 <div className="text-xs text-gray-500">{fmtDate(p.created_at)}{p.expires_at ? ` · expires ${fmtDate(p.expires_at)}` : ''}</div>
               </div>
