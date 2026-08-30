@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash,
   CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, Trash2, X, Save,
@@ -869,11 +869,20 @@ function WixIntegrationManager({
 
   return (
     <>
+      {/* Wix is the only integration built so far, so a vendor on any other
+          platform otherwise has no signal that asking for theirs is an option
+          — this points them at support rather than leaving them at a dead end. */}
+      <p className="mb-4 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
+        Don't see your platform here?{' '}
+        <Link to="/contact" className="font-medium text-[#C90044] hover:underline">Contact us</Link>{' '}
+        to request the integration to be built.
+      </p>
+
       <div className="mb-1 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
         <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Plug className="w-5 h-5 text-indigo-600" /></div>
         <div>
           <h3 className="font-semibold text-gray-900">Wix integration</h3>
-          <p className="text-xs text-gray-500">Connect your own Wix Bookings account to sync availability and bookings.</p>
+          <p className="text-xs text-gray-500">Connect your own Wix account to sync availability.</p>
         </div>
       </div>
 
@@ -934,9 +943,8 @@ function WixIntegrationManager({
                 </div>
               )}
               <p className="text-xs text-gray-400">
-                Every service, class and appointment on this Wix account becomes an activity here — along with every
-                upcoming event, if the Events &amp; Tickets app is installed. New ones land unpublished until you fill
-                in a category, age range and price.
+                Every activity on this Wix account can become an activity here — they land unpublished so you can
+                review and make any edits required before they go live.
               </p>
               <a
                 href="https://support.wix.com/en/article/about-api-keys"
@@ -953,7 +961,6 @@ function WixIntegrationManager({
             <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
               <div>
                 <h4 className="text-sm font-semibold text-gray-900">Import specific activities</h4>
-                <p className="text-xs text-gray-500">Choose which Wix services should become activities on BabyBrain, then save.</p>
               </div>
 
               {importError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{importError}</div>}
@@ -1003,6 +1010,10 @@ function WixIntegrationManager({
                     ))}
                   </div>
 
+                  <p className="text-xs text-gray-500">
+                    Choose which of your activities you would like to display through BabyBrain and click save.
+                  </p>
+
                   <Button
                     onClick={saveImport}
                     disabled={importSaving || !hasSelectionChanges}
@@ -1019,7 +1030,6 @@ function WixIntegrationManager({
             <div className="mt-5 rounded-xl border border-gray-200 p-4 space-y-4">
               <div>
                 <h4 className="text-sm font-semibold text-gray-900">Import specific events</h4>
-                <p className="text-xs text-gray-500">Choose which Wix events should become activities on BabyBrain, then save.</p>
               </div>
 
               {eventImportError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{eventImportError}</div>}
@@ -1065,6 +1075,10 @@ function WixIntegrationManager({
                       </label>
                     ))}
                   </div>
+
+                  <p className="text-xs text-gray-500">
+                    Choose which of your events you would like to display through BabyBrain and click save.
+                  </p>
 
                   <Button
                     onClick={saveEventImport}
