@@ -166,3 +166,25 @@
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Stream Chat's own theme, repainted in the brand's dark pink.
+   `stream-chat-react`'s v2 stylesheet defaults `--str-chat__primary-color` and
+   its neighbours to a blue scale, which drove the send button, the selected
+   conversation, unread badges and the sender's own bubbles — the one surface in
+   the portal still off-brand.
+
+   Deliberately NOT inside `@layer`, and deliberately a two-class selector:
+   Stream defines these variables on `.str-chat` itself, so a value set on an
+   ancestor is overridden rather than inherited, and a single-class rule of ours
+   would only tie on specificity. `.bb-chat .str-chat` (0,2,0) beats Stream's
+   `.str-chat` (0,1,0) whichever order the bundler emits them in. */
+.bb-chat .str-chat,
+.bb-chat.str-chat {
+  --str-chat__primary-color: hsl(var(--bb-pink));
+  /* Pressed/active state — one shade below --bb-pink, which has no token. */
+  --str-chat__active-primary-color: #a80039;
+  --str-chat__primary-color-low-emphasis: hsl(var(--bb-pink-surface));
+  --str-chat__primary-surface-color: hsl(var(--bb-pink-surface));
+  --str-chat__primary-surface-color-low-emphasis: hsl(var(--bb-pink-light));
+  --str-chat__primary-overlay-color: hsl(var(--bb-pink) / 0.6);
+}
