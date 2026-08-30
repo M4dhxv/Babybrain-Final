@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LiveActivity } from "../lib/useActivities";
@@ -85,18 +85,14 @@ export function ExploreMap({
     };
   }, []);
 
-  // Re-plot pins whenever the (filtered) activity list changes.
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layerRef.current;
-    if (!map || !layer) return;
-    layer.clearLayers();
-
-    // Group by rounded coordinate so co-located classes share a pin. A listing
-    // contributes one pin per venue its provider runs, so multi-location
-    // businesses (Kindermusik in the west, east and north; Lucy Sparkles across
-    // nine venues) appear everywhere they actually teach — not just at their
-    // registered address.
+  /** One entry per distinct venue coordinate, with the activities taught there.
+   *
+   *  Grouped by rounded coordinate so co-located classes share a pin. A listing
+   *  contributes one pin per venue its provider runs, so multi-location
+   *  businesses (Kindermusik in the west, east and north; Lucy Sparkles across
+   *  nine venues) appear everywhere they actually teach — not just at their
+   *  registered address. */
+  const pins = useMemo(() => {
     const byLoc = new Map<
       string,
       { lat: number; lng: number; label: string | null; items: LiveActivity[] }
@@ -125,9 +121,44 @@ export function ExploreMap({
         addPin(a.lat, a.lng, a.providerName ?? null, a);
       }
     }
+    return [...byLoc.values()];
+  }, [activities, regions]);
+
+  /** Fingerprint of what's actually on the map — the effect below is keyed on
+   *  this string, never on `pins`/`activities` themselves.
+   *
+   *  Explore builds its list as `[...filtered].sort(...)` inline on every
+   *  render, so `activities` arrives with a fresh array identity each time even
+   *  when nothing about it changed. Keyed on that, the replot effect re-ran
+   *  constantly and its `fitBounds` snapped the map back to the whole-island
+   *  view — so any unrelated re-render (typing in search, a background refetch,
+   *  toggling anything on the page) threw away whatever the user had zoomed or
+   *  panned to, which made the map feel stuck at its default zoom. Comparing
+   *  content instead means the view is only re-fitted when the pins genuinely
+   *  differ, e.g. when a filter changes what's shown. */
+  const pinsKey = useMemo(
+    () =>
+      pins
+        .map((g) => `${g.lat.toFixed(5)},${g.lng.toFixed(5)}:${g.items.map((i) => i.id).join(".")}`)
+        .sort()
+        .join("|"),
+    [pins]
+  );
+
+  // Read the latest pins from inside the content-keyed effect without making
+  // their (per-render) identity a dependency of it.
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
+
+  // Re-plot pins and re-fit the view — only when the pin content actually changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = layerRef.current;
+    if (!map || !layer) return;
+    layer.clearLayers();
 
     const bounds: [number, number][] = [];
-    for (const g of byLoc.values()) {
+    for (const g of pinsRef.current) {
       bounds.push([g.lat, g.lng]);
       const name = g.label ?? g.items[0].providerName;
       // QA: "You shouldn't have to click on pop out before seeing price",
@@ -170,7 +201,7 @@ export function ExploreMap({
     } else {
       map.setView(SG_CENTER, 11);
     }
-  }, [activities, regions]);
+  }, [pinsKey]);
 
   return <div ref={containerRef} className="h-[395px] w-full" style={{ zIndex: 0 }} />;
 }
