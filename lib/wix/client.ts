@@ -787,22 +787,48 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
     detailedDescription?: string;
   }
 
-  const data = await wixFetch<{ events?: RawEvent[] }>(creds, '/events/v3/events/query', {
-    query: {
-      paging: { limit: 100 },
-      sort: [{ fieldName: 'dateAndTimeSettings.startDate', order: 'ASC' }],
-    },
-  });
+  const START_FIELD = 'dateAndTimeSettings.startDate';
+  const PAGE_SIZE = 100;
+  // 10 pages of headroom. A vendor with more than 1000 events inside the
+  // window is well past anything this picker can usefully display, and an
+  // unbounded loop against a paging bug is worse than a truncated list.
+  const MAX_EVENTS = PAGE_SIZE * 10;
 
-  return (data.events ?? [])
+  const raw: RawEvent[] = [];
+  for (let offset = 0; offset < MAX_EVENTS; offset += PAGE_SIZE) {
+    const data = await wixFetch<{ events?: RawEvent[] }>(creds, '/events/v3/events/query', {
+      query: {
+        // The date window is applied server-side, not after the fact. Wix
+        // sorts by start date ascending, so filtering a single page in our
+        // own code meant a vendor with 100+ *past* events had their upcoming
+        // ones pushed off that page entirely and detected as zero events —
+        // a fresh integration would show an empty picker for an account that
+        // clearly has published events.
+        //
+        // Both bounds cannot live in one object: Wix's filter parser rejects
+        // `{ $gte, $lte }` on a DateTime field ("invalid for field start of
+        // type DateTime") and needs them as separate $and clauses.
+        filter: {
+          $and: [
+            { [START_FIELD]: { $gte: now.toISOString() } },
+            { [START_FIELD]: { $lte: to.toISOString() } },
+          ],
+        },
+        sort: [{ fieldName: START_FIELD, order: 'ASC' }],
+        paging: { limit: PAGE_SIZE, offset },
+      },
+    });
+    const page = data.events ?? [];
+    raw.push(...page);
+    // A short page is the last page.
+    if (page.length < PAGE_SIZE) break;
+  }
+
+  return raw
     .filter((e) => e.status !== 'CANCELED')
-    .filter((e) => {
-      const start = e.dateAndTimeSettings?.startDate;
-      const end = e.dateAndTimeSettings?.endDate;
-      if (!start || !end) return false;
-      const startMs = new Date(start).getTime();
-      return startMs >= now.getTime() && startMs <= to.getTime();
-    })
+    // The window is already enforced above; this only guards the non-null
+    // assertions below against an event with no schedule set at all.
+    .filter((e) => !!e.dateAndTimeSettings?.startDate && !!e.dateAndTimeSettings?.endDate)
     .map((e) => ({
       id: e.id,
       title: e.title,
