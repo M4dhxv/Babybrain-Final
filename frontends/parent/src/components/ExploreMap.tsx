@@ -25,7 +25,8 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 /** Interactive Explore map: one pin per provider location, its popup lists the
- *  activities at that spot. Tiles are CARTO Positron (free, no API key).
+ *  activities at that spot. Tiles are Esri's Light Gray Canvas, which needs no
+ *  API key — see the tile-layer comment below for why CARTO Positron had to go.
  *
  *  `regions` is the Explore page's area filter. It has to reach the map,
  *  because the list filter keeps an activity when ANY of its provider's venues
@@ -55,11 +56,26 @@ export function ExploreMap({
       scrollWheelZoom: false,
       attributionControl: true,
     });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 19,
+    // Esri's Light Gray Canvas, not CARTO Positron. CARTO moved their
+    // basemaps behind an API key and now stamps "API KEY REQUIRED" across
+    // every unkeyed tile — while still answering HTTP 200 with a valid PNG,
+    // so nothing threw and no console error appeared; the watermark was
+    // simply baked into the image and shipped straight to users.
+    //
+    // Split into base + labels because this style serves place names as a
+    // separate transparent overlay. maxNativeZoom stops at the deepest level
+    // the service actually has (18) while maxZoom lets the map keep zooming —
+    // Leaflet upscales the last real tile instead of going blank.
+    const esri = (service: string, opts: L.TileLayerOptions = {}) =>
+      L.tileLayer(
+        `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`,
+        { maxNativeZoom: 18, maxZoom: 19, ...opts }
+      );
+    esri("World_Light_Gray_Base", {
+      attribution:
+        'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
     }).addTo(map);
+    esri("World_Light_Gray_Reference").addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     return () => {
