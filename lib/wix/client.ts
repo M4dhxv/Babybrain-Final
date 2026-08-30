@@ -22,6 +22,15 @@
 
 const WIX_API_BASE = 'https://www.wixapis.com';
 
+/** The app's ceiling for how far ahead Wix availability is ever looked up.
+ *  Book-time re-validation must search at least as far as the widest window
+ *  any picker can display, or a slot a parent can see becomes one they can't
+ *  book: /api/wix/slots deliberately forces a 60-day window for COURSE
+ *  services (a holiday camp's single occurrence routinely sits 40-50 days
+ *  out), so re-validating over the old 7-day default found nothing and
+ *  rejected every such booking with "no longer available". */
+export const WIX_AVAILABILITY_WINDOW_DAYS = 60;
+
 export interface WixCredentials {
   accessToken: string;
   siteId: string;
@@ -127,6 +136,12 @@ export interface WixService {
     coverMedia?: { image?: { url?: string } };
     items?: { image?: { url?: string } }[];
   };
+  // The staff/resource ids actually assigned to *this* service. An
+  // APPOINTMENT booking must name a resource that's on the service — booking
+  // one that merely exists on the account (Wix has other bookable staff)
+  // fails with SLOT_NOT_AVAILABLE, so sync must not just grab the first
+  // bookable resource it finds. See the resource pick in syncWixServicesToActivities.
+  staffMemberIds?: string[];
 }
 
 /** The service's price in the service's own currency, or:
@@ -200,7 +215,19 @@ export interface WixTimeSlot {
   localStartDate: string;
   localEndDate: string;
   bookable: boolean;
-  location?: { locationType?: string };
+  // `id` is the business location's own id and is NOT optional in practice
+  // for booking: a site with more than one business location rejects every
+  // create-booking call that sends a bare `locationType` with
+  // SLOT_NOT_AVAILABLE, because Wix can't tell which location's slot is
+  // meant. See createWixBooking.
+  location?: { id?: string; name?: string; formattedAddress?: string; locationType?: string };
+  // Which staff/resources are free for this exact slot. Only populated when
+  // the request passes `resourceIds` (see fetchWixAvailability) — Wix leaves
+  // it empty otherwise, even when a resource is in fact available. This is
+  // the authoritative "who can I book this against", far better than a
+  // service-level guess, because it accounts for that resource's own
+  // calendar at this specific time.
+  availableResources?: { resourceTypeId?: string; resources?: { id: string; name?: string }[] }[];
   // The IANA zone localStartDate/localEndDate are wall-clock time IN — see
   // the comment on fetchWixAvailability. Kept alongside the raw values
   // (rather than converting them in place) because those raw strings are
@@ -269,19 +296,102 @@ export async function fetchWixResources(creds: WixCredentials): Promise<WixResou
  *  converted through that — the raw strings are still exactly what Wix's
  *  own create-booking call expects back, so they're deliberately left
  *  untouched here rather than pre-converted. */
-export async function fetchWixAvailability(creds: WixCredentials, serviceId: string, days = 7): Promise<WixTimeSlot[]> {
+export async function fetchWixAvailability(
+  creds: WixCredentials,
+  serviceId: string,
+  days = 7,
+  resourceIds?: (string | null | undefined)[]
+): Promise<WixTimeSlot[]> {
   const now = new Date();
   const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const localDate = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, '');
+  const ids = (resourceIds ?? []).filter((id): id is string => !!id);
 
   const data = await wixFetch<{ timeSlots?: WixTimeSlot[]; timeZone?: string }>(creds, '/_api/service-availability/v2/time-slots', {
     serviceId,
     fromLocalDate: localDate(now),
     toLocalDate: localDate(to),
     timezone: 'UTC',
+    // Without this, every slot comes back with `availableResources: []` —
+    // not because no resource is free, but because Wix only resolves them
+    // when asked. Passing the resource we intend to book against turns each
+    // slot's `availableResources` into a real per-slot answer for that
+    // staff member, which is what makes {@link wixSlotResourceId} reliable.
+    ...(ids.length > 0 ? { resourceIds: ids } : {}),
   });
   const timeZone = data.timeZone ?? 'UTC';
   return (data.timeSlots ?? []).map((s) => ({ ...s, timeZone }));
+}
+
+/** The staff/resource Wix itself says is free for this exact slot, preferred
+ *  over any service-level default — see WixTimeSlot.availableResources.
+ *  Null when the caller didn't request resources (or none is free), in which
+ *  case the caller should fall back to the activity's stored resource id. */
+export function wixSlotResourceId(slot: WixTimeSlot): string | null {
+  for (const group of slot.availableResources ?? []) {
+    const first = group.resources?.[0]?.id;
+    if (first) return first;
+  }
+  return null;
+}
+
+/**
+ * Collapses Wix's rolling appointment grid into complete, non-overlapping
+ * slots.
+ *
+ * Wix generates APPOINTMENT time slots on the site's *split interval*, not on
+ * the service's duration — a 45-minute service on a 30-minute split returns
+ * 10:00-10:45, 10:30-11:15, 11:00-11:45, ... Each is individually bookable,
+ * but they're alternative start times for the same staff member, not separate
+ * appointments: on a real day with 11 openings the API returns 84 slots for
+ * the week, ~90% of which overlap a neighbour.
+ *
+ * Showing that raw list is what breaks booking. A parent picks 10:30, someone
+ * else takes 10:00, and Wix doesn't merely mark 10:30 unbookable — it drops
+ * every conflicting slot from the response and re-anchors the rest of the day
+ * off the end of the new booking (10:45, 11:15, ...). The picked slot's key
+ * no longer exists in availability at all, so re-validation at booking time
+ * fails with "that slot is no longer available" for a slot the parent was
+ * looking at seconds earlier. The vendor's Schedule calendar has the mirror
+ * problem: 84 overlapping activity_sessions rows for a day that holds 11
+ * appointments.
+ *
+ * The fix is to offer one canonical grid instead of every possible start
+ * time: walk the day in chronological order and keep a slot only when it
+ * starts at or after the end of the last one kept. `bookable` is deliberately
+ * NOT considered here — the grid has to be the same set for the vendor
+ * calendar (which shows booked and blocked slots too) as for the parent
+ * picker (which filters this result down to bookable). Anchoring on only the
+ * bookable ones would give the two views different, disagreeing grids.
+ *
+ * Slots are grouped per (day, location) before selection so an unrelated
+ * second location can't shift the grid for the first.
+ */
+export function selectNonOverlappingSlots(slots: WixTimeSlot[]): WixTimeSlot[] {
+  const groups = new Map<string, WixTimeSlot[]>();
+  for (const slot of slots) {
+    const key = `${slot.location?.id ?? ''}|${slot.localStartDate.slice(0, 10)}`;
+    const group = groups.get(key);
+    if (group) group.push(slot);
+    else groups.set(key, [slot]);
+  }
+
+  const kept: WixTimeSlot[] = [];
+  for (const group of groups.values()) {
+    // Earliest start first, and among equal starts the shortest slot — a
+    // service with several durations offers 10:00-10:30 and 10:00-11:00 for
+    // the same opening, and taking the shorter leaves room for more.
+    group.sort(
+      (a, b) => a.localStartDate.localeCompare(b.localStartDate) || a.localEndDate.localeCompare(b.localEndDate)
+    );
+    let lastEnd = '';
+    for (const slot of group) {
+      if (slot.localStartDate < lastEnd) continue;
+      kept.push(slot);
+      lastEnd = slot.localEndDate;
+    }
+  }
+  return kept.sort((a, b) => a.localStartDate.localeCompare(b.localStartDate));
 }
 
 export interface WixClassSession {
@@ -430,6 +540,28 @@ async function confirmWixBooking(creds: WixCredentials, booking: WixBooking): Pr
   return data.booking ?? booking;
 }
 
+/**
+ * Books one APPOINTMENT slot.
+ *
+ * Three details here are each individually sufficient to make Wix reject the
+ * call with a 428 SLOT_NOT_AVAILABLE — a response that says nothing about
+ * which of them is wrong, so all three are load-bearing:
+ *
+ *  1. `location.id`. Sending only `locationType` works on a site with a
+ *     single business location and fails on every site with two or more,
+ *     because Wix can't tell which location's slot is meant and concludes
+ *     there is no matching slot. The id comes from the slot itself, so it is
+ *     always the location Wix offered that opening at.
+ *  2. The resource must be one assigned to *this service* and free at *this
+ *     time* — not merely a bookable resource somewhere on the account.
+ *     `slot.availableResources` is Wix's own answer to that and wins over
+ *     the caller's stored `resourceId` fallback.
+ *  3. `startDate`/`endDate` stay the raw, offset-less `localStartDate`/
+ *     `localEndDate` strings exactly as Wix returned them. Converting them
+ *     to a real UTC instant, or attaching the site's own zone offset, both
+ *     fail — Wix matches these against its grid as literal site-local
+ *     wall-clock text. See fetchWixAvailability.
+ */
 export async function createWixBooking(
   creds: WixCredentials,
   slot: WixTimeSlot,
@@ -439,6 +571,7 @@ export async function createWixBooking(
 ): Promise<WixBooking> {
   const rawLocationType = slot.location?.locationType ?? 'BUSINESS';
   const mappedLocationType = LOCATION_TYPE_MAP[rawLocationType] ?? rawLocationType;
+  const locationId = slot.location?.id;
 
   const data = await wixFetch<{ booking?: WixBooking }>(creds, '/_api/bookings-service/v2/bookings', {
     booking: {
@@ -448,8 +581,11 @@ export async function createWixBooking(
           endDate: slot.localEndDate,
           serviceId: slot.serviceId,
           scheduleId: slot.scheduleId,
-          resource: { id: resourceId },
-          location: { locationType: mappedLocationType },
+          resource: { id: wixSlotResourceId(slot) ?? resourceId },
+          location: {
+            ...(locationId ? { id: locationId } : {}),
+            locationType: mappedLocationType,
+          },
         },
       },
       totalParticipants,
@@ -461,31 +597,41 @@ export async function createWixBooking(
   return confirmWixBooking(creds, data.booking);
 }
 
-/** Books one occurrence of a CLASS/COURSE. Uses `bookedEntity.slot` (keyed
- *  on the session's `eventId`), not `bookedEntity.schedule` — `schedule` is
- *  for enrolling in an entire COURSE's date range and was silently doing
- *  that here, booking the whole recurring series (e.g. Aug 19 – Aug 31)
- *  instead of the single occurrence the parent actually picked, which is
- *  the other reason these bookings never matched anything on the Wix
- *  calendar's day view. No resource — Wix's own BOOKING_POLICY_VIOLATION
- *  rejects a plain request even when the service's early/late-booking
- *  policies are disabled, so `ignoreBookingWindow` is required here
- *  (confirmed empirically against the sandbox site). */
+/**
+ * Books a CLASS occurrence or enrols in a COURSE. The two are NOT the same
+ * call, and sending the wrong one is a hard 400 from Wix rather than a
+ * silent mismatch:
+ *
+ *  - CLASS uses `bookedEntity.slot`, keyed on the occurrence's `eventId`, so
+ *    a parent books exactly the one session they picked. (Using `schedule`
+ *    here books the entire recurring series instead — e.g. every Tuesday for
+ *    a month — which is why bookings once failed to line up with anything on
+ *    the vendor's calendar day view.)
+ *  - COURSE uses `bookedEntity.schedule`. A course is sold as a whole
+ *    programme, not per-session, and Wix rejects the slot form outright with
+ *    "Slot bookings are not allowed for course services". Its calendar
+ *    query returns a course as a single entry spanning the full run
+ *    (e.g. Oct 11 -> Oct 16), so enrolling in the schedule is also what the
+ *    parent actually picked.
+ *
+ * `ignoreBookingWindow` is required for both: Wix returns
+ * BOOKING_POLICY_VIOLATION on a plain request even when the service's
+ * early/late-booking policies are disabled (confirmed empirically).
+ */
 export async function createWixClassBooking(
   creds: WixCredentials,
   session: WixClassSession,
   contact: WixContactDetails,
-  totalParticipants = 1
+  totalParticipants = 1,
+  isCourse = false
 ): Promise<WixBooking> {
+  const bookedEntity = isCourse
+    ? { schedule: { scheduleId: session.scheduleId }, serviceId: session.serviceId }
+    : { slot: { eventId: session.eventId, scheduleId: session.scheduleId, serviceId: session.serviceId } };
+
   const data = await wixFetch<{ booking?: WixBooking }>(creds, '/_api/bookings-service/v2/bookings', {
     booking: {
-      bookedEntity: {
-        slot: {
-          eventId: session.eventId,
-          scheduleId: session.scheduleId,
-          serviceId: session.serviceId,
-        },
-      },
+      bookedEntity,
       totalParticipants,
       contactDetails: contact,
     },

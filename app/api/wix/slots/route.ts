@@ -8,6 +8,7 @@ import {
   fetchWixConfirmedAppointmentBookings,
   encodeWixSlotKey,
   getProviderWixCredentials,
+  selectNonOverlappingSlots,
   wixLocalToUtcIso,
 } from '@/lib/wix/client';
 
@@ -156,8 +157,12 @@ export async function GET(request: Request) {
       });
     }
 
-    const [slots, confirmedBookings] = await Promise.all([
-      fetchWixAvailability(creds, activity.wix_service_id, days),
+    const [rawSlots, confirmedBookings] = await Promise.all([
+      // The resource id is passed so each slot comes back carrying the staff
+      // member Wix says is free for it — both to keep this list honest for a
+      // multi-staff service and because the booking path relies on the same
+      // field (see createWixBooking).
+      fetchWixAvailability(creds, activity.wix_service_id, days, [activity.wix_resource_id]),
       // A slot's own `bookable` flag conflates "a customer holds this time"
       // with every other reason Wix won't offer it to someone new (e.g. the
       // service's minimum-notice booking policy blocking same-day slots) —
@@ -166,6 +171,16 @@ export async function GET(request: Request) {
       // not offered right now. Never blocks the availability fetch above.
       fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
     ]);
+    // Wix offers a rolling start time every split-interval (a 45-minute
+    // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,
+    // 11:00-11:45, ...) — alternative starts for one opening, not distinct
+    // appointments. Collapsing them to one canonical non-overlapping grid is
+    // what keeps this endpoint's two consumers correct: the parent picker
+    // stops offering slots that silently cancel each other out, and the
+    // vendor Schedule calendar stops materialising ~8x more
+    // activity_sessions rows than the day actually holds. See
+    // selectNonOverlappingSlots for the full reasoning.
+    const slots = selectNonOverlappingSlots(rawSlots);
     // `b.start` (from the real bookings resource) is a genuine UTC
     // timestamp; comparing it against a slot means first converting that
     // slot's own site-local `localStartDate` the same way — see

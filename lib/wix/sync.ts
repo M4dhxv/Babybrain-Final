@@ -13,6 +13,7 @@ import {
   wixServiceCapacity,
   wixServiceImageUrl,
   wixLocalToUtcIso,
+  WIX_AVAILABILITY_WINDOW_DAYS,
   type WixCredentials,
   type WixService,
   type WixLocation,
@@ -140,11 +141,18 @@ export async function syncWixServicesToActivities(
     // just come in without a location, same as before this existed.
     fetchWixLocations(creds).catch(() => [] as WixLocation[]),
   ]);
-  // Wix doesn't expose a service->resource mapping through this endpoint,
-  // so every appointment service shares whichever staff/resource is
-  // bookable first — good enough to make availability appear; a vendor
-  // with several distinct staff calendars may want to fix this up later.
-  const resource = resources.find((r) => r.bookable);
+  const bookableResources = resources.filter((r) => r.bookable);
+  /** The staff/resource to book an appointment service against. A service
+   *  carries its own `staffMemberIds`, and those ids are the resource ids —
+   *  so prefer a bookable resource that's actually on this service. Falling
+   *  straight to "first bookable resource on the account" (what this used to
+   *  do unconditionally) silently picks an unrelated staff member on any
+   *  account with more than one, and Wix then rejects every booking against
+   *  that service with SLOT_NOT_AVAILABLE. The global fallback is kept only
+   *  for a service with no staff assigned at all, where it's still the best
+   *  guess available. */
+  const resourceForService = (service: WixService) =>
+    bookableResources.find((r) => service.staffMemberIds?.includes(r.id)) ?? bookableResources[0];
   const wixLocationsById = new Map(wixLocations.map((l) => [l.id, l]));
   const locationCache = new Map<string, string | null>();
 
@@ -173,6 +181,7 @@ export async function syncWixServicesToActivities(
       result.skipped.push({ name: service.name, reason: `Unsupported Wix service type "${service.type}"` });
       continue;
     }
+    const resource = resourceForService(service);
     if (type === 'APPOINTMENT' && !resource) {
       result.skipped.push({ name: service.name, reason: 'No bookable staff/resource found on the Wix account' });
       continue;
@@ -464,7 +473,11 @@ async function resolveWixSlot(
 
   try {
     if (slotKey.kind === 'class') {
-      const sessions = await fetchWixClassSessions(creds, activity.wix_service_id);
+      // Searched over the app's full display window, not the 7-day default:
+      // /api/wix/slots shows COURSE occurrences up to 60 days out, and
+      // looking a shorter distance here rejected every one of them as "no
+      // longer available" despite the parent having just been offered it.
+      const sessions = await fetchWixClassSessions(creds, activity.wix_service_id, WIX_AVAILABILITY_WINDOW_DAYS);
       const session = sessions.find((s) => s.id === slotKey.sessionId && s.remainingCapacity >= participants);
       if (!session) {
         return {
@@ -485,7 +498,18 @@ async function resolveWixSlot(
         resolved: { kind: 'class', session },
       };
     } else {
-      const available = await fetchWixAvailability(creds, activity.wix_service_id);
+      // Resource ids are requested here so the matched slot carries Wix's own
+      // `availableResources` — createWixBooking books against that rather
+      // than the activity's stored resource, which is what stops a slot being
+      // offered by one staff member and booked against another (a guaranteed
+      // SLOT_NOT_AVAILABLE).
+      const available = await fetchWixAvailability(creds, activity.wix_service_id, WIX_AVAILABILITY_WINDOW_DAYS, [activity.wix_resource_id]);
+      // Deliberately matched against the *unfiltered* availability, not
+      // selectNonOverlappingSlots: that filter decides what to *display*, and
+      // its grid re-anchors whenever an earlier booking lands. Re-applying it
+      // here would reject a slot that is genuinely still bookable just
+      // because the canonical grid shifted under it after the parent opened
+      // the picker.
       const slot = available.find((s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e);
       if (!slot) {
         return { ok: false, status: 409, error: 'That slot is no longer available' };
@@ -571,7 +595,10 @@ export async function createWixBookingAndSession(
   let wixBookingId: string;
   try {
     if (resolved.resolved.kind === 'class') {
-      const booking = await createWixClassBooking(creds, resolved.resolved.session, contact, participants);
+      const booking = await createWixClassBooking(
+        creds, resolved.resolved.session, contact, participants,
+        activity.wix_service_type === 'COURSE'
+      );
       wixBookingId = booking.id;
     } else {
       const booking = await createWixBooking(creds, resolved.resolved.slot, activity.wix_resource_id!, contact, participants);
