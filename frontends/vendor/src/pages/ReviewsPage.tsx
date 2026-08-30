@@ -116,7 +116,7 @@ export default function ReviewsPage() {
           {(['all', 'unanswered'] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)}
               className={cn('px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                filter === f ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
+                filter === f ? 'bg-white text-[#FA4D8D] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               {f === 'all' ? 'All reviews' : `Unanswered (${unansweredCount})`}
             </button>
           ))}

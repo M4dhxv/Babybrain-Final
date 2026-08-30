@@ -127,15 +127,15 @@ export default function BillingPage() {
 
             <div className="grid grid-cols-1 gap-4 mb-4 sm:grid-cols-2">
               <div className="p-4 border-2 border-[#C90044] rounded-xl relative bg-pink-50/30">
-                <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#C90044] text-xs font-medium rounded">
+                <div className="absolute -top-2.5 right-3 px-2 py-0.5 bg-pink-100 text-[#FA4D8D] text-xs font-medium rounded">
                   Current plan
                 </div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Crown className="w-4 h-4 text-[#C90044]" />
+                  <Crown className="w-4 h-4 text-[#FA4D8D]" />
                   <span className="font-semibold text-gray-900 text-sm">{plan.label}</span>
                 </div>
                 <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
-                <div className="text-sm font-bold text-[#C90044]">{plan.price}</div>
+                <div className="text-sm font-bold text-[#FA4D8D]">{plan.price}</div>
                 <div className="text-xs text-gray-500">{plan.commission}</div>
               </div>
               {upgrade ? (
@@ -176,7 +176,7 @@ export default function BillingPage() {
                   ? `Need more exposure? Upgrade to ${upgrade.label}.`
                   : 'You have access to every feature. Stripe prorates the difference if you change tier.'}
               </p>
-              <button onClick={() => navigate('/plans')} className="text-xs text-[#C90044] font-medium flex items-center gap-1">
+              <button onClick={() => navigate('/plans')} className="text-xs text-[#FA4D8D] font-medium flex items-center gap-1">
                 {plan.isPaid ? 'Compare & change plan' : 'Learn more about plans'}
                 <ChevronRight className="w-3 h-3" />
               </button>

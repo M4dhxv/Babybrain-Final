@@ -404,7 +404,7 @@ export default function BookingsPage() {
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex w-full flex-col gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:w-auto sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
-              <Baby className="w-4 h-4 shrink-0 text-[#C90044]" />
+              <Baby className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
               <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
                 {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
                 {filteredSessions.map((s) => (
@@ -418,7 +418,7 @@ export default function BookingsPage() {
                   icon opens the same picker instead, so there's only one
                   calendar symbol instead of two. */}
               <CalendarDays
-                className="w-4 h-4 shrink-0 text-[#C90044] cursor-pointer"
+                className="w-4 h-4 shrink-0 text-[#FA4D8D] cursor-pointer"
                 onClick={() => dateFilterRef.current?.showPicker?.()}
               />
               <input
@@ -439,7 +439,7 @@ export default function BookingsPage() {
           {canManage && sessionId && (
             <button
               onClick={() => { setShowManual((v) => !v); setManualError(null); }}
-              className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-pink-50 text-[#C90044] rounded-xl text-sm font-medium hover:bg-pink-100 sm:w-auto"
+              className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-pink-50 text-[#FA4D8D] rounded-xl text-sm font-medium hover:bg-pink-100 sm:w-auto"
             >
               <UserPlus className="w-4 h-4" /> Add booking
             </button>
@@ -454,7 +454,7 @@ export default function BookingsPage() {
             {manualError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{manualError}</div>}
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Child / guest name <span className="text-[#C90044]">*</span></label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Child / guest name <span className="text-[#FA4D8D]">*</span></label>
                 <input value={manualForm.name} onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })} placeholder="e.g. Mia Tan" className="h-9 w-48 rounded-lg border border-gray-300 px-3 text-sm" />
               </div>
               <div>
@@ -478,7 +478,7 @@ export default function BookingsPage() {
           {bookingsTabs.map((tab) => (
             <button key={tab} onClick={() => selectTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
-                activeTab === tab ? 'text-[#C90044] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700')}>
+                activeTab === tab ? 'text-[#FA4D8D] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700')}>
               {tab === 'Bookings' && <CalendarDays className="w-4 h-4" />}
               {tab === 'Waitlist' && <UserPlus className="w-4 h-4" />}
               {tab === 'Attendance' && <CalendarCheck className="w-4 h-4" />}
@@ -638,7 +638,7 @@ export default function BookingsPage() {
                   {!canMessage ? (
                     <button
                       onClick={() => navigate('/plans')}
-                      className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#C90044]"
+                      className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#FA4D8D]"
                       title="Messaging parents is available on Pro and above"
                     >
                       <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Pro
@@ -647,7 +647,7 @@ export default function BookingsPage() {
                     <button
                       onClick={() => messageParent(sel.user_id!)}
                       disabled={messaging}
-                      className="flex items-center gap-2 mt-6 text-sm text-[#C90044] font-medium hover:underline disabled:opacity-60"
+                      className="flex items-center gap-2 mt-6 text-sm text-[#FA4D8D] font-medium hover:underline disabled:opacity-60"
                     >
                       <MessageSquare className="w-4 h-4" /> {messaging ? 'Opening chat…' : 'Message parent'}
                     </button>

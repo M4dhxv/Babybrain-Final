@@ -233,7 +233,7 @@ export default function DashboardPage() {
                   <button
                     key={r.key}
                     onClick={() => { setRangeKey(r.key); setRangeOpen(false); }}
-                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', r.key === rangeKey ? 'text-[#C90044] font-medium' : 'text-gray-700')}
+                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', r.key === rangeKey ? 'text-[#FA4D8D] font-medium' : 'text-gray-700')}
                   >
                     {r.label}
                   </button>
@@ -244,7 +244,7 @@ export default function DashboardPage() {
           <div className="relative">
             <button
               onClick={() => { setFilterOpen((v) => !v); setRangeOpen(false); }}
-              className={cn('flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50', statusFilter !== 'All' ? 'border-[#C90044] text-[#C90044]' : 'border-gray-200 text-gray-700')}
+              className={cn('flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50', statusFilter !== 'All' ? 'border-[#C90044] text-[#FA4D8D]' : 'border-gray-200 text-gray-700')}
             >
               <SlidersHorizontal className="w-4 h-4" />
               {statusFilter === 'All' ? 'Filters' : statusFilter}
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                   <button
                     key={f}
                     onClick={() => { setStatusFilter(f); setFilterOpen(false); }}
-                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', f === statusFilter ? 'text-[#C90044] font-medium' : 'text-gray-700')}
+                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', f === statusFilter ? 'text-[#FA4D8D] font-medium' : 'text-gray-700')}
                   >
                     {f}
                   </button>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3">
           <button onClick={() => navigate('/activities?new=activity')} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-card-hover transition-shadow text-left">
             <div className="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
-              <CalendarPlus className="w-6 h-6 text-[#C90044]" />
+              <CalendarPlus className="w-6 h-6 text-[#FA4D8D]" />
             </div>
             <div className="flex-1">
               <div className="font-semibold text-gray-900">Add an activity</div>
@@ -320,7 +320,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {!stat.change && <div className="mb-3" />}
-              <button onClick={() => navigate(stat.to)} className="flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline">
+              <button onClick={() => navigate(stat.to)} className="flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline">
                 View details
                 <ArrowRight className="w-3 h-3" />
               </button>
@@ -334,7 +334,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Upcoming sessions</h3>
-              <button onClick={() => navigate('/schedule')} className="text-xs text-[#C90044] font-medium">View all</button>
+              <button onClick={() => navigate('/schedule')} className="text-xs text-[#FA4D8D] font-medium">View all</button>
             </div>
             <div className="space-y-4">
               {visibleUpcoming.map((session, idx) => {
@@ -362,7 +362,7 @@ export default function DashboardPage() {
               })}
               {loaded && visibleUpcoming.length === 0 && <div className="text-sm text-gray-400">No sessions in this range.</div>}
             </div>
-            <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#FA4D8D]">
               View full schedule
               <ArrowRight className="w-3 h-3" />
             </button>
@@ -372,7 +372,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Recent bookings</h3>
-              <button onClick={() => navigate('/bookings')} className="text-xs text-[#C90044] font-medium">View all</button>
+              <button onClick={() => navigate('/bookings')} className="text-xs text-[#FA4D8D] font-medium">View all</button>
             </div>
             <div className="space-y-4">
               {visibleRecent.map((booking, idx) => (
@@ -415,7 +415,7 @@ export default function DashboardPage() {
               ))}
               {loaded && visibleRecent.length === 0 && <div className="text-sm text-gray-400">No {statusFilter === 'All' ? '' : statusFilter.toLowerCase() + ' '}bookings yet.</div>}
             </div>
-            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#FA4D8D]">
               View all bookings
               <ArrowRight className="w-3 h-3" />
             </button>
@@ -429,7 +429,7 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-500">
               Which activities convert, which age groups book, and the days and times parents choose.
             </p>
-            <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#C90044]">
+            <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#FA4D8D]">
               Open Insights
               <ArrowRight className="w-3 h-3" />
             </button>

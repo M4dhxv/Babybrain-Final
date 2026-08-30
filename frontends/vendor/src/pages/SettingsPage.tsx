@@ -292,7 +292,7 @@ export default function SettingsPage() {
           {settingsTabs.map((tab) => (
             <button key={tab.id} onClick={() => selectTab(tab.id)}
               className={cn('flex shrink-0 items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                activeTab === tab.id ? 'bg-white text-[#C90044] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
+                activeTab === tab.id ? 'bg-white text-[#FA4D8D] shadow-sm' : 'text-gray-600 hover:text-gray-900')}>
               <tab.icon className="w-4 h-4" />
               {tab.label}
             </button>
@@ -306,7 +306,7 @@ export default function SettingsPage() {
             <div className="flex items-start justify-between mb-6">
               <div className="flex items-center gap-4">
                 <div className="relative w-20 h-20 rounded-2xl bg-pink-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {form.logo_url ? <img src={form.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-9 h-9 text-[#C90044]" />}
+                  {form.logo_url ? <img src={form.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-9 h-9 text-[#FA4D8D]" />}
                   {isEditingProfile && (
                     <label className={cn('absolute inset-0 flex items-center justify-center bg-black/40 text-white cursor-pointer', uploadingLogo && 'opacity-70 pointer-events-none')}>
                       <ImageUp className="w-5 h-5" />
@@ -1018,7 +1018,7 @@ function WixIntegrationManager({
           — this points them at support rather than leaving them at a dead end. */}
       <p className="mb-4 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
         Don't see your platform here?{' '}
-        <Link to="/contact" className="font-medium text-[#C90044] hover:underline">Contact us</Link>{' '}
+        <Link to="/contact" className="font-medium text-[#FA4D8D] hover:underline">Contact us</Link>{' '}
         to request the integration to be built.
       </p>
 
@@ -1100,7 +1100,7 @@ function WixIntegrationManager({
               href="https://dev.wix.com/docs/rest/articles/getting-started/api-keys"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
               >
                 More on Wix API keys <ExternalLink className="w-3 h-3" />
               </a>
@@ -1283,10 +1283,10 @@ function WixIntegrationManager({
                   Open your Wix dashboard and look at the browser's address bar — it follows this pattern:
                 </p>
                 <p className="mt-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700">
-                  wix.com/dashboard/<span className="font-bold text-[#C90044]">SITE_ID</span>/home
+                  wix.com/dashboard/<span className="font-bold text-[#FA4D8D]">SITE_ID</span>/home
                 </p>
                 <p className="mt-1.5 mb-2 text-xs text-gray-500">
-                  Copy just the <span className="font-bold text-[#C90044]">SITE_ID</span> part — the segment between{' '}
+                  Copy just the <span className="font-bold text-[#FA4D8D]">SITE_ID</span> part — the segment between{' '}
                   <span className="font-mono">/dashboard/</span> and <span className="font-mono">/home</span> — and
                   paste it below.
                 </p>
@@ -1315,7 +1315,7 @@ function WixIntegrationManager({
                 href="https://dev.wix.com/docs/rest/articles/getting-started/api-keys"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#C90044] hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
               >
                 More on Wix API keys <ExternalLink className="w-3 h-3" />
               </a>
@@ -1498,7 +1498,7 @@ function PoliciesManager({
                 </p>
                 {p.body && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{p.body}</p>}
                 {p.document_url && (
-                  <a href={p.document_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-medium text-[#C90044] underline">
+                  <a href={p.document_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-medium text-[#FA4D8D] underline">
                     View uploaded document
                   </a>
                 )}
@@ -1551,7 +1551,7 @@ function PoliciesManager({
                   />
                 </label>
                 {form.document_url && (
-                  <a href={form.document_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-[#C90044] underline">Uploaded ✓</a>
+                  <a href={form.document_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-[#FA4D8D] underline">Uploaded ✓</a>
                 )}
               </div>
             </div>

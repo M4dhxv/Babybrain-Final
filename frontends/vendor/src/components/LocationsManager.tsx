@@ -188,7 +188,7 @@ export default function LocationsManager({
             <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
               <RefreshCw className={cn('w-3.5 h-3.5', wixLoading && 'animate-spin')} /> Fetch from Wix
             </button>
-            <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#C90044] rounded-lg text-xs font-medium hover:bg-pink-100">
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#FA4D8D] rounded-lg text-xs font-medium hover:bg-pink-100">
               <Plus className="w-3.5 h-3.5" /> Add location
             </button>
           </div>
@@ -272,7 +272,7 @@ export default function LocationsManager({
             </div>
           ) : (
           <div key={loc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#C90044]"><Store className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-100 text-[#FA4D8D]"><Store className="w-5 h-5" /></div>
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm">{loc.name}</div>
               <div className="text-xs text-gray-500 truncate">
@@ -304,7 +304,7 @@ export default function LocationsManager({
         <div className="rounded-xl border border-gray-200 p-4 space-y-3">
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#C90044]">*</span></label>
+            <label className="text-xs text-gray-500 mb-1 block">Location name <span className="text-[#FA4D8D]">*</span></label>
             <input className={inputCls} placeholder="e.g. Suntec City Studio" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
