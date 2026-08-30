@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, ExternalLink, RefreshCw, LogOut, Copy, Check } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
@@ -1038,6 +1039,7 @@ function WixIntegrationManager({
           {notice && <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div>}
 
           {status?.connected && !editing && (
+            <WixApiKeyHelp>
             <div className="rounded-xl border border-gray-200 p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
@@ -1090,21 +1092,9 @@ function WixIntegrationManager({
                 Every activity on this Wix account can become an activity here — they land unpublished so you can
                 review and make any edits required before they go live.
               </p>
-              <a
-                /* QA 25/08: "'More on Wix API keys' leads to a page on Wix which says
-                   'We can't find the page you are looking for'." The support.wix.com
-                   article had been retired; so had the replacement. This is Wix's
-                   current developer page and it covers generating an API key AND
-                   retrieving the site ID, which is the other field this panel asks
-                   for. Verified 200 at time of writing. */
-              href="https://dev.wix.com/docs/rest/articles/getting-started/api-keys"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
-              >
-                More on Wix API keys <ExternalLink className="w-3 h-3" />
-              </a>
+              <WixApiKeyHelpTrigger />
             </div>
+            </WixApiKeyHelp>
           )}
 
           {status?.connected && canManage && (
@@ -1247,6 +1237,7 @@ function WixIntegrationManager({
           )}
 
           {editing && canManage && (
+            <WixApiKeyHelp>
             <div className="rounded-xl border border-gray-200 p-4 space-y-5">
               <div>
                 <label className="text-sm font-semibold text-gray-800 mb-1.5 block">Wix API Key</label>
@@ -1311,15 +1302,9 @@ function WixIntegrationManager({
                 )}
               </div>
 
-              <a
-                href="https://dev.wix.com/docs/rest/articles/getting-started/api-keys"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
-              >
-                More on Wix API keys <ExternalLink className="w-3 h-3" />
-              </a>
+              <WixApiKeyHelpTrigger />
             </div>
+            </WixApiKeyHelp>
           )}
         </div>
       )}
