@@ -2874,45 +2874,67 @@ function ProfilePage() {
       });
   }
 
-  function loadPackages() {
-    supabase
+  async function loadPackages() {
+    // `packages` lost its single `activity_id` column in migration 00068 (it's
+    // an `activity_ids` array now), so the old `packages(activities(slug))`
+    // embed no longer resolves — PostgREST 400s the whole select and the tab
+    // was stuck on "No packages yet" even with credits sitting on the account.
+    const { data, error } = await supabase
       .from("package_purchases")
       .select(
-        "id, credits_total, credits_remaining, status, expires_at, packages(name, activities(slug)), providers(business_name)"
+        "id, credits_total, credits_remaining, status, expires_at, packages(name, activity_ids), providers(business_name)"
       )
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          credits_total: number;
-          credits_remaining: number;
-          status: string;
-          expires_at: string | null;
-          packages: { name: string; activities: { slug: string } | null } | null;
-          providers: { business_name: string } | null;
-        }>;
-        setPackages(
-          rows.map((r) => {
-            const activitySlug = r.packages?.activities?.slug;
-            // A pack tied to one class books it directly; an open pack (usable
-            // across a provider's classes) goes to Explore pre-searched for
-            // them, since there's no single class to jump straight into.
-            const bookHref = activitySlug
-              ? `/book?slug=${encodeURIComponent(activitySlug)}`
-              : `/explore?q=${encodeURIComponent(r.providers?.business_name ?? "")}`;
-            return {
-              id: r.id,
-              name: r.packages?.name ?? "Class package",
-              provider: r.providers?.business_name ?? "A provider",
-              total: r.credits_total,
-              remaining: r.credits_remaining,
-              status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
-              expiresAt: r.expires_at,
-              bookHref,
-            };
-          })
-        );
-      });
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.warn("[packages] load failed:", error.message);
+      return;
+    }
+    const rows = (data ?? []) as unknown as Array<{
+      id: string;
+      credits_total: number;
+      credits_remaining: number;
+      status: string;
+      expires_at: string | null;
+      packages: { name: string; activity_ids: string[] | null } | null;
+      providers: { business_name: string } | null;
+    }>;
+
+    // A pack tied to exactly one class can deep-link straight to its booking
+    // page — resolve those slugs in one query. Multi-class and open packs go
+    // to Explore pre-searched for the provider, since there's no single class
+    // to jump into.
+    const soloActivityIds = [
+      ...new Set(
+        rows
+          .map((r) => (r.packages?.activity_ids?.length === 1 ? r.packages.activity_ids[0] : null))
+          .filter((id): id is string => id != null)
+      ),
+    ];
+    const slugById = new Map<string, string>();
+    if (soloActivityIds.length) {
+      const { data: acts } = await supabase.from("activities").select("id, slug").in("id", soloActivityIds);
+      for (const a of (acts ?? []) as Array<{ id: string; slug: string }>) slugById.set(a.id, a.slug);
+    }
+
+    setPackages(
+      rows.map((r) => {
+        const ids = r.packages?.activity_ids ?? [];
+        const slug = ids.length === 1 ? slugById.get(ids[0]) : undefined;
+        const bookHref = slug
+          ? `/book?slug=${encodeURIComponent(slug)}`
+          : `/explore?q=${encodeURIComponent(r.providers?.business_name ?? "")}`;
+        return {
+          id: r.id,
+          name: r.packages?.name ?? "Class package",
+          provider: r.providers?.business_name ?? "A provider",
+          total: r.credits_total,
+          remaining: r.credits_remaining,
+          status: r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : r.status,
+          expiresAt: r.expires_at,
+          bookHref,
+        };
+      })
+    );
   }
 
   async function manageBilling() {
