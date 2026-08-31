@@ -192,7 +192,7 @@ export default function SaveListingPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/settings')}
+                onClick={() => navigate('/settings?edit=1')}
                 className="gap-1 text-xs rounded-lg border-gray-300"
               >
                 <Pencil className="w-3 h-3" />
@@ -213,7 +213,13 @@ export default function SaveListingPage() {
                   <button
                     type="button"
                     aria-label={`Edit ${item.label}`}
-                    onClick={() => navigate(item.label === 'Age range' || item.label === 'Pricing' || item.label === 'Booking link' ? '/activities' : '/settings')}
+                    onClick={() =>
+                      navigate(
+                        item.label === 'Age range' || item.label === 'Pricing' || item.label === 'Booking link'
+                          ? '/activities'
+                          : '/settings?edit=1'
+                      )
+                    }
                     className="flex-shrink-0"
                   >
                     <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#FA4D8D]" />

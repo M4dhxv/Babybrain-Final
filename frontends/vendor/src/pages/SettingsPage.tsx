@@ -133,6 +133,20 @@ export default function SettingsPage() {
     });
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
       .then(({ data }) => setTeam((data as Member[]) ?? []));
+
+    /* Deep link from "Save your listing" and its pencils (`/settings?edit=1`):
+       open the profile editor straight away rather than dropping the vendor on
+       a read-only view with a small "Edit" button to hunt for. Handled here so
+       it waits for `provider` (hence `role`) to load; the flag is then stripped
+       so Cancel returns to view mode and a reload doesn't re-arm it. */
+    if (searchParams.get('edit') === '1') {
+      setActiveTab('profile');
+      if (role === 'owner' || role === 'manager') setIsEditingProfile(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
   /** Uploads one image and returns its public URL, or null after reporting why. */
