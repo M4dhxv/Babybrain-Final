@@ -2228,11 +2228,10 @@ function FavChildAssign({
             aria-pressed={on}
             className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
               on
-                // Deliberately NOT the #FA4D8D CTA pink the rest of the
-                // platform's pink text moved to: this label sits on the pink
-                // #FFC1D6 chip itself, where that pink measures 2.13:1 and is
-                // effectively unreadable. The darker ink keeps it at 6.69:1.
-                ? "bg-[#FFC1D6] text-[#87002E]"
+                // Solid CTA pink with white text — bright and on-brand, and
+                // fully legible (unlike #FA4D8D text on the old #FFC1D6 chip,
+                // which measured ~2.1:1).
+                ? "bg-[#FA4D8D] text-white"
                 : "border border-[#EBE3E5] bg-white text-[#6D748A] hover:border-baby-pink"
             }`}
           >
