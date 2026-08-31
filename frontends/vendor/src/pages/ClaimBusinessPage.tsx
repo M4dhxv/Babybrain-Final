@@ -44,11 +44,11 @@ interface ClaimableVenue {
 }
 
 const whyVerify = [
-  { icon: MapPin, title: 'Claim your venue listing', desc: 'Take ownership of your business on BabyBrain.' },
+  { icon: MapPin, title: 'Claim your business listing', desc: 'Take ownership of your business on BabyBrain.' },
   { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programmes up to date.' },
-  { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Growth plan.' },
-  { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Growth plan.' },
-  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your activities, timetable and holidays.' },
+  { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Pay as you grow plan.' },
+  { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Pro plan.' },
+  { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your activities, schedule and packages.' },
 ];
 
 const REGION_LABELS: Record<string, string> = {
@@ -224,7 +224,7 @@ export default function ClaimBusinessPage() {
       <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <div className="mb-8 text-center">
           <h1 className="mb-2 text-3xl font-bold text-[#111A4C]">Claim your business</h1>
-          <p className="text-gray-600">Search for your venue on BabyBrain and verify ownership to get started.</p>
+          <p className="text-gray-600">Search your business on BabyBrain and verify ownership to get started.</p>
         </div>
 
         <div className="flex flex-col gap-8 lg:flex-row">
