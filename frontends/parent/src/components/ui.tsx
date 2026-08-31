@@ -178,6 +178,7 @@ type IconName =
   | "clock"
   | "menu"
   | "close"
+  | "chevron"
   | "chat";
 
 const iconPaths: Record<IconName, string> = {
@@ -246,6 +247,9 @@ const iconPaths: Record<IconName, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13.5V12l3.5 2",
   menu: "M4 7h16M4 12h16M4 17h16",
   close: "M6 6l12 12M18 6 6 18",
+  // A right-pointing chevron with a true 90° elbow (each leg is a 7×7
+  // diagonal, so the two meet square rather than in a narrow point).
+  chevron: "m9 5 7 7-7 7",
   chat: "M4.5 6.5h15v10h-8L7 20v-3.5H4.5v-10Z",
 };
 

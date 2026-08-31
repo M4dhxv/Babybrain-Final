@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
+import { clearPlanCache } from "../lib/planCache";
 import { goTo, appUrl } from "../lib/nav";
 import type { ParentProfile, Child } from "../lib/database.types";
 
@@ -146,6 +147,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await resolveData();
         } else {
           resetUser();
+          // Don't let the next account (same browser, no hard refresh) inherit
+          // this one's persisted plan.
+          clearPlanCache();
           setProfile(null);
           setKids([]);
           setDataResolved(false);

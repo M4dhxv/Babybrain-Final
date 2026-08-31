@@ -26,6 +26,7 @@ import {
   useRecommendations,
   useJourney,
   invalidatePlan,
+  primePlan,
   toCard,
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
@@ -2752,6 +2753,13 @@ function EditProfilePage() {
 
 function ProfilePage() {
   const { session, profile, children, loading, signOut, refresh } = useAuth();
+  // Plan gating (sidebar pill, tab locks, per-tab Plus panels) reads from
+  // usePlan, which is backed by a persisted last-known value — so a hard
+  // refresh renders the real plan straight away instead of flashing the
+  // free/locked view while the Stripe route catches up. `planKnown` is false
+  // only on a device that has never resolved a plan; until then gated UI
+  // stays neutral rather than showing "Free".
+  const { isPlus, known: planKnown } = usePlan();
   // Which child the journey panel and suggestions describe. Defaults to the
   // first, but every child is listed and selectable — QA: "If I have two
   // children, only one is showing on the overview".
@@ -2785,6 +2793,20 @@ function ProfilePage() {
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
+
+  // Below lg the nav is a left-hand drawer, not a stacked block. It slides in
+  // when the profile opens, holds for 4s, then rolls back; after that the edge
+  // handle (› / ‹) or a tap on the dimmed page drives it. At lg the Tailwind
+  // `lg:` classes drop the fixed positioning and it's a static sidebar again.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    const slideIn = requestAnimationFrame(() => setMenuOpen(true));
+    const rollBack = setTimeout(() => setMenuOpen(false), 4000);
+    return () => {
+      cancelAnimationFrame(slideIn);
+      clearTimeout(rollBack);
+    };
+  }, []);
 
   // Goes through the /api/customer/bookings backend route (service role)
   // instead of querying `bookings` directly from the browser — a direct
@@ -3020,7 +3042,11 @@ function ProfilePage() {
         terms_accepted_at: string | null;
         terms_version: string | null;
       }>("/api/customer/stripe/subscription")
-        .then(setBillingPlan)
+        .then((p) => {
+          setBillingPlan(p);
+          // Keep usePlan's persisted value in step with this fuller fetch.
+          primePlan(p.plan);
+        })
         .catch(() => {});
     };
 
@@ -3047,7 +3073,6 @@ function ProfilePage() {
   const recs =
     recsByChild.find((r) => r.child.id === journeyChild?.id)?.recs ?? recsByChild[0]?.recs ?? [];
   const parentName = profile?.full_name || "Your family";
-  const isPlus = billingPlan?.plan === "plus";
   // A class is "past" once its start time has gone by. Attendance decides
   // which of the two past lists it lands in.
   const now = Date.now();
@@ -3121,8 +3146,31 @@ function ProfilePage() {
           under the promo blocks. On desktop both sidebar cards stack on the
           left with the content beside them. */}
       <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
-        <aside className="order-1 lg:col-start-1 lg:row-start-1">
-          <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+        {/* Tap-away scrim: covers the ~50% of the page the open drawer leaves
+            visible, and closes the drawer when tapped. Mobile only. */}
+        {menuOpen && (
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+          />
+        )}
+        {/* Edge handle — a chunky chevron that points right (>) into the page
+            when closed and left (<) toward the drawer when open. It rides the
+            drawer's edge as it slides. Mobile only. */}
+        <button
+          type="button"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          onClick={() => setMenuOpen((v) => !v)}
+          className={`fixed top-1/2 z-50 -ml-px grid h-11 w-7 -translate-y-1/2 place-items-center rounded-r-[10px] bg-white text-baby-cta shadow-[4px_1px_10px_rgba(17,26,76,0.10)] transition-[left] duration-300 ease-out lg:hidden ${menuOpen ? "left-[62%]" : "left-0"}`}
+        >
+          <Icon name="chevron" strokeWidth={3} className={`h-5 w-5 ${menuOpen ? "rotate-180" : ""}`} />
+        </button>
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:static lg:z-auto lg:w-auto lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          <div className="min-h-full rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:min-h-0">
             <div className="flex items-center gap-3">
               <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
               <div className="min-w-0">
@@ -3134,19 +3182,26 @@ function ProfilePage() {
                 ))}
               </div>
             </div>
-            <a
-              href={isPlus ? "/profile?tab=settings" : "/pricing"}
-              className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-baby-cta" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
-            >
-              <span className="flex items-center gap-1.5">
-                <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
-                {isPlus ? "Plus plan" : "Free plan"}
-              </span>
-              <span className="text-xs">{isPlus ? "Manage" : "Upgrade →"}</span>
-            </a>
+            {planKnown ? (
+              <a
+                href={isPlus ? "/profile?tab=settings" : "/pricing"}
+                className={`mt-4 flex items-center justify-between rounded-[10px] px-3 py-2 text-sm font-bold ${isPlus ? "bg-[#FED7E4] text-baby-cta" : "bg-[#FEF4EB] text-[#FFB77A]"}`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Icon name={isPlus ? "star" : "spark"} className="h-4 w-4" />
+                  {isPlus ? "Plus plan" : "Free plan"}
+                </span>
+                <span className="text-xs">{isPlus ? "Manage" : "Upgrade →"}</span>
+              </a>
+            ) : (
+              <div className="mt-4 flex items-center gap-1.5 rounded-[10px] bg-[#F4EFF0] px-3 py-2 text-sm font-bold text-[#6D7486]">
+                <Icon name="spark" className="h-4 w-4 animate-pulse" />
+                Checking your plan…
+              </div>
+            )}
             <nav className="mt-4 space-y-1.5">
               {PROFILE_TABS.map(([key, item, icon, plusOnly]) => {
-                const locked = plusOnly && !isPlus;
+                const locked = planKnown && plusOnly && !isPlus;
                 return (
                   <a
                     key={key}
@@ -3245,7 +3300,10 @@ function ProfilePage() {
 
           {/* Saved activities is a Plus feature, so on Free it shows as a
               locked teaser rather than real content — QA: "Saved activities
-              shouldn't be showing under overview for free subscription". */}
+              shouldn't be showing under overview for free subscription". Held
+              back until the plan is known so a Plus parent never sees the
+              locked teaser flash on a hard refresh. */}
+          {planKnown && (
           <section className="mt-6">
             <SectionTitle
               emoji="🩷"
@@ -3288,6 +3346,7 @@ function ProfilePage() {
               </div>
             )}
           </section>
+          )}
 
           <section className="mt-6">
             {/* Say whose suggestions these are — the list already follows the
@@ -3357,7 +3416,17 @@ function ProfilePage() {
             />
           )}
 
-          {tab === "packages" && !isPlus && (
+          {/* The plus-gated tabs: until the plan is known, show a brief
+              placeholder rather than the Plus lock (which would flash for a
+              parent who is actually on Plus). */}
+          {["packages", "makeup", "favorites", "messages"].includes(tab) && !planKnown && (
+            <div className="grid place-items-center py-16 text-center font-semibold text-[#6D7486]">
+              <Icon name="spark" className="mb-2 h-6 w-6 animate-pulse" />
+              Checking your plan…
+            </div>
+          )}
+
+          {tab === "packages" && planKnown && !isPlus && (
             <PlusLock
               title="Packages are a Plus feature"
               copy="With Plus, every class pack you buy through BabyBrain is stored here and you can click straight through to book. On the free plan we email your pack details to you instead."
@@ -3398,7 +3467,7 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "makeup" && !isPlus && (
+          {tab === "makeup" && planKnown && !isPlus && (
             <PlusLock
               title="Make-up tokens are a Plus feature"
               copy="With Plus, make-up tokens from every provider who issues through BabyBrain are gathered here and you can click straight through to rebook. On the free plan they come to you by email."
@@ -3455,7 +3524,7 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "favorites" && !isPlus && (
+          {tab === "favorites" && planKnown && !isPlus && (
             <PlusLock
               title="Saved favourites are a Plus feature"
               copy="Upgrade to keep your favourite activities and providers on your own list, so you can come back to them any time."
@@ -3512,7 +3581,7 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "messages" && !isPlus && (
+          {tab === "messages" && planKnown && !isPlus && (
             <PlusLock
               title="Messages are a Plus feature"
               copy="With Plus, every conversation with an integrated provider — enquiries, class group chats, support — lives in one inbox. You can still read messages on your booked classes for free; sending needs Plus and the provider to have messaging enabled."

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { apiGet } from "./api";
+import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { goTo } from "./nav";
 import {
@@ -12,50 +13,78 @@ import {
   type JourneyStats,
 } from "./database.types";
 
-/** The signed-in parent's plan, cached for the tab so every gated control
- *  doesn't re-request it. Defaults to `free` until we know otherwise, so a
- *  slow response never briefly unlocks a Plus feature. */
-let planCache: { plan: "free" | "plus"; at: number } | null = null;
-
+/** The signed-in parent's plan. It can only be learned from the Stripe
+ *  subscription route, which sits downstream of the whole auth cold-start — on
+ *  a hard refresh that's 4-5s during which we'd otherwise assume `free` and
+ *  render the locked/Upgrade view, then snap to Plus once it answers.
+ *
+ *  So the last known plan is cached (in memory + localStorage, see
+ *  lib/planCache) and read back synchronously here: a returning parent renders
+ *  their real plan on the first paint, and the route call just revalidates in
+ *  the background. `known` is false only on a device that has never resolved a
+ *  plan — callers hold gated UI neutral (not "free") until it flips. */
 export function usePlan() {
   const { session, loading: authLoading } = useAuth();
-  const [plan, setPlan] = useState<"free" | "plus">(planCache?.plan ?? "free");
-  const [loading, setLoading] = useState(!planCache);
+  const cached = getPlanCache();
+  const [plan, setPlan] = useState<Plan>(cached?.plan ?? "free");
+  // We "know" the plan as soon as there's any cached/persisted value; without
+  // one the first render is a guess, so callers keep gated UI neutral.
+  const [known, setKnown] = useState(!!cached);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     if (authLoading) return;
     if (!session) {
+      // Signed out — drop any cached plan so the next account on this browser
+      // can't inherit it, and settle on the neutral default.
+      clearPlanCache();
       setPlan("free");
+      setKnown(true);
       setLoading(false);
       return;
     }
     // 60s is short enough that returning from Stripe shows the new plan.
-    if (planCache && Date.now() - planCache.at < 60_000) {
-      setPlan(planCache.plan);
+    const fresh = getPlanCache();
+    if (fresh && Date.now() - fresh.at < 60_000) {
+      setPlan(fresh.plan);
+      setKnown(true);
       setLoading(false);
       return;
     }
     let cancelled = false;
     apiGet<{ plan: "free" | "plus" }>("/api/customer/stripe/subscription")
       .then((p) => {
-        planCache = { plan: p.plan, at: Date.now() };
+        setPlanCache(p.plan);
         if (!cancelled) setPlan(p.plan);
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        // Either we have an answer or the lookup failed — stop holding gated
+        // UI neutral. On failure this falls back to the `free`/persisted value
+        // already in state, same as before.
+        if (!cancelled) {
+          setKnown(true);
+          setLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [session, authLoading]);
 
-  return { plan, isPlus: plan === "plus", loading };
+  return { plan, isPlus: plan === "plus", loading, known };
 }
 
-/** Drop the cached plan after an upgrade so the UI unlocks immediately. */
+/** Drop the cached plan after an upgrade/downgrade so the UI re-reads it. */
 export function invalidatePlan() {
-  planCache = null;
+  clearPlanCache();
+}
+
+/** Record an authoritative plan learned elsewhere (e.g. the billing panel's
+ *  fuller subscription fetch) so `usePlan` and the next hard refresh pick it
+ *  up without waiting on another round-trip. */
+export function primePlan(plan: Plan) {
+  setPlanCache(plan);
 }
 
 export interface ProviderContact {
