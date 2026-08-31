@@ -84,6 +84,18 @@ export default function ClaimBusinessPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  /* The code's email already has a BabyBrain login. Rather than bounce to
+     /login (where nothing knew to finish the claim), the owner signs in right
+     here and we re-run verification with the session — the route then hands
+     over ownership on that second post. `password` doubles as the field here;
+     the panels are mutually exclusive. */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  /* The code check alone sets `emailVerified` (it drives the status panel), but
+     a signed-out claimer still has no account at that point. `claimComplete`
+     is the real "you can move on now" signal — set only once the business has
+     actually been handed over — so the footer "Continue" can't fling them at a
+     login page for an account that was never created. */
+  const [claimComplete, setClaimComplete] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,9 +178,21 @@ export default function ClaimBusinessPage() {
         setNotice('Code confirmed. Set a password to finish claiming this business.');
         return;
       }
+      if (res.next === 'sign_in') {
+        // The code's email already has a login. Finish by signing in here — no
+        // detour to /login, which had no idea a claim was waiting.
+        setNeedsPassword(false);
+        setNeedsSignIn(true);
+        setPassword('');
+        setNotice(
+          `${res.email ?? email.trim()} already has a BabyBrain log-in. Enter its password to finish claiming this business.`
+        );
+        return;
+      }
       if (res.claimed) {
-        // Sign the new account in so /save-listing loads as its owner rather
-        // than bouncing an anonymous visitor to the login page.
+        // A freshly-created account needs signing in so /save-listing loads as
+        // its owner. An existing owner reaching here is already signed in (the
+        // sign_in step below did it), so there's nothing to do.
         if (res.account_created && withPassword && res.email) {
           const { error: signInError } = await signIn(res.email, withPassword);
           if (signInError) {
@@ -179,15 +203,13 @@ export default function ClaimBusinessPage() {
           }
         }
         setNeedsPassword(false);
+        setNeedsSignIn(false);
+        setClaimComplete(true);
         navigate('/save-listing');
       }
     } catch (e) {
-      // The route returns 409 with a message when the email already has an
-      // account — show it and point them at the login page, where signing in
-      // finishes the claim on the next post.
       const message = e instanceof Error ? e.message : 'That code could not be verified.';
       setError(message);
-      if (/already have a BabyBrain login/i.test(message)) setNeedsPassword(false);
     } finally {
       setBusy(false);
     }
@@ -197,6 +219,29 @@ export default function ClaimBusinessPage() {
     if (password.length < 8) return setError('Choose a password of at least 8 characters.');
     if (password !== password2) return setError('Those passwords don’t match.');
     await verify(password);
+  }
+
+  /**
+   * Existing-owner path: sign the vendor in against the address the code was
+   * sent to, then re-run verification. The route now sees a session (and no
+   * password), so it hands over ownership and returns `claimed: true` — which
+   * `verify()` turns into the redirect to /save-listing.
+   */
+  async function submitSignIn() {
+    const addr = email.trim();
+    if (!password) return setError('Enter your password to continue.');
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: signInError } = await signIn(addr, password);
+      if (signInError) {
+        setError(`That didn’t match — ${signInError}`);
+        return;
+      }
+      await verify();
+    } finally {
+      setBusy(false);
+    }
   }
 
   const canSendCodes = Boolean(selected && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && uen.trim());
@@ -426,6 +471,39 @@ export default function ClaimBusinessPage() {
                   >
                     {busy ? 'Sending…' : 'Send verification code'}
                   </Button>
+                ) : needsSignIn ? (
+                  /* The code's email already has a login. Sign in here and the
+                     claim finishes on the spot — no trip to /login. */
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <h4 className="text-sm font-semibold text-gray-900">Sign in to finish claiming</h4>
+                    <p className="mt-1 text-xs text-gray-500">
+                      <span className="font-medium text-gray-700">{email.trim()}</span> already has a BabyBrain log-in.
+                    </p>
+                    <label className="mt-3 block text-sm font-semibold text-gray-900" htmlFor="claim-signin-password">Password</label>
+                    <Input
+                      id="claim-signin-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Your BabyBrain password"
+                      className="mt-2 rounded-xl border-gray-200"
+                    />
+                    <Button
+                      onClick={submitSignIn}
+                      disabled={busy || !password}
+                      className="gradient-primary mt-4 w-full rounded-xl text-white hover:opacity-90"
+                    >
+                      {busy ? 'Finishing…' : 'Finish claiming this business'}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/forgot-password')}
+                      className="mt-3 w-full text-center text-xs font-semibold text-[#A7D8F8]"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
                 ) : needsPassword ? (
                   /* Final step for a claimer with no BabyBrain account. The
                      code has already proved they hold this mailbox, so all
@@ -464,7 +542,14 @@ export default function ClaimBusinessPage() {
                     </Button>
                     <button
                       type="button"
-                      onClick={() => navigate('/login')}
+                      onClick={() => {
+                        setNeedsPassword(false);
+                        setNeedsSignIn(true);
+                        setPassword('');
+                        setPassword2('');
+                        setError(null);
+                        setNotice(`Enter the password for ${email.trim()} to finish claiming this business.`);
+                      }}
                       className="mt-3 w-full text-center text-xs font-semibold text-[#A7D8F8]"
                     >
                       Already have a BabyBrain log-in? Sign in instead
@@ -544,8 +629,21 @@ export default function ClaimBusinessPage() {
             Your information is secure and will never be shared.
           </div>
           <Button
-            onClick={() => (session ? navigate('/save-listing') : navigate('/login?claim=1'))}
-            disabled={!emailVerified}
+            onClick={() => {
+              // Whatever step the claimer is on, the footer finishes it here —
+              // never by handing off to a login page that can't complete it.
+              if (!claimComplete && needsSignIn) return void submitSignIn();
+              if (!claimComplete && needsPassword) return void submitPassword();
+              navigate('/save-listing');
+            }}
+            disabled={
+              !(
+                claimComplete ||
+                (session && emailVerified) ||
+                (needsPassword && password.length >= 8 && password === password2) ||
+                (needsSignIn && password.length > 0)
+              ) || busy
+            }
             className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90"
           >
             Continue

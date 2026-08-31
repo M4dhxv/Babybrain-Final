@@ -7,8 +7,10 @@
  * QA 21/08: "once you enter the verification code it takes you to log in but no
  * password has been set — flow doesn't work." A claimer has no account and the
  * portal has no sign-up form, so the flow dead-ended. This proves the whole
- * path now completes for a brand-new vendor, and that the account-creation step
- * can't be turned into a way to take over an existing login.
+ * path now completes for a brand-new vendor; that the account-creation step
+ * can't be turned into a way to take over an existing login; and that when the
+ * email DOES already have a login, signing in finishes the claim (rather than
+ * stranding a half-done claim on the login page).
  *
  * Creates a throwaway provider and cleans it (and any account it made) up.
  */
@@ -121,24 +123,45 @@ try {
   const again = await post('/api/vendor/claim/start', { provider_id: provider.id, email: claimEmail });
   check('A claimed business refuses a new claim', again.r.status === 409, `HTTP ${again.r.status}`);
 
-  // --- 8. The password step cannot hijack an existing account ---
-  const { data: victimProvider } = await admin
+  // --- 8. An email that already has a login: the password step can't hijack
+  //        it, and the real owner finishes the claim by signing in ---
+  const { data: secondProvider } = await admin
     .from('providers')
-    .insert({ business_name: `Claim Victim Co ${stamp}`, status: 'active', description: 'validation fixture' })
+    .insert({ business_name: `Claim Second Co ${stamp}`, status: 'active', description: 'validation fixture' })
     .select()
     .single();
-  const hijack = await post('/api/vendor/claim/start', { provider_id: victimProvider.id, email: claimEmail });
-  const hijackClaim = hijack.body.claim_id;
-  await setCode(hijackClaim, '333333');
+  const second = await post('/api/vendor/claim/start', { provider_id: secondProvider.id, email: claimEmail });
+  const secondClaim = second.body.claim_id;
+  await setCode(secondClaim, '333333');
   const attempt = await post('/api/vendor/claim/verify', {
-    claim_id: hijackClaim, email_code: '333333', password: 'AttackerChosen999!',
+    claim_id: secondClaim, email_code: '333333', password: 'AttackerChosen999!',
   });
-  check('An email that already has an account is not re-passworded', attempt.r.status === 409, `HTTP ${attempt.r.status}`);
+  check('An email that already has an account is told to sign in, not re-passworded',
+    attempt.r.ok && attempt.body.next === 'sign_in', `HTTP ${attempt.r.status} ${JSON.stringify(attempt.body)}`);
+  check('…ownership is NOT handed over on that response', attempt.body.claimed === false, String(attempt.body.claimed));
   const { data: stillWorks } = await anon.auth.signInWithPassword({ email: claimEmail, password: PASSWORD });
   check('…the original password still works', Boolean(stillWorks?.session));
   const { data: attackerTry } = await anon.auth.signInWithPassword({ email: claimEmail, password: 'AttackerChosen999!' });
   check('…and the attacker-chosen password does not', !attackerTry?.session);
-  await admin.from('providers').delete().eq('id', victimProvider.id);
+
+  // Signed in, the same code (no password) completes the claim — this is the
+  // "already-registered" dead end the page now walks the owner through.
+  const finished = await post(
+    '/api/vendor/claim/verify',
+    { claim_id: secondClaim, email_code: '333333' },
+    stillWorks?.session?.access_token
+  );
+  check('Signed in, the same code hands over ownership', finished.body.claimed === true,
+    finished.body.error ?? JSON.stringify(finished.body));
+  const { data: secondMember } = await admin
+    .from('provider_members')
+    .select('role, status')
+    .eq('provider_id', secondProvider.id)
+    .eq('user_id', created?.id ?? '')
+    .maybeSingle();
+  check('…and the owner now holds the second business too',
+    secondMember?.role === 'owner' && secondMember?.status === 'active', JSON.stringify(secondMember));
+  await admin.from('providers').delete().eq('id', secondProvider.id);
 
   // --- 9. An expired code is refused even with a password ---
   const { data: exp } = await admin

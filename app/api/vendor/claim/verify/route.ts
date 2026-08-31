@@ -24,6 +24,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * already has an account, so this cannot be used to set someone else's
  * password.
  *
+ * When that email DOES already have a login, we don't touch it: the response
+ * says `next: 'sign_in'`, the page signs the owner in, and re-posts this route
+ * with the session (no password) — the signed-in branch then finishes the
+ * claim. That second post is the same path a manually-signed-in vendor takes.
+ *
  * Body: { claim_id, email_code, phone_code?, password? }
  */
 
@@ -100,21 +105,31 @@ export async function POST(request: Request) {
       email_confirm: true, // the emailed code already proved they hold this address
       user_metadata: { claimed_provider_id: claim.provider_id },
     });
-    if (createError || !created?.user) {
-      // Overwhelmingly the "already registered" case. Never touch an existing
-      // account's password — send them to sign in, and the signed-in branch
-      // below finishes the claim on their next post.
+
+    // The email already has a login. Never touch its password — mark the code
+    // verified and tell the page to sign the owner in; their next post (with a
+    // session, no password) lands in the signed-in branch and finishes the
+    // claim. Returned as a normal 200 `next` step, like `set_password`.
+    const alreadyRegistered =
+      createError?.code === 'email_exists' ||
+      createError?.code === 'user_already_exists' ||
+      /already.*(registered|exists)/i.test(createError?.message ?? '');
+
+    if (createError && alreadyRegistered) {
       await admin
         .from('provider_claims')
         .update({ email_verified_at: now, phone_verified_at: phoneOk ? now : null, status: 'verified' })
         .eq('id', claim.id);
-      return NextResponse.json({
-        verified: true,
-        claimed: false,
-        next: 'sign_in',
-        email,
-        error: 'You already have a BabyBrain login for this email — sign in and we’ll finish the claim.',
-      }, { status: 409 });
+      return NextResponse.json({ verified: true, claimed: false, next: 'sign_in', email });
+    }
+
+    if (createError || !created?.user) {
+      // A real failure (not "already registered") — don't strand them on a
+      // half-done claim with a misleading "sign in" nudge.
+      return NextResponse.json(
+        { error: 'Could not create your log-in — please try again, or email hello@babybrain.sg.' },
+        { status: 502 }
+      );
     }
     user = created.user;
     createdAccount = true;
