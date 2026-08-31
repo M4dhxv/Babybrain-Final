@@ -128,7 +128,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         if (data.session) {
           identifyUser(data.session.user.id, data.session.user.email);
-          await resolveData();
+          // Don't hold `loading` (which gates routing) on the profile/children
+          // lookup — knowing whether there's a session is enough to route. The
+          // lookup runs in the background and flips `dataResolved` when done;
+          // anything that needs the profile or child list gates on that.
+          void resolveData();
         }
       } catch (err) {
         console.warn("[auth] session init failed", err);
@@ -138,13 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       if (!alive) return;
       setSession(s);
       try {
         if (s) {
           identifyUser(s.user.id, s.user.email);
-          await resolveData();
+          void resolveData();
         } else {
           resetUser();
           // Don't let the next account (same browser, no hard refresh) inherit

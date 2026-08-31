@@ -2794,16 +2794,23 @@ function ProfilePage() {
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
 
-  // Below lg the nav is a left-hand drawer, not a stacked block. It slides in
-  // when the profile opens, holds for 4s, then rolls back; after that the edge
-  // handle (› / ‹) or a tap on the dimmed page drives it. At lg the Tailwind
-  // `lg:` classes drop the fixed positioning and it's a static sidebar again.
+  // Below lg the nav is a left-hand drawer, not a stacked block. On every
+  // profile load (each tab is its own page load) it slides in, holds for 4s,
+  // then rolls back; after that the edge handle (› / ‹) or a tap on the dimmed
+  // page drives it. At lg the Tailwind `lg:` classes drop the fixed
+  // positioning and it's a static sidebar again.
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
-    const slideIn = requestAnimationFrame(() => setMenuOpen(true));
-    const rollBack = setTimeout(() => setMenuOpen(false), 4000);
+    let rollBack: ReturnType<typeof setTimeout>;
+    // Open on a short delay so the closed state paints once and the slide-in
+    // animates; the 4s hold is chained off the open (not anchored to mount),
+    // so a data-heavy tab with a slow first render still gets the full reveal.
+    const slideIn = setTimeout(() => {
+      setMenuOpen(true);
+      rollBack = setTimeout(() => setMenuOpen(false), 4000);
+    }, 60);
     return () => {
-      cancelAnimationFrame(slideIn);
+      clearTimeout(slideIn);
       clearTimeout(rollBack);
     };
   }, []);
@@ -6068,6 +6075,21 @@ function ResetPasswordPage() {
   );
 }
 
+/** Best-effort synchronous check for a stored Supabase session, so the root
+ *  route can tell a returning parent (wait on a loader) from a genuine visitor
+ *  (show the marketing page straight away) before auth has resolved. */
+function hasStoredSession(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && /^sb-.*-auth-token$/.test(key)) return true;
+    }
+  } catch {
+    /* storage blocked — assume no session */
+  }
+  return false;
+}
+
 function App() {
   const { session, loading } = useAuth();
   // In production a Next rewrite serves these routes from `/`, but the Vite dev
@@ -6091,8 +6113,17 @@ function App() {
   if (pathname === "/contact") return <ContactPage />;
   if (pathname === "/terms") return <TermsPage />;
   // Home: signed-in parents land on their personalised dashboard (matched
-  // classes for their child), not the marketing page.
+  // classes for their child), not the marketing page. While auth is still
+  // resolving, a browser that has a stored session waits on a loader rather
+  // than flashing the marketing landing page before the redirect.
   if (!loading && session) return <MatchesPage active="/" />;
+  if (loading && hasStoredSession()) {
+    return (
+      <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
+        <RainbowLoader className="py-4" label="Loading" />
+      </main>
+    );
+  }
   return <HomePage />;
 }
 
