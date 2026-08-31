@@ -143,23 +143,27 @@ export default function EarningsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-start justify-between gap-2 px-4 py-5 sm:items-center sm:px-8">
-        <div className="flex items-start gap-2 sm:items-center sm:gap-3">
-          <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg shrink-0">
-            <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Earnings & payouts</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              What you've earned, what you're owed, and when it reached your bank.
-            </p>
-          </div>
+      {/* On mobile the title/subtitle sit centred, with the back and refresh
+          controls pinned to the edges; from sm up it's the usual left-aligned
+          row. */}
+      <div className="relative flex items-start justify-between gap-2 px-4 py-5 sm:items-center sm:gap-3 sm:px-8">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="absolute left-1 top-4 p-2 hover:bg-gray-100 rounded-lg sm:static sm:shrink-0"
+        >
+          <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
+        </button>
+        <div className="min-w-0 flex-1 px-11 text-center sm:px-0 sm:text-left">
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Earnings & payouts</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            What you've earned, what you're owed, and when it reached your bank.
+          </p>
         </div>
         <button
           onClick={() => void load()}
           disabled={loading}
           title="Refresh"
-          className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+          className="absolute right-1 top-4 p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-50 sm:static sm:shrink-0"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>

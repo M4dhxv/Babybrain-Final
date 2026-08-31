@@ -176,8 +176,8 @@ export default function PortalLayout() {
             onClick={handleSignOut}
             title={isSidebarCollapsed ? 'Sign out' : undefined}
             className={cn(
-              'mt-1 flex items-center w-full gap-3 px-3 pt-3 pb-2.5 rounded-lg text-sm font-medium transition-colors',
-              'border-t border-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600'
+              'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'text-gray-700 hover:bg-red-50 hover:text-red-600'
             )}
           >
             <LogOut className="w-5 h-5 flex-shrink-0" />
@@ -187,8 +187,8 @@ export default function PortalLayout() {
 
         {/* Current Plan Card */}
         {!isSidebarCollapsed && (
-          <div className="shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100">
-            <div className="flex items-center gap-2 mb-2">
+          <div className="shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100 text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
               <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-500 rounded-lg flex items-center justify-center">
                 <Crown className="w-4 h-4 text-white" />
               </div>
