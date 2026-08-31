@@ -2794,17 +2794,18 @@ function ProfilePage() {
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
 
-  // Below lg the nav is a left-hand drawer, not a stacked block. On every
-  // profile load (each tab is its own page load) it slides in, holds for 4s,
-  // then rolls back; after that the edge handle (› / ‹) or a tap on the dimmed
-  // page drives it. At lg the Tailwind `lg:` classes drop the fixed
-  // positioning and it's a static sidebar again.
+  // Below lg the nav is a left-hand drawer, not a stacked block. Landing on the
+  // profile (the Overview tab) auto-reveals it: it slides in, holds for 4s,
+  // then rolls back. On the other tabs it stays closed until the edge handle
+  // (› / ‹) or a tap on the dimmed page opens it. At lg the Tailwind `lg:`
+  // classes drop the fixed positioning and it's a static sidebar again.
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
+    if (tab !== "overview") return;
     let rollBack: ReturnType<typeof setTimeout>;
     // Open on a short delay so the closed state paints once and the slide-in
     // animates; the 4s hold is chained off the open (not anchored to mount),
-    // so a data-heavy tab with a slow first render still gets the full reveal.
+    // so a slow first render still gets the full reveal.
     const slideIn = setTimeout(() => {
       setMenuOpen(true);
       rollBack = setTimeout(() => setMenuOpen(false), 4000);
@@ -2813,7 +2814,7 @@ function ProfilePage() {
       clearTimeout(slideIn);
       clearTimeout(rollBack);
     };
-  }, []);
+  }, [tab]);
 
   // Goes through the /api/customer/bookings backend route (service role)
   // instead of querying `bookings` directly from the browser — a direct
