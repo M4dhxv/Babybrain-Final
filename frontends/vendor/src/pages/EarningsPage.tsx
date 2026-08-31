@@ -96,14 +96,14 @@ function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-2">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${accent ?? 'bg-gray-100'}`}>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${accent ?? 'bg-gray-100'}`}>
           <Icon className="w-4 h-4" />
         </div>
         <span className="text-xs text-gray-500">{label}</span>
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-xl font-bold text-gray-900 sm:text-2xl">{value}</div>
       {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
     </div>
   );
@@ -143,13 +143,13 @@ export default function EarningsPage() {
 
   return (
     <div className="relative">
-      <div className="flex items-center justify-between px-8 py-5">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
+      <div className="flex items-start justify-between gap-2 px-4 py-5 sm:items-center sm:px-8">
+        <div className="flex items-start gap-2 sm:items-center sm:gap-3">
+          <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg shrink-0">
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Earnings & payouts</h1>
+            <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Earnings & payouts</h1>
             <p className="text-sm text-gray-500 mt-1">
               What you've earned, what you're owed, and when it reached your bank.
             </p>
@@ -165,7 +165,7 @@ export default function EarningsPage() {
         </button>
       </div>
 
-      <div className="px-8 pb-8 space-y-6">
+      <div className="px-4 pb-8 space-y-6 sm:px-8">
         {error && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
@@ -173,26 +173,28 @@ export default function EarningsPage() {
         {/* Not on Connect yet: Stripe has nothing to show, so say what happens
             to the money instead of showing empty payout tables. */}
         {data && !data.payouts_enabled && (
-          <div className="rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 flex items-start gap-3">
-            <AlertTriangle className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 text-sm text-yellow-900">
-              <p className="font-medium">Payouts aren't switched on yet.</p>
-              <p className="text-xs mt-0.5">
-                Bookings still get paid — BabyBrain collects them and settles with you directly. Finish Stripe
-                setup and future bookings pay straight into your bank account.
-              </p>
+          <div className="rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 text-sm text-yellow-900">
+                <p className="font-medium">Payouts aren't switched on yet.</p>
+                <p className="text-xs mt-0.5">
+                  Bookings still get paid — BabyBrain collects them and settles with you directly. Finish Stripe
+                  setup and future bookings pay straight into your bank account.
+                </p>
+              </div>
             </div>
             <Button
               onClick={() => navigate('/billing')}
               variant="outline"
-              className="rounded-lg border-yellow-400 text-yellow-900 hover:bg-yellow-100 text-sm flex-shrink-0"
+              className="rounded-lg border-yellow-400 text-yellow-900 hover:bg-yellow-100 text-sm w-full flex-shrink-0 sm:w-auto"
             >
               Set up payouts
             </Button>
           </div>
         )}
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             icon={Wallet}
             accent="bg-green-100 text-green-700"
@@ -225,9 +227,9 @@ export default function EarningsPage() {
 
         {/* Where the money went, in total. */}
         {s && s.lifetime_gross_cents > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="font-semibold text-gray-900 mb-4">Where it went</h3>
-            <div className="grid grid-cols-3 gap-6 text-sm">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3 sm:gap-6">
               <div>
                 <div className="text-xs text-gray-500">Parents paid</div>
                 <div className="text-lg font-semibold text-gray-900">{money(s.lifetime_gross_cents, currency)}</div>
@@ -248,7 +250,7 @@ export default function EarningsPage() {
 
         {/* Payout history — read live from Stripe. */}
         {data?.connected && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
             <h3 className="font-semibold text-gray-900 mb-1">Payouts</h3>
             <p className="text-xs text-gray-500 mb-4">Straight from Stripe — every transfer to your bank.</p>
             {data.payouts.length === 0 ? (
@@ -300,7 +302,7 @@ export default function EarningsPage() {
         )}
 
         {/* The per-sale ledger. */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
           <h3 className="font-semibold text-gray-900 mb-1">Every paid sale</h3>
           <p className="text-xs text-gray-500 mb-4">
             What the parent paid, what came off, and what reached you.
