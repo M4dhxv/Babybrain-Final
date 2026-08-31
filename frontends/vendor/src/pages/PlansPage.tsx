@@ -291,7 +291,7 @@ export default function PlansPage() {
         </nav>
         <div className="flex items-center gap-2 sm:gap-3 justify-self-end">
           <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
-            Sign in
+            Log in
           </Button>
           {/* Mobile menu toggle */}
           <button

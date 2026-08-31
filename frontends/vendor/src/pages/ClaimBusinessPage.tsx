@@ -209,7 +209,7 @@ export default function ClaimBusinessPage() {
           onClick={() => navigate('/login')}
           className="rounded-full border-blue-300 bg-blue-50 px-4 text-blue-700 hover:bg-blue-100 sm:px-6"
         >
-          Login
+          Log in
         </Button>
         <Button
           variant="outline"

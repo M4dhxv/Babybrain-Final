@@ -43,7 +43,7 @@ export default function LoginPage() {
           onClick={() => navigate('/claim-business')}
           className="rounded-full px-6 border-0 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] transition hover:brightness-105"
         >
-          Sign up
+          Claim your listing
         </Button>
       </AuthHeader>
 
@@ -71,13 +71,13 @@ export default function LoginPage() {
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? 'Logging in…' : 'Log in'}
             </Button>
           </form>
           <p className="mt-4 text-center text-xs text-gray-500">
             New here?{' '}
             <button className="font-semibold text-[#A7D8F8]" onClick={() => navigate('/claim-business')}>
-              Claim your business
+              Claim your listing
             </button>
           </p>
         </div>

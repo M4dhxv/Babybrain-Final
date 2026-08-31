@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
             <p className="mt-4 text-center text-xs text-gray-500">
               Remembered it?{' '}
               <button className="font-semibold text-[#A7D8F8]" onClick={() => navigate('/login')}>
-                Sign in
+                Log in
               </button>
             </p>
           </>

@@ -54,13 +54,13 @@ export default function LandingPage() {
             onClick={() => navigate('/login')}
             className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
-            Sign in
+            Log in
           </Button>
           <Button
-            onClick={() => navigate('/plans')}
+            onClick={() => navigate('/claim-business')}
             className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 transition border-0 sm:inline-flex"
           >
-            Upgrade your listing
+            Claim your listing
           </Button>
           {/* Mobile menu toggle — below md the nav links have nowhere to sit,
               so they collapse behind this. */}
