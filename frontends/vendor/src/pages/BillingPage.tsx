@@ -82,11 +82,16 @@ export default function BillingPage() {
     <div className="relative">
       {/* Top Bar */}
       <div className="flex flex-col items-center gap-3 px-4 py-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-8">
-        <div className="flex w-full items-center justify-center gap-3 sm:w-auto sm:justify-start">
-          <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
+        {/* Mobile: title/subtitle centred with the back control pinned to the
+            left edge; sm+ is the usual left-aligned inline row. */}
+        <div className="relative flex w-full items-center gap-3 sm:w-auto sm:justify-start">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="absolute left-1 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg sm:static sm:translate-y-0 sm:shrink-0"
+          >
             <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
           </button>
-          <div className="text-center sm:text-left">
+          <div className="min-w-0 flex-1 px-11 text-center sm:px-0 sm:text-left">
             <h1 className="text-2xl font-bold text-gray-900">Manage subscription</h1>
             <p className="text-sm text-gray-500 mt-1">View and manage your subscription details.</p>
           </div>
