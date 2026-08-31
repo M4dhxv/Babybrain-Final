@@ -24,7 +24,7 @@ const plans = [
     price: '0',
     color: 'text-[#A7D8F8]',
     buttonText: 'Start growing',
-    buttonClass: 'border-blue-300 text-blue-700 hover:bg-blue-50',
+    buttonClass: 'border-blue-300 text-blue-600 hover:bg-blue-50',
     featured: false,
     commission: '12% commission on classes booked + Stripe fees',
     perks: [
