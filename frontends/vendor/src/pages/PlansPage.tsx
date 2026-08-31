@@ -62,7 +62,7 @@ const plans = [
     price: '199',
     color: 'text-[#FFC1D6]',
     buttonText: 'Be Premium',
-    buttonClass: 'border-pink-300 text-pink-600 hover:bg-pink-50',
+    buttonClass: 'border-pink-300 text-[#FA4D8D] hover:bg-pink-50',
     featured: false,
     yearlyPrice: '2,189/year (1 month free)',
     commission: '8% commission on classes booked + Stripe fees',
@@ -425,7 +425,7 @@ export default function PlansPage() {
             <div>Features</div>
             <div className="text-center text-blue-600">Pay as you grow</div>
             <div className="text-center text-purple-600">Pro</div>
-            <div className="text-center text-pink-600">Premium</div>
+            <div className="text-center text-[#FA4D8D]">Premium</div>
           </div>
           {features.map((feature, idx) => (
             <div
