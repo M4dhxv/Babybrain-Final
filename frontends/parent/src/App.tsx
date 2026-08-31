@@ -4543,7 +4543,7 @@ function PricingPage() {
           {/* Free */}
           <article className="relative rounded-[18px] border border-[#EBE3E5] bg-white p-6 shadow-card">
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-palette-blueSoft text-palette-blueInk">
-              <Icon name="heart" className="h-8 w-8" />
+              <Icon name="heart" className="h-8 w-8 text-white" />
             </div>
             <h2 className="mt-4 text-center text-2xl font-black">Free</h2>
             <p className="mt-2 text-center">
