@@ -21,6 +21,7 @@ import {
   TrendingUp,
   Lock,
   Wallet,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
@@ -50,7 +51,7 @@ const sidebarItems = [
 export default function PortalLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { subscription } = useAuth();
+  const { subscription, signOut } = useAuth();
   const isPro = subscription?.plan === 'pro' || subscription?.plan === 'premium';
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -64,6 +65,12 @@ export default function PortalLayout() {
   const go = (path: string) => {
     setMobileOpen(false);
     navigate(path);
+  };
+
+  const handleSignOut = async () => {
+    setMobileOpen(false);
+    await signOut();
+    navigate('/login');
   };
 
   /* The portal owns its own scrolling: the root below is exactly one viewport
@@ -163,6 +170,19 @@ export default function PortalLayout() {
               </button>
             );
           })}
+
+          {/* Sign out sits with the nav items, directly under Billing. */}
+          <button
+            onClick={handleSignOut}
+            title={isSidebarCollapsed ? 'Sign out' : undefined}
+            className={cn(
+              'mt-1 flex items-center w-full gap-3 px-3 pt-3 pb-2.5 rounded-lg text-sm font-medium transition-colors',
+              'border-t border-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600'
+            )}
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {!isSidebarCollapsed && <span className="flex-1 text-left">Sign out</span>}
+          </button>
         </nav>
 
         {/* Current Plan Card */}
