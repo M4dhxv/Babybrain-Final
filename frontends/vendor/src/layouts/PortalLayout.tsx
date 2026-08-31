@@ -156,7 +156,7 @@ export default function PortalLayout() {
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
-                    ? 'bg-pink-50 text-pink-600'
+                    ? 'bg-pink-50 text-[#FA4D8D]'
                     : locked
                       ? 'text-gray-400 hover:bg-gray-50'
                       : 'text-gray-700 hover:bg-gray-100'
@@ -228,7 +228,7 @@ export default function PortalLayout() {
           {!isSidebarCollapsed && (
             <div className="mt-1 text-xs text-gray-500">
               Visit our{' '}
-              <button onClick={() => navigate('/contact')} className="text-pink-600 hover:underline">
+              <button onClick={() => navigate('/contact')} className="text-[#FA4D8D] hover:underline">
                 Help centre
               </button>
             </div>

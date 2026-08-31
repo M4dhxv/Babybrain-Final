@@ -430,7 +430,7 @@ export default function DashboardPage() {
               Which activities convert, which age groups book, and the days and times parents choose.
             </p>
             <button onClick={() => navigate('/insights')} className="mt-4 flex items-center gap-1 text-xs font-medium text-[#FA4D8D]">
-              Open Insights
+              Open insights
               <ArrowRight className="w-3 h-3" />
             </button>
           </div>
