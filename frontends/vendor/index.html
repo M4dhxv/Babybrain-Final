@@ -60,7 +60,19 @@
       #bb-boot .bb-wave i:nth-child(4) { background: #a8e59a; animation-delay: 0.3s; }
       #bb-boot .bb-wave i:nth-child(5) { background: #a7d8f8; animation-delay: 0.4s; }
       #bb-boot .bb-wave i:nth-child(6) { background: #c7b1e6; animation-delay: 0.5s; }
-      #bb-boot .bb-word { font-size: 15px; font-weight: 800; color: #111a4c; letter-spacing: -0.01em; }
+      #bb-boot .bb-word { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+      /* "BabyBrain" in the logo's rainbow — a left-to-right sweep through the
+         six brand pastels, matching the wave dots above. */
+      #bb-boot .bb-word i { font-style: normal; }
+      #bb-boot .bb-word i:nth-child(1) { color: #ffc1d6; }
+      #bb-boot .bb-word i:nth-child(2) { color: #ffc1d6; }
+      #bb-boot .bb-word i:nth-child(3) { color: #ffb77a; }
+      #bb-boot .bb-word i:nth-child(4) { color: #ffd77a; }
+      #bb-boot .bb-word i:nth-child(5) { color: #a8e59a; }
+      #bb-boot .bb-word i:nth-child(6) { color: #a7d8f8; }
+      #bb-boot .bb-word i:nth-child(7) { color: #a7d8f8; }
+      #bb-boot .bb-word i:nth-child(8) { color: #c7b1e6; }
+      #bb-boot .bb-word i:nth-child(9) { color: #c7b1e6; }
       #bb-boot .bb-word span { font-weight: 600; color: #7b7278; }
       #bb-boot .bb-retry {
         display: none;
@@ -203,7 +215,7 @@
     <div id="root">
       <div id="bb-boot" role="status" aria-label="Loading BabyBrain">
         <div class="bb-wave"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="bb-word">BabyBrain<span class="bb-hint"> &middot; still loading</span></div>
+        <div class="bb-word"><i>B</i><i>a</i><i>b</i><i>y</i><i>B</i><i>r</i><i>a</i><i>i</i><i>n</i><span class="bb-hint"> &middot; still loading</span></div>
         <button type="button" class="bb-retry" onclick="location.reload()">Reload</button>
       </div>
     </div>
