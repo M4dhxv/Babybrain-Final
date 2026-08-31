@@ -233,22 +233,26 @@ export default function BillingPage() {
 
             <PayoutsCard />
 
-            {/* Boost Visibility */}
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
-              <div className="flex flex-col items-start gap-4 sm:flex-row">
-                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <Rocket className="w-6 h-6 text-purple-600" />
+            {/* Boost Visibility — a Premium upsell, so it's hidden once the
+                vendor is already on the top tier (featured placement and
+                priority ranking are included perks there). */}
+            {upgrade && (
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-300 p-6">
+                <div className="flex flex-col items-start gap-4 sm:flex-row">
+                  <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
+                    <Rocket className="w-6 h-6 text-purple-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Boost visibility</h3>
+                    <p className="text-xs text-gray-500 mb-1">Pay for featured / prime placement</p>
+                    <p className="text-xs text-gray-500 mb-3">Get more views and grow faster.</p>
+                  </div>
+                  <Button onClick={() => navigate('/plans')} variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
+                    Go Premium
+                  </Button>
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 mb-1">Boost visibility</h3>
-                  <p className="text-xs text-gray-500 mb-1">Pay for featured / prime placement</p>
-                  <p className="text-xs text-gray-500 mb-3">Get more views and grow faster.</p>
-                </div>
-                <Button onClick={() => navigate('/plans')} variant="outline" className="rounded-lg border-purple-300 text-purple-700 hover:bg-purple-50 text-sm">
-                  Go Premium
-                </Button>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
