@@ -551,6 +551,8 @@ export type Database = {
           stripe_account_id: string | null;
           payouts_enabled: boolean;
           wix_site_id: string | null;
+          vendor_terms_accepted_at: string | null;
+          booking_messaging_terms_accepted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -576,6 +578,8 @@ export type Database = {
           uen?: string | null;
           status?: ProviderStatus;
           wix_site_id?: string | null;
+          vendor_terms_accepted_at?: string | null;
+          booking_messaging_terms_accepted_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;

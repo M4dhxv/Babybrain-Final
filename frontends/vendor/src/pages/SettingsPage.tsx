@@ -12,6 +12,7 @@ import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderPolicy, VendorCategory } from '@/lib/database.types';
 import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
+import { VENDOR_CATEGORIES } from '@/lib/categories';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -24,23 +25,15 @@ const settingsTabs = [
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
-const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
-  { value: 'baby-toddler-classes', label: 'Baby & Toddler Classes' },
-  { value: 'playspaces', label: 'Playspaces' },
-  { value: 'camps-holiday', label: 'Camps & Holiday Programmes' },
-  { value: 'community-events', label: 'Community Events' },
-  { value: 'mum-bub-exercise', label: 'Parent & Child Exercise' },
-  { value: 'other', label: 'Other' },
-];
-
-// Acceptance itself still isn't tracked as real per-vendor data (no
-// acceptance table/timestamp exists yet — see complianceTerms.ts) — every
-// vendor who got through listing setup ticked both boxes, so "Accepted" is
-// shown for all of them, but what's now real is the actual content behind
-// it: clicking a row opens the exact agreement text from complianceTerms.ts
+// The acceptance timestamps DO now exist (providers.vendor_terms_accepted_at /
+// booking_messaging_terms_accepted_at, written by the Save-your-listing step),
+// but this tab hasn't been wired to read them yet — it still shows a flat
+// "Accepted" for every vendor. What's real here already is the content behind
+// each row: clicking it opens the exact agreement text from complianceTerms.ts
 // instead of a dead end. "Refund Policy" isn't a fixed BabyBrain document at
 // all — it's whatever the vendor wrote themselves under Waivers & Consents
 // (provider_policies), so it links there instead of a static viewer.
+// TODO: surface the real accepted-on date from the provider row.
 const complianceItems = [
   { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: VENDOR_TERMS },
   { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: BOOKING_MESSAGING_TERMS },

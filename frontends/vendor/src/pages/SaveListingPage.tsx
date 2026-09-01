@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -24,11 +24,16 @@ import {
   Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/BrandLogo';
+import { VENDOR_CATEGORIES } from '@/lib/categories';
+import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
+import type { VendorCategory } from '@/lib/database.types';
 
 interface ListingRow {
   icon: typeof Store;
@@ -44,6 +49,22 @@ interface VenueRow {
   hours: string;
 }
 
+/** Raw provider fields the inline editors write straight back to `providers`. */
+interface ProviderDraft {
+  business_name: string;
+  vendor_category: string;
+  website: string;
+  whatsapp: string;
+  contact_phone: string;
+  contact_email: string;
+}
+
+// Rows whose pencil edits the value in place (a single `providers` column).
+// Age range, Pricing and Venues are aggregates over activities/locations —
+// there's no one field to set here, so their pencils deep-link to the real
+// editor instead.
+const EDITABLE = new Set(['Business name', 'Category', 'Booking link', 'Contact']);
+
 const whyMatters = [
   { icon: Heart, text: 'Ensures accurate information for parents' },
   { icon: Shield, text: 'Builds trust and credibility for your business' },
@@ -53,93 +74,188 @@ const whyMatters = [
 
 export default function SaveListingPage() {
   const navigate = useNavigate();
-  const { provider: activeProvider } = useAuth();
+  const { provider: activeProvider, subscription, refreshProvider } = useAuth();
   const providerId = activeProvider?.id ?? null;
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [agreedVendor, setAgreedVendor] = useState(false);
   const [agreedBooking, setAgreedBooking] = useState(false);
   const [listingData, setListingData] = useState<ListingRow[]>([]);
   const [venues, setVenues] = useState<VenueRow[]>([]);
+  const [prov, setProv] = useState<ProviderDraft | null>(null);
 
-  // QA: the pencil icons did nothing because this page showed placeholder
-  // copy. It now renders the business we actually hold, and every edit
-  // control opens the real editor in the portal.
-  useEffect(() => {
+  // Inline edit state — one row at a time.
+  const [editLabel, setEditLabel] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [fieldBusy, setFieldBusy] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+
+  // Terms viewer + Save.
+  const [viewingDoc, setViewingDoc] = useState<ComplianceDocument | null>(null);
+  const [savingListing, setSavingListing] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Booking & Messaging Terms are "Growth & Pro only" — only gate Save on them
+  // for a vendor actually on a paid plan; Vendor Terms are always required.
+  const onPaidPlan = ['growth', 'pro', 'premium'].includes(subscription?.plan ?? 'free');
+  const canSave = agreedVendor && (!onPaidPlan || agreedBooking);
+
+  // Renders the business we actually hold; re-run after every inline save so
+  // the summary and preview reflect the change without a full reload.
+  const load = useCallback(async () => {
     if (!providerId) return;
-    (async () => {
-      const [{ data: provider }, { data: acts }, { data: locs }] = await Promise.all([
-        supabase
-          .from('providers')
-          .select('business_name, vendor_category, address, postal_code, website, contact_email, contact_phone, whatsapp')
-          .eq('id', providerId)
-          .maybeSingle(),
-        supabase
-          .from('activities')
-          .select('age_min_months, age_max_months, price, external_booking_url')
-          .eq('provider_id', providerId)
-          .eq('is_published', true),
-        supabase
-          .from('provider_locations')
-          .select('name, address, postal_code, operating_hours')
-          .eq('provider_id', providerId),
-      ]);
+    const [{ data: provider }, { data: acts }, { data: locs }] = await Promise.all([
+      supabase
+        .from('providers')
+        .select('business_name, vendor_category, address, postal_code, website, contact_email, contact_phone, whatsapp')
+        .eq('id', providerId)
+        .maybeSingle(),
+      supabase
+        .from('activities')
+        .select('age_min_months, age_max_months, price, external_booking_url')
+        .eq('provider_id', providerId)
+        .eq('is_published', true),
+      supabase
+        .from('provider_locations')
+        .select('name, address, postal_code, operating_hours')
+        .eq('provider_id', providerId),
+    ]);
 
-      const activities = acts ?? [];
-      const ageMin = activities.length ? Math.min(...activities.map((a) => a.age_min_months)) : null;
-      const ageMax = activities.length ? Math.max(...activities.map((a) => a.age_max_months)) : null;
-      const prices = activities.map((a) => Number(a.price)).filter((n) => Number.isFinite(n) && n > 0);
-      const bookingLink = activities.find((a) => a.external_booking_url)?.external_booking_url ?? provider?.website ?? null;
-      const months = (m: number) => (m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
+    const activities = acts ?? [];
+    const ageMin = activities.length ? Math.min(...activities.map((a) => a.age_min_months)) : null;
+    const ageMax = activities.length ? Math.max(...activities.map((a) => a.age_max_months)) : null;
+    const prices = activities.map((a) => Number(a.price)).filter((n) => Number.isFinite(n) && n > 0);
+    const bookingLink = activities.find((a) => a.external_booking_url)?.external_booking_url ?? provider?.website ?? null;
+    const months = (m: number) => (m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
-      setListingData([
-        { icon: Store, label: 'Business name', value: provider?.business_name ?? '—', color: 'text-purple-600', bg: 'bg-purple-100' },
-        { icon: Baby, label: 'Category', value: provider?.vendor_category ?? 'Not set', color: 'text-pink-600', bg: 'bg-pink-100' },
-        {
-          icon: Baby,
-          label: 'Age range',
-          value: ageMin != null && ageMax != null ? `${months(ageMin)} – ${months(ageMax)}` : 'Not set',
-          color: 'text-green-600',
-          bg: 'bg-green-100',
-        },
-        {
-          icon: DollarSign,
-          label: 'Pricing',
-          value: prices.length
-            ? `From $${Math.min(...prices).toFixed(0)} per session`
-            : 'Not set',
-          color: 'text-yellow-600',
-          bg: 'bg-yellow-100',
-        },
-        { icon: Link, label: 'Booking link', value: bookingLink ?? 'Not set', color: 'text-green-600', bg: 'bg-green-100' },
-        {
-          icon: Phone,
-          label: 'Contact',
-          value: [
-            provider?.whatsapp || provider?.contact_phone ? `WhatsApp: ${provider.whatsapp ?? provider.contact_phone}` : null,
-            provider?.contact_email ? `Email: ${provider.contact_email}` : null,
-          ].filter(Boolean).join('  •  ') || 'Not set',
-          color: 'text-blue-600',
-          bg: 'bg-blue-100',
-        },
-      ]);
+    setProv({
+      business_name: provider?.business_name ?? '',
+      vendor_category: provider?.vendor_category ?? '',
+      website: provider?.website ?? '',
+      whatsapp: provider?.whatsapp ?? '',
+      contact_phone: provider?.contact_phone ?? '',
+      contact_email: provider?.contact_email ?? '',
+    });
 
-      setVenues(
-        (locs ?? []).map((l) => {
-          const hours = l.operating_hours as Record<string, [string, string][]> | null;
-          const summary = hours
-            ? Object.entries(hours)
-                .map(([day, ranges]) => `${day[0].toUpperCase()}${day.slice(1)}: ${(ranges ?? []).map((r) => r.join(' – ')).join(', ')}`)
-                .join('\n')
-            : '';
-          return {
-            name: l.name,
-            address: [l.address, l.postal_code].filter(Boolean).join(', '),
-            hours: summary || 'Hours not set',
-          };
-        })
-      );
-    })();
+    setListingData([
+      { icon: Store, label: 'Business name', value: provider?.business_name ?? '—', color: 'text-purple-600', bg: 'bg-purple-100' },
+      {
+        icon: Baby,
+        label: 'Category',
+        value: VENDOR_CATEGORIES.find((c) => c.value === provider?.vendor_category)?.label ?? provider?.vendor_category ?? 'Not set',
+        color: 'text-pink-600',
+        bg: 'bg-pink-100',
+      },
+      {
+        icon: Baby,
+        label: 'Age range',
+        value: ageMin != null && ageMax != null ? `${months(ageMin)} – ${months(ageMax)}` : 'Not set',
+        color: 'text-green-600',
+        bg: 'bg-green-100',
+      },
+      {
+        icon: DollarSign,
+        label: 'Pricing',
+        value: prices.length
+          ? `From $${Math.min(...prices).toFixed(0)} per session`
+          : 'Not set',
+        color: 'text-yellow-600',
+        bg: 'bg-yellow-100',
+      },
+      { icon: Link, label: 'Booking link', value: bookingLink ?? 'Not set', color: 'text-green-600', bg: 'bg-green-100' },
+      {
+        icon: Phone,
+        label: 'Contact',
+        value: [
+          provider?.whatsapp || provider?.contact_phone ? `WhatsApp: ${provider.whatsapp ?? provider.contact_phone}` : null,
+          provider?.contact_email ? `Email: ${provider.contact_email}` : null,
+        ].filter(Boolean).join('  •  ') || 'Not set',
+        color: 'text-blue-600',
+        bg: 'bg-blue-100',
+      },
+    ]);
+
+    setVenues(
+      (locs ?? []).map((l) => {
+        const hours = l.operating_hours as Record<string, [string, string][]> | null;
+        const summary = hours
+          ? Object.entries(hours)
+              .map(([day, ranges]) => `${day[0].toUpperCase()}${day.slice(1)}: ${(ranges ?? []).map((r) => r.join(' – ')).join(', ')}`)
+              .join('\n')
+          : '';
+        return {
+          name: l.name,
+          address: [l.address, l.postal_code].filter(Boolean).join(', '),
+          hours: summary || 'Hours not set',
+        };
+      })
+    );
   }, [providerId]);
+
+  useEffect(() => {
+    void (async () => { await load(); })();
+  }, [load]);
+
+  function startEdit(label: string) {
+    if (!prov) return;
+    setFieldError(null);
+    if (label === 'Business name') setDraft({ business_name: prov.business_name });
+    else if (label === 'Category') setDraft({ vendor_category: prov.vendor_category });
+    else if (label === 'Booking link') setDraft({ website: prov.website });
+    else if (label === 'Contact') setDraft({ whatsapp: prov.whatsapp || prov.contact_phone, contact_email: prov.contact_email });
+    setEditLabel(label);
+  }
+
+  async function saveField() {
+    if (!providerId || !editLabel) return;
+    setFieldError(null);
+    const rows = supabase.from('providers');
+    let error: { message: string } | null = null;
+    if (editLabel === 'Business name') {
+      if (!draft.business_name?.trim()) return setFieldError('Business name can’t be empty.');
+      setFieldBusy(true);
+      ({ error } = await rows.update({ business_name: draft.business_name.trim() }).eq('id', providerId));
+    } else if (editLabel === 'Category') {
+      setFieldBusy(true);
+      ({ error } = await rows
+        .update({ vendor_category: (draft.vendor_category || null) as VendorCategory | null })
+        .eq('id', providerId));
+    } else if (editLabel === 'Booking link') {
+      setFieldBusy(true);
+      ({ error } = await rows.update({ website: draft.website?.trim() || null }).eq('id', providerId));
+    } else if (editLabel === 'Contact') {
+      setFieldBusy(true);
+      ({ error } = await rows
+        .update({ whatsapp: draft.whatsapp?.trim() || null, contact_email: draft.contact_email?.trim() || null })
+        .eq('id', providerId));
+    } else {
+      return;
+    }
+    setFieldBusy(false);
+    if (error) return setFieldError(error.message);
+    setEditLabel(null);
+    await load();
+    await refreshProvider();
+  }
+
+  async function handleSave() {
+    if (!providerId || !canSave || savingListing) return;
+    setSavingListing(true);
+    setSaveError(null);
+    const now = new Date().toISOString();
+    // Literal objects (not a built-up map) so the typed client keeps the
+    // column names checked.
+    const { error } = agreedBooking
+      ? await supabase
+          .from('providers')
+          .update({ vendor_terms_accepted_at: now, booking_messaging_terms_accepted_at: now })
+          .eq('id', providerId)
+      : await supabase.from('providers').update({ vendor_terms_accepted_at: now }).eq('id', providerId);
+    setSavingListing(false);
+    if (error) return setSaveError(error.message);
+    await refreshProvider();
+    // Land on the profile that now exists, not the portal home.
+    navigate('/settings');
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -147,7 +263,7 @@ export default function SaveListingPage() {
       <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
           <BrandLogo className="h-10" />
-          
+
         </div>
         <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
           <ArrowLeft className="w-4 h-4" />
@@ -189,43 +305,103 @@ export default function SaveListingPage() {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/settings?edit=1')}
-                className="gap-1 text-xs rounded-lg border-gray-300"
-              >
-                <Pencil className="w-3 h-3" />
-                Edit all
-              </Button>
             </div>
 
             <div className="space-y-3">
-              {listingData.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', item.bg)}>
-                    <item.icon className={cn('w-4 h-4', item.color)} />
+              {listingData.map((item, idx) => {
+                const editable = EDITABLE.has(item.label);
+                const isEditing = editLabel === item.label;
+                return (
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', item.bg)}>
+                      <item.icon className={cn('w-4 h-4', item.color)} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-500 mb-0.5">{item.label}</div>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          {item.label === 'Category' ? (
+                            <select
+                              value={draft.vendor_category ?? ''}
+                              onChange={(e) => setDraft({ vendor_category: e.target.value })}
+                              className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                            >
+                              <option value="">Not set</option>
+                              {VENDOR_CATEGORIES.map((c) => (
+                                <option key={c.value} value={c.value}>{c.label}</option>
+                              ))}
+                            </select>
+                          ) : item.label === 'Contact' ? (
+                            <>
+                              <Input
+                                value={draft.whatsapp ?? ''}
+                                onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))}
+                                placeholder="WhatsApp / phone"
+                                className="rounded-lg border-gray-300 text-sm"
+                              />
+                              <Input
+                                value={draft.contact_email ?? ''}
+                                onChange={(e) => setDraft((d) => ({ ...d, contact_email: e.target.value }))}
+                                placeholder="Email"
+                                className="rounded-lg border-gray-300 text-sm"
+                              />
+                            </>
+                          ) : (
+                            <Input
+                              value={draft[item.label === 'Booking link' ? 'website' : 'business_name'] ?? ''}
+                              onChange={(e) =>
+                                setDraft({ [item.label === 'Booking link' ? 'website' : 'business_name']: e.target.value })
+                              }
+                              placeholder={item.label === 'Booking link' ? 'https://…' : item.label}
+                              className="rounded-lg border-gray-300 text-sm"
+                            />
+                          )}
+                          {item.label === 'Booking link' && (
+                            <p className="text-[11px] text-gray-400">
+                              Your business booking/website link. An activity with its own link overrides this.
+                            </p>
+                          )}
+                          {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={saveField}
+                              disabled={fieldBusy}
+                              className="h-7 gradient-primary rounded-lg text-xs text-white hover:opacity-90"
+                            >
+                              {fieldBusy ? 'Saving…' : 'Save'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setEditLabel(null); setFieldError(null); }}
+                              className="h-7 rounded-lg border-gray-300 text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-900 whitespace-pre-line">{item.value}</div>
+                      )}
+                    </div>
+                    {!isEditing && (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${item.label}`}
+                        onClick={() =>
+                          editable
+                            ? startEdit(item.label)
+                            : navigate(item.label === 'Age range' || item.label === 'Pricing' ? '/activities' : '/settings?edit=1')
+                        }
+                        className="flex-shrink-0"
+                      >
+                        <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#FA4D8D]" />
+                      </button>
+                    )}
                   </div>
-                  <div className="flex-1">
-                    <div className="text-xs text-gray-500 mb-0.5">{item.label}</div>
-                    <div className="text-sm text-gray-900 whitespace-pre-line">{item.value}</div>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`Edit ${item.label}`}
-                    onClick={() =>
-                      navigate(
-                        item.label === 'Age range' || item.label === 'Pricing' || item.label === 'Booking link'
-                          ? '/activities'
-                          : '/settings?edit=1'
-                      )
-                    }
-                    className="flex-shrink-0"
-                  >
-                    <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#FA4D8D]" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Venues & schedules — supports multiple locations */}
@@ -279,15 +455,24 @@ export default function SaveListingPage() {
                   onCheckedChange={(c) => setAgreedVendor(c === true)}
                   className="mt-0.5"
                 />
-                <div>
+                <div className="flex-1">
                   <label htmlFor="vendor-terms" className="text-sm text-gray-700 cursor-pointer">
                     I agree to the Vendor Terms
                   </label>
                   <p className="text-xs text-gray-500 mt-1">
                     Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
                   </p>
+                  <a href="/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
+                    Full site terms &amp; privacy
+                  </a>
                 </div>
-                <span className="text-xs text-[#FA4D8D] cursor-pointer flex-shrink-0">View terms</span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc(VENDOR_TERMS)}
+                  className="text-xs text-[#FA4D8D] hover:underline flex-shrink-0"
+                >
+                  View terms
+                </button>
               </div>
             </div>
 
@@ -304,15 +489,24 @@ export default function SaveListingPage() {
                   onCheckedChange={(c) => setAgreedBooking(c === true)}
                   className="mt-0.5"
                 />
-                <div>
+                <div className="flex-1">
                   <label htmlFor="booking-terms" className="text-sm text-gray-700 cursor-pointer">
                     I agree to the Booking & Messaging Terms
                   </label>
                   <p className="text-xs text-gray-500 mt-1">
                     Covers messaging rules, cancellation/rescheduling and refund policies.
                   </p>
+                  <a href="/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
+                    Full site terms &amp; privacy
+                  </a>
                 </div>
-                <span className="text-xs text-[#FA4D8D] cursor-pointer flex-shrink-0">View terms</span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc(BOOKING_MESSAGING_TERMS)}
+                  className="text-xs text-[#FA4D8D] hover:underline flex-shrink-0"
+                >
+                  View terms
+                </button>
               </div>
             </div>
           </div>
@@ -417,7 +611,7 @@ export default function SaveListingPage() {
 
       {/* Bottom Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-8 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <Button
             variant="outline"
             onClick={() => navigate('/claim-business')}
@@ -430,17 +624,50 @@ export default function SaveListingPage() {
             <Lock className="w-4 h-4" />
             Your information is secure and will never be shared.
           </div>
-          <Button
-            onClick={() => navigate('/dashboard')}
-            className="gradient-primary text-white rounded-xl px-8 hover:opacity-90 gap-2"
-          >
-            Save
-            <Send className="w-4 h-4" />
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+            <Button
+              onClick={handleSave}
+              disabled={!canSave || savingListing}
+              className="gradient-primary text-white rounded-xl px-8 hover:opacity-90 gap-2 disabled:opacity-50"
+            >
+              {savingListing ? 'Saving…' : 'Save'}
+              <Send className="w-4 h-4" />
+            </Button>
+            {!canSave && (
+              <p className="text-[11px] text-gray-400">
+                Tick {onPaidPlan ? 'both agreements' : 'the Vendor Terms'} to continue.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="h-20" />
+
+      <Sheet open={!!viewingDoc} onOpenChange={(open) => { if (!open) setViewingDoc(null); }}>
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+          {viewingDoc && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{viewingDoc.title}</SheetTitle>
+                <SheetDescription>{viewingDoc.summary}</SheetDescription>
+              </SheetHeader>
+              <div className="px-4 pb-6 space-y-5">
+                {viewingDoc.sections.map((s) => (
+                  <div key={s.heading} className="rounded-xl border-2 border-gray-300 bg-white p-4 shadow-sm">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-1">{s.heading}</h4>
+                    <p className="text-sm text-gray-600 leading-relaxed">{s.body}</p>
+                  </div>
+                ))}
+                <a href="/terms" target="_blank" rel="noreferrer" className="inline-block text-xs text-[#FA4D8D] underline">
+                  Read the full BabyBrain site terms &amp; privacy policy
+                </a>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
