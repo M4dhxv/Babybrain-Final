@@ -5057,6 +5057,10 @@ function BookingPage() {
     return () => { cancelled = true; };
   }, [sessions]);
   const sessionVenueAddress = selected?.location_id ? sessionVenues[selected.location_id] ?? null : null;
+  /* Where this booking actually happens: the chosen session's own venue once
+     it has one (migration 00074), the activity's address otherwise. Drives
+     the on-page displays as well as the /booked redirect below. */
+  const displayVenue = sessionVenueAddress ?? activity?.address ?? null;
   const price = isEvent
     ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
     : sessionPrice != null ? sessionPrice
@@ -5223,7 +5227,7 @@ function BookingPage() {
       end: selected?.ends_at ?? "",
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
-      venue: sessionVenueAddress ?? activity?.address ?? "",
+      venue: displayVenue ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -5282,7 +5286,7 @@ function BookingPage() {
       end: selected?.ends_at ?? "",
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
-      venue: sessionVenueAddress ?? activity?.address ?? "",
+      venue: displayVenue ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -5437,7 +5441,7 @@ function BookingPage() {
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
-                    {activity.address && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {activity.address}</p>}
+                    {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {displayVenue}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
                   </div>
@@ -5688,7 +5692,7 @@ function BookingPage() {
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
-                {activity.address && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {activity.address}</p>}
+                {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {displayVenue}</p>}
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
