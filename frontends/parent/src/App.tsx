@@ -5097,6 +5097,16 @@ function BookingPage() {
     : sessionPrice != null ? sessionPrice
     : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
+  /* Sessions can carry their own venue and price (migration 00074), so the
+     venue/price on this page can shift as the parent picks a different date
+     or time. Flag it up front, but only for classes that actually have that
+     variation — no point warning about a class that always runs at one
+     venue for one price. */
+  const slotDetailsVary =
+    !isEvent &&
+    sessions.length > 1 &&
+    (new Set(sessions.map((s) => s.location_id ?? "_")).size > 1 ||
+      new Set(sessions.map((s) => (s.price == null ? "_" : String(s.price)))).size > 1);
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
     ? Math.min(selectedTicketType.limit_per_checkout, 20)
     : 6;
@@ -5527,6 +5537,12 @@ function BookingPage() {
                               </button>
                             ))}
                           </div>
+                          {slotDetailsVary && (
+                            <p className="mt-4 flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
+                              <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                              This class runs at more than one venue or price — the date and time you pick may change the venue or price shown in your booking summary.
+                            </p>
+                          )}
                         </section>
                       </>
                     )}
