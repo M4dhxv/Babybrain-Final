@@ -5636,19 +5636,15 @@ function BookingPage() {
                       </section>
                     )}
 
-                    {/* The provider's own paperwork, plus a medical & health
-                        disclosure. The waivers only show when the vendor has
-                        some; the disclosure box is always offered so a parent
-                        can flag an allergy or condition even when the vendor
-                        hasn't made it mandatory. */}
-                    {(
+                    {/* The provider's own paperwork. Each vendor writes their
+                        own consents, waivers and disclosures, so this section
+                        only appears when they have some. */}
+                    {(policies.length > 0 || needsMedical) && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${redeemToken ? "4" : "5"}. `}Provider terms</h3>
-                        {policies.length > 0 && (
-                          <p className="mb-4 text-sm font-semibold text-[#59658d]">
-                            {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
-                          </p>
-                        )}
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">
+                          {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
+                        </p>
                         <div className="space-y-3">
                           {policies.map((p) => {
                             const on = acceptedPolicies.includes(p.id);
@@ -5708,23 +5704,11 @@ function BookingPage() {
                               />
                             </div>
                           )}
-                          {/* Always offered. Required only when the vendor
-                              switched "require medical disclosure" on for this
-                              class (needsMedical) — otherwise optional, so a
-                              parent can still flag an allergy or condition. */}
-                          {(
+                          {needsMedical && (
                             <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
-                              <p className="font-black">
-                                Medical &amp; health disclosure{" "}
-                                {needsMedical ? (
-                                  <span className="text-baby-pink">*</span>
-                                ) : (
-                                  <span className="text-sm font-semibold text-[#8a93b5]">(optional)</span>
-                                )}
-                              </p>
+                              <p className="font-black">Medical &amp; health disclosure <span className="text-baby-pink">*</span></p>
                               <p className="mt-1 text-sm font-semibold text-[#59658d]">
-                                Anything the provider should know — allergies, conditions, medication.
-                                {needsMedical ? " Write “none” if there is nothing to declare." : ""}
+                                Anything the provider should know — allergies, conditions, medication. Write &ldquo;none&rdquo; if there is nothing to declare.
                               </p>
                               <textarea
                                 value={medicalNote}
