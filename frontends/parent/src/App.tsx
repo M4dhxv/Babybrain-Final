@@ -5022,7 +5022,11 @@ function BookingPage() {
   // (computeWixCheckoutTotal in lib/wix/client.ts) at checkout time.
   const ticketPriceCents = (t: EventTicketType) =>
     t.fee_type === "FEE_ADDED_AT_CHECKOUT" && t.fee_rate_percent != null
-      ? Math.round(t.price_cents * (1 + t.fee_rate_percent / 100))
+      // Byte-for-byte the server's addTicketFeeCents (lib/wix/client.ts) — the
+      // `price * (1 + rate/100)` form drifts by a floating-point ULP
+      // (3500 * 1.025 → 3587.4999999999995, rounds to 3587) and undercut the
+      // real Stripe charge by a cent.
+      ? Math.round(t.price_cents + (t.price_cents * t.fee_rate_percent) / 100)
       : t.price_cents;
   /* A session can carry its own price, so the same class at two venues can
      cost different amounts (migration 00074). Session first, activity as the
