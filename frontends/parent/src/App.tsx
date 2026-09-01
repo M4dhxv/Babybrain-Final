@@ -4990,11 +4990,15 @@ function BookingPage() {
   }, [ticketTypes, ticketTypeId]);
 
   // Default to an available credit — it's the cheapest option for the parent.
+  // Never for a Wix Event: it's ticketed through Wix, the "Select package"
+  // step isn't even shown for one, and routing its checkout through the
+  // package-credit path hits an RPC that can't take an event occurrence.
   useEffect(() => {
+    if (isEvent) { if (payWith !== "single") setPayWith("single"); return; }
     if (packageCredit && payWith === "single") setPayWith("credit");
     else if (!packageCredit && payWith === "credit") setPayWith("single");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packageCredit?.id]);
+  }, [packageCredit?.id, isEvent]);
 
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
@@ -5348,6 +5352,10 @@ function BookingPage() {
 
     const go = () => {
       if (redeemToken) return pay();
+      // A Wix Event is always bought as a ticket through Wix — package
+      // credits and pack purchases don't apply, and redeem_package_credit
+      // 400s on an event occurrence. Guard here too in case payWith is stale.
+      if (isEvent) return pay();
       if (payWith === "credit") return payWithPackage();
       if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
       return pay();
