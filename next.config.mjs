@@ -18,6 +18,24 @@ const nextConfig = {
     ];
   },
 
+  async redirects() {
+    return [
+      // The vendor portal is a HashRouter SPA that only answers at `/vendor`
+      // and `/vendor/`. A bare deep path — `/vendor/login` from an old invite
+      // mail, or anything typed/guessed — has no rewrite and fell through to
+      // Next's own 404. Bounce it into the hash form so the portal itself
+      // handles it: a real route renders that page, an unknown one renders
+      // the portal's own branded 404 (`/vendor/#/404`). `.+` (not `.*`) so
+      // `/vendor/` never matches and can't loop; `assets/` and the manifest
+      // stay excluded so real files still serve.
+      {
+        source: '/vendor/:path((?!assets/|manifest\\.webmanifest).+)',
+        destination: '/vendor/#/:path',
+        permanent: false,
+      },
+    ];
+  },
+
   async rewrites() {
     return {
       // beforeFiles run before Next's own pages, so the parent SPA at `/`
