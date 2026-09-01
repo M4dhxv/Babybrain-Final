@@ -1583,11 +1583,12 @@ function ActivityDetailPage() {
       {/* The booking rail is a page-level sidebar rather than a cell in the top
           row. It used to sit inside that row, so the row took the rail's full
           height and left a tall blank band under the title and hero before
-          About started. Explicit column placement keeps the rail on the right
-          while every other section stacks down column 1. */}
-      <main className="mx-auto grid max-w-[1180px] items-start gap-5 px-6 py-5 lg:grid-cols-[1fr_295px]">
-        <div className="grid gap-5">
-        <section className="grid gap-5 lg:grid-cols-[285px_1fr]">
+          About started. On desktop it spans both grid rows in column 2 while
+          the hero (row 1) and everything else (row 2) stack down column 1. On
+          mobile the page is a plain flex column and `order` lifts the rail
+          above the About/sessions/reviews block, just under the hero. */}
+      <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
+        <section className="order-1 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
             <div className="flex flex-1 flex-col justify-center">
@@ -1635,6 +1636,7 @@ function ActivityDetailPage() {
           </div>
         </section>
 
+        <div className="order-3 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Per the mockup: About stands alone, then Upcoming sessions and
               Packages sit side by side, then Reviews. With no packs to show,
               sessions takes the full width rather than leaving a half-empty
@@ -1694,7 +1696,7 @@ function ActivityDetailPage() {
             {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
           </section>
         </div>
-        <aside className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:col-start-2 lg:row-start-1">
+        <aside className="order-2 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1">
             {nextPrice != null ? (
               nextPrice <= 0 ? (
                 <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
