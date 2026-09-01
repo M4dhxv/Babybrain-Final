@@ -1583,10 +1583,11 @@ function ActivityDetailPage() {
       {/* The booking rail is a page-level sidebar rather than a cell in the top
           row. It used to sit inside that row, so the row took the rail's full
           height and left a tall blank band under the title and hero before
-          About started. On desktop it spans both grid rows in column 2 while
-          the hero (row 1) and everything else (row 2) stack down column 1. On
-          mobile the page is a plain flex column and `order` lifts the rail
-          above the About/sessions/reviews block, just under the hero. */}
+          About started. On desktop it spans all three grid rows in column 2
+          while the hero (row 1), About (row 2) and everything else (row 3)
+          stack down column 1. On mobile the page is a plain flex column and
+          `order` puts it right after About: hero, About, rail, then the
+          sessions/packages/reviews block. */}
       <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
         <section className="order-1 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
@@ -1636,15 +1637,16 @@ function ActivityDetailPage() {
           </div>
         </section>
 
-        <div className="order-3 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-2">
-          {/* Per the mockup: About stands alone, then Upcoming sessions and
-              Packages sit side by side, then Reviews. With no packs to show,
-              sessions takes the full width rather than leaving a half-empty
-              row. */}
-          <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-            <InfoBlock title="About" items={[activity.description]} />
-          </section>
+        {/* About sits on its own so on mobile it can come between the hero and
+            the booking rail; on desktop it's just row 2 of column 1. */}
+        <section className="order-2 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-1 lg:row-start-2">
+          <InfoBlock title="About" items={[activity.description]} />
+        </section>
 
+        <div className="order-4 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-3">
+          {/* Per the mockup: Upcoming sessions and Packages sit side by side,
+              then Reviews. With no packs to show, sessions takes the full
+              width rather than leaving a half-empty row. */}
           <div className="grid gap-5 md:grid-cols-2">
             <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 ? " md:col-span-2" : ""}`}>
               <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
@@ -1696,7 +1698,7 @@ function ActivityDetailPage() {
             {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
           </section>
         </div>
-        <aside className="order-2 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
             {nextPrice != null ? (
               nextPrice <= 0 ? (
                 <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
