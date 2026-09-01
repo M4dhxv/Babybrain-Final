@@ -1466,6 +1466,27 @@ function ActivityDetailPage() {
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
 
+  /* The next session can carry its own venue (migration 00074) — resolve it
+     so the sidebar's Location line reflects that session, not just the
+     activity's default. Lazy: most classes run at one place. */
+  const [nextVenue, setNextVenue] = useState<string | null>(null);
+  useEffect(() => {
+    const locId = sessions[0]?.location_id ?? null;
+    if (!locId) { setNextVenue(null); return; }
+    let cancelled = false;
+    supabase
+      .from("provider_locations")
+      .select("name, address")
+      .eq("id", locId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const row = data as { name: string | null; address: string | null } | null;
+        setNextVenue(row ? [row.name, row.address].filter(Boolean).join(", ") : null);
+      });
+    return () => { cancelled = true; };
+  }, [sessions]);
+
   useEffect(() => {
     if (!activity?.provider_id) return;
     supabase
@@ -1515,6 +1536,12 @@ function ActivityDetailPage() {
   const durationMins = next
     ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
     : null;
+  /* The sidebar summarises the next available class, so its price/venue are
+     that session's when it overrides them (migration 00074), not the
+     activity's defaults. Same session-first, activity-fallback resolution the
+     booking page and booking trigger use. */
+  const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
+  const nextVenueAddress = nextVenue ?? activity.address ?? null;
   const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
 
   // Messaging needs an integrated provider on Growth-and-above, and a Plus
@@ -1668,11 +1695,11 @@ function ActivityDetailPage() {
           </section>
         </div>
         <aside className="rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:col-start-2 lg:row-start-1">
-            {activity.price != null ? (
-              Number(activity.price) <= 0 ? (
+            {nextPrice != null ? (
+              nextPrice <= 0 ? (
                 <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
               ) : (
-                <p><strong className="text-[30px] text-baby-lilac">${Number(activity.price)}</strong> <span className="font-bold">/ class</span></p>
+                <p><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ class</span></p>
               )
             ) : (
               <>
@@ -1774,10 +1801,10 @@ function ActivityDetailPage() {
                 dropped out of line with the label beside it. Flex rows keep the
                 label and value on the same baseline however long the value. */}
             <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
-              {activity.address && (
+              {nextVenueAddress && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Location</strong>
-                  <span className="text-right">{activity.address}</span>
+                  <span className="text-right">{nextVenueAddress}</span>
                 </p>
               )}
               {next && (
