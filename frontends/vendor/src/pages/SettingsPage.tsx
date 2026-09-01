@@ -25,10 +25,12 @@ const settingsTabs = [
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
-// Only things the vendor has actually agreed to (or maintains) are listed —
-// no "N/A until Boost" placeholder rows. Each row is clickable:
-//   'view'          → the exact agreement text from complianceTerms.ts, in a Sheet
-//   'link'          → the full BabyBrain site terms / privacy page (new tab)
+// Lists only what the vendor actually agreed to at sign-up (the two "Required
+// to publish" / "Required for bookings" boxes on Save-your-listing) plus the
+// Refund Policy they maintain themselves — no placeholder rows.
+//   'view'          → opens the exact agreement text in a right-hand Sheet,
+//                     which itself carries a "Read in details" link to the
+//                     full published page (DOC_URL below).
 //   'edit-policies' → the vendor's own Refund Policy under Waivers & Consents
 // The acceptance timestamps exist (providers.vendor_terms_accepted_at /
 // booking_messaging_terms_accepted_at) but this tab still shows a flat
@@ -41,18 +43,21 @@ type ComplianceItem = {
   statusColor: string;
   bg: string;
   accepted: boolean;
-  kind: 'view' | 'edit-policies' | 'link';
+  kind: 'view' | 'edit-policies';
   doc: ComplianceDocument | null;
-  href: string | null;
 };
 const complianceItems: ComplianceItem[] = [
-  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: VENDOR_TERMS, href: null },
-  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: BOOKING_MESSAGING_TERMS, href: null },
-  { icon: FileText, label: 'Terms of Service', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms' },
-  { icon: Globe, label: 'Terms of Use', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms' },
-  { icon: Shield, label: 'Privacy Policy', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms#privacy' },
-  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies', doc: null, href: null },
+  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: VENDOR_TERMS },
+  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: BOOKING_MESSAGING_TERMS },
+  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies', doc: null },
 ];
+
+// Where "Read in details" in each agreement's Sheet points. Both live on the
+// single published Terms & Conditions page today; split when dedicated pages exist.
+const DOC_URL: Record<ComplianceDocument['key'], string> = {
+  vendor_terms: '/terms',
+  booking_messaging_terms: '/terms',
+};
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
 
@@ -611,11 +616,10 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-3">
               {complianceItems.map((item, idx) => {
-                const clickable = item.kind === 'view' || item.kind === 'edit-policies' || item.kind === 'link';
+                const clickable = item.kind === 'view' || item.kind === 'edit-policies';
                 const onClick = () => {
                   if (item.kind === 'view' && item.doc) setViewingDoc(item.doc);
                   else if (item.kind === 'edit-policies') selectTab('policies');
-                  else if (item.kind === 'link' && item.href) window.open(item.href, '_blank', 'noopener,noreferrer');
                 };
                 return (
                   <div
@@ -653,7 +657,15 @@ export default function SettingsPage() {
                   <SheetDescription>{viewingDoc.summary}</SheetDescription>
                 </SheetHeader>
                 <div className="px-4 pb-6 space-y-5">
-                  <p className="text-xs text-gray-400 -mt-2">
+                  <a
+                    href={DOC_URL[viewingDoc.key]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="-mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[#FA4D8D] hover:underline"
+                  >
+                    Read in details
+                  </a>
+                  <p className="text-xs text-gray-400">
                     This is the agreement you accepted when setting up your listing — shown here exactly as it was presented then.
                   </p>
                   {viewingDoc.sections.map((s) => (
