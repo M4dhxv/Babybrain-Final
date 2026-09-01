@@ -20,7 +20,6 @@ import {
   Heart,
   Star,
   MessageCircle,
-  ChevronDown,
   Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -98,6 +97,19 @@ export default function SaveListingPage() {
   // for a vendor actually on a paid plan; Vendor Terms are always required.
   const onPaidPlan = ['growth', 'pro', 'premium'].includes(subscription?.plan ?? 'free');
   const canSave = agreedVendor && (!onPaidPlan || agreedBooking);
+
+  // Values for the "Preview on BabyBrain.sg" panel — real data where we have
+  // it, so the phone and desktop previews both reflect the actual listing
+  // (and the earlier inline edits).
+  const rowValue = (label: string) => listingData.find((r) => r.label === label)?.value ?? '';
+  const previewName = prov?.business_name?.trim() || 'Your business name';
+  const previewCategory = rowValue('Category') && rowValue('Category') !== 'Not set' ? rowValue('Category') : 'Your category';
+  const previewArea = venues[0]?.address?.split(',')[0]?.trim() || 'Your venue';
+  const previewPrice = rowValue('Pricing') && rowValue('Pricing') !== 'Not set' ? rowValue('Pricing') : null;
+  const previewChips = [rowValue('Age range'), rowValue('Category')].filter((v) => v && v !== 'Not set') as string[];
+  const previewInitials =
+    previewName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || 'BB';
+  const previewImg = `${import.meta.env.BASE_URL}assets/asset_2.jpg`;
 
   // Renders the business we actually hold; re-run after every inline save so
   // the summary and preview reflect the change without a full reload.
@@ -512,11 +524,13 @@ export default function SaveListingPage() {
           </div>
 
           {/* Right - Preview */}
-          <div className="w-80 flex-shrink-0">
+          <div className={cn('flex-shrink-0 transition-[width] duration-300', previewMode === 'mobile' ? 'w-80' : 'w-full max-w-xl')}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Preview on BabyBrain.sg</h3>
             </div>
-            <p className="text-xs text-gray-500 mb-4">This is how parents will see your venue.</p>
+            <p className="text-xs text-gray-500 mb-4">
+              This is how parents will see your venue on {previewMode === 'mobile' ? 'a phone' : 'desktop'}.
+            </p>
 
             {/* Mode Toggle */}
             <div className="flex gap-2 mb-4">
@@ -542,69 +556,119 @@ export default function SaveListingPage() {
               </button>
             </div>
 
-            {/* Phone Preview */}
-            <div className="bg-gray-900 rounded-[2rem] p-3 shadow-xl">
-              <div className="bg-white rounded-[1.5rem] overflow-hidden">
-                {/* Image */}
-                <div className="relative">
-                  <img src={`${import.meta.env.BASE_URL}assets/asset_2.jpg`} alt="Preview" className="w-full h-36 object-cover" />
-                  <div className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
-                    <Heart className="w-4 h-4 text-gray-600" />
-                  </div>
-                  <div className="absolute bottom-3 left-3 w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-md">
-                    <span className="text-xs font-bold text-center leading-tight text-[#FA4D8D]">Little<br/>Play</span>
-                  </div>
-                </div>
-                {/* Info */}
-                <div className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-bold text-gray-900">Little Play Studio</h4>
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                  </div>
-                  <p className="text-xs text-gray-500 mb-3">Playspaces  •  Indoor Playground</p>
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center gap-1">
-                      <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                      <span className="text-xs font-medium">4.8 (128)</span>
+            {previewMode === 'mobile' ? (
+              /* Phone frame — narrow, single column */
+              <div className="mx-auto w-[300px] bg-gray-900 rounded-[2rem] p-3 shadow-xl">
+                <div className="bg-white rounded-[1.5rem] overflow-hidden">
+                  <div className="relative">
+                    <img src={previewImg} alt="" className="w-full h-32 object-cover" />
+                    <div className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
+                      <Heart className="w-4 h-4 text-gray-600" />
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                      <MapPin className="w-3 h-3" />
-                      Suntec City Mall
+                    <div className="absolute -bottom-5 left-3 w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-md ring-2 ring-white">
+                      <span className="text-xs font-bold text-[#FA4D8D]">{previewInitials}</span>
                     </div>
-                    <span className="text-xs text-gray-500">$$</span>
                   </div>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {['1 - 8 years', 'Indoor', 'Birthday Parties', 'Open Play'].map((tag) => (
-                      <span key={tag} className="px-2 py-1 bg-purple-300 text-purple-800 text-xs rounded-full">
-                        {tag}
+                  <div className="p-4 pt-7">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-bold text-gray-900 truncate">{previewName}</h4>
+                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">{previewCategory}</p>
+                    <div className="flex items-center gap-3 mb-3 text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                        New
                       </span>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex items-center gap-1 px-2 py-1 bg-green-100 rounded-full">
-                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                      <span className="text-xs text-green-700">Open</span>
+                      <span className="flex items-center gap-1 min-w-0">
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{previewArea}</span>
+                      </span>
+                      {previewPrice && <span className="flex-shrink-0">{previewPrice}</span>}
                     </div>
-                    <span className="text-xs text-gray-500">Closes 6:00 PM</span>
-                    <ChevronDown className="w-3 h-3 text-gray-400" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button className="flex items-center justify-center gap-1 py-2 border border-green-300 rounded-lg text-xs text-green-700">
-                      <MessageCircle className="w-3 h-3" />
-                      WhatsApp
-                    </button>
-                    <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
-                      <Phone className="w-3 h-3" />
-                      Call
-                    </button>
-                    <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
-                      <MapPin className="w-3 h-3" />
-                      View on Map
-                    </button>
+                    {previewChips.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {previewChips.map((tag) => (
+                          <span key={tag} className="px-2 py-1 bg-purple-200 text-purple-800 text-xs rounded-full">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      <button className="flex items-center justify-center gap-1 py-2 border border-green-300 rounded-lg text-xs text-green-700">
+                        <MessageCircle className="w-3 h-3" />
+                        WhatsApp
+                      </button>
+                      <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
+                        <Phone className="w-3 h-3" />
+                        Call
+                      </button>
+                      <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
+                        <MapPin className="w-3 h-3" />
+                        Map
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Desktop — browser window, image beside a roomier detail column */
+              <div className="rounded-xl border border-gray-200 shadow-xl overflow-hidden bg-white">
+                <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-2 border-b border-gray-200">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
+                  <div className="ml-3 flex-1 rounded bg-white border border-gray-200 px-2 py-0.5 text-[10px] text-gray-400 truncate">
+                    babybrain.sg/venues
+                  </div>
+                </div>
+                <div className="grid grid-cols-[minmax(0,260px)_1fr]">
+                  <img src={previewImg} alt="" className="h-full w-full object-cover" />
+                  <div className="p-5">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-lg font-bold text-gray-900">{previewName}</h4>
+                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-0.5">{previewCategory}</p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+                        New listing
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {previewArea}
+                      </span>
+                      {previewPrice && <span>{previewPrice}</span>}
+                    </div>
+                    {previewChips.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {previewChips.map((tag) => (
+                          <span key={tag} className="px-2.5 py-1 bg-purple-200 text-purple-800 text-xs rounded-full">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <button className="flex items-center gap-1.5 px-4 py-2 border border-green-300 rounded-lg text-sm text-green-700">
+                        <MessageCircle className="w-4 h-4" />
+                        WhatsApp
+                      </button>
+                      <button className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700">
+                        <Phone className="w-4 h-4" />
+                        Call
+                      </button>
+                      <button className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700">
+                        <MapPin className="w-4 h-4" />
+                        View on map
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
