@@ -54,7 +54,7 @@ export async function finalizeWixEventTicketCheckout(
 
   const { data: row } = await admin
     .from('event_ticket_orders')
-    .select('id, user_id, child_id, event_id, ticket_type_id, quantity, amount, payment_status')
+    .select('id, user_id, child_id, event_id, ticket_type_id, quantity, amount, payment_status, medical_disclosure')
     .eq('id', orderId)
     .maybeSingle();
   if (!row) return;
@@ -174,6 +174,7 @@ export async function finalizeWixEventTicketCheckout(
     stripePaymentIntent: paymentIntent,
     wixOrderNumber: result.orderNumber,
     paymentStatus: 'paid',
+    medicalDisclosure: row.medical_disclosure,
   });
 }
 
@@ -205,6 +206,8 @@ export async function mirrorEventTicketAsBookings(
     wixOrderNumber: string;
     /** 'none' for a free RSVP, 'paid' once Stripe has actually collected money. */
     paymentStatus: 'none' | 'paid';
+    /** Parent medical & health disclosure, when the event's activity asks for one. */
+    medicalDisclosure?: string | null;
   }
 ): Promise<void> {
   const { data: activity } = await admin
@@ -238,6 +241,7 @@ export async function mirrorEventTicketAsBookings(
     stripe_payment_intent: params.stripePaymentIntent,
     wix_booking_id: params.wixOrderNumber,
     wix_ticket_type_id: params.ticketTypeId,
+    medical_disclosure: params.medicalDisclosure ?? null,
   }));
   const { error } = await admin.from('bookings').insert(rows);
   if (error) console.error('[mirrorEventTicketAsBookings] insert failed', error);

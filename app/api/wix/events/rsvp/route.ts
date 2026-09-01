@@ -19,13 +19,14 @@ function wixErrorCode(e: unknown): string | null {
  * → checkout → (confirm if needed) round trip happens synchronously in one
  * request instead of being split around a Stripe redirect like the paid
  * path in app/api/wix/events/checkout.
- * Body: { eventId, ticketTypeId, childId? }
+ * Body: { eventId, ticketTypeId, childId?, medicalDisclosure? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     eventId?: string;
     ticketTypeId?: string;
     childId?: string | null;
+    medicalDisclosure?: string;
   };
   const { eventId, ticketTypeId } = body;
   if (!eventId || !ticketTypeId) {
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
       amount: 0,
       wix_reservation_id: reservation.id,
       wix_order_number: checkout.orderNumber,
+      medical_disclosure: body.medicalDisclosure?.trim() || null,
     })
     .select('id, status')
     .single();
@@ -128,6 +130,7 @@ export async function POST(request: Request) {
     stripePaymentIntent: null,
     wixOrderNumber: checkout.orderNumber,
     paymentStatus: 'none',
+    medicalDisclosure: body.medicalDisclosure?.trim() || null,
   });
 
   return NextResponse.json(order);

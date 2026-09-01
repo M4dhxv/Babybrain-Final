@@ -35,6 +35,7 @@ const check = (n: string, ok: boolean, d = '') => {
 };
 const stamp = Date.now();
 const cleanup: Array<() => Promise<void>> = [];
+const MEDICAL_NOTE = 'peanut allergy — carries an EpiPen';
 
 console.log('--- Wix Events & Tickets validation ---\n');
 
@@ -159,6 +160,7 @@ const { data: order1 } = await admin
     payment_status: 'none',
     amount: charge1.value,
     wix_reservation_id: reservation1.id,
+    medical_disclosure: MEDICAL_NOTE,
   })
   .select('id')
   .single();
@@ -182,6 +184,28 @@ check('Paid ticket order ends up confirmed', order1After?.status === 'confirmed'
 check('Paid ticket order ends up payment_status=paid', order1After?.payment_status === 'paid');
 check('Paid ticket order gets a real Wix order number', !!order1After?.wix_order_number, order1After?.wix_order_number ?? '');
 check('Paid ticket order records the Stripe payment intent', order1After?.stripe_payment_intent === `pi_test_${stamp}_1`);
+
+// ---------- 7b. Medical disclosure reaches the vendor-visible mirror ----------
+// The vendor roster reads `bookings`, not `event_ticket_orders`, so the note
+// only shows up if mirrorEventTicketAsBookings copies it across. Only asserts
+// when this event was materialised as an activity by 00070 (the mirror
+// no-ops otherwise).
+const { data: mirrored } = await admin
+  .from('bookings')
+  .select('medical_disclosure')
+  .eq('wix_booking_id', order1After?.wix_order_number ?? '__none__');
+cleanup.push(async () => {
+  await admin.from('bookings').delete().eq('wix_booking_id', order1After?.wix_order_number ?? '__none__');
+});
+if ((mirrored ?? []).length > 0) {
+  check(
+    'Event-ticket medical disclosure is copied onto the mirrored bookings row',
+    mirrored!.every((b) => b.medical_disclosure === MEDICAL_NOTE),
+    JSON.stringify(mirrored)
+  );
+} else {
+  console.log('ℹ  no mirrored bookings for this event — skipping the medical-disclosure mirror check');
+}
 
 // ---------- 8. Idempotent double-finalize (webhook + reconcile racing) ----------
 await finalizeWixEventTicketCheckout(admin, fakeSession1);
