@@ -5484,7 +5484,7 @@ function BookingPage() {
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
-                    {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {displayVenue}</p>}
+                    {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
                   </div>
@@ -5734,9 +5734,9 @@ function BookingPage() {
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
-                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
-                {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 text-baby-lilac" /> {displayVenue}</p>}
-                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
+                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
+                {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
