@@ -558,8 +558,8 @@ export default function SaveListingPage() {
 
             {previewMode === 'mobile' ? (
               /* Phone frame — narrow, single column */
-              <div className="mx-auto w-[300px] bg-gray-900 rounded-[2rem] p-3 shadow-xl">
-                <div className="bg-white rounded-[1.5rem] overflow-hidden">
+              <div className="mx-auto w-[300px] bg-gray-800 rounded-[1.8rem] p-1.5 shadow-xl">
+                <div className="bg-white rounded-[1.4rem] overflow-hidden">
                   <div className="relative">
                     <img src={previewImg} alt="" className="w-full h-32 object-cover" />
                     <div className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
