@@ -33,7 +33,7 @@ import { createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
  * APPOINTMENT is 1:1 and createWixBookingAndSession rejects count > 1
  * for those before ever touching Wix).
  *
- * Body: { activityId, wixSlotId, packagePurchaseId, childId?, policiesAccepted?, count? }
+ * Body: { activityId, wixSlotId, packagePurchaseId, childId?, policiesAccepted?, count?, medicalDisclosure?, infoResponse? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
@@ -43,6 +43,8 @@ export async function POST(request: Request) {
     childId?: string | null;
     policiesAccepted?: string[];
     count?: number;
+    medicalDisclosure?: string;
+    infoResponse?: string;
   };
   const { activityId, wixSlotId, packagePurchaseId } = body;
   const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
@@ -113,6 +115,8 @@ export async function POST(request: Request) {
     p_policies: body.policiesAccepted ?? [],
     p_wix_booking_id: result.wixBookingId,
     p_quantity: count,
+    p_medical: body.medicalDisclosure?.trim() || undefined,
+    p_info: body.infoResponse?.trim() || undefined,
   });
   if (error) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race

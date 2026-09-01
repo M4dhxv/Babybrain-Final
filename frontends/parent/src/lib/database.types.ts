@@ -929,7 +929,7 @@ export type Database = {
     Views: { [_ in never]: never };
     Functions: {
       redeem_make_up_token: {
-        Args: { p_token_id: string; p_session_id: string; p_policies?: string[] };
+        Args: { p_token_id: string; p_session_id: string; p_policies?: string[]; p_medical?: string | null; p_info?: string | null };
         Returns: string;
       };
       redeem_package_credit: {
@@ -937,6 +937,7 @@ export type Database = {
           p_purchase_id: string; p_session_id: string;
           p_child_id?: string | null; p_policies?: string[];
           p_wix_booking_id?: string | null; p_quantity?: number;
+          p_medical?: string | null; p_info?: string | null;
         };
         Returns: string;
       };

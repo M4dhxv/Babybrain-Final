@@ -5168,6 +5168,8 @@ function BookingPage() {
         p_token_id: redeemToken,
         p_session_id: sessionId,
         p_policies: acceptedPolicies,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
       });
       setBusy(false);
       if (error) {
@@ -5293,6 +5295,8 @@ function BookingPage() {
           childId: bookChildId,
           policiesAccepted: acceptedPolicies,
           count,
+          ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+          ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
         });
         status = data.status;
       } catch (e) {
@@ -5309,6 +5313,8 @@ function BookingPage() {
         p_child_id: bookChildId,
         p_policies: acceptedPolicies,
         p_quantity: count,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
       });
       if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error)); return; }
       status = (data as string | null) ?? "confirmed";
