@@ -173,6 +173,10 @@ export default function ActivitiesPage() {
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
+  // Same story as the edit drawer's price field: a Wix Event's price comes
+  // from its ticket types and is re-synced every run, so the per-session
+  // price boxes in here are read-only for one.
+  const scheduleIsWixEvent = scheduleFor?.wix_service_type === 'EVENT';
   /* QA 21/08: location and price move to the schedule, so the same class at
      three venues (or three prices) is ONE activity. Blank inherits the
      activity's own value. */
@@ -315,7 +319,8 @@ export default function ActivitiesPage() {
         studio: sessForm.studio.trim() || null,
         // Blank inherits the activity's venue/price (migration 00074).
         location_id: sessForm.location_id || null,
-        price: sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
+        // A Wix Event's price is Wix's — never override it per session.
+        price: scheduleIsWixEvent || sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
       };
     });
     // A Wix-connected vendor's real-world time is already spoken for by
@@ -407,7 +412,8 @@ export default function ActivitiesPage() {
       teacher_name: sessEditForm.teacher.trim() || null,
       studio: sessEditForm.studio.trim() || null,
       location_id: sessEditForm.location_id || null,
-      price: sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
+      // A Wix Event's price is Wix's — never override it per session.
+      price: scheduleIsWixEvent || sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
     }).eq('id', id);
     setSavingSessEdit(false);
     if (error) {
@@ -1470,10 +1476,15 @@ export default function ActivitiesPage() {
                   <input
                     type="number"
                     min="0"
-                    placeholder={scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'}
-                    className={inputCls}
-                    value={sessForm.price}
+                    placeholder={
+                      scheduleIsWixEvent
+                        ? 'Set by Wix ticket types'
+                        : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
+                    }
+                    className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
+                    value={scheduleIsWixEvent ? '' : sessForm.price}
                     onChange={(e) => setSessForm({ ...sessForm, price: e.target.value })}
+                    disabled={scheduleIsWixEvent}
                   />
                 </div>
                 <div className="col-span-2">
@@ -1531,10 +1542,15 @@ export default function ActivitiesPage() {
                           <input
                             type="number"
                             min="0"
-                            placeholder={scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'}
-                            className={inputCls}
-                            value={sessEditForm.price}
+                            placeholder={
+                              scheduleIsWixEvent
+                                ? 'Set by Wix ticket types'
+                                : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
+                            }
+                            className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
+                            value={scheduleIsWixEvent ? '' : sessEditForm.price}
                             onChange={(e) => setSessEditForm({ ...sessEditForm, price: e.target.value })}
+                            disabled={scheduleIsWixEvent}
                           />
                         </label>
                       </div>
