@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
+import { vendorPageUrl } from '@/lib/cors';
 import type { ProviderRole } from '@/types/database';
 
 /**
@@ -52,7 +53,11 @@ export async function POST(request: Request) {
     .select('business_name')
     .eq('id', providerId)
     .single();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  // The portal is a HashRouter SPA under /vendor/, so its login route is
+  // /vendor/#/login — a bare /vendor/login has no rewrite and lands on
+  // Vercel's own 404, not the sign-in page. vendorPageUrl builds the hash
+  // form against this deployment's own origin.
+  const signInUrl = vendorPageUrl(request, '/login');
   try {
     const resend = new Resend(process.env.RESEND_API_KEY!);
     await resend.emails.send({
@@ -62,7 +67,7 @@ export async function POST(request: Request) {
       html: `<div style="font-family:sans-serif">
         <h2>You're invited as ${role}</h2>
         <p>${provider?.business_name ?? 'A business'} added you to their BabyBrain vendor account.</p>
-        <p><a href="${appUrl}/vendor/login">Sign in${existing ? '' : ' / sign up'}</a> with this email to access the dashboard.</p>
+        <p><a href="${signInUrl}">Sign in${existing ? '' : ' / sign up'}</a> with this email to access the dashboard.</p>
       </div>`,
     });
   } catch {
