@@ -90,6 +90,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This ticket is free — use the RSVP endpoint, not checkout' }, { status: 400 });
   }
 
+  // Nothing else expires an abandoned pending order — not the Stripe webhook
+  // (it has no checkout.session.expired handler enabled), not a cron — so a
+  // skipped payment used to block this ticket type for the user indefinitely
+  // ("still showing the same error hours later"). After 30 minutes both the
+  // Stripe session and the Wix reservation are dead, so clear any stale
+  // pending/unpaid row for this user + ticket type before starting a fresh one.
+  await admin
+    .from('event_ticket_orders')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('ticket_type_id', ticketType.id)
+    .eq('status', 'pending')
+    .eq('payment_status', 'none')
+    .lt('created_at', new Date(Date.now() - 30 * 60 * 1000).toISOString());
+
   const { data: pending, error: insertErr } = await admin
     .from('event_ticket_orders')
     .insert({

@@ -262,6 +262,25 @@ export async function POST(request: Request) {
       break;
     }
 
+    case 'checkout.session.expired': {
+      // Stripe abandons a session ~30 min after it's created. Release the
+      // local pending event-ticket order now so its one-per-ticket-type slot
+      // frees immediately, instead of the user having to trip the stale-row
+      // sweep in the checkout route on a later attempt. The Wix reservation
+      // releases itself. (Needs 'checkout.session.expired' enabled on the
+      // endpoint — see scripts/setup-stripe-webhooks.mjs.)
+      const expired = event.data.object as Stripe.Checkout.Session;
+      if (expired.metadata?.kind === 'wix_event_ticket' && expired.metadata?.order_id) {
+        await admin
+          .from('event_ticket_orders')
+          .delete()
+          .eq('id', expired.metadata.order_id)
+          .eq('status', 'pending')
+          .eq('payment_status', 'none');
+      }
+      break;
+    }
+
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object as Stripe.Checkout.Session;

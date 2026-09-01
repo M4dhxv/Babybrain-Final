@@ -39,6 +39,8 @@ const url =
 const ACCOUNT_EVENTS = [
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
+  // Frees the pending event-ticket order when a checkout is abandoned.
+  'checkout.session.expired',
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
