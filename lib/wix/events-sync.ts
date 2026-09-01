@@ -216,23 +216,47 @@ async function syncEventActivityMirror(
   // the ticket — so the local capacity/waitlist trigger can never see more
   // confirmed bookings than Wix actually sold, and this number is safe to
   // set precisely rather than left null "to be safe".
-  const { data: existingSession } = await admin
+  //
+  // A Wix event has exactly one occurrence, so this activity carries exactly
+  // one session. This used to find it with `.eq('activity_id', …).maybeSingle()`,
+  // but `.maybeSingle()` resolves to an *error* (data === null) the moment
+  // more than one row matches — and with that error unchecked, every sync
+  // after the first duplicate fell straight through to the INSERT branch and
+  // stacked another one. So it self-multiplied: N sessions in, N+1 out, once
+  // per scheduled run. Collapse to one instead — keep a single canonical row
+  // (whichever already has a live booking on it, so a sold ticket is never
+  // stranded; otherwise the earliest), point it at the event's current
+  // date/time, and delete any other unbooked rows.
+  const { data: sessionRows } = await admin
     .from('activity_sessions')
     .select('id')
     .eq('activity_id', activityId)
-    .maybeSingle();
-  if (existingSession) {
-    await admin
-      .from('activity_sessions')
-      .update({ starts_at: event.startDate, ends_at: event.endDate, ...(capacity != null ? { capacity } : {}) })
-      .eq('id', existingSession.id);
-  } else {
+    .order('starts_at', { ascending: true });
+  const rows = sessionRows ?? [];
+  if (rows.length === 0) {
     await admin.from('activity_sessions').insert({
       activity_id: activityId,
       starts_at: event.startDate,
       ends_at: event.endDate,
       capacity,
     });
+  } else {
+    const ids = rows.map((r) => r.id);
+    const { data: bookedRows } = await admin
+      .from('bookings')
+      .select('session_id')
+      .in('session_id', ids)
+      .neq('status', 'cancelled');
+    const booked = new Set((bookedRows ?? []).map((b) => b.session_id));
+    const canonicalId = rows.find((r) => booked.has(r.id))?.id ?? rows[0].id;
+    await admin
+      .from('activity_sessions')
+      .update({ starts_at: event.startDate, ends_at: event.endDate, ...(capacity != null ? { capacity } : {}) })
+      .eq('id', canonicalId);
+    const stale = ids.filter((id) => id !== canonicalId && !booked.has(id));
+    if (stale.length > 0) {
+      await admin.from('activity_sessions').delete().in('id', stale);
+    }
   }
 }
 

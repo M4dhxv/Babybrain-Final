@@ -5412,7 +5412,7 @@ function BookingPage() {
         <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
-            <div><h1 className="text-[34px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
+            <div><h1 className="text-[34px] font-black">{isEvent ? "Get your tickets" : "Book your class"}</h1><p className="text-lg font-semibold">{isEvent ? "Pick how many tickets you need, then check out." : "Choose your preferred date, time & package."}</p></div>
             {/* The brand icon itself, rather than the confetti mascot crop that
                 was lifted from the design mockup. */}
             <img src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`} alt="" className="hidden h-24 object-contain md:block" />
@@ -5582,9 +5582,9 @@ function BookingPage() {
                         only appears when they have some. */}
                     {(policies.length > 0 || needsMedical) && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">{redeemToken ? "4" : "5"}. Provider terms</h3>
+                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${redeemToken ? "4" : "5"}. `}Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
-                          {activity?.provider_name ?? "This provider"} asks you to read and accept the following before the class.
+                          {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
                         <div className="space-y-3">
                           {policies.map((p) => {

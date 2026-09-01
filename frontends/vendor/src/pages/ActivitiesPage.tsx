@@ -155,6 +155,12 @@ export default function ActivitiesPage() {
   // Create/Edit-activity form (editingId set = editing an existing activity)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  // A Wix Event–backed activity's price is the cheapest of its ticket types,
+  // pulled live from Wix on every sync (lib/wix/events-sync.ts). Anything a
+  // vendor typed here would be overwritten on the next run, so the price
+  // field is read-only for these — they change it in Wix.
+  const editingActivity = editingId ? activities.find((a) => a.id === editingId) ?? null : null;
+  const priceIsWixManaged = editingActivity?.wix_service_type === 'EVENT';
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -647,7 +653,9 @@ export default function ActivitiesPage() {
       // BabyBrain lists activities for children up to 11, so an unstated upper
       // age can't default to adulthood — 216 was putting listings past the cap.
       age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
-      price: form.price ? Number(form.price) : null,
+      // Price is Wix's to set for an event (cheapest ticket type, re-synced
+      // every run) — never write it back from this form for those.
+      ...(priceIsWixManaged ? {} : { price: form.price ? Number(form.price) : null }),
       location_id: form.location_id || null,
       default_capacity: Number(form.default_capacity),
       address: loc?.address ?? null,
@@ -1084,8 +1092,20 @@ export default function ActivitiesPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
-              <input type="number" min="0" placeholder="e.g. 45" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
-              <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
+              <input
+                type="number"
+                min="0"
+                placeholder="e.g. 45"
+                className={cn(inputCls, priceIsWixManaged && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                disabled={priceIsWixManaged}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                {priceIsWixManaged
+                  ? 'Set by your Wix ticket types — this reflects the cheapest one and refreshes on every sync. Change the price in Wix.'
+                  : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
