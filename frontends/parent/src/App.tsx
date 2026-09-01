@@ -5130,10 +5130,12 @@ function BookingPage() {
         ticketTypeId,
         quantity: count,
         childId: bookChildId,
-        // The event form shows the medical & health disclosure when the
-        // mirrored activity requires one — carry it through so it isn't lost
-        // between here and the vendor's roster.
+        // The event form reuses the class booking form's "Provider terms"
+        // section — the disclosure, the ticked waivers and the answer to the
+        // vendor's info request all need to survive the trip to the roster.
         ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+        ...(acceptedPolicies.length ? { policiesAccepted: acceptedPolicies } : {}),
+        ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
       };
       if (selectedTicketType?.is_free) {
         try {

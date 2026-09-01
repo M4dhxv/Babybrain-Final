@@ -801,6 +801,8 @@ export type Database = {
           wix_reservation_id: string | null;
           wix_order_number: string | null;
           medical_disclosure: string | null;
+          policies_accepted: string[];
+          info_response: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -817,6 +819,8 @@ export type Database = {
           wix_reservation_id?: string | null;
           wix_order_number?: string | null;
           medical_disclosure?: string | null;
+          policies_accepted?: string[];
+          info_response?: string | null;
         };
         Update: {
           status?: 'pending' | 'confirmed' | 'cancelled';

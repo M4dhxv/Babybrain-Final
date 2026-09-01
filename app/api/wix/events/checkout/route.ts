@@ -23,7 +23,7 @@ import {
  * from that reservation's own line items via computeWixCheckoutTotal, not
  * from event_ticket_types.price_cents alone, because Wix can add its own
  * service fee at checkout on top of the ticket price.
- * Body: { eventId, ticketTypeId, quantity?, childId?, medicalDisclosure? }
+ * Body: { eventId, ticketTypeId, quantity?, childId?, medicalDisclosure?, policiesAccepted?, infoResponse? }
  */
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
@@ -32,6 +32,8 @@ export async function POST(request: Request) {
     quantity?: number;
     childId?: string | null;
     medicalDisclosure?: string;
+    policiesAccepted?: string[];
+    infoResponse?: string;
   };
   const { eventId, ticketTypeId } = body;
   if (!eventId || !ticketTypeId) {
@@ -119,6 +121,8 @@ export async function POST(request: Request) {
       amount: charge.value,
       wix_reservation_id: reservation.id,
       medical_disclosure: body.medicalDisclosure?.trim() || null,
+      policies_accepted: body.policiesAccepted ?? [],
+      info_response: body.infoResponse?.trim() || null,
     })
     .select('id')
     .single();

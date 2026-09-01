@@ -36,6 +36,11 @@ const check = (n: string, ok: boolean, d = '') => {
 const stamp = Date.now();
 const cleanup: Array<() => Promise<void>> = [];
 const MEDICAL_NOTE = 'peanut allergy — carries an EpiPen';
+const INFO_ANSWER = `unit 12-34, gate code ${stamp}`;
+// A synthetic policy id — enough to prove the array is copied onto the
+// mirrored bookings row (the booking_policy_record trigger just ignores an id
+// with no matching provider_policies row).
+const FAKE_POLICY_ID = '00000000-0000-4000-8000-0000000000ce';
 
 console.log('--- Wix Events & Tickets validation ---\n');
 
@@ -161,6 +166,8 @@ const { data: order1 } = await admin
     amount: charge1.value,
     wix_reservation_id: reservation1.id,
     medical_disclosure: MEDICAL_NOTE,
+    policies_accepted: [FAKE_POLICY_ID],
+    info_response: INFO_ANSWER,
   })
   .select('id')
   .single();
@@ -185,17 +192,18 @@ check('Paid ticket order ends up payment_status=paid', order1After?.payment_stat
 check('Paid ticket order gets a real Wix order number', !!order1After?.wix_order_number, order1After?.wix_order_number ?? '');
 check('Paid ticket order records the Stripe payment intent', order1After?.stripe_payment_intent === `pi_test_${stamp}_1`);
 
-// ---------- 7b. Medical disclosure reaches the vendor-visible mirror ----------
-// The vendor roster reads `bookings`, not `event_ticket_orders`, so the note
-// only shows up if mirrorEventTicketAsBookings copies it across. Only asserts
-// when this event was materialised as an activity by 00070 (the mirror
-// no-ops otherwise).
+// ---------- 7b. Disclosure / waivers / info answer reach the vendor-visible mirror ----------
+// The vendor roster reads `bookings` (and booking_policy_acceptances), not
+// `event_ticket_orders`, so these only show up if mirrorEventTicketAsBookings
+// copies them across. Only asserts when this event was materialised as an
+// activity by 00070 (the mirror no-ops otherwise).
+const orderNo = order1After?.wix_order_number ?? '__none__';
 const { data: mirrored } = await admin
   .from('bookings')
-  .select('medical_disclosure')
-  .eq('wix_booking_id', order1After?.wix_order_number ?? '__none__');
+  .select('id, medical_disclosure, policies_accepted, info_response')
+  .eq('wix_booking_id', orderNo);
 cleanup.push(async () => {
-  await admin.from('bookings').delete().eq('wix_booking_id', order1After?.wix_order_number ?? '__none__');
+  await admin.from('bookings').delete().eq('wix_booking_id', orderNo);
 });
 if ((mirrored ?? []).length > 0) {
   check(
@@ -203,8 +211,18 @@ if ((mirrored ?? []).length > 0) {
     mirrored!.every((b) => b.medical_disclosure === MEDICAL_NOTE),
     JSON.stringify(mirrored)
   );
+  check(
+    'Event-ticket info-request answer is copied onto the mirrored bookings row',
+    mirrored!.every((b) => b.info_response === INFO_ANSWER),
+    JSON.stringify(mirrored!.map((b) => b.info_response))
+  );
+  check(
+    'Event-ticket accepted policy ids are copied onto the mirrored bookings row',
+    mirrored!.every((b) => (b.policies_accepted ?? []).includes(FAKE_POLICY_ID)),
+    JSON.stringify(mirrored!.map((b) => b.policies_accepted))
+  );
 } else {
-  console.log('ℹ  no mirrored bookings for this event — skipping the medical-disclosure mirror check');
+  console.log('ℹ  no mirrored bookings for this event — skipping the mirror checks');
 }
 
 // ---------- 8. Idempotent double-finalize (webhook + reconcile racing) ----------

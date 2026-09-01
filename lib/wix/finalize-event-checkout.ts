@@ -54,7 +54,7 @@ export async function finalizeWixEventTicketCheckout(
 
   const { data: row } = await admin
     .from('event_ticket_orders')
-    .select('id, user_id, child_id, event_id, ticket_type_id, quantity, amount, payment_status, medical_disclosure')
+    .select('id, user_id, child_id, event_id, ticket_type_id, quantity, amount, payment_status, medical_disclosure, policies_accepted, info_response')
     .eq('id', orderId)
     .maybeSingle();
   if (!row) return;
@@ -175,6 +175,8 @@ export async function finalizeWixEventTicketCheckout(
     wixOrderNumber: result.orderNumber,
     paymentStatus: 'paid',
     medicalDisclosure: row.medical_disclosure,
+    policiesAccepted: row.policies_accepted,
+    infoResponse: row.info_response,
   });
 }
 
@@ -208,6 +210,10 @@ export async function mirrorEventTicketAsBookings(
     paymentStatus: 'none' | 'paid';
     /** Parent medical & health disclosure, when the event's activity asks for one. */
     medicalDisclosure?: string | null;
+    /** Provider policy ids the parent ticked — the booking_policy_record trigger fans these out. */
+    policiesAccepted?: string[] | null;
+    /** Parent answer to the activity's info-request prompt, when it has one. */
+    infoResponse?: string | null;
   }
 ): Promise<void> {
   const { data: activity } = await admin
@@ -242,6 +248,8 @@ export async function mirrorEventTicketAsBookings(
     wix_booking_id: params.wixOrderNumber,
     wix_ticket_type_id: params.ticketTypeId,
     medical_disclosure: params.medicalDisclosure ?? null,
+    policies_accepted: params.policiesAccepted ?? [],
+    info_response: params.infoResponse ?? null,
   }));
   const { error } = await admin.from('bookings').insert(rows);
   if (error) console.error('[mirrorEventTicketAsBookings] insert failed', error);
