@@ -185,7 +185,7 @@ export function WixApiKeyHelp({ children }: { children: React.ReactNode }) {
 
         <div className="border-t border-gray-100 px-4 py-3">
           <a
-            href="https://dev.wix.com/docs/rest/articles/getting-started/api-keys"
+            href="https://dev.wix.com/docs/api-reference/"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-sm font-medium text-[#FA4D8D] hover:underline"
