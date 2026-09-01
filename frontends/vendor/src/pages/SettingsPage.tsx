@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, Star, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -25,20 +25,33 @@ const settingsTabs = [
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
-// The acceptance timestamps DO now exist (providers.vendor_terms_accepted_at /
-// booking_messaging_terms_accepted_at, written by the Save-your-listing step),
-// but this tab hasn't been wired to read them yet — it still shows a flat
-// "Accepted" for every vendor. What's real here already is the content behind
-// each row: clicking it opens the exact agreement text from complianceTerms.ts
-// instead of a dead end. "Refund Policy" isn't a fixed BabyBrain document at
-// all — it's whatever the vendor wrote themselves under Waivers & Consents
-// (provider_policies), so it links there instead of a static viewer.
+// Only things the vendor has actually agreed to (or maintains) are listed —
+// no "N/A until Boost" placeholder rows. Each row is clickable:
+//   'view'          → the exact agreement text from complianceTerms.ts, in a Sheet
+//   'link'          → the full BabyBrain site terms / privacy page (new tab)
+//   'edit-policies' → the vendor's own Refund Policy under Waivers & Consents
+// The acceptance timestamps exist (providers.vendor_terms_accepted_at /
+// booking_messaging_terms_accepted_at) but this tab still shows a flat
+// "Accepted" rather than the real date.
 // TODO: surface the real accepted-on date from the provider row.
-const complianceItems = [
-  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: VENDOR_TERMS },
-  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view' as const, doc: BOOKING_MESSAGING_TERMS },
-  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies' as const, doc: null },
-  { icon: Star, label: 'Featured Placement Disclosure', status: 'N/A until Boost', statusColor: 'text-gray-500', bg: 'bg-gray-100', accepted: false, kind: 'none' as const, doc: null },
+type ComplianceItem = {
+  icon: typeof FileText;
+  label: string;
+  status: string;
+  statusColor: string;
+  bg: string;
+  accepted: boolean;
+  kind: 'view' | 'edit-policies' | 'link';
+  doc: ComplianceDocument | null;
+  href: string | null;
+};
+const complianceItems: ComplianceItem[] = [
+  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: VENDOR_TERMS, href: null },
+  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: BOOKING_MESSAGING_TERMS, href: null },
+  { icon: FileText, label: 'Terms of Service', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms' },
+  { icon: Globe, label: 'Terms of Use', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms' },
+  { icon: Shield, label: 'Privacy Policy', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'link', doc: null, href: '/terms#privacy' },
+  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies', doc: null, href: null },
 ];
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
@@ -598,10 +611,11 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-3">
               {complianceItems.map((item, idx) => {
-                const clickable = item.kind === 'view' || item.kind === 'edit-policies';
+                const clickable = item.kind === 'view' || item.kind === 'edit-policies' || item.kind === 'link';
                 const onClick = () => {
                   if (item.kind === 'view' && item.doc) setViewingDoc(item.doc);
                   else if (item.kind === 'edit-policies') selectTab('policies');
+                  else if (item.kind === 'link' && item.href) window.open(item.href, '_blank', 'noopener,noreferrer');
                 };
                 return (
                   <div
