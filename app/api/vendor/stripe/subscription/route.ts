@@ -6,12 +6,14 @@ import { vendorPageUrl } from '@/lib/cors';
 import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
 
 /**
- * Start, or move between, a paid subscription — Growth or Pro — for a provider.
- * Owner-only.
+ * Start, move between, or cancel a paid subscription — Growth or Pro — for a
+ * provider. `plan: 'free'` downgrades to the commission-only "Pay as you
+ * grow" tier, i.e. cancels. Owner-only.
  *
  * Returns one of:
- *   { url }                  → send the browser to Stripe Checkout (first-time)
- *   { switched: true, plan }  → the existing subscription was moved in place
+ *   { url }                          → send the browser to Stripe Checkout (first-time)
+ *   { switched: true, plan }         → the existing subscription was moved in place
+ *   { switched: true, plan: 'free' } → the existing subscription(s) were canceled
  *
  * QA 23/08: "If you are already on the Pro plan, you shouldn't be able to get
  * to stripe payment to upgrade to the plan you are already on." The row
@@ -31,9 +33,11 @@ import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
  *    upgrade restarted a 30-day free trial — which is why all nine of those
  *    subscriptions were still `trialing` and none had ever been charged.
  *
- * Pre-existing duplicates are NOT cleaned up here — cancelling someone's
- * subscription is not a side effect a plan click should have. Use
- * `npm run stripe:dedupe` for that.
+ * Pre-existing duplicates are NOT cleaned up by a paid-tier switch —
+ * cancelling someone's subscription is not a side effect a plan click should
+ * have there. Use `npm run stripe:dedupe` for that. A `plan: 'free'`
+ * downgrade is the one exception: it means "I want to pay for nothing", so it
+ * cancels every live subscription the customer has, not just the newest.
  */
 
 /** Stripe statuses that mean "this subscription still occupies the vendor's plan slot". */
@@ -42,14 +46,17 @@ const LIVE_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
 export async function POST(request: Request) {
   const { provider_id: providerId, plan = 'growth', billing = 'monthly' } = (await request.json()) as {
     provider_id?: string;
-    plan?: PaidPlan;
+    plan?: PaidPlan | 'free';
     billing?: 'monthly' | 'annual';
   };
   if (!providerId) {
     return NextResponse.json({ error: 'provider_id required' }, { status: 400 });
   }
-  if (!PAID_PLANS.includes(plan)) {
-    return NextResponse.json({ error: 'plan must be "growth" or "pro"' }, { status: 400 });
+  // 'free' is the commission-only "Pay as you grow" tier — it has no Stripe
+  // price, so moving to it means ending the paid subscription rather than
+  // switching a price. Handled below; every other value must be a paid plan.
+  if (plan !== 'free' && !PAID_PLANS.includes(plan)) {
+    return NextResponse.json({ error: 'plan must be "growth", "pro" or "free"' }, { status: 400 });
   }
 
   const auth = await requireProviderRole(request, providerId, 'owner');
@@ -57,6 +64,48 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
   const stripe = getStripe();
+
+  // Downgrade to "Pay as you grow": end the paid subscription now, the same
+  // way a paid tier switch moves in place — no Stripe Checkout, no redirect.
+  // Unlike a tier switch there's no price to move to, so this cancels
+  // instead of updating; `prorate: true` credits the unused part of the
+  // current period to the customer's balance, mirroring the "Stripe credits
+  // the unused part against your next invoice" wording a growth/pro downgrade
+  // already gives.
+  if (plan === 'free') {
+    const { data: sub } = await admin
+      .from('subscriptions')
+      .select('stripe_customer_id')
+      .eq('provider_id', providerId)
+      .maybeSingle();
+
+    let canceled = 0;
+    if (sub?.stripe_customer_id) {
+      const existing = await stripe.subscriptions.list({
+        customer: sub.stripe_customer_id,
+        status: 'all',
+        limit: 100,
+      });
+      // Cancel every live subscription, not just the newest — a vendor could
+      // otherwise still hold a duplicate after "downgrading".
+      const live = existing.data.filter((s) => LIVE_STATUSES.includes(s.status));
+      for (const s of live) {
+        await stripe.subscriptions.cancel(s.id, { prorate: true });
+        canceled++;
+      }
+    }
+
+    // The webhook (customer.subscription.deleted) will also write this row,
+    // but only once Stripe's event arrives — set it here too so the vendor
+    // sees the switch immediately on refetch instead of waiting on webhook
+    // latency.
+    await admin
+      .from('subscriptions')
+      .update({ plan: 'free', status: 'canceled' as never, cancel_at_period_end: false })
+      .eq('provider_id', providerId);
+
+    return NextResponse.json({ switched: true, plan: 'free', canceled });
+  }
 
   // Resolve the plan's price (monthly/annual) from app_config.
   const monthlyKey = `stripe_${plan}_price_id`;

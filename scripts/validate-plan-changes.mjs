@@ -219,6 +219,39 @@ try {
   // --- 9. An unknown plan is rejected before anything touches Stripe ---
   const bogus = await subscribe('premium');
   check('An unsupported plan is rejected', bogus.r.status === 400, `HTTP ${bogus.r.status}`);
+
+  /* --- 10. Downgrading to "Pay as you grow" (plan: 'free') actually cancels.
+     Plans page: clicking "Downgrade to Pay as you grow" used to just
+     navigate('/billing') and never call this route at all — the button
+     promised a downgrade and did nothing. `plan: 'free'` is the fix: it
+     should behave like a paid tier switch (in place, no Stripe redirect) but
+     end the subscription instead of moving its price. */
+  const toDowngrade = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: GROWTH }],
+    trial_period_days: 30,
+    metadata: { provider_id: provider.id, plan: 'growth' },
+  });
+  await admin.from('subscriptions').update({ plan: 'growth', stripe_subscription_id: toDowngrade.id, status: 'trialing', cancel_at_period_end: false }).eq('provider_id', provider.id);
+
+  const toFree = await subscribe('free');
+  check('Downgrade to free switches in place (no checkout redirect)', toFree.body?.switched === true && !toFree.body?.url, JSON.stringify(toFree.body));
+  check('The paid subscription is actually canceled', (await liveSubs(customerId)).length === 0, `${(await liveSubs(customerId)).length} still live`);
+  const { data: freeRow } = await admin.from('subscriptions').select('plan, status, cancel_at_period_end').eq('provider_id', provider.id).single();
+  check('Database plan says free', freeRow?.plan === 'free', freeRow?.plan);
+  check('…status says canceled', freeRow?.status === 'canceled', freeRow?.status);
+  check('…and cancel_at_period_end is cleared (it already ended, nothing pending)', freeRow?.cancel_at_period_end === false, freeRow?.cancel_at_period_end);
+
+  /* --- 11. Downgrading to free cancels EVERY live subscription, not just the
+     newest — unlike a paid-tier switch, "I want to pay for nothing" should
+     leave no duplicate behind. --- */
+  const dupA = await stripe.subscriptions.create({ customer: customerId, items: [{ price: GROWTH }], trial_period_days: 30, metadata: { provider_id: provider.id, plan: 'growth' } });
+  const dupB = await stripe.subscriptions.create({ customer: customerId, items: [{ price: PRO }], trial_period_days: 30, metadata: { provider_id: provider.id, plan: 'pro' } });
+  await admin.from('subscriptions').update({ plan: 'growth', stripe_subscription_id: dupA.id, status: 'trialing' }).eq('provider_id', provider.id);
+
+  const dupsToFree = await subscribe('free');
+  check('Downgrade to free reports both duplicates canceled', dupsToFree.body?.canceled === 2, JSON.stringify(dupsToFree.body));
+  check('No live subscriptions remain', (await liveSubs(customerId)).length === 0, `${(await liveSubs(customerId)).length} still live`);
 } finally {
   if (customerId) {
     for (const s of await liveSubs(customerId)) await stripe.subscriptions.cancel(s.id, { prorate: false }).catch(() => {});

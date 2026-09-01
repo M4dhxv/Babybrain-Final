@@ -84,10 +84,17 @@ try {
     },
   };
 
+  // Public origin the portal footer's Terms / Privacy links point back to.
+  // `babybrain.sg` is not live yet (production is the Vercel host, see
+  // docs/SETUP.md), so both links 404'd. `/privacy` is also not a route —
+  // the privacy notice is a section on the Terms page (`/terms#privacy`),
+  // which is where the rest of the app links it. Set NEXT_PUBLIC_APP_URL to
+  // override after the babybrain.sg cutover.
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://babybrain-final.vercel.app').replace(/\/+$/, '');
   const businessProfile = {
     headline: 'BabyBrain — manage your plan',
-    privacy_policy_url: 'https://babybrain.sg/privacy',
-    terms_of_service_url: 'https://babybrain.sg/terms',
+    privacy_policy_url: `${appUrl}/terms#privacy`,
+    terms_of_service_url: `${appUrl}/terms`,
   };
 
   if (!APPLY) {

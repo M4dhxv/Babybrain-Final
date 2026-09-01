@@ -171,56 +171,59 @@ export default function PlansPage() {
      a signed-out visitor still goes to /login, which is the correct behaviour
      for them. */
   async function selectPlan(planKey: 'growth' | 'pro' | null) {
-    if (!planKey) {
-      // Pay As You Grow has no subscription (it's commission-only) — an
-      // existing owner goes to Billing to turn on Stripe payouts, a signed-in
-      // guest without a claimed business claims one, and a guest signs in first.
-      if (session) { navigate(provider ? '/billing' : '/claim-business'); return; }
-      navigate('/login');
-      return;
-    }
     if (!session) { navigate('/login'); return; }
     if (!provider) {
+      // Signed in but no claimed business: the free tier sends them to claim
+      // one; a paid tier can't be started until they have.
+      if (!planKey) { navigate('/claim-business'); return; }
       setCheckoutError({ plan: planKey, message: 'Claim your business first, then come back to upgrade.' });
       return;
     }
     if (isCurrentPlan(planKey)) {
-      // Already subscribed to this tier — nothing to check out, send them to
-      // Billing instead of starting a Stripe session for the plan they have.
-      // The route refuses it as well (409), so a stale tab can't stack one.
+      // Already on this tier — nothing to switch. Billing is where the card,
+      // invoices and cancellation live.
       navigate('/billing');
       return;
     }
-    // A real tier change moves the existing subscription and prorates, so say
-    // what will happen to the money before doing it.
-    if (isPaid && !window.confirm(
-      planKey === 'growth'
-        ? `Move down to the ${tierName('growth')} plan? Stripe will credit the unused part of your current plan against your next invoice.`
-        : `Move up to the ${tierName('pro')} plan? Stripe will charge the difference for the rest of this billing period.`
-    )) return;
 
+    // "Pay as you grow" (planKey null) is commission-only — no Stripe price to
+    // move to. For a vendor not paying for anything there's nothing to change
+    // here, so Billing (turn on payouts) is the right place. For a paid vendor
+    // it's a real downgrade, handled in place exactly like a paid tier switch:
+    // the API cancels the subscription, we refetch — no Stripe redirect.
+    const target: 'growth' | 'pro' | 'free' = planKey ?? 'free';
+    if (target === 'free' && !isPaid) { navigate('/billing'); return; }
+
+    // A real tier change moves money, so say what will happen before doing it.
+    const confirmMsg =
+      target === 'free'
+        ? `Move to ${PLAN_META.free.label}? Your paid features end now, Stripe credits the unused part of this billing period to your account, and bookings move to ${PLAN_META.free.commission} with no monthly fee.`
+        : target === 'growth'
+          ? `Move down to the ${tierName('growth')} plan? Stripe will credit the unused part of your current plan against your next invoice.`
+          : `Move up to the ${tierName('pro')} plan? Stripe will charge the difference for the rest of this billing period.`;
+    if (isPaid && !window.confirm(confirmMsg)) return;
 
     setCheckoutError(null);
     setSwitched(null);
     if (switchedTimeoutRef.current) clearTimeout(switchedTimeoutRef.current);
-    setCheckoutBusy(planKey);
+    setCheckoutBusy(target);
     try {
       const { url, switched: didSwitch } = await apiPost<{ url?: string; switched?: boolean }>(
         '/api/vendor/stripe/subscription',
-        { provider_id: provider.id, plan: planKey }
+        { provider_id: provider.id, plan: target }
       );
       if (didSwitch) {
         // Changed on the subscription they already have — no Stripe redirect.
         await refreshProvider();
-        setSwitched(planKey);
+        setSwitched(target);
         switchedTimeoutRef.current = setTimeout(() => setSwitched(null), 40000);
       } else if (url) {
         window.location.href = url;
       } else {
-        setCheckoutError({ plan: planKey, message: 'Could not start checkout — please try again.' });
+        setCheckoutError({ plan: target, message: 'Could not start checkout — please try again.' });
       }
     } catch (e) {
-      setCheckoutError({ plan: planKey, message: e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.' });
+      setCheckoutError({ plan: target, message: e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.' });
     } finally {
       setCheckoutBusy(null);
     }
@@ -386,18 +389,18 @@ export default function PlansPage() {
 
                 <Button
                   onClick={() => selectPlan(plan.planKey)}
-                  disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
+                  disabled={checkoutBusy === (plan.planKey ?? 'free')}
                   className={cn(
                     'w-full rounded-xl py-3 font-semibold bg-white',
                     isCurrentPlan(plan.planKey) ? 'border-gray-300 text-gray-500' : plan.buttonClass
                   )}
                   variant="outline"
                 >
-                  {plan.planKey !== null && checkoutBusy === plan.planKey
+                  {checkoutBusy === (plan.planKey ?? 'free')
                     ? 'Working…'
                     : ctaFor(plan)}
                 </Button>
-                {checkoutError?.plan === plan.planKey && (
+                {checkoutError?.plan === (plan.planKey ?? 'free') && (
                   <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
                 )}
                 {/* Tied to isCurrentPlan rather than the raw clicked key, so it can
@@ -465,15 +468,11 @@ export default function PlansPage() {
               <div key={plan.name} className="flex px-1">
                 <Button
                   onClick={() => selectPlan(plan.planKey)}
-                  disabled={plan.planKey !== null && checkoutBusy === plan.planKey}
+                  disabled={checkoutBusy === (plan.planKey ?? 'free')}
                   className={cn('h-full w-full whitespace-normal rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight bg-white sm:text-sm', plan.buttonClass)}
                   variant="outline"
                 >
-                  {plan.planKey !== null && checkoutBusy === plan.planKey
-                    ? 'Redirecting…'
-                    : isCurrentPlan(plan.planKey)
-                      ? 'Current plan'
-                      : plan.buttonText}
+                  {checkoutBusy === (plan.planKey ?? 'free') ? 'Working…' : ctaFor(plan)}
                 </Button>
               </div>
             ))}
