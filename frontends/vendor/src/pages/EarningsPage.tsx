@@ -262,8 +262,8 @@ export default function EarningsPage() {
                 No payouts yet. Once a booking is paid, Stripe pays it out on your schedule.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
+              <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+                <table className="w-full min-w-[560px] text-sm [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0">
                   <thead>
                     <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                       <th className="pb-2 font-medium">Amount</th>
@@ -318,134 +318,76 @@ export default function EarningsPage() {
               No paid bookings yet. Free classes and pack redemptions don't appear here.
             </p>
           ) : (
-            <>
-              {/* Mobile: one card per sale — an 8-column money table doesn't
-                  survive a phone width. Desktop keeps the table. */}
-              <div className="space-y-3 sm:hidden">
-                {(data?.ledger ?? []).map((row) => {
-                  const badge = STATUS_LABEL[row.status];
-                  const pct = (row.commission_rate * 100).toFixed((row.commission_rate * 100) % 1 ? 1 : 0);
-                  return (
-                    <div key={row.id} className="rounded-xl border border-gray-200 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900">{row.label}</div>
+            /* Same table on every width — it just scrolls sideways on a
+               phone. min-w keeps the columns from crushing (w-full alone
+               shrinks the table to the container and nothing scrolls), and
+               the pr-4 on every cell but the last stops neighbouring
+               columns — "You earned" and "Status" especially — from
+               colliding when the row is wide. */
+            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <table className="w-full min-w-[860px] text-sm [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                    <th className="pb-2 font-medium">Date</th>
+                    <th className="pb-2 font-medium">Sale</th>
+                    <th className="pb-2 font-medium text-right">Parent paid</th>
+                    <th className="pb-2 font-medium text-right">Commission</th>
+                    <th className="pb-2 font-medium text-right">Stripe fee</th>
+                    <th className="pb-2 font-medium text-right">You earned</th>
+                    <th className="pb-2 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Paid out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.ledger ?? []).map((row) => {
+                    const badge = STATUS_LABEL[row.status];
+                    return (
+                      <tr key={row.id} className="border-b border-gray-100 last:border-0">
+                        <td className="py-3 text-gray-600 whitespace-nowrap">{sgDate(row.created_at)}</td>
+                        <td className="py-3">
+                          <div className="text-gray-900">{row.label}</div>
                           <div className="text-xs text-gray-400">
-                            {row.source === 'package' ? 'Class pack' : 'Booking'} · {sgDate(row.created_at)}
+                            {row.source === 'package' ? 'Class pack' : 'Booking'}
                           </div>
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
-                        >
-                          {badge.text}
-                        </span>
-                      </div>
-                      <dl className="mt-3 space-y-1.5 border-t border-gray-100 pt-3 text-sm">
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-gray-500">Parent paid</dt>
-                          <dd className="text-gray-900">{money(row.gross_cents, row.currency)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-gray-500">
-                            Commission <span className="text-gray-400">{pct}%</span>
-                          </dt>
-                          <dd className="text-gray-600">−{money(row.commission_cents, row.currency)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-gray-500">Stripe fee</dt>
-                          <dd>
-                            {row.stripe_fee_cents === null ? (
-                              <span className="text-gray-300">—</span>
-                            ) : row.fee_payer === 'vendor' ? (
-                              <span className="text-gray-600">−{money(row.stripe_fee_cents, row.currency)}</span>
-                            ) : (
-                              <span className="text-gray-400" title="Covered by BabyBrain">
-                                {money(row.stripe_fee_cents, row.currency)}
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                        {row.paid_out_at && (
-                          <div className="flex justify-between gap-3">
-                            <dt className="text-gray-500">Paid out</dt>
-                            <dd className="text-gray-600">{sgDate(row.paid_out_at)}</dd>
+                        </td>
+                        <td className="py-3 text-right text-gray-900 whitespace-nowrap">{money(row.gross_cents, row.currency)}</td>
+                        <td className="py-3 text-right text-gray-600 whitespace-nowrap">
+                          −{money(row.commission_cents, row.currency)}
+                          <div className="text-xs text-gray-400">
+                            {(row.commission_rate * 100).toFixed(row.commission_rate * 100 % 1 ? 1 : 0)}%
                           </div>
-                        )}
-                      </dl>
-                      <div className="mt-3 flex justify-between gap-3 border-t border-gray-100 pt-3 text-sm font-medium">
-                        <span className="text-gray-900">You earned</span>
-                        <span className="text-green-700">{money(row.net_cents, row.currency)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full min-w-[820px] text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                      <th className="pb-2 font-medium">Date</th>
-                      <th className="pb-2 font-medium">Sale</th>
-                      <th className="pb-2 font-medium text-right">Parent paid</th>
-                      <th className="pb-2 font-medium text-right">Commission</th>
-                      <th className="pb-2 font-medium text-right">Stripe fee</th>
-                      <th className="pb-2 font-medium text-right">You earned</th>
-                      <th className="pb-2 font-medium">Status</th>
-                      <th className="pb-2 font-medium">Paid out</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.ledger ?? []).map((row) => {
-                      const badge = STATUS_LABEL[row.status];
-                      return (
-                        <tr key={row.id} className="border-b border-gray-100 last:border-0">
-                          <td className="py-3 text-gray-600 whitespace-nowrap">{sgDate(row.created_at)}</td>
-                          <td className="py-3">
-                            <div className="text-gray-900">{row.label}</div>
-                            <div className="text-xs text-gray-400">
-                              {row.source === 'package' ? 'Class pack' : 'Booking'}
-                            </div>
-                          </td>
-                          <td className="py-3 text-right text-gray-900">{money(row.gross_cents, row.currency)}</td>
-                          <td className="py-3 text-right text-gray-600">
-                            −{money(row.commission_cents, row.currency)}
-                            <div className="text-xs text-gray-400">
-                              {(row.commission_rate * 100).toFixed(row.commission_rate * 100 % 1 ? 1 : 0)}%
-                            </div>
-                          </td>
-                          <td className="py-3 text-right text-gray-600">
-                            {/* Only a deduction from the vendor when their terms
-                                say they absorb it; otherwise it's BabyBrain's cost
-                                and shown greyed for transparency. */}
-                            {row.stripe_fee_cents === null ? (
-                              <span className="text-gray-300">—</span>
-                            ) : row.fee_payer === 'vendor' ? (
-                              <>−{money(row.stripe_fee_cents, row.currency)}</>
-                            ) : (
-                              <span className="text-gray-400" title="Covered by BabyBrain">
-                                {money(row.stripe_fee_cents, row.currency)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 text-right font-medium text-green-700">
-                            {money(row.net_cents, row.currency)}
-                          </td>
-                          <td className="py-3">
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${badge.className}`}>
-                              {badge.text}
+                        </td>
+                        <td className="py-3 text-right text-gray-600 whitespace-nowrap">
+                          {/* Only a deduction from the vendor when their terms
+                              say they absorb it; otherwise it's BabyBrain's cost
+                              and shown greyed for transparency. */}
+                          {row.stripe_fee_cents === null ? (
+                            <span className="text-gray-300">—</span>
+                          ) : row.fee_payer === 'vendor' ? (
+                            <>−{money(row.stripe_fee_cents, row.currency)}</>
+                          ) : (
+                            <span className="text-gray-400" title="Covered by BabyBrain">
+                              {money(row.stripe_fee_cents, row.currency)}
                             </span>
-                          </td>
-                          <td className="py-3 text-gray-600 whitespace-nowrap">
-                            {row.paid_out_at ? sgDate(row.paid_out_at) : <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                          )}
+                        </td>
+                        <td className="py-3 text-right font-medium text-green-700 whitespace-nowrap">
+                          {money(row.net_cents, row.currency)}
+                        </td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${badge.className}`}>
+                            {badge.text}
+                          </span>
+                        </td>
+                        <td className="py-3 text-gray-600 whitespace-nowrap">
+                          {row.paid_out_at ? sgDate(row.paid_out_at) : <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
