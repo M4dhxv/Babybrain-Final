@@ -1923,7 +1923,7 @@ type BookingItem = {
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
-type TokenItem = { id: string; status: string; provider: string; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null };
+type TokenItem = { id: string; status: string; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
 
 /** [key, label, icon, plusOnly] — the Plus-only tabs are the ones QA listed as
@@ -2163,7 +2163,8 @@ function TokenRow({ t }: { t: TokenItem }) {
     <div className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
       <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
       <div className="min-w-0 flex-1">
-        <h3 className="truncate font-black">{t.provider}</h3>
+        <h3 className="truncate font-black">{t.activityTitle ?? t.provider}</h3>
+        {t.activityTitle && <p className="truncate text-sm font-bold text-[#3f4b78]">{t.provider}</p>}
         <p className="text-sm font-semibold text-[#59658d]">
           Issued {sgDay(t.created_at)}
           {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
@@ -3067,29 +3068,35 @@ function ProfilePage() {
         child_id: string | null;
         providers: { business_name: string } | null;
       }>;
-      // Resolve the origin class slug so "Redeem" can link to its booking page.
+      // Resolve the origin class from its booking — the slug so "Redeem" can
+      // link to the booking page, the title so the card can lead with the
+      // class name rather than just the provider.
       const originIds = [...new Set(rows.map((r) => r.origin_booking_id).filter((x): x is string => !!x))];
-      const slugByBooking = new Map<string, string>();
+      const originByBooking = new Map<string, { slug: string | null; title: string | null }>();
       if (originIds.length) {
         const { data: bks } = await supabase
           .from("bookings")
-          .select("id, activity_sessions(activities(slug))")
+          .select("id, activity_sessions(activities(slug, title))")
           .in("id", originIds);
-        for (const b of (bks ?? []) as unknown as Array<{ id: string; activity_sessions: { activities: { slug: string } | null } | null }>) {
-          const slug = b.activity_sessions?.activities?.slug;
-          if (slug) slugByBooking.set(b.id, slug);
+        for (const b of (bks ?? []) as unknown as Array<{ id: string; activity_sessions: { activities: { slug: string; title: string } | null } | null }>) {
+          const act = b.activity_sessions?.activities;
+          if (act) originByBooking.set(b.id, { slug: act.slug ?? null, title: act.title ?? null });
         }
       }
       setTokens(
-        rows.map((r) => ({
-          id: r.id,
-          status: r.status,
-          created_at: r.created_at,
-          expires_at: r.expires_at,
-          provider: r.providers?.business_name ?? "A provider",
-          childId: r.child_id,
-          originSlug: r.origin_booking_id ? slugByBooking.get(r.origin_booking_id) ?? null : null,
-        }))
+        rows.map((r) => {
+          const origin = r.origin_booking_id ? originByBooking.get(r.origin_booking_id) ?? null : null;
+          return {
+            id: r.id,
+            status: r.status,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+            provider: r.providers?.business_name ?? "A provider",
+            activityTitle: origin?.title ?? null,
+            childId: r.child_id,
+            originSlug: origin?.slug ?? null,
+          };
+        })
       );
     })();
 
