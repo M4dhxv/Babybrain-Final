@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await admin
     .from('bookings')
     .select(
-      'id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours, wix_removed_at, wix_missing_since))'
+      'id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type))'
     )
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });

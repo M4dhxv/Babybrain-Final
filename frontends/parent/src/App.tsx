@@ -1923,6 +1923,8 @@ type BookingItem = {
   // For a cancelled booking: how it was made good (00080). 'token' = an
   // auto make-up token was issued; 'credit' = a package credit went back.
   compensation: "token" | "credit" | null;
+  // A Wix ticketed event — parents can't cancel or reschedule these online.
+  isEvent: boolean;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -2880,6 +2882,7 @@ function ProfilePage() {
             cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
             wix_removed_at: string | null;
             wix_missing_since: string | null;
+            wix_service_type: string | null;
           } | null;
         } | null;
         compensation: "token" | "credit" | null;
@@ -2911,6 +2914,7 @@ function ProfilePage() {
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
               removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
               compensation: r.compensation ?? null,
+              isEvent: act?.wix_service_type === "EVENT",
             };
           })
         );
@@ -4038,13 +4042,17 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     b.startsAt != null && new Date(b.startsAt).getTime() - hours * 36e5 < Date.now();
 
   const cancelBlockReason = (b: BookingItem) =>
-    !b.allowCancel
+    b.isEvent
+      ? "This is a ticketed event — it can't be cancelled once booked. Contact the provider if you need help."
+      : !b.allowCancel
       ? "The provider does not allow cancellations for this class. Contact them directly if you need help."
       : cutoffPassed(b, b.cancelCutoffH)
         ? `The cancellation window for this class has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
         : null;
   const reschedBlockReason = (b: BookingItem) =>
-    !b.allowReschedule
+    b.isEvent
+      ? "This is a ticketed event — it can't be rescheduled once booked. Contact the provider if you need help."
+      : !b.allowReschedule
       ? "The provider does not allow rescheduling for this class. Contact them directly if you need help."
       : cutoffPassed(b, b.resCutoffH)
         ? `The rescheduling window for this class has closed — rescheduling closes ${hoursLabel(b.resCutoffH)} before the session.`
@@ -5838,6 +5846,9 @@ function BookingPage() {
           )}
           {total != null && total > 0 && !redeemToken && (
             <p className="mt-2 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">Secure and encrypted payment via Stripe</p>
+          )}
+          {isEvent && (
+            <p className="mt-2 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">* This activity is non-cancellable once booked.</p>
           )}
         </section>
       </main>
