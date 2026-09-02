@@ -5859,11 +5859,17 @@ function BookingPage() {
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}
-          {isEvent && (
-            <p className="mt-2 text-center text-xs font-bold text-[#6D748D] md:col-span-2">* This activity is non-cancellable once booked.</p>
-          )}
-          {total != null && total > 0 && !redeemToken && (
-            <p className="mt-1 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">Secure and encrypted payment via Stripe</p>
+          {/* One grid item so the section's gap-5 sits above this block, not
+              between the two lines — they hug each other instead. */}
+          {(isEvent || (total != null && total > 0 && !redeemToken)) && (
+            <div className="space-y-0.5 text-center md:col-span-2">
+              {isEvent && (
+                <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>
+              )}
+              {total != null && total > 0 && !redeemToken && (
+                <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>
+              )}
+            </div>
           )}
         </section>
       </main>
