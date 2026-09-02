@@ -43,10 +43,14 @@
 /* The header's pink bleed is only meant to melt into the pink OS status bar
    of the installed app (theme-color #FA4D8D). In a normal browser tab there's
    no pink chrome above it, so it just reads as a stray gradient — paint it
-   only when running standalone. Elsewhere the header stays plain cream. */
+   only when running standalone. Elsewhere the header stays plain cream.
+
+   The fade distance is a fixed 17px, NOT a percentage: the mobile menu is a
+   child of <header>, so a %-based stop grows with the open menu and drags the
+   pink down the bar and into the menu. */
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
   .app-chrome-bleed {
-    background-image: linear-gradient(180deg, #fa4d8d 0%, #fffcf8 23%);
+    background-image: linear-gradient(180deg, #fa4d8d 0%, #fffcf8 17px);
   }
 }
 
