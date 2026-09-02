@@ -33,17 +33,31 @@ const statusFilters = ['All', 'Issued', 'Redeemed', 'Expired'] as const;
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' });
 
+/** `expires_at` as a Singapore-local YYYY-MM-DD, for seeding the <input type="date">. */
+const toDateInput = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+
 const statusBadge = (s: string) => cn(
   'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full capitalize',
   s === 'issued' ? 'bg-blue-300 text-blue-800' : s === 'redeemed' ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-500'
 );
 
 export default function MakeUpTokensPage() {
-  const { provider } = useAuth();
+  const { provider, role } = useAuth();
   const navigate = useNavigate();
+  const canManage = role === 'owner' || role === 'manager';
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<typeof statusFilters[number]>('All');
+
+  // Inline expiry editor — one token open at a time. Issuance already lets you
+  // set a bespoke expiry (BookingsPage); this is the same control for a token
+  // that's already out, so a date can be pushed back or pulled in after the fact.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [expiryMode, setExpiryMode] = useState<string>('none');
+  const [expiryDate, setExpiryDate] = useState<string>('');
+  const [savingExpiry, setSavingExpiry] = useState(false);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!provider) return;
@@ -70,6 +84,63 @@ export default function MakeUpTokensPage() {
     tokens.forEach((t) => { c[effectiveStatus(t) as keyof typeof c]++; });
     return c;
   }, [tokens]);
+
+  function startEdit(t: Token) {
+    setEditingId(t.token_id);
+    setExpiryError(null);
+    if (t.expires_at) {
+      setExpiryMode('custom');
+      setExpiryDate(toDateInput(t.expires_at));
+    } else {
+      setExpiryMode('none');
+      setExpiryDate('');
+    }
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setExpiryError(null);
+  }
+
+  /** The chosen expiry as an ISO instant, or null for a token that never expires. */
+  function resolveExpiresAt(): string | null | 'invalid' {
+    if (expiryMode === 'none') return null;
+    if (expiryMode === 'custom') {
+      if (!expiryDate) return 'invalid';
+      // End of the chosen day in Singapore time, so a token dated "today" is
+      // still usable for the rest of today.
+      const d = new Date(`${expiryDate}T23:59:59+08:00`);
+      if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return 'invalid';
+      return d.toISOString();
+    }
+    return new Date(Date.now() + Number(expiryMode) * 864e5).toISOString();
+  }
+
+  async function saveExpiry(t: Token) {
+    setExpiryError(null);
+    const expiresAt = resolveExpiresAt();
+    if (expiresAt === 'invalid') {
+      setExpiryError('Pick an expiry date in the future.');
+      return;
+    }
+    setSavingExpiry(true);
+    // A future (or absent) expiry means the token is live again — clear a
+    // stale 'expired' status the cron job may have already stamped on.
+    const status = t.status === 'expired' ? 'issued' : t.status;
+    const { error } = await supabase
+      .from('make_up_tokens')
+      .update({ expires_at: expiresAt, status })
+      .eq('id', t.token_id);
+    setSavingExpiry(false);
+    if (error) {
+      setExpiryError(error.message);
+      return;
+    }
+    setTokens((prev) =>
+      prev.map((x) => (x.token_id === t.token_id ? { ...x, expires_at: expiresAt, status } : x))
+    );
+    setEditingId(null);
+  }
 
   return (
     <div className="relative">
@@ -122,24 +193,82 @@ export default function MakeUpTokensPage() {
             <div className={cn(TOKEN_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
               <div>Family</div><div>Original class</div><div>Status</div><div>Issued</div><div>Expires</div>
             </div>
-            {visible.map((t) => (
-              <div key={t.token_id} className={cn(TOKEN_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-                    <Gift className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-                    {t.child_name}
+            {visible.map((t) => {
+              const editable = canManage && t.status !== 'redeemed';
+              return (
+                <div key={t.token_id}>
+                  <div className={cn(TOKEN_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+                        <Gift className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                        {t.child_name}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">{t.parent_name}</div>
+                    </div>
+                    <div className="min-w-0 text-sm text-gray-700 break-words">
+                      {t.origin_activity_title ?? <span className="text-gray-400">—</span>}
+                      {t.origin_session_at && <div className="text-xs text-gray-500">{fmtDate(t.origin_session_at)}</div>}
+                    </div>
+                    <div><span className={statusBadge(effectiveStatus(t))}>{effectiveStatus(t)}</span></div>
+                    <div className="text-xs text-gray-500">{fmtDate(t.created_at)}</div>
+                    <div className="text-xs text-gray-500">
+                      {editable ? (
+                        <button
+                          onClick={() => (editingId === t.token_id ? cancelEdit() : startEdit(t))}
+                          className="text-left text-[#FA4D8D] hover:underline"
+                        >
+                          {t.expires_at ? fmtDate(t.expires_at) : 'Set expiry'}
+                        </button>
+                      ) : (
+                        t.expires_at ? fmtDate(t.expires_at) : '—'
+                      )}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 truncate">{t.parent_name}</div>
+                  {editingId === t.token_id && (
+                    <div className="border-t border-gray-100 bg-gray-50 px-5 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-gray-500">Expires</span>
+                        <select
+                          value={expiryMode}
+                          onChange={(e) => setExpiryMode(e.target.value)}
+                          className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                        >
+                          <option value="30">in 30 days</option>
+                          <option value="60">in 60 days</option>
+                          <option value="90">in 90 days</option>
+                          <option value="180">in 6 months</option>
+                          <option value="365">in 12 months</option>
+                          <option value="custom">on a set date…</option>
+                          <option value="none">never</option>
+                        </select>
+                        {expiryMode === 'custom' && (
+                          <input
+                            type="date"
+                            value={expiryDate}
+                            onChange={(e) => setExpiryDate(e.target.value)}
+                            className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                          />
+                        )}
+                        <button
+                          onClick={() => saveExpiry(t)}
+                          disabled={savingExpiry}
+                          className="rounded-lg bg-[#FA4D8D] px-3 py-1 text-xs font-medium text-white hover:bg-[#e23f7c] disabled:opacity-60"
+                        >
+                          {savingExpiry ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                        >
+                          Cancel
+                        </button>
+                        {expiryError && <span className="text-xs font-medium text-red-600">{expiryError}</span>}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="min-w-0 text-sm text-gray-700 break-words">
-                  {t.origin_activity_title ?? <span className="text-gray-400">—</span>}
-                  {t.origin_session_at && <div className="text-xs text-gray-500">{fmtDate(t.origin_session_at)}</div>}
-                </div>
-                <div><span className={statusBadge(effectiveStatus(t))}>{effectiveStatus(t)}</span></div>
-                <div className="text-xs text-gray-500">{fmtDate(t.created_at)}</div>
-                <div className="text-xs text-gray-500">{t.expires_at ? fmtDate(t.expires_at) : '—'}</div>
-              </div>
-            ))}
+              );
+            })}
             {visible.length === 0 && (
               <div className="px-5 py-8 text-center text-sm text-gray-400">
                 {filter === 'All' ? 'No make-up tokens issued yet.' : `No ${filter.toLowerCase()} tokens.`}

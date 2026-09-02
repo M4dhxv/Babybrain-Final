@@ -727,6 +727,7 @@ export type Database = {
         Update: {
           status?: 'issued' | 'redeemed' | 'expired';
           redeemed_booking_id?: string | null;
+          expires_at?: string | null;
         };
         Relationships: [];
       };
