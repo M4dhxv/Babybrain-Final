@@ -21,7 +21,8 @@
     "stripe:dedupe": "node scripts/dedupe-vendor-subscriptions.mjs",
     "validate:plan-changes": "node scripts/validate-plan-changes.mjs",
     "validate:claim-flow": "node scripts/validate-claim-flow.mjs",
-    "validate:booking-rules": "node scripts/validate-booking-rules.mjs"
+    "validate:booking-rules": "node scripts/validate-booking-rules.mjs",
+    "validate:migrations": "node scripts/validate-migrations.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
