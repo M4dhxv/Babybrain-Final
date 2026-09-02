@@ -4126,12 +4126,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
-                {b.venue && (
-                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold text-[#8A93AD]">
-                    <Icon name="pin" className="h-3 w-3 shrink-0" />
-                    {b.venue}
-                  </p>
-                )}
+                {b.venue && <p className="truncate text-sm font-semibold text-[#59658d]">{b.venue}</p>}
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
