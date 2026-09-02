@@ -227,10 +227,10 @@ function HomePage() {
 
         <section className="mx-auto max-w-[1120px] px-6 py-4">
           <SectionTitle>Explore activities by age</SectionTitle>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
             {/* Drawn from AGE_BANDS so these tiles can't drift out of step with
                 the Explore filter — they used to say "0 – 6 months" but link to
-                ?age=6, which lands on the 6–17 month band. */}
+                ?age=6, which lands on the 6–11 month band. */}
             {AGE_BANDS.map((band, i) => (
               <a
                 key={band.key}
@@ -829,12 +829,19 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
 // when the class's own age range overlaps it.
 const AGE_BANDS: { key: string; label: string; min: number; max: number }[] = [
   { key: "0-5", label: "0 – 5 months", min: 0, max: 5 },
-  { key: "6-17", label: "6 – 17 months", min: 6, max: 17 },
+  { key: "6-11", label: "6 – 11 months", min: 6, max: 11 },
+  { key: "12-17", label: "12 – 17 months", min: 12, max: 17 },
   { key: "18-35", label: "18 months – 3 years", min: 18, max: 35 },
   { key: "36+", label: "Over 3 years", min: 36, max: 132 },
 ];
 /** Marketing sub-line for each band, used by the home page tiles. */
-const AGE_BAND_COPY = ["Social awakening", "Curious little movers", "Busy toddlers", "Confident explorers"];
+const AGE_BAND_COPY = [
+  "Social awakening",
+  "Curious little movers",
+  "First little steps",
+  "Busy toddlers",
+  "Confident explorers",
+];
 
 // Singapore areas. These now come from the listing itself (derived from its
 // postal sector — see migration 00032), so listings without coordinates are
