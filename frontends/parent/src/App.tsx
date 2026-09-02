@@ -5203,19 +5203,41 @@ function BookingPage() {
       }
     } else if (redeemToken) {
       // Redeeming a make-up token: books the session and consumes the token atomically.
-      const { data, error } = await supabase.rpc("redeem_make_up_token", {
-        p_token_id: redeemToken,
-        p_session_id: sessionId,
-        p_policies: acceptedPolicies,
-        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
-        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
-      });
-      setBusy(false);
-      if (error) {
-        setErr(cleanRpcErrorMessage(error));
-        return;
+      if (sessionId.startsWith("wix:")) {
+        // Wix-linked slot: no local activity_sessions row for the RPC to book
+        // against, and the slot has to be reserved in Wix first — same split
+        // as the package-credit path (/api/wix/bookings/redeem-package).
+        try {
+          const data = await apiPost<{ status: string }>("/api/wix/bookings/redeem-token", {
+            activityId: activity?.id,
+            wixSlotId: sessionId,
+            tokenId: redeemToken,
+            policiesAccepted: acceptedPolicies,
+            ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+            ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+          });
+          status = data.status;
+        } catch (e) {
+          setBusy(false);
+          setErr(e instanceof Error ? e.message : "Could not redeem this make-up token");
+          return;
+        }
+        setBusy(false);
+      } else {
+        const { data, error } = await supabase.rpc("redeem_make_up_token", {
+          p_token_id: redeemToken,
+          p_session_id: sessionId,
+          p_policies: acceptedPolicies,
+          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+        });
+        setBusy(false);
+        if (error) {
+          setErr(cleanRpcErrorMessage(error));
+          return;
+        }
+        status = (data as string | null) ?? "confirmed";
       }
-      status = (data as string | null) ?? "confirmed";
     } else if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
       // creating the booking there (and materializing the local session) is
@@ -5784,13 +5806,13 @@ function BookingPage() {
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
-              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{redeemToken ? "$0.00" : total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
             </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{redeemToken ? "$0.00" : total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
