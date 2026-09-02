@@ -494,7 +494,7 @@ export default function PlansPage() {
             <div className="text-center">
               <button
                 onClick={() => setOptOutOpen(true)}
-                className="text-sm font-semibold text-red-400 hover:text-red-500 underline underline-offset-4"
+                className="text-sm font-semibold text-red-400 hover:text-red-500"
               >
                 Opt out / remove my listing
               </button>
