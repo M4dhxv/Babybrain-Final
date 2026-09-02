@@ -399,14 +399,14 @@ export function Header({ active = "/" }: HeaderProps) {
     routes[3],
   ];
 
-  // The status bar / PWA chrome is painted solid #FA4D8D (theme-color). The
-  // header's soft top-down bleed carries that pink a few pixels in before it
-  // settles to paper (~46% down), so the two don't meet in a hard line on
-  // mobile. Header content is centred below the fade, on paper.
+  // The status bar / PWA chrome is painted #FA4D8D (theme-color). The header's
+  // soft top-down bleed — the palette's light pink #FFC1D6 settling to paper
+  // over its top ~23% — softens where that meets the page on mobile. Header
+  // content is centred below the fade, on paper.
   return (
     <header
       className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper"
-      style={{ backgroundImage: "linear-gradient(180deg, #FA4D8D 0%, #FFFCF8 46%)" }}
+      style={{ backgroundImage: "linear-gradient(180deg, #FFC1D6 0%, #FFFCF8 23%)" }}
     >
       <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
