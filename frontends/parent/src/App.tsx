@@ -14,7 +14,14 @@ import {
   ConfirmDialog,
   SectionTitle,
 } from "./components/ui";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { MessagesTab } from "./components/MessagesTab";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
@@ -2867,6 +2874,76 @@ function ProfilePage() {
     };
   }, [tab]);
 
+  // The mobile drawer's edge handle can be long-pressed (hold > 2s) to enter
+  // "adjust mode", then dragged up or down to wherever the parent wants it.
+  // The position is clamped to stay HANDLE_EDGE px clear of the top and bottom
+  // of the viewport, and remembered on the device. `null` = the default,
+  // vertically centred.
+  const HANDLE_EDGE = 72;
+  const [handleY, setHandleY] = useState<number | null>(() => {
+    try {
+      const v = localStorage.getItem("bb:profile-handle-y");
+      return v == null || Number.isNaN(Number(v)) ? null : Number(v);
+    } catch {
+      return null;
+    }
+  });
+  const [handleAdjusting, setHandleAdjusting] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const adjustingRef = useRef(false);
+  const draggedRef = useRef(false);
+  useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
+
+  const clampHandleY = (y: number) =>
+    Math.min(Math.max(y, HANDLE_EDGE), window.innerHeight - HANDLE_EDGE);
+
+  function handlePressStart(e: ReactPointerEvent<HTMLButtonElement>) {
+    draggedRef.current = false;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    holdTimer.current = setTimeout(() => {
+      adjustingRef.current = true;
+      setHandleAdjusting(true);
+      navigator.vibrate?.(25);
+    }, 2000);
+  }
+  function handlePressMove(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (!adjustingRef.current) return;
+    draggedRef.current = true;
+    setHandleY(clampHandleY(e.clientY));
+  }
+  function handlePressEnd() {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (adjustingRef.current) {
+      adjustingRef.current = false;
+      setHandleAdjusting(false);
+      // Any adjust-mode session — even a long-press with no drag — must not
+      // fall through to toggling the drawer.
+      draggedRef.current = true;
+      setHandleY((y) => {
+        if (y != null) {
+          try {
+            localStorage.setItem("bb:profile-handle-y", String(Math.round(y)));
+          } catch {
+            /* private window — the position just won't stick */
+          }
+        }
+        return y;
+      });
+    }
+  }
+  function handlePressClick(e: ReactMouseEvent) {
+    // A press that turned into a drag must not also toggle the drawer.
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      e.preventDefault();
+      return;
+    }
+    setMenuOpen((v) => !v);
+  }
+
   // Goes through the /api/customer/bookings backend route (service role)
   // instead of querying `bookings` directly from the browser — a direct
   // client-side query is subject to RLS's "published activities are public"
@@ -3254,9 +3331,27 @@ function ProfilePage() {
             drawer's edge as it slides. Mobile only. */}
         <button
           type="button"
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          onClick={() => setMenuOpen((v) => !v)}
-          className={`fixed top-1/2 z-50 -ml-px grid h-11 w-7 -translate-y-1/2 place-items-center rounded-r-[10px] bg-white text-baby-cta shadow-[4px_1px_10px_rgba(17,26,76,0.10)] transition-[left] duration-300 ease-out lg:hidden ${menuOpen ? "left-[62%]" : "left-0"}`}
+          aria-label={
+            handleAdjusting
+              ? "Drag up or down to reposition, release to set"
+              : menuOpen
+                ? "Close menu"
+                : "Open menu"
+          }
+          onPointerDown={handlePressStart}
+          onPointerMove={handlePressMove}
+          onPointerUp={handlePressEnd}
+          onPointerCancel={handlePressEnd}
+          onClick={handlePressClick}
+          style={{
+            top: handleY == null ? "50%" : `${clampHandleY(handleY)}px`,
+            transform: `translateY(-50%)${handleAdjusting ? " scale(1.12)" : ""}`,
+          }}
+          className={`fixed z-50 -ml-px grid h-11 w-7 place-items-center rounded-r-[10px] bg-white text-baby-cta shadow-[4px_1px_10px_rgba(17,26,76,0.10)] ease-out lg:hidden ${
+            handleAdjusting
+              ? "touch-none ring-2 ring-[#FA4D8D]/50 transition-transform"
+              : "transition-[left] duration-300"
+          } ${menuOpen ? "left-[62%]" : "left-0"}`}
         >
           <Icon name="chevron" strokeWidth={3} className={`h-5 w-5 ${menuOpen ? "rotate-180" : ""}`} />
         </button>
