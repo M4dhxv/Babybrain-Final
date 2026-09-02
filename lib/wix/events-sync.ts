@@ -489,22 +489,52 @@ export async function syncProviderWixEvents(
     .gt('start_date', new Date(now).toISOString())
     .lte('start_date', new Date(cutoff).toISOString());
   for (const row of linked ?? []) {
-    if (!fetchedIds.has(row.wix_event_id)) {
-      const missingSince = new Date().toISOString();
-      await admin
-        .from('wix_events')
-        .update({ wix_missing_since: missingSince, is_published: false })
-        .eq('id', row.id);
-      // Same "gone" flag propagated to the mirrored activity — matches
-      // scripts/reset-wix-demo-vendor.mjs's reconciliation for Wix Bookings
-      // (wix_missing_since + unpublish, leave sessions/bookings untouched).
-      await admin
-        .from('activities')
-        .update({ wix_missing_since: missingSince, is_published: false })
-        .eq('provider_id', providerId)
-        .eq('wix_event_id', row.id);
-      result.removed++;
+    if (fetchedIds.has(row.wix_event_id)) continue;
+    const missingSince = new Date().toISOString();
+    await admin
+      .from('wix_events')
+      .update({ wix_missing_since: missingSince, is_published: false })
+      .eq('id', row.id);
+    // Same "gone" flag propagated to the mirrored activity — matches
+    // scripts/reset-wix-demo-vendor.mjs's reconciliation for Wix Bookings.
+    const { data: mirrored } = await admin
+      .from('activities')
+      .update({ wix_missing_since: missingSince, is_published: false })
+      .eq('provider_id', providerId)
+      .eq('wix_event_id', row.id)
+      .select('id');
+    result.removed++;
+
+    // A cancelled or deleted Wix event strands whatever tickets were sold
+    // against it — the mirrored `bookings` rows used to be left `confirmed`
+    // forever. Cancel them so the roster is correct and, via
+    // compensate_cancelled_booking (00080), every paid ticket-holder gets a
+    // make-up token; free RSVPs just move to cancelled. The authoritative
+    // `event_ticket_orders` rows are moved in step. Only fires on the
+    // transition (next run the row is already `wix_missing_since`-flagged and
+    // filtered out above), so nothing is cancelled twice or on a transient
+    // sync gap that leaves the fetch throwing rather than short.
+    const activityIds = (mirrored ?? []).map((a) => a.id);
+    if (activityIds.length) {
+      const { data: sessions } = await admin
+        .from('activity_sessions')
+        .select('id')
+        .in('activity_id', activityIds);
+      const sessionIds = (sessions ?? []).map((s) => s.id);
+      if (sessionIds.length) {
+        await admin
+          .from('bookings')
+          .update({ status: 'cancelled' })
+          .in('session_id', sessionIds)
+          .neq('status', 'cancelled')
+          .neq('status', 'completed');
+      }
     }
+    await admin
+      .from('event_ticket_orders')
+      .update({ status: 'cancelled' })
+      .eq('event_id', row.id)
+      .neq('status', 'cancelled');
   }
 
   return result;
