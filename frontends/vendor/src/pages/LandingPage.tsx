@@ -82,11 +82,14 @@ export default function LandingPage() {
               <button onClick={() => { setMenuOpen(false); navigate('/'); }} className="py-3 text-center text-sm font-semibold text-[#FA4D8D]">Home</button>
               <button onClick={() => { setMenuOpen(false); navigate('/plans'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Plans</button>
               <button onClick={() => { setMenuOpen(false); navigate('/contact'); }} className="border-t border-gray-100 py-3 text-center text-sm font-medium text-gray-700">Contact</button>
+              {/* The collapsed twin of the desktop header CTA — same label,
+                  same destination (/claim-business), not the hero's
+                  "Upgrade your listing" → /plans. */}
               <button
-                onClick={() => { setMenuOpen(false); navigate('/plans'); }}
+                onClick={() => { setMenuOpen(false); navigate('/claim-business'); }}
                 className="my-2 rounded-full bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] px-6 py-2.5 text-center text-sm font-semibold text-white"
               >
-                Upgrade your listing
+                Claim your listing
               </button>
             </nav>
           </div>
