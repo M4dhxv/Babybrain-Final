@@ -399,15 +399,12 @@ export function Header({ active = "/" }: HeaderProps) {
     routes[3],
   ];
 
-  // The status bar / PWA chrome is painted #FA4D8D (theme-color). The header's
-  // soft top-down bleed — the palette's light pink #FFC1D6 settling to paper
-  // over its top ~23% — softens where that meets the page on mobile. Header
-  // content is centred below the fade, on paper.
+  // `app-chrome-bleed` paints a soft light-pink top fade ONLY in the installed
+  // app (@media display-mode: standalone, see styles/index.css), where it melts
+  // into the pink OS status bar. In a browser tab it's a no-op and the header
+  // is plain cream.
   return (
-    <header
-      className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper"
-      style={{ backgroundImage: "linear-gradient(180deg, #FFC1D6 0%, #FFFCF8 23%)" }}
-    >
+    <header className="app-chrome-bleed sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper">
       <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
         <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">

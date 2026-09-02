@@ -40,6 +40,16 @@
   display: none !important;
 }
 
+/* The header's pink bleed is only meant to melt into the pink OS status bar
+   of the installed app (theme-color #FA4D8D). In a normal browser tab there's
+   no pink chrome above it, so it just reads as a stray gradient — paint it
+   only when running standalone. Elsewhere the header stays plain cream. */
+@media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
+  .app-chrome-bleed {
+    background-image: linear-gradient(180deg, #ffc1d6 0%, #fffcf8 23%);
+  }
+}
+
 @layer utilities {
   .pixelated-fidelity {
     image-rendering: auto;
