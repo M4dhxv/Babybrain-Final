@@ -48,12 +48,28 @@ export async function POST(request: Request) {
     .eq('key', 'stripe_portal_configuration_id')
     .maybeSingle();
 
-  const portal = await getStripe().billingPortal.sessions.create({
-    customer: sub.stripe_customer_id,
-    ...(cfg?.value ? { configuration: cfg.value } : {}),
-    return_url: intent === 'cancel'
-      ? vendorPageUrl(request, '/billing', 'status=cancel_returned')
-      : vendorPageUrl(request, '/billing'),
-  });
+  let portal;
+  try {
+    portal = await getStripe().billingPortal.sessions.create({
+      customer: sub.stripe_customer_id,
+      ...(cfg?.value ? { configuration: cfg.value } : {}),
+      return_url: intent === 'cancel'
+        ? vendorPageUrl(request, '/billing', 'status=cancel_returned')
+        : vendorPageUrl(request, '/billing'),
+    });
+  } catch (e) {
+    // Either the stored customer id or the pinned portal configuration is
+    // unknown to Stripe. Both are mode-scoped, so a switch to live keys
+    // leaves every test-mode `cus_`/`bpc_` dangling; without this the throw
+    // escapes as a 500 on the Billing page rather than a message the vendor
+    // can act on.
+    if ((e as { code?: string }).code === 'resource_missing') {
+      return NextResponse.json(
+        { error: 'That billing account is no longer available. Please contact support.' },
+        { status: 400 },
+      );
+    }
+    throw e;
+  }
   return NextResponse.json({ url: portal.url });
 }

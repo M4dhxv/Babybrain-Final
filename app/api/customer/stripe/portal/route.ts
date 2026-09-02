@@ -23,9 +23,25 @@ export async function POST(request: Request) {
   }
 
   const origin = appOrigin(request);
-  const portal = await getStripe().billingPortal.sessions.create({
-    customer: sub.stripe_customer_id,
-    return_url: `${origin}/profile?tab=settings`,
-  });
+  let portal;
+  try {
+    portal = await getStripe().billingPortal.sessions.create({
+      customer: sub.stripe_customer_id,
+      return_url: `${origin}/profile?tab=settings`,
+    });
+  } catch (e) {
+    // A stored customer id that Stripe doesn't recognise — most likely a
+    // test-mode `cus_` left behind by a switch to live keys, since the two
+    // modes share no objects. Without this the SDK's throw escapes as a 500;
+    // the parent should get the same kind of message as the no-subscription
+    // case above.
+    if ((e as { code?: string }).code === 'resource_missing') {
+      return NextResponse.json(
+        { error: 'That billing account is no longer available. Please contact support.' },
+        { status: 400 },
+      );
+    }
+    throw e;
+  }
   return NextResponse.json({ url: portal.url });
 }
