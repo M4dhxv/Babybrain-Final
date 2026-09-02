@@ -2160,20 +2160,26 @@ function groupByChild<T extends { childId?: string | null; child_id?: string | n
 /** One make-up token, shared by the flat and the split-by-child lists. */
 function TokenRow({ t }: { t: TokenItem }) {
   return (
-    <div className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
-      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
-      <div className="min-w-0 flex-1">
-        <h3 className="truncate font-black">{t.activityTitle ?? t.provider}</h3>
-        {t.activityTitle && <p className="truncate text-sm font-bold text-[#3f4b78]">{t.provider}</p>}
-        <p className="text-sm font-semibold text-[#59658d]">
-          Issued {sgDay(t.created_at)}
-          {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
-        </p>
+    <div className="flex flex-col gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate font-black">{t.activityTitle ?? t.provider}</h3>
+          {t.activityTitle && <p className="truncate text-sm font-bold text-[#3f4b78]">{t.provider}</p>}
+          <p className="text-sm font-semibold text-[#59658d]">
+            Issued {sgDay(t.created_at)}
+            {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
+          </p>
+        </div>
       </div>
-      {t.status === "issued" && t.originSlug && (
-        <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
-      )}
-      <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
+      {/* On mobile these drop below the text and line up under it (past the
+          48px icon + gap); on sm+ they sit inline on the right as before. */}
+      <div className="flex flex-shrink-0 items-center gap-3 pl-16 sm:pl-0">
+        {t.status === "issued" && t.originSlug && (
+          <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+        )}
+        <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
+      </div>
     </div>
   );
 }
