@@ -839,6 +839,7 @@ export type Database = {
           issued_by: string | null;
           created_at: string;
           expires_at: string | null;
+          auto_issued: boolean;
         };
         Insert: {
           provider_id: string;
@@ -848,6 +849,7 @@ export type Database = {
           status?: 'issued' | 'redeemed' | 'expired';
           issued_by?: string | null;
           expires_at?: string | null;
+          auto_issued?: boolean;
         };
         Update: {
           status?: 'issued' | 'redeemed' | 'expired';
