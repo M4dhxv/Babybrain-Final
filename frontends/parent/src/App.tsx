@@ -2892,22 +2892,42 @@ function ProfilePage() {
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const adjustingRef = useRef(false);
   const draggedRef = useRef(false);
+  const pressStartY = useRef(0);
   useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
+
+  // While adjusting, kill every touch-scroll on the page — pointer capture
+  // alone doesn't stop the page behind from panning, and the listener has to
+  // be non-passive (React's own touch listeners are passive) to preventDefault.
+  useEffect(() => {
+    if (!handleAdjusting) return;
+    const block = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", block, { passive: false });
+    return () => document.removeEventListener("touchmove", block);
+  }, [handleAdjusting]);
 
   const clampHandleY = (y: number) =>
     Math.min(Math.max(y, HANDLE_EDGE), window.innerHeight - HANDLE_EDGE);
 
   function handlePressStart(e: ReactPointerEvent<HTMLButtonElement>) {
     draggedRef.current = false;
+    pressStartY.current = e.clientY;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     holdTimer.current = setTimeout(() => {
       adjustingRef.current = true;
       setHandleAdjusting(true);
       navigator.vibrate?.(25);
-    }, 2000);
+    }, 1000);
   }
   function handlePressMove(e: ReactPointerEvent<HTMLButtonElement>) {
-    if (!adjustingRef.current) return;
+    if (!adjustingRef.current) {
+      // Slid away before the hold completed — that's a scroll attempt, not a
+      // long-press; abandon the pending timer.
+      if (holdTimer.current && Math.abs(e.clientY - pressStartY.current) > 10) {
+        clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+      }
+      return;
+    }
     draggedRef.current = true;
     setHandleY(clampHandleY(e.clientY));
   }
@@ -3343,13 +3363,16 @@ function ProfilePage() {
           onPointerUp={handlePressEnd}
           onPointerCancel={handlePressEnd}
           onClick={handlePressClick}
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             top: handleY == null ? "50%" : `${clampHandleY(handleY)}px`,
             transform: `translateY(-50%)${handleAdjusting ? " scale(1.12)" : ""}`,
           }}
-          className={`fixed z-50 -ml-px grid h-11 w-7 place-items-center rounded-r-[10px] bg-white text-baby-cta shadow-[4px_1px_10px_rgba(17,26,76,0.10)] ease-out lg:hidden ${
+          // touch-none is unconditional: it has to be set before the gesture
+          // starts, or the browser has already claimed the touch as a scroll.
+          className={`fixed z-50 -ml-px grid h-11 w-7 touch-none select-none place-items-center rounded-r-[10px] bg-white text-baby-cta shadow-[4px_1px_10px_rgba(17,26,76,0.10)] ease-out lg:hidden ${
             handleAdjusting
-              ? "touch-none ring-2 ring-[#FA4D8D]/50 transition-transform"
+              ? "ring-2 ring-[#FA4D8D]/50 transition-transform"
               : "transition-[left] duration-300"
           } ${menuOpen ? "left-[62%]" : "left-0"}`}
         >
