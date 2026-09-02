@@ -1923,6 +1923,8 @@ type BookingItem = {
   // For a cancelled booking: how it was made good (00080). 'token' = an
   // auto make-up token was issued; 'credit' = a package credit went back.
   compensation: "token" | "credit" | null;
+  // What paid for this booking — drives the cancel-confirm heads-up.
+  paidWith: "token" | "credit" | "cash" | "free";
   // A Wix ticketed event — parents can't cancel or reschedule these online.
   isEvent: boolean;
 };
@@ -2886,6 +2888,7 @@ function ProfilePage() {
           } | null;
         } | null;
         compensation: "token" | "credit" | null;
+        paid_with: "token" | "credit" | "cash" | "free";
       }>;
     }>("/api/customer/bookings")
       .then(({ bookings: rows }) => {
@@ -2914,6 +2917,7 @@ function ProfilePage() {
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
               removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
               compensation: r.compensation ?? null,
+              paidWith: r.paid_with ?? "free",
               isEvent: act?.wix_service_type === "EVENT",
             };
           })
@@ -4059,7 +4063,18 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         : null;
 
   async function doCancel(b: BookingItem) {
-    if (!window.confirm(`Cancel your booking for ${b.title}?`)) return;
+    // Tell them what comes back — the compensate_cancelled_booking trigger
+    // (00080/00081) reinstates the credit, releases the make-up token, or
+    // issues a fresh one for a cash booking.
+    const back =
+      b.paidWith === "credit"
+        ? " Your class credit will be returned to your package."
+        : b.paidWith === "token"
+          ? " Your make-up token will be released so you can use it again."
+          : b.paidWith === "cash"
+            ? " You'll be issued a make-up token to use on another class."
+            : "";
+    if (!window.confirm(`Cancel your booking for ${b.title}?${back}`)) return;
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: b.id });
     setBusyId(null);

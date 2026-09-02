@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await admin
     .from('bookings')
     .select(
-      'id, status, created_at, child_id, package_purchase_id, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type))'
+      'id, status, created_at, child_id, package_purchase_id, payment_status, activity_sessions(starts_at, ends_at, activity_id, activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type))'
     )
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
@@ -31,31 +31,47 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const rows = data ?? [];
+  const allIds = rows.map((r) => r.id);
 
-  // How a cancelled booking was compensated (see migration 00080's
-  // compensate_cancelled_booking trigger), so My Bookings can say so on the
-  // card: an auto-issued make-up token points back here via
-  // origin_booking_id; failing that, a package-credit booking had its credit
-  // put back.
-  const cancelledIds = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
-  let tokenBookingIds = new Set<string>();
-  if (cancelledIds.length) {
-    const { data: toks } = await admin
-      .from('make_up_tokens')
-      .select('origin_booking_id')
-      .in('origin_booking_id', cancelledIds)
-      .eq('auto_issued', true);
-    tokenBookingIds = new Set(
-      (toks ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
+  // Was this booking made by redeeming a make-up token? (redeemed_booking_id
+  // is cleared when such a booking is cancelled — 00081 — so this only ever
+  // matches a live one.) And, for a cancelled booking, did an auto make-up
+  // token get minted to compensate it? (00080)
+  let redeemedByToken = new Set<string>();
+  let autoCompensated = new Set<string>();
+  if (allIds.length) {
+    const [{ data: redeemed }, { data: minted }] = await Promise.all([
+      admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', allIds),
+      admin
+        .from('make_up_tokens')
+        .select('origin_booking_id')
+        .in('origin_booking_id', allIds)
+        .eq('auto_issued', true),
+    ]);
+    redeemedByToken = new Set(
+      (redeemed ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id)
+    );
+    autoCompensated = new Set(
+      (minted ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
     );
   }
 
   const bookings = rows.map((r) => ({
     ...r,
+    // What paid for this booking — drives the cancel-confirm heads-up.
+    paid_with: redeemedByToken.has(r.id)
+      ? 'token'
+      : r.package_purchase_id
+        ? 'credit'
+        : r.payment_status === 'paid'
+          ? 'cash'
+          : 'free',
+    // How a cancelled booking was made good (00080/00081) — the permanent
+    // line on the card.
     compensation:
       r.status !== 'cancelled'
         ? null
-        : tokenBookingIds.has(r.id)
+        : autoCompensated.has(r.id)
           ? 'token'
           : r.package_purchase_id
             ? 'credit'
