@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gift } from 'lucide-react';
+import { Gift, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -215,9 +215,11 @@ export default function MakeUpTokensPage() {
                       {editable ? (
                         <button
                           onClick={() => (editingId === t.token_id ? cancelEdit() : startEdit(t))}
-                          className="text-left text-[#FA4D8D] hover:underline"
+                          className="inline-flex items-center gap-1 text-left text-[#FA4D8D] hover:underline"
+                          title="Edit expiry"
                         >
                           {t.expires_at ? fmtDate(t.expires_at) : 'Set expiry'}
+                          <Pencil className="h-3 w-3 flex-shrink-0" />
                         </button>
                       ) : (
                         t.expires_at ? fmtDate(t.expires_at) : '—'
