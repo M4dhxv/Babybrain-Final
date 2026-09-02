@@ -5154,6 +5154,14 @@ function BookingPage() {
       setErr("Please choose a ticket type first.");
       return;
     }
+    // A ticketed Wix event has no free/comp path — the isEvent branch below
+    // would ignore the token and send the parent to Stripe at full price
+    // (which reads as a charge under a "this class is on the house" banner).
+    // Block it with a clear message until event redemption actually exists.
+    if (isEvent && redeemToken) {
+      setErr("Make-up tokens can't be used for ticketed events yet. Contact the provider to arrange your place.");
+      return;
+    }
     setBusy(true);
     let status: string | null = null;
     if (isEvent) {
