@@ -5859,11 +5859,11 @@ function BookingPage() {
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}
-          {total != null && total > 0 && !redeemToken && (
-            <p className="mt-2 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">Secure and encrypted payment via Stripe</p>
-          )}
           {isEvent && (
-            <p className="mt-2 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">* This activity is non-cancellable once booked.</p>
+            <p className="mt-2 text-center text-xs font-bold text-[#6D748D] md:col-span-2">* This activity is non-cancellable once booked.</p>
+          )}
+          {total != null && total > 0 && !redeemToken && (
+            <p className="mt-1 text-center text-xs font-semibold text-[#6D748D] md:col-span-2">Secure and encrypted payment via Stripe</p>
           )}
         </section>
       </main>
