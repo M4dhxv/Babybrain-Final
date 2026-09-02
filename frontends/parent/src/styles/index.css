@@ -46,7 +46,7 @@
    only when running standalone. Elsewhere the header stays plain cream. */
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
   .app-chrome-bleed {
-    background-image: linear-gradient(180deg, #ffc1d6 0%, #fffcf8 23%);
+    background-image: linear-gradient(180deg, #fa4d8d 0%, #fffcf8 23%);
   }
 }
 
