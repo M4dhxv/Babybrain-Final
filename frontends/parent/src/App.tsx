@@ -1920,6 +1920,9 @@ type BookingItem = {
   // wix_removed_at) — its own detail page is gone, so booking cards for it
   // route back to the activities list instead of a dead link.
   removed: boolean;
+  // For a cancelled booking: how it was made good (00080). 'token' = an
+  // auto make-up token was issued; 'credit' = a package credit went back.
+  compensation: "token" | "credit" | null;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -2879,6 +2882,7 @@ function ProfilePage() {
             wix_missing_since: string | null;
           } | null;
         } | null;
+        compensation: "token" | "credit" | null;
       }>;
     }>("/api/customer/bookings")
       .then(({ bookings: rows }) => {
@@ -2906,6 +2910,7 @@ function ProfilePage() {
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
               resCutoffH: act?.reschedule_cutoff_hours ?? 24,
               removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
+              compensation: r.compensation ?? null,
             };
           })
         );
@@ -4121,6 +4126,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
+                {b.venue && (
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold text-[#8A93AD]">
+                    <Icon name="pin" className="h-3 w-3 shrink-0" />
+                    {b.venue}
+                  </p>
+                )}
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
@@ -4168,6 +4179,16 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 >
                   {busyId === b.id ? "Working…" : "Cancel booking"}
                 </button>
+              </div>
+            )}
+            {b.status === "cancelled" && b.compensation && (
+              <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
+                <Icon name="gift" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
+                <span>
+                  {b.compensation === "token"
+                    ? "Replaced with a make-up token you can use on another class — it doesn't expire."
+                    : "1 class credit has been returned to your package."}
+                </span>
               </div>
             )}
           </div>

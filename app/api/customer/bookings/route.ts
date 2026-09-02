@@ -29,5 +29,38 @@ export async function GET(request: Request) {
     .order('created_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ bookings: data ?? [] });
+
+  const rows = data ?? [];
+
+  // How a cancelled booking was compensated (see migration 00080's
+  // compensate_cancelled_booking trigger), so My Bookings can say so on the
+  // card: an auto-issued make-up token points back here via
+  // origin_booking_id; failing that, a package-credit booking had its credit
+  // put back.
+  const cancelledIds = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
+  let tokenBookingIds = new Set<string>();
+  if (cancelledIds.length) {
+    const { data: toks } = await admin
+      .from('make_up_tokens')
+      .select('origin_booking_id')
+      .in('origin_booking_id', cancelledIds)
+      .eq('auto_issued', true);
+    tokenBookingIds = new Set(
+      (toks ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
+    );
+  }
+
+  const bookings = rows.map((r) => ({
+    ...r,
+    compensation:
+      r.status !== 'cancelled'
+        ? null
+        : tokenBookingIds.has(r.id)
+          ? 'token'
+          : r.package_purchase_id
+            ? 'credit'
+            : null,
+  }));
+
+  return NextResponse.json({ bookings });
 }
