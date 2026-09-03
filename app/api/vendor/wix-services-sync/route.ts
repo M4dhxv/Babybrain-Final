@@ -5,9 +5,12 @@ import { getProviderWixCredentials } from '@/lib/wix/client';
 import { syncWixServicesToActivities } from '@/lib/wix/sync';
 
 /**
- * "Sync services" on Settings -> Integrate your Business. Re-runs the same
- * service->activity sync that happens automatically when a Wix account is
- * first connected — for picking up services added on Wix since then.
+ * "Sync services" on Settings -> Integrate your Business. Refreshes the
+ * activities a vendor has ALREADY imported — price, capacity, location,
+ * photo, description, plus the missing/revived reconciliation — straight
+ * from Wix. It does not import anything new: a service added on Wix since
+ * the last import shows up unchecked in the "Import specific activities"
+ * picker (GET /api/vendor/wix-services) for the vendor to choose.
  * Body: { provider_id }
  */
 // Wix syncs make many sequential Wix API + DB round-trips; the default

@@ -84,6 +84,11 @@ export async function runWixScheduledSync(
           status: 'ok',
         };
         try {
+          // Both called blanket (no onlyServiceIds/onlyEventIds), which is
+          // now refresh-only: they update and reconcile the activities this
+          // vendor has already imported via the pickers, and never create
+          // new ones. A service/event added on Wix waits, unchecked, in the
+          // "Import specific …" picker until the vendor opts it in.
           const services = await syncWixServicesToActivities(admin, row.provider_id, creds);
           const events = await syncProviderWixEvents(admin, row.provider_id, creds);
           outcome.services = {

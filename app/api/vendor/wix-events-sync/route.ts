@@ -6,10 +6,12 @@ import { syncProviderWixEvents } from '@/lib/wix/events-sync';
 
 /**
  * "Sync events" — the Wix Events & Tickets equivalent of
- * app/api/vendor/wix-services-sync. A vendor connected for Bookings only
- * gets `eventsAppNotInstalled: true` back rather than an error (see
- * syncProviderWixEvents) since that app is a separate, optional install.
- * Body: { provider_id }
+ * app/api/vendor/wix-services-sync. Refreshes only the events a vendor has
+ * ALREADY imported; a new event on the account shows up unchecked in the
+ * "Import specific events" picker (GET /api/vendor/wix-events) to choose.
+ * A vendor connected for Bookings only gets `eventsAppNotInstalled: true`
+ * back rather than an error (see syncProviderWixEvents) since that app is a
+ * separate, optional install. Body: { provider_id }
  */
 // Wix syncs make many sequential Wix API + DB round-trips; the default
 // ~10s function budget is not enough on a first import and the client just

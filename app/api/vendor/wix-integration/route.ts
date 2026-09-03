@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { maskWixApiKey, fetchWixServices, describeWixApiError } from '@/lib/wix/client';
-import { syncWixServicesToActivities } from '@/lib/wix/sync';
 
 /**
  * Settings -> Integrate your Business. Lets a vendor connect their own Wix
@@ -86,12 +85,12 @@ export async function POST(request: Request) {
   // check) keep working without touching the locked-down credentials table.
   await admin.from('providers').update({ wix_site_id: creds.siteId }).eq('id', providerId);
 
-  // Every service/class/appointment on the account becomes an activity
-  // (unpublished until the vendor fills it in) — connecting an account
-  // shouldn't require a separate manual step to see anything from it.
-  const sync = await syncWixServicesToActivities(admin, providerId, creds);
-
-  return NextResponse.json({ ok: true, wix_api_key_preview: preview, sync });
+  // Connecting an account no longer imports anything. The vendor then
+  // picks which services and events to bring in from the "Import specific
+  // activities" / "Import specific events" pickers (POST
+  // /api/vendor/wix-services-import and .../wix-events-import); until then
+  // this is just a verified, stored credential.
+  return NextResponse.json({ ok: true, wix_api_key_preview: preview });
 }
 
 export async function DELETE(request: Request) {

@@ -165,14 +165,36 @@ export async function syncWixServicesToActivities(
 
   const result: WixServiceSyncResult = { created: 0, updated: 0, skipped: [], removed: 0, revived: 0 };
 
-  // The "Import specific activities" picker calls this with onlyServiceIds
-  // set to just the services a vendor checked, instead of every service on
-  // the account — everything else about the sync (matching, category
-  // assignment, leaving edited fields alone) is identical either way.
-  const onlyIds = options?.onlyServiceIds ? new Set(options.onlyServiceIds) : null;
+  // Creation is opt-in. `onlyServiceIds` is the set of services the "Import
+  // specific activities" picker wants turned into activities — the ONLY way
+  // a Wix service becomes a listing here. A blanket caller (the "Sync
+  // services" button, the pg_cron background sync) passes nothing: those
+  // runs refresh and reconcile the activities a vendor has *already*
+  // imported, but never create new ones, so connecting an account — or
+  // just leaving it connected — no longer pulls the vendor's whole Wix
+  // catalogue in behind their back.
+  const explicitIds = options?.onlyServiceIds ? new Set(options.onlyServiceIds) : null;
+
+  // One read up front instead of a per-service maybeSingle() — also lets
+  // the loop cheaply skip a service that's neither already imported nor
+  // being imported right now.
+  const { data: linkedRows } = await admin
+    .from('activities')
+    .select('id, wix_service_id, wix_missing_since')
+    .eq('provider_id', providerId)
+    .not('wix_service_id', 'is', null);
+  const linkedByServiceId = new Map(
+    (linkedRows ?? []).map((r) => [r.wix_service_id as string, r])
+  );
 
   for (const service of services) {
-    if (onlyIds && !onlyIds.has(service.id)) continue;
+    const existing = linkedByServiceId.get(service.id) ?? null;
+    const mayCreate = !!explicitIds && explicitIds.has(service.id);
+    // Not imported, and not part of an explicit import request — leave it
+    // untouched. This is what makes import selective rather than
+    // "everything on the account, always".
+    if (!existing && !mayCreate) continue;
+
     const type =
       service.type === 'APPOINTMENT' || service.type === 'CLASS' || service.type === 'COURSE'
         ? service.type
@@ -186,13 +208,6 @@ export async function syncWixServicesToActivities(
       result.skipped.push({ name: service.name, reason: 'No bookable staff/resource found on the Wix account' });
       continue;
     }
-
-    const { data: existing } = await admin
-      .from('activities')
-      .select('id, wix_missing_since')
-      .eq('provider_id', providerId)
-      .eq('wix_service_id', service.id)
-      .maybeSingle();
 
     // Kept in step on every sync (create and update alike) — unlike
     // category/age/price/description, a Wix-linked activity's location

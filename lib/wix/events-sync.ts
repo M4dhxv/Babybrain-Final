@@ -340,10 +340,24 @@ export async function syncProviderWixEvents(
 ): Promise<WixEventsSyncResult> {
   // wix_events/event_ticket_types stay in step for every fetched event
   // regardless — that's just keeping BabyBrain's cache of what's on the
-  // account correct, not exposing anything to parents. `onlyEventIds` only
-  // gates the *activities* mirror below (the part a parent can actually
-  // see/book), matching syncWixServicesToActivities's onlyServiceIds.
-  const onlyIds = options?.onlyEventIds ? new Set(options.onlyEventIds) : null;
+  // account correct, not exposing anything to parents. `onlyEventIds` gates
+  // the *activities* mirror below (the part a parent can see/book): it's
+  // the set the "Import specific events" picker wants mirrored, and the
+  // only way a Wix event becomes a listing here. A blanket caller (the
+  // "Sync events" button, the pg_cron background sync) passes nothing —
+  // those runs refresh events a vendor has already imported but never
+  // mirror a new one, matching syncWixServicesToActivities.
+  const explicitIds = options?.onlyEventIds ? new Set(options.onlyEventIds) : null;
+
+  // Local wix_events.id of every event already mirrored into `activities`,
+  // so a blanket run knows which ones to keep refreshing.
+  const { data: mirroredRows } = await admin
+    .from('activities')
+    .select('wix_event_id')
+    .eq('provider_id', providerId)
+    .not('wix_event_id', 'is', null);
+  const mirroredLocalIds = new Set((mirroredRows ?? []).map((r) => r.wix_event_id as string));
+
   const result: WixEventsSyncResult = {
     created: 0,
     updated: 0,
@@ -468,7 +482,9 @@ export async function syncProviderWixEvents(
       }
     }
 
-    if (!onlyIds || onlyIds.has(event.id)) {
+    // Explicitly requested by the picker, or already imported and just
+    // being kept fresh — a blanket run never mirrors a brand-new event.
+    if ((explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))) {
       await syncEventActivityMirror(admin, providerId, localEventId, event);
     }
   }

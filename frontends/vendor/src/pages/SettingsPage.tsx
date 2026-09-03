@@ -843,13 +843,13 @@ function WixIntegrationManager({
     setError(null);
     setNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+      await apiPost<{ ok: true }>(
         '/api/vendor/wix-integration',
         { provider_id: provider.id, wix_site_id: siteId.trim(), wix_api_key: apiKey.trim() }
       );
       setApiKey('');
       setShowKey(false);
-      setNotice(`Wix account connected. ${summarizeSync(res.sync)}`);
+      setNotice('Wix account connected. Now choose which services and events to import, using the sections below.');
       await load();
     } catch (e) {
       setError(describeWixError(e, 'Could not save these credentials'));
@@ -1123,8 +1123,9 @@ function WixIntegrationManager({
                 </div>
               )}
               <p className="text-xs text-gray-400">
-                Every activity on this Wix account can become an activity here — they land unpublished so you can
-                review and make any edits required before they go live.
+                Nothing is imported automatically. Pick the services and events you want on BabyBrain from the
+                sections below — they land unpublished so you can review and edit them before they go live.
+                “Sync services” only refreshes what you’ve already imported.
               </p>
               <WixApiKeyHelpTrigger />
             </div>
