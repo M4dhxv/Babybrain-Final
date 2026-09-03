@@ -5971,7 +5971,12 @@ function BookingPage() {
                         only appears when they have some. */}
                     {(policies.length > 0 || needsMedical) && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${redeemToken ? "4" : "5"}. `}Provider terms</h3>
+                        {/* Step number tracks how many steps came before:
+                            class = date, time, children (+ package unless a
+                            make-up token skips it); course collapses date+time
+                            into one "Course schedule" step, so every later
+                            step shifts down by one. */}
+                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${(isCourse ? (redeemToken ? 3 : 4) : (redeemToken ? 4 : 5))}. `}Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
