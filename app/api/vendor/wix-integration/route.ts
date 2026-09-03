@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
-import { maskWixApiKey, fetchWixServices, describeWixApiError } from '@/lib/wix/client';
+import {
+  maskWixApiKey,
+  fetchWixServices,
+  describeWixApiError,
+  normalizeWixApiKey,
+  normalizeWixSiteId,
+  WixApiError,
+} from '@/lib/wix/client';
 
 /**
  * Settings -> Integrate your Business. Lets a vendor connect their own Wix
@@ -45,24 +52,42 @@ export async function POST(request: Request) {
     wix_site_id?: string;
     wix_api_key?: string;
   };
-  const { provider_id: providerId, wix_site_id: siteId, wix_api_key: apiKey } = body;
-  if (!providerId || !siteId?.trim() || !apiKey?.trim()) {
+  const { provider_id: providerId, wix_site_id: rawSiteId, wix_api_key: rawApiKey } = body;
+  if (!providerId || !rawSiteId?.trim() || !rawApiKey?.trim()) {
     return NextResponse.json({ error: 'provider_id, wix_site_id and wix_api_key are required' }, { status: 400 });
   }
 
   const auth = await requireProviderRole(request, providerId, 'manager');
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const creds = { accessToken: apiKey.trim(), siteId: siteId.trim() };
+  // Tolerate a messy paste: a whole dashboard URL / trailing slash in the
+  // Site ID, a wrapped key with newlines, an accidental "Bearer " prefix —
+  // all of which Wix would otherwise 403 with a "your key is bad" message.
+  const creds = { accessToken: normalizeWixApiKey(rawApiKey), siteId: normalizeWixSiteId(rawSiteId) };
+  if (!creds.accessToken || !creds.siteId) {
+    return NextResponse.json({ error: 'provider_id, wix_site_id and wix_api_key are required' }, { status: 400 });
+  }
 
   // Verify the credentials actually work before saving them — otherwise a
   // typo'd key just sits there looking "connected" until the next sync
-  // silently fails.
+  // silently fails. One retry on a transient failure (rate limit / 5xx /
+  // timeout) so a Wix blip doesn't read to the vendor as "wrong key".
   try {
     await fetchWixServices(creds);
   } catch (e) {
-    console.error('[wix-integration] credential verification failed:', e);
-    return NextResponse.json({ error: describeWixApiError(e) }, { status: 400 });
+    const transient = e instanceof WixApiError && (e.status === 0 || e.status === 429 || e.status >= 500);
+    if (transient) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        await fetchWixServices(creds);
+      } catch (e2) {
+        console.error('[wix-integration] credential verification failed (after retry):', e2);
+        return NextResponse.json({ error: describeWixApiError(e2) }, { status: 400 });
+      }
+    } else {
+      console.error('[wix-integration] credential verification failed:', e);
+      return NextResponse.json({ error: describeWixApiError(e) }, { status: 400 });
+    }
   }
 
   const admin = createAdminClient();

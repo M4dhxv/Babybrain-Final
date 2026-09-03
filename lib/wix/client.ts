@@ -88,19 +88,55 @@ async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): 
 }
 
 /** Turn a WixApiError into a message a vendor can actually act on, instead
- *  of one generic "check the key and site ID" for every failure mode. */
+ *  of one generic "check the key and site ID" for every failure mode.
+ *  Crucially, a transient Wix/network failure (rate limit, 5xx, our own
+ *  timeout, a dropped connection) is NOT the vendor's credentials being
+ *  wrong — telling them to re-check a key that's fine just sends them in
+ *  circles, so those get a "try again" message instead. */
 export function describeWixApiError(e: unknown): string {
   if (!(e instanceof WixApiError)) {
-    return 'Could not verify these credentials against Wix — check the key and site ID.';
+    return 'Could not reach Wix to verify these credentials — please try again in a moment.';
+  }
+  // 0 = network error / malformed request, 429 = rate limited, 5xx +
+  // our synthetic 504 = Wix is down or slow. None of these mean the key or
+  // site ID is wrong.
+  if (e.status === 0 || e.status === 429 || e.status >= 500) {
+    return 'Couldn’t reach Wix just now — this is on Wix’s side, not your credentials. Wait a minute and try connecting again.';
   }
   if (e.status === 404 && /meta-site .* not found/i.test(e.body)) {
     return "This Site ID doesn't match the account this API key belongs to — " +
       'make sure both are copied from the same Wix site (if you manage more than one).';
   }
+  // 404 (not the meta-site variant above) / 428 from the Bookings endpoint
+  // means Wix Bookings isn't reachable on this site — usually the app isn't
+  // installed — not that the key or Site ID is wrong.
+  if (e.status === 404 || e.status === 428) {
+    return 'Wix couldn’t complete this request — make sure the Wix Bookings app is installed on this site, then try connecting again.';
+  }
   if (e.status === 401 || e.status === 403) {
-    return 'This API key was rejected by Wix — check it hasn\'t been revoked and has Bookings read/write permissions.';
+    // 403 is ambiguous on Wix's side — a revoked/under-scoped key, but ALSO
+    // a malformed Site ID (a pasted dashboard URL, a stray space) — so the
+    // message has to name both.
+    return 'Wix rejected this connection. Check the API key hasn’t been revoked and was generated with “All site permissions”, and that the Site ID is just the ID from that same site’s dashboard URL (no extra text).';
   }
   return `Wix rejected these credentials (${e.status}) — check the key and site ID.`;
+}
+
+/** A Wix Site ID is a UUID. Vendors routinely paste the whole dashboard URL
+ *  ("wix.com/dashboard/<id>/home"), leave a trailing slash, or add a stray
+ *  space — all of which Wix answers with a 403 that reads as "your key is
+ *  bad". Pull the UUID out so those inputs just work. */
+export function normalizeWixSiteId(raw: string): string {
+  const m = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return (m ? m[0] : raw.trim()).toLowerCase();
+}
+
+/** A Wix API key is one unbroken token. A wrapped copy/paste can slip in
+ *  newlines or spaces — which make an invalid HTTP header, surfaced as a
+ *  cryptic network error — and vendors sometimes paste a leading "Bearer ".
+ *  Strip all of that; the key never legitimately contains whitespace. */
+export function normalizeWixApiKey(raw: string): string {
+  return raw.replace(/^\s*bearer\s+/i, '').replace(/\s+/g, '');
 }
 
 /** Safe-to-display form of an API key: mostly masked, last 10 characters

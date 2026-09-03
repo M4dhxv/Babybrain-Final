@@ -847,7 +847,15 @@ function WixIntegrationManager({
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider?.id]);
 
   async function save() {
-    if (!provider || !siteId.trim() || !apiKey.trim()) {
+    // Tolerate a messy paste before it ever reaches Wix: pull the UUID out
+    // of a pasted dashboard URL, drop whitespace/newlines and a stray
+    // "Bearer " from the key. The server re-does this, but cleaning the
+    // fields here means the vendor sees exactly what will be stored.
+    const cleanSite = (siteId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? siteId.trim()).toLowerCase();
+    const cleanKey = apiKey.replace(/^\s*bearer\s+/i, '').replace(/\s+/g, '');
+    if (cleanSite !== siteId) setSiteId(cleanSite);
+    if (cleanKey !== apiKey) setApiKey(cleanKey);
+    if (!provider || !cleanSite || !cleanKey) {
       setError('Both the API key and site ID are required.');
       return;
     }
@@ -857,7 +865,7 @@ function WixIntegrationManager({
     try {
       await apiPost<{ ok: true }>(
         '/api/vendor/wix-integration',
-        { provider_id: provider.id, wix_site_id: siteId.trim(), wix_api_key: apiKey.trim() }
+        { provider_id: provider.id, wix_site_id: cleanSite, wix_api_key: cleanKey }
       );
       setApiKey('');
       setShowKey(false);
