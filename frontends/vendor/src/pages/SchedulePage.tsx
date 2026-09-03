@@ -28,6 +28,7 @@ type EnrichedSession = {
   teacherName: string | null;
   studio: string | null;
   fromWix: boolean;
+  isCourse: boolean;
 };
 
 export default function SchedulePage() {
@@ -39,7 +40,7 @@ export default function SchedulePage() {
   const [fActivity, setFActivity] = useState('');
   const [fLocation, setFLocation] = useState('');
 
-  const [activities, setActivities] = useState<{ id: string; title: string; location_id: string | null; wix_service_id: string | null }[]>([]);
+  const [activities, setActivities] = useState<{ id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null }[]>([]);
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +54,7 @@ export default function SchedulePage() {
     if (!provider) return;
     (async () => {
       const [{ data: acts }, { data: locs }] = await Promise.all([
-        supabase.from('activities').select('id, title, location_id, wix_service_id').eq('provider_id', provider.id),
+        supabase.from('activities').select('id, title, location_id, wix_service_id, wix_service_type').eq('provider_id', provider.id),
         supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id),
       ]);
       setActivities(acts ?? []);
@@ -104,6 +105,10 @@ export default function SchedulePage() {
         .select('id, activity_id, starts_at, ends_at, capacity, location_id, teacher_name, studio, wix_slot_key, wix_remaining_capacity')
         .in('activity_id', activities.map((a) => a.id))
         .neq('status', 'cancelled')
+        // A COURSE enrolment's anchor row spans the whole run — it's not a
+        // dated occurrence and would render as one giant session on its
+        // start day. The course's real per-week occurrences are still here.
+        .not('wix_slot_key', 'like', 'wixcourse:%')
         .gte('starts_at', rangeStart.toISOString())
         .lte('starts_at', rangeEnd.toISOString())
         .order('starts_at');
@@ -149,6 +154,7 @@ export default function SchedulePage() {
             teacherName: s.teacher_name,
             studio: s.studio,
             fromWix,
+            isCourse: act?.wix_service_type === 'COURSE',
           };
         })
       );
@@ -404,9 +410,14 @@ function SessionCard({ s, onClick }: { s: EnrichedSession; onClick: () => void }
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
-        {s.fromWix && (
-          <span className="shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {s.isCourse && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Course</span>
+          )}
+          {s.fromWix && (
+            <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+          )}
+        </div>
       </div>
       <div className="truncate text-xs text-gray-700">{s.title}</div>
       {s.locationName && (
@@ -423,7 +434,11 @@ function SessionCard({ s, onClick }: { s: EnrichedSession; onClick: () => void }
       <div className="mt-1 flex items-center gap-1 text-[11px]">
         <Users className="h-3 w-3 text-gray-400" />
         <span className={cn(full ? 'font-medium text-red-600' : 'text-gray-500')}>
-          {s.booked}{s.capacity != null ? `/${s.capacity}` : ''} {full ? '· Full' : ''}
+          {s.booked}{s.capacity != null ? `/${s.capacity}` : ''}
+          {/* A course is enrolled as one whole programme, so this count is
+              the course's total enrolment carried across every occurrence —
+              not people booked for this specific date. */}
+          {s.isCourse ? ' enrolled · course' : full ? ' · Full' : ''}
         </span>
       </div>
     </button>

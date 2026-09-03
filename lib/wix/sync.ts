@@ -9,6 +9,7 @@ import {
   createWixBooking,
   createWixClassBooking,
   decodeWixSlotKey,
+  courseAnchorSlotKey,
   wixServicePrice,
   wixServiceCapacity,
   wixServiceImageUrl,
@@ -499,6 +500,26 @@ async function resolveWixSlot(
           ok: false,
           status: 409,
           error: participants > 1 ? 'Not enough spots left for that many children' : 'That class is no longer available',
+        };
+      }
+      // A COURSE is enrolled as one whole programme — the parent picks an
+      // occurrence in the calendar, but the Wix booking (createWixClassBooking
+      // with isCourse=true, below) always books the schedule, i.e. every
+      // session. So the local anchor row spans the full run and is keyed once
+      // per course, not per occurrence: re-enrolling reuses the same row, and
+      // "My Bookings" / the confirmation page then show a start–end range
+      // straight off it. `resolved.session` still carries the schedule id the
+      // Wix call needs.
+      if (activity.wix_service_type === 'COURSE') {
+        const startsAt = sessions.reduce((m, s) => (s.start < m ? s.start : m), session.start);
+        const endsAt = sessions.reduce((m, s) => (s.end > m ? s.end : m), session.end);
+        return {
+          ok: true,
+          key: courseAnchorSlotKey(session.scheduleId),
+          startsAt,
+          endsAt,
+          capacity: session.capacity,
+          resolved: { kind: 'class', session },
         };
       }
       return {

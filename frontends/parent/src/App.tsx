@@ -1664,6 +1664,11 @@ function ActivityDetailPage() {
           <div className="grid gap-5 md:grid-cols-2">
             <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 ? " md:col-span-2" : ""}`}>
               <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
+              {activity.wix_service_type === "COURSE" && sessions.length > 0 && (
+                <p className="mb-3 text-sm font-bold text-[#4a5685]">
+                  Runs {sgDay(sessions[0].starts_at)} – {sgDay(sessions.reduce((m, s) => ((s.ends_at ?? s.starts_at) > m ? (s.ends_at ?? s.starts_at) : m), sessions[0].ends_at ?? sessions[0].starts_at))}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {sessions.map((s) => (
                   <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
@@ -1941,6 +1946,9 @@ type BookingItem = {
   paidWith: "token" | "credit" | "cash" | "free";
   // A Wix ticketed event — parents can't cancel or reschedule these online.
   isEvent: boolean;
+  // A Wix COURSE — one enrolment covers the whole run, so there's no single
+  // session to move it to; reschedule is blocked.
+  isCourse: boolean;
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -3000,10 +3008,17 @@ function ProfilePage() {
           rows.map((r) => {
             const s = r.activity_sessions;
             const act = s?.activities;
+            // A Wix COURSE booking's session row spans the whole run, so it
+            // reads as a start–end date range rather than a single class time.
+            const courseBooking = act?.wix_service_type === "COURSE";
             return {
               id: r.id,
               status: r.status,
-              when: s?.starts_at ? sgDateTime(s.starts_at) : "",
+              when: s?.starts_at
+                ? courseBooking && s.ends_at
+                  ? `${sgDay(s.starts_at)} – ${sgDay(s.ends_at)}`
+                  : sgDateTime(s.starts_at)
+                : "",
               title: act?.title ?? "Class",
               slug: act?.slug ?? "",
               // activity-play is the only crop without a category tag baked
@@ -3023,6 +3038,7 @@ function ProfilePage() {
               compensation: r.compensation ?? null,
               paidWith: r.paid_with ?? "free",
               isEvent: act?.wix_service_type === "EVENT",
+              isCourse: courseBooking,
             };
           })
         );
@@ -4181,6 +4197,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   const reschedBlockReason = (b: BookingItem) =>
     b.isEvent
       ? "This is a ticketed event — it can't be rescheduled once booked. Contact the provider if you need help."
+      : b.isCourse
+      ? "This is a course — your enrolment covers every session in the run, so there's no single class to move. Contact the provider if you need help."
       : !b.allowReschedule
       ? "The provider does not allow rescheduling for this class. Contact them directly if you need help."
       : cutoffPassed(b, b.resCutoffH)
@@ -5064,6 +5082,12 @@ function BookingPage() {
   // only ever one session, the event's own occurrence) and which endpoint
   // gets called to actually purchase it.
   const isEvent = activity?.wix_service_type === "EVENT";
+  // A Wix COURSE is enrolled as one whole programme, not per session — the
+  // parent still sees every occurrence in the picker, but booking any of
+  // them enrols in the entire run (handled server-side in resolveWixSlot).
+  // These give the run's span for the added "Runs …" line and the booking
+  // confirmation / My Bookings date range.
+  const isCourse = activity?.wix_service_type === "COURSE";
   type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
@@ -5169,6 +5193,20 @@ function BookingPage() {
     (byDate[sgDay(s.starts_at)] ||= []).push(s);
   });
   const dates = Object.keys(byDate);
+
+  // Span of a course run (first session start → last session end).
+  const courseStart =
+    isCourse && sessions.length
+      ? sessions.reduce((m, s) => (s.starts_at < m ? s.starts_at : m), sessions[0].starts_at)
+      : null;
+  const courseEnd =
+    isCourse && sessions.length
+      ? sessions.reduce((m, s) => {
+          const e = s.ends_at ?? s.starts_at;
+          return e > m ? e : m;
+        }, sessions[0].ends_at ?? sessions[0].starts_at)
+      : null;
+  const courseRange = courseStart && courseEnd ? `${sgDay(courseStart)} – ${sgDay(courseEnd)}` : null;
 
   useEffect(() => {
     if (dates.length && !dateKey) setDateKey(dates[0]);
@@ -5477,10 +5515,10 @@ function BookingPage() {
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
-      when: selected ? sgDateTime(selected.starts_at) : "",
+      when: isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "",
       status: status ?? "pending",
-      start: selected?.starts_at ?? "",
-      end: selected?.ends_at ?? "",
+      start: (isCourse ? courseStart : selected?.starts_at) ?? "",
+      end: (isCourse ? courseEnd : selected?.ends_at) ?? "",
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
@@ -5540,10 +5578,10 @@ function BookingPage() {
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
-      when: selected ? sgDateTime(selected.starts_at) : "",
+      when: isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "",
       status,
-      start: selected?.starts_at ?? "",
-      end: selected?.ends_at ?? "",
+      start: (isCourse ? courseStart : selected?.starts_at) ?? "",
+      end: (isCourse ? courseEnd : selected?.ends_at) ?? "",
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
@@ -5701,6 +5739,7 @@ function BookingPage() {
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
+                    {isCourse && courseRange && <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> Runs {courseRange}</p>}
                     {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>

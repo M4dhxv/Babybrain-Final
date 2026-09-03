@@ -39,6 +39,11 @@ async function reconcileStaleWixSessions(
     .select('id, wix_slot_key, wix_remaining_capacity, capacity')
     .eq('activity_id', activityId)
     .not('wix_slot_key', 'is', null)
+    // A COURSE enrolment's anchor row (wix_slot_key 'wixcourse:<scheduleId>')
+    // isn't one of the per-occurrence slots this fetch enumerates — it spans
+    // the whole run and is managed at booking time — so it must never be
+    // treated as a stale occurrence and swept.
+    .not('wix_slot_key', 'like', 'wixcourse:%')
     .gte('starts_at', windowStart.toISOString())
     .lt('starts_at', windowEnd.toISOString());
   const stale = (existing ?? []).filter((s) => !currentKeys.has(s.wix_slot_key!));

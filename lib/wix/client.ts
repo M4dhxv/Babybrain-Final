@@ -493,6 +493,17 @@ export function decodeWixSlotKey(key: string): WixSlotKey {
   return JSON.parse(Buffer.from(key, 'base64url').toString('utf8'));
 }
 
+/** `activity_sessions.wix_slot_key` for a COURSE enrolment's local anchor
+ *  row. A Wix course is booked as one whole programme (not per occurrence),
+ *  so every enrolment shares a single local session row spanning the full
+ *  run — keyed once per Wix schedule. Deliberately a plain `wixcourse:`
+ *  string, not an encoded {@link WixSlotKey}: nothing decodes it, it only
+ *  needs to be stable for dedup and `LIKE 'wixcourse:%'`-filterable so the
+ *  vendor Schedule calendar and the stale-slot reconciler can skip it. */
+export function courseAnchorSlotKey(scheduleId: string): string {
+  return `wixcourse:${scheduleId}`;
+}
+
 export interface WixLocation {
   id: string;
   name: string;
