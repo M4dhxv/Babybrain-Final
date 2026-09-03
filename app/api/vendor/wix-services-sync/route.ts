@@ -10,6 +10,11 @@ import { syncWixServicesToActivities } from '@/lib/wix/sync';
  * first connected — for picking up services added on Wix since then.
  * Body: { provider_id }
  */
+// Wix syncs make many sequential Wix API + DB round-trips; the default
+// ~10s function budget is not enough on a first import and the client just
+// sees "Failed to fetch" when the platform kills it mid-flight.
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const { provider_id: providerId } = (await request.json().catch(() => ({}))) as { provider_id?: string };
   if (!providerId) return NextResponse.json({ error: 'provider_id required' }, { status: 400 });

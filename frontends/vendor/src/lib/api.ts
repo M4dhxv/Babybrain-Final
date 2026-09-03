@@ -17,6 +17,17 @@ async function errorFor(res: Response): Promise<ApiError> {
   return new ApiError(message, res.status);
 }
 
+/** `fetch` rejects (network down, CORS, or the serverless function was killed
+ *  for running past its time budget) with a bare `TypeError: Failed to fetch`.
+ *  Turn that into something a vendor can read. */
+async function doFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError('The request could not complete — the network dropped or it took too long. Try again in a moment.', 0);
+  }
+}
+
 /**
  * Calls a Next.js backend route (Stripe / chat token / staff invite),
  * attaching the Supabase access token as a Bearer header. The routes
@@ -27,7 +38,7 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
     data: { session },
   } = await supabase.auth.getSession();
   const base = (import.meta.env.VITE_API_BASE as string) || "";
-  const res = await fetch(`${base}${path}`, {
+  const res = await doFetch(`${base}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -45,7 +56,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
     data: { session },
   } = await supabase.auth.getSession();
   const base = (import.meta.env.VITE_API_BASE as string) || "";
-  const res = await fetch(`${base}${path}`, {
+  const res = await doFetch(`${base}${path}`, {
     headers: {
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
@@ -60,7 +71,7 @@ export async function apiDelete<T = unknown>(path: string): Promise<T> {
     data: { session },
   } = await supabase.auth.getSession();
   const base = (import.meta.env.VITE_API_BASE as string) || "";
-  const res = await fetch(`${base}${path}`, {
+  const res = await doFetch(`${base}${path}`, {
     method: 'DELETE',
     headers: {
       ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),

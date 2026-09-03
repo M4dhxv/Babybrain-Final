@@ -56,11 +56,30 @@ function wixHeaders(creds: WixCredentials): Record<string, string> {
 }
 
 async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${WIX_API_BASE}${path}`, {
-    method: 'POST',
-    headers: wixHeaders(creds),
-    body: JSON.stringify(body),
-  });
+  // Bound every call so one hung Wix endpoint can't burn the whole function
+  // budget and leave the client with a bare "Failed to fetch" when the
+  // platform kills the process. Surfaces as a WixApiError the callers already
+  // handle (status 504 — not a 428/403/404, so it's reported, not swallowed).
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 20_000);
+  let res: Response;
+  try {
+    res = await fetch(`${WIX_API_BASE}${path}`, {
+      method: 'POST',
+      headers: wixHeaders(creds),
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    });
+  } catch (e) {
+    const timedOut = e instanceof Error && e.name === 'AbortError';
+    throw new WixApiError(
+      timedOut ? 504 : 0,
+      path,
+      timedOut ? 'Wix did not respond within 20s' : e instanceof Error ? e.message : 'network error',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new WixApiError(res.status, path, text);

@@ -10,6 +10,11 @@ import { getProviderWixCredentials, fetchWixEvents, WixApiError } from '@/lib/wi
  * /api/vendor/wix-events-import saves the selection). Mirrors
  * /api/vendor/wix-services for Bookings.
  */
+// Wix syncs make many sequential Wix API + DB round-trips; the default
+// ~10s function budget is not enough on a first import and the client just
+// sees "Failed to fetch" when the platform kills it mid-flight.
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const providerId = searchParams.get('providerId');

@@ -25,6 +25,11 @@ import { syncWixServicesToActivities, unlinkWixActivities } from '@/lib/wix/sync
  * account, rather than a silent, permanent detach.
  * Body: { provider_id, service_ids: string[] }
  */
+// Wix syncs make many sequential Wix API + DB round-trips; the default
+// ~10s function budget is not enough on a first import and the client just
+// sees "Failed to fetch" when the platform kills it mid-flight.
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const { provider_id: providerId, service_ids: serviceIds } = (await request.json().catch(() => ({}))) as {
     provider_id?: string;
