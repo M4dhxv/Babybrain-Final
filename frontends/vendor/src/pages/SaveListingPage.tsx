@@ -11,7 +11,6 @@ import {
   Link,
   Phone,
   Shield,
-  CalendarDays,
   Lock,
   Bell,
   CheckCircle,
@@ -31,7 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/BrandLogo';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
-import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
+import { VENDOR_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 import type { VendorCategory } from '@/lib/database.types';
 
 interface ListingRow {
@@ -73,11 +72,10 @@ const whyMatters = [
 
 export default function SaveListingPage() {
   const navigate = useNavigate();
-  const { provider: activeProvider, subscription, refreshProvider } = useAuth();
+  const { provider: activeProvider, refreshProvider } = useAuth();
   const providerId = activeProvider?.id ?? null;
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [agreedVendor, setAgreedVendor] = useState(false);
-  const [agreedBooking, setAgreedBooking] = useState(false);
   const [listingData, setListingData] = useState<ListingRow[]>([]);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [prov, setProv] = useState<ProviderDraft | null>(null);
@@ -93,10 +91,7 @@ export default function SaveListingPage() {
   const [savingListing, setSavingListing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Booking & Messaging Terms are "Growth & Pro only" — only gate Save on them
-  // for a vendor actually on a paid plan; Vendor Terms are always required.
-  const onPaidPlan = ['growth', 'pro', 'premium'].includes(subscription?.plan ?? 'free');
-  const canSave = agreedVendor && (!onPaidPlan || agreedBooking);
+  const canSave = agreedVendor;
 
   // Values for the "Preview on BabyBrain.sg" panel — real data where we have
   // it, so the phone and desktop previews both reflect the actual listing
@@ -254,14 +249,10 @@ export default function SaveListingPage() {
     setSavingListing(true);
     setSaveError(null);
     const now = new Date().toISOString();
-    // Literal objects (not a built-up map) so the typed client keeps the
-    // column names checked.
-    const { error } = agreedBooking
-      ? await supabase
-          .from('providers')
-          .update({ vendor_terms_accepted_at: now, booking_messaging_terms_accepted_at: now })
-          .eq('id', providerId)
-      : await supabase.from('providers').update({ vendor_terms_accepted_at: now }).eq('id', providerId);
+    const { error } = await supabase
+      .from('providers')
+      .update({ vendor_terms_accepted_at: now })
+      .eq('id', providerId);
     setSavingListing(false);
     if (error) return setSaveError(error.message);
     await refreshProvider();
@@ -287,16 +278,16 @@ export default function SaveListingPage() {
       <div className="max-w-6xl mx-auto px-8 py-8">
         {/* Title */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#111A4C] mb-2">Save your listing</h1>
-          <p className="text-gray-600">Double-check your details to help parents find and trust your venue.</p>
+          <h1 className="text-3xl font-bold text-[#111A4C] mb-2">Review your listing</h1>
+          <p className="text-gray-600">Check the accuracy of your details, make any adjustments required and save.</p>
         </div>
 
         <div className="flex gap-8">
           {/* Left Sidebar */}
           <div className="w-56 flex-shrink-0">
-            <img src={`${import.meta.env.BASE_URL}assets/asset_1.png`} alt="Brain" className="w-32 h-auto mb-4" />
+            <BrandLogo className="mb-4 h-12 w-auto" />
             <h3 className="text-lg font-bold text-[#111A4C] mb-2">Almost there! <span className="text-lg">🚀</span></h3>
-            <p className="text-sm text-gray-600 mb-6">Review your information before saving. You can edit anything if needed.</p>
+            <p className="text-sm text-gray-600 mb-6">Review the information about your business, edit anything you wish and save.</p>
 
             <div className="bg-pink-50 rounded-xl p-4">
               <h4 className="text-sm font-semibold text-[#FA4D8D] mb-3">Why it matters</h4>
@@ -488,39 +479,6 @@ export default function SaveListingPage() {
               </div>
             </div>
 
-            {/* Required for bookings */}
-            <div className="mt-4 p-4 border border-gray-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-3">
-                <CalendarDays className="w-5 h-5 text-green-600" />
-                <h4 className="font-semibold text-gray-900">Required for bookings (Growth & Pro only)</h4>
-              </div>
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id="booking-terms"
-                  checked={agreedBooking}
-                  onCheckedChange={(c) => setAgreedBooking(c === true)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <label htmlFor="booking-terms" className="text-sm text-gray-700 cursor-pointer">
-                    I agree to the Booking & Messaging Terms
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Covers messaging rules, cancellation/rescheduling and refund policies.
-                  </p>
-                  <a href="/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
-                    Full site terms &amp; privacy
-                  </a>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setViewingDoc(BOOKING_MESSAGING_TERMS)}
-                  className="text-xs text-[#FA4D8D] hover:underline flex-shrink-0"
-                >
-                  View terms
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Right - Preview */}
@@ -686,7 +644,7 @@ export default function SaveListingPage() {
           </Button>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Lock className="w-4 h-4" />
-            Your information is secure and will never be shared.
+            Your information is secure
           </div>
           <div className="flex flex-col items-end gap-1">
             {saveError && <p className="text-xs text-red-500">{saveError}</p>}
@@ -699,9 +657,7 @@ export default function SaveListingPage() {
               <Send className="w-4 h-4" />
             </Button>
             {!canSave && (
-              <p className="text-[11px] text-gray-400">
-                Tick {onPaidPlan ? 'both agreements' : 'the Vendor Terms'} to continue.
-              </p>
+              <p className="text-[11px] text-gray-400">Tick the Vendor Terms to continue.</p>
             )}
           </div>
         </div>
