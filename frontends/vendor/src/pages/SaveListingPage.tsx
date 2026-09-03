@@ -881,7 +881,6 @@ export default function SaveListingPage() {
             Your information is secure
           </div>
           <div className="flex flex-col items-end gap-1">
-            {saveError && <p className="text-xs text-red-500">{saveError}</p>}
             <Button
               onClick={handleSave}
               disabled={!canSave || savingListing}
@@ -890,9 +889,19 @@ export default function SaveListingPage() {
               {savingListing ? 'Saving…' : 'Save'}
               <Send className="h-4 w-4" />
             </Button>
-            {!canSave && (
-              <p className="text-[11px] text-gray-400">Tick the Vendor Terms to continue.</p>
-            )}
+            {/* One message slot, always taking its line — hidden rather than
+                removed. Dropping it out of the layout changed the bar's height,
+                so ticking the box shunted Back, the lock line and Save. Now
+                only the button's own colour changes. */}
+            <p
+              className={cn(
+                'text-[11px]',
+                saveError ? 'text-red-500' : 'text-gray-400',
+                !saveError && canSave && 'invisible'
+              )}
+            >
+              {saveError || 'Tick the Vendor Terms to continue.'}
+            </p>
           </div>
         </div>
       </div>
