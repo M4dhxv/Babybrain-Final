@@ -8,38 +8,102 @@ import {
   MapPin,
   Clock,
   DollarSign,
-  Link,
+  Globe,
   Phone,
+  Mail,
+  MessageCircle,
+  Hash,
+  FileText,
+  CalendarCheck,
+  CalendarDays,
   Shield,
   Lock,
   Bell,
-  CheckCircle,
-  Smartphone,
-  Monitor,
   Heart,
   Star,
-  MessageCircle,
+  User,
+  Sparkles,
+  ExternalLink,
+  Smartphone,
+  Monitor,
+  X,
   Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { BrandLogo, BrandIcon } from '@/components/BrandLogo';
-import { VENDOR_CATEGORIES } from '@/lib/categories';
+import { BrandLogo, BrandStacked } from '@/components/BrandLogo';
+import { VENDOR_CATEGORIES, categoryLabel } from '@/lib/categories';
 import { VENDOR_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
-import type { VendorCategory } from '@/lib/database.types';
+import { formatAgeRange, regionLabel } from '@/lib/database.types';
+import type { Database, VendorCategory } from '@/lib/database.types';
 
-interface ListingRow {
+type ProviderUpdate = Database['public']['Tables']['providers']['Update'];
+
+/** The profile as it is edited here — the same columns Settings → Profile owns. */
+interface ProfileDraft {
+  business_name: string;
+  vendor_category: string;
+  description: string;
+  logo_url: string;
+  contact_phone: string;
+  contact_email: string;
+  whatsapp: string;
+  website: string;
+  address: string;
+  postal_code: string;
+  uen: string;
+}
+
+const EMPTY_PROFILE: ProfileDraft = {
+  business_name: '', vendor_category: '', description: '', logo_url: '',
+  contact_phone: '', contact_email: '', whatsapp: '', website: '',
+  address: '', postal_code: '', uen: '',
+};
+
+/* The summary is the vendor's profile, not a separate set of fields: the same
+   rows Settings → Profile shows, editable in place so nobody has to leave the
+   review to fix a phone number. `identity` covers the name + category pair in
+   the header card; the rest are one column each. */
+type FieldKey =
+  | 'identity' | 'description' | 'contact_phone' | 'contact_email'
+  | 'whatsapp' | 'website' | 'address' | 'uen';
+
+interface SummaryField {
+  key: FieldKey;
   icon: typeof Store;
   label: string;
-  value: string;
-  color: string;
-  bg: string;
+  hint?: string;
 }
+
+const SUMMARY_SECTIONS: { title: string; fields: SummaryField[] }[] = [
+  {
+    title: 'About',
+    fields: [{ key: 'description', icon: FileText, label: 'Business description', hint: 'The blurb parents read on your listing.' }],
+  },
+  {
+    title: 'Contact',
+    fields: [
+      { key: 'contact_phone', icon: Phone, label: 'Phone' },
+      { key: 'contact_email', icon: Mail, label: 'Email' },
+      { key: 'whatsapp', icon: MessageCircle, label: 'WhatsApp' },
+      { key: 'website', icon: Globe, label: 'Website' },
+    ],
+  },
+  {
+    title: 'Location & registration',
+    fields: [
+      { key: 'address', icon: MapPin, label: 'Address' },
+      { key: 'uen', icon: Hash, label: 'UEN' },
+    ],
+  },
+];
 
 interface VenueRow {
   name: string;
@@ -47,21 +111,56 @@ interface VenueRow {
   hours: string;
 }
 
-/** Raw provider fields the inline editors write straight back to `providers`. */
-interface ProviderDraft {
-  business_name: string;
-  vendor_category: string;
-  website: string;
-  whatsapp: string;
-  contact_phone: string;
-  contact_email: string;
+/** The aggregates over activities — no single column to set, so each pencil
+ *  deep-links to the editor that actually owns it. */
+interface GlanceRow {
+  icon: typeof Store;
+  label: string;
+  value: string;
+  to: string;
 }
 
-// Rows whose pencil edits the value in place (a single `providers` column).
-// Age range, Pricing and Venues are aggregates over activities/locations —
-// there's no one field to set here, so their pencils deep-link to the real
-// editor instead.
-const EDITABLE = new Set(['Business name', 'Category', 'Booking link', 'Contact']);
+/** Exactly the fields the parent app's ActivityCard prints. */
+interface PreviewCard {
+  title: string;
+  providerName: string | null;
+  category: string;
+  image: string;
+  age: string;
+  place: string;
+  date: string;
+  time: string;
+  price: string | null;
+  rating: string;
+  duration: string;
+  instantBook: boolean;
+  /** Where the details came from, so the caption can say so honestly. */
+  source: 'published' | 'draft' | 'profile';
+}
+
+/* The rows render before (and whether or not) there is anything to count, so
+   the section keeps its shape instead of collapsing to just the venues box. */
+const EMPTY_GLANCE: GlanceRow[] = [
+  { icon: CalendarCheck, label: 'Published activities', value: 'None published yet', to: '/activities' },
+  { icon: Baby, label: 'Age range', value: 'Not set', to: '/activities' },
+  { icon: DollarSign, label: 'Pricing', value: 'Not set', to: '/activities' },
+];
+
+const EMPTY_CARD: PreviewCard = {
+  title: 'Your business name',
+  providerName: null,
+  category: 'Your category',
+  image: `${import.meta.env.BASE_URL}assets/activity-play.jpg`,
+  age: 'Ages you set on your activities',
+  place: 'Your selected location',
+  date: '',
+  time: '',
+  price: null,
+  rating: '',
+  duration: '',
+  instantBook: false,
+  source: 'profile',
+};
 
 const whyMatters = [
   { icon: Heart, text: 'Ensures accurate information for parents' },
@@ -70,18 +169,72 @@ const whyMatters = [
   { icon: Bell, text: 'Keep your schedule and programmes up to date' },
 ];
 
+/** Same five fields Settings → Profile scores, so both pages agree on "complete". */
+const completion = (p: ProfileDraft) => {
+  const fields = [p.business_name, p.contact_phone, p.contact_email, p.website, p.description];
+  return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+};
+
+/* ---- The parent app's own formatting, copied so the preview reads identically ---- */
+
+/** Matches formatDuration in the parent app. */
+const formatDuration = (mins: number | null | undefined): string => {
+  if (!mins || mins <= 0) return '';
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+};
+
+const sgDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const sgTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' }) : '';
+
+/** Cards lead with the area; the address tail is the fallback, minus the
+ *  postcode. Empty when there is nothing to go on, so the caller can choose
+ *  between the parent app's own "Singapore" and a placeholder. */
+const placeLabel = (region: string | null, address: string | null) => {
+  const area = regionLabel(region);
+  if (area) return area;
+  const tail = (address ?? '').split(',').map((s) => s.trim()).pop() ?? '';
+  return tail.replace(/\b\d{6}\b/g, '').replace(/[,\s]+$/, '').trim();
+};
+
+/** "From $32" — the parent card's price line. */
+const priceLabel = (price: number | null): string | null => {
+  if (price == null) return null;
+  const n = Number(price);
+  if (!Number.isFinite(n) || n <= 0) return 'Free';
+  return `From $${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
+};
+
+/** Themed placeholder per category, matching the Activities page. */
+const fallbackImage = (category: string) => {
+  const name = category.toLowerCase();
+  const img = name.includes('art') ? 'activity-art.jpg'
+    : name.includes('science') || name.includes('learn') || name.includes('stem') ? 'activity-stem.jpg'
+    : name.includes('yoga') || name.includes('mind') ? 'activity-yoga.jpg'
+    : name.includes('play') || name.includes('sensory') || name.includes('move') ? 'activity-play.jpg'
+    : 'activity-music.jpg';
+  return `${import.meta.env.BASE_URL}assets/${img}`;
+};
+
 export default function SaveListingPage() {
   const navigate = useNavigate();
   const { provider: activeProvider, refreshProvider } = useAuth();
   const providerId = activeProvider?.id ?? null;
-  const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
+  const [desktopOpen, setDesktopOpen] = useState(false);
   const [agreedVendor, setAgreedVendor] = useState(false);
-  const [listingData, setListingData] = useState<ListingRow[]>([]);
+  const [prov, setProv] = useState<ProfileDraft>(EMPTY_PROFILE);
   const [venues, setVenues] = useState<VenueRow[]>([]);
-  const [prov, setProv] = useState<ProviderDraft | null>(null);
+  const [glance, setGlance] = useState<GlanceRow[]>(EMPTY_GLANCE);
+  // Never null: the card is the shape of the real listing, so an empty
+  // profile still shows the shape rather than an empty phone.
+  const [card, setCard] = useState<PreviewCard>(EMPTY_CARD);
 
-  // Inline edit state — one row at a time.
-  const [editLabel, setEditLabel] = useState<string | null>(null);
+  // Inline edit state — one field at a time.
+  const [editKey, setEditKey] = useState<FieldKey | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [fieldBusy, setFieldBusy] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -93,153 +246,218 @@ export default function SaveListingPage() {
 
   const canSave = agreedVendor;
 
-  // Values for the "Preview on BabyBrain.sg" panel — real data where we have
-  // it, so the phone and desktop previews both reflect the actual listing
-  // (and the earlier inline edits).
-  const rowValue = (label: string) => listingData.find((r) => r.label === label)?.value ?? '';
-  const previewName = prov?.business_name?.trim() || 'Your business name';
-  const previewCategory = rowValue('Category') && rowValue('Category') !== 'Not set' ? rowValue('Category') : 'Your category';
-  const previewArea = venues[0]?.address?.split(',')[0]?.trim() || 'Your venue';
-  const previewPrice = rowValue('Pricing') && rowValue('Pricing') !== 'Not set' ? rowValue('Pricing') : null;
-  const previewChips = [rowValue('Age range'), rowValue('Category')].filter((v) => v && v !== 'Not set') as string[];
-  const previewInitials =
-    previewName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || 'BB';
-  const previewImg = `${import.meta.env.BASE_URL}assets/asset_2.jpg`;
+  // Both previews carry the same footnote — it says where the details came
+  // from, so nobody mistakes a draft for something families can already find.
+  const previewNote =
+    card.source === 'published'
+      ? 'Preview only — nothing here is clickable.'
+      : card.source === 'draft'
+        ? 'From your draft activity — publish it and this is exactly what families will find.'
+        : 'Add an activity and its photo, ages, schedule and price fill in here.';
 
   // Renders the business we actually hold; re-run after every inline save so
-  // the summary and preview reflect the change without a full reload.
+  // the summary and the preview reflect the change without a full reload.
   const load = useCallback(async () => {
     if (!providerId) return;
-    const [{ data: provider }, { data: acts }, { data: locs }] = await Promise.all([
+    const [{ data: provider }, { data: acts }, { data: locs }, { data: cats }] = await Promise.all([
       supabase
         .from('providers')
-        .select('business_name, vendor_category, address, postal_code, website, contact_email, contact_phone, whatsapp')
+        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen')
         .eq('id', providerId)
         .maybeSingle(),
+      // Drafts come back too: during onboarding a vendor often has an
+      // activity built but not published yet, and the preview should show
+      // their real details rather than placeholder text. Published first, so
+      // the preview leads with something families can actually find.
       supabase
         .from('activities')
-        .select('age_min_months, age_max_months, price, external_booking_url')
+        .select('id, title, price, age_min_months, age_max_months, address, region, image_urls, category_id, rating_avg, rating_count, external_booking_url, is_published, created_at')
         .eq('provider_id', providerId)
-        .eq('is_published', true),
+        .is('archived_at', null)
+        .order('is_published', { ascending: false })
+        .order('created_at'),
       supabase
         .from('provider_locations')
         .select('name, address, postal_code, operating_hours')
         .eq('provider_id', providerId),
+      supabase.from('activity_categories').select('id, name'),
     ]);
 
-    const activities = acts ?? [];
-    const ageMin = activities.length ? Math.min(...activities.map((a) => a.age_min_months)) : null;
-    const ageMax = activities.length ? Math.max(...activities.map((a) => a.age_max_months)) : null;
-    const prices = activities.map((a) => Number(a.price)).filter((n) => Number.isFinite(n) && n > 0);
-    const bookingLink = activities.find((a) => a.external_booking_url)?.external_booking_url ?? provider?.website ?? null;
-    const months = (m: number) => (m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
-
-    setProv({
+    const profile: ProfileDraft = {
       business_name: provider?.business_name ?? '',
       vendor_category: provider?.vendor_category ?? '',
-      website: provider?.website ?? '',
-      whatsapp: provider?.whatsapp ?? '',
+      description: provider?.description ?? '',
+      logo_url: provider?.logo_url ?? '',
       contact_phone: provider?.contact_phone ?? '',
       contact_email: provider?.contact_email ?? '',
-    });
+      whatsapp: provider?.whatsapp ?? '',
+      website: provider?.website ?? '',
+      address: provider?.address ?? '',
+      postal_code: provider?.postal_code ?? '',
+      uen: provider?.uen ?? '',
+    };
+    setProv(profile);
 
-    setListingData([
-      { icon: Store, label: 'Business name', value: provider?.business_name ?? '—', color: 'text-purple-600', bg: 'bg-purple-100' },
+    const activities = acts ?? [];
+    const published = activities.filter((a) => a.is_published);
+    // A vendor mid-onboarding has drafts and nothing live; showing their real
+    // ages and prices beats "Not set", so fall back to the drafts.
+    const counted = published.length ? published : activities;
+    const ageMin = counted.length ? Math.min(...counted.map((a) => a.age_min_months)) : null;
+    const ageMax = counted.length ? Math.max(...counted.map((a) => a.age_max_months)) : null;
+    const prices = counted.map((a) => Number(a.price)).filter((n) => Number.isFinite(n) && n > 0);
+
+    setGlance([
       {
-        icon: Baby,
-        label: 'Category',
-        value: VENDOR_CATEGORIES.find((c) => c.value === provider?.vendor_category)?.label ?? provider?.vendor_category ?? 'Not set',
-        color: 'text-pink-600',
-        bg: 'bg-pink-100',
+        icon: CalendarCheck,
+        label: 'Published activities',
+        value: published.length ? `${published.length} live on BabyBrain` : 'None published yet',
+        to: '/activities',
       },
       {
         icon: Baby,
         label: 'Age range',
-        value: ageMin != null && ageMax != null ? `${months(ageMin)} – ${months(ageMax)}` : 'Not set',
-        color: 'text-green-600',
-        bg: 'bg-green-100',
+        value: ageMin != null && ageMax != null ? formatAgeRange(ageMin, ageMax) : 'Not set',
+        to: '/activities',
       },
       {
         icon: DollarSign,
         label: 'Pricing',
-        value: prices.length
-          ? `From $${Math.min(...prices).toFixed(0)} per session`
-          : 'Not set',
-        color: 'text-yellow-600',
-        bg: 'bg-yellow-100',
-      },
-      { icon: Link, label: 'Booking link', value: bookingLink ?? 'Not set', color: 'text-green-600', bg: 'bg-green-100' },
-      {
-        icon: Phone,
-        label: 'Contact',
-        value: [
-          provider?.whatsapp || provider?.contact_phone ? `WhatsApp: ${provider.whatsapp ?? provider.contact_phone}` : null,
-          provider?.contact_email ? `Email: ${provider.contact_email}` : null,
-        ].filter(Boolean).join('  •  ') || 'Not set',
-        color: 'text-blue-600',
-        bg: 'bg-blue-100',
+        value: prices.length ? `From $${Math.min(...prices).toFixed(0)} per session` : 'Not set',
+        to: '/activities',
       },
     ]);
 
-    setVenues(
-      (locs ?? []).map((l) => {
-        const hours = l.operating_hours as Record<string, [string, string][]> | null;
-        const summary = hours
-          ? Object.entries(hours)
-              .map(([day, ranges]) => `${day[0].toUpperCase()}${day.slice(1)}: ${(ranges ?? []).map((r) => r.join(' – ')).join(', ')}`)
-              .join('\n')
-          : '';
-        return {
-          name: l.name,
-          address: [l.address, l.postal_code].filter(Boolean).join(', '),
-          hours: summary || 'Hours not set',
-        };
-      })
-    );
+    const venueRows: VenueRow[] = (locs ?? []).map((l) => {
+      const hours = l.operating_hours as Record<string, [string, string][]> | null;
+      const summary = hours
+        ? Object.entries(hours)
+            .map(([day, ranges]) => `${day[0].toUpperCase()}${day.slice(1)}: ${(ranges ?? []).map((r) => r.join(' – ')).join(', ')}`)
+            .join('\n')
+        : '';
+      return {
+        name: l.name,
+        address: [l.address, l.postal_code].filter(Boolean).join(', '),
+        hours: summary || 'Hours not set',
+      };
+    });
+    setVenues(venueRows);
+
+    // The preview card mirrors the parent app's search result for this
+    // business. Every field is filled from something the vendor really has —
+    // their leading activity first, then the profile and venues behind it —
+    // so placeholder wording only ever shows for a detail that is genuinely
+    // still empty.
+    const catName = (id: number) => (cats ?? []).find((c) => c.id === id)?.name ?? '';
+    const lead = activities[0];
+    let nextSessionAt: string | null = null;
+    let durationMins: number | null = null;
+    if (lead) {
+      const { data: sess } = await supabase
+        .from('activity_sessions')
+        .select('starts_at, ends_at')
+        .eq('activity_id', lead.id)
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at')
+        .limit(1);
+      const next = sess?.[0];
+      nextSessionAt = next?.starts_at ?? null;
+      if (next?.starts_at && next.ends_at) {
+        durationMins = Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000);
+      }
+    }
+
+    const businessName = profile.business_name.trim();
+    const cardTitle = lead?.title?.trim() || businessName || 'Your business name';
+    // The activity's own category, else the one set on the profile.
+    const category =
+      (lead ? catName(lead.category_id) : '')
+      || (profile.vendor_category ? categoryLabel(profile.vendor_category) : '')
+      || 'Your category';
+    const cardAge =
+      lead ? formatAgeRange(lead.age_min_months, lead.age_max_months)
+        : ageMin != null && ageMax != null ? formatAgeRange(ageMin, ageMax)
+        : 'Ages you set on your activities';
+    const cheapest = prices.length ? Math.min(...prices) : null;
+
+    setCard({
+      title: cardTitle,
+      // The parent card drops the provider line when it just repeats the title.
+      providerName: businessName && businessName.toLowerCase() !== cardTitle.toLowerCase() ? businessName : null,
+      category,
+      // The activity's photo, else the cover image on the profile, else a
+      // placeholder themed to the category.
+      image: lead?.image_urls?.[0] || provider?.cover_image_url || fallbackImage(category),
+      age: cardAge,
+      // The location the vendor has actually chosen: the activity's own area
+      // first, then the profile address, then the first venue they added.
+      place:
+        placeLabel(lead?.region ?? null, lead?.address || profile.address || venueRows[0]?.address || null)
+        || (lead ? 'Singapore' : 'Your selected location'),
+      date: sgDate(nextSessionAt),
+      time: sgTime(nextSessionAt),
+      price: lead ? priceLabel(lead.price) : cheapest != null ? `From $${cheapest.toFixed(0)}` : null,
+      rating: lead && lead.rating_count > 0 ? `${Number(lead.rating_avg).toFixed(1)} (${lead.rating_count})` : '',
+      duration: formatDuration(durationMins),
+      instantBook: lead ? !lead.external_booking_url : false,
+      source: !lead ? 'profile' : lead.is_published ? 'published' : 'draft',
+    });
   }, [providerId]);
 
   useEffect(() => {
     void (async () => { await load(); })();
   }, [load]);
 
-  function startEdit(label: string) {
-    if (!prov) return;
+  // Esc closes the desktop pop-up, like every other overlay in the portal.
+  useEffect(() => {
+    if (!desktopOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDesktopOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [desktopOpen]);
+
+  /** What the read-only row prints for each field. */
+  function fieldValue(key: FieldKey): string {
+    if (key === 'address') return [prov.address, prov.postal_code].filter(Boolean).join(', ');
+    if (key === 'identity') return prov.business_name;
+    return (prov[key as keyof ProfileDraft] as string) ?? '';
+  }
+
+  function startEdit(key: FieldKey) {
     setFieldError(null);
-    if (label === 'Business name') setDraft({ business_name: prov.business_name });
-    else if (label === 'Category') setDraft({ vendor_category: prov.vendor_category });
-    else if (label === 'Booking link') setDraft({ website: prov.website });
-    else if (label === 'Contact') setDraft({ whatsapp: prov.whatsapp || prov.contact_phone, contact_email: prov.contact_email });
-    setEditLabel(label);
+    if (key === 'identity') setDraft({ business_name: prov.business_name, vendor_category: prov.vendor_category });
+    else if (key === 'address') setDraft({ address: prov.address, postal_code: prov.postal_code });
+    else setDraft({ [key]: (prov[key as keyof ProfileDraft] as string) ?? '' });
+    setEditKey(key);
   }
 
   async function saveField() {
-    if (!providerId || !editLabel) return;
+    if (!providerId || !editKey) return;
     setFieldError(null);
-    const rows = supabase.from('providers');
-    let error: { message: string } | null = null;
-    if (editLabel === 'Business name') {
+
+    let patch: ProviderUpdate;
+    if (editKey === 'identity') {
       if (!draft.business_name?.trim()) return setFieldError('Business name can’t be empty.');
-      setFieldBusy(true);
-      ({ error } = await rows.update({ business_name: draft.business_name.trim() }).eq('id', providerId));
-    } else if (editLabel === 'Category') {
-      setFieldBusy(true);
-      ({ error } = await rows
-        .update({ vendor_category: (draft.vendor_category || null) as VendorCategory | null })
-        .eq('id', providerId));
-    } else if (editLabel === 'Booking link') {
-      setFieldBusy(true);
-      ({ error } = await rows.update({ website: draft.website?.trim() || null }).eq('id', providerId));
-    } else if (editLabel === 'Contact') {
-      setFieldBusy(true);
-      ({ error } = await rows
-        .update({ whatsapp: draft.whatsapp?.trim() || null, contact_email: draft.contact_email?.trim() || null })
-        .eq('id', providerId));
+      patch = {
+        business_name: draft.business_name.trim(),
+        vendor_category: (draft.vendor_category || null) as VendorCategory | null,
+      };
+    } else if (editKey === 'address') {
+      patch = { address: draft.address?.trim() || null, postal_code: draft.postal_code?.trim() || null };
+    } else if (editKey === 'description') {
+      // NOT NULL on the row — an emptied description is '', never null.
+      patch = { description: draft.description?.trim() ?? '' };
     } else {
-      return;
+      // The remaining keys are all nullable text columns on `providers`; a
+      // computed key widens to an index signature, hence the cast.
+      patch = { [editKey]: draft[editKey]?.trim() || null } as ProviderUpdate;
     }
+
+    setFieldBusy(true);
+    const { error } = await supabase.from('providers').update(patch).eq('id', providerId);
     setFieldBusy(false);
     if (error) return setFieldError(error.message);
-    setEditLabel(null);
+    setEditKey(null);
     await load();
     await refreshProvider();
   }
@@ -260,60 +478,118 @@ export default function SaveListingPage() {
     navigate('/settings');
   }
 
+  /** One editable summary row: label, current value, pencil, inline editor. */
+  function FieldRow({ field }: { field: SummaryField }) {
+    const isEditing = editKey === field.key;
+    const value = fieldValue(field.key);
+    return (
+      <div className="flex items-start gap-3 rounded-xl bg-gray-50 p-3">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+          <field.icon className="h-4 w-4 text-gray-500" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="mb-0.5 text-xs text-gray-500">{field.label}</div>
+          {isEditing ? (
+            <div className="space-y-2">
+              {field.key === 'description' ? (
+                <Textarea
+                  rows={4}
+                  value={draft.description ?? ''}
+                  onChange={(e) => setDraft({ description: e.target.value })}
+                  placeholder="What you do, who it's for, what makes it special."
+                  className="resize-none rounded-lg border-gray-300 text-sm"
+                />
+              ) : field.key === 'address' ? (
+                <>
+                  <Input
+                    value={draft.address ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))}
+                    placeholder="Street address"
+                    className="rounded-lg border-gray-300 text-sm"
+                  />
+                  <Input
+                    value={draft.postal_code ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, postal_code: e.target.value }))}
+                    placeholder="Postal code"
+                    className="rounded-lg border-gray-300 text-sm"
+                  />
+                </>
+              ) : (
+                <Input
+                  value={draft[field.key] ?? ''}
+                  onChange={(e) => setDraft({ [field.key]: e.target.value })}
+                  placeholder={field.key === 'website' ? 'https://…' : field.label}
+                  className="rounded-lg border-gray-300 text-sm"
+                />
+              )}
+              {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
+              <div className="flex gap-2">
+                <Button size="sm" onClick={saveField} disabled={fieldBusy} className="gradient-primary h-7 rounded-lg text-xs text-white hover:opacity-90">
+                  {fieldBusy ? 'Saving…' : 'Save'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setEditKey(null); setFieldError(null); }} className="h-7 rounded-lg border-gray-300 text-xs">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className={cn('whitespace-pre-line text-sm', value ? 'text-gray-900' : 'text-gray-400')}>
+              {value || 'Not set'}
+            </div>
+          )}
+          {field.hint && !isEditing && <p className="mt-1 text-[11px] text-gray-400">{field.hint}</p>}
+        </div>
+        {!isEditing && (
+          <button type="button" aria-label={`Edit ${field.label}`} onClick={() => startEdit(field.key)} className="flex-shrink-0">
+            <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+      <header className="flex items-center justify-between border-b border-gray-100 px-8 py-4">
+        <div className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
           <BrandLogo className="h-10" />
-
         </div>
-        <Button variant="outline" onClick={() => navigate('/dashboard')} className="rounded-lg gap-2 border-gray-300 text-gray-700 hover:bg-gray-50">
-          <ArrowLeft className="w-4 h-4" />
-          Save & exit
+        <Button variant="outline" onClick={() => navigate('/dashboard')} className="gap-2 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50">
+          <ArrowLeft className="h-4 w-4" />
+          Save &amp; exit
         </Button>
       </header>
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-8 py-8">
+      <div className="mx-auto max-w-6xl px-8 py-8">
         {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#111A4C] mb-2">Review your listing</h1>
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-3xl font-bold text-[#111A4C]">Review your listing</h1>
           <p className="text-gray-600">Check the accuracy of your details, make any adjustments required and save.</p>
         </div>
 
-        <div className="flex gap-8">
+        {/* flex-wrap so the desktop preview can drop onto a full-width row
+            of its own instead of crushing the summary beside it. */}
+        <div className="flex flex-wrap items-start gap-8">
           {/* Left Sidebar */}
           <div className="w-56 flex-shrink-0">
-            {/* Stacked lockup — the brain-icon mark over the wordmark, the
-                word in the brand's own per-letter pastels. */}
-            {/* logo-icon.png carries a lot of its own transparent padding, so
-                the word is pulled up under it with a negative margin rather
-                than relying on flex gap. */}
-            <div className="-mt-4 mb-8 flex flex-col items-center">
-              <BrandIcon className="h-40 w-40" />
-              <span className="-mt-10 text-2xl font-extrabold tracking-tight">
-                <span className="text-[#FFB0CE]">B</span>
-                <span className="text-[#FFB0CE]">a</span>
-                <span className="text-[#FFB278]">b</span>
-                <span className="text-[#FFCB5E]">y</span>
-                <span className="text-[#8FDD80]">B</span>
-                <span className="text-[#7FCBF0]">r</span>
-                <span className="text-[#7FCBF0]">a</span>
-                <span className="text-[#B79FDE]">i</span>
-                <span className="text-[#B79FDE]">n</span>
-              </span>
+            {/* The supplied stacked lockup, not a re-typeset copy of it — the
+                wordmark has its own face and per-letter colours, so a web-font
+                rebuild reads as the wrong logo. */}
+            <div className="mb-6 flex justify-center">
+              <BrandStacked className="h-32" />
             </div>
             <h3 className="mb-2 text-center text-lg font-bold text-[#111A4C]">Almost there! <span className="text-lg">🚀</span></h3>
             <p className="mb-6 text-center text-sm text-gray-600">Review the information about your business, edit anything you wish and save.</p>
 
-            <div className="bg-pink-50 rounded-xl p-4">
-              <h4 className="text-sm font-semibold text-[#FA4D8D] mb-3">Why it matters</h4>
+            <div className="rounded-xl bg-pink-50 p-4">
+              <h4 className="mb-3 text-sm font-semibold text-[#FA4D8D]">Why it matters</h4>
               <div className="space-y-3">
                 {whyMatters.map((item, idx) => (
                   <div key={idx} className="flex gap-2">
-                    <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center flex-shrink-0">
-                      <item.icon className="w-3 h-3 text-[#FA4D8D]" />
+                    <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white">
+                      <item.icon className="h-3 w-3 text-[#FA4D8D]" />
                     </div>
                     <span className="text-xs text-gray-700">{item.text}</span>
                   </div>
@@ -322,151 +598,143 @@ export default function SaveListingPage() {
             </div>
           </div>
 
-          {/* Center - Summary */}
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
-            </div>
+          {/* Center — the profile summary */}
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
+            <p className="mb-4 mt-1 text-xs text-gray-500">
+              These are the details on your profile. Edit anything here and it saves straight away.
+            </p>
 
-            <div className="space-y-3">
-              {listingData.map((item, idx) => {
-                const editable = EDITABLE.has(item.label);
-                const isEditing = editLabel === item.label;
-                return (
-                  <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', item.bg)}>
-                      <item.icon className={cn('w-4 h-4', item.color)} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-500 mb-0.5">{item.label}</div>
-                      {isEditing ? (
-                        <div className="space-y-2">
-                          {item.label === 'Category' ? (
-                            <select
-                              value={draft.vendor_category ?? ''}
-                              onChange={(e) => setDraft({ vendor_category: e.target.value })}
-                              className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm"
-                            >
-                              <option value="">Not set</option>
-                              {VENDOR_CATEGORIES.map((c) => (
-                                <option key={c.value} value={c.value}>{c.label}</option>
-                              ))}
-                            </select>
-                          ) : item.label === 'Contact' ? (
-                            <>
-                              <Input
-                                value={draft.whatsapp ?? ''}
-                                onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))}
-                                placeholder="WhatsApp / phone"
-                                className="rounded-lg border-gray-300 text-sm"
-                              />
-                              <Input
-                                value={draft.contact_email ?? ''}
-                                onChange={(e) => setDraft((d) => ({ ...d, contact_email: e.target.value }))}
-                                placeholder="Email"
-                                className="rounded-lg border-gray-300 text-sm"
-                              />
-                            </>
-                          ) : (
-                            <Input
-                              value={draft[item.label === 'Booking link' ? 'website' : 'business_name'] ?? ''}
-                              onChange={(e) =>
-                                setDraft({ [item.label === 'Booking link' ? 'website' : 'business_name']: e.target.value })
-                              }
-                              placeholder={item.label === 'Booking link' ? 'https://…' : item.label}
-                              className="rounded-lg border-gray-300 text-sm"
-                            />
-                          )}
-                          {item.label === 'Booking link' && (
-                            <p className="text-[11px] text-gray-400">
-                              Your business booking/website link. An activity with its own link overrides this.
-                            </p>
-                          )}
-                          {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={saveField}
-                              disabled={fieldBusy}
-                              className="h-7 gradient-primary rounded-lg text-xs text-white hover:opacity-90"
-                            >
-                              {fieldBusy ? 'Saving…' : 'Save'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => { setEditLabel(null); setFieldError(null); }}
-                              className="h-7 rounded-lg border-gray-300 text-xs"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-gray-900 whitespace-pre-line">{item.value}</div>
-                      )}
-                    </div>
-                    {!isEditing && (
-                      <button
-                        type="button"
-                        aria-label={`Edit ${item.label}`}
-                        onClick={() =>
-                          editable
-                            ? startEdit(item.label)
-                            : navigate(item.label === 'Age range' || item.label === 'Pricing' ? '/activities' : '/settings?edit=1')
-                        }
-                        className="flex-shrink-0"
-                      >
-                        <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-[#FA4D8D]" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Venues & schedules — supports multiple locations */}
-            <div className="mt-3 p-3 bg-gray-50 rounded-xl">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Venues &amp; schedules
-                    {venues.length > 1 && (
-                      <span className="ml-1 text-[#FA4D8D] font-medium">· {venues.length} locations detected</span>
-                    )}
-                  </div>
+            {/* Identity — logo, name, category and how complete the profile is */}
+            <div className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-pink-100">
+                  {prov.logo_url
+                    ? <img src={prov.logo_url} alt="" className="h-full w-full object-cover" />
+                    : <Store className="h-7 w-7 text-[#FA4D8D]" />}
                 </div>
-                <button type="button" aria-label="Edit venues & schedules" onClick={() => navigate('/activities?tab=locations')} className="flex-shrink-0">
-                  <Pencil className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
-                </button>
+                <div className="min-w-0 flex-1">
+                  {editKey === 'identity' ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={draft.business_name ?? ''}
+                        onChange={(e) => setDraft((d) => ({ ...d, business_name: e.target.value }))}
+                        placeholder="Business name"
+                        className="rounded-lg border-gray-300 text-sm"
+                      />
+                      <select
+                        value={draft.vendor_category ?? ''}
+                        onChange={(e) => setDraft((d) => ({ ...d, vendor_category: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Select a category</option>
+                        {VENDOR_CATEGORIES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={saveField} disabled={fieldBusy} className="gradient-primary h-7 rounded-lg text-xs text-white hover:opacity-90">
+                          {fieldBusy ? 'Saving…' : 'Save'}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setEditKey(null); setFieldError(null); }} className="h-7 rounded-lg border-gray-300 text-xs">
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <h4 className="truncate text-lg font-bold text-gray-900">{prov.business_name || 'Your business'}</h4>
+                      <p className="text-sm text-gray-500">{prov.vendor_category ? categoryLabel(prov.vendor_category) : 'No category yet'}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Progress value={completion(prov)} className="h-2 w-32" />
+                        <span className="text-xs font-semibold text-gray-500">{completion(prov)}% complete</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {editKey !== 'identity' && (
+                  <button type="button" aria-label="Edit business name and category" onClick={() => startEdit('identity')} className="flex-shrink-0">
+                    <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
+                  </button>
+                )}
               </div>
+            </div>
+
+            {SUMMARY_SECTIONS.map((section) => (
+              <div key={section.title} className="mt-5">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{section.title}</h4>
+                <div className="space-y-2">
+                  {section.fields.map((f) => <FieldRow key={f.key} field={f} />)}
+                </div>
+              </div>
+            ))}
+
+            {/* Programmes — aggregates over activities and locations, so each
+                pencil opens the editor that owns them rather than editing here. */}
+            <div className="mt-5">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Your programmes</h4>
               <div className="space-y-2">
-                {venues.map((v, i) => (
-                  <div key={i} className="rounded-lg bg-white border border-gray-100 p-3">
-                    <div className="text-sm font-semibold text-gray-900">{v.name}</div>
-                    <div className="flex items-start gap-1.5 mt-1 text-xs text-gray-600">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <span>{v.address}</span>
+                {glance.map((row) => (
+                  <div key={row.label} className="flex items-start gap-3 rounded-xl bg-gray-50 p-3">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+                      <row.icon className="h-4 w-4 text-gray-500" />
                     </div>
-                    <div className="flex items-start gap-1.5 mt-1 text-xs text-gray-600">
-                      <Clock className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <span className="whitespace-pre-line">{v.hours}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 text-xs text-gray-500">{row.label}</div>
+                      <div className="text-sm text-gray-900">{row.value}</div>
                     </div>
+                    <button type="button" aria-label={`Edit ${row.label}`} onClick={() => navigate(row.to)} className="flex-shrink-0">
+                      <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
+                    </button>
                   </div>
                 ))}
+
+                {/* Venues & schedules — supports multiple locations */}
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+                        <MapPin className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Venues &amp; schedules
+                        {venues.length > 1 && (
+                          <span className="ml-1 font-medium text-[#FA4D8D]">· {venues.length} locations detected</span>
+                        )}
+                      </div>
+                    </div>
+                    <button type="button" aria-label="Edit venues &amp; schedules" onClick={() => navigate('/activities?tab=locations')} className="flex-shrink-0">
+                      <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {venues.map((v, i) => (
+                      <div key={i} className="rounded-lg border border-gray-100 bg-white p-3">
+                        <div className="text-sm font-semibold text-gray-900">{v.name}</div>
+                        <div className="mt-1 flex items-start gap-1.5 text-xs text-gray-600">
+                          <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                          <span>{v.address}</span>
+                        </div>
+                        <div className="mt-1 flex items-start gap-1.5 text-xs text-gray-600">
+                          <Clock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                          <span className="whitespace-pre-line">{v.hours}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {venues.length === 0 && <p className="text-sm text-gray-400">No venues added yet.</p>}
+                  </div>
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    Different activities can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
+                  </p>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-400 mt-2">
-                Different activities can run at different venues &amp; times — add a venue for each location so parents see the right schedule.
-              </p>
             </div>
 
             {/* Required to publish */}
-            <div className="mt-6 p-4 border border-gray-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-3">
-                <Shield className="w-5 h-5 text-[#FA4D8D]" />
+            <div className="mt-6 rounded-xl border border-gray-200 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Shield className="h-5 w-5 text-[#FA4D8D]" />
                 <h4 className="font-semibold text-gray-900">Required to publish</h4>
               </div>
               <div className="flex items-start gap-3">
@@ -477,12 +745,9 @@ export default function SaveListingPage() {
                   className="mt-0.5"
                 />
                 <div className="flex-1">
-                  <label htmlFor="vendor-terms" className="text-sm text-gray-700 cursor-pointer">
+                  <label htmlFor="vendor-terms" className="cursor-pointer text-sm text-gray-700">
                     You hereby acknowledge that you have read our Terms of Service, Terms of Use and Privacy Policy and confirm that you are in agreement with and legally bound by such terms, as modified from time to time.
                   </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
-                  </p>
                   <a href="/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
                     Full site terms &amp; privacy
                   </a>
@@ -490,178 +755,129 @@ export default function SaveListingPage() {
                 <button
                   type="button"
                   onClick={() => setViewingDoc(VENDOR_TERMS)}
-                  className="text-xs text-[#FA4D8D] hover:underline flex-shrink-0"
+                  className="flex-shrink-0 text-xs text-[#FA4D8D] hover:underline"
                 >
                   View terms
                 </button>
               </div>
             </div>
-
           </div>
 
-          {/* Right - Preview */}
-          <div className={cn('flex-shrink-0 transition-[width] duration-300', previewMode === 'mobile' ? 'w-80' : 'w-full max-w-xl')}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Preview on BabyBrain.sg</h3>
-            </div>
-            <p className="text-xs text-gray-500 mb-4">
-              This is how parents will see your venue on {previewMode === 'mobile' ? 'a phone' : 'desktop'}.
-            </p>
+          {/* Right — the parent app's own listing card, on a phone; the
+              desktop view opens as a pop-up over the page so switching never
+              moves the vendor away from the summary they are reviewing.
 
-            {/* Mode Toggle */}
-            <div className="flex gap-2 mb-4">
+              Both are copies of real parent components (ActivityCard and
+              ActivityRow in frontends/parent components/ui.tsx), down to their
+              palette, radii and Nunito face: a vendor-styled approximation
+              showed fields and buttons (Call, Map) families never see. */}
+          <div className="w-80 flex-shrink-0">
+            <h3 className="font-semibold text-gray-900">Preview on BabyBrain.sg</h3>
+            <p className="mb-3 mt-1 text-xs text-gray-500">This is how parents will see your business.</p>
+
+            <div className="mb-4 flex gap-2">
               <button
-                onClick={() => setPreviewMode('mobile')}
+                type="button"
+                onClick={() => setDesktopOpen(false)}
                 className={cn(
-                  'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                  previewMode === 'mobile' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+                  'flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                  desktopOpen ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-gray-900 text-white'
                 )}
               >
-                <Smartphone className="w-3 h-3" />
+                <Smartphone className="h-3 w-3" />
                 Mobile
               </button>
               <button
-                onClick={() => setPreviewMode('desktop')}
+                type="button"
+                onClick={() => setDesktopOpen(true)}
                 className={cn(
-                  'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                  previewMode === 'desktop' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+                  'flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                  desktopOpen ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 )}
               >
-                <Monitor className="w-3 h-3" />
+                <Monitor className="h-3 w-3" />
                 Desktop
               </button>
             </div>
 
-            {previewMode === 'mobile' ? (
-              /* Phone frame — narrow, single column */
-              <div className="mx-auto w-[300px] bg-gray-800 rounded-[1.8rem] p-1.5 shadow-xl">
-                <div className="bg-white rounded-[1.4rem] overflow-hidden">
-                  <div className="relative">
-                    <img src={previewImg} alt="" className="w-full h-32 object-cover" />
-                    <div className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
-                      <Heart className="w-4 h-4 text-gray-600" />
-                    </div>
-                    <div className="absolute -bottom-5 left-3 w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-md ring-2 ring-white">
-                      <span className="text-xs font-bold text-[#FA4D8D]">{previewInitials}</span>
-                    </div>
-                  </div>
-                  <div className="p-4 pt-7">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-bold text-gray-900 truncate">{previewName}</h4>
-                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    </div>
-                    <p className="text-xs text-gray-500 mb-3">{previewCategory}</p>
-                    <div className="flex items-center gap-3 mb-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                        New
+            {/* Phone frame — the vertical ActivityCard, as it appears on the
+                parent app's home, matches and favourites rails. */}
+            <div className="mx-auto w-[300px] rounded-[1.8rem] bg-gray-800 p-1.5 shadow-xl">
+              <div
+                className="overflow-hidden rounded-[1.4rem] bg-[#FFFCF8] p-3"
+                style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+              >
+                <article
+                  className="overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white"
+                  style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
+                >
+                  <div className="relative h-[108px]">
+                    <img src={card.image} alt="" className="h-full w-full object-cover" />
+                    <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
+                      {card.category}
+                    </span>
+                    {card.instantBook && (
+                      <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
+                        <Sparkles className="h-3 w-3" /> Instant book
                       </span>
-                      <span className="flex items-center gap-1 min-w-0">
-                        <MapPin className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{previewArea}</span>
-                      </span>
-                      {previewPrice && <span className="flex-shrink-0">{previewPrice}</span>}
-                    </div>
-                    {previewChips.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {previewChips.map((tag) => (
-                          <span key={tag} className="px-2 py-1 bg-purple-200 text-purple-800 text-xs rounded-full">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
                     )}
-                    <div className="grid grid-cols-3 gap-2">
-                      <button className="flex items-center justify-center gap-1 py-2 border border-green-300 rounded-lg text-xs text-green-700">
-                        <MessageCircle className="w-3 h-3" />
-                        WhatsApp
-                      </button>
-                      <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
-                        <Phone className="w-3 h-3" />
-                        Call
-                      </button>
-                      <button className="flex items-center justify-center gap-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-700">
-                        <MapPin className="w-3 h-3" />
-                        Map
-                      </button>
-                    </div>
+                    <span className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
+                      <Heart className="h-[18px] w-[18px]" />
+                    </span>
                   </div>
-                </div>
-              </div>
-            ) : (
-              /* Desktop — browser window, image beside a roomier detail column */
-              <div className="rounded-xl border border-gray-200 shadow-xl overflow-hidden bg-white">
-                <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-2 border-b border-gray-200">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                  <div className="ml-3 flex-1 rounded bg-white border border-gray-200 px-2 py-0.5 text-[10px] text-gray-400 truncate">
-                    babybrain.sg/venues
-                  </div>
-                </div>
-                <div className="grid grid-cols-[minmax(0,260px)_1fr]">
-                  <img src={previewImg} alt="" className="h-full w-full object-cover" />
-                  <div className="p-5">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-lg font-bold text-gray-900">{previewName}</h4>
-                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    </div>
-                    <p className="text-sm text-gray-500 mt-0.5">{previewCategory}</p>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-                        New listing
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5" />
-                        {previewArea}
-                      </span>
-                      {previewPrice && <span>{previewPrice}</span>}
-                    </div>
-                    {previewChips.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {previewChips.map((tag) => (
-                          <span key={tag} className="px-2.5 py-1 bg-purple-200 text-purple-800 text-xs rounded-full">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
+                  <div className="p-3.5">
+                    <h3 className="mb-0.5 text-[15px] font-black leading-tight text-[#111A4C]">{card.title}</h3>
+                    {card.providerName && (
+                      <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#A7D8F8]">
+                        <Store className="h-3.5 w-3.5" /> {card.providerName}
+                      </p>
                     )}
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      <button className="flex items-center gap-1.5 px-4 py-2 border border-green-300 rounded-lg text-sm text-green-700">
-                        <MessageCircle className="w-4 h-4" />
-                        WhatsApp
-                      </button>
-                      <button className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700">
-                        <Phone className="w-4 h-4" />
-                        Call
-                      </button>
-                      <button className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700">
-                        <MapPin className="w-4 h-4" />
-                        View on map
-                      </button>
+                    <div className="space-y-1 text-[11.5px] font-semibold text-[#4a5685]">
+                      <p className="flex items-center gap-1.5"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
+                      <p className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
+                      <p className="flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" />
+                        {card.date ? `${card.date} · ${card.time}` : 'Schedule TBC'}
+                      </p>
+                      {card.price && <p className="font-black text-[#A7D8F8]">{card.price}</p>}
+                      {(card.rating || card.duration) && (
+                        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {card.rating && (
+                            <span className="flex items-center gap-1.5"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</span>
+                          )}
+                          {card.duration && (
+                            <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-[#F4EFF0] pt-3">
+                      <span className="text-sm font-extrabold text-[#A7D8F8]">View details</span>
+                      <ExternalLink className="h-5 w-5 text-[#A7D8F8]" />
                     </div>
                   </div>
-                </div>
+                </article>
               </div>
-            )}
+            </div>
+
+            <p className="mt-3 text-center text-[11px] text-gray-400">{previewNote}</p>
           </div>
         </div>
       </div>
 
       {/* Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-8 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white px-8 py-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <Button
             variant="outline"
             onClick={() => navigate('/claim-business')}
-            className="rounded-xl gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
+            className="gap-2 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Lock className="w-4 h-4" />
+            <Lock className="h-4 w-4" />
             Your information is secure
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -669,10 +885,10 @@ export default function SaveListingPage() {
             <Button
               onClick={handleSave}
               disabled={!canSave || savingListing}
-              className="gradient-primary text-white rounded-xl px-8 hover:opacity-90 gap-2 disabled:opacity-50"
+              className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90 disabled:opacity-50"
             >
               {savingListing ? 'Saving…' : 'Save'}
-              <Send className="w-4 h-4" />
+              <Send className="h-4 w-4" />
             </Button>
             {!canSave && (
               <p className="text-[11px] text-gray-400">Tick the Vendor Terms to continue.</p>
@@ -683,19 +899,114 @@ export default function SaveListingPage() {
 
       <div className="h-20" />
 
+      {/* Desktop view — a pop-up over the page, so the vendor never loses
+          their place in the summary. The window holds the horizontal
+          ActivityRow, which is how Explore lists results on a wide screen. */}
+      {desktopOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/25 p-4 backdrop-blur-sm"
+          onClick={() => setDesktopOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Desktop preview of your listing"
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+              <div className="flex items-center gap-2.5">
+                <Monitor className="h-4 w-4 flex-shrink-0 text-[#FA4D8D]" />
+                <div>
+                  <h3 className="text-sm font-bold text-[#111A4C]">Desktop view</h3>
+                  <p className="text-xs text-gray-500">This is how parents will see your business on a desktop.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDesktopOpen(false)}
+                aria-label="Close desktop preview"
+                className="rounded-lg p-1.5 hover:bg-gray-100"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-5">
+              <div className="overflow-hidden rounded-xl border border-gray-200 shadow-xl">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                  <div className="ml-3 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-400">
+                    babybrain.sg/explore
+                  </div>
+                </div>
+                <div
+                  className="bg-[#FFFCF8] p-4"
+                  style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+                >
+                  <article
+                    className="grid grid-cols-[170px_1fr] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white xl:grid-cols-[220px_1fr]"
+                    style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
+                  >
+                    <div className="relative">
+                      <img src={card.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
+                      <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
+                        {card.category}
+                      </span>
+                      {card.instantBook && (
+                        <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
+                          <Sparkles className="h-3 w-3" /> Instant book
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative p-4">
+                      <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
+                        <Heart className="h-[18px] w-[18px]" />
+                      </span>
+                      <h3 className="mb-0.5 text-[16px] font-black text-[#111A4C]">{card.title}</h3>
+                      {card.providerName && (
+                        <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#A7D8F8]">
+                          <Store className="h-3.5 w-3.5" /> {card.providerName}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
+                        <p className="flex items-center gap-1"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
+                        <p className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
+                        <p className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
+                        <p>{card.time}</p>
+                        {card.duration && (
+                          <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
+                        )}
+                        {card.price && <p className="font-black text-[#A7D8F8]">{card.price}</p>}
+                        {card.rating && (
+                          <p className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-5 py-2.5 text-center text-xs text-gray-500">{previewNote}</div>
+          </div>
+        </div>
+      )}
       <Sheet open={!!viewingDoc} onOpenChange={(open) => { if (!open) setViewingDoc(null); }}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
           {viewingDoc && (
             <>
               <SheetHeader>
                 <SheetTitle>{viewingDoc.title}</SheetTitle>
                 <SheetDescription>{viewingDoc.summary}</SheetDescription>
               </SheetHeader>
-              <div className="px-4 pb-6 space-y-5">
+              <div className="space-y-5 px-4 pb-6">
                 {viewingDoc.sections.map((s) => (
                   <div key={s.heading} className="rounded-xl border-2 border-gray-300 bg-white p-4 shadow-sm">
-                    <h4 className="text-sm font-semibold text-gray-900 mb-1">{s.heading}</h4>
-                    <p className="text-sm text-gray-600 leading-relaxed">{s.body}</p>
+                    <h4 className="mb-1 text-sm font-semibold text-gray-900">{s.heading}</h4>
+                    <p className="text-sm leading-relaxed text-gray-600">{s.body}</p>
                   </div>
                 ))}
                 <a href="/terms" target="_blank" rel="noreferrer" className="inline-block text-xs text-[#FA4D8D] underline">

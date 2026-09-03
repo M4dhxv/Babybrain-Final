@@ -37,6 +37,21 @@ export type VendorCategory =
 export type EmailStatus = 'pending' | 'sent' | 'skipped' | 'failed';
 export type SortOption = 'popular' | 'rating' | 'distance';
 
+/** Singapore areas the parent app filters by and prints on listing cards. */
+export type SgRegion = 'central' | 'east' | 'north-east' | 'north' | 'west' | 'sentosa';
+
+export const REGION_LABELS: Record<SgRegion, string> = {
+  central: 'Central',
+  east: 'East',
+  'north-east': 'North-East',
+  north: 'North',
+  west: 'West',
+  sentosa: 'Sentosa',
+};
+
+export const regionLabel = (r: string | null | undefined) =>
+  (r && REGION_LABELS[r as SgRegion]) || '';
+
 export type Database = {
   public: {
     Tables: {
@@ -166,6 +181,10 @@ export type Database = {
           price: number | null;
           address: string | null;
           postal_code: string | null;
+          // Derived from the postal code by the DB. Parent cards lead with the
+          // area ("East") rather than the street, so the listing preview needs
+          // it to show what a family actually sees.
+          region: SgRegion | null;
           latitude: number | null;
           longitude: number | null;
           image_urls: string[];
