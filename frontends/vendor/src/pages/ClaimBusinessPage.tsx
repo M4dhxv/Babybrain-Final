@@ -33,7 +33,7 @@ import { AuthHeader } from '@/components/AuthHeader';
  * provider list and drives the /api/vendor/claim/* endpoints.
  */
 
-interface ClaimableVenue {
+interface ClaimableBusiness {
   id: string;
   business_name: string;
   address: string | null;
@@ -45,7 +45,7 @@ interface ClaimableVenue {
 
 const whyVerify = [
   { icon: MapPin, title: 'Claim your business listing', desc: 'Take ownership of your business on BabyBrain.' },
-  { icon: Pencil, title: 'Update venue information', desc: 'Keep your details, photos and programmes up to date.' },
+  { icon: Pencil, title: 'Update business information', desc: 'Keep your details, photos and programmes up to date.' },
   { icon: CalendarDays, title: 'Take bookings & payments', desc: 'Let parents book and pay through BabyBrain — included on the Pay as you grow plan.' },
   { icon: MessageCircle, title: 'Chat with parents', desc: 'Respond to enquiries with live in-app messaging — included on the Pro plan.' },
   { icon: Bell, title: 'Manage schedules & availability', desc: 'Easily manage your activities, schedule and packages.' },
@@ -61,10 +61,10 @@ export default function ClaimBusinessPage() {
   const { session, signIn } = useAuth();
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<ClaimableVenue[]>([]);
+  const [results, setResults] = useState<ClaimableBusiness[]>([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [selected, setSelected] = useState<ClaimableVenue | null>(null);
+  const [selected, setSelected] = useState<ClaimableBusiness | null>(null);
 
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -121,13 +121,13 @@ export default function ClaimBusinessPage() {
         setError('Search is unavailable right now — please try again.');
         return;
       }
-      setResults((data ?? []) as unknown as ClaimableVenue[]);
+      setResults((data ?? []) as unknown as ClaimableBusiness[]);
     }, 300);
     return () => clearTimeout(t);
   }, [query]);
 
   async function sendCodes() {
-    if (!selected) return setError('Find and select your venue first.');
+    if (!selected) return setError('Find and select your business first.');
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -314,12 +314,12 @@ export default function ClaimBusinessPage() {
           </div>
 
           <div className="flex flex-1 flex-col gap-6 md:flex-row">
-            {/* Step 1 — find the venue */}
+            {/* Step 1 — find the business */}
             <div className="flex-1">
               <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-sm font-bold text-[#FA4D8D]">1</div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">Find your venue</h3>
+                  <h3 className="font-semibold text-gray-900">Find your business</h3>
                   <p className="text-xs text-gray-500">Search our listings by business name, address or postcode.</p>
                 </div>
               </div>
@@ -336,13 +336,13 @@ export default function ClaimBusinessPage() {
               </div>
 
               <div className="mb-4 space-y-3">
-                {results.map((venue) => {
-                  const on = selected?.id === venue.id;
+                {results.map((business) => {
+                  const on = selected?.id === business.id;
                   return (
                     <button
                       type="button"
-                      key={venue.id}
-                      onClick={() => setSelected(venue)}
+                      key={business.id}
+                      onClick={() => setSelected(business)}
                       className={cn(
                         'flex w-full items-start gap-4 rounded-xl border-2 p-3 text-left transition-colors',
                         on ? 'border-[#FA4D8D] bg-pink-50/50' : 'border-gray-200 hover:border-gray-300'
@@ -350,23 +350,23 @@ export default function ClaimBusinessPage() {
                     >
                       <div className="flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-semibold text-gray-900">{venue.business_name}</h4>
+                          <h4 className="font-semibold text-gray-900">{business.business_name}</h4>
                           {on && <CheckCircle className="h-5 w-5 flex-shrink-0 text-[#FA4D8D]" />}
                         </div>
-                        {(venue.address || venue.postal_code) && (
+                        {(business.address || business.postal_code) && (
                           <div className="mt-1 flex items-start gap-1 text-xs text-gray-500">
                             <MapPin className="mt-0.5 h-3 w-3 flex-shrink-0" />
-                            <span>{[venue.address, venue.postal_code].filter(Boolean).join(', ')}</span>
+                            <span>{[business.address, business.postal_code].filter(Boolean).join(', ')}</span>
                           </div>
                         )}
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {venue.region && (
+                          {business.region && (
                             <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
-                              {REGION_LABELS[venue.region] ?? venue.region}
+                              {REGION_LABELS[business.region] ?? business.region}
                             </span>
                           )}
                           <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs text-[#FA4D8D]">
-                            {venue.activity_count} {venue.activity_count === 1 ? 'listing' : 'listings'}
+                            {business.activity_count} {business.activity_count === 1 ? 'listing' : 'listings'}
                           </span>
                         </div>
                       </div>
@@ -375,7 +375,7 @@ export default function ClaimBusinessPage() {
                 })}
                 {searched && !searching && results.length === 0 && (
                   <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
-                    No unclaimed venues matched “{query.trim()}”. It may already be claimed, or not listed yet.
+                    No unclaimed businesses matched “{query.trim()}”. It may already be claimed, or not listed yet.
                   </p>
                 )}
                 {query.trim().length < 2 && (
@@ -384,7 +384,7 @@ export default function ClaimBusinessPage() {
               </div>
 
               <p className="text-sm text-gray-500">
-                Can't find your venue?{' '}
+                Can't find your business?{' '}
                 <button type="button" onClick={() => navigate('/contact')} className="cursor-pointer text-[#FA4D8D]">
                   Contact our support
                 </button>
@@ -403,7 +403,7 @@ export default function ClaimBusinessPage() {
 
               {!selected && (
                 <p className="mb-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
-                  Select your venue on the left to continue.
+                  Select your business on the left to continue.
                 </p>
               )}
 
