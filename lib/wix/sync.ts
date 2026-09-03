@@ -130,6 +130,14 @@ function slugify(s: string): string {
     .replace(/^-+|-+$/g, '') || 'wix-service';
 }
 
+/** The only Wix-owned columns a vendor may claim via activities.wix_locked_fields
+ *  (00082). Price is the one the portal offers today; title/description/image
+ *  are listed because they are the intended next step and the mechanism is
+ *  identical. Capacity, location and the schedule are deliberately absent —
+ *  those have correctness consequences (a seat Wix will refuse to sell, a
+ *  family sent to the wrong address), not just commercial ones. */
+const VENDOR_OVERRIDABLE_WIX_FIELDS = new Set(['price', 'title', 'description', 'image_urls']);
+
 export async function syncWixServicesToActivities(
   admin: SupabaseClient<Database>,
   providerId: string,
@@ -182,7 +190,7 @@ export async function syncWixServicesToActivities(
   // being imported right now.
   const { data: linkedRows } = await admin
     .from('activities')
-    .select('id, wix_service_id, wix_missing_since')
+    .select('id, wix_service_id, wix_missing_since, wix_locked_fields')
     .eq('provider_id', providerId)
     .not('wix_service_id', 'is', null);
   const linkedByServiceId = new Map(
@@ -237,23 +245,36 @@ export async function syncWixServicesToActivities(
     const wixDescription = service.description?.trim() || null;
 
     if (existing) {
+      const patch: Database['public']['Tables']['activities']['Update'] = {
+        title: service.name,
+        wix_service_type: type,
+        wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+        location_id: locationId,
+        address,
+        postal_code: postalCode,
+        ...(price != null ? { price } : {}),
+        ...(capacity != null ? { default_capacity: capacity } : {}),
+        ...(imageUrl ? { image_urls: [imageUrl] } : {}),
+        ...(wixDescription ? { description: wixDescription } : {}),
+        // Wix knows about this service again (this fetch found it), so any
+        // earlier "gone missing" flag no longer applies.
+        wix_missing_since: null,
+      };
+      // Anything the vendor has claimed (00082) is theirs — drop it from the
+      // patch so this sync leaves it alone. Only ever the fields the portal
+      // actually offers: a stray value can't be used to stop the reconciler
+      // clearing wix_missing_since, or to freeze the service type.
+      for (const field of existing.wix_locked_fields ?? []) {
+        if (VENDOR_OVERRIDABLE_WIX_FIELDS.has(field)) {
+          delete patch[field as keyof typeof patch];
+        }
+      }
+      // Wix's own price is mirrored either way, so an overridden activity can
+      // still show what Wix currently charges and be reverted to it.
+      patch.wix_price = price;
       await admin
         .from('activities')
-        .update({
-          title: service.name,
-          wix_service_type: type,
-          wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
-          location_id: locationId,
-          address,
-          postal_code: postalCode,
-          ...(price != null ? { price } : {}),
-          ...(capacity != null ? { default_capacity: capacity } : {}),
-          ...(imageUrl ? { image_urls: [imageUrl] } : {}),
-          ...(wixDescription ? { description: wixDescription } : {}),
-          // Wix knows about this service again (this fetch found it), so any
-          // earlier "gone missing" flag no longer applies.
-          wix_missing_since: null,
-        })
+        .update(patch)
         .eq('id', existing.id);
       if (existing.wix_missing_since) result.revived++;
       result.updated++;
@@ -285,6 +306,7 @@ export async function syncWixServicesToActivities(
       address,
       postal_code: postalCode,
       price,
+      wix_price: price,
       default_capacity: capacity,
       image_urls: imageUrl ? [imageUrl] : [],
     });

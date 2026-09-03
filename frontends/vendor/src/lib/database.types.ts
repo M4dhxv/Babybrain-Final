@@ -197,6 +197,8 @@ export type Database = {
           // The local wix_events.id a mirrored Wix Event points at (00070).
           // Null for a Wix Bookings service and for a native activity.
           wix_event_id: string | null;
+          wix_locked_fields: string[];
+          wix_price: number | null;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
           created_at: string;
@@ -238,6 +240,8 @@ export type Database = {
           wix_resource_id?: string | null;
           wix_service_type?: string | null;
           wix_event_id?: string | null;
+          wix_locked_fields?: string[];
+          wix_price?: number | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;

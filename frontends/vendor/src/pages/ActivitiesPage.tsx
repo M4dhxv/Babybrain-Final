@@ -170,6 +170,17 @@ export default function ActivitiesPage() {
   const isWixEvent = wixKind === 'EVENT';
   // An appointment is 1:1 by definition — a frozen "1" is just noise.
   const hideCapacity = wixKind === 'APPOINTMENT';
+  // Price is the one Wix-owned field a vendor may claim, and only on a Wix
+  // *Bookings* service: BabyBrain charges those through its own Stripe, so
+  // the number is purely commercial and nothing reconciles it against Wix.
+  // An event's charge comes from Wix's own ticket reservation, so an
+  // editable price there would advertise one amount and take another (00082).
+  const priceOverridable = isWixLinked && wixKind !== 'EVENT';
+  const [priceOverridden, setPriceOverridden] = useState(false);
+  // What Wix itself charges, shown next to an overridden price so the vendor
+  // can see it move. wix_price is only filled from the next sync on, hence
+  // the fallback to the mirrored price.
+  const wixPrice = editingActivity?.wix_price ?? editingActivity?.price ?? null;
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -632,6 +643,7 @@ export default function ActivitiesPage() {
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
     });
+    setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
     setFormError(null);
     setShowDrawer(true);
   }
@@ -685,8 +697,19 @@ export default function ActivitiesPage() {
       // re-synced on every run, so writing them back from this form would only
       // survive to the next tick. Omitted entirely rather than round-tripped —
       // the drawer shows them read-only under "From Wix" instead.
+      // A claimed price is written back and recorded in wix_locked_fields so
+      // the sync skips it from here on. Releasing it drops the entry and the
+      // next sync (<=5 min) restores Wix's number.
       ...(isWixLinked
-        ? {}
+        ? {
+            wix_locked_fields: [
+              ...(editingActivity?.wix_locked_fields ?? []).filter((x) => x !== 'price'),
+              ...(priceOverridable && priceOverridden ? ['price'] : []),
+            ],
+            ...(priceOverridable && priceOverridden
+              ? { price: form.price ? Number(form.price) : null }
+              : {}),
+          }
         : {
             price: form.price ? Number(form.price) : null,
             location_id: form.location_id || null,
@@ -1113,7 +1136,10 @@ export default function ActivitiesPage() {
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-xs text-gray-500">Price</dt>
                     <dd className="text-right text-sm font-medium text-gray-900">
-                      {editingActivity?.price != null ? `${editingActivity.price}` : 'Not set in Wix'}
+                      {wixPrice != null ? '$' + wixPrice : 'Not set in Wix'}
+                      {priceOverridden && (
+                        <span className="block text-[11px] font-normal text-amber-700">not in use — your price applies</span>
+                      )}
                       {isWixEvent && <span className="block text-[11px] font-normal text-gray-500">cheapest ticket type</span>}
                     </dd>
                   </div>
@@ -1166,6 +1192,50 @@ export default function ActivitiesPage() {
               <textarea placeholder="Describe this activity..." rows={3} maxLength={500} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               <div className="text-right text-xs text-gray-400 mt-1">{form.description.length}/500</div>
             </div>
+            {priceOverridable && (
+              <div>
+                <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
+                {priceOverridden ? (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 45"
+                      className={inputCls}
+                      value={form.price}
+                      onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Your price — the sync won&rsquo;t overwrite it.{' '}
+                      {wixPrice != null && <>Wix charges ${wixPrice}. </>}
+                      <button
+                        type="button"
+                        onClick={() => { setPriceOverridden(false); setForm({ ...form, price: wixPrice != null ? String(wixPrice) : '' }); }}
+                        className="font-medium text-[#FA4D8D] hover:underline"
+                      >
+                        Follow Wix again
+                      </button>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      className={cn(inputCls, 'bg-gray-50 text-gray-500 cursor-not-allowed')}
+                      value={wixPrice ?? ''}
+                      disabled
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Following Wix.{' '}
+                      <button type="button" onClick={() => setPriceOverridden(true)} className="font-medium text-[#FA4D8D] hover:underline">
+                        Set your own price
+                      </button>{' '}
+                      to charge something different on BabyBrain.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Age range (months)</label>
               <div className="flex items-center gap-3">

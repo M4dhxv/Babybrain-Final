@@ -215,6 +215,12 @@ export type Database = {
           // lib/wix/events-sync.ts and 00070_wix_events_as_activities.sql.
           // wix_service_id is deliberately left null for these.
           wix_event_id: string | null;
+          // Wix-owned columns the vendor has claimed, so the sync leaves them
+          // alone (00082). Only VENDOR_OVERRIDABLE_WIX_FIELDS are honoured.
+          wix_locked_fields: string[];
+          // Wix's own price, mirrored every sync even when `price` is overridden,
+          // so the portal can show what Wix currently charges and revert to it.
+          wix_price: number | null;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
           created_at: string;
@@ -258,6 +264,8 @@ export type Database = {
           wix_resource_id?: string | null;
           wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
           wix_event_id?: string | null;
+          wix_locked_fields?: string[];
+          wix_price?: number | null;
         };
         Update: Partial<Database['public']['Tables']['activities']['Insert']> & {
           archived_at?: string | null;
