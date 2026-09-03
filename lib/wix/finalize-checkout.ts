@@ -1,6 +1,7 @@
 import type Stripe from 'stripe';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { recordSale } from '@/lib/commercials';
 import { getProviderWixCredentials } from './client';
 import { createWixBookingAndSession, resolveWixContact } from './sync';
 
@@ -34,7 +35,7 @@ export async function finalizeWixBookingCheckout(
 
   const { data: rows } = await admin
     .from('bookings')
-    .select('id, user_id, payment_status')
+    .select('id, user_id, payment_status, amount')
     .in('id', bookingIds);
   if (!rows || rows.length === 0) return;
   if (rows.every((r) => r.payment_status === 'paid')) return; // already finalized
@@ -99,4 +100,21 @@ export async function finalizeWixBookingCheckout(
       wix_booking_id: result.wixBookingId,
     })
     .in('id', bookingIds);
+
+  // Same ledger entry the native paid booking writes (the webhook's
+  // kind='booking' branch). Without it a Wix-linked class sold through
+  // BabyBrain took the parent's money, split it to the vendor's connected
+  // account and then showed up nowhere in the vendor's Earnings — nothing
+  // to reconcile a payout against. One entry for the whole checkout, gross
+  // across every seat, keyed to the first booking row exactly as the native
+  // path keys to its single one. recordSale is idempotent on the payment
+  // intent, so the webhook and /api/stripe/reconcile racing is safe.
+  const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
+  await recordSale(admin, {
+    providerId: activity.provider_id,
+    source: 'booking',
+    bookingId: rows[0].id,
+    grossCents,
+    paymentIntentId: paymentIntent,
+  });
 }

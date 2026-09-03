@@ -322,6 +322,10 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          // Set from Wix by importWixSessionStaff (lib/wix/sync.ts) for
+          // Wix-sourced sessions, and by the vendor by hand for site-native
+          // ones.
+          teacher_name?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };

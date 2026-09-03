@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
+import { checkWixBookingGates, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
 
 /**
  * Parent redeems a make-up token for a Wix-sourced slot.
@@ -53,12 +53,19 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: activity } = await admin
     .from('activities')
-    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type')
+    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, bookings_paused, booking_cutoff_minutes, info_request_enabled')
     .eq('id', activityId)
     .maybeSingle();
   if (!activity?.wix_service_id || !activity.provider_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
   }
+
+  // Paused / required-information, before the token is claimed. This route
+  // inserts through the service-role client, which
+  // enforce_booking_insert_defaults steps aside for, so nothing else applies
+  // them — see checkWixBookingGates.
+  const gates = checkWixBookingGates(activity, body.infoResponse);
+  if (!gates.ok) return NextResponse.json({ error: gates.error }, { status: gates.status });
 
   // The token must be this parent's, live, and for this provider — checked
   // before anything is claimed or booked.
@@ -114,7 +121,8 @@ export async function POST(request: Request) {
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
     contact,
-    1
+    1,
+    { cutoffMinutes: activity.booking_cutoff_minutes }
   );
   if (!result.ok) {
     await revertClaim();

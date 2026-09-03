@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
-  Clock, Baby, Info, Check, X, Save, Gift, FileCheck,
+  Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -35,7 +35,13 @@ const sgDateKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { t
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const ageLabel = (m: number | null) => (m == null ? '' : m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
-type SessionOpt = { id: string; starts_at: string; capacity: number | null; title: string };
+type SessionOpt = {
+  id: string; starts_at: string; capacity: number | null; title: string;
+  // Who's taking it and where. Typed in by the vendor for a site-native
+  // session; imported from Wix by importWixSessionStaff (lib/wix/sync.ts) for
+  // a Wix-sourced one, so a Wix vendor's roster names the instructor too.
+  teacher_name: string | null; studio: string | null;
+};
 type RosterRow = {
   booking_id: string; status: string; payment_status: string; child_name: string;
   child_age_months: number | null; has_medical: boolean; waitlist_position: number | null;
@@ -203,7 +209,7 @@ export default function BookingsPage() {
         ids.map((id) =>
           supabase
             .from('activity_sessions')
-            .select('id, starts_at, capacity, activity_id')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio')
             .eq('activity_id', id)
             .gte('starts_at', new Date().toISOString())
             .order('starts_at', { ascending: true })
@@ -213,7 +219,10 @@ export default function BookingsPage() {
       const sess = results
         .flatMap((r) => r.data ?? [])
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-      const opts = sess.map((s) => ({ id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity' }));
+      const opts = sess.map((s) => ({
+        id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity',
+        teacher_name: s.teacher_name, studio: s.studio,
+      }));
       setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
       setSessions(opts);
       // The Schedule tab deep-links here with ?session=, so a click on a
@@ -443,6 +452,19 @@ export default function BookingsPage() {
             >
               <UserPlus className="w-4 h-4" /> Add booking
             </button>
+          )}
+          {/* Who's on this session, so whoever is working the roster knows who
+              to hand it to without opening Schedule. For a Wix-linked session
+              this is the staff member Wix has assigned (imported by
+              importWixSessionStaff) — it can't be edited here, same as every
+              other Wix-owned detail. */}
+          {currentSession && (currentSession.teacher_name || currentSession.studio) && (
+            <div className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-600 sm:w-auto">
+              <UserIcon className="h-4 w-4 shrink-0 text-[#FA4D8D]" />
+              <span className="truncate font-medium">
+                {[currentSession.teacher_name, currentSession.studio].filter(Boolean).join(' · ')}
+              </span>
+            </div>
           )}
         </div>
 

@@ -16,10 +16,11 @@
  * No API key needed.
  */
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 process.loadEnvFile('.env.local');
 const LIVE = process.argv.includes('--live');
-const sql = postgres(process.env.SUPABASE_DB_URL, { prepare: false });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ prepare: false } });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

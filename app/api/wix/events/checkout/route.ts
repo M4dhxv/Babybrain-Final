@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
-import { getStripe, DEFAULT_COMMISSION_RATE } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
+import { computeSplit, getTerms } from '@/lib/commercials';
 import {
   WixApiError,
   computeWixCheckoutTotal,
@@ -188,15 +189,14 @@ export async function POST(request: Request) {
     .eq('id', event.provider_id)
     .maybeSingle();
   if (provider?.stripe_account_id && provider.payouts_enabled) {
-    const { data: sub } = await admin
-      .from('subscriptions')
-      .select('commission_rate')
-      .eq('provider_id', event.provider_id)
-      .maybeSingle();
-    const commission = sub?.commission_rate ?? DEFAULT_COMMISSION_RATE;
+    // The vendor's full negotiated terms, same as every other paid path —
+    // commission_rate alone silently dropped any flat per-sale fee and the
+    // Stripe-fee recovery a vendor had agreed to absorb.
+    const terms = await getTerms(admin, event.provider_id);
+    const split = computeSplit(Math.round(charge.value * 100), terms);
     connect = {
       payment_intent_data: {
-        application_fee_amount: Math.round(charge.value * 100 * commission),
+        application_fee_amount: split.applicationFeeCents,
         transfer_data: { destination: provider.stripe_account_id },
       },
     };

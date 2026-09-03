@@ -322,6 +322,15 @@ if (signInErr) {
 
 // ---------- cleanup ----------
 console.log('\n--- Cleaning up test data ---');
+// finalizeWixEventTicketCheckout now writes the vendor's earnings ledger
+// entry for a ticket sale, so a run of this script leaves provider_earnings
+// rows behind against its synthetic pi_test_… payment intents. Cleared
+// first, by that prefix, so a validation run never inflates real earnings.
+await admin
+  .from('provider_earnings')
+  .delete()
+  .like('stripe_payment_intent', 'pi_test_%')
+  .then(({ error }) => error && console.error('cleanup step failed (non-fatal):', error.message));
 for (const fn of cleanup.reverse()) {
   await fn().catch((e) => console.error('cleanup step failed (non-fatal):', e.message));
 }

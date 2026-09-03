@@ -1050,12 +1050,23 @@ function WixIntegrationManager({
     setImportError(null);
     setImportNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number; unlinked: number } }>(
+      const res = await apiPost<{
+        sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number; unlinked: number };
+        protectedServices: { wixServiceId: string; title: string }[];
+      }>(
         '/api/vendor/wix-services-import',
         { provider_id: provider.id, service_ids: Array.from(selectedIds) }
       );
-      setImportNotice(summarizeSync(res.sync));
-      await loadServices();
+      let notice = summarizeSync(res.sync);
+      // An activity a family has actually booked can't be unlinked — say so,
+      // rather than letting the box quietly re-tick itself on reload. Same
+      // wording as the events picker's own protected message.
+      if (res.protectedServices?.length) {
+        const n = res.protectedServices.length;
+        notice += ` ${res.protectedServices.map((p) => `"${p.title}"`).join(', ')} already ${n > 1 ? 'have' : 'has'} bookings, so ${n > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${n > 1 ? 'them' : 'it'}.`;
+      }
+      setImportNotice(notice);
+      await loadServices(); // re-ticks anything that was protected, since it's still really linked
     } catch (e) {
       setImportError(describeWixError(e, 'Could not import the selected activities'));
     } finally {

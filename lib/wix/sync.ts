@@ -400,23 +400,47 @@ async function deleteUnbookedSessions(admin: SupabaseClient<Database>, activityI
  * `activities.slug`'s unique constraint if the vendor re-checks the same
  * service later — sync's insert path uses a slug derived from the Wix
  * service id, which would otherwise collide with this now-orphaned row.
+ *
+ * Refuses to unlink a service that already has a real (non-cancelled)
+ * booking on it, exactly as unlinkWixEventActivities does for Wix Events.
+ * Unchecking a box shouldn't be able to strand a family's booked class:
+ * clearing wix_service_id detaches it from every future sync, so the seat
+ * stops being reconciled against Wix and a later re-import creates an
+ * unrelated duplicate listing rather than reviving this one. Those go back
+ * in `protectedServices` so the caller can keep them in the sync and tell
+ * the vendor why the box came back ticked.
  */
 export async function unlinkWixActivities(
   admin: SupabaseClient<Database>,
   providerId: string,
   serviceIds: string[]
-): Promise<number> {
-  if (serviceIds.length === 0) return 0;
+): Promise<{ removed: number; protectedServices: { wixServiceId: string; title: string }[] }> {
+  if (serviceIds.length === 0) return { removed: 0, protectedServices: [] };
 
   const { data: rows } = await admin
     .from('activities')
-    .select('id, slug')
+    .select('id, slug, title, wix_service_id')
     .eq('provider_id', providerId)
     .in('wix_service_id', serviceIds);
-  if (!rows || rows.length === 0) return 0;
+  if (!rows || rows.length === 0) return { removed: 0, protectedServices: [] };
 
   let removed = 0;
+  const protectedServices: { wixServiceId: string; title: string }[] = [];
   for (const row of rows) {
+    const { data: sessions } = await admin.from('activity_sessions').select('id').eq('activity_id', row.id);
+    const sessionIds = (sessions ?? []).map((s) => s.id);
+    const { count } = sessionIds.length
+      ? await admin
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .in('session_id', sessionIds)
+          .neq('status', 'cancelled')
+      : { count: 0 };
+    if ((count ?? 0) > 0) {
+      protectedServices.push({ wixServiceId: row.wix_service_id as string, title: row.title });
+      continue;
+    }
+
     await deleteUnbookedSessions(admin, row.id);
     const { error } = await admin
       .from('activities')
@@ -431,7 +455,98 @@ export async function unlinkWixActivities(
       .eq('id', row.id);
     if (!error) removed++;
   }
-  return removed;
+  return { removed, protectedServices };
+}
+
+/**
+ * Imports the name of the staff member taking each Wix session onto the
+ * local schedule — `activity_sessions.teacher_name`, the same column a
+ * non-Wix vendor fills in by hand (00042), so the vendor Schedule calendar,
+ * the Activities session list and the parent's booking page all show it
+ * without any of them needing to know Wix exists.
+ *
+ * Called from /api/wix/slots right after that route upserts the session
+ * rows, so the name lands in the same pass that materialises the slot —
+ * every Wix session on the schedule carries its instructor from the first
+ * time anyone looks at it. `staffBySlotKey` maps `wix_slot_key` to the
+ * already-formatted display name (see {@link formatWixStaffNames}); for an
+ * APPOINTMENT that's the staff Wix says is free for the slot, for a
+ * CLASS/COURSE the staff the occurrence is assigned to.
+ *
+ * A key mapped to null is skipped rather than blanked: Wix simply having
+ * nobody named on a session is not an instruction to erase a name that's
+ * already there — the same rule {@link wixServicePrice} and
+ * {@link wixServiceCapacity} follow for price and capacity.
+ *
+ * Only rows whose stored name actually differs are written, and those are
+ * grouped by name — one UPDATE per instructor who changed, not one per
+ * session. That matters because this runs on every slots fetch: a
+ * half-hourly appointment service materialises hundreds of rows over the
+ * 60-day window, and re-writing all of them on every page view (for a
+ * schedule that almost never changes) is pure write load.
+ *
+ * Both the read and the writes are addressed by `activity_id` and row `id`,
+ * never by `wix_slot_key`. PostgREST puts filters in the query string, and
+ * these keys are long — a class session's key is a ~460-character base64
+ * blob (Wix's own session ids are enormous) — so an `.in('wix_slot_key', …)`
+ * over a full window builds a request URL tens of kilobytes long and is
+ * rejected before it reaches the database. Comparing in code also sidesteps
+ * a second trap: an instructor's name is free text from Wix and can contain
+ * the commas and parentheses PostgREST's filter grammar uses as syntax.
+ *
+ * Best-effort by design — this is display detail on top of availability that
+ * has already been fetched and saved, so a failure here logs and returns
+ * rather than failing the slots request the vendor or parent is waiting on.
+ */
+export async function importWixSessionStaff(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  staffBySlotKey: Map<string, string | null>
+): Promise<number> {
+  if ([...staffBySlotKey.values()].every((name) => !name)) return 0;
+
+  const { data: rows, error: readError } = await admin
+    .from('activity_sessions')
+    .select('id, wix_slot_key, teacher_name')
+    .eq('activity_id', activityId)
+    .not('wix_slot_key', 'is', null);
+  if (readError) {
+    console.error('Wix session staff import could not read the schedule', activityId, readError);
+    return 0;
+  }
+
+  const idsByName = new Map<string, string[]>();
+  for (const row of rows ?? []) {
+    const name = staffBySlotKey.get(row.wix_slot_key as string);
+    // `undefined` = this fetch didn't cover the session (a different window);
+    // `null` = Wix named nobody. Neither is grounds for a write.
+    if (!name || row.teacher_name === name) continue;
+    const ids = idsByName.get(name);
+    if (ids) ids.push(row.id);
+    else idsByName.set(name, [row.id]);
+  }
+  if (idsByName.size === 0) return 0;
+
+  let updated = 0;
+  for (const [name, ids] of idsByName) {
+    // Chunked for the same reason the keys aren't used as a filter: an
+    // appointment service's first import names every slot in the 60-day
+    // window at once, and a few hundred uuids in one `in.(…)` is a request
+    // URL long enough to be refused.
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await admin
+        .from('activity_sessions')
+        .update({ teacher_name: name })
+        .in('id', ids.slice(i, i + 100))
+        .select('id');
+      if (error) {
+        console.error('Wix session staff import failed', activityId, error);
+        continue;
+      }
+      updated += data?.length ?? 0;
+    }
+  }
+  return updated;
 }
 
 export interface WixSlotActivity {
@@ -439,6 +554,52 @@ export interface WixSlotActivity {
   wix_service_id: string;
   wix_resource_id: string | null;
   wix_service_type: string | null;
+}
+
+/** The booking rules a vendor sets on an activity that a Wix-sourced booking
+ *  has to respect just as much as a site-native one does. */
+export interface WixBookingGates {
+  bookings_paused: boolean | null;
+  info_request_enabled: boolean | null;
+  booking_cutoff_minutes: number | null;
+}
+
+/**
+ * The activity-level half of the booking rules, checked before anything is
+ * created in Wix.
+ *
+ * These rules live in `enforce_booking_insert_defaults` (00074) for ordinary
+ * bookings, but that trigger opens with `if auth.role() = 'service_role'
+ * then return new` — the trusted-server escape hatch the Stripe webhook
+ * needs. Every Wix booking route inserts through the service-role admin
+ * client, so *none* of them were covered: a class the vendor had paused was
+ * still bookable, and an activity that asks for information got a booking
+ * with none. The gates have to be applied here instead, in the code that
+ * holds the service-role key.
+ *
+ * The cut-off is deliberately NOT here — it needs the slot's real start
+ * time, which only exists once the slot has been resolved against live Wix
+ * availability. See {@link resolveWixSlot}'s `gate` argument.
+ */
+export function checkWixBookingGates(
+  gates: WixBookingGates,
+  infoResponse: string | null | undefined
+): { ok: true } | { ok: false; status: number; error: string } {
+  if (gates.bookings_paused) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'Bookings for this class are currently paused by the provider.',
+    };
+  }
+  if (gates.info_request_enabled && !infoResponse?.trim()) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'This class needs some extra information before you can book.',
+    };
+  }
+  return { ok: true };
 }
 
 export interface WixContact {
@@ -484,11 +645,34 @@ type ResolvedWixSlot =
  *  the picker loading and "Book" being clicked — shared by both the
  *  immediate booking path and the pre-payment reservation path below, since
  *  both need this same check before doing anything else. */
+/** How close to a session's start a parent may still book it, or null to
+ *  skip the check. Only the routes a *parent* calls pass a number: by the
+ *  time finalizeWixBookingCheckout runs, Stripe has already taken the money,
+ *  and refusing there over a cut-off that passed while the parent was on
+ *  Stripe's page would strand a paid booking rather than prevent a late one. */
+type WixCutoffGate = { cutoffMinutes: number | null } | null;
+
+function cutoffRejection(startsAt: string, gate: WixCutoffGate):
+  | { status: number; error: string }
+  | null {
+  if (!gate) return null;
+  const cutoff = gate.cutoffMinutes ?? 15;
+  if (new Date(startsAt).getTime() - cutoff * 60_000 > Date.now()) return null;
+  return {
+    status: 409,
+    error:
+      cutoff === 0
+        ? 'This class has already started.'
+        : `Bookings for this class close ${cutoff} minutes before it starts.`,
+  };
+}
+
 async function resolveWixSlot(
   creds: WixCredentials,
   activity: WixSlotActivity,
   wixSlotId: string,
-  participants: number
+  participants: number,
+  gate: WixCutoffGate = null
 ): Promise<
   | { ok: true; key: string; startsAt: string; endsAt: string; capacity: number; resolved: ResolvedWixSlot }
   | { ok: false; status: number; error: string }
@@ -556,6 +740,12 @@ async function resolveWixSlot(
           resolved: { kind: 'class', session },
         };
       }
+      // Deliberately only for a CLASS — a COURSE (returned above) is one
+      // enrolment in a whole run that a parent may legitimately join
+      // mid-way, so neither the run's start nor the next remaining
+      // occurrence is a sensible thing to close bookings against.
+      const late = cutoffRejection(session.start, gate);
+      if (late) return { ok: false, ...late };
       return {
         ok: true,
         key,
@@ -588,10 +778,13 @@ async function resolveWixSlot(
       // and must be true UTC — slot.localStartDate/localEndDate themselves stay
       // untouched on `resolved.slot` since createWixBooking sends those exact
       // site-local strings back to Wix's own create-booking call.
+      const startsAtUtc = wixLocalToUtcIso(slot.localStartDate, slot.timeZone ?? 'UTC');
+      const late = cutoffRejection(startsAtUtc, gate);
+      if (late) return { ok: false, ...late };
       return {
         ok: true,
         key,
-        startsAt: wixLocalToUtcIso(slot.localStartDate, slot.timeZone ?? 'UTC'),
+        startsAt: startsAtUtc,
         endsAt: wixLocalToUtcIso(slot.localEndDate, slot.timeZone ?? 'UTC'),
         capacity: 1,
         resolved: { kind: 'appointment', slot },
@@ -654,12 +847,15 @@ export async function createWixBookingAndSession(
   activity: WixSlotActivity,
   wixSlotId: string,
   contact: WixContact,
-  participants = 1
+  participants = 1,
+  /** The activity's booking cut-off, for the parent-facing routes. Left null
+   *  by finalizeWixBookingCheckout — see {@link WixCutoffGate}. */
+  gate: WixCutoffGate = null
 ): Promise<
   | { ok: true; sessionId: string; wixBookingId: string }
   | { ok: false; status: number; error: string }
 > {
-  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants);
+  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants, gate);
   if (!resolved.ok) return resolved;
 
   let wixBookingId: string;
@@ -701,12 +897,13 @@ export async function reserveWixSlotForCheckout(
   creds: WixCredentials,
   activity: WixSlotActivity,
   wixSlotId: string,
-  participants = 1
+  participants = 1,
+  gate: WixCutoffGate = null
 ): Promise<
   | { ok: true; sessionId: string }
   | { ok: false; status: number; error: string }
 > {
-  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants);
+  const resolved = await resolveWixSlot(creds, activity, wixSlotId, participants, gate);
   if (!resolved.ok) return resolved;
 
   const sessionId = await ensureLocalWixSession(admin, activity.id, resolved.key, resolved.startsAt, resolved.endsAt, resolved.capacity);

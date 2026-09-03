@@ -65,17 +65,32 @@ export async function POST(request: Request) {
     // this box".
     const toRemove = [...currentIds].filter((id) => wixVisibleIds.has(id) && !selected.has(id));
 
+    // The unlink runs BEFORE the sync, not after — a service with real
+    // bookings on it gets refused (see unlinkWixActivities) and has to stay
+    // in the sync's own onlyServiceIds so it keeps being kept in step like
+    // any other still-listed activity, rather than quietly falling out of
+    // date because the vendor tried to uncheck it. Same order and reasoning
+    // as wix-events-import.
+    const unlinkResult = toRemove.length
+      ? await unlinkWixActivities(admin, providerId, toRemove)
+      : { removed: 0, protectedServices: [] };
+
     // Always run the full sync, not just when toAdd is non-empty — its
     // reconciliation pass (wix_missing_since) is what correctly handles
     // every locally-linked service this save's selection couldn't include,
     // and that needs to run on every save, not only ones adding something.
-    const sync = await syncWixServicesToActivities(admin, providerId, creds, { onlyServiceIds: toAdd });
+    const sync = await syncWixServicesToActivities(admin, providerId, creds, {
+      onlyServiceIds: [...new Set([...toAdd, ...unlinkResult.protectedServices.map((p) => p.wixServiceId)])],
+    });
+
     // Distinct from `sync.removed` (services the reconciliation pass inside
     // syncWixServicesToActivities found missing from the account entirely) —
     // `unlinked` is a vendor's own deliberate uncheck in this picker.
-    const unlinked = toRemove.length ? await unlinkWixActivities(admin, providerId, toRemove) : 0;
-
-    return NextResponse.json({ ok: true, sync: { ...sync, unlinked } });
+    return NextResponse.json({
+      ok: true,
+      sync: { ...sync, unlinked: unlinkResult.removed },
+      protectedServices: unlinkResult.protectedServices,
+    });
   } catch (e) {
     console.error('Wix selective import failed', e);
     return NextResponse.json({ error: 'Could not reach Wix' }, { status: 502 });

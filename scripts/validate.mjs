@@ -10,6 +10,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { StreamChat } from 'stream-chat';
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 process.loadEnvFile('.env.local');
 
@@ -27,7 +28,7 @@ const check = (name, ok, detail = '') => {
 };
 
 // ---------- 0. Schema + RLS introspection (direct SQL) ----------
-const sql = postgres(process.env.SUPABASE_DB_URL, { prepare: false });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ prepare: false } });
 
 const EXPECTED_TABLES = [
   'parent_profiles', 'user_preferences', 'children', 'activity_categories',
@@ -168,8 +169,28 @@ const { data: searchMusic } = await clientA.rpc('search_activities', { p_categor
 check('Category filter works', (searchMusic ?? []).length >= 2 &&
   searchMusic.every((a) => a.category_slug === 'music'), `${searchMusic?.length ?? 0} music`);
 
+// Deliberately not pinned to one seeded row. This asserted
+// `storytime-stretch-yoga` was in the results, but that mock row was
+// unpublished after QA reached it by direct link (see the note in
+// frontends/parent/src/lib/data.ts) — so the check failed for the one
+// reason it should have passed: search correctly refusing to surface an
+// unpublished listing. Assert the real behaviour instead: a term returns
+// matching published activities, and only published ones.
 const { data: searchText } = await clientA.rpc('search_activities', { p_query: 'yoga' });
-check('Full-text search works', (searchText ?? []).some((a) => a.slug === 'storytime-stretch-yoga'));
+const yogaHits = searchText ?? [];
+// Asserted on shape, not on any one row. The search vector spans the
+// activity's description as well as its title (a class held at "Freedom Yoga
+// Holland V" is a legitimate hit for "yoga" with neither the word in its
+// title nor a yoga provider), so "every result mentions yoga" is not a true
+// statement about correct behaviour. What is: the term narrows the set, and
+// it finds the listings actually named for it.
+check('Full-text search works',
+  yogaHits.length > 0 &&
+    yogaHits.length < (searchAll ?? []).length &&
+    yogaHits.some((a) => /yoga/i.test(a.title)),
+  `${yogaHits.length} of ${(searchAll ?? []).length} results`);
+check('Full-text search never returns an unpublished listing',
+  !yogaHits.some((a) => a.slug === 'storytime-stretch-yoga'));
 
 const { data: searchNear } = await clientA.rpc('search_activities', {
   p_lat: 1.3052, p_lng: 103.8302, p_radius_km: 5, p_sort: 'distance',

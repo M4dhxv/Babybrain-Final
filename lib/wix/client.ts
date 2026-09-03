@@ -451,6 +451,56 @@ export function wixSlotResourceId(slot: WixTimeSlot): string | null {
   return null;
 }
 
+/** A staff member (a Wix Bookings "resource") taking a session. `id` is the
+ *  same resource id {@link fetchWixResources} returns and that an
+ *  APPOINTMENT booking is made against. */
+export interface WixStaffMember {
+  id: string;
+  name: string;
+}
+
+/** The staff Wix says are free for this APPOINTMENT slot — the same
+ *  `availableResources` the booking itself is made against, so the name a
+ *  parent is shown and the person the appointment lands on can't disagree.
+ *  Empty unless the availability request passed `resourceIds` (see
+ *  {@link fetchWixAvailability}). */
+export function wixSlotStaff(slot: WixTimeSlot): WixStaffMember[] {
+  const out: WixStaffMember[] = [];
+  for (const group of slot.availableResources ?? []) {
+    for (const r of group.resources ?? []) {
+      if (r.id && r.name && !out.some((s) => s.id === r.id)) out.push({ id: r.id, name: r.name });
+    }
+  }
+  return out;
+}
+
+/** One display string for whoever is taking a session — "Madhav", or
+ *  "Madhav & Anita" when a class is co-taught. Null when Wix names nobody,
+ *  which every caller must treat as "leave whatever is stored alone" rather
+ *  than as an instruction to blank it (same convention as
+ *  {@link wixServicePrice}).
+ *
+ *  `knownStaffIds`, when given, restricts the result to ids Wix actually
+ *  lists as bookable resources on the account. A session's
+ *  `affectedSchedules` is "every calendar this booking blocks", which is the
+ *  assigned staff in practice but is not *defined* as staff-only — filtering
+ *  against the real resource list is what stops a non-staff calendar ever
+ *  being shown to a parent as their child's teacher. */
+export function formatWixStaffNames(
+  staff: WixStaffMember[],
+  knownStaffIds?: Set<string>
+): string | null {
+  const names = staff
+    .filter((s) => !knownStaffIds || knownStaffIds.has(s.id))
+    .map((s) => s.name.trim())
+    .filter(Boolean);
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return null;
+  // Two is already unusual; beyond that a roster reads better than a list.
+  if (unique.length > 2) return `${unique[0]} +${unique.length - 1} more`;
+  return unique.join(' & ');
+}
+
 /**
  * Collapses Wix's rolling appointment grid into complete, non-overlapping
  * slots.
@@ -519,6 +569,8 @@ export interface WixClassSession {
   end: string; // ISO timestamp
   capacity: number;
   remainingCapacity: number;
+  /** Who is actually taking this occurrence — see {@link WixStaffMember}. */
+  staff: WixStaffMember[];
 }
 
 /** Every occurrence for a CLASS/COURSE service over the next `days` days,
@@ -542,6 +594,13 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
     remainingCapacity: number;
     start: { timestamp: string };
     end: { timestamp: string };
+    // Every other calendar this occurrence blocks out. For a CLASS/COURSE
+    // that's the staff assigned to teach it — confirmed live: a Kathak class
+    // comes back with `scheduleOwnerId` = the instructor's resource id and
+    // `scheduleOwnerName` = "Madhav". It is the ONLY place the sessions query
+    // names the person taking the session; the top-level `scheduleOwnerName`
+    // is the *service's* name ("Kathak Classes"), not a staff member's.
+    affectedSchedules?: { scheduleOwnerId?: string; scheduleOwnerName?: string }[];
   }
   const data = await wixFetch<{ sessions?: RawSession[] }>(creds, '/bookings/v2/calendar/sessions/query', {
     query: { paging: { limit: 100 } },
@@ -559,6 +618,10 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
       end: s.end.timestamp,
       capacity: s.capacity,
       remainingCapacity: s.remainingCapacity,
+      staff: (s.affectedSchedules ?? [])
+        .filter((a): a is { scheduleOwnerId: string; scheduleOwnerName: string } =>
+          !!a.scheduleOwnerId && !!a.scheduleOwnerName)
+        .map((a) => ({ id: a.scheduleOwnerId, name: a.scheduleOwnerName })),
     }));
 }
 

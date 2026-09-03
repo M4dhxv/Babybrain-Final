@@ -1330,18 +1330,25 @@ const sgDayRange = (start: string, end: string) =>
  *  (weekday + start–end time), each with its own date range and count, so
  *  the two show up as separate lines instead of a wall of near-identical
  *  "5:30 pm" cards. */
-function courseStrands(sessions: { starts_at: string; ends_at: string | null }[]) {
-  const groups: Record<string, { weekday: string; time: string; dates: string[] }> = {};
+function courseStrands(sessions: { starts_at: string; ends_at: string | null; teacher_name?: string | null }[]) {
+  const groups: Record<string, { weekday: string; time: string; dates: string[]; teachers: string[] }> = {};
   for (const s of sessions) {
     const weekday = new Date(s.starts_at).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", weekday: "long" });
     const time = s.ends_at ? `${sgTime(s.starts_at)} – ${sgTime(s.ends_at)}` : sgTime(s.starts_at);
     const key = `${weekday}|${time}`;
-    (groups[key] ||= { weekday, time, dates: [] }).dates.push(s.starts_at);
+    const group = (groups[key] ||= { weekday, time, dates: [], teachers: [] });
+    group.dates.push(s.starts_at);
+    // A course's weekly strands are routinely taught by different people —
+    // confirmed on a real Wix course whose Wednesday and Thursday runs have
+    // different instructors — so the teacher belongs on the strand, not on
+    // the course as a whole.
+    const teacher = s.teacher_name?.trim();
+    if (teacher && !group.teachers.includes(teacher)) group.teachers.push(teacher);
   }
   return Object.values(groups)
     .map((g) => {
       const sorted = g.dates.slice().sort();
-      return { weekday: g.weekday, time: g.time, first: sorted[0], last: sorted[sorted.length - 1], count: g.dates.length };
+      return { weekday: g.weekday, time: g.time, first: sorted[0], last: sorted[sorted.length - 1], count: g.dates.length, teachers: g.teachers };
     })
     .sort((a, b) => a.first.localeCompare(b.first))
     .map((g) => ({
@@ -1349,6 +1356,7 @@ function courseStrands(sessions: { starts_at: string; ends_at: string | null }[]
       label: `${g.weekday}s · ${g.time}`,
       range: g.first === g.last ? sgDay(g.first) : `${sgDay(g.first)} – ${sgDay(g.last)}`,
       count: g.count,
+      teacher: g.teachers.length ? g.teachers.join(" & ") : null,
     }));
 }
 
@@ -5521,6 +5529,11 @@ function BookingPage() {
         policiesAccepted: acceptedPolicies,
         count,
         ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+        // Required by the activity when info_request_enabled, and now
+        // enforced server-side on both Wix endpoints — it used to be
+        // collected on this page and then never sent, so the vendor's roster
+        // showed the answer blank for every Wix-linked class.
+        ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
       };
       if (activity?.price != null && Number(activity.price) > 0) {
         try {
@@ -5839,6 +5852,7 @@ function BookingPage() {
                               <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] bg-white px-3 py-2.5">
                                 <p className="text-sm font-black text-[#34406f]">{st.label}</p>
                                 <p className="mt-0.5 text-xs font-semibold text-[#697390]">{st.range} · {st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                                {st.teacher && <p className="mt-0.5 text-xs font-bold text-[#8B5CF6]">With {st.teacher}</p>}
                               </div>
                             ))}
                           </div>
@@ -5875,6 +5889,14 @@ function BookingPage() {
                             {times.map((s) => (
                               <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
                                 <span className="block whitespace-nowrap">{sgTime(s.starts_at)}</span>
+                                {/* Who's taking this particular slot. Worth
+                                    showing per-time rather than once for the
+                                    class: a multi-staff service genuinely has a
+                                    different person on each opening, and that's
+                                    often what decides which time a parent picks. */}
+                                {s.teacher_name && (
+                                  <span className="mt-1 block truncate text-xs font-bold text-[#8B5CF6]">{s.teacher_name}</span>
+                                )}
                                 <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : "Available"}</span>
                               </button>
                             ))}
@@ -6098,6 +6120,16 @@ function BookingPage() {
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
+                {/* Confirms who the parent is booking with before they pay,
+                    not only after. A course is taught by whoever runs each
+                    strand, so it names them from the strands rather than from
+                    the one auto-selected occurrence. */}
+                {(isCourse ? strands.map((st) => st.teacher).filter(Boolean).join(" · ") : selected?.teacher_name) && (
+                  <p className="flex gap-2">
+                    <Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" />
+                    With {isCourse ? [...new Set(strands.map((st) => st.teacher).filter(Boolean))].join(" · ") : selected?.teacher_name}
+                  </p>
+                )}
                 {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>

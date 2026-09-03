@@ -6,6 +6,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 process.loadEnvFile('.env.local');
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,7 +18,7 @@ const check = (n, ok, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? 
 const stamp = Date.now();
 
 // ---- schema present ----
-const sql = postgres(process.env.SUPABASE_DB_URL, { prepare: false });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ prepare: false } });
 const tables = (await sql`select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and relkind='r'`).map(r => r.relname);
 check('New vendor tables exist',
   ['providers','provider_members','provider_locations','attendance','make_up_tokens','subscriptions','listing_events'].every(t => tables.includes(t)));

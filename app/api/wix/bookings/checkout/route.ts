@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
-import { getStripe, DEFAULT_COMMISSION_RATE } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
+import { computeSplit, getTerms } from '@/lib/commercials';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { reserveWixSlotForCheckout } from '@/lib/wix/sync';
+import { checkWixBookingGates, reserveWixSlotForCheckout } from '@/lib/wix/sync';
 
 /**
  * Parent pays for a Wix-linked class. Unlike the free path
@@ -18,7 +19,7 @@ import { reserveWixSlotForCheckout } from '@/lib/wix/sync';
  * path uses, once payment is actually confirmed — so a parent who starts
  * checkout and abandons it never leaves a live unpaid hold on the vendor's
  * Wix calendar.
- * Body: { activityId, wixSlotId, childId?, policiesAccepted?, medicalDisclosure?, count? }
+ * Body: { activityId, wixSlotId, childId?, policiesAccepted?, medicalDisclosure?, infoResponse?, count? }
  */
 // Every Wix API call is bounded at 20s by wixFetch, and these routes make
 // several of them back to back (resolve a slot, create the booking, confirm
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     childId?: string | null;
     policiesAccepted?: string[];
     medicalDisclosure?: string;
+    infoResponse?: string;
     count?: number;
   };
   const { activityId, wixSlotId } = body;
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: activity } = await admin
     .from('activities')
-    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, title, slug, price')
+    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, title, slug, price, bookings_paused, booking_cutoff_minutes, info_request_enabled')
     .eq('id', activityId)
     .maybeSingle();
   if (!activity?.wix_service_id || !activity.provider_id) {
@@ -63,6 +65,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }
 
+  // Paused / required-information, checked before a Stripe session is ever
+  // created. Same reason as the free route: this inserts through the
+  // service-role client, which enforce_booking_insert_defaults steps aside
+  // for. See checkWixBookingGates.
+  const gates = checkWixBookingGates(activity, body.infoResponse);
+  if (!gates.ok) return NextResponse.json({ error: gates.error }, { status: gates.status });
+
   const creds = await getProviderWixCredentials(admin, activity.provider_id);
   if (!creds) {
     return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
@@ -73,7 +82,8 @@ export async function POST(request: Request) {
     creds,
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
-    count
+    count,
+    { cutoffMinutes: activity.booking_cutoff_minutes }
   );
   if (!reserved.ok) {
     return NextResponse.json({ error: reserved.error }, { status: reserved.status });
@@ -90,6 +100,7 @@ export async function POST(request: Request) {
     payment_status: 'none' as const,
     policies_accepted: body.policiesAccepted ?? [],
     medical_disclosure: body.medicalDisclosure || null,
+    info_response: body.infoResponse?.trim() || null,
   }));
   const { data: bookings, error: bookingError } = await admin.from('bookings').insert(rows).select('id, status');
   if (bookingError || !bookings || bookings.length !== count) {
@@ -154,15 +165,17 @@ export async function POST(request: Request) {
     .eq('id', activity.provider_id)
     .maybeSingle();
   if (provider?.stripe_account_id && provider.payouts_enabled) {
-    const { data: sub } = await admin
-      .from('subscriptions')
-      .select('commission_rate')
-      .eq('provider_id', activity.provider_id)
-      .maybeSingle();
-    const commission = sub?.commission_rate ?? DEFAULT_COMMISSION_RATE;
+    // The vendor's negotiated terms in full — commission rate, any flat
+    // per-sale fee, and the Stripe-fee recovery when they've agreed to
+    // absorb it — exactly as the native /api/bookings/checkout computes it.
+    // Reading commission_rate on its own quietly dropped the other two, so
+    // the same class sold through Wix and through BabyBrain's own scheduler
+    // paid two different commissions.
+    const terms = await getTerms(admin, activity.provider_id);
+    const split = computeSplit(amountCents * count, terms);
     connect = {
       payment_intent_data: {
-        application_fee_amount: Math.round(amountCents * count * commission),
+        application_fee_amount: split.applicationFeeCents,
         transfer_data: { destination: provider.stripe_account_id },
       },
     };

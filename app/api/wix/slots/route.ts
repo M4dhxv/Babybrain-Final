@@ -7,11 +7,16 @@ import {
   fetchWixClassSessions,
   fetchWixCourseSpan,
   fetchWixConfirmedAppointmentBookings,
+  fetchWixResources,
   encodeWixSlotKey,
+  formatWixStaffNames,
   getProviderWixCredentials,
   selectNonOverlappingSlots,
   wixLocalToUtcIso,
+  wixSlotStaff,
+  type WixResource,
 } from '@/lib/wix/client';
+import { importWixSessionStaff } from '@/lib/wix/sync';
 
 /**
  * Removes local `activity_sessions` rows for slots this same fetch's window
@@ -133,9 +138,28 @@ export async function GET(request: Request) {
   const windowStart = new Date();
   const windowEnd = new Date(windowStart.getTime() + days * 24 * 60 * 60 * 1000);
 
+  // Which resource ids on this account are really bookable staff — used to
+  // keep a session's `affectedSchedules` from ever putting a non-staff
+  // calendar in front of a parent as their child's instructor (see
+  // formatWixStaffNames). Fetched alongside availability rather than before
+  // it so it costs no extra wall-clock time, and a failure just means slots
+  // come back without a name, exactly as they did before this existed.
+  const staffIdsPromise: Promise<Set<string> | null> = fetchWixResources(creds)
+    .then((rs: WixResource[]) => new Set(rs.filter((r) => r.bookable).map((r) => r.id)))
+    .catch(() => null);
+
   try {
     if (isClass) {
-      const sessions = await fetchWixClassSessions(creds, activity.wix_service_id, days);
+      const [sessions, knownStaffIds] = await Promise.all([
+        fetchWixClassSessions(creds, activity.wix_service_id, days),
+        staffIdsPromise,
+      ]);
+      const staffBySlotKey = new Map(
+        sessions.map((s) => [
+          encodeWixSlotKey({ kind: 'class', sessionId: s.id }),
+          formatWixStaffNames(s.staff, knownStaffIds ?? undefined),
+        ])
+      );
 
       // A COURSE is enrolled as one whole run — the parent page shows a
       // "Runs <start> – <end>" span for it. `sessions` only holds *future*
@@ -164,6 +188,9 @@ export async function GET(request: Request) {
           { onConflict: 'activity_id,wix_slot_key' }
         );
         if (syncError) console.error('Wix class session sync failed', syncError);
+        // After the upsert, so every row it just created/refreshed is there
+        // to be named.
+        await importWixSessionStaff(admin, activity.id, staffBySlotKey);
       }
       await reconcileStaleWixSessions(
         admin,
@@ -176,17 +203,24 @@ export async function GET(request: Request) {
       return NextResponse.json({
         slots: sessions
           .filter((s) => s.remainingCapacity > 0)
-          .map((s) => ({
-            id: `wix:${encodeWixSlotKey({ kind: 'class', sessionId: s.id })}`,
-            starts_at: s.start,
-            ends_at: s.end,
-            capacity: s.remainingCapacity,
-          })),
+          .map((s) => {
+            const key = encodeWixSlotKey({ kind: 'class', sessionId: s.id });
+            return {
+              id: `wix:${key}`,
+              starts_at: s.start,
+              ends_at: s.end,
+              capacity: s.remainingCapacity,
+              // Named here as well as stored, so the parent's picker can show
+              // who's taking a slot without a second round trip for rows it
+              // never reads out of the database anyway.
+              teacher_name: staffBySlotKey.get(key) ?? null,
+            };
+          }),
         ...(course ? { course } : {}),
       });
     }
 
-    const [rawSlots, confirmedBookings] = await Promise.all([
+    const [rawSlots, confirmedBookings, knownStaffIds] = await Promise.all([
       // The resource id is passed so each slot comes back carrying the staff
       // member Wix says is free for it — both to keep this list honest for a
       // multi-staff service and because the booking path relies on the same
@@ -199,6 +233,7 @@ export async function GET(request: Request) {
       // tells the vendor Schedule page whether a slot is booked vs. simply
       // not offered right now. Never blocks the availability fetch above.
       fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
+      staffIdsPromise,
     ]);
     // Wix offers a rolling start time every split-interval (a 45-minute
     // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,
@@ -216,6 +251,16 @@ export async function GET(request: Request) {
     // wixLocalToUtcIso and the comment on fetchWixAvailability for why that
     // conversion can't be skipped just because there's no offset suffix.
     const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
+    // An appointment names its staff from the slot's own availableResources
+    // — the exact resource createWixBooking then books against — rather than
+    // from the activity's stored fallback, so the person a parent is shown
+    // is the person who ends up taking the appointment.
+    const staffBySlotKey = new Map(
+      slots.map((s) => [
+        encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+        formatWixStaffNames(wixSlotStaff(s), knownStaffIds ?? undefined),
+      ])
+    );
 
     if (slots.length > 0) {
       const { error: syncError } = await admin.from('activity_sessions').upsert(
@@ -238,6 +283,7 @@ export async function GET(request: Request) {
         { onConflict: 'activity_id,wix_slot_key' }
       );
       if (syncError) console.error('Wix appointment slot sync failed', syncError);
+      await importWixSessionStaff(admin, activity.id, staffBySlotKey);
     }
     await reconcileStaleWixSessions(
       admin,
@@ -250,12 +296,16 @@ export async function GET(request: Request) {
     return NextResponse.json({
       slots: slots
         .filter((s) => s.bookable)
-        .map((s) => ({
-          id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate })}`,
-          starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
-          ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
-          capacity: 1,
-        })),
+        .map((s) => {
+          const key = encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate });
+          return {
+            id: `wix:${key}`,
+            starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
+            ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
+            capacity: 1,
+            teacher_name: staffBySlotKey.get(key) ?? null,
+          };
+        }),
     });
   } catch (e) {
     console.error('Wix availability fetch failed', e);

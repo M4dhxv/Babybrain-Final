@@ -261,6 +261,11 @@ export type Database = {
           location_id: string | null;
           price: number | null;
           status: 'scheduled' | 'cancelled';
+          // Who is taking this session (00042). Typed in by the vendor for a
+          // site-native session; imported from Wix by importWixSessionStaff
+          // (lib/wix/sync.ts) for a Wix-sourced one.
+          teacher_name: string | null;
+          studio: string | null;
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
           created_at: string;

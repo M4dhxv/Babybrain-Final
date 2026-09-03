@@ -11,13 +11,14 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 process.loadEnvFile('.env.local');
 const API = process.env.VALIDATE_API_BASE ?? 'http://localhost:3000';
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
-const sql = postgres(process.env.SUPABASE_DB_URL, { prepare: false });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ prepare: false } });
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? ` — ${d}` : ''}`); ok ? pass++ : fail++; };

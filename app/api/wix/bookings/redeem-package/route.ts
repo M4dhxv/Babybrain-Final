@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
+import { checkWixBookingGates, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
 
 /**
  * Parent redeems a package credit for a Wix-sourced slot. redeem_package_credit
@@ -66,12 +66,20 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: activity } = await admin
     .from('activities')
-    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type')
+    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, bookings_paused, booking_cutoff_minutes, info_request_enabled')
     .eq('id', activityId)
     .maybeSingle();
   if (!activity?.wix_service_id || !activity.provider_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
   }
+
+  // Paused / required-information up front. The RPC below runs on the
+  // parent's own client, so enforce_booking_insert_defaults does apply to it
+  // — but only after a real Wix booking has already been made, leaving the
+  // "booked in Wix but could not redeem the credit" state below. Checking
+  // here means a paused class or a missing answer costs nothing.
+  const gates = checkWixBookingGates(activity, body.infoResponse);
+  if (!gates.ok) return NextResponse.json({ error: gates.error }, { status: gates.status });
 
   // Fail fast on an obviously-unusable credit before ever touching Wix.
   const { data: purchase } = await admin
@@ -105,7 +113,8 @@ export async function POST(request: Request) {
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
     contact,
-    count
+    count,
+    { cutoffMinutes: activity.booking_cutoff_minutes }
   );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });

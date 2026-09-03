@@ -22,6 +22,7 @@
 import { readFileSync } from 'node:fs';
 import Stripe from 'stripe';
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
   const m = line.match(/^([A-Z_]+)=(.*)$/);
@@ -38,7 +39,7 @@ const PRICE_KEYS = [
 ];
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: 'require' });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ ssl: 'require' } });
 const mode = process.env.STRIPE_SECRET_KEY.startsWith('sk_live') ? 'LIVE' : 'TEST';
 
 try {

@@ -1,6 +1,7 @@
 import type Stripe from 'stripe';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { recordSale } from '@/lib/commercials';
 import {
   WixApiError,
   checkoutWixEventOrder,
@@ -163,7 +164,7 @@ export async function finalizeWixEventTicketCheckout(
     })
     .eq('id', row.id);
 
-  await mirrorEventTicketAsBookings(admin, {
+  const mirrored = await mirrorEventTicketAsBookings(admin, {
     providerId: event.provider_id,
     localEventId: row.event_id,
     ticketTypeId: row.ticket_type_id,
@@ -177,6 +178,19 @@ export async function finalizeWixEventTicketCheckout(
     medicalDisclosure: row.medical_disclosure,
     policiesAccepted: row.policies_accepted,
     infoResponse: row.info_response,
+  });
+
+  // A ticket sale is a sale: the vendor's Earnings ledger has to show it,
+  // same as a class booking, or a payout has nothing to reconcile against.
+  // `amount` on the order is the whole order total (every ticket in the
+  // checkout), which is exactly what Stripe charged. Idempotent on the
+  // payment intent, so webhook + reconcile racing is safe.
+  await recordSale(admin, {
+    providerId: event.provider_id,
+    source: 'booking',
+    bookingId: mirrored.firstBookingId,
+    grossCents: Math.round(Number(row.amount ?? 0) * 100),
+    paymentIntentId: paymentIntent,
   });
 }
 
@@ -193,6 +207,10 @@ export async function finalizeWixEventTicketCheckout(
  * practice since checkout requires a synced ticket type to begin with), the
  * real order above is already saved either way, so this logs and returns
  * rather than throwing back into the webhook/reconcile caller.
+ *
+ * Returns the first row it wrote, so the caller can hang an earnings ledger
+ * entry off it — null when nothing was written, which recordSale accepts
+ * (the sale is still recorded, just not linked to a booking row).
  */
 export async function mirrorEventTicketAsBookings(
   admin: SupabaseClient<Database>,
@@ -215,7 +233,7 @@ export async function mirrorEventTicketAsBookings(
     /** Parent answer to the activity's info-request prompt, when it has one. */
     infoResponse?: string | null;
   }
-): Promise<void> {
+): Promise<{ firstBookingId: string | null }> {
   const { data: activity } = await admin
     .from('activities')
     .select('id')
@@ -224,16 +242,26 @@ export async function mirrorEventTicketAsBookings(
     .maybeSingle();
   if (!activity) {
     console.error('[mirrorEventTicketAsBookings] no mirrored activity found — booking list will miss this purchase', params.localEventId);
-    return;
+    return { firstBookingId: null };
   }
-  const { data: eventSession } = await admin
+  // A Wix event has exactly one occurrence, so its activity carries exactly
+  // one session — but `.maybeSingle()` resolves to an *error* the moment two
+  // rows match, and this activity has duplicated its session row for real
+  // before now (see syncEventActivityMirror's own note, and
+  // scripts/dedupe-wix-event-sessions.mjs). That turned a paid ticket into
+  // one that never appeared in My Bookings at all. Take the earliest row
+  // instead: worst case the ticket lands on the right activity's first
+  // occurrence, which is still the event.
+  const { data: eventSessions } = await admin
     .from('activity_sessions')
     .select('id')
     .eq('activity_id', activity.id)
-    .maybeSingle();
+    .order('starts_at', { ascending: true })
+    .limit(1);
+  const eventSession = eventSessions?.[0];
   if (!eventSession) {
     console.error('[mirrorEventTicketAsBookings] mirrored activity has no session row', activity.id);
-    return;
+    return { firstBookingId: null };
   }
 
   const perSeat = params.totalAmount != null ? params.totalAmount / params.quantity : null;
@@ -251,6 +279,7 @@ export async function mirrorEventTicketAsBookings(
     policies_accepted: params.policiesAccepted ?? [],
     info_response: params.infoResponse ?? null,
   }));
-  const { error } = await admin.from('bookings').insert(rows);
+  const { data: inserted, error } = await admin.from('bookings').insert(rows).select('id');
   if (error) console.error('[mirrorEventTicketAsBookings] insert failed', error);
+  return { firstBookingId: inserted?.[0]?.id ?? null };
 }

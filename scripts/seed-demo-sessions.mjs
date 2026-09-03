@@ -19,11 +19,12 @@
  * (and worth re-running whenever the demo slots age out).
  */
 import postgres from 'postgres';
+import { parseDbUrl } from './lib/db-url.mjs';
 
 process.loadEnvFile('.env.local');
 const LIVE = process.argv.includes('--live');
 const WEEKS = Number(process.env.WEEKS || 6);
-const sql = postgres(process.env.SUPABASE_DB_URL, { prepare: false });
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ prepare: false } });
 
 /** Each demo class gets its own weekly slot so the timetable looks plausible. */
 const SLOTS = [

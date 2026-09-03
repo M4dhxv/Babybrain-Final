@@ -22,6 +22,7 @@
     "validate:plan-changes": "node scripts/validate-plan-changes.mjs",
     "validate:claim-flow": "node scripts/validate-claim-flow.mjs",
     "validate:booking-rules": "node scripts/validate-booking-rules.mjs",
+    "validate:wix-booking-gates": "npx tsx scripts/validate-wix-booking-gates.mts",
     "validate:migrations": "node scripts/validate-migrations.mjs",
     "validate:stripe-config": "node scripts/validate-stripe-config.mjs"
   },
