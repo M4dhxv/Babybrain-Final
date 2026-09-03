@@ -5,7 +5,6 @@ import {
   Banknote,
   ChevronRight,
   Clock,
-  Landmark,
   RefreshCw,
   Wallet,
 } from 'lucide-react';
@@ -156,7 +155,7 @@ export default function EarningsPage() {
         <div className="min-w-0 flex-1 px-11 text-center sm:px-0 sm:text-left">
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Earnings & payouts</h1>
           <p className="text-sm text-gray-500 mt-1">
-            What you've earned, what you're owed, and when it reached your bank.
+            What you've earned and how much of it has been received.
           </p>
         </div>
         <button
@@ -174,18 +173,14 @@ export default function EarningsPage() {
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
 
-        {/* Not on Connect yet: Stripe has nothing to show, so say what happens
-            to the money instead of showing empty payout tables. */}
+        {/* Not on Connect yet: Stripe has nothing to show, so prompt the setup
+            rather than render empty payout tables. */}
         {data && !data.payouts_enabled && (
           <div className="rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-start">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
               <div className="flex-1 text-sm text-yellow-900">
                 <p className="font-medium">Payouts aren't switched on yet.</p>
-                <p className="text-xs mt-0.5">
-                  Bookings still get paid — BabyBrain collects them and settles with you directly. Finish Stripe
-                  setup and future bookings pay straight into your bank account.
-                </p>
               </div>
             </div>
             <Button
@@ -198,7 +193,7 @@ export default function EarningsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           <StatCard
             icon={Wallet}
             accent="bg-green-100 text-green-700"
@@ -212,13 +207,6 @@ export default function EarningsPage() {
             label="On the way"
             value={s ? money(s.awaiting_payout_cents, currency) : '—'}
             hint="In Stripe, not yet paid out"
-          />
-          <StatCard
-            icon={Landmark}
-            accent="bg-yellow-100 text-yellow-700"
-            label="Owed by BabyBrain"
-            value={s ? money(s.owed_by_babybrain_cents, currency) : '—'}
-            hint="Collected before payouts were on"
           />
           <StatCard
             icon={Banknote}
