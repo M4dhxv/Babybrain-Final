@@ -114,21 +114,45 @@ export function describeWixApiError(e: unknown): string {
     return 'Wix couldn’t complete this request — make sure the Wix Bookings app is installed on this site, then try connecting again.';
   }
   if (e.status === 401 || e.status === 403) {
-    // 403 is ambiguous on Wix's side — a revoked/under-scoped key, but ALSO
-    // a malformed Site ID (a pasted dashboard URL, a stray space) — so the
-    // message has to name both.
-    return 'Wix rejected this connection. Check the API key hasn’t been revoked and was generated with “All site permissions”, and that the Site ID is just the ID from that same site’s dashboard URL (no extra text).';
+    // 403 is what Wix returns for a well-formed Site ID this key has no
+    // rights on — confirmed live by pairing a valid key with another
+    // account's real site — as well as for a revoked/under-scoped key. Once
+    // normalizeWixSiteId has run and the route has rejected anything that
+    // isn't a UUID, the mismatch is much the likelier of the two, so the
+    // message leads with it instead of blaming a key that is fine.
+    return 'Wix rejected this connection. The most common cause is an API key and Site ID that belong to two different Wix sites — check both were copied from the same site. Otherwise the key may have been revoked, or wasn’t generated with “All site permissions”.';
   }
   return `Wix rejected these credentials (${e.status}) — check the key and site ID.`;
 }
+
+/** Characters that survive a copy/paste without being visible on screen:
+ *  zero-width space/non-joiner/joiner, the word joiner, a BOM, a soft
+ *  hyphen. Wix's dashboard and most docs pages emit at least one of them,
+ *  and a single one makes an otherwise-perfect Site ID fail a shape check
+ *  (or an API key build an invalid HTTP header) for a reason the vendor
+ *  cannot possibly see. Confirmed live: a Site ID with one U+200B in it
+ *  looks identical and is rejected. */
+const INVISIBLE_CHARS = /[\u200b-\u200d\u2060\ufeff\u00ad]/g;
+/** Hyphen lookalikes a word processor or chat client substitutes for "-". */
+const DASH_LOOKALIKES = /[\u2010-\u2015\u2212]/g;
 
 /** A Wix Site ID is a UUID. Vendors routinely paste the whole dashboard URL
  *  ("wix.com/dashboard/<id>/home"), leave a trailing slash, or add a stray
  *  space — all of which Wix answers with a 403 that reads as "your key is
  *  bad". Pull the UUID out so those inputs just work. */
 export function normalizeWixSiteId(raw: string): string {
-  const m = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  return (m ? m[0] : raw.trim()).toLowerCase();
+  const cleaned = raw.replace(INVISIBLE_CHARS, '').replace(DASH_LOOKALIKES, '-');
+  const m = cleaned.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return (m ? m[0] : cleaned.trim()).toLowerCase();
+}
+
+/** Whether a (already normalized) Site ID is the UUID Wix actually issues.
+ *  Anything else — a site *name*, a slug, half a URL — is worth rejecting
+ *  before we spend a Wix round trip on it, because Wix answers those with
+ *  the same 403 it uses for a bad key and the vendor ends up re-generating
+ *  a key that was never the problem. */
+export function isWixSiteId(v: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
 
 /** A Wix API key is one unbroken token. A wrapped copy/paste can slip in
@@ -136,7 +160,7 @@ export function normalizeWixSiteId(raw: string): string {
  *  cryptic network error — and vendors sometimes paste a leading "Bearer ".
  *  Strip all of that; the key never legitimately contains whitespace. */
 export function normalizeWixApiKey(raw: string): string {
-  return raw.replace(/^\s*bearer\s+/i, '').replace(/\s+/g, '');
+  return raw.replace(INVISIBLE_CHARS, '').replace(/^\s*bearer\s+/i, '').replace(/\s+/g, '');
 }
 
 /** Safe-to-display form of an API key: mostly masked, last 10 characters

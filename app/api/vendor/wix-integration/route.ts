@@ -7,6 +7,7 @@ import {
   describeWixApiError,
   normalizeWixApiKey,
   normalizeWixSiteId,
+  isWixSiteId,
   WixApiError,
 } from '@/lib/wix/client';
 
@@ -22,6 +23,14 @@ import {
  * 00053), so every read/write here goes through the service-role admin
  * client after requireProviderRole() has confirmed the caller's membership.
  */
+
+// Every Wix API call is bounded at 20s by wixFetch, and these routes make
+// several of them back to back (resolve a slot, create the booking, confirm
+// it). On the platform default (~10s) a slow-but-healthy Wix response gets
+// the function killed mid-flight and the user sees a bare network error —
+// for credentials/bookings that were perfectly fine. Same 60s ceiling the
+// other Wix routes already set.
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const providerId = new URL(request.url).searchParams.get('providerId');
@@ -66,6 +75,22 @@ export async function POST(request: Request) {
   const creds = { accessToken: normalizeWixApiKey(rawApiKey), siteId: normalizeWixSiteId(rawSiteId) };
   if (!creds.accessToken || !creds.siteId) {
     return NextResponse.json({ error: 'provider_id, wix_site_id and wix_api_key are required' }, { status: 400 });
+  }
+
+  // A Site ID that isn't a UUID (a site *name*, a slug, half a URL) draws
+  // the same 403 from Wix that a revoked key does, which sends vendors off
+  // to regenerate a key that was never the problem. Catch it here instead,
+  // naming the actual mistake — and without spending a Wix round trip.
+  if (!isWixSiteId(creds.siteId)) {
+    return NextResponse.json(
+      {
+        error:
+          'That doesn’t look like a Wix Site ID. It’s the UUID in your Wix dashboard URL — ' +
+          'wix.com/dashboard/SITE_ID/home — for example a240b75d-88bb-414a-bf15-01f112022e66. ' +
+          'You can paste the whole URL and we’ll pull the ID out of it.',
+      },
+      { status: 400 }
+    );
   }
 
   // Verify the credentials actually work before saving them — otherwise a

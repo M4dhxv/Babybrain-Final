@@ -11,6 +11,14 @@ import { fetchWixBusyRanges, getProviderWixCredentials } from '@/lib/wix/client'
  * any other vendor-scoped route.
  * Query: ?providerId=<uuid>
  */
+// Every Wix API call is bounded at 20s by wixFetch, and these routes make
+// several of them back to back (resolve a slot, create the booking, confirm
+// it). On the platform default (~10s) a slow-but-healthy Wix response gets
+// the function killed mid-flight and the user sees a bare network error —
+// for credentials/bookings that were perfectly fine. Same 60s ceiling the
+// other Wix routes already set.
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const providerId = new URL(request.url).searchParams.get('providerId');
   if (!providerId) {
