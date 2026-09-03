@@ -141,10 +141,17 @@ export interface WixService {
   payment?: {
     rateType?: string; // FIXED | CUSTOM | VARIED | NO_FEE | SUBSCRIPTION
     fixed?: { price?: { value?: string; currency?: string } };
-    // Wix's own representative price for a per-variant rate (e.g. a camp
-    // priced 99-459 depending on which week/add-ons) — not necessarily what
-    // every booking costs, but the closest thing to a single number Wix has.
-    varied?: { defaultPrice?: { value?: string; currency?: string } };
+    // A per-variant rate (e.g. a camp priced 99-459 by week/add-ons, or a
+    // class priced differently by weekday). `defaultPrice` is a base value
+    // that a variant can override and that no booking necessarily pays;
+    // `minPrice`/`maxPrice` bound what the variants actually cost. Wix's own
+    // booking widget shows "From <minPrice>", so that's the honest
+    // single-number stand-in — see wixServicePrice.
+    varied?: {
+      defaultPrice?: { value?: string; currency?: string };
+      minPrice?: { value?: string; currency?: string };
+      maxPrice?: { value?: string; currency?: string };
+    };
   };
   defaultCapacity?: number;
   // Wix's Media object — same mainMedia/coverMedia/items shape used across
@@ -165,10 +172,12 @@ export interface WixService {
 
 /** The service's price in the service's own currency, or:
  *  - `0` for a NO_FEE service (parent-facing pages render 0 as "Free")
- *  - Wix's own `defaultPrice` for a VARIED service (the real price still
- *    depends on which variant a customer picks — this is a representative
- *    starting point, same as what Wix's own dashboard shows as the
- *    service's price)
+ *  - the "from" price for a VARIED service: `minPrice` when Wix gives one
+ *    (what its own booking widget shows, and what the cheapest bookable
+ *    variant actually costs), falling back to `defaultPrice`. `defaultPrice`
+ *    alone is wrong here — it's a base value a variant can override, so a
+ *    class priced ₹35 every weekday but left with a ₹30 default showed ₹30
+ *    to parents while every real booking was ₹35.
  *  - `null` when Wix has no number to give at all — CUSTOM (a free-text
  *    rate like "Contact us"), SUBSCRIPTION, or a missing/malformed
  *    `payment` block. Callers should leave whatever price is already on
@@ -182,8 +191,11 @@ export function wixServicePrice(service: WixService): number | null {
     return Number.isFinite(value) ? value : null;
   }
   if (rateType === 'VARIED') {
-    const value = Number(service.payment?.varied?.defaultPrice?.value);
-    return Number.isFinite(value) ? value : null;
+    const varied = service.payment?.varied;
+    const min = Number(varied?.minPrice?.value);
+    if (Number.isFinite(min)) return min;
+    const fallback = Number(varied?.defaultPrice?.value);
+    return Number.isFinite(fallback) ? fallback : null;
   }
   return null;
 }
