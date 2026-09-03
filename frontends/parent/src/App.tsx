@@ -1690,7 +1690,7 @@ function ActivityDetailPage() {
               then Reviews. With no packs to show, sessions takes the full
               width rather than leaving a half-empty row. */}
           <div className="grid gap-5 md:grid-cols-2">
-            <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 ? " md:col-span-2" : ""}`}>
+            <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 || activity.wix_service_type === "COURSE" ? " md:col-span-2" : ""}`}>
               <h2 className="mb-3 text-xl font-black">{activity.wix_service_type === "COURSE" ? "Course schedule" : "Upcoming sessions"}</h2>
               {activity.wix_service_type === "COURSE" && sessions.length > 0 ? (
                 <>
@@ -1717,7 +1717,7 @@ function ActivityDetailPage() {
               {durationMins && activity.wix_service_type !== "COURSE" && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
             </section>
 
-            {packs.length > 0 && (
+            {packs.length > 0 && activity.wix_service_type !== "COURSE" && (
               <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
                 <h2 className="mb-3 text-xl font-black">Packages</h2>
                 <div className="grid gap-3">
@@ -5287,11 +5287,14 @@ function BookingPage() {
   // step isn't even shown for one, and routing its checkout through the
   // package-credit path hits an RPC that can't take an event occurrence.
   useEffect(() => {
-    if (isEvent) { if (payWith !== "single") setPayWith("single"); return; }
+    // Events and courses are a single whole purchase — a multi-class pack
+    // (one credit = one session) doesn't map onto them, so the "Select
+    // package" step is hidden and payment stays "single".
+    if (isEvent || isCourse) { if (payWith !== "single") setPayWith("single"); return; }
     if (packageCredit && payWith === "single") setPayWith("credit");
     else if (!packageCredit && payWith === "credit") setPayWith("single");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packageCredit?.id, isEvent]);
+  }, [packageCredit?.id, isEvent, isCourse]);
 
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
@@ -5922,9 +5925,9 @@ function BookingPage() {
                         unused credit from a pack, or buying a pack now. Not
                         applicable to a Wix Event ticket — payment is always a
                         single purchase (see the isEvent branch in pay()). */}
-                    {!redeemToken && !isEvent && (
+                    {!redeemToken && !isEvent && !isCourse && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">{isCourse ? "3. Select package" : "4. Select package"}</h3>
+                        <h3 className="mb-2 text-xl font-black">4. Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
                         <div className="space-y-3">
                           <PackageOption
@@ -5973,10 +5976,10 @@ function BookingPage() {
                       <section>
                         {/* Step number tracks how many steps came before:
                             class = date, time, children (+ package unless a
-                            make-up token skips it); course collapses date+time
-                            into one "Course schedule" step, so every later
-                            step shifts down by one. */}
-                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${(isCourse ? (redeemToken ? 3 : 4) : (redeemToken ? 4 : 5))}. `}Provider terms</h3>
+                            make-up token skips it); a course is one "Course
+                            schedule" step + children, with no package step,
+                            so its Provider terms is always step 3. */}
+                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${(isCourse ? 3 : redeemToken ? 4 : 5)}. `}Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
