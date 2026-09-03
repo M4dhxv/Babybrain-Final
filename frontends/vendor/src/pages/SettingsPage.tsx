@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -756,6 +756,13 @@ function WixIntegrationManager({
   const [editing, setEditing] = useState(false);
   const [siteId, setSiteId] = useState('');
   const [apiKey, setApiKey] = useState('');
+  // A background reload (a tab switch triggers a Supabase token refresh,
+  // which hands this component a fresh `provider` object) must not wipe what
+  // the vendor is part-way through pasting into the connect form. Once they
+  // touch either field, load() leaves the inputs and `editing` alone until
+  // the next successful save.
+  const touched = useRef(false);
+  const markTouched = () => { touched.current = true; };
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -820,19 +827,24 @@ function WixIntegrationManager({
     try {
       const s = await apiGet<WixStatus>(`/api/vendor/wix-integration?providerId=${provider.id}`);
       setStatus(s);
-      setEditing(!s.connected);
-      setSiteId(s.wix_site_id ?? '');
       setRevealedKey(null);
+      // Never yank the form out from under a vendor mid-paste (see `touched`).
+      if (!touched.current) {
+        setEditing(!s.connected);
+        setSiteId(s.wix_site_id ?? '');
+      }
     } catch (e) {
       setError(describeWixError(e, 'Could not load Wix integration status'));
       // Status is unknown, not necessarily "connected" — still let a manager
       // attempt to (re)connect rather than leaving them with a dead end.
-      setEditing(true);
+      if (!touched.current) setEditing(true);
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+  // Keyed on the id, not the object: a token refresh re-creates the provider
+  // object (same id) and must not re-trigger a reload that clears the inputs.
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider?.id]);
 
   async function save() {
     if (!provider || !siteId.trim() || !apiKey.trim()) {
@@ -850,6 +862,8 @@ function WixIntegrationManager({
       setApiKey('');
       setShowKey(false);
       setNotice('Wix account connected. Now choose which services and events to import, using the sections below.');
+      // Saved — let load() re-seed the form from the stored value.
+      touched.current = false;
       await load();
     } catch (e) {
       setError(describeWixError(e, 'Could not save these credentials'));
@@ -1287,7 +1301,7 @@ function WixIntegrationManager({
                     className={cn(inputCls, 'flex-1')}
                     placeholder="IST.eyJra..."
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => { markTouched(); setApiKey(e.target.value); }}
                     autoComplete="off"
                   />
                   <button
@@ -1321,7 +1335,7 @@ function WixIntegrationManager({
                   className={inputCls}
                   placeholder="e.g. a240b75d-88bb-414a-bf15-01f112022e66"
                   value={siteId}
-                  onChange={(e) => setSiteId(e.target.value)}
+                  onChange={(e) => { markTouched(); setSiteId(e.target.value); }}
                   autoComplete="off"
                 />
               </div>
@@ -1331,7 +1345,7 @@ function WixIntegrationManager({
                   <Save className="w-4 h-4" /> {saving ? 'Connecting…' : 'Save & connect'}
                 </Button>
                 {status?.connected && (
-                  <Button variant="outline" onClick={() => { setEditing(false); setApiKey(''); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
+                  <Button variant="outline" onClick={() => { touched.current = false; setEditing(false); setApiKey(''); setSiteId(status.wix_site_id ?? ''); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
                 )}
