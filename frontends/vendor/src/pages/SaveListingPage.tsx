@@ -28,7 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { BrandLogo } from '@/components/BrandLogo';
+import { BrandLogo, BrandIcon } from '@/components/BrandLogo';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
 import { VENDOR_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 import type { VendorCategory } from '@/lib/database.types';
@@ -285,9 +285,27 @@ export default function SaveListingPage() {
         <div className="flex gap-8">
           {/* Left Sidebar */}
           <div className="w-56 flex-shrink-0">
-            <BrandLogo className="mb-4 h-12 w-auto" />
-            <h3 className="text-lg font-bold text-[#111A4C] mb-2">Almost there! <span className="text-lg">🚀</span></h3>
-            <p className="text-sm text-gray-600 mb-6">Review the information about your business, edit anything you wish and save.</p>
+            {/* Stacked lockup — the brain-icon mark over the wordmark, the
+                word in the brand's own per-letter pastels. */}
+            {/* logo-icon.png carries a lot of its own transparent padding, so
+                the word is pulled up under it with a negative margin rather
+                than relying on flex gap. */}
+            <div className="-mt-4 mb-8 flex flex-col items-center">
+              <BrandIcon className="h-40 w-40" />
+              <span className="-mt-10 text-2xl font-extrabold tracking-tight">
+                <span className="text-[#FFB0CE]">B</span>
+                <span className="text-[#FFB0CE]">a</span>
+                <span className="text-[#FFB278]">b</span>
+                <span className="text-[#FFCB5E]">y</span>
+                <span className="text-[#8FDD80]">B</span>
+                <span className="text-[#7FCBF0]">r</span>
+                <span className="text-[#7FCBF0]">a</span>
+                <span className="text-[#B79FDE]">i</span>
+                <span className="text-[#B79FDE]">n</span>
+              </span>
+            </div>
+            <h3 className="mb-2 text-center text-lg font-bold text-[#111A4C]">Almost there! <span className="text-lg">🚀</span></h3>
+            <p className="mb-6 text-center text-sm text-gray-600">Review the information about your business, edit anything you wish and save.</p>
 
             <div className="bg-pink-50 rounded-xl p-4">
               <h4 className="text-sm font-semibold text-[#FA4D8D] mb-3">Why it matters</h4>
@@ -460,7 +478,7 @@ export default function SaveListingPage() {
                 />
                 <div className="flex-1">
                   <label htmlFor="vendor-terms" className="text-sm text-gray-700 cursor-pointer">
-                    I agree to the Vendor Terms
+                    You hereby acknowledge that you have read our Terms of Service, Terms of Use and Privacy Policy and confirm that you are in agreement with and legally bound by such terms, as modified from time to time.
                   </label>
                   <p className="text-xs text-gray-500 mt-1">
                     Includes content ownership, child photo consent, PDPA obligations, review policy, platform rules and suspension & removal rights.
