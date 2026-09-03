@@ -1318,6 +1318,34 @@ const sgTime = (iso: string) =>
     minute: "2-digit",
   });
 
+/** A Wix COURSE runs on more than one weekly slot — e.g. Wednesdays
+ *  5:30–6:30 pm and Thursdays 5:30–7:00 pm — and one enrolment covers all
+ *  of them. Groups a course's occurrences into those distinct strands
+ *  (weekday + start–end time), each with its own date range and count, so
+ *  the two show up as separate lines instead of a wall of near-identical
+ *  "5:30 pm" cards. */
+function courseStrands(sessions: { starts_at: string; ends_at: string | null }[]) {
+  const groups: Record<string, { weekday: string; time: string; dates: string[] }> = {};
+  for (const s of sessions) {
+    const weekday = new Date(s.starts_at).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", weekday: "long" });
+    const time = s.ends_at ? `${sgTime(s.starts_at)} – ${sgTime(s.ends_at)}` : sgTime(s.starts_at);
+    const key = `${weekday}|${time}`;
+    (groups[key] ||= { weekday, time, dates: [] }).dates.push(s.starts_at);
+  }
+  return Object.values(groups)
+    .map((g) => {
+      const sorted = g.dates.slice().sort();
+      return { weekday: g.weekday, time: g.time, first: sorted[0], last: sorted[sorted.length - 1], count: g.dates.length };
+    })
+    .sort((a, b) => a.first.localeCompare(b.first))
+    .map((g) => ({
+      key: `${g.weekday}|${g.time}`,
+      label: `${g.weekday}s · ${g.time}`,
+      range: g.first === g.last ? sgDay(g.first) : `${sgDay(g.first)} – ${sgDay(g.last)}`,
+      count: g.count,
+    }));
+}
+
 /** Full-screen photo viewer for an activity's gallery. Arrow keys and Escape
  *  work, and clicking the backdrop closes it. */
 function PhotoLightbox({
@@ -1663,19 +1691,30 @@ function ActivityDetailPage() {
               width rather than leaving a half-empty row. */}
           <div className="grid gap-5 md:grid-cols-2">
             <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 ? " md:col-span-2" : ""}`}>
-              <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
-              {activity.wix_service_type === "COURSE" && sessions.length > 0 && (
-                <p className="mb-3 text-sm font-bold text-[#4a5685]">
-                  Runs {sgDay(sessions[0].starts_at)} – {sgDay(sessions.reduce((m, s) => ((s.ends_at ?? s.starts_at) > m ? (s.ends_at ?? s.starts_at) : m), sessions[0].ends_at ?? sessions[0].starts_at))}
-                </p>
+              <h2 className="mb-3 text-xl font-black">{activity.wix_service_type === "COURSE" ? "Course schedule" : "Upcoming sessions"}</h2>
+              {activity.wix_service_type === "COURSE" && sessions.length > 0 ? (
+                <>
+                  <p className="mb-3 text-sm font-bold text-[#4a5685]">
+                    Runs {sgDay(sessions[0].starts_at)} – {sgDay(sessions.reduce((m, s) => ((s.ends_at ?? s.starts_at) > m ? (s.ends_at ?? s.starts_at) : m), sessions[0].ends_at ?? sessions[0].starts_at))} · one booking covers every session
+                  </p>
+                  <div className="space-y-2">
+                    {courseStrands(sessions).map((st) => (
+                      <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2">
+                        <p className="text-sm font-black text-[#34406f]">{st.label}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-[#68718f]">{st.range} · {st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {sessions.map((s) => (
+                    <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
+                  ))}
+                  {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
+                </div>
               )}
-              <div className="flex flex-wrap gap-2">
-                {sessions.map((s) => (
-                  <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
-                ))}
-                {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
-              </div>
-              {durationMins && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
+              {durationMins && activity.wix_service_type !== "COURSE" && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
             </section>
 
             {packs.length > 0 && (
@@ -5207,6 +5246,11 @@ function BookingPage() {
         }, sessions[0].ends_at ?? sessions[0].starts_at)
       : null;
   const courseRange = courseStart && courseEnd ? `${sgDay(courseStart)} – ${sgDay(courseEnd)}` : null;
+  // The course's distinct weekly strands (Wed vs Thu, each its own time) and
+  // the course-wide spots-left figure — a course is booked as one unit, not
+  // a chosen date/time.
+  const strands = isCourse ? courseStrands(sessions) : [];
+  const courseSpots = isCourse ? sessions[0]?.capacity ?? null : null;
 
   useEffect(() => {
     if (dates.length && !dateKey) setDateKey(dates[0]);
@@ -5216,9 +5260,12 @@ function BookingPage() {
   // (materialized by lib/wix/events-sync.ts), so it's auto-selected the
   // moment it loads rather than making the parent click through a picker
   // with only one option in it.
+  // Events and courses aren't date/time-picked — an event has one occurrence,
+  // a course is enrolled as a whole — so auto-select the (any) underlying
+  // session so the booking can proceed straight to child/payment.
   useEffect(() => {
-    if (isEvent && sessions.length > 0 && !sessionId) setSessionId(sessions[0].id);
-  }, [isEvent, sessions, sessionId]);
+    if ((isEvent || isCourse) && sessions.length > 0 && !sessionId) setSessionId(sessions[0].id);
+  }, [isEvent, isCourse, sessions, sessionId]);
 
   useEffect(() => {
     if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
@@ -5333,7 +5380,7 @@ function BookingPage() {
       return;
     }
     if (!sessionId) {
-      setErr(isEvent ? "This event isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
+      setErr(isEvent || isCourse ? "This isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
       return;
     }
     if (isEvent && !ticketTypeId) {
@@ -5739,7 +5786,6 @@ function BookingPage() {
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
-                    {isCourse && courseRange && <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> Runs {courseRange}</p>}
                     {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
@@ -5752,7 +5798,29 @@ function BookingPage() {
                   <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
                 ) : (
                   <>
-                    {!isEvent && (
+                    {isCourse && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">1. Course schedule</h3>
+                        <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4">
+                          <p className="text-sm font-semibold text-[#5a6690]">
+                            This is a course — one booking enrols your child for the whole run, every session below.
+                          </p>
+                          {courseRange && <p className="mt-1 text-sm font-black text-[#34406f]">Runs {courseRange}</p>}
+                          <div className="mt-4 space-y-2">
+                            {strands.map((st) => (
+                              <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] bg-white px-3 py-2.5">
+                                <p className="text-sm font-black text-[#34406f]">{st.label}</p>
+                                <p className="mt-0.5 text-xs font-semibold text-[#697390]">{st.range} · {st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {courseSpots != null && (
+                            <p className="mt-3 text-xs font-semibold text-[#697390]">{courseSpots} {courseSpots === 1 ? "spot" : "spots"} left</p>
+                          )}
+                        </div>
+                      </section>
+                    )}
+                    {!isEvent && !isCourse && (
                       <>
                         <section>
                           <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
@@ -5843,7 +5911,7 @@ function BookingPage() {
                       </p>
                     )}
                     <section>
-                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : "3. Number of children"}</h3>
+                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of children"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
@@ -5856,7 +5924,7 @@ function BookingPage() {
                         single purchase (see the isEvent branch in pay()). */}
                     {!redeemToken && !isEvent && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">4. Select package</h3>
+                        <h3 className="mb-2 text-xl font-black">{isCourse ? "3. Select package" : "4. Select package"}</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
                         <div className="space-y-3">
                           <PackageOption
