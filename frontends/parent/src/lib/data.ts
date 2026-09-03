@@ -129,6 +129,10 @@ export interface ActivityDetail {
     | null;
   sessions: ActivitySession[];
   reviews: Review[];
+  // A Wix COURSE's whole-run bounds from Wix's own schedule (see
+  // /api/wix/slots). `sessions` is future-only, so this is what the "Runs …"
+  // span uses to stay right for a course viewed mid-run.
+  courseSpan: { start: string; end: string } | null;
   loading: boolean;
 }
 
@@ -137,6 +141,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     activity: null,
     sessions: [],
     reviews: [],
+    courseSpan: null,
     loading: true,
   });
 
@@ -157,7 +162,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
         .eq("is_published", true)
         .maybeSingle();
       if (!act) {
-        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], loading: false });
+        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, loading: false });
         return;
       }
 
@@ -177,13 +182,18 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       // always has one, so this excludes it and avoids double-listing).
       // /api/wix/bookings materializes a session row only once a Wix slot is
       // actually booked.
+      // A course's real run span comes back alongside its slots (Wix's own
+      // schedule bounds) — captured here so the setState below can surface
+      // it, since it isn't a per-session value.
+      let wixCourseSpan: { start: string; end: string } | null = null;
       const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
         ? Promise.all([
-            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[] }>(
+            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
               `/api/wix/slots?activityId=${act.id}`
             )
-              .then((r) =>
-                r.slots.map((s) => ({
+              .then((r) => {
+                wixCourseSpan = r.course ?? null;
+                return r.slots.map((s) => ({
                   id: s.id,
                   activity_id: act.id,
                   starts_at: s.starts_at,
@@ -198,8 +208,8 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   wix_slot_key: null,
                   wix_remaining_capacity: null,
                   created_at: new Date().toISOString(),
-                }))
-              )
+                }));
+              })
               .catch(() => []),
             supabase
               .from("activity_sessions")
@@ -253,6 +263,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           },
           sessions,
           reviews: reviews ?? [],
+          courseSpan: wixCourseSpan,
           loading: false,
         });
     })();

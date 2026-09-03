@@ -6,6 +6,7 @@ import {
   fetchWixLocations,
   fetchWixAvailability,
   fetchWixClassSessions,
+  fetchWixCourseSpan,
   createWixBooking,
   createWixClassBooking,
   decodeWixSlotKey,
@@ -511,8 +512,19 @@ async function resolveWixSlot(
       // straight off it. `resolved.session` still carries the schedule id the
       // Wix call needs.
       if (activity.wix_service_type === 'COURSE') {
-        const startsAt = sessions.reduce((m, s) => (s.start < m ? s.start : m), session.start);
-        const endsAt = sessions.reduce((m, s) => (s.end > m ? s.end : m), session.end);
+        // Prefer Wix's own schedule bounds — `sessions` is future-only, so a
+        // course booked mid-run would otherwise anchor to "next remaining
+        // session → last" instead of the true run. Falls back to the visible
+        // occurrences if the lookup fails.
+        let startsAt = sessions.reduce((m, s) => (s.start < m ? s.start : m), session.start);
+        let endsAt = sessions.reduce((m, s) => (s.end > m ? s.end : m), session.end);
+        try {
+          const span = await fetchWixCourseSpan(creds, activity.wix_service_id);
+          if (span.start) startsAt = span.start;
+          if (span.end) endsAt = span.end;
+        } catch (e) {
+          console.error('Wix course span lookup failed', e);
+        }
         return {
           ok: true,
           key: courseAnchorSlotKey(session.scheduleId),

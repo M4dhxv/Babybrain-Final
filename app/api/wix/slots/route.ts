@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   fetchWixAvailability,
   fetchWixClassSessions,
+  fetchWixCourseSpan,
   fetchWixConfirmedAppointmentBookings,
   encodeWixSlotKey,
   getProviderWixCredentials,
@@ -128,6 +129,20 @@ export async function GET(request: Request) {
     if (isClass) {
       const sessions = await fetchWixClassSessions(creds, activity.wix_service_id, days);
 
+      // A COURSE is enrolled as one whole run — the parent page shows a
+      // "Runs <start> – <end>" span for it. `sessions` only holds *future*
+      // occurrences, so for a course mid-run (or one down to its last
+      // session) take the real bounds from Wix's schedule instead.
+      let course: { start: string; end: string } | null = null;
+      if (activity.wix_service_type === 'COURSE') {
+        try {
+          const span = await fetchWixCourseSpan(creds, activity.wix_service_id);
+          if (span.start && span.end) course = { start: span.start, end: span.end };
+        } catch (e) {
+          console.error('Wix course span lookup failed', e);
+        }
+      }
+
       if (sessions.length > 0) {
         const { error: syncError } = await admin.from('activity_sessions').upsert(
           sessions.map((s) => ({
@@ -159,6 +174,7 @@ export async function GET(request: Request) {
             ends_at: s.end,
             capacity: s.remainingCapacity,
           })),
+        ...(course ? { course } : {}),
       });
     }
 

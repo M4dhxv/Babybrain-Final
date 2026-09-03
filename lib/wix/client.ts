@@ -154,6 +154,10 @@ export interface WixService {
     };
   };
   defaultCapacity?: number;
+  // Present on CLASS/COURSE services — the run's overall bounds straight
+  // from Wix. Used for a COURSE's "Runs …" span, since the calendar query
+  // only returns future occurrences (see fetchWixCourseSpan).
+  schedule?: { id?: string; firstSessionStart?: string; lastSessionEnd?: string };
   // Wix's Media object — same mainMedia/coverMedia/items shape used across
   // its APIs (Stores, Bookings, ...). A service normally has at most a
   // handful of photos; only the cover shot is worth pulling in here.
@@ -299,6 +303,27 @@ export async function fetchWixServices(creds: WixCredentials): Promise<WixServic
     query: { paging: { limit: 50 } },
   });
   return data.services ?? [];
+}
+
+/** A COURSE service's whole-run bounds (first session start, last session
+ *  end) from Wix's own schedule. `fetchWixClassSessions` only returns
+ *  *future* occurrences, so a course viewed or booked mid-run would
+ *  otherwise report a span that starts at "next remaining session" instead
+ *  of when the course actually began. Best-effort: returns nulls if Wix has
+ *  no schedule dates or the lookup fails, and every caller falls back to the
+ *  visible occurrences. */
+export async function fetchWixCourseSpan(
+  creds: WixCredentials,
+  serviceId: string
+): Promise<{ start: string | null; end: string | null }> {
+  const data = await wixFetch<{ services?: WixService[] }>(creds, '/bookings/v2/services/query', {
+    query: { filter: { id: serviceId }, paging: { limit: 1 } },
+  });
+  const svc = (data.services ?? []).find((s) => s.id === serviceId) ?? (data.services ?? [])[0];
+  return {
+    start: svc?.schedule?.firstSessionStart ?? null,
+    end: svc?.schedule?.lastSessionEnd ?? null,
+  };
 }
 
 export async function fetchWixResources(creds: WixCredentials): Promise<WixResource[]> {

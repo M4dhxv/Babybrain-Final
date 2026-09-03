@@ -1318,6 +1318,12 @@ const sgTime = (iso: string) =>
     minute: "2-digit",
   });
 
+/** "Wed, 9 Sept – Thu, 29 Oct", collapsing to a single date when both ends
+ *  land on the same day (a one-session course, or a course down to its last
+ *  session). */
+const sgDayRange = (start: string, end: string) =>
+  sgDay(start) === sgDay(end) ? sgDay(start) : `${sgDay(start)} – ${sgDay(end)}`;
+
 /** A Wix COURSE runs on more than one weekly slot — e.g. Wednesdays
  *  5:30–6:30 pm and Thursdays 5:30–7:00 pm — and one enrolment covers all
  *  of them. Groups a course's occurrences into those distinct strands
@@ -1495,7 +1501,7 @@ function ContactLink({
 }
 
 function ActivityDetailPage() {
-  const { activity, sessions, reviews, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, reviews, courseSpan, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const { isPlus } = usePlan();
@@ -1578,6 +1584,19 @@ function ActivityDetailPage() {
   const durationMins = next
     ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
     : null;
+  // A course's run span — Wix's schedule bounds when known, else first/last
+  // visible session (future-only, so it can understate a mid-run course).
+  const courseRunRange =
+    activity.wix_service_type === "COURSE" && sessions.length > 0
+      ? sgDayRange(
+          courseSpan?.start ?? sessions[0].starts_at,
+          courseSpan?.end ??
+            sessions.reduce(
+              (m, s) => ((s.ends_at ?? s.starts_at) > m ? (s.ends_at ?? s.starts_at) : m),
+              sessions[0].ends_at ?? sessions[0].starts_at
+            )
+        )
+      : null;
   /* The sidebar summarises the next available class, so its price/venue are
      that session's when it overrides them (migration 00074), not the
      activity's defaults. Same session-first, activity-fallback resolution the
@@ -1695,7 +1714,7 @@ function ActivityDetailPage() {
               {activity.wix_service_type === "COURSE" && sessions.length > 0 ? (
                 <>
                   <p className="mb-3 text-sm font-bold text-[#4a5685]">
-                    Runs {sgDay(sessions[0].starts_at)} – {sgDay(sessions.reduce((m, s) => ((s.ends_at ?? s.starts_at) > m ? (s.ends_at ?? s.starts_at) : m), sessions[0].ends_at ?? sessions[0].starts_at))} · one booking covers every session
+                    Runs {courseRunRange} · one booking covers every session
                   </p>
                   <div className="space-y-2">
                     {courseStrands(sessions).map((st) => (
@@ -3055,7 +3074,7 @@ function ProfilePage() {
               status: r.status,
               when: s?.starts_at
                 ? courseBooking && s.ends_at
-                  ? `${sgDay(s.starts_at)} – ${sgDay(s.ends_at)}`
+                  ? sgDayRange(s.starts_at, s.ends_at)
                   : sgDateTime(s.starts_at)
                 : "",
               title: act?.title ?? "Class",
@@ -5081,7 +5100,7 @@ function PackageOption({
 }
 
 function BookingPage() {
-  const { activity, sessions, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, courseSpan, loading } = useActivityDetail(getParam("slug"));
   const { session: auth, children: kids } = useAuth();
   const redeemToken = getParam("token");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -5233,19 +5252,25 @@ function BookingPage() {
   });
   const dates = Object.keys(byDate);
 
-  // Span of a course run (first session start → last session end).
+  // Span of a course run. Wix's own schedule bounds (courseSpan) when we
+  // have them — `sessions` is future-only, so deriving from it understates
+  // the run for a course viewed mid-way — else first/last visible session.
   const courseStart =
-    isCourse && sessions.length
-      ? sessions.reduce((m, s) => (s.starts_at < m ? s.starts_at : m), sessions[0].starts_at)
+    isCourse
+      ? courseSpan?.start ??
+        (sessions.length ? sessions.reduce((m, s) => (s.starts_at < m ? s.starts_at : m), sessions[0].starts_at) : null)
       : null;
   const courseEnd =
-    isCourse && sessions.length
-      ? sessions.reduce((m, s) => {
-          const e = s.ends_at ?? s.starts_at;
-          return e > m ? e : m;
-        }, sessions[0].ends_at ?? sessions[0].starts_at)
+    isCourse
+      ? courseSpan?.end ??
+        (sessions.length
+          ? sessions.reduce((m, s) => {
+              const e = s.ends_at ?? s.starts_at;
+              return e > m ? e : m;
+            }, sessions[0].ends_at ?? sessions[0].starts_at)
+          : null)
       : null;
-  const courseRange = courseStart && courseEnd ? `${sgDay(courseStart)} – ${sgDay(courseEnd)}` : null;
+  const courseRange = courseStart && courseEnd ? sgDayRange(courseStart, courseEnd) : null;
   // The course's distinct weekly strands (Wed vs Thu, each its own time) and
   // the course-wide spots-left figure — a course is booked as one unit, not
   // a chosen date/time.
