@@ -160,7 +160,16 @@ export default function ActivitiesPage() {
   // vendor typed here would be overwritten on the next run, so the price
   // field is read-only for these — they change it in Wix.
   const editingActivity = editingId ? activities.find((a) => a.id === editingId) ?? null : null;
-  const priceIsWixManaged = editingActivity?.wix_service_type === 'EVENT';
+  // Everything Wix owns is rewritten by the sync on every run (the cron
+  // ticks every 5 minutes), so a value typed here is silently undone
+  // minutes later. Freeze the lot for any Wix-linked activity rather than
+  // letting a vendor edit something that cannot stick — and, worse, letting
+  // a parent see a price or capacity Wix will not honour at booking.
+  const wixKind = editingActivity?.wix_service_type ?? null;
+  const isWixLinked = !!(editingActivity?.wix_service_id || editingActivity?.wix_event_id);
+  const isWixEvent = wixKind === 'EVENT';
+  // An appointment is 1:1 by definition — a frozen "1" is just noise.
+  const hideCapacity = wixKind === 'APPOINTMENT';
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -177,6 +186,12 @@ export default function ActivitiesPage() {
   // from its ticket types and is re-synced every run, so the per-session
   // price boxes in here are read-only for one.
   const scheduleIsWixEvent = scheduleFor?.wix_service_type === 'EVENT';
+  // Sessions for ANY Wix-linked activity are Wix's: /api/wix/slots mirrors
+  // live availability into activity_sessions and reconciles away anything
+  // that no longer matches. A hand-added session here is either swept or
+  // becomes a slot Wix will refuse to book, so the whole schedule is
+  // read-only for them.
+  const scheduleIsWix = !!(scheduleFor?.wix_service_id || scheduleFor?.wix_event_id);
   /* QA 21/08: location and price move to the schedule, so the same class at
      three venues (or three prices) is ONE activity. Blank inherits the
      activity's own value. */
@@ -643,7 +658,14 @@ export default function ActivitiesPage() {
   async function saveActivity() {
     if (!provider) return;
     if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
-    if (!form.default_capacity || Number(form.default_capacity) < 1) { setFormError('Set a capacity for this activity.'); return; }
+    // Capacity comes from Wix for a linked activity (and is null for an
+    // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
+    // and isn't written, so demanding one here would be a dead end on a form
+    // with nothing to fix.
+    if (!isWixLinked && (!form.default_capacity || Number(form.default_capacity) < 1)) {
+      setFormError('Set a capacity for this activity.');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     // The activity's address/postal_code/lat/lng are denormalized from its
@@ -659,15 +681,21 @@ export default function ActivitiesPage() {
       // BabyBrain lists activities for children up to 11, so an unstated upper
       // age can't default to adulthood — 216 was putting listings past the cap.
       age_max_months: Math.min(132, form.age_max_months ? Number(form.age_max_months) : 132),
-      // Price is Wix's to set for an event (cheapest ticket type, re-synced
-      // every run) — never write it back from this form for those.
-      ...(priceIsWixManaged ? {} : { price: form.price ? Number(form.price) : null }),
-      location_id: form.location_id || null,
-      default_capacity: Number(form.default_capacity),
-      address: loc?.address ?? null,
-      postal_code: loc?.postal_code ?? null,
-      latitude: loc?.latitude ?? null,
-      longitude: loc?.longitude ?? null,
+      // Price, capacity and venue are Wix's for a linked activity and are
+      // re-synced on every run, so writing them back from this form would only
+      // survive to the next tick. Omitted entirely rather than round-tripped —
+      // the drawer shows them read-only under "From Wix" instead.
+      ...(isWixLinked
+        ? {}
+        : {
+            price: form.price ? Number(form.price) : null,
+            location_id: form.location_id || null,
+            default_capacity: Number(form.default_capacity),
+            address: loc?.address ?? null,
+            postal_code: loc?.postal_code ?? null,
+            latitude: loc?.latitude ?? null,
+            longitude: loc?.longitude ?? null,
+          }),
       image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
       allow_cancellation: form.allow_cancellation,
@@ -1055,6 +1083,73 @@ export default function ActivitiesPage() {
 
           <div className="flex-1 overflow-auto p-5 space-y-5">
             {formError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</div>}
+
+            {/* Everything Wix owns, shown read-only and grouped, so it is
+                obvious at a glance which half of this form is the vendor's to
+                change. Before this the two were interleaved and a vendor could
+                edit a price that the next sync (<=5 min) silently put back. */}
+            {isWixLinked && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+                    <span className="text-sm font-semibold text-gray-900">From Wix</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={syncServices}
+                    disabled={syncing}
+                    className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
+                    {syncing ? 'Syncing…' : 'Sync now'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Managed in Wix and refreshed automatically every few minutes. Editing these here wouldn&rsquo;t
+                  stick — change them in Wix and they&rsquo;ll update here.
+                </p>
+                <dl className="space-y-2 border-t border-purple-100 pt-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-xs text-gray-500">Price</dt>
+                    <dd className="text-right text-sm font-medium text-gray-900">
+                      {editingActivity?.price != null ? `${editingActivity.price}` : 'Not set in Wix'}
+                      {isWixEvent && <span className="block text-[11px] font-normal text-gray-500">cheapest ticket type</span>}
+                    </dd>
+                  </div>
+                  {!hideCapacity && (
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-xs text-gray-500">Capacity</dt>
+                      <dd className="text-sm font-medium text-gray-900">{editingActivity?.default_capacity ?? '—'}</dd>
+                    </div>
+                  )}
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-xs text-gray-500">Venue</dt>
+                    <dd className="text-right text-sm font-medium text-gray-900">
+                      {locations.find((l) => l.id === editingActivity?.location_id)?.name ?? editingActivity?.address ?? 'Not set in Wix'}
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-xs text-gray-500">Schedule</dt>
+                    <dd className="text-sm font-medium text-gray-900">{isWixEvent ? 'The event date' : 'Live from Wix'}</dd>
+                  </div>
+                </dl>
+                {editingActivity?.updated_at && (
+                  <p className="text-[11px] text-gray-500">
+                    Last synced{' '}
+                    {new Date(editingActivity.updated_at).toLocaleString('en-SG', {
+                      timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+                    })}
+                  </p>
+                )}
+                {syncNotice && <p className="text-[11px] font-medium text-green-700">{syncNotice}</p>}
+                {syncError && <p className="text-[11px] font-medium text-red-600">{syncError}</p>}
+              </div>
+            )}
+
+            {isWixLinked && (
+              <div className="border-t border-gray-100 pt-4 text-sm font-semibold text-gray-900">Your BabyBrain details</div>
+            )}
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#FA4D8D]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -1079,6 +1174,8 @@ export default function ActivitiesPage() {
                 <input type="number" min="0" placeholder="Max" className={inputCls} value={form.age_max_months} onChange={(e) => setForm({ ...form, age_max_months: e.target.value })} />
               </div>
             </div>
+            {!isWixLinked && (
+              <>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Location</label>
               <select className={inputCls} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
@@ -1102,22 +1199,19 @@ export default function ActivitiesPage() {
                 type="number"
                 min="0"
                 placeholder="e.g. 45"
-                className={cn(inputCls, priceIsWixManaged && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
+                className={inputCls}
                 value={form.price}
                 onChange={(e) => setForm({ ...form, price: e.target.value })}
-                disabled={priceIsWixManaged}
               />
-              <p className="mt-1 text-xs text-gray-500">
-                {priceIsWixManaged
-                  ? 'Set by your Wix ticket types — this reflects the cheapest one and refreshes on every sync. Change the price in Wix.'
-                  : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
-              </p>
+              <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
               <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
               <p className="mt-1 text-xs text-gray-500">Pre-fills the capacity when you add new sessions for this activity.</p>
             </div>
+              </>
+            )}
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity image</label>
               <label className={cn(
@@ -1434,6 +1528,27 @@ export default function ActivitiesPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {/* A Wix-linked activity's dates come from Wix and are re-mirrored
+                (and reconciled) on every availability fetch, so a session added
+                or moved here is either swept away or becomes a slot Wix refuses
+                to book. Read-only, with the one place that can change it named. */}
+            {scheduleIsWix && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+                  <span className="text-sm font-semibold text-gray-900">Schedule managed in Wix</span>
+                </div>
+                <p className="mt-2 text-xs text-gray-600">
+                  {scheduleIsWixEvent
+                    ? 'This is a Wix event — its date and ticket capacity come from Wix.'
+                    : scheduleFor?.wix_service_type === 'COURSE'
+                      ? 'This is a Wix course — one booking covers the whole run, and every session below comes from Wix.'
+                      : 'These sessions mirror live availability on your Wix calendar.'}
+                  {' '}Add, move or cancel them in Wix and they&rsquo;ll update here.
+                </p>
+              </div>
+            )}
+            {!scheduleIsWix && (
             <div>
               <h4 className="text-sm font-medium text-gray-900 mb-2">Add sessions</h4>
               <div className="grid grid-cols-2 gap-3">
@@ -1501,6 +1616,7 @@ export default function ActivitiesPage() {
                 {savingSess ? 'Adding…' : 'Add to schedule'}
               </Button>
             </div>
+            )}
 
             <div>
               <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions ({sessions.length})</h4>
@@ -1592,14 +1708,18 @@ export default function ActivitiesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-1">
-                        <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {scheduleIsWix ? (
+                        <span className="flex-shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+                      ) : (
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 ))}
