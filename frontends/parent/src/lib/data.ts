@@ -117,6 +117,17 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
   );
 }
 
+/** Exactly the `activity_sessions` columns a parent is meant to see, and
+ *  exactly the ones {@link ActivitySession} declares — so a narrowed select
+ *  still satisfies the type. Named rather than `select("*")` on purpose:
+ *  the table also carries `teacher_name` and `studio`, which are the vendor's
+ *  own scheduling notes (00042) and have no business reaching a parent's
+ *  browser. `*` shipped them on every listing view without anything ever
+ *  rendering them. Keep this in step with ActivitySession if the table gains
+ *  a column parents genuinely need. */
+const PARENT_SESSION_COLUMNS =
+  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, wix_slot_key, wix_remaining_capacity, created_at';
+
 export interface ActivityDetail {
   activity:
     | (ActivityRow & {
@@ -213,7 +224,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .catch(() => []),
             supabase
               .from("activity_sessions")
-              .select("*")
+              .select(PARENT_SESSION_COLUMNS)
               .eq("activity_id", act.id)
               .is("wix_slot_key", null)
               .gte("starts_at", new Date().toISOString())
@@ -229,7 +240,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
         : Promise.resolve(
             supabase
               .from("activity_sessions")
-              .select("*")
+              .select(PARENT_SESSION_COLUMNS)
               .eq("activity_id", act.id)
               .gte("starts_at", new Date().toISOString())
               .order("starts_at")
