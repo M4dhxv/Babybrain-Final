@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
@@ -527,28 +527,39 @@ export default function ActivitiesPage() {
     setSyncNotice(null);
     try {
       const [servicesRes, eventsRes] = await Promise.all([
-        apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+        apiPost<{ sync?: Partial<{ created: number; updated: number; removed: number; revived: number }> }>(
           '/api/vendor/wix-services-sync',
           { provider_id: provider.id }
         ),
-        apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+        apiPost<{ sync?: Partial<{ created: number; updated: number; removed: number; revived: number }> }>(
           '/api/vendor/wix-events-sync',
           { provider_id: provider.id }
         ),
       ]);
-      const created = servicesRes.sync.created + eventsRes.sync.created;
-      const updated = servicesRes.sync.updated + eventsRes.sync.updated;
-      const revived = servicesRes.sync.revived + eventsRes.sync.revived;
-      const removed = servicesRes.sync.removed + eventsRes.sync.removed;
+      // Every count is read defensively. Adding them straight off the
+      // response threw "Cannot read properties of undefined (reading
+      // 'created')" at a vendor when a sync came back 2xx without its `sync`
+      // field — and by then the sync had already run, so the only thing that
+      // actually failed was the sentence describing it. Same guard as
+      // summarizeSync in SettingsPage.
+      const tally = (field: 'created' | 'updated' | 'revived' | 'removed') =>
+        (servicesRes?.sync?.[field] ?? 0) + (eventsRes?.sync?.[field] ?? 0);
       const parts = [];
-      if (created) parts.push(`${created} new`);
-      if (updated) parts.push(`${updated} updated`);
-      if (revived) parts.push(`${revived} restored`);
-      if (removed) parts.push(`${removed} removed`);
+      if (tally('created')) parts.push(`${tally('created')} new`);
+      if (tally('updated')) parts.push(`${tally('updated')} updated`);
+      if (tally('revived')) parts.push(`${tally('revived')} restored`);
+      if (tally('removed')) parts.push(`${tally('removed')} removed`);
       setSyncNotice(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
       await load();
     } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Could not sync services');
+      // Only a server-authored message is fit to show a vendor; anything else
+      // is this page's own bug and its text is browser jargon.
+      if (e instanceof ApiError) {
+        setSyncError(e.message || 'Could not sync services');
+      } else {
+        console.error('[wix sync] unexpected error', e);
+        setSyncError('Could not sync services. If this keeps happening, contact support.');
+      }
     } finally {
       setSyncing(false);
       window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);

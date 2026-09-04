@@ -799,14 +799,42 @@ function WixIntegrationManager({
   // expired (long-lived tab, refresh token aged out) — "Not authenticated"
   // on its own reads like a permissions bug, so point the vendor at the fix
   // (sign out/in) and an escape hatch if that doesn't clear it up.
+  //
+  // Only an ApiError's message is ever shown. Those are written for a vendor
+  // to read — the server's own `error` field (describeWixApiError's "check
+  // both were copied from the same site", say) or apiPost's network-failure
+  // wording. Anything else reaching here is a bug in this page, and its
+  // message is browser text: a vendor was shown "Cannot read properties of
+  // undefined (reading 'created')" on the integrations tab, which reads as
+  // "your Wix connection is broken" when nothing about it was. Those get the
+  // caller's own fallback, and the real error goes to the console where it
+  // is actually useful.
   function describeWixError(e: unknown, fallback: string): string {
-    if (e instanceof ApiError && e.status === 401) {
-      return 'Your session has expired. Please sign out and sign back in — if this keeps happening, contact support.';
+    if (e instanceof ApiError) {
+      if (e.status === 401) {
+        return 'Your session has expired. Please sign out and sign back in — if this keeps happening, contact support.';
+      }
+      return e.message || fallback;
     }
-    return e instanceof Error ? e.message : fallback;
+    console.error('[wix integration] unexpected error', e);
+    return `${fallback}. If this keeps happening, contact support.`;
   }
 
-  function summarizeSync(sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed?: number; revived?: number; unlinked?: number }) {
+  /** Reading a count straight off the response threw
+   *  "Cannot read properties of undefined (reading 'created')" at a vendor,
+   *  in the integrations card's error box, when a sync call came back 2xx
+   *  without its `sync` field. The sync had already run at that point — only
+   *  the sentence describing it blew up — so this must never be the thing
+   *  that turns a completed sync into a failure. Every field is treated as
+   *  optional and a missing summary degrades to "couldn't be summarised"
+   *  rather than throwing. Same for summarizeEventSync below. */
+  type SyncSummary = Partial<{
+    created: number; updated: number; removed: number; revived: number; unlinked: number;
+    skipped: { name: string; reason: string }[];
+  }>;
+
+  function summarizeSync(sync: SyncSummary | null | undefined) {
+    if (!sync) return 'Synced from Wix — the result couldn’t be summarised, so check your activities below.';
     const parts = [];
     if (sync.created) parts.push(`${sync.created} new`);
     if (sync.updated) parts.push(`${sync.updated} updated`);
@@ -815,8 +843,9 @@ function WixIntegrationManager({
     if (sync.unlinked) parts.push(`${sync.unlinked} unlinked`);
     if (!sync.created && !sync.updated && !sync.removed && !sync.revived && !sync.unlinked) parts.push('nothing new');
     let text = `Synced from Wix: ${parts.join(', ')}.`;
-    if (sync.skipped.length) {
-      text += ` ${sync.skipped.length} skipped — ${sync.skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
+    const skipped = sync.skipped ?? [];
+    if (skipped.length) {
+      text += ` ${skipped.length} skipped — ${skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`;
     }
     return text;
   }
@@ -886,7 +915,7 @@ function WixIntegrationManager({
     setError(null);
     setNotice(null);
     try {
-      const res = await apiPost<{ sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number } }>(
+      const res = await apiPost<{ sync?: SyncSummary }>(
         '/api/vendor/wix-services-sync',
         { provider_id: provider.id }
       );
@@ -896,14 +925,14 @@ function WixIntegrationManager({
       // landed, hence the inner catch: it's reported alongside, not thrown.
       let eventsLine: string;
       try {
-        const ev = await apiPost<{ sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean } }>(
+        const ev = await apiPost<{ sync?: EventSyncSummary }>(
           '/api/vendor/wix-events-sync',
           { provider_id: provider.id }
         );
         eventsLine = summarizeEventSync(ev.sync);
         await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
       } catch (e) {
-        eventsLine = `Events couldn’t be synced — ${describeWixError(e, 'please try again.')}`;
+        eventsLine = `Events couldn’t be synced — ${describeWixError(e, 'please try again')}`;
       }
       setNotice(`${summarizeSync(res.sync)} ${eventsLine}`);
     } catch (e) {
@@ -918,7 +947,13 @@ function WixIntegrationManager({
   // services" above fires both: a vendor connected for Bookings only won't
   // have the Events app installed at all, and that call reports it back
   // rather than erroring, which is why this reads as a normal outcome.
-  function summarizeEventSync(sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean }) {
+  type EventSyncSummary = Partial<{
+    created: number; updated: number; removed: number; revived: number;
+    ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean;
+  }>;
+
+  function summarizeEventSync(sync: EventSyncSummary | null | undefined) {
+    if (!sync) return 'Synced from Wix Events — the result couldn’t be summarised.';
     if (sync.eventsAppNotInstalled) {
       return 'This Wix account doesn’t have the Events & Tickets app installed, so there’s nothing to sync yet.';
     }
@@ -929,8 +964,9 @@ function WixIntegrationManager({
     if (sync.removed) parts.push(`${sync.removed} removed`);
     if (!sync.created && !sync.updated && !sync.removed && !sync.revived) parts.push('nothing new');
     let text = `Synced from Wix Events: ${parts.join(', ')}.`;
-    if (sync.ticketPricingSkipped.length) {
-      text += ` Ticket pricing couldn’t be read for: ${sync.ticketPricingSkipped.join(', ')}.`;
+    const skipped = sync.ticketPricingSkipped ?? [];
+    if (skipped.length) {
+      text += ` Ticket pricing couldn’t be read for: ${skipped.join(', ')}.`;
     }
     return text;
   }
@@ -972,12 +1008,14 @@ function WixIntegrationManager({
     setEventImportNotice(null);
     try {
       const res = await apiPost<{
-        sync: { created: number; updated: number; removed: number; revived: number; ticketPricingSkipped: string[]; eventsAppNotInstalled: boolean; unlinked: number };
-        protectedEvents: { wixEventId: string; title: string }[];
+        sync?: EventSyncSummary;
+        protectedEvents?: { wixEventId: string; title: string }[];
       }>('/api/vendor/wix-events-import', { provider_id: provider.id, event_ids: Array.from(selectedEventIds) });
       let notice = summarizeEventSync(res.sync);
-      if (res.protectedEvents.length > 0) {
-        notice += ` ${res.protectedEvents.map((p) => `"${p.title}"`).join(', ')} already ${res.protectedEvents.length > 1 ? 'have' : 'has'} bookings, so ${res.protectedEvents.length > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${res.protectedEvents.length > 1 ? 'them' : 'it'}.`;
+      const blocked = res.protectedEvents ?? [];
+      if (blocked.length > 0) {
+        const n = blocked.length;
+        notice += ` ${blocked.map((p) => `"${p.title}"`).join(', ')} already ${n > 1 ? 'have' : 'has'} bookings, so ${n > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${n > 1 ? 'them' : 'it'}.`;
       }
       setEventImportNotice(notice);
       await loadWixEvents(); // re-checks anything that was protected, since it's still really linked
@@ -1051,8 +1089,8 @@ function WixIntegrationManager({
     setImportNotice(null);
     try {
       const res = await apiPost<{
-        sync: { created: number; updated: number; skipped: { name: string; reason: string }[]; removed: number; revived: number; unlinked: number };
-        protectedServices: { wixServiceId: string; title: string }[];
+        sync?: SyncSummary;
+        protectedServices?: { wixServiceId: string; title: string }[];
       }>(
         '/api/vendor/wix-services-import',
         { provider_id: provider.id, service_ids: Array.from(selectedIds) }
