@@ -324,7 +324,13 @@ export default function SchedulePage() {
 
         {!loading && activities.length > 0 && view === 'week' && (
           <div className="overflow-x-auto">
-          <div className="grid min-w-[900px] grid-cols-7 gap-3">
+          {/* Forcing all 7 days into one horizontally-scrolled row (the sm+
+              behavior below) squeezed each card to ~130px on a phone — too
+              narrow for a session's time, title, venue and teacher to read.
+              Below `sm`, wrap into 2 columns instead: every card gets a real
+              width and nothing needs to scroll sideways to be read, at the
+              cost of scrolling the page down through 4 rows instead. */}
+          <div className="grid grid-cols-2 gap-3 sm:min-w-[900px] sm:grid-cols-7">
             {weekDays.map((d) => {
               const daySessions = sessionsFor(d);
               return (
