@@ -385,6 +385,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# wix-sync (supabase/functions/wix-sync) — the 24/7 Wix background sync,
+# moved off Vercel (see supabase/migrations/00083_wix_sync_to_edge_function.sql).
+# Its only caller is pg_cron via pg_net, not a browser, so it authenticates
+# with its own x-cron-secret header (checked against the CRON_SHARED_SECRET
+# function secret) rather than a Supabase-issued JWT.
+[functions.wix-sync]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
