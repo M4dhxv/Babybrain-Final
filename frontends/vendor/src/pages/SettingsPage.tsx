@@ -1167,7 +1167,7 @@ function WixIntegrationManager({
                   <CheckCircle className="w-3.5 h-3.5" /> Connected
                 </span>
                 {status.updated_at && (
-                  <span className="text-xs text-gray-400">since {new Date(status.updated_at).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  <span className="text-xs text-gray-400">since {new Date(status.updated_at).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                 )}
               </div>
               <div>
