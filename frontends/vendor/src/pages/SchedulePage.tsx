@@ -108,7 +108,18 @@ export default function SchedulePage() {
         // A COURSE enrolment's anchor row spans the whole run — it's not a
         // dated occurrence and would render as one giant session on its
         // start day. The course's real per-week occurrences are still here.
-        .not('wix_slot_key', 'like', 'wixcourse:%')
+        //
+        // `.not(col, 'like', pattern)` alone is NOT the right way to exclude
+        // it: SQL's three-valued logic makes `NOT (NULL LIKE pattern)`
+        // evaluate to NULL, not TRUE, so a plain `.not('wix_slot_key',
+        // 'like', 'wixcourse:%')` silently dropped every row whose
+        // wix_slot_key is NULL — which is every site-native session and
+        // every Wix-Events-mirrored one, i.e. most vendors' entire calendar.
+        // Confirmed live: a demo account with a mix of native sessions and
+        // one imported Wix event showed "No sessions" all week despite 8
+        // real sessions existing in that range. `.or()` keeps a NULL key
+        // explicitly instead of leaving it to the NOT.
+        .or('wix_slot_key.is.null,wix_slot_key.not.like.wixcourse:%')
         .gte('starts_at', rangeStart.toISOString())
         .lte('starts_at', rangeEnd.toISOString())
         .order('starts_at');
