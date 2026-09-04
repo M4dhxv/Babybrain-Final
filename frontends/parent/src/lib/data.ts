@@ -188,7 +188,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       let wixCourseSpan: { start: string; end: string } | null = null;
       const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
         ? Promise.all([
-            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number; teacher_name?: string | null }[]; course?: { start: string; end: string } | null }>(
+            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
               `/api/wix/slots?activityId=${act.id}`
             )
               .then((r) => {
@@ -205,12 +205,6 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   // BabyBrain per-session override, so it inherits.
                   price: null,
                   status: "scheduled" as const,
-                  // Who Wix says is taking this exact slot — comes back on the
-                  // same response rather than being read out of
-                  // activity_sessions, which these synthesised rows have no id
-                  // into. See /api/wix/slots.
-                  teacher_name: s.teacher_name ?? null,
-                  studio: null,
                   wix_slot_key: null,
                   wix_remaining_capacity: null,
                   created_at: new Date().toISOString(),
