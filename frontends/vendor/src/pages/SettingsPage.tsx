@@ -853,6 +853,15 @@ function WixIntegrationManager({
   async function load() {
     if (!provider) return;
     setLoading(true);
+    // Cleared on every reload. This was the one writer of `error` that never
+    // reset it, so a failure from any other action — a sync, a reveal —
+    // stayed pinned to the integrations card indefinitely: through a
+    // remount, through "Change key", through a *successful* reconnect. It is
+    // why a vendor sat looking at a sync error while re-entering their
+    // credentials, with the button that produced it not even on screen (it
+    // only renders when connected and not editing). A stale message there
+    // reads as "this connection is still broken" long after it isn't.
+    setError(null);
     try {
       const s = await apiGet<WixStatus>(`/api/vendor/wix-integration?providerId=${provider.id}`);
       setStatus(s);
@@ -919,6 +928,12 @@ function WixIntegrationManager({
         '/api/vendor/wix-services-sync',
         { provider_id: provider.id }
       );
+      // The route returns `{ ok: true, sync }` on every success, so a missing
+      // `sync` means something other than the route answered — and that is
+      // exactly the case that used to throw here. Log the whole body: the
+      // shape of whatever did answer is the one piece of evidence needed to
+      // explain it, and it was being thrown away.
+      if (!res?.sync) console.error('[wix sync] services response had no `sync` field', res);
       // Events are a second Wix app and a second call, but a vendor thinks of
       // this as one "pull everything in from Wix" button, so it fires both.
       // Events failing shouldn't discard the services result that already
@@ -929,6 +944,7 @@ function WixIntegrationManager({
           '/api/vendor/wix-events-sync',
           { provider_id: provider.id }
         );
+        if (!ev?.sync) console.error('[wix sync] events response had no `sync` field', ev);
         eventsLine = summarizeEventSync(ev.sync);
         await loadWixEvents(); // picker (if open) shouldn't show stale checkboxes after a blanket sync
       } catch (e) {
