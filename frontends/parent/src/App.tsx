@@ -4268,10 +4268,11 @@ function PastActivitiesTab({
   );
 }
 
-/** The seats of a multi-child booking, in a collapsible list. Seat 1 is the
- *  chosen child (read-only); guest seats show "Guest child" until the parent
- *  renames them here — the name is written to bookings.guest_name and shows
- *  on the vendor's roster too (00084). Each seat can also be cancelled on its
+/** The seats of a multi-child booking (00084). The "N children" line is the
+ *  disclosure toggle; opening it reveals the roster indented right beneath.
+ *  Seat 1 is the chosen child (read-only); guest seats read "Guest child"
+ *  until the parent renames them — the name is written to bookings.guest_name
+ *  and shows on the vendor's roster too. Each seat can be cancelled on its
  *  own, leaving the rest of the party booked. */
 function PartyPlaces({
   b, onRename, onCancelPlace, editable, cancelWhy,
@@ -4282,65 +4283,99 @@ function PartyPlaces({
   editable: boolean;
   cancelWhy: string | null;
 }) {
+  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const listId = `party-${b.id}`;
+  const initial = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
+
   return (
-    <details className="mt-2 border-t border-[#FAF7F7] pt-2">
-      <summary className="cursor-pointer text-xs font-bold text-[#59658d]">Who's coming ({b.places.length})</summary>
-      <ul className="mt-2 space-y-1.5">
-        {b.places.map((p, i) => (
-          <li key={p.bookingId} className="flex items-center gap-2 text-sm font-semibold text-[#3f4b78]">
-            <Icon name="user" className="h-3.5 w-3.5 shrink-0 text-baby-lilac" />
-            {editing === p.bookingId ? (
-              <>
-                <input
-                  autoFocus
-                  value={draft}
-                  maxLength={80}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { onRename(p.bookingId, draft); setEditing(null); }
-                    if (e.key === "Escape") setEditing(null);
-                  }}
-                  placeholder="Guest child"
-                  className="min-w-0 flex-1 rounded-[8px] border border-[#FED7E4] px-2 py-1 text-sm font-semibold"
-                />
-                <button type="button" onClick={() => { onRename(p.bookingId, draft); setEditing(null); }} className="text-xs font-bold text-baby-pink">Save</button>
-                <button type="button" onClick={() => setEditing(null)} className="text-xs font-bold text-[#6D748D]">Cancel</button>
-              </>
-            ) : (
-              <>
-                <span className={`flex-1 ${p.isGuest && p.name === "Guest child" ? "text-[#6D748D]" : ""}`}>{p.name}</span>
-                {editable && p.isGuest && (
-                  <button
-                    type="button"
-                    onClick={() => { setDraft(p.name === "Guest child" ? "" : p.name); setEditing(p.bookingId); }}
-                    className="text-[#FFC1D6] hover:text-baby-pink"
-                    aria-label={`Edit name for guest ${i + 1}`}
-                  >
-                    <Icon name="pen" className="h-3.5 w-3.5" />
-                  </button>
+    <div className="mt-1 pl-20">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={listId}
+        className="group flex items-center gap-2 text-sm font-bold text-[#59658d] transition-colors hover:text-baby-cta"
+      >
+        <Icon name="people" className="h-4 w-4 text-baby-lilac" />
+        <span>{b.places.length} children</span>
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F3EDF8] transition-colors group-hover:bg-[#FCE6EF]">
+          <Icon
+            name="chevron"
+            strokeWidth={2.4}
+            className={`h-3 w-3 text-[#9A86C4] transition-transform duration-200 ${open ? "-rotate-90" : "rotate-90"}`}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <ul id={listId} className="mt-2.5 space-y-1.5">
+          {b.places.map((p, i) => {
+            const unnamed = p.isGuest && p.name === "Guest child";
+            return (
+              <li key={p.bookingId} className="flex items-center gap-2.5">
+                <span
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black ${
+                    p.isGuest ? "bg-[#F1EEF6] text-[#8A7FB0]" : "bg-[#FEEBF2] text-baby-cta"
+                  }`}
+                >
+                  {p.isGuest ? <Icon name="user" className="h-3.5 w-3.5" /> : initial(p.name)}
+                </span>
+
+                {editing === p.bookingId ? (
+                  <>
+                    <input
+                      autoFocus
+                      value={draft}
+                      maxLength={80}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { onRename(p.bookingId, draft); setEditing(null); }
+                        if (e.key === "Escape") setEditing(null);
+                      }}
+                      placeholder="Guest child"
+                      className="min-w-0 flex-1 rounded-[9px] border border-[#FED7E4] px-2.5 py-1.5 text-sm font-semibold outline-none focus:border-baby-pink"
+                    />
+                    <button type="button" onClick={() => { onRename(p.bookingId, draft); setEditing(null); }} className="text-xs font-black text-baby-pink">Save</button>
+                    <button type="button" onClick={() => setEditing(null)} className="text-xs font-bold text-[#8A93AC]">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span className={`flex-1 truncate text-sm font-bold ${unnamed ? "text-[#8A93AC]" : "text-[#3f4b78]"}`}>
+                      {p.name}
+                    </span>
+                    {editable && p.isGuest && (
+                      <button
+                        type="button"
+                        onClick={() => { setDraft(unnamed ? "" : p.name); setEditing(p.bookingId); }}
+                        className="flex items-center gap-1 rounded-[8px] border border-[#E7DEEF] px-2 py-1 text-xs font-bold text-[#9A86C4] hover:bg-[#F7F3FB]"
+                      >
+                        <Icon name="pen" className="h-3 w-3" /> Name
+                      </button>
+                    )}
+                    {editable && b.places.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => onCancelPlace(p.bookingId, p.name)}
+                        className={`rounded-[8px] px-2 py-1 text-xs font-bold ${
+                          cancelWhy
+                            ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#8A93AC]"
+                            : "border border-[#FED7E4] text-[#F2739E] hover:bg-[#FFF5F8]"
+                        }`}
+                        title={cancelWhy ?? `Cancel ${p.name}'s place`}
+                      >
+                        Cancel place
+                      </button>
+                    )}
+                  </>
                 )}
-                {editable && b.places.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => onCancelPlace(p.bookingId, p.name)}
-                    className={`rounded-[8px] px-2 py-0.5 text-xs font-bold ${
-                      cancelWhy
-                        ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
-                        : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
-                    }`}
-                    title={cancelWhy ?? `Cancel ${p.name}'s place`}
-                  >
-                    Cancel place
-                  </button>
-                )}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-    </details>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -4512,12 +4547,6 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
                 {b.venue && <p className="truncate text-sm font-semibold text-[#59658d]">{b.venue}</p>}
-                {party(b) && (
-                  <p className="text-sm font-semibold text-[#59658d]">
-                    <Icon name="user" className="mr-1 inline h-3.5 w-3.5 text-baby-lilac" />
-                    {b.places.length} children
-                  </p>
-                )}
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
