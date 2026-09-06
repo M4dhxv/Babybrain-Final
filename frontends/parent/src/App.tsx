@@ -2910,6 +2910,9 @@ function ProfilePage() {
   // activity_id -> child ids it's assigned to. Empty/absent = whole family.
   const [favChildren, setFavChildren] = useState<Record<string, string[]>>({});
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+  // Until the first fetch resolves, the Bookings / Past tabs show a skeleton
+  // rather than flashing the "you haven't booked anything" empty state.
+  const [bookingsLoaded, setBookingsLoaded] = useState(false);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
@@ -3143,7 +3146,9 @@ function ProfilePage() {
             };
           })
         );
-      });
+      })
+      .catch(() => {})
+      .finally(() => setBookingsLoaded(true));
   }
 
   async function loadPackages() {
@@ -3717,7 +3722,9 @@ function ProfilePage() {
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
-              {splitByChild ? (
+              {!bookingsLoaded ? (
+                <BookingsSkeleton />
+              ) : splitByChild ? (
                 <div className="space-y-8">
                   {groupByChild(upcomingBookings, children).map((g) => (
                     <section key={g.key}>
@@ -3738,6 +3745,7 @@ function ProfilePage() {
           {tab === "past" && (
             <PastActivitiesTab
               items={pastBookings}
+              loading={!bookingsLoaded}
               onChanged={loadBookings}
               filterChips={<ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />}
               groups={splitByChild ? groupByChild(pastBookings, children) : null}
@@ -4132,6 +4140,7 @@ function PastActivitiesTab({
   onChanged,
   filterChips,
   groups,
+  loading = false,
 }: {
   items: BookingItem[];
   onChanged: () => void;
@@ -4139,6 +4148,8 @@ function PastActivitiesTab({
   /** Set when "All children" is chosen and there's more than one child: the
    *  same three attendance sections, repeated under each child's name. */
   groups?: { key: string; name: string; items: BookingItem[] }[] | null;
+  /** First bookings fetch still in flight — show a skeleton, not the empty state. */
+  loading?: boolean;
 }) {
   const [marks, setMarks] = useState<Record<string, "present" | "absent">>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -4254,7 +4265,9 @@ function PastActivitiesTab({
       {filterChips}
       {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-baby-cta">{error}</p>}
 
-      {items.length === 0 ? (
+      {loading ? (
+        <BookingsSkeleton />
+      ) : items.length === 0 ? (
         <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
       ) : groups ? (
         <div className="mt-4 space-y-8">
@@ -4671,6 +4684,25 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Placeholder cards shown while the bookings fetch is still in flight, so
+ *  the Bookings / Past tabs never flash their empty state on load. */
+function BookingsSkeleton({ rows = 2 }: { rows?: number }) {
+  return (
+    <div className="mt-4 space-y-3" aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card">
+          <div className="h-14 w-14 shrink-0 animate-pulse rounded-[10px] bg-[#F3EDF0] sm:h-16 sm:w-16" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-2/5 animate-pulse rounded bg-[#F3EDF0]" />
+            <div className="h-3 w-3/5 animate-pulse rounded bg-[#F6F1F3]" />
+            <div className="h-3 w-1/3 animate-pulse rounded bg-[#F6F1F3]" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
