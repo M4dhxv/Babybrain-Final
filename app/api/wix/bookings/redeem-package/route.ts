@@ -53,6 +53,8 @@ export async function POST(request: Request) {
     count?: number;
     medicalDisclosure?: string;
     infoResponse?: string;
+    // Names for the extra seats of a multi-child booking (00084).
+    guestNames?: string[];
   };
   const { activityId, wixSlotId, packagePurchaseId } = body;
   const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
@@ -134,6 +136,7 @@ export async function POST(request: Request) {
     p_quantity: count,
     p_medical: body.medicalDisclosure?.trim() || undefined,
     p_info: body.infoResponse?.trim() || undefined,
+    p_guest_names: count > 1 ? (body.guestNames ?? []).map((n) => n?.trim() ?? '') : undefined,
   });
   if (error) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race

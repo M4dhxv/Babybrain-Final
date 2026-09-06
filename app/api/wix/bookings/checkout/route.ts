@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe';
@@ -38,6 +39,8 @@ export async function POST(request: Request) {
     medicalDisclosure?: string;
     infoResponse?: string;
     count?: number;
+    // Names for the extra seats of a multi-child booking (00084).
+    guestNames?: string[];
   };
   const { activityId, wixSlotId } = body;
   const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
@@ -91,16 +94,21 @@ export async function POST(request: Request) {
 
   // One pending row per spot, same as the free path — the capacity/waitlist
   // trigger counts rows, so each child needs to be its own seat rather than
-  // the whole party being one row.
-  const rows = Array.from({ length: count }, () => ({
+  // the whole party being one row. A party (00084) shares a
+  // booking_group_id; seat 1 has the child + medical/info, seats 2..N are
+  // "Guest child".
+  const groupId = count > 1 ? randomUUID() : null;
+  const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
-    child_id: body.childId ?? null,
+    child_id: i === 0 ? (body.childId ?? null) : null,
+    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Guest child'),
+    booking_group_id: groupId,
     session_id: reserved.sessionId,
     status: 'pending' as const,
     payment_status: 'none' as const,
     policies_accepted: body.policiesAccepted ?? [],
-    medical_disclosure: body.medicalDisclosure || null,
-    info_response: body.infoResponse?.trim() || null,
+    medical_disclosure: i === 0 ? (body.medicalDisclosure || null) : null,
+    info_response: i === 0 ? (body.infoResponse?.trim() || null) : null,
   }));
   const { data: bookings, error: bookingError } = await admin.from('bookings').insert(rows).select('id, status');
   if (bookingError || !bookings || bookings.length !== count) {

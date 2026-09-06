@@ -5652,6 +5652,10 @@ function BookingPage() {
         childId: bookChildId,
         policiesAccepted: acceptedPolicies,
         count,
+        // Names for the extra seats (00084); blank -> "Guest child".
+        ...(count > 1
+          ? { guestNames: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+          : {}),
         ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
         // Required by the activity when info_request_enabled, and now
         // enforced server-side on both Wix endpoints — it used to be
@@ -5769,6 +5773,9 @@ function BookingPage() {
           childId: bookChildId,
           policiesAccepted: acceptedPolicies,
           count,
+          ...(count > 1
+            ? { guestNames: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+            : {}),
           ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
           ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
         });
@@ -6094,7 +6101,7 @@ function BookingPage() {
                         <button type="button" onClick={() => setCount((c) => Math.min(isEvent ? ticketQuantityCap : 6, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
-                    {!isEvent && !isCourse && !sessionId?.startsWith("wix:") && count > 1 && (
+                    {!isEvent && !isCourse && count > 1 && (
                       <section>
                         <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="mb-3 text-sm font-semibold text-[#59658d]">

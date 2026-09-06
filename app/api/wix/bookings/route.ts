@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
     medicalDisclosure?: string;
     infoResponse?: string;
     count?: number;
+    // Names for the extra seats of a multi-child booking (00084); index 0 =
+    // the 2nd child. Blank -> "Guest child".
+    guestNames?: string[];
   };
   const { activityId, wixSlotId } = body;
   const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
@@ -92,19 +96,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  const rows = Array.from({ length: count }, () => ({
+  // A party (00084): every seat is its own row sharing a booking_group_id
+  // so the parent app collapses them into one card. Seat 1 carries the
+  // child; seats 2..N are "Guest child" (renamable later) and skip the
+  // medical/info fields, which ride on seat 1.
+  const groupId = count > 1 ? randomUUID() : null;
+  const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
-    child_id: body.childId ?? null,
+    child_id: i === 0 ? (body.childId ?? null) : null,
+    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Guest child'),
+    booking_group_id: groupId,
     session_id: result.sessionId,
     status: 'confirmed' as const,
     payment_status: 'none' as const,
     policies_accepted: body.policiesAccepted ?? [],
-    medical_disclosure: body.medicalDisclosure || null,
+    medical_disclosure: i === 0 ? (body.medicalDisclosure || null) : null,
     // Whatever this activity asks for at booking. Collected by the parent
     // page and required by checkWixBookingGates above — it was being dropped
     // on the floor here, so a vendor who asks (e.g. "which condo are we
     // coming to?") got a roster with the answer blank.
-    info_response: body.infoResponse?.trim() || null,
+    info_response: i === 0 ? (body.infoResponse?.trim() || null) : null,
     wix_booking_id: result.wixBookingId,
   }));
   const { data: bookings, error: bookingError } = await admin.from('bookings').insert(rows).select('id, status');
