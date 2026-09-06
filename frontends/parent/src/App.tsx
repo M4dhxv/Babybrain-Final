@@ -3088,10 +3088,13 @@ function ProfilePage() {
           r.children?.name?.trim() || r.guest_name?.trim() || "Guest child";
         setBookings(
           [...groups.values()].map((seats) => {
-            // Seat order: the real child first, then guests in row order.
-            const ordered = [...seats].sort(
-              (a, b) => (a.child_id ? 0 : 1) - (b.child_id ? 0 : 1)
-            );
+            // The card represents the live seats; if every seat is cancelled
+            // it's a cancelled booking. Seat order: the real child first,
+            // then guests in row order.
+            const bySeat = (a: (typeof seats)[number], b: (typeof seats)[number]) =>
+              (a.child_id ? 0 : 1) - (b.child_id ? 0 : 1);
+            const live = seats.filter((x) => x.status !== "cancelled").sort(bySeat);
+            const ordered = live.length > 0 ? live : [...seats].sort(bySeat);
             const r = ordered[0];
             const s = r.activity_sessions;
             const act = s?.activities;
@@ -4268,8 +4271,17 @@ function PastActivitiesTab({
 /** The seats of a multi-child booking, in a collapsible list. Seat 1 is the
  *  chosen child (read-only); guest seats show "Guest child" until the parent
  *  renames them here — the name is written to bookings.guest_name and shows
- *  on the vendor's roster too (00084). */
-function PartyPlaces({ b, onRename, editable }: { b: BookingItem; onRename: (bookingId: string, name: string) => void; editable: boolean }) {
+ *  on the vendor's roster too (00084). Each seat can also be cancelled on its
+ *  own, leaving the rest of the party booked. */
+function PartyPlaces({
+  b, onRename, onCancelPlace, editable, cancelWhy,
+}: {
+  b: BookingItem;
+  onRename: (bookingId: string, name: string) => void;
+  onCancelPlace: (bookingId: string, name: string) => void;
+  editable: boolean;
+  cancelWhy: string | null;
+}) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   return (
@@ -4298,7 +4310,7 @@ function PartyPlaces({ b, onRename, editable }: { b: BookingItem; onRename: (boo
               </>
             ) : (
               <>
-                <span className={p.isGuest && p.name === "Guest child" ? "text-[#6D748D]" : ""}>{p.name}</span>
+                <span className={`flex-1 ${p.isGuest && p.name === "Guest child" ? "text-[#6D748D]" : ""}`}>{p.name}</span>
                 {editable && p.isGuest && (
                   <button
                     type="button"
@@ -4307,6 +4319,20 @@ function PartyPlaces({ b, onRename, editable }: { b: BookingItem; onRename: (boo
                     aria-label={`Edit name for guest ${i + 1}`}
                   >
                     <Icon name="pen" className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {editable && b.places.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onCancelPlace(p.bookingId, p.name)}
+                    className={`rounded-[8px] px-2 py-0.5 text-xs font-bold ${
+                      cancelWhy
+                        ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
+                        : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
+                    }`}
+                    title={cancelWhy ?? `Cancel ${p.name}'s place`}
+                  >
+                    Cancel place
                   </button>
                 )}
               </>
@@ -4389,6 +4415,26 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
       p_booking_id: bookingId,
       p_name: name.trim() || null,
     });
+    if (error) setNotice(cleanRpcErrorMessage(error));
+    else onChanged?.();
+  }
+
+  /** Cancel one seat of a party, leaving the rest booked. Same policy gate
+   *  as the whole-booking cancel; the per-row compensation trigger returns
+   *  that seat's own credit / make-up token. */
+  async function cancelPlace(b: BookingItem, bookingId: string, name: string) {
+    const why = cancelBlockReason(b);
+    if (why) { setNotice(why); return; }
+    const back =
+      b.paidWith === "credit"
+        ? " 1 class credit will be returned to your package."
+        : b.paidWith === "cash"
+          ? " You'll be issued a make-up token to use on another class."
+          : "";
+    if (!window.confirm(`Cancel ${name}'s place on ${b.title}?${back}`)) return;
+    setBusyId(b.id);
+    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
+    setBusyId(null);
     if (error) setNotice(cleanRpcErrorMessage(error));
     else onChanged?.();
   }
@@ -4491,7 +4537,15 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               )}
               <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
             </a>
-            {party(b) && <PartyPlaces b={b} onRename={renameGuest} editable={b.status !== "cancelled"} />}
+            {party(b) && (
+              <PartyPlaces
+                b={b}
+                onRename={renameGuest}
+                onCancelPlace={(id, name) => cancelPlace(b, id, name)}
+                editable={b.status !== "cancelled" && upcoming(b)}
+                cancelWhy={cancelWhy}
+              />
+            )}
             {upcoming(b) && (
               <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
                 <button
