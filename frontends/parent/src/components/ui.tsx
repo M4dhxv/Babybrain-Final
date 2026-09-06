@@ -848,7 +848,7 @@ export function ActivityCard({
 }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <article className="overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
+    <article className="flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
         <img
           src={activity.image}
@@ -872,7 +872,7 @@ export function ActivityCard({
           onToggled={onFavoriteToggled && activity.id ? (saved) => onFavoriteToggled(activity.id as string, saved) : undefined}
         />
       </div>
-      <div className="p-3.5">
+      <div className="flex flex-1 flex-col p-3.5">
         <h3 className="mb-0.5 text-[15px] font-black leading-tight text-baby-ink">
           {activity.title}
         </h3>
@@ -910,7 +910,7 @@ export function ActivityCard({
           )}
         </div>
         {compact ? (
-          <div className="mt-3 flex gap-2">
+          <div className="mt-auto flex gap-2 pt-3">
             <Button href={href} size="sm" className="flex-1 rounded-[8px] px-3 py-2 text-xs">
               View details
             </Button>
@@ -919,7 +919,7 @@ export function ActivityCard({
             </Button>
           </div>
         ) : (
-          <div className="mt-3 flex items-center justify-between border-t border-[#F4EFF0] pt-3">
+          <div className="mt-auto flex items-center justify-between border-t border-[#F4EFF0] pt-3">
             <a href={href} className="text-sm font-extrabold text-palette-blue">
               View details
             </a>
@@ -959,17 +959,28 @@ export function ActivityRow({ activity }: { activity: Activity }) {
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}
           </p>
         )}
-        <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
-          <p className="flex items-center gap-1"><Icon name="user" className="h-3.5 w-3.5 text-palette-blue" /> {activity.age}</p>
-          <p className="flex items-center gap-1"><Icon name="pin" className="h-3.5 w-3.5 text-palette-blue" /> {placeLabel(activity)}</p>
-          <p className="flex items-center gap-1"><Icon name="calendar" className="h-3.5 w-3.5 text-palette-blue" /> {activity.date || "Schedule TBC"}</p>
-          <p>{activity.time}</p>
-          {formatDuration(activity.durationMins) && (
-            <p className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5 text-palette-blue" /> {formatDuration(activity.durationMins)}</p>
-          )}
-          {priceLabel(activity) && <p className="font-black text-palette-blue">{priceLabel(activity)}</p>}
-          {activity.rating && <p className="flex items-center gap-1"><Icon name="star" className="h-3.5 w-3.5 text-palette-blue" /> {activity.rating}</p>}
+        {/* Fixed three rows (age·area / date·time / duration·price) so every
+            card is the same height and the two columns line up — the left
+            column sizes to its content and never wraps, the right one
+            ellipsises. Missing values leave their cell blank rather than
+            shifting the next value into the wrong column. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
+          <span className="flex items-center gap-1 whitespace-nowrap"><Icon name="user" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> {activity.age}</span>
+          <span className="flex items-center gap-1 min-w-0"><Icon name="pin" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> <span className="truncate">{placeLabel(activity)}</span></span>
+          <span className="flex items-center gap-1 whitespace-nowrap"><Icon name="calendar" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> {activity.date || "Schedule TBC"}</span>
+          <span className="truncate">{activity.date ? activity.time : ""}</span>
+          <span className="flex items-center gap-1 whitespace-nowrap">
+            {formatDuration(activity.durationMins)
+              ? <><Icon name="clock" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> {formatDuration(activity.durationMins)}</>
+              : " "}
+          </span>
+          <span className="truncate font-black text-palette-blue">{priceLabel(activity) ?? ""}</span>
         </div>
+        {activity.rating && (
+          <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold text-[#52608b]">
+            <Icon name="star" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> {activity.rating}
+          </p>
+        )}
       </div>
     </a>
   );
