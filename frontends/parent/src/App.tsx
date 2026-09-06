@@ -4545,8 +4545,18 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
-                {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
-                {b.venue && <p className="truncate text-sm font-semibold text-[#59658d]">{b.venue}</p>}
+                {b.when && (
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-[#59658d]">
+                    <Icon name="calendar" className="h-3.5 w-3.5 shrink-0 text-baby-lilac" />
+                    {b.when}
+                  </p>
+                )}
+                {b.venue && (
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-[#59658d]">
+                    <Icon name="pin" className="h-3.5 w-3.5 shrink-0 text-baby-lilac" />
+                    <span className="truncate">{b.venue}</span>
+                  </p>
+                )}
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
