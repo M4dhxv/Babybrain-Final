@@ -503,6 +503,8 @@ export type Database = {
           followed_up_at: string | null;
           guest_name: string | null;
           guest_contact: string | null;
+          /** Groups the seat rows of one multi-child booking (00084). */
+          booking_group_id: string | null;
           wix_booking_id: string | null;
           created_at: string;
           updated_at: string;

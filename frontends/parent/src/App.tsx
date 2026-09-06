@@ -2007,6 +2007,14 @@ type BookingItem = {
   // A Wix COURSE — one enrolment covers the whole run, so there's no single
   // session to move it to; reschedule is blocked.
   isCourse: boolean;
+  // A multi-child booking (00084): every seat is its own booking row sharing
+  // one booking_group_id, collapsed here into a single card. `places` lists
+  // them in seat order — seat 1 is the chosen child, the rest are guests
+  // ("Guest child" until renamed). `allIds` drives group reschedule; cancel
+  // uses `groupId`.
+  groupId: string | null;
+  places: { bookingId: string; name: string; isGuest: boolean }[];
+  allIds: string[];
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -3043,7 +3051,10 @@ function ProfilePage() {
         id: string;
         status: string;
         child_id: string | null;
+        guest_name: string | null;
+        booking_group_id: string | null;
         package_purchase_id: string | null;
+        children: { name: string } | null;
         activity_sessions: {
           starts_at: string;
           ends_at: string | null;
@@ -3062,8 +3073,26 @@ function ProfilePage() {
       }>;
     }>("/api/customer/bookings")
       .then(({ bookings: rows }) => {
+        // A multi-child booking (00084) arrives as one row per seat sharing a
+        // booking_group_id. Collapse each group into a single card; a solo
+        // booking is its own group of one. Rows come newest-first, so the
+        // first row seen for a key fixes the card's position in the list.
+        const groups = new Map<string, typeof rows>();
+        for (const r of rows) {
+          const key = r.booking_group_id ?? r.id;
+          const list = groups.get(key);
+          if (list) list.push(r);
+          else groups.set(key, [r]);
+        }
+        const placeName = (r: (typeof rows)[number]) =>
+          r.children?.name?.trim() || r.guest_name?.trim() || "Guest child";
         setBookings(
-          rows.map((r) => {
+          [...groups.values()].map((seats) => {
+            // Seat order: the real child first, then guests in row order.
+            const ordered = [...seats].sort(
+              (a, b) => (a.child_id ? 0 : 1) - (b.child_id ? 0 : 1)
+            );
+            const r = ordered[0];
             const s = r.activity_sessions;
             const act = s?.activities;
             // A Wix COURSE booking's session row spans the whole run, so it
@@ -3097,6 +3126,13 @@ function ProfilePage() {
               paidWith: r.paid_with ?? "free",
               isEvent: act?.wix_service_type === "EVENT",
               isCourse: courseBooking,
+              groupId: r.booking_group_id ?? null,
+              places: ordered.map((x) => ({
+                bookingId: x.id,
+                name: placeName(x),
+                isGuest: !x.child_id,
+              })),
+              allIds: ordered.map((x) => x.id),
             };
           })
         );
@@ -4229,6 +4265,59 @@ function PastActivitiesTab({
   );
 }
 
+/** The seats of a multi-child booking, in a collapsible list. Seat 1 is the
+ *  chosen child (read-only); guest seats show "Guest child" until the parent
+ *  renames them here — the name is written to bookings.guest_name and shows
+ *  on the vendor's roster too (00084). */
+function PartyPlaces({ b, onRename, editable }: { b: BookingItem; onRename: (bookingId: string, name: string) => void; editable: boolean }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  return (
+    <details className="mt-2 border-t border-[#FAF7F7] pt-2">
+      <summary className="cursor-pointer text-xs font-bold text-[#59658d]">Who's coming ({b.places.length})</summary>
+      <ul className="mt-2 space-y-1.5">
+        {b.places.map((p, i) => (
+          <li key={p.bookingId} className="flex items-center gap-2 text-sm font-semibold text-[#3f4b78]">
+            <Icon name="user" className="h-3.5 w-3.5 shrink-0 text-baby-lilac" />
+            {editing === p.bookingId ? (
+              <>
+                <input
+                  autoFocus
+                  value={draft}
+                  maxLength={80}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { onRename(p.bookingId, draft); setEditing(null); }
+                    if (e.key === "Escape") setEditing(null);
+                  }}
+                  placeholder="Guest child"
+                  className="min-w-0 flex-1 rounded-[8px] border border-[#FED7E4] px-2 py-1 text-sm font-semibold"
+                />
+                <button type="button" onClick={() => { onRename(p.bookingId, draft); setEditing(null); }} className="text-xs font-bold text-baby-pink">Save</button>
+                <button type="button" onClick={() => setEditing(null)} className="text-xs font-bold text-[#6D748D]">Cancel</button>
+              </>
+            ) : (
+              <>
+                <span className={p.isGuest && p.name === "Guest child" ? "text-[#6D748D]" : ""}>{p.name}</span>
+                {editable && p.isGuest && (
+                  <button
+                    type="button"
+                    onClick={() => { setDraft(p.name === "Guest child" ? "" : p.name); setEditing(p.bookingId); }}
+                    className="text-[#FFC1D6] hover:text-baby-pink"
+                    aria-label={`Edit name for guest ${i + 1}`}
+                  >
+                    <Icon name="pen" className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void; isPlus?: boolean }) {
   // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
   // actions grey out and explain themselves in a pop-up.
@@ -4265,22 +4354,41 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         ? `The rescheduling window for this class has closed — rescheduling closes ${hoursLabel(b.resCutoffH)} before the session.`
         : null;
 
+  const party = (b: BookingItem) => b.places.length > 1;
+
   async function doCancel(b: BookingItem) {
+    const seats = b.places.length;
     // Tell them what comes back — the compensate_cancelled_booking trigger
     // (00080/00081) reinstates the credit, releases the make-up token, or
-    // issues a fresh one for a cash booking.
+    // issues a fresh one for a cash booking. A party returns one of these
+    // per seat.
+    const unit = seats > 1 ? `${seats} class credits` : "Your class credit";
     const back =
       b.paidWith === "credit"
-        ? " Your class credit will be returned to your package."
+        ? ` ${unit} will be returned to your package.`
         : b.paidWith === "token"
           ? " Your make-up token will be released so you can use it again."
           : b.paidWith === "cash"
-            ? " You'll be issued a make-up token to use on another class."
+            ? ` You'll be issued ${seats > 1 ? `${seats} make-up tokens` : "a make-up token"} to use on another class.`
             : "";
-    if (!window.confirm(`Cancel your booking for ${b.title}?${back}`)) return;
+    const q = party(b)
+      ? `Cancel all ${seats} places for ${b.title}?${back}`
+      : `Cancel your booking for ${b.title}?${back}`;
+    if (!window.confirm(q)) return;
     setBusyId(b.id);
-    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: b.id });
+    const { error } = party(b) && b.groupId
+      ? await supabase.rpc("cancel_booking_group", { p_group_id: b.groupId })
+      : await supabase.rpc("cancel_booking", { p_booking_id: b.id });
     setBusyId(null);
+    if (error) setNotice(cleanRpcErrorMessage(error));
+    else onChanged?.();
+  }
+
+  async function renameGuest(bookingId: string, name: string) {
+    const { error } = await supabase.rpc("rename_booking_guest", {
+      p_booking_id: bookingId,
+      p_name: name.trim() || null,
+    });
     if (error) setNotice(cleanRpcErrorMessage(error));
     else onChanged?.();
   }
@@ -4301,7 +4409,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   async function doReschedule(newSessionId: string) {
     if (!reschedFor) return;
     setBusyId(reschedFor.id);
-    const { error } = await supabase.rpc("reschedule_booking", { p_booking_id: reschedFor.id, p_new_session_id: newSessionId });
+    // A party moves every seat to the same new session, one call each.
+    let error: { message: string; code?: string | null } | null = null;
+    for (const id of reschedFor.allIds) {
+      const res = await supabase.rpc("reschedule_booking", { p_booking_id: id, p_new_session_id: newSessionId });
+      if (res.error) { error = res.error; break; }
+    }
     setBusyId(null);
     setReschedFor(null);
     if (error) setNotice(cleanRpcErrorMessage(error));
@@ -4353,6 +4466,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
                 {b.venue && <p className="truncate text-sm font-semibold text-[#59658d]">{b.venue}</p>}
+                {party(b) && (
+                  <p className="text-sm font-semibold text-[#59658d]">
+                    <Icon name="user" className="mr-1 inline h-3.5 w-3.5 text-baby-lilac" />
+                    {b.places.length} children
+                  </p>
+                )}
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
@@ -4372,6 +4491,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               )}
               <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
             </a>
+            {party(b) && <PartyPlaces b={b} onRename={renameGuest} editable={b.status !== "cancelled"} />}
             {upcoming(b) && (
               <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
                 <button
@@ -4396,9 +4516,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
                       : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
                   }`}
-                  title={cancelWhy ?? "Cancel this booking"}
+                  title={cancelWhy ?? (party(b) ? `Cancel all ${b.places.length} places` : "Cancel this booking")}
                 >
-                  {busyId === b.id ? "Working…" : "Cancel booking"}
+                  {busyId === b.id ? "Working…" : party(b) ? `Cancel all ${b.places.length}` : "Cancel booking"}
                 </button>
               </div>
             )}
@@ -4407,8 +4527,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 <Icon name="gift" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
                 <span>
                   {b.compensation === "token"
-                    ? "Replaced with a make-up token you can use on another class — it doesn't expire."
-                    : "1 class credit has been returned to your package."}
+                    ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another class — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
+                    : `${b.places.length > 1 ? `${b.places.length} class credits have` : "1 class credit has"} been returned to your package.`}
                 </span>
               </div>
             )}
@@ -5108,6 +5228,10 @@ function BookingPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
   const [count, setCount] = useState(1);
+  // Optional names for the extra seats of a multi-child booking (00084);
+  // index 0 = the 2nd child. Blank entries become "Guest child" on both the
+  // parent card and the vendor roster, editable later from My Bookings.
+  const [guestNames, setGuestNames] = useState<string[]>([]);
   const [childId, setChildId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -5560,33 +5684,40 @@ function BookingPage() {
       }
       setBusy(false);
     } else {
+      // book_party (00084) inserts one bookings row per seat under a shared
+      // booking_group_id, all-or-nothing on capacity. Seat 1 is the chosen
+      // child; the rest carry the optional guest names. A solo booking is
+      // just a party of one (group_id null).
+      const guests =
+        count > 1 ? Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) : [];
       const { data, error } = await supabase
-        .from("bookings")
-        .insert({
-          user_id: auth.user.id,
-          session_id: sessionId,
-          child_id: bookChildId,
+        .rpc("book_party", {
+          p_session_id: sessionId,
+          p_child_id: bookChildId,
+          p_guest_names: guests,
           // Enforced again by the `booking_policy_gate` trigger, so a booking
           // can never exist without the provider's required consents.
-          policies_accepted: acceptedPolicies,
-          ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
+          p_policies: acceptedPolicies,
+          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
           // Whatever the vendor asked for on this activity. The insert trigger
-          // rejects a blank one when the request is switched on, so this is
-          // required rather than best-effort.
-          ...(infoResponse.trim() ? { info_response: infoResponse.trim() } : {}),
+          // rejects a blank one when the request is switched on.
+          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
         })
-        .select("id, status")
         .single();
-      if (error) {
+      if (error || !data) {
         setBusy(false);
-        setErr(error.message);
+        setErr(error ? cleanRpcErrorMessage(error) : "Could not create the booking");
         return;
       }
-      // Paid class → hand off to Stripe Checkout; the webhook confirms on payment.
-      // Free class (no price) stays a direct confirmed/pending booking.
-      if (price != null && price > 0 && data?.status !== "waitlisted") {
+      const { group_id: groupId, status: partyStatus } = data as { group_id: string | null; status: string };
+      // Paid class → hand off to Stripe Checkout for the whole party; the
+      // webhook confirms every seat on payment. Free class stays direct.
+      if (price != null && price > 0 && partyStatus !== "waitlisted") {
         try {
-          const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", { booking_id: data.id });
+          const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", {
+            group_id: groupId,
+            session_id: sessionId,
+          });
           if (url) {
             window.location.href = url;
             return;
@@ -5598,7 +5729,7 @@ function BookingPage() {
         }
       }
       setBusy(false);
-      status = data?.status ?? "pending";
+      status = partyStatus ?? "pending";
     }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
@@ -5656,6 +5787,10 @@ function BookingPage() {
         p_child_id: bookChildId,
         p_policies: acceptedPolicies,
         p_quantity: count,
+        // Names for the extra seats (00084); blank -> "Guest child".
+        ...(count > 1
+          ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+          : {}),
         ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
         ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
       });
@@ -5959,6 +6094,26 @@ function BookingPage() {
                         <button type="button" onClick={() => setCount((c) => Math.min(isEvent ? ticketQuantityCap : 6, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
+                    {!isEvent && !isCourse && !sessionId?.startsWith("wix:") && count > 1 && (
+                      <section>
+                        <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
+                        <p className="mb-3 text-sm font-semibold text-[#59658d]">
+                          {bookChild?.name ?? "Your child"} takes the first place. Name the other {count - 1 === 1 ? "child" : "children"} if you like — otherwise they show as &ldquo;Guest child&rdquo; to you and the provider. You can edit these later from My Bookings.
+                        </p>
+                        <div className="space-y-2">
+                          {Array.from({ length: count - 1 }).map((_, i) => (
+                            <input
+                              key={i}
+                              value={guestNames[i] ?? ""}
+                              maxLength={80}
+                              onChange={(e) => setGuestNames((xs) => { const n = [...xs]; n[i] = e.target.value; return n; })}
+                              placeholder="Guest child"
+                              className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     {/* Step 4: how to pay for the class — a single drop-in, an
                         unused credit from a pack, or buying a pack now. Not
                         applicable to a Wix Event ticket — payment is always a

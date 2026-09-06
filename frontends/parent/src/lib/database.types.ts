@@ -593,6 +593,10 @@ export type Database = {
           id: string;
           user_id: string;
           child_id: string | null;
+          /** Manual/guest or a multi-child booking's extra seat (00026/00084). */
+          guest_name: string | null;
+          /** Groups the seat rows of one multi-child booking (00084). */
+          booking_group_id: string | null;
           session_id: string;
           provider_id: string | null;
           status: BookingStatus;
@@ -616,6 +620,8 @@ export type Database = {
           id?: string;
           user_id: string;
           child_id?: string | null;
+          guest_name?: string | null;
+          booking_group_id?: string | null;
           session_id: string;
           medical_disclosure?: string | null;
           info_response?: string | null;
@@ -629,6 +635,7 @@ export type Database = {
           payment_status?: PaymentStatus;
           amount?: number | null;
           stripe_payment_intent?: string | null;
+          guest_name?: string | null;
         };
               Relationships: [
           {
@@ -940,11 +947,28 @@ export type Database = {
           p_child_id?: string | null; p_policies?: string[];
           p_wix_booking_id?: string | null; p_quantity?: number;
           p_medical?: string | null; p_info?: string | null;
+          p_guest_names?: string[];
         };
         Returns: string;
       };
+      book_party: {
+        Args: {
+          p_session_id: string; p_child_id?: string | null;
+          p_guest_names?: string[]; p_policies?: string[];
+          p_medical?: string | null; p_info?: string | null;
+        };
+        Returns: { group_id: string; status: string }[];
+      };
       cancel_booking: {
         Args: { p_booking_id: string };
+        Returns: undefined;
+      };
+      cancel_booking_group: {
+        Args: { p_group_id: string };
+        Returns: undefined;
+      };
+      rename_booking_guest: {
+        Args: { p_booking_id: string; p_name: string | null };
         Returns: undefined;
       };
       mark_own_attendance: {

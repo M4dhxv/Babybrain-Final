@@ -163,32 +163,33 @@ export async function POST(request: Request) {
 
   if (kind === 'booking' && session.metadata?.booking_id) {
     const bookingId = session.metadata.booking_id;
+    // A multi-child booking (00084) confirms every seat in the group.
+    const groupId = session.metadata.booking_group_id ?? null;
     const paymentIntent = (session.payment_intent as string) ?? null;
+    const patch = {
+      payment_status: 'paid' as const,
+      status: 'confirmed' as const,
+      stripe_payment_intent: paymentIntent,
+    };
     // RLS is bypassed by the admin client, so scope the write to this parent.
-    await admin
-      .from('bookings')
-      .update({
-        payment_status: 'paid',
-        status: 'confirmed',
-        stripe_payment_intent: paymentIntent,
-      })
-      .eq('id', bookingId)
-      .eq('user_id', user.id);
+    const scoped = admin.from('bookings').update(patch).eq('user_id', user.id);
+    await (groupId ? scoped.eq('booking_group_id', groupId) : scoped.eq('id', bookingId));
 
     // Same ledger entry the webhook would have written. recordSale is
     // idempotent on the payment intent, so whichever path runs first wins.
-    const { data: booked } = await admin
-      .from('bookings')
-      .select('amount, provider_id')
-      .eq('id', bookingId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (booked?.provider_id) {
+    const readScoped = admin.from('bookings').select('amount, provider_id').eq('user_id', user.id);
+    const { data: booked } = await (groupId
+      ? readScoped.eq('booking_group_id', groupId)
+      : readScoped.eq('id', bookingId));
+    const rows = booked ?? [];
+    const providerId = rows[0]?.provider_id ?? null;
+    if (providerId) {
+      const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
       await recordSale(admin, {
-        providerId: booked.provider_id,
+        providerId,
         source: 'booking',
         bookingId,
-        grossCents: Math.round(Number(booked.amount ?? 0) * 100),
+        grossCents,
         paymentIntentId: paymentIntent,
       });
     }

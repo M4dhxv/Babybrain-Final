@@ -15,26 +15,35 @@ import { computeSplit, getTerms } from '@/lib/commercials';
  * Body: { booking_id: string }
  */
 export async function POST(request: Request) {
-  const { booking_id: bookingId } = (await request.json().catch(() => ({}))) as { booking_id?: string };
-  if (!bookingId) {
-    return NextResponse.json({ error: 'booking_id required' }, { status: 400 });
-  }
+  const body = (await request.json().catch(() => ({}))) as {
+    booking_id?: string;
+    group_id?: string | null;
+  };
 
   const { supabase, user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  // RLS ensures the parent can only read their own booking.
-  const { data: booking } = await supabase
+  // A booking is one or more seat rows sharing a booking_group_id (00084).
+  // Accept either the group id or a single booking id (the reconcile path
+  // still passes booking_id).
+  const seatQuery = supabase
     .from('bookings')
-    .select('id, user_id, session_id, payment_status')
-    .eq('id', bookingId)
-    .maybeSingle();
-  if (!booking || booking.user_id !== user.id) {
+    .select('id, user_id, session_id, payment_status, booking_group_id');
+  const { data: seats } = body.group_id
+    ? await seatQuery.eq('booking_group_id', body.group_id)
+    : body.booking_id
+      ? await seatQuery.eq('id', body.booking_id)
+      : { data: null };
+
+  if (!seats || seats.length === 0 || seats.some((s) => s.user_id !== user.id)) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
   }
-  if (booking.payment_status === 'paid') {
+  if (seats.every((s) => s.payment_status === 'paid')) {
     return NextResponse.json({ error: 'Already paid' }, { status: 409 });
   }
+  const booking = seats[0];
+  const groupId = booking.booking_group_id ?? null;
+  const seatCount = seats.length;
 
   const admin = createAdminClient();
 
@@ -58,10 +67,13 @@ export async function POST(request: Request) {
   if (!price || price <= 0) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }
-  const amountCents = Math.round(price * 100);
+  const unitCents = Math.round(price * 100);
+  const amountCents = unitCents * seatCount;
 
-  // Stamp the amount server-side (parents can't set money columns themselves).
-  await admin.from('bookings').update({ amount: price }).eq('id', bookingId);
+  // Stamp the per-seat amount server-side (parents can't set money columns
+  // themselves) across every seat in the party.
+  const seatIds = seats.map((s) => s.id);
+  await admin.from('bookings').update({ amount: price }).in('id', seatIds);
 
   const title = activity?.title ?? 'Class booking';
   const origin = appOrigin(request);
@@ -73,13 +85,22 @@ export async function POST(request: Request) {
       {
         price_data: {
           currency: 'sgd' as const,
-          unit_amount: amountCents,
-          product_data: { name: `${title} — class booking` },
+          unit_amount: unitCents,
+          product_data: {
+            name:
+              seatCount > 1
+                ? `${title} — class booking (${seatCount} children)`
+                : `${title} — class booking`,
+          },
         },
-        quantity: 1,
+        quantity: seatCount,
       },
     ],
-    metadata: { kind: 'booking', booking_id: bookingId },
+    metadata: {
+      kind: 'booking',
+      booking_id: booking.id,
+      ...(groupId ? { booking_group_id: groupId } : {}),
+    },
     // session_id lets the app reconcile the payment on return even if the
     // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
     success_url: `${origin}/booked?title=${encodeURIComponent(title)}&slug=${encodeURIComponent(activity?.slug ?? '')}&status=confirmed&paid=1&session_id={CHECKOUT_SESSION_ID}`,

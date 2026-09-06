@@ -512,6 +512,15 @@ export type Database = {
           updated_at: string;
           package_purchase_id: string | null;
           policies_accepted: string[];
+          // Manual/guest booking (00026) or, for a multi-child booking
+          // (00084), an extra seat — always set to a real name or the
+          // literal "Guest child" so the roster never falls back to the
+          // parent's own name for a guest seat.
+          guest_name: string | null;
+          guest_contact: string | null;
+          // Groups the seat rows of one multi-child booking (00084). Null =
+          // a solo booking. The parent app renders one card per group.
+          booking_group_id: string | null;
           wix_booking_id: string | null;
           // Which event_ticket_types row this booking is for — set only when
           // session_id points at a wix_service_type='EVENT' activity's
@@ -528,6 +537,9 @@ export type Database = {
           info_response?: string | null;
           package_purchase_id?: string | null;
           policies_accepted?: string[];
+          guest_name?: string | null;
+          guest_contact?: string | null;
+          booking_group_id?: string | null;
           wix_booking_id?: string | null;
           wix_ticket_type_id?: string | null;
           // provider_id / waitlist_position set by trigger either way.
@@ -554,6 +566,8 @@ export type Database = {
           amount?: number | null;
           stripe_payment_intent?: string | null;
           wix_booking_id?: string | null;
+          guest_name?: string | null;
+          booking_group_id?: string | null;
         };
               Relationships: [
           {
