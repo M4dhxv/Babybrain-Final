@@ -3059,6 +3059,10 @@ function ProfilePage() {
           starts_at: string;
           ends_at: string | null;
           activity_id: string;
+          // The venue can live on the session rather than the activity
+          // (migration 00074 moved location per-session), so a class run at
+          // one venue leaves activities.address null.
+          provider_locations: { name: string | null; address: string | null } | null;
           activities: {
             title: string; slug: string; image_urls: string[]; address: string | null;
             allow_cancellation: boolean; allow_rescheduling: boolean;
@@ -3116,7 +3120,7 @@ function ProfilePage() {
               image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
               startsAt: s?.starts_at ?? null,
               endsAt: s?.ends_at ?? null,
-              venue: act?.address ?? "",
+              venue: s?.provider_locations?.address || s?.provider_locations?.name || act?.address || "",
               activityId: s?.activity_id ?? null,
               childId: r.child_id ?? null,
               packagePurchaseId: r.package_purchase_id ?? null,
