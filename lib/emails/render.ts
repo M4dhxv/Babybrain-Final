@@ -26,7 +26,10 @@ export interface RenderedEmail {
 }
 
 // ---- helpers ----
-const esc = (v: unknown): string =>
+/** HTML-escape an untrusted value for interpolation into an email body. Exported
+ *  so callers assembling their own fallback HTML (e.g. the notifications webhook)
+ *  escape user-supplied fields the same way every template here already does. */
+export const esc = (v: unknown): string =>
   String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
 const str = (d: EmailData, k: string): string | undefined => {

@@ -18,10 +18,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  // Keep only well-formed UUIDs. This is a public endpoint, so a malformed id
+  // must not reach Postgres and come back as a raw "invalid input syntax for
+  // type uuid" 500 that leaks the column type — a non-UUID is simply ignored.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const ids = (searchParams.get('sessionIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((s) => UUID.test(s))
     .slice(0, 50);
   if (ids.length === 0) return NextResponse.json({ counts: {} });
 

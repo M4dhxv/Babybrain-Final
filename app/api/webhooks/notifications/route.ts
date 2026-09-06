@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { renderEmail, type EmailData } from '@/lib/emails/render';
+import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { klaviyoEnabled, metricFor, trackEvent, upsertProfile } from '@/lib/klaviyo';
 
 /**
@@ -57,12 +57,16 @@ export async function POST(request: Request) {
   // Branded template for this type, or a safe generic fallback.
   const rendered = renderEmail(notification.type, data, { appUrl, recipientName: name });
   const subject = rendered?.subject ?? notification.title;
+  // The generic fallback (used for any notification type without a branded
+  // template, e.g. provider_message) interpolates title/body/url that can be
+  // user-controlled — chat text most notably — so every field is HTML-escaped
+  // to prevent HTML/script injection into the delivered email.
   const html =
     rendered?.html ??
     `<div style="font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;color:#767676;font-size:18px">
-      <h2 style="color:#4a4a4a">${notification.title}</h2>
-      <p>${notification.body}</p>
-      <p><a href="${appUrl}${typeof data.url === 'string' ? data.url : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
+      <h2 style="color:#4a4a4a">${esc(notification.title)}</h2>
+      <p>${esc(notification.body)}</p>
+      <p><a href="${esc(appUrl)}${typeof data.url === 'string' ? esc(data.url) : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
     </div>`;
 
   const resend = new Resend(process.env.RESEND_API_KEY!);

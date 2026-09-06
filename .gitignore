@@ -23,6 +23,7 @@ email-previews/
 
 # Local demo/test credentials — never commit
 .demo-credentials.local.md
+.qa-credentials.local.md
 
 # Vendor pipeline artefacts: the raw Apify crawl and its structured output.
 # Intermediate only — the real data lands in Supabase via import-vendors.mjs.

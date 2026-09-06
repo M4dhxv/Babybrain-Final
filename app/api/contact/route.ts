@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 import { renderEmail } from '@/lib/emails/render';
+import { rateLimited, clientIp } from '@/lib/rate-limit';
 
 /**
  * Contact form on /contact — stores the message, then emails the support inbox.
@@ -24,24 +25,20 @@ const SUPPORT_INBOX = process.env.SUPPORT_EMAIL ?? 'hello@babybrain.sg';
 // Small in-memory throttle: 5 messages per IP per 10 minutes. Good enough to
 // stop casual abuse on a single instance; swap for a shared store if we scale
 // the API out horizontally.
-const WINDOW_MS = 10 * 60 * 1000;
+const WINDOW_SECONDS = 10 * 60;
 const MAX_PER_WINDOW = 5;
-const hits = new Map<string, number[]>();
-
-function rateLimited(ip: string): boolean {
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  recent.push(now);
-  hits.set(ip, recent);
-  return recent.length > MAX_PER_WINDOW;
-}
 
 export async function POST(request: Request) {
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown';
-  if (rateLimited(ip)) {
+  const ip = clientIp(request);
+
+  // Shared, serverless-safe rate limit (migration 00080). The old in-process
+  // Map reset per instance, so it barely throttled a distributed caller on
+  // Vercel. Requires the service role; if it isn't configured, fall through
+  // (the store below is unavailable too, so nothing is amplified).
+  const storeUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const storeKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const admin = storeUrl && storeKey ? createClient(storeUrl, storeKey, { auth: { persistSession: false } }) : null;
+  if (admin && (await rateLimited(admin, `contact:${ip}`, MAX_PER_WINDOW, WINDOW_SECONDS))) {
     return NextResponse.json(
       { error: "You've sent a few messages already — please email hello@babybrain.sg directly." },
       { status: 429 }
@@ -67,12 +64,9 @@ export async function POST(request: Request) {
 
   // Record it before attempting delivery, so the message survives an email
   // outage. Service role because `contact_messages` is deliberately unreadable
-  // and unwritable by anon/authenticated.
+  // and unwritable by anon/authenticated. Reuses the `admin` client built above.
   let storedId: string | null = null;
-  const storeUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const storeKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (storeUrl && storeKey) {
-    const admin = createClient(storeUrl, storeKey, { auth: { persistSession: false } });
+  if (admin) {
     const { data, error: storeErr } = await admin
       .from('contact_messages')
       .insert({
@@ -91,8 +85,7 @@ export async function POST(request: Request) {
   }
 
   const markSent = async (emailed: boolean, emailError?: string) => {
-    if (!storedId || !storeUrl || !storeKey) return;
-    const admin = createClient(storeUrl, storeKey, { auth: { persistSession: false } });
+    if (!storedId || !admin) return;
     await admin
       .from('contact_messages')
       .update({ emailed, email_error: emailError ?? null })

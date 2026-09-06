@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail } from '@/lib/emails/render';
+import { rateLimited, clientIp } from '@/lib/rate-limit';
 
 /**
  * Start a "Claim Your Business" attempt: generate one-time codes and send them
@@ -40,6 +41,26 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
+
+  // This route is unauthenticated and sends a BabyBrain-branded verification
+  // email to the address in the request on every call, so it must be throttled
+  // (migration 00080). Without it, it can be used to spam branded email to
+  // arbitrary addresses and pile up provider_claims rows. Limit per IP, per
+  // target email, and per provider — all generous enough for a real vendor who
+  // mistypes or doesn't receive the first code.
+  const ip = clientIp(request);
+  const target = email.trim().toLowerCase();
+  const throttled =
+    (await rateLimited(admin, `claim:ip:${ip}`, 5, 600)) ||
+    (await rateLimited(admin, `claim:email:${target}`, 3, 600)) ||
+    (await rateLimited(admin, `claim:provider:${providerId}`, 3, 600));
+  if (throttled) {
+    return NextResponse.json(
+      { error: 'Too many verification attempts — please wait a few minutes, or email hello@babybrain.sg.' },
+      { status: 429 }
+    );
+  }
+
   const { data: provider } = await admin
     .from('providers')
     .select('id, business_name, is_claimed')
