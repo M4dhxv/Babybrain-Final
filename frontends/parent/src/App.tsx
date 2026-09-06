@@ -4294,7 +4294,7 @@ function PartyPlaces({
   const initial = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
 
   return (
-    <div className="mt-1 pl-20">
+    <div className="mt-2 pl-0 sm:mt-1 sm:pl-20">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -4318,7 +4318,7 @@ function PartyPlaces({
           {b.places.map((p, i) => {
             const unnamed = p.isGuest && p.name === "Guest child";
             return (
-              <li key={p.bookingId} className="flex items-center gap-2.5">
+              <li key={p.bookingId} className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <span
                   className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black ${
                     p.isGuest ? "bg-[#F1EEF6] text-[#8A7FB0]" : "bg-[#FEEBF2] text-baby-cta"
@@ -4545,8 +4545,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             {/* A removed activity's own detail page is gone (unpublished,
                 slug renamed by unlinkWixActivities) — send those clicks to
                 the activities list instead of a dead link. */}
-            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-center gap-4">
-              <img src={b.image} alt="" className="h-16 w-16 flex-shrink-0 rounded-[10px] object-cover" />
+            <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-start gap-3 sm:items-center sm:gap-4">
+              <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover sm:h-16 sm:w-16" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && (
@@ -4561,6 +4561,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     <span className="truncate">{b.venue}</span>
                   </p>
                 )}
+                {/* On a phone the status chip sits under the title so the
+                    header row isn't three things fighting for ~340px. */}
+                <span className={`mt-1.5 inline-flex rounded-full px-3 py-1 text-xs font-bold capitalize sm:hidden ${bookingStatusStyle(b.status)}`}>{b.status}</span>
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
@@ -4578,7 +4581,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
                 </button>
               )}
-              <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+              <span className={`hidden rounded-full px-3 py-1 text-xs font-bold capitalize sm:inline-flex ${bookingStatusStyle(b.status)}`}>{b.status}</span>
             </a>
             {party(b) && (
               <PartyPlaces
@@ -4590,12 +4593,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
               />
             )}
             {upcoming(b) && (
-              <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
+              <div className="mt-2 flex flex-col gap-2 border-t border-[#FAF7F7] pt-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   disabled={busyId === b.id}
                   onClick={() => (reschedWhy ? setNotice(reschedWhy) : openReschedule(b))}
-                  className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
+                  className={`w-full rounded-[9px] px-3 py-2.5 text-sm font-bold sm:w-auto sm:py-1.5 sm:text-xs ${
                     reschedWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
                       : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
@@ -4608,7 +4611,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   type="button"
                   disabled={busyId === b.id}
                   onClick={() => (cancelWhy ? setNotice(cancelWhy) : doCancel(b))}
-                  className={`rounded-[9px] px-3 py-1.5 text-xs font-bold ${
+                  className={`w-full rounded-[9px] px-3 py-2.5 text-sm font-bold sm:w-auto sm:py-1.5 sm:text-xs ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
                       : "border border-[#FED7E4] text-[#FFC1D6] hover:bg-[#FFF5F8]"
