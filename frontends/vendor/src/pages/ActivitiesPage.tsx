@@ -1355,8 +1355,7 @@ export default function ActivitiesPage() {
                   <div className="text-sm font-medium text-gray-900">Cancellations not available</div>
                   <div className="text-xs text-gray-500">
                     {wixKind === 'EVENT' ? 'Ticketed Wix events' : 'Wix courses'} can&rsquo;t be cancelled once
-                    booked — parents see a &ldquo;non-cancellable once booked&rdquo; notice at checkout. Manage
-                    these in Wix.
+                    booked — parents see a &ldquo;non-cancellable once booked&rdquo; notice at checkout.
                   </div>
                 </div>
               ) : (
