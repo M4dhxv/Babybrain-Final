@@ -67,7 +67,7 @@ type RosterRow = {
   info_response: string | null;
   // How the booking was settled (migration 00085): a package credit, a
   // redeemed make-up token, a Stripe payment, a refund, or nothing.
-  paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'none' | null;
+  paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
 };
 
 // Roster badge + detail-card wording for each settlement type. Falls back to
@@ -77,10 +77,11 @@ const PAY_BADGE: Record<string, { label: string; cls: string }> = {
   credit: { label: 'Credit', cls: 'bg-indigo-200 text-indigo-800' },
   token: { label: 'Make-up', cls: 'bg-amber-200 text-amber-900' },
   refunded: { label: 'Refunded', cls: 'bg-gray-200 text-gray-700' },
+  free: { label: 'Free', cls: 'bg-gray-100 text-gray-500' },
   none: { label: 'Unpaid', cls: 'bg-gray-100 text-gray-600' },
 };
 const PAY_DETAIL: Record<string, string> = {
-  cash: 'Paid', credit: 'Package credit', token: 'Make-up token', refunded: 'Refunded', none: 'None',
+  cash: 'Paid', credit: 'Package credit', token: 'Make-up token', refunded: 'Refunded', free: 'Free', none: 'None',
 };
 const payKind = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) =>
   r.paid_via ?? (r.payment_status === 'paid' ? 'cash' : r.payment_status === 'refunded' ? 'refunded' : 'none');

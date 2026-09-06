@@ -869,8 +869,8 @@ export type Database = {
           info_response: string | null;
           /** How many of the provider's waivers this parent ticked. */
           policies_accepted: number;
-          /** How the booking was settled (00085). */
-          paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'none' | null;
+          /** How the booking was settled (00085/00086). */
+          paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
         }[];
       };
       provider_trial_conversion: {
