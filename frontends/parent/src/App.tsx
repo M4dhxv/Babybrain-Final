@@ -1514,6 +1514,26 @@ function ActivityDetailPage() {
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
 
+  /* The browser resolves the hash before Vite has mounted, and reviews arrive
+     asynchronously after that, so #reviews (the post-activity check-in email's
+     "leave a review" link — migration 00083) would land at the top of the page.
+     Poll briefly for the target, then give up quietly. */
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        clearInterval(t);
+      } else if (++tries > 40) {
+        clearInterval(t); // ~4s: the section isn't on this page after all
+      }
+    }, 100);
+    return () => clearInterval(t);
+  }, []);
+
   /* The next session can carry its own venue (migration 00074) — resolve it
      so the sidebar's Location line reflects that session, not just the
      activity's default. Lazy: most classes run at one place. */
@@ -1756,7 +1776,9 @@ function ActivityDetailPage() {
             )}
           </div>
 
-          <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+          {/* `id` so the post-activity check-in email's "leave a review" link
+              (/activity?slug=…#reviews, migration 00083) lands on the form. */}
+          <section id="reviews" className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
             <ReviewForm activityId={activity.id} />
             {reviews.map((r) => (
@@ -5357,6 +5379,12 @@ function BookingPage() {
   const { activity, sessions, courseSpan, loading } = useActivityDetail(getParam("slug"));
   const { session: auth, children: kids } = useAuth();
   const redeemToken = getParam("token");
+  /* "A spot has opened up" emails deep-link here with the freed slot
+     (migration 00083): /book?slug=…&session=<id>. Until that slot has been
+     resolved the date/time defaults below hold off, so the parent lands on the
+     session the email was about rather than whichever one happens to be first. */
+  const wantSessionId = getParam("session");
+  const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
   const [count, setCount] = useState(1);
@@ -5542,8 +5570,22 @@ function BookingPage() {
   const courseSpots = isCourse ? sessions[0]?.capacity ?? null : null;
 
   useEffect(() => {
+    if (!preselectPending || loading) return;
+    // The slot may be gone by the time the parent opens the email — someone
+    // else booked it, or the vendor pulled the session. Fall through to the
+    // normal default rather than leaving the picker empty.
+    const want = sessions.find((x) => x.id === wantSessionId);
+    if (want) {
+      setDateKey(sgDay(want.starts_at));
+      setSessionId(want.id);
+    }
+    setPreselectPending(false);
+  }, [preselectPending, loading, sessions, wantSessionId]);
+
+  useEffect(() => {
+    if (preselectPending) return;
     if (dates.length && !dateKey) setDateKey(dates[0]);
-  }, [dates, dateKey]);
+  }, [dates, dateKey, preselectPending]);
 
   // Events skip the date/time picker entirely — there's exactly one session
   // (materialized by lib/wix/events-sync.ts), so it's auto-selected the

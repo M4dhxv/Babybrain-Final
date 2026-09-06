@@ -27,7 +27,10 @@ export const KLAVIYO_METRICS: Record<string, string> = {
   booking_confirmed: 'Booking Confirmed',
   booking_cancelled: 'Booking Cancelled',
   booking_reminder: 'Booking Reminder',
-  waitlist_promoted: 'Waitlist Spot Opened',
+  // Two distinct outcomes since migration 00083, and they want different
+  // flows: one still has to go and book, the other is already confirmed.
+  waitlist_promoted: 'Waitlist Spot Confirmed',
+  waitlist_confirmed: 'Waitlist Spot Confirmed',
   waitlist_available: 'Waitlist Spot Opened',
   class_followup: 'Class Attended',
   post_activity_checkin: 'Class Attended',

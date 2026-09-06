@@ -199,6 +199,16 @@ const T: Record<string, Template> = {
       p(`We hope you secure the spot and enjoy the activity with your family! If it is no longer available, remember you can ${link(ctx, '/explore', 'explore other activities here')}.`) +
       sign),
 
+  waitlist_confirmed: (d, ctx) =>
+    wrap(ctx, 'You’re off the waitlist — you’re in! 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('Good news — a spot opened up on the following activity and, as it was already paid for, your place is now confirmed:') +
+      details(d) +
+      p(`You can see it any time in ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'your bookings')}.`) +
+      p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
+      p('We hope your family enjoys it!') +
+      sign),
+
   post_activity_checkin: (d, ctx) =>
     wrap(ctx, 'How was it? 👶🧠',
       p(greet(ctx.recipientName)) +
@@ -406,7 +416,13 @@ const T: Record<string, Template> = {
 const ALIASES: Record<string, string> = {
   welcome: 'parent_welcome_free',
   class_followup: 'post_activity_checkin',
-  waitlist_promoted: 'waitlist_available',
+  // The DB now distinguishes the two waitlist outcomes (migration 00083): a
+  // seat that is free to book (`waitlist_available`, its own type) versus one
+  // the parent has already paid for and is simply now confirmed on
+  // (`waitlist_promoted`). Before 00083 everything came through as
+  // `waitlist_promoted` and got the "book now" copy even though the booking
+  // had already been auto-confirmed, which read as a mistake to the parent.
+  waitlist_promoted: 'waitlist_confirmed',
   support_message: 'message_response',
 };
 

@@ -153,6 +153,9 @@ export default function BookingsPage() {
   }, [requestedTab]);
   const selectTab = (t: string) => {
     setActiveTab(t);
+    // The left-hand list is a different set of people per tab, so a held
+    // selection index would point at the wrong family after switching.
+    setSelected(0);
     setSearchParams(t === 'Bookings' ? {} : { tab: t }, { replace: true });
   };
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
@@ -334,7 +337,12 @@ export default function BookingsPage() {
   const currentSession = sessions.find((s) => s.id === sessionId);
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
-  const visibleBookings = booked.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
+  /* QA 04/09: "Under bookings, when there is a waitlist and you click on that
+     tab, all the bookings are still showing on the left — should just show the
+     waitlist." The left-hand list now follows the tab. Attendance is still
+     taken against the confirmed roster, so it keeps the booked list. */
+  const listSource = activeTab === 'Waitlist' ? waitlisted : booked;
+  const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
 
@@ -592,7 +600,7 @@ export default function BookingsPage() {
           <div className="w-full flex-shrink-0 lg:w-80">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bookings..."
+              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" />
             </div>
             <div className="space-y-2">
@@ -621,7 +629,11 @@ export default function BookingsPage() {
                   </span>
                 </div>
               ))}
-              {!loading && visibleBookings.length === 0 && <div className="text-sm text-gray-400 px-1">No bookings for this session.</div>}
+              {!loading && visibleBookings.length === 0 && (
+                <div className="text-sm text-gray-400 px-1">
+                  {activeTab === 'Waitlist' ? 'No one on the waitlist for this session.' : 'No bookings for this session.'}
+                </div>
+              )}
             </div>
             <div className="mt-4 text-sm text-gray-500">{booked.length} bookings</div>
           </div>
