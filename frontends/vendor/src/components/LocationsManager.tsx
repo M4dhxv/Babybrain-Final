@@ -5,6 +5,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
+import { geocodePostal } from '@/lib/geocode';
 import type { ProviderLocation } from '@/lib/database.types';
 
 /**
@@ -15,23 +16,6 @@ import type { ProviderLocation } from '@/lib/database.types';
  * 'activities' tab." Lifted out of SettingsPage so Activities can own it,
  * rather than bouncing the vendor to Settings and back.
  */
-/** Resolve a Singapore postal code to coordinates via the same authenticated
- *  /api/geocode (OneMap) the onboarding + admin flows use. Best-effort: a
- *  non-6-digit code or a lookup failure returns null and the venue is saved
- *  without a pin, exactly as before — geocoding must never block adding a venue. */
-async function geocodePostal(postalCode: string): Promise<{ latitude: number; longitude: number } | null> {
-  const code = postalCode.trim();
-  if (!/^\d{6}$/.test(code)) return null;
-  try {
-    const r = await apiPost<{ latitude: number; longitude: number }>('/api/geocode', { postal_code: code });
-    return Number.isFinite(r.latitude) && Number.isFinite(r.longitude)
-      ? { latitude: r.latitude, longitude: r.longitude }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function LocationsManager({
   provider, canManage, openOnMount, onOpened, onChanged,
 }: {

@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
+import { geocodePostal } from '@/lib/geocode';
 import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderPolicy, VendorCategory } from '@/lib/database.types';
 import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
@@ -217,6 +218,11 @@ export default function SettingsPage() {
     setSaving(true);
     setSaved(false);
     setProfileError(null);
+    // Only worth a lookup when the postal code actually moved.
+    const coords =
+      form.postal_code && form.postal_code !== (provider.postal_code ?? '')
+        ? await geocodePostal(form.postal_code)
+        : null;
     const { error } = await supabase.from('providers').update({
       business_name: form.business_name,
       vendor_category: form.vendor_category || null,
@@ -231,6 +237,12 @@ export default function SettingsPage() {
       website: form.website || null,
       address: form.address || null,
       postal_code: form.postal_code || null,
+      /* Re-geocode from the postal code so a moved business moves its map pin
+         and area with it. Without this the address text changed but the
+         coordinates (and so the Explore pin, the region and the distance sort)
+         stayed at the old place. Best-effort: a failed lookup leaves the
+         existing coordinates rather than blocking the save. */
+      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
       uen: form.uen || null,
     }).eq('id', provider.id);
     setSaving(false);
