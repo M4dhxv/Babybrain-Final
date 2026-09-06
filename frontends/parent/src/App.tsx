@@ -4247,6 +4247,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   const cancelBlockReason = (b: BookingItem) =>
     b.isEvent
       ? "This is a ticketed event — it can't be cancelled once booked. Contact the provider if you need help."
+      : b.isCourse
+      ? "This is a course — your enrolment covers the whole run, so it can't be cancelled online. Contact the provider if you need help."
       : !b.allowCancel
       ? "The provider does not allow cancellations for this class. Contact them directly if you need help."
       : cutoffPassed(b, b.cancelCutoffH)
@@ -5146,6 +5148,12 @@ function BookingPage() {
   // These give the run's span for the added "Runs …" line and the booking
   // confirmation / My Bookings date range.
   const isCourse = activity?.wix_service_type === "COURSE";
+  // Non-cancellable once booked: always for Wix ticketed events and courses
+  // (reserved inside Wix), and for any other activity where the provider has
+  // turned the cancellation toggle off on the edit-activity card. Drives the
+  // disclaimer on the last booking step below; the matching disabled cancel
+  // button lives in BookingList (allowCancel / isEvent / isCourse).
+  const nonCancellable = isEvent || isCourse || activity?.allow_cancellation === false;
   type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
@@ -6131,9 +6139,9 @@ function BookingPage() {
           )}
           {/* One grid item so the section's gap-5 sits above this block, not
               between the two lines — they hug each other instead. */}
-          {(isEvent || (total != null && total > 0 && !redeemToken)) && (
+          {(nonCancellable || (total != null && total > 0 && !redeemToken)) && (
             <div className="space-y-0.5 text-center md:col-span-2">
-              {isEvent && (
+              {nonCancellable && (
                 <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>
               )}
               {total != null && total > 0 && !redeemToken && (

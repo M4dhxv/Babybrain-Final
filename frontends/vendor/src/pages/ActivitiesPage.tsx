@@ -168,6 +168,12 @@ export default function ActivitiesPage() {
   const wixKind = editingActivity?.wix_service_type ?? null;
   const isWixLinked = !!(editingActivity?.wix_service_id || editingActivity?.wix_event_id);
   const isWixEvent = wixKind === 'EVENT';
+  // A Wix ticketed event or course is enrolled/reserved inside Wix's own
+  // ticketing, not through BabyBrain — there is nothing here to cancel, so
+  // the "Allow cancellations" toggle is hidden for these and the activity is
+  // always flagged non-cancellable to parents. Native activities and Wix
+  // Class / Appointment services keep the toggle.
+  const cancellationLocked = wixKind === 'EVENT' || wixKind === 'COURSE';
   // An appointment is 1:1 by definition — a frozen "1" is just noise.
   const hideCapacity = wixKind === 'APPOINTMENT';
   // Price is the one Wix-owned field a vendor may claim, and only on a Wix
@@ -732,7 +738,10 @@ export default function ActivitiesPage() {
           }),
       image_urls: form.image_url ? [form.image_url] : [],
       requires_medical_disclosure: form.requires_medical_disclosure,
-      allow_cancellation: form.allow_cancellation,
+      // Wix Events / Courses are always non-cancellable — force the flag off
+      // regardless of any stale form value so the parent app and the
+      // cancel_booking RPC both treat them as such.
+      allow_cancellation: cancellationLocked ? false : form.allow_cancellation,
       allow_rescheduling: form.allow_rescheduling,
       cancellation_cutoff_hours: Math.max(0, Number(form.cancellation_cutoff_hours) || 24),
       reschedule_cutoff_hours: Math.max(0, Number(form.reschedule_cutoff_hours) || 24),
@@ -1338,18 +1347,41 @@ export default function ActivitiesPage() {
             {/* 2.2: cancellation & rescheduling policy for this class */}
             <div className="rounded-xl border border-gray-200 p-4 space-y-4">
               <div className="text-sm font-semibold text-gray-900">Booking policies</div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
-                  <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
+              {cancellationLocked ? (
+                /* Wix Events and Courses can't be cancelled through BabyBrain
+                   — no toggle, and parents always see the non-cancellable
+                   notice on the last booking step. */
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <div className="text-sm font-medium text-gray-900">Cancellations not available</div>
+                  <div className="text-xs text-gray-500">
+                    {wixKind === 'EVENT' ? 'Ticketed Wix events' : 'Wix courses'} can&rsquo;t be cancelled once
+                    booked — parents see a &ldquo;non-cancellable once booked&rdquo; notice at checkout. Manage
+                    these in Wix.
+                  </div>
                 </div>
-                <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#C90044]" />
-              </div>
-              {form.allow_cancellation && (
-                <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
-                  <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
-                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
+                      <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
+                    </div>
+                    <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#C90044]" />
+                  </div>
+                  {form.allow_cancellation ? (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
+                      <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
+                    </div>
+                  ) : (
+                    /* Toggle off — mirror on the parent side is the checkout
+                       disclaimer + a disabled cancel button after booking. */
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                      Parents will see a &ldquo;non-cancellable once booked&rdquo; notice on the last booking step and
+                      can&rsquo;t cancel the booking themselves afterwards.
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex items-center justify-between">
                 <div>
