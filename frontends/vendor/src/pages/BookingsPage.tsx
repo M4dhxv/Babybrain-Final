@@ -65,7 +65,25 @@ type RosterRow = {
   parent_name: string | null; medical_disclosure: string | null; policies_accepted: number;
   // The parent's answer to whatever this activity asks for (migration 00074).
   info_response: string | null;
+  // How the booking was settled (migration 00085): a package credit, a
+  // redeemed make-up token, a Stripe payment, a refund, or nothing.
+  paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'none' | null;
 };
+
+// Roster badge + detail-card wording for each settlement type. Falls back to
+// payment_status when paid_via isn't present yet (RPC not deployed).
+const PAY_BADGE: Record<string, { label: string; cls: string }> = {
+  cash: { label: 'Paid', cls: 'bg-green-300 text-green-800' },
+  credit: { label: 'Credit', cls: 'bg-indigo-200 text-indigo-800' },
+  token: { label: 'Make-up', cls: 'bg-amber-200 text-amber-900' },
+  refunded: { label: 'Refunded', cls: 'bg-gray-200 text-gray-700' },
+  none: { label: 'Unpaid', cls: 'bg-gray-100 text-gray-600' },
+};
+const PAY_DETAIL: Record<string, string> = {
+  cash: 'Paid', credit: 'Package credit', token: 'Make-up token', refunded: 'Refunded', none: 'None',
+};
+const payKind = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) =>
+  r.paid_via ?? (r.payment_status === 'paid' ? 'cash' : r.payment_status === 'refunded' ? 'refunded' : 'none');
 
 export default function BookingsPage() {
   const { provider, role, session, subscription } = useAuth();
@@ -589,8 +607,8 @@ export default function BookingsPage() {
                       {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-300 text-orange-800 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
-                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', b.payment_status === 'paid' ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-600')}>
-                    {b.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', PAY_BADGE[payKind(b)].cls)}>
+                    {PAY_BADGE[payKind(b)].label}
                   </span>
                 </div>
               ))}
@@ -614,7 +632,7 @@ export default function BookingsPage() {
                   <div className="space-y-4">
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Payment</div>
-                      <div className="text-sm text-gray-700 capitalize">{sel.payment_status}</div>
+                      <div className="text-sm text-gray-700">{PAY_DETAIL[payKind(sel)]}</div>
                     </div>
                     {sel.parent_name && (
                       <div>
