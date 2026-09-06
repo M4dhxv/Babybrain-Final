@@ -1,12 +1,12 @@
--- 00086_activity_region_borrows_provider_coords.sql
+-- 00096_activity_region_borrows_provider_coords.sql
 --
--- Follow-on from 00085. Correcting sg_region() moved Play & Bloom's venue and
+-- Follow-on from 00095. Correcting sg_region() moved Play & Bloom's venue and
 -- provider row to 'central', but its twelve activities stayed on 'sentosa'.
 --
 -- Each of those activities carries its own postal_code (099253) and no
 -- coordinates. set_activity_region() resolves the activity's own address
 -- first, so sg_region('099253', null, null) had nothing to disambiguate with
--- and fell back to the postal prefix — the exact ambiguity 00085 fixed — and
+-- and fell back to the postal prefix — the exact ambiguity 00095 fixed — and
 -- the coalesce to the provider's (now correct) region never ran, because the
 -- activity's own answer was not null, just wrong.
 --

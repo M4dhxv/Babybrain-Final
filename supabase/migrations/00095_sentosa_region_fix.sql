@@ -1,4 +1,4 @@
--- 00085_sentosa_region_fix.sql
+-- 00095_sentosa_region_fix.sql
 --
 -- QA 24/09 [sheet 24/08]: "Play & bloom location is incorrect — should be
 -- Central, not Sentosa."
