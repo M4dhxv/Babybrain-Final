@@ -84,6 +84,9 @@ export default function ClaimBusinessPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  /* QA 04/09: marketing consent at account creation, vendor side. Optional and
+     unticked by default — a permission, not a condition of claiming. */
+  const [marketingConsent, setMarketingConsent] = useState(false);
   /* The code's email already has a BabyBrain login. Rather than bounce to
      /login (where nothing knew to finish the claim), the owner signs in right
      here and we re-run verification with the session — the route then hands
@@ -169,7 +172,7 @@ export default function ClaimBusinessPage() {
         claim_id: claimId,
         email_code: emailCode,
         phone_code: phoneCode || undefined,
-        ...(withPassword ? { password: withPassword } : {}),
+        ...(withPassword ? { password: withPassword, marketing_consent: marketingConsent } : {}),
       });
       setEmailVerified(res.verified);
 
@@ -533,6 +536,20 @@ export default function ClaimBusinessPage() {
                       placeholder="Type it again"
                       className="mt-2 rounded-xl border-gray-200"
                     />
+                    <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={marketingConsent}
+                        onChange={(e) => setMarketingConsent(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 accent-[#C90044]"
+                      />
+                      <span>
+                        I agree and consent to receive marketing communications from BabyBrain to
+                        update me on offers, promotions, discounts, events, news, etc. relating to
+                        BabyBrain's products and services via any means of communication such as via
+                        email.
+                      </span>
+                    </label>
                     <Button
                       onClick={submitPassword}
                       disabled={busy || password.length < 8 || password !== password2}

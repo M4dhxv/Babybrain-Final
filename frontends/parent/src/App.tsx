@@ -440,6 +440,10 @@ function OnboardingPage() {
   const [budgets, setBudgets] = useState<string[]>([]);
   const [kids, setKids] = useState<ChildDraft[]>([newChildDraft()]);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  /* QA 04/09: marketing consent at account creation. Optional and unticked by
+     default — it is a permission, not a condition of signing up, so it never
+     blocks the form (unlike the Terms checkbox above). */
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
@@ -504,6 +508,7 @@ function OnboardingPage() {
       phone: phone || null,
       postal_code: postcode.trim(),
       terms_accepted: acceptedTerms,
+      marketing_consent: marketingConsent,
       preferences: {
         days,
         times,
@@ -533,6 +538,9 @@ function OnboardingPage() {
       phone: phone || null,
       postal_code: postcode.trim(),
       terms_accepted_at: new Date().toISOString(),
+      // Only written when actually ticked — a null here means no consent, and
+      // that is the state every account starts in.
+      ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
     }).eq("id", uid);
     await supabase.from("user_preferences").update({
       preferred_days: days as never,
@@ -681,6 +689,20 @@ function OnboardingPage() {
             <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms &amp; Conditions</a>{" "}
             and{" "}
             <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>.
+          </span>
+        </label>
+
+        <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
+          <input
+            type="checkbox"
+            checked={marketingConsent}
+            onChange={(e) => setMarketingConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-baby-pink"
+          />
+          <span>
+            I agree and consent to receive marketing communications from BabyBrain to update me on
+            offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
+            services via any means of communication such as via email.
           </span>
         </label>
 

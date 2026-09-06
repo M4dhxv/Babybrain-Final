@@ -39,6 +39,8 @@ export interface SignupOnboarding {
   phone: string | null;
   postal_code: string;
   terms_accepted: boolean;
+  /** Optional marketing permission from the sign-up checkbox (00094). */
+  marketing_consent?: boolean;
   preferences: {
     days: string[];
     times: string[];

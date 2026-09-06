@@ -591,6 +591,7 @@ export type Database = {
           wix_site_id: string | null;
           vendor_terms_accepted_at: string | null;
           booking_messaging_terms_accepted_at: string | null;
+          marketing_consent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -618,6 +619,7 @@ export type Database = {
           wix_site_id?: string | null;
           vendor_terms_accepted_at?: string | null;
           booking_messaging_terms_accepted_at?: string | null;
+          marketing_consent_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;

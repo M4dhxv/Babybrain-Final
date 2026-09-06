@@ -41,11 +41,13 @@ export async function POST(request: Request) {
     email_code: emailCode,
     phone_code: phoneCode,
     password,
+    marketing_consent: marketingConsent,
   } = (await request.json().catch(() => ({}))) as {
     claim_id?: string;
     email_code?: string;
     phone_code?: string;
     password?: string;
+    marketing_consent?: boolean;
   };
 
   if (!claimId || !emailCode) {
@@ -171,6 +173,12 @@ export async function POST(request: Request) {
       owner_id: user.id,
       verification_status: 'verified',
       status: 'active',
+      /* QA 04/09: the marketing-consent checkbox on the claim form (00094).
+         Only written when actually ticked — an untouched box must leave the
+         column null, which is what "no consent" means. Set here rather than
+         from the browser because `providers` is not writable by a vendor until
+         the claim above has made them its owner. */
+      ...(marketingConsent === true ? { marketing_consent_at: now } : {}),
     })
     .eq('id', claim.provider_id);
 
