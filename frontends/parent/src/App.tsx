@@ -5008,6 +5008,19 @@ function ContactPage() {
 }
 
 function TermsPage() {
+  /* Reached either as /terms#privacy or as the bare /privacy route (which
+     Stripe's billing portal links to). Both should land on the privacy
+     section, not the top of the Terms. */
+  useEffect(() => {
+    const wantsPrivacy =
+      window.location.hash === "#privacy" || window.location.pathname.replace(/\/$/, "") === "/privacy";
+    if (!wantsPrivacy) return;
+    const t = setTimeout(() => {
+      document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => clearTimeout(t);
+  }, []);
+
   const sections: { id?: string; title: string; body: React.ReactNode }[] = [
     {
       title: "1. Acceptance of Terms",
@@ -6940,6 +6953,11 @@ function App() {
   if (pathname === "/edit-profile") return <EditProfilePage />;
   if (pathname === "/contact") return <ContactPage />;
   if (pathname === "/terms") return <TermsPage />;
+  /* QA 01/09: Stripe's billing portal links out to a privacy policy, and a
+     bare /privacy is the URL everyone expects (a `#privacy` fragment is also
+     easy for an external service to drop). It has never been a route, so it
+     fell through to the signed-in home. Same page, opened at that section. */
+  if (pathname === "/privacy") return <TermsPage />;
   // Home: signed-in parents land on their personalised dashboard (matched
   // classes for their child), not the marketing page. While auth is still
   // resolving, a browser that has a stored session waits on a loader rather

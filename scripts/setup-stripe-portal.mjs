@@ -94,7 +94,10 @@ try {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://babybrain-final.vercel.app').replace(/\/+$/, '');
   const businessProfile = {
     headline: 'BabyBrain — manage your plan',
-    privacy_policy_url: `${appUrl}/terms#privacy`,
+    // A bare path, not a `#privacy` fragment: Stripe renders these as plain
+    // links and a fragment is easy for an intermediary to drop. /privacy is a
+    // real route in the parent SPA and opens the Terms at that section.
+    privacy_policy_url: `${appUrl}/privacy`,
     terms_of_service_url: `${appUrl}/terms`,
   };
 
