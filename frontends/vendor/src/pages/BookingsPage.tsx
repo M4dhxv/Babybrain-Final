@@ -32,6 +32,20 @@ const sgDateTime = (iso: string) =>
 // stores and expects, so a session's calendar day (not just its UTC one,
 // which can differ around midnight SGT) can be compared against the filter.
 const sgDateKey = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+// Start of a Singapore-time calendar day as a UTC ISO string. SGT is a fixed
+// UTC+8 (no DST), so 00:00 SGT is 16:00 UTC the day before. The default
+// session picker starts here — "today" stays in the list all day, even after
+// a slot's time has passed, so the vendor can still work its roster.
+const sgStartOfDayIso = (key: string) => new Date(`${key}T00:00:00+08:00`).toISOString();
+const sgTodayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+// `key` shifted by `days` (negative = earlier), still a SGT YYYY-MM-DD.
+const sgKeyShift = (key: string, days: number) => {
+  const d = new Date(`${key}T00:00:00+08:00`);
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+};
+// How far back the date filter can reach.
+const PAST_FILTER_DAYS = 30;
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const ageLabel = (m: number | null) => (m == null ? '' : m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
@@ -123,9 +137,18 @@ export default function BookingsPage() {
   // value" state.
   const [dateFilter, setDateFilter] = useState('');
   const dateFilterRef = useRef<HTMLInputElement>(null);
+  // Recomputed on mount (and if `sessions` changes) — fine for a page a
+  // vendor doesn't leave open across midnight.
+  const startTodayIso = useMemo(() => sgStartOfDayIso(sgTodayKey()), []);
+  // No date filter → today (incl. slots already past) plus everything ahead.
+  // A date filter → exactly that calendar day, which can be up to
+  // PAST_FILTER_DAYS in the past.
   const filteredSessions = useMemo(
-    () => (dateFilter ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter) : sessions),
-    [sessions, dateFilter]
+    () =>
+      dateFilter
+        ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter)
+        : sessions.filter((s) => s.starts_at >= startTodayIso),
+    [sessions, dateFilter, startTodayIso]
   );
   // Switching (or clearing) the date filter can leave the current selection
   // out of view — jump to the first session that's still in it rather than
@@ -205,19 +228,37 @@ export default function BookingsPage() {
       // even though it's genuinely upcoming. One query per activity,
       // each capped, guarantees every activity gets a fair share.
       const perActivityCap = 20;
+      // Two windows per activity so a past date is always reachable from the
+      // filter without a high-frequency Wix activity's history crowding out
+      // its future slots: today→ahead (ascending), and the last
+      // PAST_FILTER_DAYS before today (descending, so the most recent past
+      // sessions are the ones that survive the cap).
+      const dayStartIso = sgStartOfDayIso(sgTodayKey());
+      const pastStartIso = sgStartOfDayIso(sgKeyShift(sgTodayKey(), -PAST_FILTER_DAYS));
+      const pastCap = 40;
       const results = await Promise.all(
-        ids.map((id) =>
+        ids.flatMap((id) => [
           supabase
             .from('activity_sessions')
             .select('id, starts_at, capacity, activity_id, teacher_name, studio')
             .eq('activity_id', id)
-            .gte('starts_at', new Date().toISOString())
+            .gte('starts_at', dayStartIso)
             .order('starts_at', { ascending: true })
-            .limit(perActivityCap)
-        )
+            .limit(perActivityCap),
+          supabase
+            .from('activity_sessions')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio')
+            .eq('activity_id', id)
+            .gte('starts_at', pastStartIso)
+            .lt('starts_at', dayStartIso)
+            .order('starts_at', { ascending: false })
+            .limit(pastCap),
+        ])
       );
+      const seen = new Set<string>();
       const sess = results
         .flatMap((r) => r.data ?? [])
+        .filter((s) => !seen.has(s.id) && seen.add(s.id))
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
       const opts = sess.map((s) => ({
         id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity',
@@ -230,7 +271,11 @@ export default function BookingsPage() {
       // session happened to load first.
       const requested = searchParams.get('session');
       const preselect = requested && opts.some((o) => o.id === requested) ? requested : '';
-      setSessionId((cur) => cur || preselect || opts[0]?.id || '');
+      // Default to the first session from today onward (past ones are only
+      // there for the date filter); fall back to the most recent past one if
+      // there's nothing upcoming.
+      const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso);
+      setSessionId((cur) => cur || preselect || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
       if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
       setLoading(false);
     })();
@@ -417,7 +462,9 @@ export default function BookingsPage() {
               <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
                 {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
                 {filteredSessions.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title} • {sgDateTime(s.starts_at)}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.title} • {sgDateTime(s.starts_at)}{s.starts_at < startTodayIso ? ' • past' : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -434,9 +481,11 @@ export default function BookingsPage() {
                 ref={dateFilterRef}
                 type="date"
                 value={dateFilter}
+                min={sgKeyShift(sgTodayKey(), -PAST_FILTER_DAYS)}
                 onChange={(e) => setDateFilter(e.target.value)}
                 className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:flex-none"
-                aria-label="Filter sessions by date"
+                aria-label={`Filter sessions by date — past ${PAST_FILTER_DAYS} days available`}
+                title={`Pick any date from the last ${PAST_FILTER_DAYS} days onward to open that day's roster`}
               />
               {dateFilter && (
                 <button onClick={() => setDateFilter('')} className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600">
