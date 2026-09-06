@@ -83,8 +83,16 @@ const PAY_BADGE: Record<string, { label: string; cls: string }> = {
 const PAY_DETAIL: Record<string, string> = {
   cash: 'Paid', credit: 'Package credit', token: 'Make-up token', refunded: 'Refunded', free: 'Free', none: 'None',
 };
-const payKind = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) =>
-  r.paid_via ?? (r.payment_status === 'paid' ? 'cash' : r.payment_status === 'refunded' ? 'refunded' : 'none');
+// Always resolves to a key that exists in both maps — a paid_via value this
+// build doesn't know (RPC ahead of the deploy) must never white-screen the
+// page, it just falls back to "Unpaid".
+const payKind = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>): keyof typeof PAY_BADGE => {
+  const v =
+    r.paid_via ?? (r.payment_status === 'paid' ? 'cash' : r.payment_status === 'refunded' ? 'refunded' : 'none');
+  return v in PAY_BADGE ? (v as keyof typeof PAY_BADGE) : 'none';
+};
+const payBadge = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_BADGE[payKind(r)];
+const payDetail = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_DETAIL[payKind(r)];
 
 export default function BookingsPage() {
   const { provider, role, session, subscription } = useAuth();
@@ -608,8 +616,8 @@ export default function BookingsPage() {
                       {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-300 text-orange-800 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
-                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', PAY_BADGE[payKind(b)].cls)}>
-                    {PAY_BADGE[payKind(b)].label}
+                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', payBadge(b).cls)}>
+                    {payBadge(b).label}
                   </span>
                 </div>
               ))}
@@ -633,7 +641,7 @@ export default function BookingsPage() {
                   <div className="space-y-4">
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Payment</div>
-                      <div className="text-sm text-gray-700">{PAY_DETAIL[payKind(sel)]}</div>
+                      <div className="text-sm text-gray-700">{payDetail(sel)}</div>
                     </div>
                     {sel.parent_name && (
                       <div>
