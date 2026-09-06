@@ -1,4 +1,4 @@
--- 00084_session_pause_and_manual_bookings.sql
+-- 00091_session_pause_and_manual_bookings.sql
 --
 -- QA 04/09/26, two vendor rows:
 --
@@ -40,15 +40,15 @@ comment on column public.activity_sessions.bookings_paused is
   'Stops parents booking this one session. Independent of '
   'activities.bookings_paused, which stops every session of the activity.';
 
--- The booking gate, unchanged from 00082 except that it now reads the
+-- The booking gate. Main's 00084 (multi-child booking groups) owns the
+-- body; this adds the provider-status gate from 00089 and reads the
 -- session's own pause flag alongside the activity's, and says which one
 -- stopped the booking.
 create or replace function public.enforce_booking_insert_defaults()
- returns trigger
- language plpgsql
- security definer
- set search_path to 'public'
-as $function$
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
 declare
   v_price numeric;
   v_paused boolean;
@@ -84,8 +84,8 @@ begin
   end if;
 
   -- 1.1: parents cannot book a paused class; vendors can still record manual
-  -- bookings against it. 00084: the pause is now per-session as well as
-  -- per-activity, and the message says which.
+  -- bookings against it. The pause is per-session as well as per-activity, and
+  -- the message says which.
   if not v_is_manager then
     if coalesce(v_paused, false) then
       raise exception 'Bookings for this class are currently paused.';
@@ -95,8 +95,6 @@ begin
     end if;
   end if;
 
-  -- 1.2 (00074): the booking cut-off. Vendors are exempt so they can still
-  -- record a walk-in at the door, which is exactly when they need to.
   if not v_is_manager
      and v_starts_at is not null
      and v_starts_at - make_interval(mins => coalesce(v_cutoff, 15)) <= now() then
@@ -106,22 +104,19 @@ begin
     raise exception 'Bookings for this class close % minutes before it starts.', coalesce(v_cutoff, 15);
   end if;
 
-  -- 1.3 (00074): if the vendor asks for information at booking, it has to be
-  -- answered. Enforced here, not just in the UI, for the same reason the
-  -- waiver gate is: the client can be bypassed.
+  -- 1.3 (00074): the vendor's booking question must be answered — except on a
+  -- companion seat of a multi-child booking (00084), where it rode in on the
+  -- primary seat.
   if coalesce(v_info_enabled, false) and not v_is_manager
+     and coalesce(new.guest_name, '') = ''
      and coalesce(btrim(new.info_response), '') = '' then
     raise exception 'This class needs some extra information before you can book.';
   end if;
 
-  -- Nobody but the server sets Stripe payment state.
   new.amount := null;
   new.stripe_payment_intent := null;
 
   if v_is_manager and new.guest_name is not null then
-    -- 2.1: manual vendor booking — recorded as confirmed (waitlisted if the
-    -- capacity trigger put it there); vendors may mark it paid (offline
-    -- payment) but never refunded.
     if new.payment_status is null or new.payment_status not in ('none', 'paid') then
       new.payment_status := 'none';
     end if;
@@ -132,20 +127,19 @@ begin
   else
     new.payment_status := 'none';
     if new.status = 'waitlisted' then
-      null; -- preserve status + position set by handle_booking_insert
+      null;
     else
       new.waitlist_position := null;
       if coalesce(v_price, 0) = 0 then
-        new.status := 'confirmed';   -- free class: nothing to pay
+        new.status := 'confirmed';
       else
-        new.status := 'pending';     -- paid class: Stripe webhook confirms
+        new.status := 'pending';
       end if;
     end if;
   end if;
-
   return new;
 end;
-$function$;
+$$;
 
 -- =============================================================
 -- 2. Let a manager delete a manual booking (and only a manual one)
@@ -165,7 +159,7 @@ create policy "managers delete manual bookings" on public.bookings
 --    reschedule_booking never checked bookings_paused — not even the
 --    activity-level flag from 00026 — so a parent could move a booking onto a
 --    session the vendor had closed. A pause that reschedule walks straight
---    through is not a pause. Otherwise identical to the 00082 version; the
+--    through is not a pause. Otherwise identical to the 00089 version; the
 --    "Booking moved" notification also now carries the new session's date,
 --    venue and duration, which it never has (the template reads them, so the
 --    email has always gone out without the detail block).

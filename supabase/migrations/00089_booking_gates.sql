@@ -1,9 +1,9 @@
--- 00082_booking_gates.sql
+-- 00089_booking_gates.sql
 --
 -- Two booking-function fixes (QA 2026-09-02).
 --
 -- 1. H-1 (defence in depth): refuse a new booking when the owning provider is
---    not `active`. 00081 already removes a draft/suspended provider's listings
+--    not `active`. 00088 already removes a draft/suspended provider's listings
 --    from discovery; this closes the residual path where someone holding a
 --    session id posts a booking directly (native, package-credit or make-up
 --    token — all of which run as the caller and hit this trigger). The trusted
@@ -14,18 +14,17 @@
 --    current session — a no-op that "succeeded" and fired a spurious
 --    "Booking moved" notification. Reject it.
 --
--- !! HIGHER RISK than 00081: enforce_booking_insert_defaults is the core
+-- !! HIGHER RISK than 00088: enforce_booking_insert_defaults is the core
 -- booking-insert gate. Apply this to a scratch/staging database and run
 -- `npm run validate:booking-rules` (26 checks) + `npm run validate:vendor`
 -- against it BEFORE applying to production — the change cannot be exercised
 -- until it is applied.
 
 create or replace function public.enforce_booking_insert_defaults()
- returns trigger
- language plpgsql
- security definer
- set search_path to 'public'
-as $function$
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
 declare
   v_price numeric;
   v_paused boolean;
@@ -59,14 +58,10 @@ begin
     raise exception 'This provider is not currently taking bookings.';
   end if;
 
-  -- 1.1: parents cannot book a paused class; vendors can still record manual
-  -- bookings against it.
   if coalesce(v_paused, false) and not v_is_manager then
     raise exception 'Bookings for this class are currently paused.';
   end if;
 
-  -- 1.2 (00074): the booking cut-off. Vendors are exempt so they can still
-  -- record a walk-in at the door, which is exactly when they need to.
   if not v_is_manager
      and v_starts_at is not null
      and v_starts_at - make_interval(mins => coalesce(v_cutoff, 15)) <= now() then
@@ -76,22 +71,19 @@ begin
     raise exception 'Bookings for this class close % minutes before it starts.', coalesce(v_cutoff, 15);
   end if;
 
-  -- 1.3 (00074): if the vendor asks for information at booking, it has to be
-  -- answered. Enforced here, not just in the UI, for the same reason the
-  -- waiver gate is: the client can be bypassed.
+  -- 1.3 (00074): the vendor's booking question must be answered — except on a
+  -- companion seat of a multi-child booking (00084), where it rode in on the
+  -- primary seat.
   if coalesce(v_info_enabled, false) and not v_is_manager
+     and coalesce(new.guest_name, '') = ''
      and coalesce(btrim(new.info_response), '') = '' then
     raise exception 'This class needs some extra information before you can book.';
   end if;
 
-  -- Nobody but the server sets Stripe payment state.
   new.amount := null;
   new.stripe_payment_intent := null;
 
   if v_is_manager and new.guest_name is not null then
-    -- 2.1: manual vendor booking — recorded as confirmed (waitlisted if the
-    -- capacity trigger put it there); vendors may mark it paid (offline
-    -- payment) but never refunded.
     if new.payment_status is null or new.payment_status not in ('none', 'paid') then
       new.payment_status := 'none';
     end if;
@@ -102,19 +94,19 @@ begin
   else
     new.payment_status := 'none';
     if new.status = 'waitlisted' then
-      null; -- preserve status + position set by handle_booking_insert
+      null;
     else
       new.waitlist_position := null;
       if coalesce(v_price, 0) = 0 then
-        new.status := 'confirmed';   -- free class: nothing to pay
+        new.status := 'confirmed';
       else
-        new.status := 'pending';     -- paid class: Stripe webhook confirms
+        new.status := 'pending';
       end if;
     end if;
   end if;
   return new;
 end;
-$function$;
+$$;
 
 -- ---------- O-2: reschedule_booking rejects a no-op same-session move ----------
 create or replace function public.reschedule_booking(p_booking_id uuid, p_new_session_id uuid)

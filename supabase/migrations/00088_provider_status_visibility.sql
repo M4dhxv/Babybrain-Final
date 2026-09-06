@@ -1,4 +1,4 @@
--- 00081_provider_status_visibility.sql
+-- 00088_provider_status_visibility.sql
 --
 -- Fix H-1 (QA 2026-09-02): a published activity stayed publicly visible even
 -- when its provider was `draft` or `suspended`.
@@ -15,7 +15,7 @@
 -- is non-active.
 --
 -- LOW RISK: read-path only (search function + two SELECT policies). It does not
--- touch the booking triggers — the booking-time gate is 00082.
+-- touch the booking triggers — the booking-time gate is 00089.
 
 -- ---------- search_activities: require an active provider ----------
 create or replace function public.search_activities(

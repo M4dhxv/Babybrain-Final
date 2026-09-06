@@ -19,8 +19,8 @@
  * the final `commit;` of a file that opens its own — so a migration that
  * fails is never recorded, and one that lands always is.
  */
-import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import postgres from 'postgres';
 import { parseDbUrl } from './lib/db-url.mjs';
 
@@ -40,12 +40,30 @@ if (!parts) {
 }
 const [, version, label] = parts;
 
+// A version number is an identity, not a slot. Two different files claiming
+// 00082 is always a mistake — it happened when a branch went stale and invented
+// migrations on numbers `main` had already used, and nothing noticed until the
+// database had run both. Cheap to catch before touching the database at all.
+const sameVersion = readdirSync(dirname(file))
+  .filter((f) => f.endsWith('.sql') && f.startsWith(`${version}_`) && f !== basename(file));
+if (sameVersion.length) {
+  console.error(
+    `FAILED ${file}: version ${version} is also claimed by ${sameVersion.join(', ')}.\n` +
+    `  Renumber one of them — a version identifies a single migration.`
+  );
+  process.exit(1);
+}
+
 const body = readFileSync(file, 'utf8');
 // version and label are [0-9a-z_] by the check above, so they cannot break out
 // of these quotes.
 const record =
   `\ninsert into supabase_migrations.schema_migrations (version, name)\n` +
   `values ('${version}', '${label}')\non conflict (version) do nothing;\n`;
+// `do nothing` is right for re-applying the SAME migration (they are written to
+// be idempotent), but only once we know the recorded row IS this migration. The
+// pre-flight below establishes that; without it, applying onto a version that
+// belongs to a different migration recorded nothing and reported success.
 
 // A file that opens its own transaction ends with `commit;` (10 of them do).
 // Appending after that would record in a second transaction of its own, so
@@ -60,8 +78,20 @@ const text = selfCommitting ? selfCommitting[1] + record + selfCommitting[2] : b
 // transaction (00083) failed here. One connection is all this script uses.
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });
 try {
-  await sql.unsafe(text);
-  console.log(`applied ${file} (recorded as ${version})`);
+  const [existing] = await sql`
+    select name from supabase_migrations.schema_migrations where version = ${version}`;
+  if (existing && existing.name !== label) {
+    console.error(
+      `FAILED ${file}: version ${version} is already recorded as "${existing.name}".\n` +
+      `  This file is "${label}". Applying it would run against a version number that\n` +
+      `  belongs to a different migration, and the insert would silently record nothing.\n` +
+      `  Renumber this file to a free version and re-run.`
+    );
+    process.exitCode = 1;
+  } else {
+    await sql.unsafe(text);
+    console.log(`applied ${file} (recorded as ${version})`);
+  }
 } catch (e) {
   console.error(`FAILED ${file}:`, e.message);
   process.exitCode = 1;

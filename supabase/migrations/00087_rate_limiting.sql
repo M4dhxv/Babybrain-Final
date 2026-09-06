@@ -1,4 +1,4 @@
--- 00080_rate_limiting.sql
+-- 00087_rate_limiting.sql
 --
 -- A shared, serverless-safe rate limiter (QA fixes 2026-09-02).
 --

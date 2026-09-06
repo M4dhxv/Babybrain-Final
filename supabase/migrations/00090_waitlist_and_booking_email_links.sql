@@ -1,4 +1,4 @@
--- 00083_waitlist_and_booking_email_links.sql
+-- 00090_waitlist_and_booking_email_links.sql
 --
 -- QA 04/09/26. Five reported rows, one root-cause cluster: the notification
 -- producers that feed the parent emails.
