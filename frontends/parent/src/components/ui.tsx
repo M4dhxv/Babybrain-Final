@@ -499,7 +499,7 @@ export function Header({ active = "/" }: HeaderProps) {
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
                 </a>
-                <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
+                <a href="/profile?tab=favorites" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
                 </a>
                 <button onClick={() => signOut()} className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[#68718f] hover:bg-white">
