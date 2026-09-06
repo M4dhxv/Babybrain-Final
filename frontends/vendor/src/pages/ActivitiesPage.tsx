@@ -86,7 +86,7 @@ const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aS
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
-  location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: true,
+  location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: false,
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
   // 00074 — booking cut-off, the bespoke information request, and the copy
@@ -649,7 +649,7 @@ export default function ActivitiesPage() {
       location_id: a.location_id ?? '',
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_url: a.image_urls?.[0] ?? '',
-      requires_medical_disclosure: a.requires_medical_disclosure ?? true,
+      requires_medical_disclosure: a.requires_medical_disclosure ?? false,
       allow_cancellation: a.allow_cancellation ?? true,
       allow_rescheduling: a.allow_rescheduling ?? true,
       cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
@@ -964,6 +964,11 @@ export default function ActivitiesPage() {
                 canManage={canManage}
                 openOnMount={openNewLocation}
                 onOpened={() => setOpenNewLocation(false)}
+                /* Keep this page's own `locations` state (which the
+                   create-activity modal's venue dropdown reads) in step when a
+                   venue is added/edited/removed here, so a just-added venue is
+                   selectable without a page reload. */
+                onChanged={load}
               />
             </div>
           ) : (

@@ -15,11 +15,32 @@ import type { ProviderLocation } from '@/lib/database.types';
  * 'activities' tab." Lifted out of SettingsPage so Activities can own it,
  * rather than bouncing the vendor to Settings and back.
  */
+/** Resolve a Singapore postal code to coordinates via the same authenticated
+ *  /api/geocode (OneMap) the onboarding + admin flows use. Best-effort: a
+ *  non-6-digit code or a lookup failure returns null and the venue is saved
+ *  without a pin, exactly as before — geocoding must never block adding a venue. */
+async function geocodePostal(postalCode: string): Promise<{ latitude: number; longitude: number } | null> {
+  const code = postalCode.trim();
+  if (!/^\d{6}$/.test(code)) return null;
+  try {
+    const r = await apiPost<{ latitude: number; longitude: number }>('/api/geocode', { postal_code: code });
+    return Number.isFinite(r.latitude) && Number.isFinite(r.longitude)
+      ? { latitude: r.latitude, longitude: r.longitude }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function LocationsManager({
-  provider, canManage, openOnMount, onOpened,
+  provider, canManage, openOnMount, onOpened, onChanged,
 }: {
   provider: { id: string } | null; canManage: boolean;
   openOnMount?: boolean; onOpened?: () => void;
+  /** Fired after a venue is added/edited/removed so a parent page can refresh
+   *  its own copy of the locations list (e.g. the create-activity venue
+   *  dropdown) without a full reload. */
+  onChanged?: () => void;
 }) {
   const [locations, setLocations] = useState<ProviderLocation[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -92,6 +113,7 @@ export default function LocationsManager({
       });
       setWixNotice(res.imported > 0 ? `Added ${res.imported} location${res.imported === 1 ? '' : 's'} from Wix.` : 'Nothing new to add.');
       await Promise.all([loadWixLocations(), load()]);
+      if (res.imported > 0) onChanged?.();
     } catch (e) {
       setWixError(e instanceof Error ? e.message : 'Could not import from Wix');
     } finally {
@@ -122,11 +144,17 @@ export default function LocationsManager({
     if (!provider || !form.name.trim()) { setError('A location name is required.'); return; }
     setSaving(true);
     setError(null);
+    // Geocode from the postal code so the venue gets a map pin and area
+    // filter, the same way the /admin create path does — a venue added here
+    // used to land with null coordinates and never appear on the Explore map.
+    const coords = await geocodePostal(form.postal_code);
     const { error: err } = await supabase.from('provider_locations').insert({
       provider_id: provider.id,
       name: form.name.trim(),
       address: form.address.trim() || null,
       postal_code: form.postal_code.trim() || null,
+      latitude: coords?.latitude ?? null,
+      longitude: coords?.longitude ?? null,
       is_primary: locations.length === 0, // first location becomes the main branch
     });
     setSaving(false);
@@ -134,12 +162,14 @@ export default function LocationsManager({
     setForm({ name: '', address: '', postal_code: '' });
     setShowForm(false);
     load();
+    onChanged?.();
   }
 
   async function removeLocation(id: string) {
     if (!window.confirm('Remove this location?')) return;
     await supabase.from('provider_locations').delete().eq('id', id);
     load();
+    onChanged?.();
   }
 
   function startEdit(loc: ProviderLocation) {
@@ -152,15 +182,20 @@ export default function LocationsManager({
     if (!editForm.name.trim()) { setEditError('A location name is required.'); return; }
     setEditSaving(true);
     setEditError(null);
+    // Re-geocode on edit too, so correcting a postal code moves the pin
+    // instead of leaving stale (or null) coordinates behind.
+    const coords = await geocodePostal(editForm.postal_code);
     const { error: err } = await supabase.from('provider_locations').update({
       name: editForm.name.trim(),
       address: editForm.address.trim() || null,
       postal_code: editForm.postal_code.trim() || null,
+      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
     }).eq('id', id);
     setEditSaving(false);
     if (err) { setEditError(err.message); return; }
     setEditingId(null);
     load();
+    onChanged?.();
   }
 
   async function setPrimary(id: string) {
@@ -169,6 +204,7 @@ export default function LocationsManager({
     await supabase.from('provider_locations').update({ is_primary: false }).eq('provider_id', provider.id);
     await supabase.from('provider_locations').update({ is_primary: true }).eq('id', id);
     load();
+    onChanged?.();
   }
 
   const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
