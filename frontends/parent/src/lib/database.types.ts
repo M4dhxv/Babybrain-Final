@@ -261,6 +261,7 @@ export type Database = {
           location_id: string | null;
           price: number | null;
           status: 'scheduled' | 'cancelled';
+          bookings_paused: boolean;
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
           created_at: string;
@@ -274,6 +275,7 @@ export type Database = {
           location_id?: string | null;
           price?: number | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };
@@ -284,6 +286,7 @@ export type Database = {
           location_id?: string | null;
           price?: number | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };

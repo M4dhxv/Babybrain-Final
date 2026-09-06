@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
+  Pencil, Trash2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -56,6 +57,7 @@ type SessionOpt = {
   // a Wix-sourced one, so a Wix vendor's roster names the instructor too.
   teacher_name: string | null; studio: string | null;
 };
+
 type RosterRow = {
   booking_id: string; status: string; payment_status: string; child_name: string;
   child_age_months: number | null; has_medical: boolean; waitlist_position: number | null;
@@ -335,6 +337,11 @@ export default function BookingsPage() {
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
 
   const currentSession = sessions.find((s) => s.id === sessionId);
+  /* Whether the roster on screen belongs to a session that has already run —
+     reachable via the date filter, which reaches PAST_FILTER_DAYS back. Uses
+     the same Singapore day boundary the picker does, so "past" means an
+     earlier day rather than merely an earlier hour of today. */
+  const currentSessionIsPast = !!currentSession && currentSession.starts_at < startTodayIso;
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
   /* QA 04/09: "Under bookings, when there is a waitlist and you click on that
@@ -351,7 +358,88 @@ export default function BookingsPage() {
     loadRoster(sessionId);
   }
   async function removeBooking(bookingId: string) {
-    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
+    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
+    // Used to swallow the error entirely, so a refused update looked like it
+    // had worked until the roster reloaded unchanged.
+    if (error) { setRowError(error.message); return; }
+    setRowError(null);
+    loadRoster(sessionId);
+  }
+
+  /* ---- QA 04/09: acting on one booking, not the whole activity ----
+     "Currently can only cancel a whole activity, not just a particular
+     booking" and "when a booking is added manually, can't edit or delete".
+
+     Two different actions, deliberately: a real parent's booking is
+     CANCELLED — that notifies them and hands back whatever paid for it (the
+     compensate_cancelled_booking trigger returns a package credit or reissues
+     a make-up token) — while a manual guest entry, which is the vendor's own
+     record of something arranged offline, can be corrected or deleted
+     outright. Migration 00084 adds the delete policy, scoped to manual rows. */
+  const [rowError, setRowError] = useState<string | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [editingManual, setEditingManual] = useState<string | null>(null);
+  const [manualEdit, setManualEdit] = useState({ name: '', contact: '', paid: false });
+
+  async function startManualEdit(row: RosterRow) {
+    setRowError(null);
+    // The roster RPC returns the display name but not the stored guest fields,
+    // so read the row itself to seed the form with what's actually saved.
+    const { data } = await supabase
+      .from('bookings')
+      .select('guest_name, guest_contact, payment_status')
+      .eq('id', row.booking_id)
+      .maybeSingle();
+    setManualEdit({
+      name: data?.guest_name ?? row.child_name,
+      contact: data?.guest_contact ?? '',
+      paid: (data?.payment_status ?? row.payment_status) === 'paid',
+    });
+    setEditingManual(row.booking_id);
+  }
+
+  async function saveManualEdit(bookingId: string) {
+    if (!manualEdit.name.trim()) { setRowError('A name is required.'); return; }
+    setRowBusy(true);
+    const { error } = await supabase.from('bookings').update({
+      guest_name: manualEdit.name.trim(),
+      guest_contact: manualEdit.contact.trim() || null,
+      payment_status: manualEdit.paid ? 'paid' : 'none',
+    }).eq('id', bookingId);
+    setRowBusy(false);
+    if (error) { setRowError(error.message); return; }
+    setRowError(null);
+    setEditingManual(null);
+    loadRoster(sessionId);
+  }
+
+  async function deleteManualBooking(row: RosterRow) {
+    if (!window.confirm(`Delete the manual entry for ${row.child_name}? It's removed from the roster for good.`)) return;
+    setRowBusy(true);
+    const { error, count } = await supabase
+      .from('bookings')
+      .delete({ count: 'exact' })
+      .eq('id', row.booking_id);
+    setRowBusy(false);
+    if (error) { setRowError(error.message); return; }
+    // RLS returns success with zero rows when the policy doesn't match, so a
+    // silent no-op has to be reported rather than looking like it worked.
+    if (!count) { setRowError('That entry could not be deleted — only manually-added bookings can be.'); return; }
+    setRowError(null);
+    setSelected(0);
+    loadRoster(sessionId);
+  }
+
+  async function cancelBooking(row: RosterRow) {
+    if (!window.confirm(
+      `Cancel ${row.child_name}'s booking?\n\nThey're notified, and any package credit or make-up token they used is returned to them.`
+    )) return;
+    setRowBusy(true);
+    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', row.booking_id);
+    setRowBusy(false);
+    if (error) { setRowError(error.message); return; }
+    setRowError(null);
+    setSelected(0);
     loadRoster(sessionId);
   }
 
@@ -462,6 +550,10 @@ export default function BookingsPage() {
   }
 
   const sel = visibleBookings[selected];
+
+  // Don't carry a half-finished edit, or an error about one booking, onto
+  // whichever booking is selected next.
+  useEffect(() => { setEditingManual(null); setRowError(null); }, [sel?.booking_id, sessionId]);
 
   useEffect(() => {
     if (!sel || sel.policies_accepted === 0 || policyAcceptances[sel.booking_id]) return;
@@ -786,6 +878,87 @@ export default function BookingsPage() {
                       {tokenError && <p className="mt-2 text-xs font-medium text-red-600">{tokenError}</p>}
                     </div>
                   )}
+
+                  {/* Per-booking actions (QA 04/09). */}
+                  {canManage && sel.status !== 'cancelled' && (
+                    <div className="mt-6 border-t border-gray-100 pt-4">
+                      {editingManual === sel.booking_id ? (
+                        <div className="space-y-3">
+                          <div className="text-sm font-medium text-gray-900">Edit this manual entry</div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Child / guest name</label>
+                            <input
+                              value={manualEdit.name}
+                              onChange={(e) => setManualEdit({ ...manualEdit, name: e.target.value })}
+                              className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Contact (optional)</label>
+                            <input
+                              value={manualEdit.contact}
+                              onChange={(e) => setManualEdit({ ...manualEdit, contact: e.target.value })}
+                              placeholder="Phone or email"
+                              className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm"
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <Checkbox
+                              checked={manualEdit.paid}
+                              onCheckedChange={(v) => setManualEdit({ ...manualEdit, paid: Boolean(v) })}
+                              className="data-[state=checked]:bg-[#C90044]"
+                            />
+                            Paid outside BabyBrain
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveManualEdit(sel.booking_id)}
+                              disabled={rowBusy || !manualEdit.name.trim()}
+                              className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50"
+                            >
+                              {rowBusy ? 'Saving…' : 'Save changes'}
+                            </button>
+                            <button
+                              onClick={() => { setEditingManual(null); setRowError(null); }}
+                              className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-4">
+                          {/* A manual entry is the vendor's own offline record — correct
+                              it or remove it. A parent's booking is neither. */}
+                          {sel.is_manual && (
+                            <>
+                              <button
+                                onClick={() => startManualEdit(sel)}
+                                className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                              >
+                                <Pencil className="h-4 w-4" /> Edit entry
+                              </button>
+                              <button
+                                onClick={() => deleteManualBooking(sel)}
+                                disabled={rowBusy}
+                                className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
+                              >
+                                <Trash2 className="h-4 w-4" /> Delete entry
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => cancelBooking(sel)}
+                            disabled={rowBusy}
+                            className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
+                          >
+                            <XCircle className="h-4 w-4" /> Cancel this booking
+                          </button>
+                        </div>
+                      )}
+                      {rowError && <p className="mt-2 text-xs font-medium text-red-600">{rowError}</p>}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-sm text-gray-400">Select a booking.</div>
@@ -831,6 +1004,16 @@ export default function BookingsPage() {
           {/* Attendance */}
           {activeTab === 'Attendance' && (
             <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
+              {/* The picker now reaches back over recent sessions (QA 04/09), so
+                  say plainly when the roster on screen is one that already ran. */}
+              {currentSessionIsPast && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p className="text-xs text-amber-800">
+                    This session has already run — you can still mark and save attendance for it.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-4 mb-5">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg">
                   <Check className="w-4 h-4 text-green-600" /><span className="text-sm font-medium text-green-700">Present {presentCount}</span>

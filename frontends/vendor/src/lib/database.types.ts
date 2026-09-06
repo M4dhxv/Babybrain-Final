@@ -287,6 +287,7 @@ export type Database = {
           capacity: number | null;
           location_id: string | null;
           status: 'scheduled' | 'cancelled';
+          bookings_paused: boolean;
           teacher_name: string | null;
           price: number | null;
           studio: string | null;
@@ -302,6 +303,7 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           teacher_name?: string | null;
           price?: number | null;
           studio?: string | null;
@@ -314,6 +316,7 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           teacher_name?: string | null;
           price?: number | null;
           studio?: string | null;
@@ -527,6 +530,12 @@ export type Database = {
           payment_status?: PaymentStatus;
           amount?: number | null;
           stripe_payment_intent?: string | null;
+          /* A manual (guest) booking is the vendor's own record of something
+             arranged offline, so a manager can correct the name and contact
+             after the fact — the "managers update bookings" policy has always
+             allowed it, this type just never described it. */
+          guest_name?: string | null;
+          guest_contact?: string | null;
         };
               Relationships: [
           {

@@ -4470,7 +4470,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
           ? " Your make-up token will be released so you can use it again."
           : b.paidWith === "cash"
             ? ` You'll be issued ${seats > 1 ? `${seats} make-up tokens` : "a make-up token"} to use on another class.`
-            : "";
+            : // QA 04/09: with nothing specific to promise, the bare "Cancel your
+              // booking?" implied BabyBrain decides what happens to the money. Say
+              // whose call it actually is, before they confirm rather than after.
+              " Eligibility for a refund or make-up token is per vendor policy.";
     const q = party(b)
       ? `Cancel all ${seats} places for ${b.title}?${back}`
       : `Cancel your booking for ${b.title}?${back}`;

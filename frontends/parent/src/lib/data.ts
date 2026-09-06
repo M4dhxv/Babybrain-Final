@@ -126,7 +126,7 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
  *  rendering them. Keep this in step with ActivitySession if the table gains
  *  a column parents genuinely need. */
 const PARENT_SESSION_COLUMNS =
-  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, wix_slot_key, wix_remaining_capacity, created_at';
+  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, wix_slot_key, wix_remaining_capacity, created_at';
 
 export interface ActivityDetail {
   activity:
@@ -216,6 +216,10 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   // BabyBrain per-session override, so it inherits.
                   price: null,
                   status: "scheduled" as const,
+                  // Pausing is a BabyBrain per-session control (00084); a Wix
+                  // slot's availability is Wix's to decide, so it's never
+                  // paused on our side.
+                  bookings_paused: false,
                   wix_slot_key: null,
                   wix_remaining_capacity: null,
                   created_at: new Date().toISOString(),
@@ -227,6 +231,10 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .select(PARENT_SESSION_COLUMNS)
               .eq("activity_id", act.id)
               .is("wix_slot_key", null)
+              // A session the vendor has paused isn't taking bookings
+              // (migration 00084) — leave it out of the picker rather than
+              // letting a parent choose it and be refused at the last step.
+              .eq("bookings_paused", false)
               .gte("starts_at", new Date().toISOString())
               .order("starts_at")
               .limit(8)
@@ -242,6 +250,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .from("activity_sessions")
               .select(PARENT_SESSION_COLUMNS)
               .eq("activity_id", act.id)
+              .eq("bookings_paused", false) // see above
               .gte("starts_at", new Date().toISOString())
               .order("starts_at")
               .limit(8)

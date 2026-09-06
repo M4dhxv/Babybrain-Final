@@ -26,6 +26,8 @@ import {
   MessageCircle,
   Users,
   Heart,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -196,6 +198,9 @@ export default function ActivitiesPage() {
     id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number;
     location_id: string | null; price: number | null;
     teacher_name: string | null; studio: string | null;
+    /* QA 04/09: pause is per-session as well as per-activity (migration 00084),
+       so a week the teacher is away can be closed without shutting the class. */
+    bookings_paused: boolean;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
@@ -302,7 +307,7 @@ export default function ActivitiesPage() {
   async function loadSessions(activityId: string) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused')
       .eq('activity_id', activityId)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
@@ -455,6 +460,21 @@ export default function ActivitiesPage() {
     setEditingSessId(null);
     await loadSessions(scheduleFor.id);
     load(); // the table's "next session" column can have moved
+  }
+
+  /* Closes just this slot to new parent bookings. The activity-level switch
+     (bookings_paused on the activity) still pauses every session at once;
+     this one is independent of it, and vendors can still record a manual
+     booking against a paused session. */
+  async function toggleSessionPause(s: Sess) {
+    if (!scheduleFor) return;
+    const { error } = await supabase
+      .from('activity_sessions')
+      .update({ bookings_paused: !s.bookings_paused })
+      .eq('id', s.id);
+    if (error) { setSessError(error.message); return; }
+    setSessError(null);
+    await loadSessions(scheduleFor.id);
   }
 
   async function removeSession(s: Sess) {
@@ -1801,10 +1821,13 @@ export default function ActivitiesPage() {
                       </div>
                     </div>
                   ) : (
-                    <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5">
+                    <div key={s.id} className={cn('flex items-center justify-between rounded-lg border px-3 py-2.5', s.bookings_paused ? 'border-amber-200 bg-amber-50/60' : 'border-gray-200')}>
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900">
+                        <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900">
                           {new Date(s.starts_at).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                          {s.bookings_paused && (
+                            <span className="rounded px-1.5 py-0.5 text-xs font-medium text-amber-800 bg-amber-200">Bookings paused</span>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500">
                           {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
@@ -1829,6 +1852,17 @@ export default function ActivitiesPage() {
                         <span className="flex-shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
                       ) : (
                         <div className="flex flex-shrink-0 items-center gap-1">
+                          {/* Pausing is a BabyBrain-side control, so it sits with
+                              the other per-session actions — and like them it is
+                              hidden for a Wix-owned schedule, which is managed in
+                              Wix and re-synced from there. */}
+                          <button
+                            onClick={() => toggleSessionPause(s)}
+                            className={cn('p-1.5 rounded-lg', s.bookings_paused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}
+                            title={s.bookings_paused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
+                          >
+                            {s.bookings_paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
+                          </button>
                           <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
                             <Pencil className="w-4 h-4" />
                           </button>
