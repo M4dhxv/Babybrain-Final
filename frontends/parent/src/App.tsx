@@ -61,6 +61,42 @@ function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+/** Scroll to an element that may not exist yet.
+ *
+ *  The browser resolves a hash before Vite has mounted, and page content often
+ *  arrives a frame or two later still, so a single delayed shot silently
+ *  misses: `getElementById` returns null, `?.` swallows it, and the reader
+ *  lands at the top of the page. Polls briefly, then gives up quietly for a
+ *  section that genuinely isn't on this page. Returns a cleanup for useEffect.
+ *
+ *  Jumps rather than animates. Someone arriving on a deep link — from an
+ *  email, or Stripe's billing portal — has not scrolled anywhere, so there is
+ *  no motion to preserve the sense of; and a `behavior: "smooth"` request is
+ *  simply ignored in some environments, which fails by silently doing nothing
+ *  at all. */
+function scrollToWhenReady(id: string, tries = 40, everyMs = 100): () => void {
+  let n = 0;
+  const timer = window.setInterval(() => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      window.clearInterval(timer);
+    } else if (++n > tries) {
+      window.clearInterval(timer);
+    }
+  }, everyMs);
+  return () => window.clearInterval(timer);
+}
+
+/** The current route, with the dev server's `/app` base and any trailing slash
+ *  stripped. The Vite dev server serves this SPA under /app/ while production
+ *  rewrites it to the bare path, so anything branching on the route has to
+ *  normalise both — reading window.location.pathname raw works in production
+ *  and silently does nothing in dev. */
+function routePath(): string {
+  return window.location.pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";
+}
+
 const GENERIC_RPC_ERROR = "Something went wrong — please try again or contact support.";
 
 /**
@@ -1544,17 +1580,7 @@ function ActivityDetailPage() {
   useEffect(() => {
     const id = window.location.hash.slice(1);
     if (!id) return;
-    let tries = 0;
-    const t = setInterval(() => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        clearInterval(t);
-      } else if (++tries > 40) {
-        clearInterval(t); // ~4s: the section isn't on this page after all
-      }
-    }, 100);
-    return () => clearInterval(t);
+    return scrollToWhenReady(id);
   }, []);
 
   /* The next session can carry its own venue (migration 00074) — resolve it
@@ -4924,10 +4950,7 @@ function ContactPage() {
   // link from another page landed at the top of Contact. Scroll once mounted.
   useEffect(() => {
     if (window.location.hash !== "#faq") return;
-    const t = setTimeout(() => {
-      document.getElementById("faq")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
-    return () => clearTimeout(t);
+    return scrollToWhenReady("faq");
   }, []);
   return (
     <>
@@ -5012,13 +5035,9 @@ function TermsPage() {
      Stripe's billing portal links to). Both should land on the privacy
      section, not the top of the Terms. */
   useEffect(() => {
-    const wantsPrivacy =
-      window.location.hash === "#privacy" || window.location.pathname.replace(/\/$/, "") === "/privacy";
+    const wantsPrivacy = window.location.hash === "#privacy" || routePath() === "/privacy";
     if (!wantsPrivacy) return;
-    const t = setTimeout(() => {
-      document.getElementById("privacy")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
-    return () => clearTimeout(t);
+    return scrollToWhenReady("privacy");
   }, []);
 
   const sections: { id?: string; title: string; body: React.ReactNode }[] = [
@@ -6936,7 +6955,7 @@ function App() {
   // In production a Next rewrite serves these routes from `/`, but the Vite dev
   // server hosts the bundle under its `/app/` base — strip it so local routing
   // matches what parents actually browse.
-  const pathname = window.location.pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";
+  const pathname = routePath();
   if (pathname === "/login") return <LoginPage />;
   if (pathname === "/forgot-password") return <ForgotPasswordPage />;
   if (pathname === "/reset-password") return <ResetPasswordPage />;
