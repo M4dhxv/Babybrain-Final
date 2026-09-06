@@ -31,6 +31,11 @@ export type LiveActivity = Activity & {
   durationMins?: number | null;
   instantBook: boolean;
   venues: ActivityVenue[];
+  /** Every area this activity actually runs in — the areas of the venues it
+   *  names, or its own single region when it names none. This, not `region`
+   *  plus the provider's whole venue estate, is what the Area filter matches
+   *  on (QA 17/08). */
+  areas: SgRegion[];
 };
 
 const sgDate = (iso: string | null) =>
@@ -78,47 +83,111 @@ export function useActivities(params: ActivityQuery = {}) {
         p_limit: params.limit ?? 24,
       });
 
-      // Pull every venue of the providers on this page in one round trip, so
-      // multi-location businesses get a pin per venue rather than one pin at
-      // their head office.
+      /* The venues each activity ACTUALLY runs at — its own venue, plus any
+         venue an upcoming session overrides to (migration 00074).
+
+         This used to pull every venue belonging to the activity's provider,
+         which is what QA 17/08 hit: "I just have Sentosa selected and it is
+         showing me Lucy Sparkles in East, Wildlings in Central, Muckypups
+         East." All three own a Sentosa branch alongside branches elsewhere, so
+         every class they run matched a Sentosa filter — and drew a pin there.
+         19 providers span more than one area, so this was not a one-off.
+
+         Scoping to the activity is stricter than the data currently supports
+         (most listings don't name a venue yet, and fall through to their own
+         region below), and that is the right way round: showing a Katong class
+         under a Sentosa filter invites a booking in the wrong place, which is
+         exactly what was reported. It sharpens on its own as vendors set
+         per-session venues. */
+      const activityIds = (rows ?? []).map((r) => r.id);
       const providerIds = [
         ...new Set((rows ?? []).map((r) => r.provider_id).filter((x): x is string => !!x)),
       ];
-      const venuesByProvider = new Map<string, ActivityVenue[]>();
-      if (providerIds.length) {
+      const locationIdsByActivity = new Map<string, Set<string>>();
+      const addLocation = (activityId: string, locationId: string | null) => {
+        if (!locationId) return;
+        const set = locationIdsByActivity.get(activityId) ?? new Set<string>();
+        set.add(locationId);
+        locationIdsByActivity.set(activityId, set);
+      };
+      if (activityIds.length) {
+        const [ownVenues, sessionVenues] = await Promise.all([
+          supabase.from("activities").select("id, location_id").in("id", activityIds),
+          supabase
+            .from("activity_sessions")
+            .select("activity_id, location_id")
+            .in("activity_id", activityIds)
+            .not("location_id", "is", null)
+            .gte("starts_at", new Date().toISOString()),
+        ]);
+        for (const a of (ownVenues.data ?? []) as unknown as Array<{ id: string; location_id: string | null }>) {
+          addLocation(a.id, a.location_id);
+        }
+        for (const sv of (sessionVenues.data ?? []) as unknown as Array<{ activity_id: string; location_id: string | null }>) {
+          addLocation(sv.activity_id, sv.location_id);
+        }
+      }
+
+      // One round trip for every venue referenced above, plus each provider's
+      // primary branch — the fallback for a listing that names no venue and
+      // carries no coordinates of its own.
+      const venuesById = new Map<string, ActivityVenue>();
+      const primaryVenueByProvider = new Map<string, ActivityVenue>();
+      const referencedLocationIds = [...new Set([...locationIdsByActivity.values()].flatMap((s) => [...s]))];
+      if (referencedLocationIds.length || providerIds.length) {
         const { data: locs } = await supabase
           .from("provider_locations")
-          .select("provider_id, name, latitude, longitude, region")
-          .in("provider_id", providerIds);
+          .select("id, provider_id, name, latitude, longitude, region, is_primary")
+          .or(
+            [
+              referencedLocationIds.length ? `id.in.(${referencedLocationIds.join(",")})` : null,
+              providerIds.length ? `provider_id.in.(${providerIds.join(",")})` : null,
+            ]
+              .filter(Boolean)
+              .join(",")
+          );
         for (const l of (locs ?? []) as unknown as Array<{
+          id: string;
           provider_id: string;
           name: string;
           latitude: number | null;
           longitude: number | null;
           region: SgRegion | null;
+          is_primary: boolean | null;
         }>) {
           if (l.latitude == null || l.longitude == null) continue;
-          const list = venuesByProvider.get(l.provider_id) ?? [];
-          list.push({ name: l.name, lat: l.latitude, lng: l.longitude, region: l.region });
-          venuesByProvider.set(l.provider_id, list);
+          const venue = { name: l.name, lat: l.latitude, lng: l.longitude, region: l.region };
+          venuesById.set(l.id, venue);
+          if (l.is_primary) primaryVenueByProvider.set(l.provider_id, venue);
         }
       }
 
       const mapped: LiveActivity[] = (rows ?? []).map((r) => {
-        // Fall back to the listing's own coordinate when the provider has no
-        // venue rows, so nothing in the list is left off the map.
-        const venues =
-          (r.provider_id ? venuesByProvider.get(r.provider_id) : undefined) ??
-          (r.latitude != null && r.longitude != null
-            ? [
-                {
-                  name: r.provider_name ?? r.title,
-                  lat: r.latitude,
-                  lng: r.longitude,
-                  region: r.region,
-                },
-              ]
-            : []);
+        /* This activity's own venues, then the listing's own coordinate, then
+           the provider's primary branch — so nothing is left off the map, but
+           a listing never borrows a branch it doesn't teach at. */
+        const own = [...(locationIdsByActivity.get(r.id) ?? [])]
+          .map((id) => venuesById.get(id))
+          .filter((v): v is ActivityVenue => !!v);
+        const fallback =
+          r.latitude != null && r.longitude != null
+            ? [{ name: r.provider_name ?? r.title, lat: r.latitude, lng: r.longitude, region: r.region }]
+            : r.provider_id && primaryVenueByProvider.has(r.provider_id)
+              ? [primaryVenueByProvider.get(r.provider_id)!]
+              : [];
+        const venues = own.length > 0 ? own : fallback;
+        /* The areas the Area filter matches on. When the activity names its
+           own venues those are definitive — a class that only runs in Katong
+           must not also answer to its provider's Central head-office region.
+           With no venues named, the listing's own region is the best we have. */
+        const areas = [
+          ...new Set(
+            (own.length > 0
+              ? own.map((v) => v.region)
+              : [r.region as SgRegion | null]
+            ).filter((x): x is SgRegion => !!x)
+          ),
+        ];
 
         return {
           id: r.id,
@@ -146,6 +215,7 @@ export function useActivities(params: ActivityQuery = {}) {
           durationMins: r.duration_mins,
           instantBook: r.instant_book ?? false,
           venues,
+          areas,
         };
       });
 

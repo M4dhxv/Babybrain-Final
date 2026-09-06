@@ -1045,10 +1045,11 @@ function ExplorePage() {
     if (selectedBands.length &&
         !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
     if (regions.length) {
-      const inRegion =
-        (a.region && regions.includes(a.region)) ||
-        a.venues.some((v) => v.region && regions.includes(v.region));
-      if (!inRegion) return false;
+      /* `areas` is where this class actually runs (see useActivities). It used
+         to be "the listing's region OR any venue the provider owns anywhere",
+         which put a Katong class in front of a parent filtering on Sentosa
+         purely because the provider also had a Sentosa branch — QA 17/08. */
+      if (!a.areas.some((x) => regions.includes(x))) return false;
     }
     if (priceActive && a.price != null && a.price > maxPrice) return false;
     if (dateFrom) {
