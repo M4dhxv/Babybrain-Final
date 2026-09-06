@@ -71,7 +71,6 @@ declare
   v_group    uuid := gen_random_uuid();
   v_session  record;
   v_child    uuid;
-  v_capacity int;
   v_taken    int;
   v_status   text;
   v_worst    text := 'confirmed';
