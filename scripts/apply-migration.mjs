@@ -53,7 +53,12 @@ const record =
 const selfCommitting = body.match(/([\s\S]*?)(\bcommit\s*;\s*)$/i);
 const text = selfCommitting ? selfCommitting[1] + record + selfCommitting[2] : body + record;
 
-const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require' });
+// `max: 1` is required, not a tuning knob: postgres.js refuses an explicit
+// BEGIN through a pooled connection ("UNSAFE_TRANSACTION"), which is exactly
+// what the self-committing files spliced above send. Without it the splice
+// logic could never actually run — the first migration to open its own
+// transaction (00083) failed here. One connection is all this script uses.
+const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });
 try {
   await sql.unsafe(text);
   console.log(`applied ${file} (recorded as ${version})`);
