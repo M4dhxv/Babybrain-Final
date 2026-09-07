@@ -3,6 +3,7 @@ import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { sgDateTime } from '@/lib/format';
 import { computeSplit, getTerms } from '@/lib/commercials';
 
 /**
@@ -56,11 +57,16 @@ export async function POST(request: Request) {
   // booking trigger uses to decide free vs paid, so the two can't disagree.
   const { data: sess } = await admin
     .from('activity_sessions')
-    .select('price, activities(title, slug, price, provider_id)')
+    // starts_at/ends_at and the venue ride along for the confirmation page's
+    // summary and its "Add to calendar" button — see success_url below.
+    .select('price, starts_at, ends_at, location_id, activities(title, slug, price, provider_id, address), provider_locations(name, address)')
     .eq('id', booking.session_id)
     .maybeSingle();
   const activity = (sess?.activities ?? null) as unknown as
-    | { title: string; slug: string; price: number | null; provider_id: string | null }
+    | { title: string; slug: string; price: number | null; provider_id: string | null; address: string | null }
+    | null;
+  const venueRow = (sess?.provider_locations ?? null) as unknown as
+    | { name: string | null; address: string | null }
     | null;
 
   const price = Number(sess?.price ?? activity?.price ?? 0);
@@ -103,7 +109,30 @@ export async function POST(request: Request) {
     },
     // session_id lets the app reconcile the payment on return even if the
     // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
-    success_url: `${origin}/booked?title=${encodeURIComponent(title)}&slug=${encodeURIComponent(activity?.slug ?? '')}&status=confirmed&paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    /* QA 04/09: "there should be an add to calendar option on the booking
+       confirmation page". There always was one — but it only renders when the
+       page is given `start`, and coming back from Stripe it never was, so a
+       PAID booking landed on a confirmation with no date, no venue and no
+       calendar button. The in-app (free / credit / token) paths already pass
+       all four. */
+    success_url:
+      `${origin}/booked?` +
+      new URLSearchParams({
+        title,
+        slug: activity?.slug ?? '',
+        status: 'confirmed',
+        paid: '1',
+        when: sess?.starts_at ? sgDateTime(sess.starts_at) : '',
+        start: sess?.starts_at ?? '',
+        end: sess?.ends_at ?? '',
+        // Session venue first, then the activity's own address (00074).
+        venue:
+          [venueRow?.name, venueRow?.address].filter(Boolean).join(', ') ||
+          activity?.address ||
+          '',
+      }).toString() +
+      // Left unencoded — Stripe substitutes the real id into this placeholder.
+      `&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=bookings&booking=cancelled`,
   };
 

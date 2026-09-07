@@ -6,6 +6,7 @@ import { computeSplit, getTerms } from '@/lib/commercials';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { sgDateTime } from '@/lib/format';
 import { getProviderWixCredentials } from '@/lib/wix/client';
 import { checkWixBookingGates, reserveWixSlotForCheckout } from '@/lib/wix/sync';
 
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: activity } = await admin
     .from('activities')
-    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, title, slug, price, bookings_paused, booking_cutoff_minutes, info_request_enabled')
+    .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, title, slug, price, address, bookings_paused, booking_cutoff_minutes, info_request_enabled')
     .eq('id', activityId)
     .maybeSingle();
   if (!activity?.wix_service_id || !activity.provider_id) {
@@ -97,6 +98,16 @@ export async function POST(request: Request) {
   // the whole party being one row. A party (00084) shares a
   // booking_group_id; seat 1 has the child + medical/info, seats 2..N are
   // "Guest child".
+  // Timing + venue of the slot just reserved, for the confirmation page.
+  const { data: slot } = await admin
+    .from('activity_sessions')
+    .select('starts_at, ends_at, provider_locations(name, address)')
+    .eq('id', reserved.sessionId)
+    .maybeSingle();
+  const slotVenue = (slot?.provider_locations ?? null) as unknown as
+    | { name: string | null; address: string | null }
+    | null;
+
   const groupId = count > 1 ? randomUUID() : null;
   const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
@@ -159,7 +170,27 @@ export async function POST(request: Request) {
       activity_id: activity.id,
       wix_slot_id: wixSlotId,
     },
-    success_url: `${origin}/booked?title=${encodeURIComponent(title)}&slug=${encodeURIComponent(activity.slug ?? '')}&status=confirmed&paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    /* Same as the native checkout: the confirmation page only renders its
+       date, venue and "Add to calendar" button when it is given them, and
+       coming back from Stripe it never was (QA 04/09). The reserved slot has
+       been materialised as a local session by now, so its timing is on hand. */
+    success_url:
+      `${origin}/booked?` +
+      new URLSearchParams({
+        title,
+        slug: activity.slug ?? '',
+        status: 'confirmed',
+        paid: '1',
+        when: slot?.starts_at ? sgDateTime(slot.starts_at) : '',
+        start: slot?.starts_at ?? '',
+        end: slot?.ends_at ?? '',
+        venue:
+          [slotVenue?.name, slotVenue?.address].filter(Boolean).join(', ') ||
+          activity.address ||
+          '',
+      }).toString() +
+      // Stripe substitutes the real id into this placeholder — leave it raw.
+      `&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=bookings&booking=cancelled`,
   };
 
