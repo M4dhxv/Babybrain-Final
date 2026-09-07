@@ -468,7 +468,9 @@ export default function ActivitiesPage() {
   /* Closes just this slot to new parent bookings. The activity-level switch
      (bookings_paused on the activity) still pauses every session at once;
      this one is independent of it, and vendors can still record a manual
-     booking against a paused session. */
+     booking against a paused session. Works for a Wix occurrence as well —
+     the flag sits on our own session row, the sync never rewrites it, and
+     the Wix booking routes check it (isWixSessionPaused). */
   async function toggleSessionPause(s: Sess) {
     if (!scheduleFor) return;
     const { error } = await supabase
@@ -1916,29 +1918,32 @@ export default function ActivitiesPage() {
                           </div>
                         )}
                       </div>
-                      {scheduleIsWix ? (
-                        <span className="flex-shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
-                      ) : (
-                        <div className="flex flex-shrink-0 items-center gap-1">
-                          {/* Pausing is a BabyBrain-side control, so it sits with
-                              the other per-session actions — and like them it is
-                              hidden for a Wix-owned schedule, which is managed in
-                              Wix and re-synced from there. */}
-                          <button
-                            onClick={() => toggleSessionPause(s)}
-                            className={cn('p-1.5 rounded-lg', s.bookings_paused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}
-                            title={s.bookings_paused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
-                          >
-                            {s.bookings_paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
-                          </button>
-                          <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        {scheduleIsWix && (
+                          <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+                        )}
+                        {/* Pause is a BabyBrain-side control that the sync never
+                            overwrites, so it works on a Wix occurrence too — the
+                            Wix booking routes honour it (isWixSessionPaused).
+                            Editing / removing a Wix session stays Wix's job. */}
+                        <button
+                          onClick={() => toggleSessionPause(s)}
+                          className={cn('p-1.5 rounded-lg', s.bookings_paused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}
+                          title={s.bookings_paused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
+                        >
+                          {s.bookings_paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
+                        </button>
+                        {!scheduleIsWix && (
+                          <>
+                            <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )
                 ))}

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { checkWixBookingGates, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
+import { checkWixBookingGates, isWixSessionPaused, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
 
 /**
  * Parent redeems a make-up token for a Wix-sourced slot.
@@ -66,6 +66,13 @@ export async function POST(request: Request) {
   // them — see checkWixBookingGates.
   const gates = checkWixBookingGates(activity, body.infoResponse);
   if (!gates.ok) return NextResponse.json({ error: gates.error }, { status: gates.status });
+
+  if (await isWixSessionPaused(admin, activity.id, wixSlotId!)) {
+    return NextResponse.json(
+      { error: 'Bookings for this session are currently paused — other dates may still be available.' },
+      { status: 409 }
+    );
+  }
 
   // The token must be this parent's, live, and for this provider — checked
   // before anything is claimed or booked.

@@ -301,6 +301,10 @@ export type Database = {
           teacher_name: string | null;
           price: number | null;
           studio: string | null;
+          // Pause bookings on this one session (00091) — independent of
+          // activities.bookings_paused, honoured by the booking gate and, for
+          // Wix occurrences, by the Wix booking routes (isWixSessionPaused).
+          bookings_paused: boolean;
           created_at: string;
           // Wix-sourced sessions only (migrations 00050, 00052) — null for
           // ordinary site-native sessions.
@@ -318,6 +322,7 @@ export type Database = {
           studio?: string | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };
@@ -327,6 +332,7 @@ export type Database = {
           capacity?: number | null;
           location_id?: string | null;
           status?: 'scheduled' | 'cancelled';
+          bookings_paused?: boolean;
           // Set from Wix by importWixSessionStaff (lib/wix/sync.ts) for
           // Wix-sourced sessions, and by the vendor by hand for site-native
           // ones.

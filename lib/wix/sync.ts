@@ -602,6 +602,30 @@ export function checkWixBookingGates(
   return { ok: true };
 }
 
+/**
+ * The per-session half of the pause rule (00091) for a Wix slot. The
+ * activity-level flag is handled by {@link checkWixBookingGates}; this reads
+ * the one thing that flag can't — whether the vendor has closed *this* Wix
+ * occurrence specifically. A Wix slot only has a local `activity_sessions`
+ * row once someone has viewed or booked it, so "no row" means "not paused".
+ * Sync never writes `bookings_paused`, so a pause set from the Schedule
+ * calendar survives every re-sync.
+ */
+export async function isWixSessionPaused(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  wixSlotId: string
+): Promise<boolean> {
+  const key = wixSlotId.replace(/^wix:/, '');
+  const { data } = await admin
+    .from('activity_sessions')
+    .select('bookings_paused')
+    .eq('activity_id', activityId)
+    .eq('wix_slot_key', key)
+    .maybeSingle();
+  return !!data?.bookings_paused;
+}
+
 export interface WixContact {
   firstName: string;
   lastName: string;

@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { checkWixBookingGates, reserveWixSlotForCheckout } from '@/lib/wix/sync';
+import { checkWixBookingGates, isWixSessionPaused, reserveWixSlotForCheckout } from '@/lib/wix/sync';
 
 /**
  * Parent pays for a Wix-linked class. Unlike the free path
@@ -75,6 +75,13 @@ export async function POST(request: Request) {
   // for. See checkWixBookingGates.
   const gates = checkWixBookingGates(activity, body.infoResponse);
   if (!gates.ok) return NextResponse.json({ error: gates.error }, { status: gates.status });
+
+  if (await isWixSessionPaused(admin, activity.id, wixSlotId!)) {
+    return NextResponse.json(
+      { error: 'Bookings for this session are currently paused — other dates may still be available.' },
+      { status: 409 }
+    );
+  }
 
   const creds = await getProviderWixCredentials(admin, activity.provider_id);
   if (!creds) {

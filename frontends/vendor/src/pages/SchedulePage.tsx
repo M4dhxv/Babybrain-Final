@@ -192,8 +192,9 @@ export default function SchedulePage() {
 
   // Close (or reopen) one slot to new parent bookings, straight from the
   // calendar. Independent of the activity-wide pause; a manual booking can
-  // still be recorded against a paused session. The gate is enforced in the
-  // database (00091).
+  // still be recorded against a paused session. Works for a Wix occurrence
+  // too — the flag lives on our own session row, sync never touches it, and
+  // the Wix booking routes honour it (isWixSessionPaused).
   async function togglePause(s: EnrichedSession) {
     setPauseError(null);
     const { error } = await supabase
@@ -374,7 +375,7 @@ export default function SchedulePage() {
                         key={s.id}
                         s={s}
                         onClick={() => navigate(`/bookings?session=${s.id}`)}
-                        onTogglePause={s.fromWix ? undefined : () => togglePause(s)}
+                        onTogglePause={() => togglePause(s)}
                       />
                     ))}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}

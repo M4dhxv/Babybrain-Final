@@ -145,6 +145,18 @@ export async function GET(request: Request) {
   const windowStart = new Date();
   const windowEnd = new Date(windowStart.getTime() + days * 24 * 60 * 60 * 1000);
 
+  // Wix occurrences the vendor has closed to new bookings from the Schedule
+  // calendar (00091). The pause lives on the local activity_sessions row —
+  // sync never overwrites it — and is keyed by wix_slot_key, so a paused
+  // slot is simply dropped from what the parent picker is offered.
+  const { data: pausedRows } = await admin
+    .from('activity_sessions')
+    .select('wix_slot_key')
+    .eq('activity_id', activity.id)
+    .eq('bookings_paused', true)
+    .not('wix_slot_key', 'is', null);
+  const pausedKeys = new Set((pausedRows ?? []).map((r) => r.wix_slot_key as string));
+
   // Which resource ids on this account are really bookable staff — used to
   // keep a session's `affectedSchedules` from ever writing a non-staff
   // calendar onto the schedule as the instructor (see formatWixStaffNames).
@@ -215,7 +227,8 @@ export async function GET(request: Request) {
             starts_at: s.start,
             ends_at: s.end,
             capacity: s.remainingCapacity,
-          })),
+          }))
+          .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
         ...(course ? { course } : {}),
       });
     }
@@ -301,7 +314,8 @@ export async function GET(request: Request) {
           starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
           ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
           capacity: 1,
-        })),
+        }))
+        .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
     });
   } catch (e) {
     console.error('Wix availability fetch failed', e);
