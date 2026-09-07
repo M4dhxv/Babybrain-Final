@@ -3307,7 +3307,15 @@ function ProfilePage() {
     if (!session) return;
     supabase
       .from("favorites")
-      .select("activities(*, activity_categories(name))")
+      /* Upcoming sessions ride along so the card can show the next class
+         rather than "Schedule TBC" (QA 24/08). Filtered to the future on the
+         server — a Wix-linked class can carry hundreds of past slots, and a
+         parent with twenty favourites would otherwise pull thousands of rows
+         to render twenty dates. */
+      .select(
+        "activities(*, activity_categories(name), activity_sessions(starts_at, ends_at))"
+      )
+      .gte("activities.activity_sessions.starts_at", new Date().toISOString())
       .then(({ data }) => {
         setFavs(
           (data ?? [])

@@ -477,6 +477,26 @@ export function useJourney(childId: string | undefined) {
  *  goes through `search_activities`) carried them. Rows come from `activities`,
  *  which keeps a denormalised `provider_name`; a joined `providers` row wins
  *  when the caller selected one. */
+/** Card date/time formatting, matching useActivities' own so a listing reads
+ *  the same on Explore as it does in Favourites. */
+const sgCardDate = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleDateString("en-SG", {
+        timeZone: "Asia/Singapore",
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      })
+    : "";
+const sgCardTime = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleTimeString("en-SG", {
+        timeZone: "Asia/Singapore",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
+
 export function toCard(
   a: ActivityRow & {
     category_name?: string;
@@ -492,6 +512,21 @@ export function toCard(
     ? Math.round((new Date(timed.ends_at as string).getTime() - new Date(timed.starts_at).getTime()) / 60000)
     : null;
 
+  /* QA 24/08: "I added to the schedule on tinkers playdate but it still says
+     'Schedule TBC' on the pop out in saved activities/favourites — it should
+     update with the time and date of the next class."
+
+     date/time were hardcoded empty here, so every card built through toCard
+     (favourites, matches, suggestions) said "Schedule TBC" however full the
+     schedule was — the card only ever had a real date on Explore, which gets
+     next_session_at from search_activities. Derived here from the soonest
+     upcoming session the caller passed in; a caller that fetches no sessions
+     still falls back to "Schedule TBC", which is then honest. */
+  const now = Date.now();
+  const nextSession = (a.activity_sessions ?? [])
+    .filter((sn) => sn.starts_at && new Date(sn.starts_at).getTime() >= now)
+    .sort((x, y) => x.starts_at.localeCompare(y.starts_at))[0];
+
   return {
     id: a.id,
     slug: a.slug,
@@ -500,8 +535,8 @@ export function toCard(
     image: a.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
     age: formatAgeRange(a.age_min_months, a.age_max_months),
     venue: a.address ? a.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
-    date: "",
-    time: "",
+    date: sgCardDate(nextSession?.starts_at ?? null),
+    time: sgCardTime(nextSession?.starts_at ?? null),
     // Empty when there are no reviews, so the card drops the rating line
     // rather than printing a bare "New" beside nothing else.
     rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "",
