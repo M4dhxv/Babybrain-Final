@@ -324,17 +324,16 @@ export default function SchedulePage() {
 
         {!loading && activities.length > 0 && view === 'week' && (
           <div className="overflow-x-auto">
-          {/* Forcing all 7 days into one horizontally-scrolled row (the sm+
-              behavior below) squeezed each card to ~130px on a phone — too
-              narrow for a session's time, title, venue and teacher to read.
-              Below `sm`, wrap into 2 columns instead: every card gets a real
-              width and nothing needs to scroll sideways to be read, at the
-              cost of scrolling the page down through 4 rows instead. */}
-          <div className="grid grid-cols-2 gap-3 sm:min-w-[900px] sm:grid-cols-7">
+          {/* Mobile: a horizontal scroll strip showing ~2 day cards at a time,
+              so each card is wide enough to read its sessions and you swipe
+              through the week sideways. sm+: the full 7-column row (the
+              min-w only forces a horizontal scroll when the portal itself is
+              narrower than 900px). */}
+          <div className="flex snap-x snap-mandatory gap-3 sm:grid sm:min-w-[900px] sm:snap-none sm:grid-cols-7">
             {weekDays.map((d) => {
               const daySessions = sessionsFor(d);
               return (
-                <div key={d.toISOString()} className="min-h-[240px] rounded-xl border border-gray-200 bg-white p-3">
+                <div key={d.toISOString()} className="min-h-[240px] w-[calc(50%-0.375rem)] shrink-0 snap-start rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="text-xs font-medium text-gray-500">{format(d, 'EEE')}</span>
                     <span
