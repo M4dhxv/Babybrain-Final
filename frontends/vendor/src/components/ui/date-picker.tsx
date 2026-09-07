@@ -240,12 +240,18 @@ export function DatePicker({
     }
   };
 
-  const inputCls = [bare ? 'w-full bg-transparent text-sm focus:outline-none' : INPUT_BASE, bare ? '' : 'pr-10', className]
-    .filter(Boolean)
-    .join(' ');
+  // bare: the wrapper is the flex child (carries the caller's width classes)
+  // and lays the field + icon out in a row. Non-bare: the caller styles the
+  // input, the icon sits absolutely inside it.
+  const wrapCls = bare
+    ? ['relative inline-flex min-w-0 items-center gap-1', className].filter(Boolean).join(' ')
+    : 'relative block';
+  const inputCls = bare
+    ? 'min-w-0 flex-1 bg-transparent text-sm font-medium text-[#211D20] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
+    : [INPUT_BASE, 'pr-10', className].filter(Boolean).join(' ');
 
   return (
-    <span ref={wrapRef} className="relative block">
+    <span ref={wrapRef} className={wrapCls}>
       <input
         ref={inputRef}
         id={id}
@@ -267,7 +273,7 @@ export function DatePicker({
         aria-label="Open calendar"
         className={
           bare
-            ? 'ml-1 inline-grid h-6 w-6 place-items-center rounded text-[#FA4D8D] disabled:opacity-60'
+            ? 'inline-grid h-6 w-6 shrink-0 place-items-center rounded text-[#FA4D8D] disabled:opacity-60'
             : 'absolute right-0 top-0 grid h-full w-10 place-items-center text-[#FA4D8D] hover:text-[#C90044] disabled:opacity-60'
         }
       >
