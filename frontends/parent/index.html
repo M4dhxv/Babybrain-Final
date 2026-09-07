@@ -21,15 +21,14 @@
          instead. The icons below are square crops of the same brand mark. -->
     <link rel="manifest" href="/app/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/app/assets/brand/apple-touch-icon.png" />
-    <!-- #FA4D8D — the exact colour the header's top fade (.app-chrome-bleed)
-         starts from, so in the installed app the OS bar and the header are
-         one continuous colour, then the fade carries it into the page. -->
+    <!-- #FA4D8D — a solid bright-pink OS status bar / PWA chrome in the
+         installed app, sitting as a hard block above the cream header. -->
     <meta name="theme-color" content="#FA4D8D" />
     <script>
-      /* That pink theme-color is for the installed app, where the header's
-         top fade melts into it. In a plain browser tab it just paints a bar
-         over a cream page, so swap it to the page colour there. Runs
-         synchronously in <head> so the bar is right on first paint. */
+      /* That pink theme-color is only wanted in the installed app. In a plain
+         browser tab it just paints a bar over a cream page, so swap it to the
+         page colour there. Runs synchronously in <head> so the bar is right
+         on first paint. */
       (function () {
         try {
           var app =

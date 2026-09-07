@@ -399,12 +399,11 @@ export function Header({ active = "/" }: HeaderProps) {
     routes[3],
   ];
 
-  // `app-chrome-bleed` paints a soft light-pink top fade ONLY in the installed
-  // app (@media display-mode: standalone, see styles/index.css), where it melts
-  // into the pink OS status bar. In a browser tab it's a no-op and the header
-  // is plain cream.
+  // Plain cream header. In the installed app the OS status bar is a solid
+  // bright pink (theme-color #FA4D8D) and meets this as a hard block — no
+  // gradient bleed. In a browser tab there's no pink chrome above it.
   return (
-    <header className="app-chrome-bleed sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper">
+    <header className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper">
       <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
         <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">
