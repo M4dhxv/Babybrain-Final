@@ -30,7 +30,18 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const rows = data ?? [];
+  /* QA 24/08: "they are in the order you book them — it makes more sense for
+     them to be ordered chronologically in order of when they are happening."
+     Sorted here rather than in the query: activity_sessions is a to-one embed,
+     and PostgREST's `referencedTable` ordering sorts the embedded rows, not the
+     bookings that carry them. One parent's bookings is a small list. Booking
+     date stays the tiebreak for two seats on the same session. */
+  const rows = (data ?? []).slice().sort((a, b) => {
+    const at = (a as { activity_sessions?: { starts_at?: string } }).activity_sessions?.starts_at ?? '';
+    const bt = (b as { activity_sessions?: { starts_at?: string } }).activity_sessions?.starts_at ?? '';
+    if (at !== bt) return at < bt ? -1 : 1;
+    return String(b.created_at).localeCompare(String(a.created_at));
+  });
   const allIds = rows.map((r) => r.id);
 
   // Was this booking made by redeeming a make-up token? (redeemed_booking_id

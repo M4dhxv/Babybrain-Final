@@ -99,7 +99,7 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
-  const { session, provider, subscription, refreshProvider } = useAuth();
+  const { session, provider, subscription, refreshProvider, signOut } = useAuth();
   // Legacy DB rows can carry the old 'premium' value for what the UI now
   // calls the top tier ('pro' planKey), and the free tier's planKey is `null`
   // rather than 'free' — normalize both sides before comparing. Only treat a
@@ -293,9 +293,21 @@ export default function PlansPage() {
           <button onClick={() => { navigate('/contact'); }} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-2 sm:gap-3 justify-self-end">
-          <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
-            Log in
-          </Button>
+          {/* QA 31/08: "when logged in and go to upgrade, top right on plans page
+              says sign in when already signed in — it should be a log out CTA." */}
+          {session ? (
+            <Button
+              variant="outline"
+              onClick={async () => { await signOut(); navigate('/'); }}
+              className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Log out
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => navigate('/login')} className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50">
+              Log in
+            </Button>
+          )}
           {/* Mobile menu toggle */}
           <button
             type="button"

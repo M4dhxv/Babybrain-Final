@@ -35,6 +35,8 @@ const columns: { title: string; links: { label: string; to?: string; href?: stri
   {
     title: 'For Parents',
     links: [
+      // QA 21/08: "under for parents add 'Home' at the top".
+      { label: 'Home', href: '/' },
       { label: 'Explore Activities', href: '/explore' },
       { label: 'About Us', href: '/about' },
       { label: 'Parent Sign Up', href: '/onboarding' },

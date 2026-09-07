@@ -1020,6 +1020,12 @@ export function CategoryTile({
   );
 }
 
+/** BabyBrain's own support contacts. Declared here rather than in App so the
+ *  footer can use them without importing from App (which imports this file). */
+export const SUPPORT_EMAIL = "hello@babybrain.sg";
+export const SUPPORT_PHONE = "+65 8996 6716"; // support line (call + WhatsApp)
+export const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
+
 export function Footer() {
   const { session } = useAuth();
   /* "How It Works" points at the signed-out home page, which a signed-in
@@ -1029,7 +1035,9 @@ export function Footer() {
     ...(session ? [] : ([["How It Works", "/#how-it-works"]] as [string, string | null][])),
     ["Activities", "/explore"],
     ["About Us", "/about"],
-    ["For Partners", "/vendor/"],
+    // QA 21/08: this column is the parent's own journey — the partner links
+    // live in their own column below — so the slot becomes their sign-up.
+    ["Sign Up", "/onboarding"],
   ];
   return (
     <footer className="border-t border-[#F4EFF0] bg-white/70 py-6">
@@ -1039,11 +1047,39 @@ export function Footer() {
           <p className="mt-3 max-w-[230px] text-sm font-semibold leading-5 text-[#59658d]">
             Helping parents discover and book activities for their children.
           </p>
+          {/* QA 21/08: the same quick-contact row the vendor footer has. */}
+          <div className="mt-4 flex items-center gap-2.5">
+            {([
+              ["whatsapp", "WhatsApp us", `https://wa.me/${phoneDigits(SUPPORT_PHONE)}`, "bg-[#EAF7EE] text-[#3F9A5B]"],
+              ["mail", "Email us", `mailto:${SUPPORT_EMAIL}`, "bg-[#FEEBF2] text-baby-cta"],
+              ["phone", "Call us", `tel:+${phoneDigits(SUPPORT_PHONE)}`, "bg-[#F1EDFB] text-[#6B5AA8]"],
+              ["instagram", "Instagram", "https://instagram.com/babybrainsg", "bg-[#F4EFF0] text-[#59658d]"],
+            ] as [string, string, string, string][]).map(([icon, label, href, tone]) => (
+              <a
+                key={label}
+                href={href}
+                aria-label={label}
+                {...(/^https?:\/\//.test(href) ? { target: "_blank", rel: "noreferrer" } : {})}
+                className={`grid h-9 w-9 place-items-center rounded-full transition hover:opacity-80 ${tone}`}
+              >
+                <Icon name={icon} className="h-4 w-4" />
+              </a>
+            ))}
+          </div>
         </div>
         {([
           ["Explore", exploreLinks],
           ["Support", [["Contact Us", "/contact"], ["FAQs", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
-          ["Follow Us", [["Instagram", "https://instagram.com/babybrainsg", "instagram"]]],
+          /* QA 21/08: "change the 'Follow Us' to 'For Partners' listing out 'Why
+             BabyBrain', 'Plans & Pricing', 'Claim Your Business' and 'Log in'".
+             Instagram moves to the contact buttons above, so nothing is lost.
+             Vendor routes are hash-based (HashRouter), hence /vendor/#/…. */
+          ["For Partners", [
+            ["Why BabyBrain", "/vendor/"],
+            ["Plans & Pricing", "/vendor/#/plans"],
+            ["Claim Your Business", "/vendor/#/claim-business"],
+            ["Log in", "/vendor/#/login"],
+          ]],
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
           <div key={title} className="text-sm">
             <h3 className="mb-3 font-black">{title}</h3>

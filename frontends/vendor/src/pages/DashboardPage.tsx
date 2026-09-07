@@ -207,7 +207,13 @@ export default function DashboardPage() {
   const activeRangeDays = RANGE_PRESETS.find((r) => r.key === rangeKey)!.days;
   const rangeCutoff = Date.now() + activeRangeDays * 864e5;
   const visibleUpcoming = upcoming.filter((s) => new Date(s.when).getTime() <= rangeCutoff);
-  const visibleRecent = statusFilter === 'All' ? recent : recent.filter((r) => r.status.toLowerCase() === statusFilter.toLowerCase());
+  /* QA 21/08: "should display a maximum of 10 listings on overview". The RPC
+     still fetches 30 so the status filter has something to filter — the cap is
+     on what the overview shows, applied after filtering so picking a status
+     doesn't leave a near-empty list. */
+  const RECENT_ON_OVERVIEW = 10;
+  const visibleRecent = (statusFilter === 'All' ? recent : recent.filter((r) => r.status.toLowerCase() === statusFilter.toLowerCase()))
+    .slice(0, RECENT_ON_OVERVIEW);
 
   return (
     <div className="relative">

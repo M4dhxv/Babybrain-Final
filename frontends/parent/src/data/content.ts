@@ -26,7 +26,7 @@ export type Activity = {
 export const categories = [
   ["music", "Music & Drama", "Rhythm, songs and performing", "music"],
   ["palette", "Sensory & Art", "Explore, touch and create", "sensory-play"],
-  ["shoe", "Gym & Dance", "Tumbling, balance and moving", "movement"],
+  ["shoe", "Gym, Dance & Other Sports", "Tumbling, balance and moving", "movement"],
   ["movement", "Swimming", "Water confidence and lessons", "swimming"],
   ["flask", "Early Learning", "Curiosity today, ready for more", "early-learning"],
   ["people", "Parent & Child Exercise", "Move and bond together", "parent-baby"],

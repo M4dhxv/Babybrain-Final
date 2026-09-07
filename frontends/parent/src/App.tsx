@@ -7,6 +7,9 @@ import {
   CategoryTile,
   DateInput,
   Footer,
+  SUPPORT_EMAIL,
+  SUPPORT_PHONE,
+  phoneDigits,
   Icon,
   MiniActivityGrid,
   PageShell,
@@ -54,7 +57,6 @@ import type { ActivitySession, Child, Gender, ProviderPolicy } from "./lib/datab
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
-import { SupportChat } from "./components/SupportChat";
 import { RainbowLoader } from "./components/RainbowLoader";
 
 function getParam(name: string) {
@@ -2254,7 +2256,7 @@ function ExportScheduleDialog({
 const PLACEHOLDER_SAVED = [
   { id: "ph-1", slug: "", title: "Music & Movement", category: "Music & Drama", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "6 months – 2 years", venue: "Central", date: "", time: "", rating: "" },
   { id: "ph-2", slug: "", title: "Sensory Play", category: "Sensory & Art", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "12 months – 3 years", venue: "East", date: "", time: "", rating: "" },
-  { id: "ph-3", slug: "", title: "Toddler Gym", category: "Gym & Dance", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "18 months – 4 years", venue: "West", date: "", time: "", rating: "" },
+  { id: "ph-3", slug: "", title: "Toddler Gym", category: "Gym, Dance & Other Sports", image: `${import.meta.env.BASE_URL}assets/crops/activity-play.png`, age: "18 months – 4 years", venue: "West", date: "", time: "", rating: "" },
 ];
 
 /** Stand-in shown where a Plus-only feature would be, with the upgrade path. */
@@ -3846,7 +3848,7 @@ function ProfilePage() {
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {filterChild && (
                 <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
-                  A pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus any still untouched.
+                  Some pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus any still untouched.
                 </p>
               )}
               {visiblePackages.length === 0 ? (
@@ -4791,10 +4793,6 @@ function EmptyPanel({ icon, copy, cta, href }: { icon: string; copy: string; cta
   );
 }
 
-const SUPPORT_EMAIL = "hello@babybrain.sg";
-const SUPPORT_PHONE = "+65 8996 6716"; // BabyBrain support line (call + WhatsApp)
-const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
-
 const FAQ_LINK = "font-black text-baby-pink hover:underline";
 const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
   {
@@ -4939,12 +4937,6 @@ function ContactForm() {
 }
 
 function ContactPage() {
-  const { session } = useAuth();
-  const [support, setSupport] = useState(false);
-  const openSupport = () => {
-    if (!session) { goTo("/login"); return; }
-    setSupport(true);
-  };
 
   // Vite renders after the browser has already tried to resolve #faq, so a
   // link from another page landed at the top of Contact. Scroll once mounted.
@@ -4954,7 +4946,6 @@ function ContactPage() {
   }, []);
   return (
     <>
-    {support && <SupportChat onClose={() => setSupport(false)} />}
     <PageShell active="/contact">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
         <section className="grid items-center gap-7 md:grid-cols-[1fr_420px]">
@@ -4977,14 +4968,17 @@ function ContactPage() {
 
         <section className="mt-8">
           <SectionTitle emoji="👇🏻">Get in touch</SectionTitle>
-          <div className="grid gap-5 md:grid-cols-4">
+          {/* QA 21/08: "can we remove the message us options to save credits for
+              the users messaging vendors and each other" — the in-app support
+              chat card is gone, leaving WhatsApp, email and phone. Three
+              columns, so the row still fills its width. */}
+          <div className="grid gap-5 md:grid-cols-3">
             {[
               // "Chat on WhatsApp" needed 138px in the 137px a quarter-width
               // card leaves, so it wrapped and made this CTA taller than the
               // other three. The shorter label also matches the pattern of the
               // rest of the row, where the button repeats the card title.
               { icon: "whatsapp", title: "WhatsApp us", tag: "Recommended", copy: "Message us on WhatsApp for the quickest response.", label: "WhatsApp us", variant: "pink", href: `https://wa.me/${phoneDigits(SUPPORT_PHONE)}` },
-              { icon: "pen", title: "Message us", tag: "", copy: "Plus subscribers can chat with our team in real time.", label: "Message us", variant: "outline", onClick: openSupport },
               { icon: "mail", title: "Email us", tag: "", copy: "For more complex enquiries, send us an e-mail and we'll get back to you.", label: "Email us", variant: "outline", href: `mailto:${SUPPORT_EMAIL}` },
               { icon: "phone", title: "Call us", tag: "", copy: "Speak with our friendly support team if urgent.", label: "Call us", variant: "outline", href: `tel:+${phoneDigits(SUPPORT_PHONE)}` },
             ].map((c) => (
@@ -4995,7 +4989,7 @@ function ContactPage() {
                 <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-[#FEEBF2] to-[#FED7E4] text-baby-cta"><Icon name={c.icon} className="h-9 w-9" /></div>
                 <h3 className="text-xl font-black">{c.title} {c.tag && <span className="rounded-full bg-[#FED7E4] px-2 py-1 text-[10px] text-baby-cta">{c.tag}</span>}</h3>
                 <p className="my-5 text-sm font-semibold leading-6 text-[#28345f]">{c.copy}</p>
-                <Button variant={c.variant === "pink" ? "pink" : "outline"} className="mt-auto w-full" href={c.href} onClick={c.onClick}>{c.label}</Button>
+                <Button variant={c.variant === "pink" ? "pink" : "outline"} className="mt-auto w-full" href={c.href}>{c.label}</Button>
               </article>
             ))}
           </div>
