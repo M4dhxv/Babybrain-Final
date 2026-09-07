@@ -227,6 +227,12 @@ export default function SaveListingPage() {
   const providerId = activeProvider?.id ?? null;
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [agreedVendor, setAgreedVendor] = useState(false);
+  // Marketing consent (00094) — optional, never blocks the save. Pre-filled
+  // from what the provider already agreed to; the original timestamp is kept
+  // so re-saving doesn't move the consent date, and unticking clears it back
+  // to NULL (how consent is withdrawn).
+  const [marketingConsent, setMarketingConsent] = useState(false);
+  const [marketingConsentAt, setMarketingConsentAt] = useState<string | null>(null);
   const [prov, setProv] = useState<ProfileDraft>(EMPTY_PROFILE);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [glance, setGlance] = useState<GlanceRow[]>(EMPTY_GLANCE);
@@ -263,7 +269,7 @@ export default function SaveListingPage() {
     const [{ data: provider }, { data: acts }, { data: locs }, { data: cats }] = await Promise.all([
       supabase
         .from('providers')
-        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen')
+        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, marketing_consent_at')
         .eq('id', providerId)
         .maybeSingle(),
       // Drafts come back too: during onboarding a vendor often has an
@@ -298,6 +304,8 @@ export default function SaveListingPage() {
       uen: provider?.uen ?? '',
     };
     setProv(profile);
+    setMarketingConsentAt(provider?.marketing_consent_at ?? null);
+    setMarketingConsent(!!provider?.marketing_consent_at);
 
     const activities = acts ?? [];
     const published = activities.filter((a) => a.is_published);
@@ -470,7 +478,11 @@ export default function SaveListingPage() {
     const now = new Date().toISOString();
     const { error } = await supabase
       .from('providers')
-      .update({ vendor_terms_accepted_at: now })
+      .update({
+        vendor_terms_accepted_at: now,
+        // Optional — keep the first consent date; unticking withdraws it.
+        marketing_consent_at: marketingConsent ? (marketingConsentAt ?? now) : null,
+      })
       .eq('id', providerId);
     setSavingListing(false);
     if (error) return setSaveError(error.message);
@@ -762,6 +774,23 @@ export default function SaveListingPage() {
                 >
                   View terms
                 </button>
+              </div>
+            </div>
+
+            {/* Marketing consent (00094) — optional, does not gate the save. */}
+            <div className="mt-3 rounded-xl border border-gray-200 p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="vendor-marketing"
+                  checked={marketingConsent}
+                  onCheckedChange={(c) => setMarketingConsent(c === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="vendor-marketing" className="flex-1 cursor-pointer text-sm text-gray-700">
+                  I agree and consent to receive marketing communications from BabyBrain to update me
+                  on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products
+                  and services via any means of communication such as via email.
+                </label>
               </div>
             </div>
           </div>
