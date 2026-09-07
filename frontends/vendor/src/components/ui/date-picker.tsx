@@ -298,82 +298,80 @@ export function DatePicker({
               top: pos.drop === 'down' ? pos.top : undefined,
               bottom: pos.drop === 'up' ? window.innerHeight - pos.top : undefined,
             }}
-            className="z-[60] w-[264px] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-[0_4px_14px_rgba(33,29,32,0.08)]"
+            className="z-[60] w-[264px] rounded-[10px] border border-[#EBE3E5] bg-white p-3 shadow-[0_4px_14px_rgba(33,29,32,0.08)]"
           >
-            <div className="flex items-center justify-between bg-[#FA4D8D] px-3 py-2.5 text-white">
+            <div className="mb-2 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }))}
                 aria-label="Previous month"
-                className="grid h-7 w-7 place-items-center rounded-[7px] border border-white/50 text-white hover:bg-white/15"
+                className="grid h-7 w-7 place-items-center rounded-[7px] border border-[#EBE3E5] text-[#6E646B] hover:bg-[#FAF7F7]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
               </button>
-              <span className="text-[13px] font-semibold">
+              <span className="text-[13px] font-semibold text-[#211D20]">
                 {MONTHS[view.m]} {view.y}
               </span>
               <button
                 type="button"
                 onClick={() => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }))}
                 aria-label="Next month"
-                className="grid h-7 w-7 place-items-center rounded-[7px] border border-white/50 text-white hover:bg-white/15"
+                className="grid h-7 w-7 place-items-center rounded-[7px] border border-[#EBE3E5] text-[#6E646B] hover:bg-[#FAF7F7]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
               </button>
             </div>
 
-            <div className="px-3 pt-3">
-              <div className="grid grid-cols-7">
-                {WEEKDAYS.map((w) => (
-                  <span key={w} className="py-1 text-center text-[11px] font-medium text-[#6E646B]">{w}</span>
-                ))}
-              </div>
-
-              <div
-                ref={gridRef}
-                role="grid"
-                tabIndex={0}
-                onKeyDown={onGridKey}
-                className="grid grid-cols-7 gap-0.5 outline-none"
-              >
-                {cells.map((c) => {
-                  const isSel = c.iso === value;
-                  const isToday = c.iso === todayISO();
-                  const isActive = c.iso === active;
-                  const off = disabledISO(c.iso);
-                  return (
-                    <button
-                      key={c.iso}
-                      type="button"
-                      role="gridcell"
-                      aria-selected={isSel}
-                      aria-current={isToday ? 'date' : undefined}
-                      disabled={off}
-                      tabIndex={-1}
-                      onMouseEnter={() => !off && setActive(c.iso)}
-                      onClick={() => pick(c.iso)}
-                      className={[
-                        'relative flex h-8 items-center justify-center rounded-full text-[12.5px]',
-                        off
-                          ? 'cursor-not-allowed text-[#C9C2C4] opacity-50'
-                          : isSel
-                            ? 'bg-[#FA4D8D] font-medium text-white'
-                            : c.outside
-                              ? 'text-[#C9C2C4] hover:bg-[#FEF5F8]'
-                              : isToday
-                                ? 'font-medium text-[#211D20] shadow-[inset_0_0_0_1.5px_#FFC1D6] hover:bg-[#FEF5F8]'
-                                : 'text-[#211D20] hover:bg-[#FEF5F8]',
-                        isActive && !isSel && !off ? 'ring-1 ring-inset ring-[#FFC1D6]' : '',
-                      ].join(' ')}
-                    >
-                      {c.day}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="grid grid-cols-7">
+              {WEEKDAYS.map((w) => (
+                <span key={w} className="py-1 text-center text-[11px] font-medium text-[#6E646B]">{w}</span>
+              ))}
             </div>
 
-            <div className="flex items-center justify-between px-3 pb-3 pt-2 text-xs font-medium">
+            <div
+              ref={gridRef}
+              role="grid"
+              tabIndex={0}
+              onKeyDown={onGridKey}
+              className="grid grid-cols-7 gap-0.5 outline-none"
+            >
+              {cells.map((c) => {
+                const isSel = c.iso === value;
+                const isToday = c.iso === todayISO();
+                const isActive = c.iso === active;
+                const off = disabledISO(c.iso);
+                return (
+                  <button
+                    key={c.iso}
+                    type="button"
+                    role="gridcell"
+                    aria-selected={isSel}
+                    aria-current={isToday ? 'date' : undefined}
+                    disabled={off}
+                    tabIndex={-1}
+                    onMouseEnter={() => !off && setActive(c.iso)}
+                    onClick={() => pick(c.iso)}
+                    className={[
+                      'relative flex h-8 items-center justify-center rounded-full text-[12.5px]',
+                      off
+                        ? 'cursor-not-allowed text-[#C9C2C4] opacity-50'
+                        : isSel
+                          ? 'bg-[#FA4D8D] font-medium text-white'
+                          : c.outside
+                            ? 'text-[#C9C2C4] hover:bg-[#FEF5F8]'
+                            : isToday
+                              ? 'font-medium text-[#FA4D8D] shadow-[inset_0_0_0_1.5px_#FA4D8D] hover:bg-[#FEF5F8]'
+                              : 'text-[#211D20] hover:bg-[#FEF5F8]',
+                      isActive && !isSel && !off ? 'ring-1 ring-inset ring-[#FFC1D6]' : '',
+                    ].join(' ')}
+                  >
+                    {c.day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 flex items-center justify-between text-xs font-medium">
               <button type="button" onClick={clear} className="text-[#6E646B] hover:text-[#211D20]">
                 Clear
               </button>
