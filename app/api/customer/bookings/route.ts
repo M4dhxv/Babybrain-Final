@@ -30,17 +30,18 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  /* QA 24/08: "they are in the order you book them — it makes more sense for
-     them to be ordered chronologically in order of when they are happening."
-     Sorted here rather than in the query: activity_sessions is a to-one embed,
-     and PostgREST's `referencedTable` ordering sorts the embedded rows, not the
-     bookings that carry them. One parent's bookings is a small list. Booking
-     date stays the tiebreak for two seats on the same session. */
+  /* Most recently booked first, so a class the parent just booked is at the
+     top of the list rather than buried under earlier-dated ones. Class start
+     time is the tiebreak (later session first) for two bookings made at the
+     same moment. Sorted here rather than in the query: activity_sessions is a
+     to-one embed, and PostgREST's `referencedTable` ordering sorts the
+     embedded rows, not the bookings that carry them. */
   const rows = (data ?? []).slice().sort((a, b) => {
+    const c = String(b.created_at).localeCompare(String(a.created_at));
+    if (c !== 0) return c;
     const at = (a as { activity_sessions?: { starts_at?: string } }).activity_sessions?.starts_at ?? '';
     const bt = (b as { activity_sessions?: { starts_at?: string } }).activity_sessions?.starts_at ?? '';
-    if (at !== bt) return at < bt ? -1 : 1;
-    return String(b.created_at).localeCompare(String(a.created_at));
+    return at < bt ? 1 : at > bt ? -1 : 0;
   });
   const allIds = rows.map((r) => r.id);
 

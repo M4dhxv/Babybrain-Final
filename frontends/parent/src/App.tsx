@@ -2487,9 +2487,9 @@ function BookingStatusChip({ b, className = "" }: { b: BookingItem; className?: 
   return (
     <div className={className}>
       {mixed ? (
-        <span className={`inline-flex items-center gap-1.5 ${pill} bg-[#F4EFF0]`}>
+        <span className={`inline-flex items-center gap-1.5 ${pill} bg-[#F1FBEF]`}>
           <span className="text-palette-greenInk">{confirmed} confirmed</span>
-          <span className="text-[#8A93AC]">·</span>
+          <span className="text-[#A8B0A0]">·</span>
           <span className="text-palette-orangeStrong">{waiting} waitlisted</span>
         </span>
       ) : (
