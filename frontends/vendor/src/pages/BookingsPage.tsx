@@ -1067,7 +1067,7 @@ export default function BookingsPage() {
               </div>
               <div className="flex items-start gap-2 mt-5 p-3 bg-blue-50 rounded-xl">
                 <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">Promoting a family confirms their booking and sends a notification.</p>
+                <p className="text-xs text-blue-700">Promoting confirms a family that already paid (package credit, make-up token, or a free class). On a paid class they haven't paid for, it sends them a "pay now" link instead — their place is confirmed once they pay.</p>
               </div>
             </div>
           )}

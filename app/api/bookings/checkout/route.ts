@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   // still passes booking_id).
   const seatQuery = supabase
     .from('bookings')
-    .select('id, user_id, session_id, payment_status, booking_group_id, status');
+    .select('id, user_id, session_id, payment_status, booking_group_id, status, waitlist_pay_invited');
   const { data: seats } = body.group_id
     ? await seatQuery.eq('booking_group_id', body.group_id)
     : body.booking_id
@@ -77,8 +77,14 @@ export async function POST(request: Request) {
   // Paying to claim a freed seat from the waitlist: the seat isn't held, so
   // re-check there's actually one going before sending the parent to Stripe.
   // The moment the class fills, this "Pay now" stops working — that's the
-  // "expire the link when the vacancy is filled" behaviour.
-  if (seats.some((s) => (s as { status?: string }).status === 'waitlisted')) {
+  // "expire the link when the vacancy is filled" behaviour. A vendor "Promote"
+  // on an unpaid booking (waitlist_pay_invited, 00101) is an explicit offer,
+  // so it's allowed through even at capacity.
+  const waitlisted = seats.filter((s) => (s as { status?: string }).status === 'waitlisted');
+  const vendorInvited = waitlisted.every(
+    (s) => (s as { waitlist_pay_invited?: boolean }).waitlist_pay_invited === true
+  );
+  if (waitlisted.length > 0 && !vendorInvited) {
     const { count } = await admin
       .from('bookings')
       .select('id', { count: 'exact', head: true })

@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         .in('id', wlSessionIds),
       admin
         .from('bookings')
-        .select('id, session_id, status, payment_status, package_purchase_id, waitlist_position, created_at')
+        .select('id, session_id, status, payment_status, package_purchase_id, waitlist_position, waitlist_pay_invited, created_at')
         .in('session_id', wlSessionIds),
     ]);
     const wlBookingIds = (sessBookings ?? [])
@@ -99,25 +99,30 @@ export async function GET(request: Request) {
         .in('redeemed_booking_id', wlBookingIds);
       redeemedWl = new Set((rt ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id));
     }
+    const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
+      b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
     for (const s of sess ?? []) {
       const price = Number(s.price ?? (s.activities as { price?: number | null } | null)?.price ?? 0);
       if (price <= 0) continue; // free class: promotion is automatic
       const onSession = (sessBookings ?? []).filter((b) => b.session_id === s.id);
+      const wl = onSession.filter((b) => b.status === 'waitlisted');
+
+      // A vendor who used "Promote" on an unpaid booking has offered the seat
+      // explicitly — show "Pay now" even if the class is at capacity.
+      for (const b of wl) {
+        if (b.waitlist_pay_invited && !isSettled(b)) claimable.add(b.id);
+      }
+
       const taken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
       const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - taken;
       if (free <= 0) continue;
-      const queue = onSession
-        .filter((b) => b.status === 'waitlisted')
-        .sort(
-          (a, b) =>
-            (a.waitlist_position ?? 1e9) - (b.waitlist_position ?? 1e9) ||
-            String(a.created_at).localeCompare(String(b.created_at))
-        );
+      const queue = wl.sort(
+        (a, b) =>
+          (a.waitlist_position ?? 1e9) - (b.waitlist_position ?? 1e9) ||
+          String(a.created_at).localeCompare(String(b.created_at))
+      );
       for (let i = 0; i < Math.min(free, queue.length); i++) {
-        const q = queue[i];
-        const settled =
-          q.payment_status === 'paid' || q.package_purchase_id != null || redeemedWl.has(q.id);
-        if (!settled) claimable.add(q.id);
+        if (!isSettled(queue[i])) claimable.add(queue[i].id);
       }
     }
   }

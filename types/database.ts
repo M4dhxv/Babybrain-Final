@@ -512,6 +512,9 @@ export type Database = {
           provider_id: string | null;
           status: BookingStatus;
           waitlist_position: number | null;
+          // A vendor promoted this waitlisted booking on a paid class it
+          // wasn't paid for (00101) — parent gets "Pay now" even at capacity.
+          waitlist_pay_invited: boolean;
           medical_disclosure: string | null;
           info_response: string | null;
           payment_status: PaymentStatus;
