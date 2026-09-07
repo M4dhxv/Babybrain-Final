@@ -4596,29 +4596,13 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
 
   async function doCancel(b: BookingItem) {
     const seats = b.places.length;
-    // Tell them what comes back — the compensate_cancelled_booking trigger
-    // (00080/00081) reinstates the credit, releases the make-up token, or
-    // issues a fresh one for a cash booking. A party returns one of these
-    // per seat.
-    const unit = seats > 1 ? `${seats} class credits` : "Your class credit";
-    const back =
-      // 00097: the provider marked this class non-refundable on cancel —
-      // nothing comes back regardless of how it was paid.
-      b.refundMode === "none"
-        ? " Payment for this activity is non-refundable, if cancelled — no credit or make-up token is returned."
-        : b.paidWith === "credit"
-        ? ` ${unit} will be returned to your package.`
-        : b.paidWith === "token"
-          ? " Your make-up token will be released so you can use it again."
-          : b.paidWith === "cash"
-            ? ` You'll be issued ${seats > 1 ? `${seats} make-up tokens` : "a make-up token"} to use on another class.`
-            : // QA 04/09: with nothing specific to promise, the bare "Cancel your
-              // booking?" implied BabyBrain decides what happens to the money. Say
-              // whose call it actually is, before they confirm rather than after.
-              " Eligibility for a refund or make-up token is per vendor policy.";
+    // What a cancellation actually gives back is the vendor's policy (00097)
+    // and is shown on the booking afterwards — the confirm step just says so
+    // rather than promising a specific outcome up front.
+    const tail = "Eligibility for refund or make up tokens is per vendor policy.";
     const q = party(b)
-      ? `Cancel all ${seats} places for ${b.title}?${back}`
-      : `Cancel your booking for ${b.title}?${back}`;
+      ? `Cancel all ${seats} places for ${b.title}? ${tail}`
+      : `Cancel your booking for ${b.title}? ${tail}`;
     if (!window.confirm(q)) return;
     setBusyId(b.id);
     const { error } = party(b) && b.groupId
@@ -4644,15 +4628,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   async function cancelPlace(b: BookingItem, bookingId: string, name: string) {
     const why = cancelBlockReason(b);
     if (why) { setNotice(why); return; }
-    const back =
-      b.refundMode === "none"
-        ? " Payment for this activity is non-refundable, if cancelled."
-        : b.paidWith === "credit"
-        ? " 1 class credit will be returned to your package."
-        : b.paidWith === "cash"
-          ? " You'll be issued a make-up token to use on another class."
-          : "";
-    if (!window.confirm(`Cancel ${name}'s place on ${b.title}?${back}`)) return;
+    if (!window.confirm(`Cancel ${name}'s place on ${b.title}? Eligibility for refund or make up tokens is per vendor policy.`)) return;
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     setBusyId(null);
