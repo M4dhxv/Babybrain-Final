@@ -3004,9 +3004,10 @@ function ProfilePage() {
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
-  /* Unread badge on the Messages tab (QA 04/09). Only connects a chat client
-     for a parent who can actually use messaging — a Plus perk. */
-  const unreadMessages = useUnreadMessages(Boolean(session) && isPlus);
+  /* Unread badge on the Messages tab (QA 04/09). Free parents can read their
+     conversations now, so the badge is worth showing to them too — an unread
+     message they can open is exactly what it is for. */
+  const unreadMessages = useUnreadMessages(Boolean(session));
 
   // Below lg the nav is a left-hand drawer, not a stacked block. Landing on the
   // profile (the Overview tab) auto-reveals it: it slides in, holds for 4s,
@@ -4017,11 +4018,21 @@ function ProfilePage() {
             </div>
           )}
 
-          {tab === "messages" && planKnown && !isPlus && (
-            <PlusLock
-              title="Messages are a Plus feature"
-              copy="With Plus, every conversation with an integrated provider — enquiries, class group chats, support — lives in one inbox. You can still read messages on your booked classes for free; sending needs Plus and the provider to have messaging enabled."
-            />
+          {/* QA 04/09: the copy here promised "you can still read messages on
+              your booked classes for free" while the tab showed nothing but an
+              upgrade card. Free parents now get the reading half — the same
+              inbox, with the composer replaced by an upgrade line — above a
+              short note about what Plus adds. */}
+          {tab === "messages" && planKnown && !isPlus && session && (
+            <div>
+              <h1 className="mb-4 text-[26px] font-black">Messages</h1>
+              <p className="mb-4 rounded-[12px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
+                You can read the conversations you're part of. Replying, and starting a new
+                conversation with a provider, needs{" "}
+                <a href="/pricing" className="font-black text-baby-pink hover:underline">Plus</a>.
+              </p>
+              <MessagesTab userId={session.user.id} readOnly />
+            </div>
           )}
           {tab === "messages" && isPlus && session && (
             <div>

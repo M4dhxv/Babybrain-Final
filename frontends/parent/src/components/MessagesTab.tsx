@@ -34,10 +34,12 @@ function ChatPanes({
   userId,
   deepLinkChannel,
   isMobile,
+  readOnly,
 }: {
   userId: string;
   deepLinkChannel?: string;
   isMobile: boolean;
+  readOnly: boolean;
 }) {
   const { channel, setActiveChannel } = useChatContext();
   const chatOpen = !!channel;
@@ -61,7 +63,9 @@ function ChatPanes({
           setActiveChannelOnMount={!isMobile || !!deepLinkChannel}
           EmptyStateIndicator={() => (
             <div className="p-6 text-center text-sm font-semibold text-[#68718f]">
-              No conversations yet. Message a provider from a class page to start one.
+              {readOnly
+                ? "No conversations yet. Class group chats appear here once a provider starts one for a class you've booked."
+                : "No conversations yet. Message a provider from a class page to start one."}
             </div>
           )}
         />
@@ -78,7 +82,20 @@ function ChatPanes({
             </button>
             <ChannelHeader />
             <MessageList />
-            <MessageInput />
+            {/* QA 04/09: "they should be able to see messages on classed booked
+                onto but the type & send function be greyed out." Free parents
+                get the reading half; the composer is replaced rather than
+                disabled, so it explains itself instead of looking broken. */}
+            {readOnly ? (
+              <div className="border-t border-[#F4EFF0] bg-[#FAF7F7] px-4 py-3 text-sm font-semibold text-[#68718f]">
+                Replying is a Plus feature.{" "}
+                <a href="/pricing" className="font-black text-baby-pink hover:underline">
+                  Upgrade to join in
+                </a>
+              </div>
+            ) : (
+              <MessageInput />
+            )}
           </Window>
           <Thread />
         </Channel>
@@ -92,7 +109,7 @@ function ChatPanes({
  * group chats, support — in one place. QA: "Where do parents paying see
  * messages? Need a tab". Mirrors the vendor portal's MessagesPage.
  */
-export function MessagesTab({ userId }: { userId: string }) {
+export function MessagesTab({ userId, readOnly = false }: { userId: string; readOnly?: boolean }) {
   const [client, setClient] = useState<StreamChat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deepLinkChannel] = useState(
@@ -140,7 +157,7 @@ export function MessagesTab({ userId }: { userId: string }) {
   return (
     <div className="bb-chat h-[600px] overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card str-chat__theme-light">
       <Chat client={client}>
-        <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} />
+        <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} readOnly={readOnly} />
       </Chat>
     </div>
   );
