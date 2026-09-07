@@ -793,39 +793,40 @@ export default function ActivitiesPage() {
     setSaving(false);
     if (error) { setFormError(error.message); return; }
 
-    // Capacity is presented as an activity-wide setting, so a change to it
-    // carries to this activity's still-upcoming sessions — otherwise the
+    // Capacity is an activity-wide setting, so every save re-aligns this
+    // activity's still-upcoming, non-cancelled sessions to it — otherwise the
     // parent app keeps showing the old spots left for classes already on the
-    // schedule. Per-session tweaks are redone from Manage schedule. Never
-    // drops a session below what's already booked; best-effort, so a hiccup
-    // here never blocks the save that already went through.
+    // schedule. A session already at that number (or below its own booking
+    // count) is left alone; nothing is ever dropped below what's booked.
+    // Per-session exceptions are redone from Manage schedule. Best-effort, so
+    // a hiccup here never blocks the save that already went through.
     const newCap = Number(form.default_capacity);
-    const oldCap = editingActivity?.default_capacity ?? null;
-    if (editingId && !isWixLinked && Number.isFinite(newCap) && newCap !== oldCap) {
+    if (editingId && !isWixLinked && Number.isFinite(newCap) && newCap >= 1) {
       try {
         const nowIso = new Date().toISOString();
         const { data: future } = await supabase
           .from('activity_sessions')
-          .select('id')
+          .select('id, capacity')
           .eq('activity_id', editingId)
           .gte('starts_at', nowIso)
           .neq('status', 'cancelled');
-        const ids = (future ?? []).map((s) => s.id);
-        if (ids.length) {
+        const rows = future ?? [];
+        if (rows.length) {
           const { data: bks } = await supabase
             .from('bookings')
             .select('session_id, status')
-            .in('session_id', ids);
+            .in('session_id', rows.map((s) => s.id));
           const booked: Record<string, number> = {};
           (bks ?? []).forEach((b) => {
             if (b.status !== 'cancelled') booked[b.session_id] = (booked[b.session_id] ?? 0) + 1;
           });
-          // One update per distinct capacity value (most sessions land on the
-          // same one) rather than a round-trip per session.
+          // One update per distinct target value (most sessions share it)
+          // rather than a round-trip per session; skip the already-correct.
           const groups = new Map<number, string[]>();
-          for (const id of ids) {
-            const cap = Math.max(newCap, booked[id] ?? 0);
-            groups.set(cap, [...(groups.get(cap) ?? []), id]);
+          for (const s of rows) {
+            const cap = Math.max(newCap, booked[s.id] ?? 0);
+            if (cap === s.capacity) continue;
+            groups.set(cap, [...(groups.get(cap) ?? []), s.id]);
           }
           await Promise.all(
             [...groups].map(([cap, gids]) =>
