@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DatePicker } from "./DatePicker";
 import { resolveAvatar } from "../lib/avatars";
 import type { Activity } from "../data/content";
 import { routes } from "../data/content";
@@ -580,19 +581,10 @@ export function Button({
   );
 }
 
-/** Date field that always reads and writes DD/MM/YYYY.
- *
- *  `<input type="date">` renders in the browser's locale, which showed
- *  MM/DD/YYYY for our QA reviewers. This keeps the value in ISO (yyyy-mm-dd)
- *  for the database while the parent only ever sees day-first, and auto-inserts
- *  the slashes as they type. */
-export function DateInput({
-  value,
-  onChange,
-  className = "",
-  id,
-  placeholder = "DD/MM/YYYY",
-}: {
+/** Date field — a typeable day-first text input plus our own calendar
+ *  popover ({@link DatePicker}), replacing the browser's native
+ *  `<input type="date">`. Value stays ISO (yyyy-mm-dd) for the database. */
+export function DateInput(props: {
   /** ISO yyyy-mm-dd, or "" when empty. */
   value: string;
   onChange: (iso: string) => void;
@@ -600,107 +592,7 @@ export function DateInput({
   id?: string;
   placeholder?: string;
 }) {
-  const isoToUk = (iso: string) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-    return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
-  };
-  const [text, setText] = useState(() => isoToUk(value));
-
-  // Follow the value when it's changed from outside (e.g. a form reset or a
-  // record loading in), but never fight the user mid-typing.
-  const [lastValue, setLastValue] = useState(value);
-  if (value !== lastValue) {
-    setLastValue(value);
-    setText(isoToUk(value));
-  }
-
-  function handle(raw: string) {
-    const digits = raw.replace(/\D/g, "").slice(0, 8);
-    const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
-    const pretty = parts.join("/");
-    setText(pretty);
-
-    if (digits.length < 8) {
-      if (value) onChange("");
-      return;
-    }
-    const [dd, mm, yyyy] = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)];
-    const iso = `${yyyy}-${mm}-${dd}`;
-    // Reject impossible dates (31/02) — Date normalises them silently. Dates
-    // that are real but out of range are still emitted: clamping them to ""
-    // here made every range problem surface as "enter a date as DD/MM/YYYY",
-    // which QA read as the format being wrong. Range is the caller's to judge.
-    const d = new Date(`${iso}T00:00:00Z`);
-    const isRealDate =
-      d.getUTCFullYear() === Number(yyyy) &&
-      d.getUTCMonth() + 1 === Number(mm) &&
-      d.getUTCDate() === Number(dd);
-    onChange(isRealDate ? iso : "");
-  }
-
-  /* QA asked for "a calendar pop out so you can easily select dates (but also
-   * be able to type too if you wish)". The visible field stays day-first text
-   * so typing is unambiguous — a native `type="date"` renders MM/DD/YYYY for
-   * some locales, which is what it replaced. The calendar button opens a
-   * hidden native date input over the same spot, so picking a date is one tap
-   * and the two stay in sync. */
-  const picker = useRef<HTMLInputElement>(null);
-  const openPicker = () => {
-    const el = picker.current;
-    if (!el) return;
-    // showPicker() is the reliable way; older browsers fall back to a click,
-    // which opens the picker on the (visually hidden) native control.
-    if (typeof el.showPicker === "function") {
-      try {
-        el.showPicker();
-        return;
-      } catch {
-        /* not allowed in this context — fall through */
-      }
-    }
-    el.focus();
-    el.click();
-  };
-
-  return (
-    <span className="relative block">
-      <input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        value={text}
-        placeholder={placeholder}
-        aria-describedby={id ? `${id}-format` : undefined}
-        onChange={(e) => handle(e.target.value)}
-        className={`${className} pr-10`}
-      />
-      <button
-        type="button"
-        onClick={openPicker}
-        aria-label="Open calendar"
-        className="absolute right-0 top-0 grid h-full w-10 place-items-center text-[#6D748A] transition hover:text-baby-pink"
-      >
-        <Icon name="calendar" className="h-4 w-4" />
-      </button>
-      <input
-        ref={picker}
-        type="date"
-        tabIndex={-1}
-        aria-hidden="true"
-        value={value || ""}
-        onChange={(e) => {
-          const iso = e.target.value;
-          setText(isoToUk(iso));
-          setLastValue(iso);
-          onChange(iso);
-        }}
-        // Sits under the button so the native popup anchors there, but is
-        // never focusable or readable — the text field is the real control.
-        className="pointer-events-none absolute right-2 bottom-0 h-0 w-0 opacity-0"
-      />
-    </span>
-  );
+  return <DatePicker {...props} />;
 }
 
 /** Scattered brand confetti — hearts, stars, dots and dashes in the palette

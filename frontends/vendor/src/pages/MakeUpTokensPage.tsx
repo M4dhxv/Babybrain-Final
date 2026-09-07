@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { DatePicker } from '@/components/ui/date-picker';
 
 /**
  * The make-up tokens table's column tracks. Header and body rows are separate grids, so the
@@ -246,11 +247,11 @@ export default function MakeUpTokensPage() {
                           <Opt value="none">never</Opt>
                         </SelectField>
                         {expiryMode === 'custom' && (
-                          <input
-                            type="date"
+                          <DatePicker
                             value={expiryDate}
-                            onChange={(e) => setExpiryDate(e.target.value)}
-                            className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                            onChange={setExpiryDate}
+                            aria-label="Token expiry date"
+                            className="px-2 py-1 text-xs text-gray-700"
                           />
                         )}
                         <button

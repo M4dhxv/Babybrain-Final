@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { DatePicker } from '@/components/ui/date-picker';
 
 /**
  * The class roster table's column tracks. Header and body rows are separate grids, so the
@@ -169,7 +170,6 @@ export default function BookingsPage() {
   // list. Empty string = no filter, matching <input type="date">'s own "no
   // value" state.
   const [dateFilter, setDateFilter] = useState('');
-  const dateFilterRef = useRef<HTMLInputElement>(null);
   // Recomputed on mount (and if `sessions` changes) — fine for a page a
   // vendor doesn't leave open across midnight.
   const startTodayIso = useMemo(() => sgStartOfDayIso(sgTodayKey()), []);
@@ -488,11 +488,11 @@ export default function BookingsPage() {
         <Opt value="none">never</Opt>
       </SelectField>
       {tokenExpiry === 'custom' && (
-        <input
-          type="date"
+        <DatePicker
           value={tokenExpiryDate}
-          onChange={(e) => setTokenExpiryDate(e.target.value)}
-          className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+          onChange={setTokenExpiryDate}
+          aria-label="Token expiry date"
+          className="px-2 py-1 text-xs text-gray-700"
         />
       )}
     </div>
@@ -623,22 +623,13 @@ export default function BookingsPage() {
             </div>
             <div className="h-px w-full bg-gray-200 sm:h-4 sm:w-px" />
             <div className="flex min-w-0 items-center gap-2">
-              {/* The input's own native picker-indicator icon is hidden — this
-                  icon opens the same picker instead, so there's only one
-                  calendar symbol instead of two. */}
-              <CalendarDays
-                className="w-4 h-4 shrink-0 text-[#FA4D8D] cursor-pointer"
-                onClick={() => dateFilterRef.current?.showPicker?.()}
-              />
-              <input
-                ref={dateFilterRef}
-                type="date"
+              <DatePicker
+                bare
                 value={dateFilter}
                 min={sgKeyShift(sgTodayKey(), -PAST_FILTER_DAYS)}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden sm:flex-none"
+                onChange={setDateFilter}
+                className="min-w-0 flex-1 font-medium sm:flex-none"
                 aria-label={`Filter sessions by date — past ${PAST_FILTER_DAYS} days available`}
-                title={`Pick any date from the last ${PAST_FILTER_DAYS} days onward to open that day's roster`}
               />
               {dateFilter && (
                 <button onClick={() => setDateFilter('')} className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600">

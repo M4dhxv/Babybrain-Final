@@ -32,6 +32,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
@@ -1711,7 +1712,7 @@ export default function ActivitiesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
-                  <input type="date" className={inputCls} value={sessForm.date} onChange={(e) => setSessForm({ ...sessForm, date: e.target.value })} />
+                  <DatePicker className={inputCls} value={sessForm.date} onChange={(v) => setSessForm({ ...sessForm, date: v })} aria-label="Session date" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Start time</label>
@@ -1787,7 +1788,7 @@ export default function ActivitiesPage() {
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Date</span>
-                          <input type="date" className={inputCls} value={sessEditForm.date} onChange={(e) => setSessEditForm({ ...sessEditForm, date: e.target.value })} />
+                          <DatePicker className={inputCls} value={sessEditForm.date} onChange={(v) => setSessEditForm({ ...sessEditForm, date: v })} aria-label="Session date" />
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Start time (SGT)</span>
