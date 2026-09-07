@@ -4,7 +4,7 @@ import {
   addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
   isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw, PauseCircle, PlayCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
@@ -30,6 +30,9 @@ type EnrichedSession = {
   studio: string | null;
   fromWix: boolean;
   isCourse: boolean;
+  // Per-session pause (00091) — closes just this slot to new parent bookings,
+  // independent of the activity-wide switch.
+  bookingsPaused: boolean;
 };
 
 export default function SchedulePage() {
@@ -46,6 +49,7 @@ export default function SchedulePage() {
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [wixError, setWixError] = useState<string | null>(null);
+  const [pauseError, setPauseError] = useState<string | null>(null);
   const [wixSyncedAt, setWixSyncedAt] = useState<Date | null>(null);
   const [syncNonce, setSyncNonce] = useState(0);
 
@@ -103,7 +107,7 @@ export default function SchedulePage() {
       const locationMap = new Map(locations.map((l) => [l.id, l.name]));
       const { data: sess } = await supabase
         .from('activity_sessions')
-        .select('id, activity_id, starts_at, ends_at, capacity, location_id, teacher_name, studio, wix_slot_key, wix_remaining_capacity')
+        .select('id, activity_id, starts_at, ends_at, capacity, location_id, teacher_name, studio, bookings_paused, wix_slot_key, wix_remaining_capacity')
         .in('activity_id', activities.map((a) => a.id))
         .neq('status', 'cancelled')
         // A COURSE enrolment's anchor row spans the whole run — it's not a
@@ -167,6 +171,7 @@ export default function SchedulePage() {
             studio: s.studio,
             fromWix,
             isCourse: act?.wix_service_type === 'COURSE',
+            bookingsPaused: !!s.bookings_paused,
           };
         })
       );
@@ -184,6 +189,20 @@ export default function SchedulePage() {
       ),
     [sessions, fActivity, fLocation, locations]
   );
+
+  // Close (or reopen) one slot to new parent bookings, straight from the
+  // calendar. Independent of the activity-wide pause; a manual booking can
+  // still be recorded against a paused session. The gate is enforced in the
+  // database (00091).
+  async function togglePause(s: EnrichedSession) {
+    setPauseError(null);
+    const { error } = await supabase
+      .from('activity_sessions')
+      .update({ bookings_paused: !s.bookingsPaused })
+      .eq('id', s.id);
+    if (error) { setPauseError(error.message); return; }
+    setSyncNonce((n) => n + 1);
+  }
 
   const goToday = () => setCursor(new Date());
   const goPrev = () => setCursor((c) => (view === 'week' ? addDays(c, -7) : addMonths(c, -1)));
@@ -230,6 +249,9 @@ export default function SchedulePage() {
       <div className="px-4 pb-8 sm:px-8">
         {wixError && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{wixError}</div>
+        )}
+        {pauseError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pauseError}</div>
         )}
 
         {/* Controls. Mobile stacks them one per row, centred, in the order
@@ -348,7 +370,12 @@ export default function SchedulePage() {
                   </div>
                   <div className="space-y-2">
                     {daySessions.map((s) => (
-                      <SessionCard key={s.id} s={s} onClick={() => navigate(`/bookings?session=${s.id}`)} />
+                      <SessionCard
+                        key={s.id}
+                        s={s}
+                        onClick={() => navigate(`/bookings?session=${s.id}`)}
+                        onTogglePause={s.fromWix ? undefined : () => togglePause(s)}
+                      />
                     ))}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
                   </div>
@@ -396,8 +423,11 @@ export default function SchedulePage() {
                           key={s.id}
                           className={cn(
                             'truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
-                            s.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
+                            s.bookingsPaused
+                              ? 'bg-amber-100 text-amber-800'
+                              : s.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
                           )}
+                          title={s.bookingsPaused ? 'Bookings paused for this session' : undefined}
                         >
                           {sgTime(s.starts_at)} {s.title}
                         </div>
@@ -415,28 +445,37 @@ export default function SchedulePage() {
   );
 }
 
-function SessionCard({ s, onClick }: { s: EnrichedSession; onClick: () => void }) {
+function SessionCard({
+  s, onClick, onTogglePause,
+}: { s: EnrichedSession; onClick: () => void; onTogglePause?: () => void }) {
   const full = s.capacity != null && s.booked >= s.capacity;
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full rounded-lg border px-2.5 py-2 text-left transition-colors',
-        s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
-        <div className="flex shrink-0 items-center gap-1">
-          {s.isCourse && (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Course</span>
-          )}
-          {s.fromWix && (
-            <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
-          )}
+    <div className="relative">
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-full rounded-lg border px-2.5 py-2 text-left transition-colors',
+          onTogglePause && 'pr-8',
+          s.bookingsPaused
+            ? 'border-amber-200 bg-amber-50/80 hover:bg-amber-50'
+            : s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
+          <div className="flex shrink-0 items-center gap-1">
+            {s.bookingsPaused && (
+              <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Paused</span>
+            )}
+            {s.isCourse && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Course</span>
+            )}
+            {s.fromWix && (
+              <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="truncate text-xs text-gray-700">{s.title}</div>
+        <div className="truncate text-xs text-gray-700">{s.title}</div>
       {s.locationName && (
         <div className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500">
           <MapPin className="h-3 w-3 flex-shrink-0" /> <span className="truncate">{s.locationName}</span>
@@ -458,6 +497,20 @@ function SessionCard({ s, onClick }: { s: EnrichedSession; onClick: () => void }
           {s.isCourse ? ' enrolled · course' : full ? ' · Full' : ''}
         </span>
       </div>
-    </button>
+      </button>
+      {onTogglePause && (
+        <button
+          type="button"
+          onClick={onTogglePause}
+          title={s.bookingsPaused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
+          className={cn(
+            'absolute right-1 top-1 rounded-md p-1',
+            s.bookingsPaused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+          )}
+        >
+          {s.bookingsPaused ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+        </button>
+      )}
+    </div>
   );
 }
