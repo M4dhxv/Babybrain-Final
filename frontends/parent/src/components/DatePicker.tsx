@@ -241,8 +241,8 @@ export function DatePicker({
   };
 
   // bare: the wrapper is the flex child (carries the caller's width classes)
-  // and lays the field + icon out in a row. Non-bare: the caller styles the
-  // input, the icon sits absolutely inside it.
+  // and lays the icon + field out in a tight row, icon first. Non-bare: the
+  // caller styles the input, the icon sits absolutely inside it.
   const wrapCls = bare
     ? ['relative inline-flex min-w-0 items-center gap-1', className].filter(Boolean).join(' ')
     : 'relative block';
@@ -250,8 +250,29 @@ export function DatePicker({
     ? 'min-w-0 flex-1 bg-transparent text-sm font-medium text-[#211D20] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
     : [INPUT_BASE, 'pr-10', className].filter(Boolean).join(' ');
 
+  const calButton = (
+    <button
+      type="button"
+      tabIndex={-1}
+      disabled={disabled}
+      onClick={() => (open ? setOpen(false) : openCal())}
+      aria-label="Open calendar"
+      className={
+        bare
+          ? 'inline-grid h-5 w-5 shrink-0 place-items-center text-[#FA4D8D] disabled:opacity-60'
+          : 'absolute right-0 top-0 grid h-full w-10 place-items-center text-[#FA4D8D] hover:text-[#C90044] disabled:opacity-60'
+      }
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
+      </svg>
+    </button>
+  );
+
   return (
     <span ref={wrapRef} className={wrapCls}>
+      {bare && calButton}
       <input
         ref={inputRef}
         id={id}
@@ -265,23 +286,7 @@ export function DatePicker({
         onChange={(e) => emit(e.target.value)}
         className={inputCls}
       />
-      <button
-        type="button"
-        tabIndex={-1}
-        disabled={disabled}
-        onClick={() => (open ? setOpen(false) : openCal())}
-        aria-label="Open calendar"
-        className={
-          bare
-            ? 'inline-grid h-6 w-6 shrink-0 place-items-center rounded text-[#FA4D8D] disabled:opacity-60'
-            : 'absolute right-0 top-0 grid h-full w-10 place-items-center text-[#FA4D8D] hover:text-[#C90044] disabled:opacity-60'
-        }
-      >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18" />
-        </svg>
-      </button>
+      {!bare && calButton}
 
       {open &&
         createPortal(
