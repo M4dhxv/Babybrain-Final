@@ -2474,9 +2474,9 @@ function bookingStatusStyle(status: string) {
 
 /** The status pill for a booking card. A multi-child party can straddle the
  *  session's capacity, so when its seats aren't all the same status it shows a
- *  two-tone summary ("2 confirmed · 1 waitlisted", green / bright orange) plus
- *  a plain-language waitlist note. A solo booking, or a party whose seats all
- *  agree, keeps the single capitalised pill exactly as before. */
+ *  two-tone summary ("2 confirmed · 1 waitlisted", green / bright orange). A
+ *  solo booking, or a party whose seats all agree, keeps the single
+ *  capitalised pill exactly as before. */
 function BookingStatusChip({ b, className = "" }: { b: BookingItem; className?: string }) {
   const live = b.seatStatuses.filter((s) => s !== "cancelled");
   const waiting = live.filter((s) => s === "waitlisted").length;
@@ -2484,23 +2484,17 @@ function BookingStatusChip({ b, className = "" }: { b: BookingItem; className?: 
   const mixed = b.places.length > 1 && waiting > 0 && confirmed > 0;
   const pill = "rounded-full px-3 py-1 text-xs font-bold";
 
-  if (!mixed) {
-    return (
-      <div className={className}>
-        <span className={`inline-flex capitalize ${pill} ${bookingStatusStyle(b.status)}`}>{b.status}</span>
-      </div>
-    );
-  }
   return (
-    <div className={`flex flex-col items-start gap-1 ${className}`}>
-      <span className={`inline-flex items-center gap-1.5 ${pill} bg-[#F4EFF0]`}>
-        <span className="text-palette-greenInk">{confirmed} confirmed</span>
-        <span className="text-[#8A93AC]">·</span>
-        <span className="text-palette-orangeStrong">{waiting} waitlisted</span>
-      </span>
-      <span className="flex items-center gap-1 text-[11.5px] font-bold text-palette-orangeStrong">
-        <Icon name="clock" className="h-3 w-3" /> {waiting} of {live.length} on the waitlist
-      </span>
+    <div className={className}>
+      {mixed ? (
+        <span className={`inline-flex items-center gap-1.5 ${pill} bg-[#F4EFF0]`}>
+          <span className="text-palette-greenInk">{confirmed} confirmed</span>
+          <span className="text-[#8A93AC]">·</span>
+          <span className="text-palette-orangeStrong">{waiting} waitlisted</span>
+        </span>
+      ) : (
+        <span className={`inline-flex capitalize ${pill} ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+      )}
     </div>
   );
 }
