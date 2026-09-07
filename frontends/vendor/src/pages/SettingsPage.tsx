@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import type { ProviderPolicy, VendorCategory } from '@/lib/database.types';
 import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
+import { SelectField, Opt } from '@/components/ui/select-field';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -408,10 +409,10 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Category</label>
-                    <select className={inputCls} value={form.vendor_category} onChange={(e) => setForm({ ...form, vendor_category: e.target.value as VendorCategory })}>
-                      <option value="">Select a category</option>
-                      {VENDOR_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
+                    <SelectField className={inputCls} value={form.vendor_category} onChange={(v) => setForm({ ...form, vendor_category: v as VendorCategory })} placeholder="Select a category" aria-label="Category">
+                      <Opt value="">Select a category</Opt>
+                      {VENDOR_CATEGORIES.map((c) => <Opt key={c.value} value={c.value}>{c.label}</Opt>)}
+                    </SelectField>
                   </div>
                 </div>
                 <div>
@@ -593,13 +594,14 @@ export default function SettingsPage() {
                     onChange={(e) => setInviteEmail(e.target.value)}
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
                   />
-                  <select
+                  <SelectField
                     value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as 'manager' | 'staff')}
-                    className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white">
-                    <option value="staff">Staff</option>
-                    <option value="manager">Manager</option>
-                  </select>
+                    onChange={(v) => setInviteRole(v as 'manager' | 'staff')}
+                    aria-label="Invite role"
+                    className="px-3 py-2">
+                    <Opt value="staff">Staff</Opt>
+                    <Opt value="manager">Manager</Opt>
+                  </SelectField>
                   <button
                     onClick={inviteMember}
                     disabled={inviting || !inviteEmail.trim()}
@@ -1651,10 +1653,10 @@ function PoliciesManager({
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
-              <select className={inputCls} value={form.activity_id} onChange={(e) => setForm({ ...form, activity_id: e.target.value })}>
-                <option value="">All of my activities</option>
-                {activities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-              </select>
+              <SelectField className={inputCls} value={form.activity_id} onChange={(v) => setForm({ ...form, activity_id: v })} aria-label="Applies to">
+                <Opt value="">All of my activities</Opt>
+                {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
+              </SelectField>
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Document (optional)</label>

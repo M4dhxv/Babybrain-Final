@@ -26,6 +26,7 @@ import {
   type ReactNode,
 } from "react";
 import { MessagesTab } from "./components/MessagesTab";
+import { SelectField, Opt } from "./components/SelectField";
 import { useUnreadMessages } from "./lib/chat";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
@@ -1227,11 +1228,11 @@ function ExplorePage() {
           <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#F4EFF0] pt-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-bold text-[#68718f]">Sort by</span>
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className={selectClass}>
-                <option value="popular">Most popular</option>
-                <option value="distance">Nearest</option>
-                <option value="soonest">Starting soonest</option>
-              </select>
+              <SelectField value={sort} onChange={(v) => setSort(v as typeof sort)} aria-label="Sort by" className="h-10 w-full px-3 text-[13px] font-bold">
+                <Opt value="popular">Most popular</Opt>
+                <Opt value="distance">Nearest</Opt>
+                <Opt value="soonest">Starting soonest</Opt>
+              </SelectField>
             </label>
             <button
               type="button"
@@ -1250,19 +1251,20 @@ function ExplorePage() {
           {sort === "distance" && !here && (
             <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
               <span>Allow location access to sort by how near activities are to you, or</span>
-              <select
-                defaultValue=""
-                onChange={(e) => {
-                  const centroid = REGION_CENTROIDS[e.target.value];
+              <SelectField
+                value=""
+                placeholder="pick your area"
+                aria-label="Pick your area"
+                onChange={(v) => {
+                  const centroid = REGION_CENTROIDS[v];
                   if (centroid) setHere(centroid);
                 }}
-                className="h-7 rounded-[8px] border border-[#EBE3E5] bg-white px-2 text-xs font-bold text-[#4a5680] focus:border-baby-pink focus:outline-none"
+                className="h-7 px-2 text-xs font-bold text-[#4a5680]"
               >
-                <option value="" disabled>pick your area</option>
                 {REGION_FILTERS.map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
+                  <Opt key={v} value={v}>{l}</Opt>
                 ))}
-              </select>
+              </SelectField>
             </p>
           )}
 
@@ -2303,16 +2305,17 @@ function ChildSelect({
   return (
     <label className="mb-4 flex items-center gap-2 text-sm font-bold text-[#4a5685]">
       {label}
-      <select
+      <SelectField
         value={value ?? "all"}
-        onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
-        className="h-10 rounded-[10px] border border-[#DCD2D5] bg-white px-3 text-sm font-bold text-[#4a5685]"
+        onChange={(v) => onChange(v === "all" ? null : v)}
+        aria-label={label}
+        className="h-10 px-3 text-sm font-bold text-[#4a5685]"
       >
-        <option value="all">All children (split out)</option>
+        <Opt value="all">All children (split out)</Opt>
         {kids.map((k) => (
-          <option key={k.id} value={k.id}>{k.name}</option>
+          <Opt key={k.id} value={k.id}>{k.name}</Opt>
         ))}
-      </select>
+      </SelectField>
     </label>
   );
 }

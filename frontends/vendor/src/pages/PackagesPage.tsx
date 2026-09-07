@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { SelectField, Opt } from '@/components/ui/select-field';
 
 /**
  * The package purchases table's column tracks. Header and body rows are separate grids, so the
@@ -319,10 +320,10 @@ export default function PackagesPage() {
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>
                     <div className="flex w-full gap-2">
-                      <select value={packForm.allowed_weekday} onChange={(e) => setPackForm({ ...packForm, allowed_weekday: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:flex-none">
-                        <option value="">Any day</option>
-                        {WEEKDAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                      </select>
+                      <SelectField value={packForm.allowed_weekday} onChange={(v) => setPackForm({ ...packForm, allowed_weekday: v })} aria-label="Restrict to weekday" className="h-9 flex-1 px-3 sm:flex-none">
+                        <Opt value="">Any day</Opt>
+                        {WEEKDAY_NAMES.map((d, i) => <Opt key={d} value={String(i)}>{d}</Opt>)}
+                      </SelectField>
                       <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm sm:flex-none" title="Session start time (SGT); leave blank for any time" />
                     </div>
                   </div>

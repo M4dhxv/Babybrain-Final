@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Crown, TrendingUp, Users, CalendarDays, Eye, Star, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { SelectField, Opt } from '@/components/ui/select-field';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -203,15 +204,16 @@ export default function InsightsPage() {
         </div>
         <label className="flex items-center justify-center gap-2 sm:justify-end">
           <span className="text-xs text-gray-500">Time frame</span>
-          <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
+          <SelectField
+            value={String(days)}
+            onChange={(v) => setDays(Number(v))}
+            aria-label="Time frame"
+            className="text-gray-700"
           >
             {RANGES.map((r) => (
-              <option key={r.days} value={r.days}>{r.label}</option>
+              <Opt key={r.days} value={String(r.days)}>{r.label}</Opt>
             ))}
-          </select>
+          </SelectField>
         </label>
       </div>
 

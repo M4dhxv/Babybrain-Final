@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { SelectField, Opt } from '@/components/ui/select-field';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -622,16 +623,18 @@ export default function SaveListingPage() {
                         placeholder="Business name"
                         className="rounded-lg border-gray-300 text-sm"
                       />
-                      <select
+                      <SelectField
                         value={draft.vendor_category ?? ''}
-                        onChange={(e) => setDraft((d) => ({ ...d, vendor_category: e.target.value }))}
-                        className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                        onChange={(v) => setDraft((d) => ({ ...d, vendor_category: v as VendorCategory }))}
+                        placeholder="Select a category"
+                        aria-label="Business category"
+                        className="w-full px-2 py-1.5"
                       >
-                        <option value="">Select a category</option>
+                        <Opt value="">Select a category</Opt>
                         {VENDOR_CATEGORIES.map((c) => (
-                          <option key={c.value} value={c.value}>{c.label}</option>
+                          <Opt key={c.value} value={c.value}>{c.label}</Opt>
                         ))}
-                      </select>
+                      </SelectField>
                       {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
                       <div className="flex gap-2">
                         <Button size="sm" onClick={saveField} disabled={fieldBusy} className="gradient-primary h-7 rounded-lg text-xs text-white hover:opacity-90">

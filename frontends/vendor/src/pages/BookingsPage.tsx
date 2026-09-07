@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import { SelectField, Opt } from '@/components/ui/select-field';
 
 /**
  * The class roster table's column tracks. Header and body rows are separate grids, so the
@@ -472,19 +473,20 @@ export default function BookingsPage() {
   const expiryPicker = (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-gray-500">Expires</span>
-      <select
+      <SelectField
         value={tokenExpiry}
-        onChange={(e) => setTokenExpiry(e.target.value)}
-        className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+        onChange={setTokenExpiry}
+        aria-label="Token expiry"
+        className="px-2 py-1 text-xs text-gray-700"
       >
-        <option value="30">in 30 days</option>
-        <option value="60">in 60 days</option>
-        <option value="90">in 90 days</option>
-        <option value="180">in 6 months</option>
-        <option value="365">in 12 months</option>
-        <option value="custom">on a set date…</option>
-        <option value="none">never</option>
-      </select>
+        <Opt value="30">in 30 days</Opt>
+        <Opt value="60">in 60 days</Opt>
+        <Opt value="90">in 90 days</Opt>
+        <Opt value="180">in 6 months</Opt>
+        <Opt value="365">in 12 months</Opt>
+        <Opt value="custom">on a set date…</Opt>
+        <Opt value="none">never</Opt>
+      </SelectField>
       {tokenExpiry === 'custom' && (
         <input
           type="date"
@@ -610,14 +612,14 @@ export default function BookingsPage() {
           <div className="flex w-full flex-col gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:w-auto sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
               <Baby className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
-              <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
-                {filteredSessions.length === 0 && <option>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}
+              <SelectField bare value={sessionId} onChange={setSessionId} aria-label="Session" className="min-w-0 flex-1 font-medium sm:flex-none" placeholder={dateFilter ? 'No sessions on this date' : 'No sessions yet'}>
+                {filteredSessions.length === 0 && <Opt value="" disabled>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</Opt>}
                 {filteredSessions.map((s) => (
-                  <option key={s.id} value={s.id}>
+                  <Opt key={s.id} value={s.id}>
                     {s.title} • {sgDateTime(s.starts_at)}{s.starts_at < startTodayIso ? ' • past' : ''}
-                  </option>
+                  </Opt>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <div className="h-px w-full bg-gray-200 sm:h-4 sm:w-px" />
             <div className="flex min-w-0 items-center gap-2">
@@ -844,17 +846,18 @@ export default function BookingsPage() {
                     {sel.child_id && (
                       <div>
                         <div className="text-xs text-gray-500 mb-1">Skill level (this class)</div>
-                        <select
+                        <SelectField
                           value={sel.skill_level ?? ''}
                           disabled={!canManage || savingSkill}
-                          onChange={(e) => setSkillLevel(sel, e.target.value)}
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-pink-300 disabled:opacity-60"
+                          onChange={(v) => setSkillLevel(sel, v)}
+                          aria-label="Skill level for this class"
+                          className="w-full px-3 py-2"
                         >
-                          <option value="">Not set</option>
+                          <Opt value="">Not set</Opt>
                           {['beginner', 'intermediate', 'advanced'].map((l) => (
-                            <option key={l} value={l}>{l[0].toUpperCase() + l.slice(1)}</option>
+                            <Opt key={l} value={l}>{l[0].toUpperCase() + l.slice(1)}</Opt>
                           ))}
-                        </select>
+                        </SelectField>
                       </div>
                     )}
                   </div>
@@ -958,14 +961,15 @@ export default function BookingsPage() {
                           </p>
                           <div>
                             <label className="mb-1 block text-xs font-medium text-gray-600">Refund</label>
-                            <select
+                            <SelectField
                               value={cancelMode}
-                              onChange={(e) => setCancelMode(e.target.value as 'refund' | 'none')}
-                              className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm"
+                              onChange={(v) => setCancelMode(v as 'refund' | 'none')}
+                              aria-label="Refund"
+                              className="h-9 w-full px-3"
                             >
-                              <option value="refund">Refund as package credit / make-up token</option>
-                              <option value="none">No refund</option>
-                            </select>
+                              <Opt value="refund">Refund as package credit / make-up token</Opt>
+                              <Opt value="none">No refund</Opt>
+                            </SelectField>
                           </div>
                           {cancelMode === 'none' && (
                             <div className="space-y-2">

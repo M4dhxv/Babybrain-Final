@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { SelectField, Opt } from '@/components/ui/select-field';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -251,23 +252,23 @@ export default function SchedulePage() {
           {/* All activities */}
           <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-3 sm:ml-auto sm:w-auto">
             <CalendarRange className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
-            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
-              <option value="">All activities</option>
+            <SelectField bare value={fActivity} onChange={setFActivity} aria-label="Filter by activity" className="min-w-0 flex-1 font-medium sm:flex-none">
+              <Opt value="">All activities</Opt>
               {activities.map((a) => (
-                <option key={a.id} value={a.id}>{a.title}</option>
+                <Opt key={a.id} value={a.id}>{a.title}</Opt>
               ))}
-            </select>
+            </SelectField>
           </div>
 
           {/* All locations */}
           <div className="flex w-full items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:order-4 sm:w-auto">
             <MapPin className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
-            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className="min-w-0 flex-1 bg-transparent font-medium focus:outline-none sm:flex-none">
-              <option value="">All locations</option>
+            <SelectField bare value={fLocation} onChange={setFLocation} aria-label="Filter by location" className="min-w-0 flex-1 font-medium sm:flex-none">
+              <Opt value="">All locations</Opt>
               {locations.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
+                <Opt key={l.id} value={l.id}>{l.name}</Opt>
               ))}
-            </select>
+            </SelectField>
           </div>
 
           {/* Week / Month */}

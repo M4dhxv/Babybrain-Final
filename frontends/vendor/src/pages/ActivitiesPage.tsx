@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { SelectField, Opt } from '@/components/ui/select-field';
 import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
@@ -809,14 +810,8 @@ export default function ActivitiesPage() {
   const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
   const [showFilters, setShowFilters] = useState(true);
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
-  const filterCls = 'px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-pink-300';
-  // Mobile: full-width selects with centred text and a custom chevron held
-  // a little off the right edge (the native one sits flush). Reverts to the
-  // OS control from sm up.
-  const filterMobileCls =
-    "w-full max-w-xs text-center appearance-none bg-no-repeat bg-[length:14px] bg-[right_0.9rem_center] pl-9 pr-9 " +
-    "bg-[url(\"data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='14'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%239ca3af'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E\")] " +
-    "sm:w-auto sm:max-w-none sm:text-left sm:appearance-auto sm:bg-none sm:pl-3 sm:pr-3";
+  // Mobile: full-width so the filter selects stack the same size; inline from sm up.
+  const filterSelCls = 'w-full max-w-xs px-3 py-2 text-gray-700 sm:w-auto sm:max-w-none';
 
   return (
     <div className="relative">
@@ -952,33 +947,33 @@ export default function ActivitiesPage() {
               all the same size) and centre; on desktop they sit inline. */}
           {showFilters && pageTab === 'activities' && (
           <div className="flex flex-col items-center gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center">
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={cn(filterCls, filterMobileCls)}>
-              <option value="">All statuses</option>
-              {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select value={fLocation} onChange={(e) => setFLocation(e.target.value)} className={cn(filterCls, filterMobileCls)}>
-              <option value="">All locations</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <select value={fAge} onChange={(e) => setFAge(e.target.value)} className={cn(filterCls, filterMobileCls)}>
-              <option value="">All age groups</option>
-              <option value="0-18">0 – 18 months</option>
-              <option value="18-36">18m – 3 years</option>
-              <option value="36-60">3 – 5 years</option>
-              <option value="60-216">5+ years</option>
-            </select>
-            <select value={fActivity} onChange={(e) => setFActivity(e.target.value)} className={cn(filterCls, filterMobileCls)}>
-              <option value="">All activities</option>
+            <SelectField value={fStatus} onChange={setFStatus} aria-label="Filter by status" className={filterSelCls}>
+              <Opt value="">All statuses</Opt>
+              {['Live', 'Draft', 'Archived', 'Removed'].map((s) => <Opt key={s} value={s}>{s}</Opt>)}
+            </SelectField>
+            <SelectField value={fLocation} onChange={setFLocation} aria-label="Filter by location" className={filterSelCls}>
+              <Opt value="">All locations</Opt>
+              {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+            </SelectField>
+            <SelectField value={fAge} onChange={setFAge} aria-label="Filter by age group" className={filterSelCls}>
+              <Opt value="">All age groups</Opt>
+              <Opt value="0-18">0 – 18 months</Opt>
+              <Opt value="18-36">18m – 3 years</Opt>
+              <Opt value="36-60">3 – 5 years</Opt>
+              <Opt value="60-216">5+ years</Opt>
+            </SelectField>
+            <SelectField value={fActivity} onChange={setFActivity} aria-label="Filter by activity" className={filterSelCls}>
+              <Opt value="">All activities</Opt>
               {activities
                 .filter((a) => !isFullyRemoved(a))
                 .sort((a, b) => a.title.localeCompare(b.title))
-                .map((a) => <option key={a.id} value={String(a.id)}>{a.title}</option>)}
-            </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className={cn(filterCls, filterMobileCls, 'sm:ml-auto')}>
-              <option value="updated">Sort by: Recently updated</option>
-              <option value="name">Sort by: Name</option>
-              <option value="rating">Sort by: Rating</option>
-            </select>
+                .map((a) => <Opt key={a.id} value={String(a.id)}>{a.title}</Opt>)}
+            </SelectField>
+            <SelectField value={sortBy} onChange={(v) => setSortBy(v as typeof sortBy)} aria-label="Sort activities" className={cn(filterSelCls, 'sm:ml-auto')}>
+              <Opt value="updated">Sort by: Recently updated</Opt>
+              <Opt value="name">Sort by: Name</Opt>
+              <Opt value="rating">Sort by: Rating</Opt>
+            </SelectField>
           </div>
           )}
 
@@ -1232,10 +1227,10 @@ export default function ActivitiesPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#FA4D8D]">*</span></label>
-              <select className={inputCls} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-                <option value="">Select category</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <SelectField className={inputCls} value={form.category_id} onChange={(v) => setForm({ ...form, category_id: v })} placeholder="Select category" aria-label="Category">
+                <Opt value="">Select category</Opt>
+                {categories.map((c) => <Opt key={c.id} value={String(c.id)}>{c.name}</Opt>)}
+              </SelectField>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Description</label>
@@ -1298,10 +1293,10 @@ export default function ActivitiesPage() {
               <>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Location</label>
-              <select className={inputCls} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
-                <option value="">Select a location</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              <SelectField className={inputCls} value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Select a location" aria-label="Location">
+                <Opt value="">Select a location</Opt>
+                {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+              </SelectField>
               {locations.length === 0 ? (
                 <p className="mt-1 text-xs text-gray-500">No locations yet — add one on the <button className="text-[#FA4D8D] font-medium hover:underline" onClick={() => { setPageTab('locations'); setOpenNewLocation(true); setShowDrawer(false); }}>Locations tab</button>.</p>
               ) : (
@@ -1405,14 +1400,15 @@ export default function ActivitiesPage() {
                       </div>
                       <div>
                         <label className="text-xs font-medium text-gray-600 mb-1 block">When a booking is cancelled</label>
-                        <select
+                        <SelectField
                           className={inputCls}
+                          aria-label="When a booking is cancelled"
                           value={form.cancellation_refund_mode}
-                          onChange={(e) => setForm({ ...form, cancellation_refund_mode: e.target.value as 'refund' | 'none' })}
+                          onChange={(v) => setForm({ ...form, cancellation_refund_mode: v as 'refund' | 'none' })}
                         >
-                          <option value="refund">Refund as package credit / make-up token</option>
-                          <option value="none">No refund</option>
-                        </select>
+                          <Opt value="refund">Refund as package credit / make-up token</Opt>
+                          <Opt value="none">No refund</Opt>
+                        </SelectField>
                         {form.cancellation_refund_mode === 'none' && (
                           <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                             Parents see &ldquo;Payment for this activity is non-refundable, if cancelled.&rdquo; at checkout.
@@ -1742,10 +1738,10 @@ export default function ActivitiesPage() {
                     each, instead of being created three times. */}
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Venue</label>
-                  <select className={inputCls} value={sessForm.location_id} onChange={(e) => setSessForm({ ...sessForm, location_id: e.target.value })}>
-                    <option value="">Same as the activity</option>
-                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  <SelectField className={inputCls} value={sessForm.location_id} onChange={(v) => setSessForm({ ...sessForm, location_id: v })} aria-label="Session venue">
+                    <Opt value="">Same as the activity</Opt>
+                    {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+                  </SelectField>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Price (SGD)</label>
@@ -1765,11 +1761,11 @@ export default function ActivitiesPage() {
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat weekly</label>
-                  <select className={inputCls} value={sessForm.repeat} onChange={(e) => setSessForm({ ...sessForm, repeat: e.target.value })}>
+                  <SelectField className={inputCls} value={sessForm.repeat} onChange={(v) => setSessForm({ ...sessForm, repeat: v })} aria-label="Repeat weekly">
                     {[1, 2, 4, 6, 8, 12].map((n) => (
-                      <option key={n} value={n}>{n === 1 ? 'Just this session' : `${n} weeks (same day & time)`}</option>
+                      <Opt key={n} value={String(n)}>{n === 1 ? 'Just this session' : `${n} weeks (same day & time)`}</Opt>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               {sessError && <p className="mt-2 text-xs font-medium text-red-600">{sessError}</p>}
@@ -1809,10 +1805,10 @@ export default function ActivitiesPage() {
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Venue</span>
-                          <select className={inputCls} value={sessEditForm.location_id} onChange={(e) => setSessEditForm({ ...sessEditForm, location_id: e.target.value })}>
-                            <option value="">Same as the activity</option>
-                            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                          </select>
+                          <SelectField className={inputCls} value={sessEditForm.location_id} onChange={(v) => setSessEditForm({ ...sessEditForm, location_id: v })} aria-label="Session venue">
+                            <Opt value="">Same as the activity</Opt>
+                            {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+                          </SelectField>
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Price (SGD)</span>

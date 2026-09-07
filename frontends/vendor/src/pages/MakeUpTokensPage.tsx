@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { SelectField, Opt } from '@/components/ui/select-field';
 
 /**
  * The make-up tokens table's column tracks. Header and body rows are separate grids, so the
@@ -230,19 +231,20 @@ export default function MakeUpTokensPage() {
                     <div className="border-t border-gray-100 bg-gray-50 px-5 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs text-gray-500">Expires</span>
-                        <select
+                        <SelectField
                           value={expiryMode}
-                          onChange={(e) => setExpiryMode(e.target.value)}
-                          className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                          onChange={setExpiryMode}
+                          aria-label="Expires"
+                          className="px-2 py-1 text-xs text-gray-700"
                         >
-                          <option value="30">in 30 days</option>
-                          <option value="60">in 60 days</option>
-                          <option value="90">in 90 days</option>
-                          <option value="180">in 6 months</option>
-                          <option value="365">in 12 months</option>
-                          <option value="custom">on a set date…</option>
-                          <option value="none">never</option>
-                        </select>
+                          <Opt value="30">in 30 days</Opt>
+                          <Opt value="60">in 60 days</Opt>
+                          <Opt value="90">in 90 days</Opt>
+                          <Opt value="180">in 6 months</Opt>
+                          <Opt value="365">in 12 months</Opt>
+                          <Opt value="custom">on a set date…</Opt>
+                          <Opt value="none">never</Opt>
+                        </SelectField>
                         {expiryMode === 'custom' && (
                           <input
                             type="date"
