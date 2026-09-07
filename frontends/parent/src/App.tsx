@@ -2095,8 +2095,11 @@ type BookingItem = {
   // ("Guest child" until renamed). `allIds` drives group reschedule; cancel
   // uses `groupId`.
   groupId: string | null;
-  places: { bookingId: string; name: string; isGuest: boolean }[];
+  places: { bookingId: string; name: string; isGuest: boolean; status: string }[];
   allIds: string[];
+  // Per live seat, e.g. ["confirmed","confirmed","waitlisted"] — a party can
+  // straddle a session's capacity, so the seats don't all share `status`.
+  seatStatuses: string[];
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -2467,6 +2470,39 @@ function bookingStatusStyle(status: string) {
   if (status === "cancelled") return "bg-[#FEEBF2] text-baby-cta";
   if (status === "waitlisted") return "bg-amber-50 text-palette-yellow";
   return "bg-[#FEEBF2] text-baby-cta";
+}
+
+/** The status pill for a booking card. A multi-child party can straddle the
+ *  session's capacity, so when its seats aren't all the same status it shows a
+ *  two-tone summary ("2 confirmed · 1 waitlisted", green / bright orange) plus
+ *  a plain-language waitlist note. A solo booking, or a party whose seats all
+ *  agree, keeps the single capitalised pill exactly as before. */
+function BookingStatusChip({ b, className = "" }: { b: BookingItem; className?: string }) {
+  const live = b.seatStatuses.filter((s) => s !== "cancelled");
+  const waiting = live.filter((s) => s === "waitlisted").length;
+  const confirmed = live.length - waiting;
+  const mixed = b.places.length > 1 && waiting > 0 && confirmed > 0;
+  const pill = "rounded-full px-3 py-1 text-xs font-bold";
+
+  if (!mixed) {
+    return (
+      <div className={className}>
+        <span className={`inline-flex capitalize ${pill} ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+      </div>
+    );
+  }
+  return (
+    <div className={`flex flex-col items-start gap-1 ${className}`}>
+      <span className={`inline-flex items-center gap-1.5 ${pill} bg-[#F4EFF0]`}>
+        <span className="text-palette-greenInk">{confirmed} confirmed</span>
+        <span className="text-[#8A93AC]">·</span>
+        <span className="text-palette-orangeStrong">{waiting} waitlisted</span>
+      </span>
+      <span className="flex items-center gap-1 text-[11.5px] font-bold text-palette-orangeStrong">
+        <Icon name="clock" className="h-3 w-3" /> {waiting} of {live.length} on the waitlist
+      </span>
+    </div>
+  );
 }
 
 type ChildRecs = ReturnType<typeof useRecommendations>["data"];
@@ -3235,8 +3271,10 @@ function ProfilePage() {
                 bookingId: x.id,
                 name: placeName(x),
                 isGuest: !x.child_id,
+                status: x.status,
               })),
               allIds: ordered.map((x) => x.id),
+              seatStatuses: ordered.map((x) => x.status),
             };
           })
         );
@@ -4482,6 +4520,14 @@ function PartyPlaces({
                     <span className={`flex-1 truncate text-sm font-bold ${unnamed ? "text-[#8A93AC]" : "text-[#3f4b78]"}`}>
                       {p.name}
                     </span>
+                    {/* Only the seats that landed on the waitlist are called
+                        out — when the whole party is waitlisted the card's own
+                        pill already says so. */}
+                    {p.status === "waitlisted" && b.places.some((q) => q.status !== "waitlisted") && (
+                      <span className="shrink-0 rounded-full bg-palette-orangeSoft px-2 py-0.5 text-[10px] font-black text-palette-orangeStrong">
+                        Waitlisted
+                      </span>
+                    )}
                     {editable && p.isGuest && (
                       <button
                         type="button"
@@ -4713,7 +4759,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 )}
                 {/* On a phone the status chip sits under the title so the
                     header row isn't three things fighting for ~340px. */}
-                <span className={`mt-1.5 inline-flex rounded-full px-3 py-1 text-xs font-bold capitalize sm:hidden ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+                <BookingStatusChip b={b} className="mt-1.5 sm:hidden" />
               </div>
               {/* Adding a single class to your own calendar is free; only the
                   bulk date-range export + PDF above is a Plus feature. */}
@@ -4731,7 +4777,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
                 </button>
               )}
-              <span className={`hidden rounded-full px-3 py-1 text-xs font-bold capitalize sm:inline-flex ${bookingStatusStyle(b.status)}`}>{b.status}</span>
+              <BookingStatusChip b={b} className="hidden shrink-0 sm:flex" />
             </a>
             {party(b) && (
               <PartyPlaces
