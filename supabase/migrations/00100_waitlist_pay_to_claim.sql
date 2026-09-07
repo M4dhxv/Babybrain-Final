@@ -1,4 +1,4 @@
--- 00099_waitlist_pay_to_claim.sql
+-- 00100_waitlist_pay_to_claim.sql
 --
 -- Two waitlist scenarios reported again, both still on the pre-00090
 -- behaviour (00090 either wasn't applied or was rolled past):

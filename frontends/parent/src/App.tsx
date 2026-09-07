@@ -2085,7 +2085,7 @@ type BookingItem = {
   // non-refundable if cancelled.
   refundMode: "refund" | "none";
   // A waitlisted booking on a paid class that now has a seat free for it
-  // (00099) — the card shows "Pay now" to claim it. Recomputed every load,
+  // (00100) — the card shows "Pay now" to claim it. Recomputed every load,
   // so it disappears the moment the seat is taken. `claimIds` are the seat
   // rows to check out.
   canClaim: boolean;
@@ -4605,7 +4605,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
 
   const party = (b: BookingItem) => b.places.length > 1;
 
-  // Pay for a still-waitlisted booking that now has a seat free (00099).
+  // Pay for a still-waitlisted booking that now has a seat free (00100).
   // Checks out the existing booking rows — the webhook confirms them. If the
   // class filled between the page loading and this click, the route says so.
   async function payToClaim(b: BookingItem) {

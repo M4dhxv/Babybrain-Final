@@ -1,4 +1,4 @@
--- 00097_rename_gym_dance_category.sql
+-- 00098_rename_gym_dance_category.sql
 --
 -- QA 21/08: "Can we change the name of the category 'Gym & Dance' to
 -- 'Gym, Dance & Other Sports' on home page, explore page and sign up page."
