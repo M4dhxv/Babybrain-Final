@@ -188,6 +188,8 @@ export async function POST(request: Request) {
           [slotVenue?.name, slotVenue?.address].filter(Boolean).join(', ') ||
           activity.address ||
           '',
+        // Wix staffs its own slots, so we hold no teacher/studio for one.
+        staff: '',
       }).toString() +
       // Stripe substitutes the real id into this placeholder — leave it raw.
       `&session_id={CHECKOUT_SESSION_ID}`,

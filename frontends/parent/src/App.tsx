@@ -2064,6 +2064,8 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
   startsAt: string | null; endsAt: string | null; venue: string;
+  /** Teacher and/or studio for this session, when the vendor set them (00074). */
+  staff: string;
   activityId: string | null; childId: string | null; packagePurchaseId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
@@ -3139,6 +3141,9 @@ function ProfilePage() {
           starts_at: string;
           ends_at: string | null;
           activity_id: string;
+          // Who's taking it and where in the building, per session (00074).
+          teacher_name: string | null;
+          studio: string | null;
           // The venue can live on the session rather than the activity
           // (migration 00074 moved location per-session), so a class run at
           // one venue leaves activities.address null.
@@ -3201,6 +3206,8 @@ function ProfilePage() {
               startsAt: s?.starts_at ?? null,
               endsAt: s?.ends_at ?? null,
               venue: s?.provider_locations?.address || s?.provider_locations?.name || act?.address || "",
+              // QA 24/08: "they should be able to see under bookings".
+              staff: [s?.teacher_name, s?.studio].filter(Boolean).join(" · "),
               activityId: s?.activity_id ?? null,
               childId: r.child_id ?? null,
               packagePurchaseId: r.package_purchase_id ?? null,
@@ -4670,6 +4677,14 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     <span className="truncate">{b.venue}</span>
                   </p>
                 )}
+                {/* QA 24/08: the teacher and studio the vendor set on this
+                    session — the parent could not see them anywhere. */}
+                {b.staff && (
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-[#59658d]">
+                    <Icon name="user" className="h-3.5 w-3.5 shrink-0 text-baby-lilac" />
+                    <span className="truncate">{b.staff}</span>
+                  </p>
+                )}
                 {/* On a phone the status chip sits under the title so the
                     header row isn't three things fighting for ~340px. */}
                 <span className={`mt-1.5 inline-flex rounded-full px-3 py-1 text-xs font-bold capitalize sm:hidden ${bookingStatusStyle(b.status)}`}>{b.status}</span>
@@ -5760,6 +5775,11 @@ function BookingPage() {
      it has one (migration 00074), the activity's address otherwise. Drives
      the on-page displays as well as the /booked redirect below. */
   const displayVenue = sessionVenueAddress ?? activity?.address ?? null;
+  /* QA 24/08: "I added a teacher and studio to an activity but it doesn't show
+     anywhere on the parent side — it should show on the class option, booking
+     confirmation screen and they should be able to see under bookings."
+     Per-session, so it only reads once a slot is chosen. */
+  const displayStaff = [selected?.teacher_name, selected?.studio].filter(Boolean).join(" · ") || null;
   const price = isEvent
     ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
     : sessionPrice != null ? sessionPrice
@@ -5991,6 +6011,7 @@ function BookingPage() {
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
+      staff: displayStaff ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -6061,6 +6082,7 @@ function BookingPage() {
       // A session can sit at a different venue from its activity (00074), so
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
+      staff: displayStaff ?? "",
     });
     goTo(`/booked?${q.toString()}`);
   }
@@ -6216,6 +6238,7 @@ function BookingPage() {
                   <p className="mt-2 font-semibold">{ageText}</p>
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
                     {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
+                    {displayStaff && <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayStaff}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
                   </div>
@@ -6581,6 +6604,8 @@ function BookedPage() {
   const start = getParam("start");
   const end = getParam("end");
   const venue = getParam("venue") || "";
+  // Who's taking it and where in the building (QA 24/08).
+  const staff = getParam("staff") || "";
   const slug = getParam("slug") || "";
   const waitlisted = status === "waitlisted";
 
@@ -6672,7 +6697,7 @@ function BookedPage() {
           <aside className="space-y-5">
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
-              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
+              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (

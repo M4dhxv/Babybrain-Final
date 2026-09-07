@@ -126,7 +126,7 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
  *  rendering them. Keep this in step with ActivitySession if the table gains
  *  a column parents genuinely need. */
 const PARENT_SESSION_COLUMNS =
-  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, wix_slot_key, wix_remaining_capacity, created_at';
+  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at';
 
 export interface ActivityDetail {
   activity:
@@ -220,6 +220,9 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   // slot's availability is Wix's to decide, so it's never
                   // paused on our side.
                   bookings_paused: false,
+                  // Wix staffs its own slots; we hold no teacher/studio for one.
+                  teacher_name: null,
+                  studio: null,
                   wix_slot_key: null,
                   wix_remaining_capacity: null,
                   created_at: new Date().toISOString(),

@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     .from('activity_sessions')
     // starts_at/ends_at and the venue ride along for the confirmation page's
     // summary and its "Add to calendar" button — see success_url below.
-    .select('price, starts_at, ends_at, location_id, activities(title, slug, price, provider_id, address), provider_locations(name, address)')
+    .select('price, starts_at, ends_at, location_id, teacher_name, studio, activities(title, slug, price, provider_id, address), provider_locations(name, address)')
     .eq('id', booking.session_id)
     .maybeSingle();
   const activity = (sess?.activities ?? null) as unknown as
@@ -130,6 +130,8 @@ export async function POST(request: Request) {
           [venueRow?.name, venueRow?.address].filter(Boolean).join(', ') ||
           activity?.address ||
           '',
+        // Who's taking it and where in the building (QA 24/08).
+        staff: [sess?.teacher_name, sess?.studio].filter(Boolean).join(' · '),
       }).toString() +
       // Left unencoded — Stripe substitutes the real id into this placeholder.
       `&session_id={CHECKOUT_SESSION_ID}`,

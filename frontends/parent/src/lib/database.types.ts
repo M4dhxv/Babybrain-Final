@@ -264,6 +264,8 @@ export type Database = {
           price: number | null;
           status: 'scheduled' | 'cancelled';
           bookings_paused: boolean;
+          teacher_name: string | null;
+          studio: string | null;
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
           created_at: string;
@@ -278,6 +280,8 @@ export type Database = {
           price?: number | null;
           status?: 'scheduled' | 'cancelled';
           bookings_paused?: boolean;
+          teacher_name?: string | null;
+          studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };
@@ -289,6 +293,8 @@ export type Database = {
           price?: number | null;
           status?: 'scheduled' | 'cancelled';
           bookings_paused?: boolean;
+          teacher_name?: string | null;
+          studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
         };
