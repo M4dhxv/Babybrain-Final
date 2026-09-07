@@ -1366,7 +1366,7 @@ export default function ActivitiesPage() {
                   waivers and consents, use Settings → Waivers &amp; Consents.
                 </div>
               </div>
-              <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} className="data-[state=checked]:bg-[#C90044]" />
+              <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} />
             </div>
 
             {/* 2.2: cancellation & rescheduling policy for this class */}
@@ -1390,7 +1390,7 @@ export default function ActivitiesPage() {
                       <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
                       <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
                     </div>
-                    <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#C90044]" />
+                    <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} />
                   </div>
                   {form.allow_cancellation ? (
                     <div className="space-y-3">
@@ -1432,7 +1432,7 @@ export default function ActivitiesPage() {
                   <div className="text-sm font-medium text-gray-900">Allow rescheduling</div>
                   <div className="text-xs text-gray-500">Parents can move their booking to another session</div>
                 </div>
-                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} className="data-[state=checked]:bg-[#C90044]" />
+                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} />
               </div>
               {form.allow_rescheduling && (
                 <div>
@@ -1471,7 +1471,7 @@ export default function ActivitiesPage() {
                   <div className="text-sm font-medium text-gray-900">Ask parents for extra information</div>
                   <div className="text-xs text-gray-500">For anything you need before the class — e.g. an address when you host at their condo</div>
                 </div>
-                <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} className="data-[state=checked]:bg-[#C90044]" />
+                <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} />
               </div>
               {form.info_request_enabled && (
                 <div>
