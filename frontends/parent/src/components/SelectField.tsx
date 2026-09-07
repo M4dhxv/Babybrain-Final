@@ -268,11 +268,11 @@ export function SelectField({
                   onMouseEnter={() => !o.disabled && setActive(i)}
                   onClick={() => commit(i)}
                   className={[
-                    'flex cursor-pointer items-center gap-2 rounded-[6px] px-2.5 py-2 text-sm',
+                    'relative flex cursor-pointer items-center gap-2 rounded-[6px] py-2 pl-3 pr-2.5 text-sm',
                     o.disabled
                       ? 'cursor-not-allowed text-[#6E646B] opacity-50'
                       : isSel
-                        ? 'bg-[#FFC1D6] font-medium text-[#87002E]'
+                        ? "bg-[#FEECF2] font-medium text-[#FA4D8D] before:absolute before:inset-y-1.5 before:left-1 before:w-[3px] before:rounded-full before:bg-[#FA4D8D] before:content-['']"
                         : isActive
                           ? 'bg-[#FAF7F7] text-[#211D20]'
                           : 'text-[#211D20]',
