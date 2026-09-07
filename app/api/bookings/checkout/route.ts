@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   // still passes booking_id).
   const seatQuery = supabase
     .from('bookings')
-    .select('id, user_id, session_id, payment_status, booking_group_id');
+    .select('id, user_id, session_id, payment_status, booking_group_id, status');
   const { data: seats } = body.group_id
     ? await seatQuery.eq('booking_group_id', body.group_id)
     : body.booking_id
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     .from('activity_sessions')
     // starts_at/ends_at and the venue ride along for the confirmation page's
     // summary and its "Add to calendar" button — see success_url below.
-    .select('price, starts_at, ends_at, location_id, teacher_name, studio, activities(title, slug, price, provider_id, address), provider_locations(name, address)')
+    .select('price, capacity, starts_at, ends_at, location_id, teacher_name, studio, activities(title, slug, price, provider_id, address), provider_locations(name, address)')
     .eq('id', booking.session_id)
     .maybeSingle();
   const activity = (sess?.activities ?? null) as unknown as
@@ -72,6 +72,25 @@ export async function POST(request: Request) {
   const price = Number(sess?.price ?? activity?.price ?? 0);
   if (!price || price <= 0) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
+  }
+
+  // Paying to claim a freed seat from the waitlist: the seat isn't held, so
+  // re-check there's actually one going before sending the parent to Stripe.
+  // The moment the class fills, this "Pay now" stops working — that's the
+  // "expire the link when the vacancy is filled" behaviour.
+  if (seats.some((s) => (s as { status?: string }).status === 'waitlisted')) {
+    const { count } = await admin
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', booking.session_id)
+      .in('status', ['pending', 'confirmed']);
+    const cap = sess?.capacity ?? null;
+    if (cap != null && (count ?? 0) + seatCount > cap) {
+      return NextResponse.json(
+        { error: "That spot has been taken — you're still on the waitlist." },
+        { status: 409 }
+      );
+    }
   }
   const unitCents = Math.round(price * 100);
   const amountCents = unitCents * seatCount;

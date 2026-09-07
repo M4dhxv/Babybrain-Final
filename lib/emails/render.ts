@@ -190,13 +190,13 @@ const T: Record<string, Template> = {
       sign),
 
   waitlist_available: (d, ctx) =>
-    wrap(ctx, 'A spot has become available - book now! 👶🧠',
+    wrap(ctx, 'A spot has opened up — pay to claim it 👶🧠',
       p(greet(ctx.recipientName)) +
-      p('A spot has come available for the following activity which you joined the waitlist for:') +
+      p('A place has come free on the following activity, which you joined the waitlist for:') +
       details(d) +
-      p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book now')}, before someone else does!`) +
+      p(`Pay for your booking to lock in the seat before it goes to someone else — ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'go to my bookings')} and use the "Pay now" button on this class.`) +
+      p('If someone else pays first, the spot closes and your booking stays on the waitlist — nothing is charged.') +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
-      p(`We hope you secure the spot and enjoy the activity with your family! If it is no longer available, remember you can ${link(ctx, '/explore', 'explore other activities here')}.`) +
       sign),
 
   waitlist_confirmed: (d, ctx) =>

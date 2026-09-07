@@ -2084,6 +2084,12 @@ type BookingItem = {
   // What this class gives back on cancellation (00097): 'none' = payment is
   // non-refundable if cancelled.
   refundMode: "refund" | "none";
+  // A waitlisted booking on a paid class that now has a seat free for it
+  // (00099) — the card shows "Pay now" to claim it. Recomputed every load,
+  // so it disappears the moment the seat is taken. `claimIds` are the seat
+  // rows to check out.
+  canClaim: boolean;
+  claimIds: string[];
   // A Wix ticketed event — parents can't cancel or reschedule these online.
   isEvent: boolean;
   // A Wix COURSE — one enrolment covers the whole run, so there's no single
@@ -3198,6 +3204,7 @@ function ProfilePage() {
         compensation: "token" | "credit" | "none" | null;
         paid_with: "token" | "credit" | "cash" | "free";
         refund_mode: "refund" | "none";
+        can_claim?: boolean;
       }>;
     }>("/api/customer/bookings")
       .then(({ bookings: rows }) => {
@@ -3258,6 +3265,10 @@ function ProfilePage() {
               compensation: r.compensation ?? null,
               paidWith: r.paid_with ?? "free",
               refundMode: r.refund_mode ?? "refund",
+              // Seats of this (possibly multi-child) booking that now have a
+              // spot free to pay for.
+              canClaim: ordered.some((x) => x.can_claim === true),
+              claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
               isEvent: act?.wix_service_type === "EVENT",
               isCourse: courseBooking,
               groupId: r.booking_group_id ?? null,
@@ -4594,6 +4605,26 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
 
   const party = (b: BookingItem) => b.places.length > 1;
 
+  // Pay for a still-waitlisted booking that now has a seat free (00099).
+  // Checks out the existing booking rows — the webhook confirms them. If the
+  // class filled between the page loading and this click, the route says so.
+  async function payToClaim(b: BookingItem) {
+    if (!b.claimIds.length) return;
+    setBusyId(b.id);
+    try {
+      const allWaitlisted = b.places.every((p) => p.status === "waitlisted");
+      const body =
+        b.groupId && allWaitlisted ? { group_id: b.groupId } : { booking_id: b.claimIds[0] };
+      const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", body);
+      if (url) window.location.href = url;
+      else setNotice("Couldn't start payment just now — please try again.");
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Couldn't start payment — please try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function doCancel(b: BookingItem) {
     const seats = b.places.length;
     // What a cancellation actually gives back is the vendor's policy (00097)
@@ -4757,6 +4788,21 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 editable={b.status !== "cancelled" && upcoming(b)}
                 cancelWhy={cancelWhy}
               />
+            )}
+            {b.canClaim && (
+              <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-bold text-palette-greenInk">
+                  A spot has opened up on this class — pay to confirm it before it's taken.
+                </p>
+                <button
+                  type="button"
+                  disabled={busyId === b.id}
+                  onClick={() => payToClaim(b)}
+                  className="w-full rounded-[9px] bg-baby-cta px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-60 sm:w-auto sm:py-1.5 sm:text-xs"
+                >
+                  {busyId === b.id ? "Starting…" : "Pay now"}
+                </button>
+              </div>
             )}
             {upcoming(b) && (
               <div className="mt-2 flex flex-col gap-2 border-t border-[#FAF7F7] pt-2 sm:flex-row sm:justify-end">
