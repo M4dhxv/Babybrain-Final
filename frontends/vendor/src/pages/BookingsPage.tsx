@@ -66,6 +66,9 @@ type RosterRow = {
   attendance_status: 'present' | 'absent' | 'late' | null;
   child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
   is_manual: boolean; user_id: string | null;
+  // A "Pay now" invite has already gone to this waitlisted family (00101) —
+  // the Promote button freezes into "Invited" so it isn't fired twice.
+  waitlist_pay_invited: boolean;
   parent_name: string | null; medical_disclosure: string | null; policies_accepted: number;
   // The parent's answer to whatever this activity asks for (migration 00074).
   info_response: string | null;
@@ -354,9 +357,14 @@ export default function BookingsPage() {
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
 
+  const [promotingId, setPromotingId] = useState<string | null>(null);
   async function promote(bookingId: string) {
-    await supabase.rpc('promote_waitlist_entry', { p_booking_id: bookingId });
-    loadRoster(sessionId);
+    if (promotingId) return;
+    setPromotingId(bookingId);
+    const { error } = await supabase.rpc('promote_waitlist_entry', { p_booking_id: bookingId });
+    if (error) setRowError(error.message);
+    await loadRoster(sessionId);
+    setPromotingId(null);
   }
   async function removeBooking(bookingId: string) {
     const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
@@ -1057,7 +1065,24 @@ export default function BookingsPage() {
                     </div>
                     {canManage && (
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => promote(p.booking_id)} className="rounded-lg text-xs bg-green-500 text-white hover:bg-green-600">Promote + notify</Button>
+                        {p.waitlist_pay_invited ? (
+                          <Button
+                            size="sm"
+                            disabled
+                            className="rounded-lg text-xs bg-green-100 text-green-700 border border-green-200"
+                          >
+                            <Check className="h-3.5 w-3.5" /> Invited
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={promotingId === p.booking_id}
+                            onClick={() => promote(p.booking_id)}
+                            className="rounded-lg text-xs bg-green-500 text-white hover:bg-green-600"
+                          >
+                            {promotingId === p.booking_id ? 'Promoting…' : 'Promote + notify'}
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" onClick={() => removeBooking(p.booking_id)} className="rounded-lg text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-200">Remove</Button>
                       </div>
                     )}

@@ -896,6 +896,8 @@ export type Database = {
           policies_accepted: number;
           /** How the booking was settled (00085/00086). */
           paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
+          /** A "Pay now" invite has already been sent to this waitlisted family (00101/00106). */
+          waitlist_pay_invited: boolean;
         }[];
       };
       provider_trial_conversion: {
