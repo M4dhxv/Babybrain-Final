@@ -26,6 +26,7 @@ import {
   type ReactNode,
 } from "react";
 import { MessagesTab } from "./components/MessagesTab";
+import { useUnreadMessages } from "./lib/chat";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
 import { useAuth } from "./auth/AuthProvider";
@@ -3001,6 +3002,9 @@ function ProfilePage() {
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
+  /* Unread badge on the Messages tab (QA 04/09). Only connects a chat client
+     for a parent who can actually use messaging — a Plus perk. */
+  const unreadMessages = useUnreadMessages(Boolean(session) && isPlus);
 
   // Below lg the nav is a left-hand drawer, not a stacked block. Landing on the
   // profile (the Overview tab) auto-reveals it: it slides in, holds for 4s,
@@ -3615,6 +3619,14 @@ function ProfilePage() {
                     className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] font-bold ${tab === key ? "bg-[#FED7E4] text-baby-cta" : locked ? "text-[#6D7486] hover:bg-[#EDF7FD]" : "text-[#5a6484] hover:bg-[#EDF7FD]"}`}
                   >
                     <Icon name={icon} className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} /> {item}
+                    {/* QA 04/09: "there should be a notification on the messages
+                        tab i.e. a little 1, 2, 3 bubble depending on the number
+                        so they know to check." */}
+                    {key === "messages" && unreadMessages > 0 && !locked && (
+                      <span className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-baby-cta px-1.5 text-[11px] font-black text-white">
+                        {unreadMessages > 9 ? "9+" : unreadMessages}
+                      </span>
+                    )}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
                   </a>
                 );

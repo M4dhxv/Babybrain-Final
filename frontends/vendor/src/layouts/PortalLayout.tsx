@@ -24,6 +24,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useUnreadMessages } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta } from '@/lib/plans';
 import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
@@ -57,6 +58,9 @@ export default function PortalLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const plan = planMeta(subscription?.plan);
+  /* Unread badge on the Messages tab (QA 04/09). Only connects a chat client
+     on a plan that actually has messaging. */
+  const unreadMessages = useUnreadMessages(plan.isPaid);
   const renewLabel = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })
     : '';
@@ -165,6 +169,16 @@ export default function PortalLayout() {
                 <item.icon className="w-5 h-5 flex-shrink-0" />
                 {!isSidebarCollapsed && (
                   <span className="flex-1 text-left">{item.label}</span>
+                )}
+                {/* QA 04/09: unread bubble on Messages, so a vendor knows to
+                    look. Shown collapsed too — that's when it matters most. */}
+                {item.path === '/messages' && !locked && unreadMessages > 0 && (
+                  <span className={cn(
+                    'grid h-5 min-w-[20px] place-items-center rounded-full bg-[#FA4D8D] px-1.5 text-[11px] font-bold text-white',
+                    isSidebarCollapsed && 'absolute right-1 top-1 h-4 min-w-[16px] px-1 text-[10px]'
+                  )}>
+                    {unreadMessages > 9 ? '9+' : unreadMessages}
+                  </span>
                 )}
                 {locked && !isSidebarCollapsed && <Lock className="w-3.5 h-3.5 flex-shrink-0" />}
               </button>

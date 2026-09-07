@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { StreamChat } from 'stream-chat';
 import { apiGet } from './api';
 
@@ -33,4 +34,49 @@ export async function disconnectChat(): Promise<void> {
   const client = await clientPromise.catch(() => null);
   clientPromise = null;
   if (client) await client.disconnectUser();
+}
+
+/**
+ * Total unread messages across every conversation this vendor user is in.
+ *
+ * QA 04/09: "when a vendor has an unread message, it isn't clear — there
+ * should be a notification on the messages tab i.e. a little 1, 2, 3 bubble."
+ *
+ * Stream keeps the running total on the connected user and pushes an event
+ * whenever it moves, so no polling. `enabled` is false on a plan without
+ * messaging, where connecting a client would be a wasted round trip.
+ */
+export function useUnreadMessages(enabled: boolean): number {
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUnread(0);
+      return;
+    }
+    let cancelled = false;
+    let detach: (() => void) | undefined;
+    getChatClient()
+      .then((client) => {
+        if (cancelled) return;
+        // Custom fields on the connected user are loosely typed in this
+        // version of stream-chat, so both reads are defensive.
+        const seed = (client.user as { total_unread_count?: unknown } | undefined)?.total_unread_count;
+        setUnread(typeof seed === 'number' ? seed : 0);
+        const sub = client.on((e) => {
+          const total = (e as { total_unread_count?: unknown }).total_unread_count;
+          if (typeof total === 'number') setUnread(total);
+        });
+        detach = () => sub.unsubscribe();
+      })
+      .catch(() => {
+        // Chat being unavailable must never break the shell it decorates.
+      });
+    return () => {
+      cancelled = true;
+      detach?.();
+    };
+  }, [enabled]);
+
+  return unread;
 }
