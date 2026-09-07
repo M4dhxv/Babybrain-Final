@@ -266,8 +266,16 @@ wrong rate in `/admin` → Commercials affects future sales only. Past rows keep
 deal they were sold under, by design.
 
 **Refunds and cancellations.** `cancel_booking` only changes a booking's status — it
-has never moved money, and the parent's notification says any refund follows the
-provider's policy. To actually return money, a manager or owner uses
+has never moved money. What a cancellation gives *back* is governed by
+`activities.cancellation_refund_mode` (00097): `refund` (default) lets
+`compensate_cancelled_booking` reinstate the package credit / release or mint a
+make-up token as before; `none` withholds everything and the parent sees
+"non-refundable, if cancelled" at checkout. `cancel_booking` /
+`cancel_booking_group` stamp `bookings.cancel_refund_mode` from the class default;
+the vendor's per-booking cancel (Bookings page) stamps their dialog choice and, for
+a no-refund cancel, a required `cancel_reason` (+ `cancelled_by`). The trigger reads
+`cancel_refund_mode`, falling back to the activity default then `refund`. None of
+this returns cash — to actually return money, a manager or owner uses
 `POST /api/vendor/bookings/refund`, which unwinds the Connect split
 (`reverse_transfer` + `refund_application_fee`, proportional on a partial refund) so
 BabyBrain doesn't absorb the vendor's share. Refunds a vendor issues from their own

@@ -202,6 +202,10 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number | null;
+          // What a cancellation returns (00097): 'refund' reinstates the
+          // credit / issues a make-up token; 'none' is "non-refundable if
+          // cancelled". Only in effect while allow_cancellation is true.
+          cancellation_refund_mode: 'refund' | 'none';
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
           info_request_prompt: string | null;
@@ -254,6 +258,7 @@ export type Database = {
           allow_cancellation?: boolean;
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number | null;
+          cancellation_refund_mode?: 'refund' | 'none';
           booking_cutoff_minutes?: number;
           info_request_enabled?: boolean;
           info_request_prompt?: string | null;
@@ -522,6 +527,11 @@ export type Database = {
           // a solo booking. The parent app renders one card per group.
           booking_group_id: string | null;
           wix_booking_id: string | null;
+          // Cancellation refund decision (00097): 'refund' = credit/token back,
+          // 'none' = withheld. Null until cancelled / for a legacy cancel.
+          cancel_refund_mode: 'refund' | 'none' | null;
+          cancel_reason: string | null;
+          cancelled_by: string | null;
           // Which event_ticket_types row this booking is for — set only when
           // session_id points at a wix_service_type='EVENT' activity's
           // session; wix_booking_id on that same row holds the Wix order
@@ -568,6 +578,9 @@ export type Database = {
           wix_booking_id?: string | null;
           guest_name?: string | null;
           booking_group_id?: string | null;
+          cancel_refund_mode?: 'refund' | 'none' | null;
+          cancel_reason?: string | null;
+          cancelled_by?: string | null;
         };
               Relationships: [
           {

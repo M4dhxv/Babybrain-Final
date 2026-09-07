@@ -380,6 +380,13 @@ export default function BookingsPage() {
   const [rowBusy, setRowBusy] = useState(false);
   const [editingManual, setEditingManual] = useState<string | null>(null);
   const [manualEdit, setManualEdit] = useState({ name: '', contact: '', paid: false });
+  /* The cancel confirm panel for the selected booking: the vendor picks
+     whether the parent is made whole (credit reinstated / make-up token — the
+     compensate_cancelled_booking trigger decides which from how it was paid)
+     or gets nothing, and must say why for a no-refund cancel. */
+  const [cancelFor, setCancelFor] = useState<string | null>(null);
+  const [cancelMode, setCancelMode] = useState<'refund' | 'none'>('refund');
+  const [cancelReason, setCancelReason] = useState('');
 
   async function startManualEdit(row: RosterRow) {
     setRowError(null);
@@ -430,15 +437,32 @@ export default function BookingsPage() {
     loadRoster(sessionId);
   }
 
+  function openCancel(row: RosterRow) {
+    setRowError(null);
+    setCancelMode('refund');
+    setCancelReason('');
+    setCancelFor(row.booking_id);
+  }
+
   async function cancelBooking(row: RosterRow) {
-    if (!window.confirm(
-      `Cancel ${row.child_name}'s booking?\n\nThey're notified, and any package credit or make-up token they used is returned to them.`
-    )) return;
+    if (cancelMode === 'none' && !cancelReason.trim()) {
+      setRowError('A reason is required when cancelling with no refund.');
+      return;
+    }
     setRowBusy(true);
-    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', row.booking_id);
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        status: 'cancelled',
+        cancel_refund_mode: cancelMode,
+        cancel_reason: cancelMode === 'none' ? cancelReason.trim() : null,
+        cancelled_by: session?.user.id ?? null,
+      })
+      .eq('id', row.booking_id);
     setRowBusy(false);
     if (error) { setRowError(error.message); return; }
     setRowError(null);
+    setCancelFor(null);
     setSelected(0);
     loadRoster(sessionId);
   }
@@ -553,7 +577,7 @@ export default function BookingsPage() {
 
   // Don't carry a half-finished edit, or an error about one booking, onto
   // whichever booking is selected next.
-  useEffect(() => { setEditingManual(null); setRowError(null); }, [sel?.booking_id, sessionId]);
+  useEffect(() => { setEditingManual(null); setCancelFor(null); setRowError(null); }, [sel?.booking_id, sessionId]);
 
   useEffect(() => {
     if (!sel || sel.policies_accepted === 0 || policyAcceptances[sel.booking_id]) return;
@@ -926,6 +950,58 @@ export default function BookingsPage() {
                             </button>
                           </div>
                         </div>
+                      ) : cancelFor === sel.booking_id ? (
+                        <div className="space-y-3">
+                          <div className="text-sm font-medium text-gray-900">Cancel {sel.child_name}&rsquo;s booking</div>
+                          <p className="text-xs text-gray-500">
+                            The parent is notified and the place is freed either way.
+                          </p>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Refund</label>
+                            <select
+                              value={cancelMode}
+                              onChange={(e) => setCancelMode(e.target.value as 'refund' | 'none')}
+                              className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm"
+                            >
+                              <option value="refund">Refund as package credit / make-up token</option>
+                              <option value="none">No refund</option>
+                            </select>
+                          </div>
+                          {cancelMode === 'none' && (
+                            <div className="space-y-2">
+                              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                Payment for this activity is non-refundable, if cancelled. No package credit or make-up token is returned.
+                              </p>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
+                                  Reason <span className="text-[#FA4D8D]">*</span>
+                                </label>
+                                <textarea
+                                  value={cancelReason}
+                                  onChange={(e) => setCancelReason(e.target.value)}
+                                  rows={2}
+                                  placeholder="Why is no refund being given?"
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                />
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => cancelBooking(sel)}
+                              disabled={rowBusy || (cancelMode === 'none' && !cancelReason.trim())}
+                              className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {rowBusy ? 'Cancelling…' : 'Confirm cancellation'}
+                            </button>
+                            <button
+                              onClick={() => { setCancelFor(null); setRowError(null); }}
+                              className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Keep booking
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <div className="flex flex-wrap items-center gap-4">
                           {/* A manual entry is the vendor's own offline record — correct
@@ -948,7 +1024,7 @@ export default function BookingsPage() {
                             </>
                           )}
                           <button
-                            onClick={() => cancelBooking(sel)}
+                            onClick={() => openCancel(sel)}
                             disabled={rowBusy}
                             className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
                           >

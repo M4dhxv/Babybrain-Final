@@ -2074,10 +2074,14 @@ type BookingItem = {
   // route back to the activities list instead of a dead link.
   removed: boolean;
   // For a cancelled booking: how it was made good (00080). 'token' = an
-  // auto make-up token was issued; 'credit' = a package credit went back.
-  compensation: "token" | "credit" | null;
+  // auto make-up token was issued; 'credit' = a package credit went back;
+  // 'none' = the provider withheld a refund (00097).
+  compensation: "token" | "credit" | "none" | null;
   // What paid for this booking — drives the cancel-confirm heads-up.
   paidWith: "token" | "credit" | "cash" | "free";
+  // What this class gives back on cancellation (00097): 'none' = payment is
+  // non-refundable if cancelled.
+  refundMode: "refund" | "none";
   // A Wix ticketed event — parents can't cancel or reschedule these online.
   isEvent: boolean;
   // A Wix COURSE — one enrolment covers the whole run, so there's no single
@@ -3158,8 +3162,9 @@ function ProfilePage() {
             wix_service_type: string | null;
           } | null;
         } | null;
-        compensation: "token" | "credit" | null;
+        compensation: "token" | "credit" | "none" | null;
         paid_with: "token" | "credit" | "cash" | "free";
+        refund_mode: "refund" | "none";
       }>;
     }>("/api/customer/bookings")
       .then(({ bookings: rows }) => {
@@ -3219,6 +3224,7 @@ function ProfilePage() {
               removed: act?.wix_removed_at != null || act?.wix_missing_since != null,
               compensation: r.compensation ?? null,
               paidWith: r.paid_with ?? "free",
+              refundMode: r.refund_mode ?? "refund",
               isEvent: act?.wix_service_type === "EVENT",
               isCourse: courseBooking,
               groupId: r.booking_group_id ?? null,
@@ -4553,7 +4559,11 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     // per seat.
     const unit = seats > 1 ? `${seats} class credits` : "Your class credit";
     const back =
-      b.paidWith === "credit"
+      // 00097: the provider marked this class non-refundable on cancel —
+      // nothing comes back regardless of how it was paid.
+      b.refundMode === "none"
+        ? " Payment for this activity is non-refundable, if cancelled — no credit or make-up token is returned."
+        : b.paidWith === "credit"
         ? ` ${unit} will be returned to your package.`
         : b.paidWith === "token"
           ? " Your make-up token will be released so you can use it again."
@@ -4592,7 +4602,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
     const why = cancelBlockReason(b);
     if (why) { setNotice(why); return; }
     const back =
-      b.paidWith === "credit"
+      b.refundMode === "none"
+        ? " Payment for this activity is non-refundable, if cancelled."
+        : b.paidWith === "credit"
         ? " 1 class credit will be returned to your package."
         : b.paidWith === "cash"
           ? " You'll be issued a make-up token to use on another class."
@@ -4759,9 +4771,11 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             )}
             {b.status === "cancelled" && b.compensation && (
               <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
-                <Icon name="gift" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
+                <Icon name={b.compensation === "none" ? "bell" : "gift"} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
                 <span>
-                  {b.compensation === "token"
+                  {b.compensation === "none"
+                    ? "Payment for this activity is non-refundable, if cancelled — no credit or make-up token was issued."
+                    : b.compensation === "token"
                     ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another class — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
                     : `${b.places.length > 1 ? `${b.places.length} class credits have` : "1 class credit has"} been returned to your package.`}
                 </span>
@@ -5536,6 +5550,10 @@ function BookingPage() {
   // disclaimer on the last booking step below; the matching disabled cancel
   // button lives in BookingList (allowCancel / isEvent / isCourse).
   const nonCancellable = isEvent || isCourse || activity?.allow_cancellation === false;
+  // 00097: cancellations ARE allowed, but the provider gives nothing back —
+  // shown instead of (never alongside) the non-cancellable notice.
+  const nonRefundableOnCancel =
+    !nonCancellable && activity?.cancellation_refund_mode === "none";
   type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
@@ -6581,10 +6599,13 @@ function BookingPage() {
           )}
           {/* One grid item so the section's gap-5 sits above this block, not
               between the two lines — they hug each other instead. */}
-          {(nonCancellable || (total != null && total > 0 && !redeemToken)) && (
+          {(nonCancellable || nonRefundableOnCancel || (total != null && total > 0 && !redeemToken)) && (
             <div className="space-y-0.5 text-center md:col-span-2">
               {nonCancellable && (
                 <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>
+              )}
+              {nonRefundableOnCancel && (
+                <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>
               )}
               {total != null && total > 0 && !redeemToken && (
                 <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>

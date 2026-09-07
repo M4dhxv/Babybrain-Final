@@ -204,6 +204,9 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
+          // 00097 — 'refund' reinstates the credit / issues a make-up token on
+          // cancel; 'none' is "non-refundable if cancelled".
+          cancellation_refund_mode: 'refund' | 'none';
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
           info_request_prompt: string | null;
@@ -249,6 +252,7 @@ export type Database = {
           allow_cancellation?: boolean;
           allow_rescheduling?: boolean;
           cancellation_cutoff_hours?: number;
+          cancellation_refund_mode?: 'refund' | 'none';
           booking_cutoff_minutes?: number;
           info_request_enabled?: boolean;
           info_request_prompt?: string | null;
@@ -509,6 +513,12 @@ export type Database = {
           /** Groups the seat rows of one multi-child booking (00084). */
           booking_group_id: string | null;
           wix_booking_id: string | null;
+          /** 00097 — the refund decision recorded when this booking was
+           *  cancelled: 'refund' = credit/token returned, 'none' = withheld.
+           *  Null until cancelled, or for a legacy status-only cancel. */
+          cancel_refund_mode: 'refund' | 'none' | null;
+          cancel_reason: string | null;
+          cancelled_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -536,6 +546,10 @@ export type Database = {
              allowed it, this type just never described it. */
           guest_name?: string | null;
           guest_contact?: string | null;
+          /* Set together by the vendor's per-booking cancel (BookingsPage). */
+          cancel_refund_mode?: 'refund' | 'none' | null;
+          cancel_reason?: string | null;
+          cancelled_by?: string | null;
         };
               Relationships: [
           {

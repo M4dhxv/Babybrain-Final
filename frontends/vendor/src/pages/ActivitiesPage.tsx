@@ -91,6 +91,7 @@ const emptyForm = {
   location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: false,
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
+  cancellation_refund_mode: 'refund' as 'refund' | 'none',
   // 00074 — booking cut-off, the bespoke information request, and the copy
   // parents see once they've booked.
   booking_cutoff_minutes: '15',
@@ -674,6 +675,7 @@ export default function ActivitiesPage() {
       allow_rescheduling: a.allow_rescheduling ?? true,
       cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
       reschedule_cutoff_hours: String(a.reschedule_cutoff_hours ?? 24),
+      cancellation_refund_mode: (a.cancellation_refund_mode ?? 'refund') as 'refund' | 'none',
       booking_cutoff_minutes: String(a.booking_cutoff_minutes ?? 15),
       info_request_enabled: a.info_request_enabled ?? false,
       info_request_prompt: a.info_request_prompt ?? '',
@@ -763,6 +765,9 @@ export default function ActivitiesPage() {
       // cancel_booking RPC both treat them as such.
       allow_cancellation: cancellationLocked ? false : form.allow_cancellation,
       allow_rescheduling: form.allow_rescheduling,
+      // Only bites while cancellations are allowed; a locked (Wix Event/Course)
+      // activity is non-cancellable, so the mode is moot — keep the default.
+      cancellation_refund_mode: cancellationLocked ? 'refund' : form.cancellation_refund_mode,
       cancellation_cutoff_hours: Math.max(0, Number(form.cancellation_cutoff_hours) || 24),
       reschedule_cutoff_hours: Math.max(0, Number(form.reschedule_cutoff_hours) || 24),
       // 0 is meaningful here ("right up to the start time"), so an empty box
@@ -1393,9 +1398,28 @@ export default function ActivitiesPage() {
                     <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} className="data-[state=checked]:bg-[#C90044]" />
                   </div>
                   {form.allow_cancellation ? (
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
-                      <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
+                        <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 mb-1 block">When a booking is cancelled</label>
+                        <select
+                          className={inputCls}
+                          value={form.cancellation_refund_mode}
+                          onChange={(e) => setForm({ ...form, cancellation_refund_mode: e.target.value as 'refund' | 'none' })}
+                        >
+                          <option value="refund">Refund as package credit / make-up token</option>
+                          <option value="none">No refund</option>
+                        </select>
+                        {form.cancellation_refund_mode === 'none' && (
+                          <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                            Parents see &ldquo;Payment for this activity is non-refundable, if cancelled.&rdquo; at checkout.
+                            Cancelling still frees the place, but no package credit or make-up token is returned.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     /* Toggle off — mirror on the parent side is the checkout

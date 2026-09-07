@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await admin
     .from('bookings')
     .select(
-      'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type))'
+      'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type))'
     )
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
@@ -67,27 +67,42 @@ export async function GET(request: Request) {
     );
   }
 
-  const bookings = rows.map((r) => ({
-    ...r,
-    // What paid for this booking — drives the cancel-confirm heads-up.
-    paid_with: redeemedByToken.has(r.id)
-      ? 'token'
-      : r.package_purchase_id
-        ? 'credit'
-        : r.payment_status === 'paid'
-          ? 'cash'
-          : 'free',
-    // How a cancelled booking was made good (00080/00081) — the permanent
-    // line on the card.
-    compensation:
-      r.status !== 'cancelled'
-        ? null
-        : autoCompensated.has(r.id)
-          ? 'token'
-          : r.package_purchase_id
-            ? 'credit'
-            : null,
-  }));
+  const bookings = rows.map((r) => {
+    // The refund decision for this booking: what it was cancelled with, else
+    // the class default, else the historical 'refund'. Drives both the
+    // pre-cancel heads-up and the permanent line on a cancelled card.
+    const refundMode: 'refund' | 'none' =
+      (r.cancel_refund_mode as 'refund' | 'none' | null) ??
+      ((r.activity_sessions?.activities?.cancellation_refund_mode as 'refund' | 'none' | undefined) ??
+        'refund');
+    return {
+      ...r,
+      // What paid for this booking — drives the cancel-confirm heads-up.
+      paid_with: redeemedByToken.has(r.id)
+        ? 'token'
+        : r.package_purchase_id
+          ? 'credit'
+          : r.payment_status === 'paid'
+            ? 'cash'
+            : 'free',
+      // What this class gives back on cancellation.
+      refund_mode: refundMode,
+      // How a cancelled booking was made good (00080/00081) — the permanent
+      // line on the card. 'none' when the provider withheld a refund, so the
+      // card doesn't imply a credit came back off a lingering
+      // package_purchase_id.
+      compensation:
+        r.status !== 'cancelled'
+          ? null
+          : refundMode === 'none'
+            ? 'none'
+            : autoCompensated.has(r.id)
+              ? 'token'
+              : r.package_purchase_id
+                ? 'credit'
+                : null,
+    };
+  });
 
   return NextResponse.json({ bookings });
 }
