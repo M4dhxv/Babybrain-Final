@@ -2077,11 +2077,11 @@ type BookingItem = {
   removed: boolean;
   // For a cancelled booking: how it was made good (00080). 'token' = an
   // auto make-up token was issued; 'credit' = a package credit went back;
-  // 'none' = the provider withheld a refund (00097).
+  // 'none' = the provider withheld a refund (00099).
   compensation: "token" | "credit" | "none" | null;
   // What paid for this booking — drives the cancel-confirm heads-up.
   paidWith: "token" | "credit" | "cash" | "free";
-  // What this class gives back on cancellation (00097): 'none' = payment is
+  // What this class gives back on cancellation (00099): 'none' = payment is
   // non-refundable if cancelled.
   refundMode: "refund" | "none";
   // A waitlisted booking on a paid class that now has a seat free for it
@@ -4627,7 +4627,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
 
   async function doCancel(b: BookingItem) {
     const seats = b.places.length;
-    // What a cancellation actually gives back is the vendor's policy (00097)
+    // What a cancellation actually gives back is the vendor's policy (00099)
     // and is shown on the booking afterwards — the confirm step just says so
     // rather than promising a specific outcome up front.
     const tail = "Eligibility for refund or make up tokens is per vendor policy.";
@@ -5615,7 +5615,7 @@ function BookingPage() {
   // disclaimer on the last booking step below; the matching disabled cancel
   // button lives in BookingList (allowCancel / isEvent / isCourse).
   const nonCancellable = isEvent || isCourse || activity?.allow_cancellation === false;
-  // 00097: cancellations ARE allowed, but the provider gives nothing back —
+  // 00099: cancellations ARE allowed, but the provider gives nothing back —
   // shown instead of (never alongside) the non-cancellable notice.
   const nonRefundableOnCancel =
     !nonCancellable && activity?.cancellation_refund_mode === "none";

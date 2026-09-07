@@ -204,7 +204,7 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
-          // 00097 — 'refund' reinstates the credit / issues a make-up token on
+          // 00099 — 'refund' reinstates the credit / issues a make-up token on
           // cancel; 'none' is "non-refundable if cancelled".
           cancellation_refund_mode: 'refund' | 'none';
           booking_cutoff_minutes: number;
@@ -513,7 +513,7 @@ export type Database = {
           /** Groups the seat rows of one multi-child booking (00084). */
           booking_group_id: string | null;
           wix_booking_id: string | null;
-          /** 00097 — the refund decision recorded when this booking was
+          /** 00099 — the refund decision recorded when this booking was
            *  cancelled: 'refund' = credit/token returned, 'none' = withheld.
            *  Null until cancelled, or for a legacy status-only cancel. */
           cancel_refund_mode: 'refund' | 'none' | null;

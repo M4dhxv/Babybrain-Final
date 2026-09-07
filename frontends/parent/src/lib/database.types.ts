@@ -201,7 +201,7 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number;
-          // 00097 — 'none' means "payment is non-refundable if cancelled";
+          // 00099 — 'none' means "payment is non-refundable if cancelled";
           // 'refund' (default) reinstates the credit / issues a make-up token.
           cancellation_refund_mode: 'refund' | 'none';
           booking_cutoff_minutes: number;

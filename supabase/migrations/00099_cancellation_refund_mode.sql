@@ -1,4 +1,4 @@
--- 00097_cancellation_refund_mode.sql
+-- 00099_cancellation_refund_mode.sql
 --
 -- Let a provider decide what a cancellation gives back: the parent made whole
 -- the usual way (a package credit reinstated, a redeemed make-up token
@@ -12,7 +12,7 @@
 --     allow_cancellation is true: if parents can't self-cancel there is no
 --     refund to promise or withhold, and a vendor cancelling a single booking
 --     picks the mode for that one booking in the dialog. 'refund' (the
---     default) keeps every pre-00097 booking behaving exactly as before.
+--     default) keeps every pre-00099 booking behaving exactly as before.
 --
 --   * bookings.cancel_refund_mode — the decision actually applied to one
 --     cancelled row. cancel_booking / cancel_booking_group stamp it from the

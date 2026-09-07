@@ -202,7 +202,7 @@ export type Database = {
           allow_cancellation: boolean;
           allow_rescheduling: boolean;
           cancellation_cutoff_hours: number | null;
-          // What a cancellation returns (00097): 'refund' reinstates the
+          // What a cancellation returns (00099): 'refund' reinstates the
           // credit / issues a make-up token; 'none' is "non-refundable if
           // cancelled". Only in effect while allow_cancellation is true.
           cancellation_refund_mode: 'refund' | 'none';
@@ -533,7 +533,7 @@ export type Database = {
           // a solo booking. The parent app renders one card per group.
           booking_group_id: string | null;
           wix_booking_id: string | null;
-          // Cancellation refund decision (00097): 'refund' = credit/token back,
+          // Cancellation refund decision (00099): 'refund' = credit/token back,
           // 'none' = withheld. Null until cancelled / for a legacy cancel.
           cancel_refund_mode: 'refund' | 'none' | null;
           cancel_reason: string | null;
