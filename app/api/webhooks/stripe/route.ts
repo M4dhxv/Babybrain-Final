@@ -307,15 +307,24 @@ export async function POST(request: Request) {
       if (kind === 'booking' && session.metadata?.booking_id) {
         const bookingId = session.metadata.booking_id;
         // A multi-child booking (00084) pays for every seat in one checkout;
-        // confirm the whole group, not just the representative row.
+        // confirm the whole group, not just the representative row. But a
+        // party that straddled capacity (00104) leaves waitlisted seats under
+        // the same group id — so when the checkout listed the exact seats it
+        // charged, confirm only those.
         const groupId = session.metadata.booking_group_id ?? null;
+        const seatIds = (session.metadata.seat_ids ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
         const paymentIntent = (session.payment_intent as string) ?? null;
         const patch = {
           payment_status: 'paid' as const,
           status: 'confirmed' as const,
           stripe_payment_intent: paymentIntent,
         };
-        if (groupId) {
+        if (seatIds.length > 0) {
+          await admin.from('bookings').update(patch).in('id', seatIds);
+        } else if (groupId) {
           await admin.from('bookings').update(patch).eq('booking_group_id', groupId);
         } else {
           await admin.from('bookings').update(patch).eq('id', bookingId);
@@ -324,15 +333,21 @@ export async function POST(request: Request) {
         // Ledger entry so the vendor can see what they earned on this booking
         // and what was deducted. Idempotent on the payment intent.
         // provider_id is stamped on the booking by handle_booking_insert.
-        const { data: booked } = groupId
-          ? await admin
-              .from('bookings')
-              .select('amount, provider_id')
-              .eq('booking_group_id', groupId)
-          : await admin
-              .from('bookings')
-              .select('amount, provider_id')
-              .eq('id', bookingId);
+        const { data: booked } =
+          seatIds.length > 0
+            ? await admin
+                .from('bookings')
+                .select('amount, provider_id')
+                .in('id', seatIds)
+            : groupId
+              ? await admin
+                  .from('bookings')
+                  .select('amount, provider_id')
+                  .eq('booking_group_id', groupId)
+              : await admin
+                  .from('bookings')
+                  .select('amount, provider_id')
+                  .eq('id', bookingId);
         const rows = booked ?? [];
         const providerId = rows[0]?.provider_id ?? null;
         if (providerId) {

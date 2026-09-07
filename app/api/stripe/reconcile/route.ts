@@ -163,8 +163,14 @@ export async function POST(request: Request) {
 
   if (kind === 'booking' && session.metadata?.booking_id) {
     const bookingId = session.metadata.booking_id;
-    // A multi-child booking (00084) confirms every seat in the group.
+    // A multi-child booking (00084) confirms every seat in the group — unless
+    // the party straddled capacity (00104), in which case the checkout listed
+    // the exact seats it charged and the waitlisted overflow is left alone.
     const groupId = session.metadata.booking_group_id ?? null;
+    const seatIds = (session.metadata.seat_ids ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     const paymentIntent = (session.payment_intent as string) ?? null;
     const patch = {
       payment_status: 'paid' as const,
@@ -173,14 +179,20 @@ export async function POST(request: Request) {
     };
     // RLS is bypassed by the admin client, so scope the write to this parent.
     const scoped = admin.from('bookings').update(patch).eq('user_id', user.id);
-    await (groupId ? scoped.eq('booking_group_id', groupId) : scoped.eq('id', bookingId));
+    await (seatIds.length > 0
+      ? scoped.in('id', seatIds)
+      : groupId
+        ? scoped.eq('booking_group_id', groupId)
+        : scoped.eq('id', bookingId));
 
     // Same ledger entry the webhook would have written. recordSale is
     // idempotent on the payment intent, so whichever path runs first wins.
     const readScoped = admin.from('bookings').select('amount, provider_id').eq('user_id', user.id);
-    const { data: booked } = await (groupId
-      ? readScoped.eq('booking_group_id', groupId)
-      : readScoped.eq('id', bookingId));
+    const { data: booked } = await (seatIds.length > 0
+      ? readScoped.in('id', seatIds)
+      : groupId
+        ? readScoped.eq('booking_group_id', groupId)
+        : readScoped.eq('id', bookingId));
     const rows = booked ?? [];
     const providerId = rows[0]?.provider_id ?? null;
     if (providerId) {

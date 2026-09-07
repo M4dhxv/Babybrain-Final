@@ -6049,9 +6049,10 @@ function BookingPage() {
       setBusy(false);
     } else {
       // book_party (00084) inserts one bookings row per seat under a shared
-      // booking_group_id, all-or-nothing on capacity. Seat 1 is the chosen
-      // child; the rest carry the optional guest names. A solo booking is
-      // just a party of one (group_id null).
+      // booking_group_id. It takes the party as far as the session fits
+      // (00104): overflow seats land on the waitlist and it returns 'pending'
+      // as long as at least one seat needs paying. Seat 1 is the chosen child;
+      // the rest carry the optional guest names.
       const guests =
         count > 1 ? Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) : [];
       const { data, error } = await supabase
@@ -6074,8 +6075,10 @@ function BookingPage() {
         return;
       }
       const { group_id: groupId, status: partyStatus } = data as { group_id: string | null; status: string };
-      // Paid class → hand off to Stripe Checkout for the whole party; the
-      // webhook confirms every seat on payment. Free class stays direct.
+      // Paid class → hand off to Stripe Checkout; the route charges only the
+      // seats that fit and the webhook confirms just those. Free class stays
+      // direct. 'waitlisted' means nothing fit — no payment, straight to the
+      // waitlist confirmation.
       if (price != null && price > 0 && partyStatus !== "waitlisted") {
         try {
           const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", {
@@ -6705,6 +6708,9 @@ function BookedPage() {
   const staff = getParam("staff") || "";
   const slug = getParam("slug") || "";
   const waitlisted = status === "waitlisted";
+  // A party that straddled the session's capacity (00104): the seats that fit
+  // are confirmed/paid, this many are still on the waitlist.
+  const wlLeft = Number(getParam("wl") || 0);
 
   /* QA 24/08 + 28/08: "you can't change the information on the activity
      confirmation screen" and "vendors currently can't edit the message that is
@@ -6744,7 +6750,7 @@ function BookedPage() {
         <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
-          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p></div>
+          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p>{!waitlisted && wlLeft > 0 && <p className="mt-2 font-semibold text-palette-orangeStrong">{wlLeft === 1 ? "One place didn't fit and is on the waitlist" : `${wlLeft} places didn't fit and are on the waitlist`} — we'll email you to pay for {wlLeft === 1 ? "it" : "them"} when a spot opens.</p>}</div>
           {/* The full stacked logo (mascot + wordmark), not the confetti mascot
               crop lifted from the mockup — same call as the Book page header,
               which already dropped the confetti. */}

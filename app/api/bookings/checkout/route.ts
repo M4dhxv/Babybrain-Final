@@ -42,9 +42,20 @@ export async function POST(request: Request) {
   if (seats.every((s) => s.payment_status === 'paid')) {
     return NextResponse.json({ error: 'Already paid' }, { status: 409 });
   }
-  const booking = seats[0];
+
+  // A party can straddle the session's capacity (00104): the seats that fit
+  // come back `pending`, the overflow `waitlisted`. Charge only what's owed
+  // now — the pending seats. The waitlisted overflow is claimed later through
+  // the "Pay now" flow (00100), which re-enters here with only those rows and
+  // no pending seat among them, so it falls through to `unpaid`.
+  const unpaid = seats.filter((s) => s.payment_status !== 'paid');
+  const pending = unpaid.filter((s) => (s as { status?: string }).status === 'pending');
+  const chargeSeats = pending.length > 0 ? pending : unpaid;
+
+  const booking = chargeSeats[0];
   const groupId = booking.booking_group_id ?? null;
-  const seatCount = seats.length;
+  const seatCount = chargeSeats.length;
+  const chargeIds = new Set(chargeSeats.map((s) => s.id));
 
   const admin = createAdminClient();
 
@@ -80,7 +91,7 @@ export async function POST(request: Request) {
   // "expire the link when the vacancy is filled" behaviour. A vendor "Promote"
   // on an unpaid booking (waitlist_pay_invited, 00101) is an explicit offer,
   // so it's allowed through even at capacity.
-  const waitlisted = seats.filter((s) => (s as { status?: string }).status === 'waitlisted');
+  const waitlisted = chargeSeats.filter((s) => (s as { status?: string }).status === 'waitlisted');
   const vendorInvited = waitlisted.every(
     (s) => (s as { waitlist_pay_invited?: boolean }).waitlist_pay_invited === true
   );
@@ -102,9 +113,17 @@ export async function POST(request: Request) {
   const amountCents = unitCents * seatCount;
 
   // Stamp the per-seat amount server-side (parents can't set money columns
-  // themselves) across every seat in the party.
-  const seatIds = seats.map((s) => s.id);
+  // themselves) on the seats being charged — not the waitlisted overflow,
+  // which isn't being paid for on this checkout.
+  const seatIds = chargeSeats.map((s) => s.id);
   await admin.from('bookings').update({ amount: price }).in('id', seatIds);
+
+  // Seats from this group that stay on the waitlist after this payment — the
+  // confirmation page tells the parent so "Your class is booked!" isn't a lie
+  // when one of their children is still queued.
+  const stillWaitlisted = seats.filter(
+    (s) => (s as { status?: string }).status === 'waitlisted' && !chargeIds.has(s.id)
+  ).length;
 
   const title = activity?.title ?? 'Class booking';
   const origin = appOrigin(request);
@@ -131,6 +150,10 @@ export async function POST(request: Request) {
       kind: 'booking',
       booking_id: booking.id,
       ...(groupId ? { booking_group_id: groupId } : {}),
+      // Confirm exactly the seats this checkout paid for. A straddling party
+      // (00104) has waitlisted seats under the same group id that must NOT be
+      // flipped to confirmed by the webhook.
+      seat_ids: seatIds.join(','),
     },
     // session_id lets the app reconcile the payment on return even if the
     // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
@@ -157,6 +180,8 @@ export async function POST(request: Request) {
           '',
         // Who's taking it and where in the building (QA 24/08).
         staff: [sess?.teacher_name, sess?.studio].filter(Boolean).join(' · '),
+        // Seats from this party still queued after this payment (00104).
+        ...(stillWaitlisted > 0 ? { wl: String(stillWaitlisted) } : {}),
       }).toString() +
       // Left unencoded — Stripe substitutes the real id into this placeholder.
       `&session_id={CHECKOUT_SESSION_ID}`,

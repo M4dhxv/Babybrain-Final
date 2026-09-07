@@ -6,12 +6,25 @@
 -- full class never even reached the waitlist, so the waitlist was only ever
 -- populated by races.
 --
--- Now: if the whole party won't fit, the whole party is queued — every seat
--- goes in `waitlisted` with a position, nothing is charged, and the parent
--- pays for the lot later via the "Pay now" flow (00100) once enough seats
--- open. handle_booking_insert still waitlists a solo/party per row on a
--- genuinely full class; this also covers "3 wanted, 1 free" without leaving
--- a half-paid party.
+-- Now the party is accepted as far as it fits. The per-row capacity trigger
+-- (handle_booking_insert, 00008) already does the work: seat by seat it lets
+-- rows through as `pending` until the session is full, then flips the rest to
+-- `waitlisted` with a queue position. A party of 3 into 2 free seats becomes
+-- 2 pending + 1 waitlisted — same behaviour redeem_package_credit has always
+-- had (00084).
+--
+-- What changes here is only the RETURN value, which the parent app reads to
+-- decide whether to collect payment:
+--
+--   'pending'    -> at least one seat fits and is unpaid; send the party to
+--                   Stripe. The checkout route charges just the pending seats
+--                   and confirms them; the waitlisted overflow stays queued
+--                   and is paid for later via the "Pay now" flow (00100).
+--   'waitlisted' -> nothing fit; the whole party is queued, nothing to pay.
+--   'confirmed'  -> free class, every seat is in.
+--
+-- Still carries the 00103 ambiguity fix (`#variable_conflict use_column` +
+-- qualified `status` references) — `status` is an implicit OUT parameter here.
 
 begin;
 
@@ -30,18 +43,17 @@ set search_path to 'public'
 as $function$
 #variable_conflict use_column
 declare
-  v_user      uuid := auth.uid();
-  v_seats     int  := 1 + coalesce(array_length(p_guest_names, 1), 0);
-  v_group     uuid := gen_random_uuid();
-  v_session   record;
-  v_child     uuid;
-  v_taken     int;
-  v_status    text;
-  v_worst     text := 'confirmed';
-  v_id        uuid;
-  v_i         int;
-  v_all_wait  boolean := false;
-  v_wl_next   int := 1;
+  v_user        uuid := auth.uid();
+  v_seats       int  := 1 + coalesce(array_length(p_guest_names, 1), 0);
+  v_group       uuid := gen_random_uuid();
+  v_session     record;
+  v_child       uuid;
+  v_status      text;
+  v_id          uuid;
+  v_i           int;
+  v_any_pending boolean := false;
+  v_any_wait    boolean := false;
+  v_ret         text;
 begin
   if v_user is null then
     raise exception 'Please log in again to book';
@@ -71,25 +83,11 @@ begin
     end if;
   end if;
 
-  -- Whole party won't fit -> queue the whole party, in order. Nobody is
-  -- charged; they pay once enough seats open.
-  if v_session.capacity is not null then
-    select count(*) into v_taken
-    from public.bookings b
-    where b.session_id = p_session_id
-      and b.status in ('pending', 'confirmed');
-    if v_taken + v_seats > v_session.capacity then
-      v_all_wait := true;
-      select coalesce(max(b.waitlist_position), 0) + 1 into v_wl_next
-      from public.bookings b
-      where b.session_id = p_session_id and b.status = 'waitlisted';
-    end if;
-  end if;
-
+  -- No capacity gate here. handle_booking_insert waitlists each row that
+  -- doesn't fit, in order, so the party is taken as far as the session allows.
   for v_i in 1..v_seats loop
     insert into public.bookings (user_id, session_id, child_id, guest_name, policies_accepted,
-                                 medical_disclosure, info_response, booking_group_id,
-                                 status, waitlist_position)
+                                 medical_disclosure, info_response, booking_group_id)
     values (
       v_user,
       p_session_id,
@@ -99,35 +97,34 @@ begin
       coalesce(p_policies, '{}'::uuid[]),
       case when v_i = 1 then nullif(btrim(p_medical), '') else null end,
       case when v_i = 1 then nullif(btrim(p_info), '') else null end,
-      v_group,
-      case when v_all_wait then 'waitlisted' else null end,
-      case when v_all_wait then v_wl_next + v_i - 1 else null end
+      v_group
     )
     returning bookings.id, bookings.status into v_id, v_status;
 
     if v_status = 'waitlisted' then
-      v_worst := 'waitlisted';
-    elsif v_status = 'pending' and v_worst <> 'waitlisted' then
-      v_worst := 'pending';
+      v_any_wait := true;
+    elsif v_status = 'pending' then
+      v_any_pending := true;
     end if;
   end loop;
 
-  -- A partly-waitlisted paid party is a trap: the client won't send them to
-  -- Stripe once v_worst is 'waitlisted', so any 'pending' seats would sit
-  -- unpaid forever. Put the whole group on the waitlist together.
-  if v_worst = 'waitlisted' then
-    update public.bookings b
-    set status = 'waitlisted',
-        waitlist_position = coalesce(
-          (select max(x.waitlist_position) from public.bookings x
-           where x.session_id = p_session_id and x.status = 'waitlisted'
-             and x.booking_group_id is distinct from v_group), 0) + 1
-    where b.booking_group_id = v_group and b.status = 'pending';
+  -- Return contract read by the parent app (see file header).
+  if v_any_pending then
+    v_ret := 'pending';
+  elsif v_any_wait then
+    v_ret := 'waitlisted';
+  else
+    v_ret := 'confirmed';
   end if;
 
-  return query select v_group, v_worst;
+  return query select v_group, v_ret;
 end;
 $function$;
+
+insert into supabase_migrations.schema_migrations (version, name)
+values ('00103','fix_book_party_status_ambiguity'),
+       ('00104','book_party_waitlist_when_full')
+on conflict (version) do nothing;
 
 notify pgrst, 'reload schema';
 
