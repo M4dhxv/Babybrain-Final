@@ -362,9 +362,19 @@ export default function BookingsPage() {
     if (promotingId) return;
     setPromotingId(bookingId);
     const { error } = await supabase.rpc('promote_waitlist_entry', { p_booking_id: bookingId });
-    if (error) setRowError(error.message);
-    await loadRoster(sessionId);
+    if (error) {
+      setRowError(error.message);
+      setPromotingId(null);
+      return;
+    }
+    // Flip the button now — don't wait on the refetch. An unpaid family stays
+    // on the waitlist as "Invited"; a settled one is confirmed and drops off,
+    // which the loadRoster below reconciles.
+    setRoster((rows) =>
+      rows.map((r) => (r.booking_id === bookingId ? { ...r, waitlist_pay_invited: true } : r)),
+    );
     setPromotingId(null);
+    loadRoster(sessionId);
   }
   async function removeBooking(bookingId: string) {
     const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
