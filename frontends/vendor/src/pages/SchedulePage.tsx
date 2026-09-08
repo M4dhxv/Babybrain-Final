@@ -30,6 +30,10 @@ type EnrichedSession = {
   studio: string | null;
   fromWix: boolean;
   isCourse: boolean;
+  // Wix-linked weekly CLASS only: seats held past the (immutable, Wix-mirrored)
+  // capacity — promoted + paid from the waitlist (00108). The cell shows
+  // "n/n +x" instead of an oversold "n+x/n". 0 for every other session type.
+  wixClassOverflow: number;
   // Per-session pause (00091) — closes just this slot to new parent bookings,
   // independent of the activity-wide switch.
   bookingsPaused: boolean;
@@ -130,13 +134,18 @@ export default function SchedulePage() {
         .order('starts_at');
       const rows = sess ?? [];
       const counts: Record<string, number> = {};
+      // Held seats only (not the waitlist) — drives the Wix-class overflow
+      // readout, which must not count queued parents as "held on BabyBrain".
+      const seatCounts: Record<string, number> = {};
       if (rows.length) {
         const { data: bks } = await supabase
           .from('bookings')
           .select('session_id, status')
           .in('session_id', rows.map((s) => s.id));
         (bks ?? []).forEach((b) => {
-          if (b.status !== 'cancelled') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+          if (b.status === 'cancelled') return;
+          counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+          if (b.status !== 'waitlisted') seatCounts[b.session_id] = (seatCounts[b.session_id] ?? 0) + 1;
         });
       }
       setSessions(
@@ -158,6 +167,14 @@ export default function SchedulePage() {
               ? Math.max(0, s.capacity - s.wix_remaining_capacity)
               : 0;
           const booked = Math.max(wixDerived, counts[s.id] ?? 0);
+          // For a Wix class, capacity mirrors Wix and can't be raised from
+          // here (00108) — held seats past it are BabyBrain's promoted-paid
+          // overflow. Uses the held-seat count (Wix's own filled figure or
+          // our confirmed rows), never the waitlist.
+          const wixClassOverflow =
+            act?.wix_service_type === 'CLASS' && s.capacity != null
+              ? Math.max(0, Math.max(wixDerived, seatCounts[s.id] ?? 0) - s.capacity)
+              : 0;
           return {
             id: s.id,
             activity_id: s.activity_id,
@@ -171,6 +188,7 @@ export default function SchedulePage() {
             studio: s.studio,
             fromWix,
             isCourse: act?.wix_service_type === 'COURSE',
+            wixClassOverflow,
             bookingsPaused: !!s.bookings_paused,
           };
         })
@@ -450,6 +468,7 @@ function SessionCard({
   s, onClick, onTogglePause,
 }: { s: EnrichedSession; onClick: () => void; onTogglePause?: () => void }) {
   const full = s.capacity != null && s.booked >= s.capacity;
+  const wixOverflow = s.wixClassOverflow;
   return (
     <div className="relative">
       <button
@@ -490,12 +509,23 @@ function SessionCard({
       )}
       <div className="mt-1 flex items-center gap-1 text-[11px]">
         <Users className="h-3 w-3 text-gray-400" />
-        <span className={cn(full ? 'font-medium text-red-600' : 'text-gray-500')}>
-          {s.booked}{s.capacity != null ? `/${s.capacity}` : ''}
+        <span
+          className={cn(full ? 'font-medium text-red-600' : 'text-gray-500')}
+          title={wixOverflow > 0 ? `${s.capacity} on Wix · ${wixOverflow} held on BabyBrain beyond Wix capacity` : undefined}
+        >
+          {wixOverflow > 0
+            ? `${s.capacity}/${s.capacity}`
+            : `${s.booked}${s.capacity != null ? `/${s.capacity}` : ''}`}
           {/* A course is enrolled as one whole programme, so this count is
               the course's total enrolment carried across every occurrence —
               not people booked for this specific date. */}
-          {s.isCourse ? ' enrolled · course' : full ? ' · Full' : ''}
+          {s.isCourse
+            ? ' enrolled · course'
+            : wixOverflow > 0
+              ? ` +${wixOverflow}`
+              : full
+                ? ' · Full'
+                : ''}
         </span>
       </div>
       </button>
