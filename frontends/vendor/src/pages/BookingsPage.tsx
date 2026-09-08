@@ -381,6 +381,15 @@ export default function BookingsPage() {
   const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
+  // A Wix class's capacity mirrors Wix and can't be written back (00108), so a
+  // promoted + paid waitlist seat is carried *over* that number rather than
+  // inflating it. This is how many such extra seats BabyBrain is holding for
+  // the selected session — shown next to the Wix capacity on the Waitlist tab.
+  const currentSessionIsWixClass = activityWixType[sessionActivity[sessionId]] === 'CLASS';
+  const wixClassOverflow =
+    currentSessionIsWixClass && currentSession?.capacity != null
+      ? Math.max(0, booked.length - currentSession.capacity)
+      : 0;
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   async function promote(bookingId: string) {
@@ -787,7 +796,12 @@ export default function BookingsPage() {
                 </div>
               )}
             </div>
-            <div className="mt-4 text-sm text-gray-500">{booked.length} bookings</div>
+            <div className="mt-4 text-sm text-gray-500">
+              {booked.length} bookings
+              {wixClassOverflow > 0 && (
+                <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
+              )}
+            </div>
           </div>
 
           {/* Bookings detail */}
@@ -1083,8 +1097,16 @@ export default function BookingsPage() {
           {/* Waitlist */}
           {activeTab === 'Waitlist' && (
             <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center gap-4 mb-5 text-sm">
-                <span>Capacity <strong className="text-gray-900">{booked.length}/{currentSession?.capacity ?? '∞'}</strong></span>
+              <div className="flex flex-wrap items-center gap-4 mb-5 text-sm">
+                {wixClassOverflow > 0 ? (
+                  <span>
+                    Capacity <strong className="text-gray-900">{currentSession?.capacity}/{currentSession?.capacity}</strong> on Wix
+                    <span className="text-gray-300"> · </span>
+                    <strong className="text-gray-900">+{wixClassOverflow}</strong> held on BabyBrain
+                  </span>
+                ) : (
+                  <span>Capacity <strong className="text-gray-900">{booked.length}/{currentSession?.capacity ?? '∞'}</strong></span>
+                )}
                 <span className="text-gray-300">•</span>
                 <span>Waitlist <strong className="text-gray-900">{waitlisted.length}</strong></span>
               </div>
