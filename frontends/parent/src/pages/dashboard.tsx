@@ -25,6 +25,7 @@ import {
 } from "../components/ui";
 import { SelectField, Opt } from "../components/SelectField";
 import { EnquiryChat } from "../components/EnquiryChat";
+import { UnreadBadge } from "../components/UnreadBadge";
 import { ClassGroupChat } from "../components/ClassGroupChat";
 import RedirectToLanding from "../components/RedirectToLanding";
 import {
@@ -1716,10 +1717,8 @@ export function ProfilePage() {
                     {/* QA 04/09: "there should be a notification on the messages
                         tab i.e. a little 1, 2, 3 bubble depending on the number
                         so they know to check." */}
-                    {key === "messages" && unreadMessages > 0 && !locked && (
-                      <span className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-baby-cta px-1.5 text-[11px] font-black text-white">
-                        {unreadMessages > 9 ? "9+" : unreadMessages}
-                      </span>
+                    {key === "messages" && !locked && (
+                      <UnreadBadge count={unreadMessages} className="ml-auto" />
                     )}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
                   </a>

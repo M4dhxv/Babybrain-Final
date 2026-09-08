@@ -28,6 +28,7 @@ import { useUnreadMessages } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta } from '@/lib/plans';
 import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
+import { UnreadBadge } from '@/components/UnreadBadge';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -172,13 +173,8 @@ export default function PortalLayout() {
                 )}
                 {/* QA 04/09: unread bubble on Messages, so a vendor knows to
                     look. Shown collapsed too — that's when it matters most. */}
-                {item.path === '/messages' && !locked && unreadMessages > 0 && (
-                  <span className={cn(
-                    'grid h-5 min-w-[20px] place-items-center rounded-full bg-[#FA4D8D] px-1.5 text-[11px] font-bold text-white',
-                    isSidebarCollapsed && 'absolute right-1 top-1 h-4 min-w-[16px] px-1 text-[10px]'
-                  )}>
-                    {unreadMessages > 9 ? '9+' : unreadMessages}
-                  </span>
+                {item.path === '/messages' && !locked && (
+                  <UnreadBadge count={unreadMessages} collapsed={isSidebarCollapsed} />
                 )}
                 {locked && !isSidebarCollapsed && <Lock className="w-3.5 h-3.5 flex-shrink-0" />}
               </button>
