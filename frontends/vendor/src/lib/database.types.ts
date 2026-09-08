@@ -898,6 +898,8 @@ export type Database = {
           paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
           /** A "Pay now" invite has already been sent to this waitlisted family (00101/00106). */
           waitlist_pay_invited: boolean;
+          /** For a companion seat of a multi-child party (00084/00109), the name on the seat carrying the real child. */
+          group_primary_name: string | null;
         }[];
       };
       provider_trial_conversion: {

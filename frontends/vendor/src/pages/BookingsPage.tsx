@@ -72,7 +72,11 @@ type RosterRow = {
   child_age_months: number | null; has_medical: boolean; waitlist_position: number | null;
   attendance_status: 'present' | 'absent' | 'late' | null;
   child_id: string | null; skill_level: 'beginner' | 'intermediate' | 'advanced' | null;
-  is_manual: boolean; user_id: string | null;
+  // is_manual is the vendor's own offline record (no parent account). A
+  // multi-child party's companion seats also carry a guest_name but belong
+  // to a parent — those get group_primary_name (the seat with the real
+  // child) and a "With <name>" tag instead.
+  is_manual: boolean; user_id: string | null; group_primary_name: string | null;
   // A "Pay now" invite has already gone to this waitlisted family (00101) —
   // the Promote button freezes into "Invited" so it isn't fired twice.
   waitlist_pay_invited: boolean;
@@ -792,6 +796,7 @@ export default function BookingsPage() {
                     <div className="flex flex-wrap gap-1 mt-1">
                       {b.has_medical && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-purple-300 text-purple-800">Medical Disclosure</span>}
                       {b.is_manual && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-300 text-blue-800">Manual</span>}
+                      {!b.is_manual && b.group_primary_name && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-700">With {b.group_primary_name}</span>}
                       {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-300 text-orange-800 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
@@ -823,7 +828,12 @@ export default function BookingsPage() {
                     <div className="w-12 h-12 rounded-full bg-pink-100 flex items-center justify-center text-lg font-bold text-pink-600">{initials(sel.child_name)}</div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{sel.child_name}</h3>
-                      <p className="text-sm text-gray-500">{ageLabel(sel.child_age_months)}</p>
+                      <p className="text-sm text-gray-500">
+                        {ageLabel(sel.child_age_months)}
+                        {!sel.is_manual && sel.group_primary_name && (
+                          <span>{ageLabel(sel.child_age_months) ? ' · ' : ''}With {sel.group_primary_name}</span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-4">
