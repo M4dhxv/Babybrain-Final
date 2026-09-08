@@ -60,7 +60,7 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { RainbowLoader } from "./components/RainbowLoader";
-import { ActivityCardGridSkeleton } from "./components/Skeletons";
+import { ActivityCardGridSkeleton, ActivityRowListSkeleton } from "./components/Skeletons";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -1297,7 +1297,11 @@ function ExplorePage() {
               <span className="text-xs font-bold text-[#68718f]">{pinned} of {shown.length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              <ExploreMap activities={shown} regions={regions} />
+              {loading ? (
+                <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
+              ) : (
+                <ExploreMap activities={shown} regions={regions} />
+              )}
             </div>
           </section>
           <section>
@@ -1319,11 +1323,15 @@ function ExplorePage() {
                     ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
                     : <p className="text-sm font-black">{`${shown.length} activities found`}</p>}
                 </div>
-                <div className="grid gap-2.5 xl:grid-cols-2">
-                  {shown.map((activity) => (
-                    <ActivityRow key={activity.id} activity={activity} />
-                  ))}
-                </div>
+                {loading ? (
+                  <ActivityRowListSkeleton count={6} />
+                ) : (
+                  <div className="grid gap-2.5 xl:grid-cols-2">
+                    {shown.map((activity) => (
+                      <ActivityRow key={activity.id} activity={activity} />
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </section>

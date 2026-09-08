@@ -44,3 +44,33 @@ export function ActivityCardGridSkeleton({
     </div>
   );
 }
+
+/** Placeholder matching `ActivityRow` — the wide image-left layout the Explore
+ *  results list uses. */
+export function ActivityRowSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]"
+    >
+      <div className="h-44 animate-pulse bg-[#F3EDF0] sm:h-full sm:min-h-[116px]" />
+      <div className="p-4">
+        <div className="h-3 w-2/5 animate-pulse rounded bg-[#F3EDF0]" />
+        <div className="mt-2.5 h-2.5 w-1/3 animate-pulse rounded bg-[#F6F1F3]" />
+        <div className="mt-3.5 h-2.5 w-3/5 animate-pulse rounded bg-[#F6F1F3]" />
+        <div className="mt-2 h-2.5 w-2/5 animate-pulse rounded bg-[#F6F1F3]" />
+      </div>
+    </div>
+  );
+}
+
+/** A list of `ActivityRowSkeleton`s for the Explore results column. */
+export function ActivityRowListSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="grid gap-2.5 xl:grid-cols-2" aria-hidden="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <ActivityRowSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
