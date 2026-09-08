@@ -1107,6 +1107,11 @@ function ExplorePage() {
   const [showMore, setShowMore] = useState(false);
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
   const query = getParam("q");
+  // Render the list in pages of 50 rather than dumping ~300 rows (and their
+  // images) into the DOM at once. The map and the "N activities found" count
+  // still reflect the whole filtered set.
+  const PAGE = 50;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
 
   // Categories, ages and areas are all multi-select now, so we fetch the whole
   // published set once (it's a few hundred rows) and filter in the browser.
@@ -1176,6 +1181,11 @@ function ExplorePage() {
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
+
+  // Any change to the filters, sort or search starts the list back at page one.
+  useEffect(() => {
+    setVisibleCount(PAGE);
+  }, [categories_, ages, regions, dateFrom, timeRange, maxPrice, sort, query]);
 
   // Sorting by distance needs a location; ask only when it's chosen. If the
   // browser won't give one (denied, or no geolocation at all), fall back to the
@@ -1353,11 +1363,24 @@ function ExplorePage() {
                 {loading ? (
                   <ActivityRowListSkeleton count={6} />
                 ) : (
-                  <div className="grid gap-2.5 xl:grid-cols-2">
-                    {shown.map((activity) => (
-                      <ActivityRow key={activity.id} activity={activity} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid gap-2.5 xl:grid-cols-2">
+                      {shown.slice(0, visibleCount).map((activity) => (
+                        <ActivityRow key={activity.id} activity={activity} />
+                      ))}
+                    </div>
+                    {shown.length > visibleCount && (
+                      <div className="mt-5 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleCount((n) => n + PAGE)}
+                          className="rounded-[10px] border border-[#EBE3E5] bg-white px-6 py-2.5 text-sm font-black text-[#4a5680] shadow-card hover:border-baby-pink"
+                        >
+                          Show more ({shown.length - visibleCount} left)
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

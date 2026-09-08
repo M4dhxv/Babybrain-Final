@@ -4,6 +4,7 @@ import { apiGet } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
+import { cacheGet, cacheSet } from "./queryCache";
 import { goTo } from "./nav";
 import {
   formatAgeRange,
@@ -152,25 +153,34 @@ export interface ActivityDetail {
   loading: boolean;
 }
 
+const EMPTY_DETAIL: ActivityDetail = {
+  activity: null,
+  sessions: [],
+  reviews: [],
+  courseSpan: null,
+  eventSoldOut: false,
+  loading: true,
+};
+
 export function useActivityDetail(slug: string | null): ActivityDetail {
-  const [state, setState] = useState<ActivityDetail>({
-    activity: null,
-    sessions: [],
-    reviews: [],
-    courseSpan: null,
-    eventSoldOut: false,
-    loading: true,
-  });
+  const detailKey = slug ? "detail:" + slug : null;
+  const seed = detailKey ? cacheGet<ActivityDetail>(detailKey) : undefined;
+  const [state, setState] = useState<ActivityDetail>(
+    seed ? { ...seed.data, loading: false } : EMPTY_DETAIL
+  );
 
   useEffect(() => {
-    if (!slug) {
+    if (!slug || !detailKey) {
       setState((s) => ({ ...s, loading: false }));
       return;
     }
-    // Client-side nav from one listing straight to another keeps this hook
-    // mounted; show the skeleton for the switch rather than the previous
-    // activity's content until the new fetch lands.
-    setState((s) => ({ ...s, loading: true }));
+    // Show the last-seen listing at once on a return visit, then refresh it in
+    // place (session capacity and the review list are worth re-fetching every
+    // time). Only fall back to the skeleton when there's nothing cached — e.g.
+    // a client-side hop straight from one listing to another.
+    const cached = cacheGet<ActivityDetail>(detailKey);
+    if (cached) setState({ ...cached.data, loading: false });
+    else setState((s) => ({ ...s, loading: true }));
     let cancelled = false;
     (async () => {
       // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
@@ -306,21 +316,22 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           : Promise.resolve(false),
         eventSoldOutPromise,
       ]);
-      if (!cancelled)
-        setState({
-          activity: {
-            ...act,
-            category_name:
-              (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
-            provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
-            provider_can_message: providerCanMessage,
-          },
-          sessions,
-          reviews: reviews ?? [],
-          courseSpan: wixCourseSpan,
-          eventSoldOut,
-          loading: false,
-        });
+      const next: ActivityDetail = {
+        activity: {
+          ...act,
+          category_name:
+            (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
+          provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
+          provider_can_message: providerCanMessage,
+        },
+        sessions,
+        reviews: reviews ?? [],
+        courseSpan: wixCourseSpan,
+        eventSoldOut,
+        loading: false,
+      };
+      cacheSet(detailKey, next);
+      if (!cancelled) setState(next);
     })();
     return () => {
       cancelled = true;
@@ -422,10 +433,16 @@ export interface ChildRecommendations {
   }[];
 }
 
+/** Recommendations are recomputed server-side by a job, never by anything the
+ *  parent does here, so a cached set stays valid for a while. */
+const RECS_FRESH_MS = 5 * 60_000;
+
 export function useRecommendations(children: Child[]) {
-  const [data, setData] = useState<ChildRecommendations[]>([]);
-  const [loading, setLoading] = useState(true);
   const ids = children.map((c) => c.id).join(",");
+  const cacheKey = "recs:" + ids;
+  const seed = ids ? cacheGet<ChildRecommendations[]>(cacheKey) : undefined;
+  const [data, setData] = useState<ChildRecommendations[]>(seed?.data ?? []);
+  const [loading, setLoading] = useState(!seed);
 
   useEffect(() => {
     if (children.length === 0) {
@@ -433,11 +450,19 @@ export function useRecommendations(children: Child[]) {
       setLoading(false);
       return;
     }
-    // Children arrive after auth resolves — a beat after the first (empty) pass
-    // already flipped `loading` off. Re-enter loading here or the fetch runs
-    // with `loading === false` and the section renders an empty grid.
-    setLoading(true);
     let cancelled = false;
+    const cached = cacheGet<ChildRecommendations[]>(cacheKey);
+    if (cached) {
+      setData(cached.data);
+      setLoading(false);
+      if (cached.age < RECS_FRESH_MS) return; // fresh — no refetch
+      // else revalidate in the background, keeping the cached cards on screen
+    } else {
+      // Children arrive after auth resolves — a beat after the first (empty)
+      // pass already flipped `loading` off. Re-enter loading here or the fetch
+      // runs with `loading === false` and the section renders an empty grid.
+      setLoading(true);
+    }
     (async () => {
       const out = await Promise.all(
         children.map(async (child) => {
@@ -485,6 +510,7 @@ export function useRecommendations(children: Child[]) {
           };
         })
       );
+      cacheSet(cacheKey, out);
       if (!cancelled) {
         setData(out);
         setLoading(false);
