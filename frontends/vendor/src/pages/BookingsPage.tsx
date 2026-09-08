@@ -438,7 +438,7 @@ export default function BookingsPage() {
      compensate_cancelled_booking trigger returns a package credit or reissues
      a make-up token) — while a manual guest entry, which is the vendor's own
      record of something arranged offline, can be corrected or deleted
-     outright. Migration 00084 adds the delete policy, scoped to manual rows. */
+     outright. Migration 00091 adds the delete policy, scoped to manual rows. */
   const [rowError, setRowError] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
   const [editingManual, setEditingManual] = useState<string | null>(null);
