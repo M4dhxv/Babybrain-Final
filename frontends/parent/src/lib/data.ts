@@ -469,13 +469,26 @@ export function useRecommendations(children: Child[]) {
 
 export function useJourney(childId: string | undefined) {
   const [stats, setStats] = useState<JourneyStats | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (!childId) return;
+    if (!childId) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
     supabase
       .rpc("child_journey_stats", { p_child_id: childId })
-      .then(({ data }) => setStats((data?.[0] as JourneyStats) ?? null));
+      .then(({ data }) => {
+        if (cancelled) return;
+        setStats((data?.[0] as JourneyStats) ?? null);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [childId]);
-  return stats;
+  return { stats, loading };
 }
 
 /** Map a DB activity row → the content `Activity` card shape.

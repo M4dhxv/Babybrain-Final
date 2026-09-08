@@ -66,6 +66,8 @@ import {
   ChildCardSkeleton,
   ActivityDetailSkeleton,
   BookingPageSkeleton,
+  JourneyStatsSkeleton,
+  ListRowsSkeleton,
 } from "./components/Skeletons";
 
 function getParam(name: string) {
@@ -3040,7 +3042,7 @@ function ProfilePage() {
   const journeyChild =
     (childFilter ? children.find((c) => c.id === childFilter) : children.find((c) => c.id === journeyChildId)) ??
     children[0];
-  const journey = useJourney(journeyChild?.id);
+  const { stats: journey, loading: journeyLoading } = useJourney(journeyChild?.id);
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
   // First favourites fetch still in flight — show a card skeleton rather than
@@ -3057,6 +3059,12 @@ function ProfilePage() {
   const [tokens, setTokens] = useState<TokenItem[]>([]);
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [savedProviders, setSavedProviders] = useState<{ id: string; name: string }[]>([]);
+  // First-fetch flags for the list tabs, so each shows a skeleton rather than
+  // its "nothing here yet" empty state before the query has answered.
+  const [reviewsLoaded, setReviewsLoaded] = useState(false);
+  const [notifsLoaded, setNotifsLoaded] = useState(false);
+  const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [tokensLoaded, setTokensLoaded] = useState(false);
   const [billingPlan, setBillingPlan] = useState<{
     plan: "free" | "plus";
     status: string | null;
@@ -3321,6 +3329,7 @@ function ProfilePage() {
       .order("created_at", { ascending: false });
     if (error) {
       console.warn("[packages] load failed:", error.message);
+      setPackagesLoaded(true);
       return;
     }
     const rows = (data ?? []) as unknown as Array<{
@@ -3369,6 +3378,7 @@ function ProfilePage() {
         };
       })
     );
+    setPackagesLoaded(true);
   }
 
   async function manageBilling() {
@@ -3386,6 +3396,10 @@ function ProfilePage() {
   useEffect(() => {
     if (!session) {
       setFavsLoaded(true);
+      setReviewsLoaded(true);
+      setNotifsLoaded(true);
+      setPackagesLoaded(true);
+      setTokensLoaded(true);
       return;
     }
     supabase
@@ -3450,13 +3464,17 @@ function ProfilePage() {
             providerResponse: r.provider_response,
           }))
         );
+        setReviewsLoaded(true);
       });
 
     supabase
       .from("notifications")
       .select("id, title, body, read_at, created_at")
       .order("created_at", { ascending: false })
-      .then(({ data }) => setNotifications((data ?? []) as unknown as NotifItem[]));
+      .then(({ data }) => {
+        setNotifications((data ?? []) as unknown as NotifItem[]);
+        setNotifsLoaded(true);
+      });
 
     loadPackages();
 
@@ -3512,6 +3530,7 @@ function ProfilePage() {
           };
         })
       );
+      setTokensLoaded(true);
     })();
 
     const fetchPlan = () => {
@@ -3798,13 +3817,17 @@ function ProfilePage() {
             </div>
             <div className="rounded-[10px] bg-[#FEEBF2] p-5">
               <h2 className="mb-4 text-lg font-black">{journeyChild ? `${journeyChild.name}'s journey` : "Journey"}</h2>
-              {[
-                [`${journey?.classes_attended ?? 0} activities attended`, "calendar"],
-                [`${journey?.venues_explored ?? 0} venues explored`, "pin"],
-                [`${journey?.hours_of_learning ?? 0} hours completed`, "clock"],
-              ].map(([item, icon]) => (
-                <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#A7D8F8]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
-              ))}
+              {journeyLoading ? (
+                <JourneyStatsSkeleton />
+              ) : (
+                [
+                  [`${journey?.classes_attended ?? 0} activities attended`, "calendar"],
+                  [`${journey?.venues_explored ?? 0} venues explored`, "pin"],
+                  [`${journey?.hours_of_learning ?? 0} hours completed`, "clock"],
+                ].map(([item, icon]) => (
+                  <p key={item} className="mb-4 flex items-center gap-2 text-base font-black text-[#A7D8F8]"><Icon name={icon} className="h-4 w-4" /> <span className="text-baby-ink">{item}</span></p>
+                ))
+              )}
             </div>
           </div>
 
@@ -3963,7 +3986,9 @@ function ProfilePage() {
                   Some pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus any still untouched.
                 </p>
               )}
-              {visiblePackages.length === 0 ? (
+              {!packagesLoaded ? (
+                <ListRowsSkeleton count={2} lines={2} />
+              ) : visiblePackages.length === 0 ? (
                 <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
               ) : (
                 <>
@@ -3999,7 +4024,9 @@ function ProfilePage() {
               <h1 className="text-[26px] font-black">Make-up tokens</h1>
               <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
-              {visibleTokens.length === 0 ? (
+              {!tokensLoaded ? (
+                <ListRowsSkeleton count={2} lines={2} />
+              ) : visibleTokens.length === 0 ? (
                 <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
               ) : splitByChild ? (
                 /* Split by child first, then active/finished within each child,
@@ -4130,7 +4157,9 @@ function ProfilePage() {
           {tab === "reviews" && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Reviews</h1>
-              {reviews.length === 0 ? (
+              {!reviewsLoaded ? (
+                <ListRowsSkeleton count={3} lines={2} />
+              ) : reviews.length === 0 ? (
                 <EmptyPanel icon="star" copy="You haven't written any reviews yet." cta="Browse activities" href="/explore" />
               ) : (
                 <div className="space-y-3">
@@ -4157,7 +4186,9 @@ function ProfilePage() {
           {tab === "notifications" && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Notifications</h1>
-              {notifications.length === 0 ? (
+              {!notifsLoaded ? (
+                <ListRowsSkeleton count={4} lines={2} />
+              ) : notifications.length === 0 ? (
                 <EmptyPanel icon="bell" copy="No notifications yet — booking updates and reminders will show up here." />
               ) : (
                 <div className="space-y-2.5">

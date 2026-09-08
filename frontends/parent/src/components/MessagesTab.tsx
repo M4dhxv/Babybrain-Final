@@ -14,6 +14,7 @@ import {
 import "stream-chat-react/dist/css/v2/index.css";
 import { getChatClient } from "../lib/chat";
 import { Icon } from "./ui";
+import { MessagesSkeleton } from "./Skeletons";
 
 /**
  * The list + conversation panes.
@@ -147,11 +148,7 @@ export function MessagesTab({ userId, readOnly = false }: { userId: string; read
     );
   }
   if (!client) {
-    return (
-      <div className="rounded-[14px] border border-[#EBE3E5] bg-white p-10 text-center text-sm font-semibold text-[#68718f]">
-        Connecting to messages…
-      </div>
-    );
+    return <MessagesSkeleton />;
   }
 
   return (

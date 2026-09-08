@@ -94,6 +94,85 @@ export function ChildCardSkeleton() {
   );
 }
 
+/** Placeholder for the Overview "journey" panel — three icon-and-label rows.
+ *  Tinted for the pink `#FEEBF2` panel it sits in rather than the grey greys. */
+export function JourneyStatsSkeleton() {
+  return (
+    <div className="space-y-4" aria-hidden="true">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div className="h-4 w-4 flex-none animate-pulse rounded bg-[#FBD3E3]" />
+          <div className="h-3.5 w-40 animate-pulse rounded bg-[#FBD3E3]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Generic stacked-card placeholder for the dashboard list tabs (reviews,
+ *  notifications, packages, make-up tokens) — a title bar and a couple of body
+ *  lines per card. */
+export function ListRowsSkeleton({
+  count = 3,
+  lines = 2,
+}: {
+  count?: number;
+  lines?: number;
+}) {
+  return (
+    <div className="mt-4 space-y-3" aria-hidden="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+          <div className="h-4 w-2/5 animate-pulse rounded bg-[#F3EDF0]" />
+          {Array.from({ length: lines }).map((_, j) => (
+            <div
+              key={j}
+              className="mt-2.5 h-3 animate-pulse rounded bg-[#F6F1F3]"
+              style={{ width: `${72 - j * 14}%` }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Placeholder for the Messages tab's two-pane chat while the Stream client
+ *  connects — a conversation list on the left, a thread on the right. */
+export function MessagesSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="grid h-[600px] overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card md:grid-cols-[300px_1fr]"
+    >
+      <div className="hidden border-r border-[#F4EFF0] p-3 md:block">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="mb-2 flex items-center gap-3 rounded-[10px] p-2">
+            <div className="h-10 w-10 flex-none animate-pulse rounded-full bg-[#F3EDF0]" />
+            <div className="flex-1">
+              <div className="h-3 w-3/5 animate-pulse rounded bg-[#F3EDF0]" />
+              <div className="mt-2 h-2.5 w-4/5 animate-pulse rounded bg-[#F6F1F3]" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col p-4">
+        <div className="flex items-center gap-3 border-b border-[#F4EFF0] pb-3">
+          <div className="h-9 w-9 animate-pulse rounded-full bg-[#F3EDF0]" />
+          <div className="h-3 w-32 animate-pulse rounded bg-[#F3EDF0]" />
+        </div>
+        <div className="mt-4 flex-1 space-y-3">
+          <div className="h-10 w-3/5 animate-pulse rounded-[12px] bg-[#F6F1F3]" />
+          <div className="ml-auto h-10 w-2/5 animate-pulse rounded-[12px] bg-[#F3EDF0]" />
+          <div className="h-14 w-1/2 animate-pulse rounded-[12px] bg-[#F6F1F3]" />
+          <div className="ml-auto h-10 w-1/3 animate-pulse rounded-[12px] bg-[#F3EDF0]" />
+        </div>
+        <div className="mt-3 h-11 w-full animate-pulse rounded-[12px] bg-[#F6F1F3]" />
+      </div>
+    </div>
+  );
+}
+
 /** Full-page placeholder for the activity detail route: title column + hero,
  *  an About card, the sessions card, and the booking rail — same grid as the
  *  real page so nothing shifts when it swaps in. Render inside `PageShell`. */
