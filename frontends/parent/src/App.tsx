@@ -60,7 +60,13 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { RainbowLoader } from "./components/RainbowLoader";
-import { ActivityCardGridSkeleton, ActivityRowListSkeleton, ChildCardSkeleton } from "./components/Skeletons";
+import {
+  ActivityCardGridSkeleton,
+  ActivityRowListSkeleton,
+  ChildCardSkeleton,
+  ActivityDetailSkeleton,
+  BookingPageSkeleton,
+} from "./components/Skeletons";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -1650,7 +1656,7 @@ function ActivityDetailPage() {
   if (loading) {
     return (
       <PageShell active="/explore">
-        <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16"><RainbowLoader className="py-4" label="Loading activity" /></main>
+        <ActivityDetailSkeleton />
       </PageShell>
     );
   }
@@ -6325,7 +6331,7 @@ function BookingPage() {
   if (loading) {
     return (
       <PageShell active="/book">
-        <main data-bb-loading className="mx-auto max-w-[1024px] px-6 py-16"><RainbowLoader className="py-4" label="Loading booking" /></main>
+        <BookingPageSkeleton />
       </PageShell>
     );
   }
