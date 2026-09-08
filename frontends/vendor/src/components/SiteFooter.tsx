@@ -13,7 +13,15 @@ export const SUPPORT_EMAIL = 'hello@babybrain.sg';
 export const SUPPORT_PHONE = '+65 8996 6716';
 export const phoneDigits = (p: string) => p.replace(/[^\d]/g, '');
 
-const columns: { title: string; links: { label: string; to?: string; href?: string }[] }[] = [
+/* `to` → in-app react-router link (stays in the vendor HashRouter).
+   `href` → the parent/consumer site at the domain root; `blank` opens it in a
+   new tab so it can't take over the portal tab (the shared Supabase session on
+   the same domain would otherwise boot the parent UI in place — the "About
+   swaps me to the parent interface" bug). */
+const columns: {
+  title: string;
+  links: { label: string; to?: string; href?: string; blank?: boolean }[];
+}[] = [
   {
     title: 'For Partners',
     links: [
@@ -28,18 +36,23 @@ const columns: { title: string; links: { label: string; to?: string; href?: stri
     links: [
       { label: 'Contact Us', to: '/contact' },
       { label: 'FAQs', to: '/contact#faq' },
-      { label: 'Privacy Policy', href: '/terms#privacy' },
-      { label: 'Terms of Service', href: '/terms' },
+      { label: 'Privacy Policy', href: '/terms#privacy', blank: true },
+      { label: 'Terms of Service', href: '/terms', blank: true },
     ],
   },
   {
     title: 'For Parents',
     links: [
+      // These are genuine consumer-site destinations (there's no vendor
+      // equivalent), so they stay `href` — but `blank` so a vendor who clicks
+      // one gets the parent site in a NEW tab instead of it replacing the
+      // portal in place. About Us is shared content, so it's an in-app vendor
+      // page (`to`) rather than a jump to the parent app.
       // QA 21/08: "under for parents add 'Home' at the top".
-      { label: 'Home', href: '/' },
-      { label: 'Explore Activities', href: '/explore' },
-      { label: 'About Us', href: '/about' },
-      { label: 'Parent Sign Up', href: '/onboarding' },
+      { label: 'Home', href: '/', blank: true },
+      { label: 'Explore Activities', href: '/explore', blank: true },
+      { label: 'About Us', to: '/about' },
+      { label: 'Parent Sign Up', href: '/onboarding', blank: true },
     ],
   },
 ];
@@ -98,7 +111,13 @@ export default function SiteFooter() {
                   {l.to ? (
                     <Link to={l.to} className="hover:text-[#FA4D8D]">{l.label}</Link>
                   ) : (
-                    <a href={l.href} className="hover:text-[#FA4D8D]">{l.label}</a>
+                    <a
+                      href={l.href}
+                      {...(l.blank ? { target: '_blank', rel: 'noreferrer' } : {})}
+                      className="hover:text-[#FA4D8D]"
+                    >
+                      {l.label}
+                    </a>
                   )}
                 </p>
               ))}
