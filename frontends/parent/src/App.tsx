@@ -43,7 +43,7 @@ import {
 } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { apiGet, apiPost } from "./lib/api";
-import { goTo } from "./lib/nav";
+import { goTo, useLocation } from "./lib/nav";
 import { downloadBookingIcs, downloadScheduleIcs } from "./lib/ics";
 import { downloadSchedulePdf, withinRange } from "./lib/schedule-pdf";
 import { formatChildAge, formatAgeRange, formatDuration, regionLabel, ageInMonths } from "./lib/database.types";
@@ -617,7 +617,9 @@ function OnboardingPage() {
         }))
       );
     }
-    goTo("/matches");
+    // Fresh sign-in plus brand-new children — reboot so every hook picks up
+    // the new auth and profile state from scratch.
+    goTo("/matches", { hard: true });
   }
 
   if (confirmSent) {
@@ -772,10 +774,10 @@ function OnboardingPage() {
 
 /** No session (signed out, or the refresh token expired while the tab sat
  *  open): leave for the public landing page instead of showing a signed-in
- *  page's logged-out panel. Rendered as a placeholder while the hard
- *  navigation this fires actually happens. */
+ *  page's logged-out panel. `replace` so Back doesn't bounce straight off the
+ *  gated URL again. Rendered as a placeholder while the nav happens. */
 function RedirectToLanding() {
-  useEffect(() => { goTo("/"); }, []);
+  useEffect(() => { goTo("/", { replace: true }); }, []);
   return (
     <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
       <RainbowLoader className="py-4" label="Taking you back" />
@@ -3087,6 +3089,9 @@ function ProfilePage() {
   // classes drop the fixed positioning and it's a static sidebar again.
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
+    // Client-side nav keeps this page mounted across tab changes, so the drawer
+    // has to be told to close — a full reload used to do it for free.
+    setMenuOpen(false);
     if (tab !== "overview") return;
     let rollBack: ReturnType<typeof setTimeout>;
     // Open on a short delay so the closed state paints once and the slide-in
@@ -4299,7 +4304,7 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
     try {
       await apiPost("/api/customer/account", { confirm: "DELETE" });
       await supabase.auth.signOut();
-      goTo("/?deleted=1");
+      goTo("/?deleted=1", { hard: true });
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : "We couldn't delete your account — please contact hello@babybrain.sg.");
@@ -6973,7 +6978,8 @@ function LoginPage() {
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
     const next = getParam("next");
-    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile");
+    // Reboot into the signed-in app so every hook starts from the new session.
+    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile", { hard: true });
   }
   return (
     <PageShell active="/login">
@@ -7091,7 +7097,7 @@ function ResetPasswordPage() {
     setBusy(false);
     if (error) return setError(error);
     setDone(true);
-    setTimeout(() => goTo("/profile"), 1500);
+    setTimeout(() => goTo("/profile", { hard: true }), 1500);
   }
 
   return (
@@ -7159,6 +7165,10 @@ function hasStoredSession(): boolean {
 
 function App() {
   const { session, loading } = useAuth();
+  // Re-render on client-side navigation (pushState via goTo, or back/forward).
+  // The pages below read the URL during render, so they pick up the new route
+  // as soon as App re-renders them.
+  useLocation();
   // In production a Next rewrite serves these routes from `/`, but the Vite dev
   // server hosts the bundle under its `/app/` base — strip it so local routing
   // matches what parents actually browse.

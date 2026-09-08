@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DatePicker } from "./DatePicker";
 import { resolveAvatar } from "../lib/avatars";
@@ -8,7 +8,7 @@ import { useActivities } from "../lib/useActivities";
 import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
-import { goTo } from "../lib/nav";
+import { goTo, useLocation } from "../lib/nav";
 
 /** "That's a Plus feature" prompt.
  *
@@ -362,10 +362,16 @@ type HeaderProps = {
   auth?: "public" | "user";
 };
 
-/** Header search — jumps to Explore with the term applied. Kept as a plain
- *  form so Enter works and no client router is needed. */
+/** Header search — jumps to Explore with the term applied. A plain form so
+ *  Enter just works; `goTo` handles it as a client-side navigation. */
 function SearchBox({ className = "", autoFocus = false }: { className?: string; autoFocus?: boolean }) {
+  const loc = useLocation();
   const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  // Keep the box in step with the URL when navigation happens elsewhere
+  // (client-side nav no longer remounts this component).
+  useEffect(() => {
+    setTerm(new URLSearchParams(window.location.search).get("q") ?? "");
+  }, [loc]);
   return (
     <form
       role="search"
@@ -392,7 +398,13 @@ function SearchBox({ className = "", autoFocus = false }: { className?: string; 
 
 export function Header({ active = "/" }: HeaderProps) {
   const { session, profile, signOut } = useAuth();
+  const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Close the mobile dropdown after a navigation — client-side nav keeps the
+  // Header mounted, so tapping a link no longer clears it on its own.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [loc]);
   const navItems = [
     routes[0],
     { href: active === "/matches" ? "/matches" : "/explore", label: "Explore Activities" },

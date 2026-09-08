@@ -235,7 +235,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     signOut: async () => {
       await supabase.auth.signOut();
-      goTo("/");
+      // Full reload on the way out so no signed-in state (dashboard caches,
+      // favourites, plan) lingers in memory for the landing page.
+      goTo("/", { hard: true });
     },
     refresh: async () => { await resolveData(); },
   };

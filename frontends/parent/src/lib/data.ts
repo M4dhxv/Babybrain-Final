@@ -162,6 +162,10 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       setState((s) => ({ ...s, loading: false }));
       return;
     }
+    // Client-side nav from one listing straight to another keeps this hook
+    // mounted; show the skeleton for the switch rather than the previous
+    // activity's content until the new fetch lands.
+    setState((s) => ({ ...s, loading: true }));
     let cancelled = false;
     (async () => {
       // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
