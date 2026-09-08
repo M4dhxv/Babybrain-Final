@@ -9,6 +9,7 @@ import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
 import { goTo, useLocation } from "../lib/nav";
+import { warmDashboard } from "../lib/prefetch";
 
 /** "That's a Plus feature" prompt.
  *
@@ -452,7 +453,11 @@ export function Header({ active = "/" }: HeaderProps) {
             </Button>
           </div>
         ) : (
-          <div className="hidden items-center gap-4 text-sm font-bold lg:flex">
+          <div
+            className="hidden items-center gap-4 text-sm font-bold lg:flex"
+            onMouseEnter={warmDashboard}
+            onFocusCapture={warmDashboard}
+          >
             <a href="/profile?tab=favorites" className="flex items-center gap-1.5 text-baby-ink hover:text-baby-pink">
               <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
             </a>
@@ -507,7 +512,7 @@ export function Header({ active = "/" }: HeaderProps) {
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col gap-1 text-[15px] font-bold">
+              <div className="flex flex-col gap-1 text-[15px] font-bold" onFocusCapture={warmDashboard}>
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
                 </a>

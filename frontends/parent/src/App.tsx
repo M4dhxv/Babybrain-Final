@@ -36,7 +36,12 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { RainbowLoader } from "./components/RainbowLoader";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
+import { warmDashboard } from "./lib/prefetch";
 import RedirectToLanding from "./components/RedirectToLanding";
+import AboutPage from "./pages/AboutPage";
+import TermsPage from "./pages/TermsPage";
+import PricingPage from "./pages/PricingPage";
+import ContactPage from "./pages/ContactPage";
 import { Chip, REGION_FILTERS } from "./pages/prefChips";
 import {
   ActivityCardGridSkeleton,
@@ -52,11 +57,10 @@ const ExploreMap = lazy(() =>
 );
 
 // Routes a first visit rarely lands on — each its own chunk, fetched when the
-// route is first hit rather than shipped in the entry bundle.
-const AboutPage = lazy(() => import("./pages/AboutPage"));
-const TermsPage = lazy(() => import("./pages/TermsPage"));
-const PricingPage = lazy(() => import("./pages/PricingPage"));
-const ContactPage = lazy(() => import("./pages/ContactPage"));
+// route is first hit rather than shipped in the entry bundle. The static
+// pages (About / Terms / Pricing / Contact) are a few kB each and built only
+// from entry-bundle components, so they're imported eagerly at the top
+// instead — a chunk apiece just bought a round-trip and a Suspense flash.
 const BookedPage = lazy(() => import("./pages/BookedPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 // The signed-in dashboard + booking + payment surface — the bulk of the app
@@ -1594,6 +1598,22 @@ function App() {
   // server hosts the bundle under its `/app/` base — strip it so local routing
   // matches what parents actually browse.
   const pathname = routePath();
+
+  // Once there's a session, warm the dashboard chunk on idle so Profile /
+  // Bookings / Payment open without a fetch-and-skeleton. Gated on session so
+  // a first-time visitor never downloads it, and deferred so it never
+  // competes with the current route.
+  useEffect(() => {
+    if (!session) return;
+    const ric = "requestIdleCallback" in window
+      ? (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback
+      : null;
+    const id = ric ? ric(warmDashboard) : window.setTimeout(warmDashboard, 2000);
+    return () => {
+      if (ric) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id);
+      else window.clearTimeout(id);
+    };
+  }, [session]);
 
   const bootLoader = (
     <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
