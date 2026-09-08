@@ -29,6 +29,8 @@ import { useAuth } from '@/auth/AuthProvider';
 import { planMeta } from '@/lib/plans';
 import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
 import { UnreadBadge } from '@/components/UnreadBadge';
+import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
+import { prefetchRoute, warmPortal } from '@/lib/prefetch';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -71,6 +73,12 @@ export default function PortalLayout() {
     setMobileOpen(false);
     navigate(path);
   };
+
+  // Once the portal is up and idle, pull the three hot tabs' chunks so the
+  // first hop to each is instant rather than a Suspense flash.
+  useEffect(() => {
+    warmPortal();
+  }, []);
 
   const handleSignOut = async () => {
     setMobileOpen(false);
@@ -157,6 +165,8 @@ export default function PortalLayout() {
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
+                onMouseEnter={() => prefetchRoute(item.path)}
+                onFocus={() => prefetchRoute(item.path)}
                 title={locked ? (item.proOnly ? 'Insights is a Premium feature' : 'Messaging is available on Pro and above') : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
@@ -246,9 +256,14 @@ export default function PortalLayout() {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* Main Content. The route-keyed boundary means a page that throws (most
+          often a stale lazy chunk after a redeploy) shows a Reload panel with
+          the sidebar still in place — and switching to any other tab clears it,
+          because the key change remounts a fresh boundary. */}
       <main className="flex-1 overflow-auto pt-14 md:pt-0">
-        <Outlet />
+        <RouteErrorBoundary key={location.pathname} home="/dashboard">
+          <Outlet />
+        </RouteErrorBoundary>
         <SiteFooter />
       </main>
     </div>

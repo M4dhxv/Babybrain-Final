@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Star, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' });
@@ -25,35 +26,32 @@ export default function ReviewsPage() {
   const { provider, role } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
 
-  const [reviews, setReviews] = useState<ReviewRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unanswered'>('all');
 
-  async function load() {
-    if (!provider) return;
-    setLoading(true);
-    const { data: acts } = await supabase.from('activities').select('id, title').eq('provider_id', provider.id);
-    const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
-    const ids = [...titleOf.keys()];
-    if (!ids.length) { setReviews([]); setLoading(false); return; }
+  const { data, loading, refreshing, refetch } = useProviderQuery<ReviewRow[]>(
+    provider ? `reviews:${provider.id}` : null,
+    async () => {
+      const { data: acts } = await supabase.from('activities').select('id, title').eq('provider_id', provider!.id);
+      const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
+      const ids = [...titleOf.keys()];
+      if (!ids.length) return [];
 
-    const { data } = await supabase
-      .from('reviews')
-      .select('id, rating, comment, provider_response, provider_responded_at, created_at, activity_id, user_id')
-      .in('activity_id', ids)
-      .order('created_at', { ascending: false });
+      const { data: rows } = await supabase
+        .from('reviews')
+        .select('id, rating, comment, provider_response, provider_responded_at, created_at, activity_id, user_id')
+        .in('activity_id', ids)
+        .order('created_at', { ascending: false });
 
-    const userIds = [...new Set((data ?? []).map((r) => r.user_id))];
-    const nameById = new Map<string, string>();
-    if (userIds.length) {
-      const { data: profiles } = await supabase.from('parent_profiles').select('id, full_name').in('id', userIds);
-      (profiles ?? []).forEach((p) => nameById.set(p.id, p.full_name ?? 'A parent'));
-    }
+      const userIds = [...new Set((rows ?? []).map((r) => r.user_id))];
+      const nameById = new Map<string, string>();
+      if (userIds.length) {
+        const { data: profiles } = await supabase.from('parent_profiles').select('id, full_name').in('id', userIds);
+        (profiles ?? []).forEach((p) => nameById.set(p.id, p.full_name ?? 'A parent'));
+      }
 
-    setReviews(
-      (data ?? []).map((r) => ({
+      return (rows ?? []).map((r) => ({
         id: r.id,
         rating: r.rating,
         comment: r.comment,
@@ -62,12 +60,10 @@ export default function ReviewsPage() {
         created_at: r.created_at,
         parent_name: nameById.get(r.user_id) ?? 'A parent',
         activity_title: titleOf.get(r.activity_id) ?? 'Activity',
-      }))
-    );
-    setLoading(false);
-  }
-
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
+      }));
+    },
+  );
+  const reviews = data ?? [];
 
   async function submitResponse(reviewId: string) {
     const text = (drafts[reviewId] ?? '').trim();
@@ -77,7 +73,7 @@ export default function ReviewsPage() {
     setSaving(null);
     if (error) return;
     setDrafts((d) => { const next = { ...d }; delete next[reviewId]; return next; });
-    load();
+    refetch();
   }
 
   const visible = filter === 'unanswered' ? reviews.filter((r) => !r.provider_response) : reviews;
@@ -86,6 +82,7 @@ export default function ReviewsPage() {
 
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
@@ -122,7 +119,7 @@ export default function ReviewsPage() {
           ))}
         </div>
 
-        {loading && <RainbowLoader className="py-6" label="Loading reviews" />}
+        {loading && <ListRowsSkeleton count={4} />}
         {!loading && visible.length === 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
             {filter === 'unanswered' ? "You're all caught up — no unanswered reviews." : 'No reviews yet.'}

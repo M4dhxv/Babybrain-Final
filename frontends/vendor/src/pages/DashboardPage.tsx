@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { DashboardSkeleton, RefreshBar } from '@/components/Skeletons';
 import type { ProviderOverview } from '@/lib/database.types';
 import {
   CalendarPlus,
@@ -61,12 +63,18 @@ function sgGreeting() {
   return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 }
 
+type DashboardData = {
+  overview: ProviderOverview | null;
+  upcoming: UpcomingSession[];
+  recent: RecentBooking[];
+  attendanceRate: string | null;
+};
+const EMPTY_UPCOMING: UpcomingSession[] = [];
+const EMPTY_RECENT: RecentBooking[] = [];
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { provider } = useAuth();
-  const [overview, setOverview] = useState<ProviderOverview | null>(null);
-  const [upcoming, setUpcoming] = useState<UpcomingSession[]>([]);
-  const [recent, setRecent] = useState<RecentBooking[]>([]);
   /* Both header buttons used to navigate('/bookings') regardless of what was
      clicked. They're real controls now: the date range narrows Upcoming
      Sessions to a window (sessions are fetched 90 days out so every preset has
@@ -83,8 +91,6 @@ export default function DashboardPage() {
   const STATUS_FILTERS = ['All', 'Confirmed', 'Waitlisted', 'Cancelled', 'Completed'] as const;
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('All');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [attendanceRate, setAttendanceRate] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
   /* Replies owed, straight from Stream's own unread counter — something the
      vendor can act on, unlike the session count this card used to show. */
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
@@ -97,23 +103,26 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    if (!provider) return;
-    supabase
-      .rpc('provider_overview', { p_provider: provider.id })
-      .then(({ data }) => setOverview((data?.[0] as ProviderOverview) ?? null));
+  // Everything the dashboard shows, in one stale-while-revalidate read: a
+  // revisit paints the last figures instantly and refreshes them behind a thin
+  // top bar, instead of blanking to a loader. Every query below is byte-for-byte
+  // the one this page has always run — only the plumbing changed.
+  const { data, loading, refreshing } = useProviderQuery<DashboardData>(
+    provider ? `dashboard:${provider.id}` : null,
+    async () => {
+      const { data: ov } = await supabase.rpc('provider_overview', { p_provider: provider!.id });
+      const overview = (ov?.[0] as ProviderOverview) ?? null;
 
-    (async () => {
       const [{ data: acts }, { data: locs }] = await Promise.all([
-        supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider.id),
-        supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id),
+        supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider!.id),
+        supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
       ]);
       const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const activityLocationOf = new Map((acts ?? []).map((a) => [a.id, a.location_id]));
       const wixTypeOf = new Map((acts ?? []).map((a) => [a.id, a.wix_service_type]));
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
-      if (!ids.length) { setLoaded(true); return; }
+      if (!ids.length) return { overview, upcoming: [], recent: [], attendanceRate: null };
 
       const nowIso = new Date().toISOString();
       // Fetched 90 days out (not just the next 4) so the date-range control has
@@ -138,7 +147,7 @@ export default function DashboardPage() {
           if (b.status === 'confirmed' || b.status === 'completed') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
-      setUpcoming((sess ?? []).map((s) => {
+      const upcoming: UpcomingSession[] = (sess ?? []).map((s) => {
         const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
         const booked = counts[s.id] ?? 0;
         // A Wix class's capacity mirrors Wix and can't be raised from here
@@ -159,57 +168,52 @@ export default function DashboardPage() {
           location: locId ? locationNameOf.get(locId) ?? null : null,
           overflow,
         };
-      }));
+      });
 
       // 1.3: recent bookings with the booked child's name (security-definer RPC).
       // Fetched 30 (not 4) so the status filter has more than one screenful to
       // narrow.
-      supabase
-        .rpc('provider_recent_bookings', { p_provider: provider.id, p_limit: 30 })
-        .then(({ data }) => {
-          setRecent((data ?? []).map((r) => ({
-            id: r.booking_id,
-            child: r.child_name,
-            activity: r.activity_title,
-            time: sgWhen(r.starts_at),
-            status: r.status,
-            isRepeat: r.is_repeat,
-            packageName: r.package_name,
-          })));
-        });
+      const { data: recentRows } = await supabase
+        .rpc('provider_recent_bookings', { p_provider: provider!.id, p_limit: 30 });
+      const recent: RecentBooking[] = (recentRows ?? []).map((r) => ({
+        id: r.booking_id,
+        child: r.child_name,
+        activity: r.activity_title,
+        time: sgWhen(r.starts_at),
+        status: r.status,
+        isRepeat: r.is_repeat,
+        packageName: r.package_name,
+      }));
 
-      // All non-cancelled bookings feed the by-day chart, the conversion
-      // insight and the attendance-rate KPI in one fetch.
+      // Attendance rate = present / marked, across this provider's non-cancelled
+      // bookings.
       const { data: allBks } = await supabase
         .from('bookings')
         .select('id, status, created_at, session_id')
-        .eq('provider_id', provider.id)
+        .eq('provider_id', provider!.id)
         .neq('status', 'cancelled')
         .order('created_at', { ascending: false });
       const bks = allBks ?? [];
-      const rIds = [...new Set(bks.map((b) => b.session_id))];
-      const sessInfo = new Map<string, { activity_id: string; starts_at: string }>();
-      if (rIds.length) {
-        const { data: rs } = await supabase.from('activity_sessions').select('id, activity_id, starts_at').in('id', rIds);
-        (rs ?? []).forEach((s) => sessInfo.set(s.id, { activity_id: s.activity_id, starts_at: s.starts_at }));
-      }
-
-      // 2.3: bookings made in the last 30 days, for the conversion insight.
-
-      // Attendance rate = present / marked, across this provider's bookings.
+      let attendanceRate: string | null = null;
       if (bks.length) {
         const { data: att } = await supabase
           .from('attendance')
           .select('status')
           .in('booking_id', bks.map((b) => b.id));
         const marked = (att ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
-        setAttendanceRate(marked.length
+        attendanceRate = marked.length
           ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
-          : null);
+          : null;
       }
-      setLoaded(true);
-    })();
-  }, [provider]);
+
+      return { overview, upcoming, recent, attendanceRate };
+    },
+  );
+  const overview = data?.overview ?? null;
+  const upcoming = data?.upcoming ?? EMPTY_UPCOMING;
+  const recent = data?.recent ?? EMPTY_RECENT;
+  const attendanceRate = data?.attendanceRate ?? null;
+  const loaded = !loading;
 
   // Live values mapped onto the existing card config (icons/labels/colours
   // stay; only the numbers come from the backend). Order matches statsCards:
@@ -238,6 +242,7 @@ export default function DashboardPage() {
 
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       {/* Top Bar */}
       <div className="flex flex-col items-center gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
@@ -328,6 +333,12 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* Cold load: hold the shape of the stats + lists rather than showing
+            the placeholder demo numbers this config carries. A revisit skips
+            this entirely — the cached figures are already on screen. */}
+        {loading && <DashboardSkeleton />}
+
+        {!loading && <>
         {/* Stats Cards */}
         <div className="grid grid-cols-2 gap-4 mb-6 sm:grid-cols-3 lg:grid-cols-5">
           {statsCards.map((stat, i) => (
@@ -338,7 +349,7 @@ export default function DashboardPage() {
                 </div>
                 <span className="text-xs font-medium text-gray-600">{stat.label}</span>
               </div>
-              <div className="text-2xl font-bold text-gray-900 mb-1">{liveValues[i] ?? stat.value}</div>
+              <div className="text-2xl font-bold text-gray-900 mb-1">{liveValues[i] ?? '—'}</div>
               <div className="text-xs text-gray-500 mb-2">{stat.sub}</div>
               {stat.change && (
                 <div className="flex items-center gap-1 text-xs text-green-600 mb-3">
@@ -476,6 +487,7 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+        </>}
       </div>
 
       {/* Floating Chat Button.

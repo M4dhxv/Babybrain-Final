@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { CalendarCheck, UserPlus, CalendarX, Star, Gift, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 
 type Event = {
   kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
@@ -39,21 +39,18 @@ function message(e: Event): string {
 
 export default function NotificationsPage() {
   const { provider } = useAuth();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!provider) return;
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase.rpc('provider_notification_feed', { p_provider: provider.id, p_limit: 50 });
-      setEvents((data ?? []) as Event[]);
-      setLoading(false);
-    })();
-  }, [provider]);
+  const { data, loading, refreshing } = useProviderQuery<Event[]>(
+    provider ? `notifications:${provider.id}` : null,
+    async () => {
+      const { data: rows } = await supabase.rpc('provider_notification_feed', { p_provider: provider!.id, p_limit: 50 });
+      return (rows ?? []) as Event[];
+    },
+  );
+  const events = data ?? [];
 
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
@@ -62,7 +59,7 @@ export default function NotificationsPage() {
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {loading && <RainbowLoader className="py-6" label="Loading notifications" />}
+        {loading && <ListRowsSkeleton count={6} lines={1} />}
 
         {!loading && (
           <div className="max-w-2xl rounded-xl border border-gray-200 bg-white">

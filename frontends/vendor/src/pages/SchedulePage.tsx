@@ -9,8 +9,14 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
+
+type ScheduleActivity = { id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null };
+type ScheduleLocation = { id: string; name: string };
+const NO_ACTIVITIES: ScheduleActivity[] = [];
+const NO_LOCATIONS: ScheduleLocation[] = [];
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -48,27 +54,32 @@ export default function SchedulePage() {
   const [fActivity, setFActivity] = useState('');
   const [fLocation, setFLocation] = useState('');
 
-  const [activities, setActivities] = useState<{ id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null }[]>([]);
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [wixError, setWixError] = useState<string | null>(null);
   const [wixSyncedAt, setWixSyncedAt] = useState<Date | null>(null);
   const [syncNonce, setSyncNonce] = useState(0);
 
-  // This provider's activities + locations, once — everything else filters
-  // against these rather than re-fetching them per view.
-  useEffect(() => {
-    if (!provider) return;
-    (async () => {
+  // This provider's activities + locations — near-static for a session, so
+  // stale-while-revalidate cached: revisiting Schedule paints the filters
+  // instantly instead of re-running these two queries. The session fetch below
+  // is deliberately NOT cached — it carries live Wix availability and must be
+  // fresh every time.
+  const { data: refData, loading: refLoading, refreshing } = useProviderQuery<{
+    activities: ScheduleActivity[];
+    locations: ScheduleLocation[];
+  }>(
+    provider ? `schedule-refs:${provider.id}` : null,
+    async () => {
       const [{ data: acts }, { data: locs }] = await Promise.all([
-        supabase.from('activities').select('id, title, location_id, wix_service_id, wix_service_type').eq('provider_id', provider.id),
-        supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id),
+        supabase.from('activities').select('id, title, location_id, wix_service_id, wix_service_type').eq('provider_id', provider!.id),
+        supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
       ]);
-      setActivities(acts ?? []);
-      setLocations(locs ?? []);
-    })();
-  }, [provider]);
+      return { activities: (acts ?? []) as ScheduleActivity[], locations: (locs ?? []) as ScheduleLocation[] };
+    },
+  );
+  const activities = refData?.activities ?? NO_ACTIVITIES;
+  const locations = refData?.locations ?? NO_LOCATIONS;
 
   const wixLinkedIds = useMemo(() => activities.filter((a) => a.wix_service_id).map((a) => a.id), [activities]);
 
@@ -225,8 +236,13 @@ export default function SchedulePage() {
 
   const sessionsFor = (d: Date) => filtered.filter((s) => isSameDay(new Date(s.starts_at), d));
 
+  // Cold load: either the reference data or the sessions are still in flight
+  // and there's nothing to show yet. A background revalidate never sets this.
+  const busy = refLoading || loading;
+
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
@@ -334,9 +350,9 @@ export default function SchedulePage() {
           <div className="text-sm font-semibold text-gray-900 sm:order-2">{rangeLabel}</div>
         </div>
 
-        {loading && <RainbowLoader className="py-6" label="Loading schedule" />}
+        {busy && <ScheduleWeekSkeleton />}
 
-        {!loading && activities.length === 0 && (
+        {!busy && activities.length === 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
             <p className="text-sm text-gray-500 mb-3">You don't have any activities yet, so there's nothing to schedule.</p>
             <button onClick={() => navigate('/activities')} className="text-sm font-medium text-[#FA4D8D] hover:underline">
@@ -345,7 +361,7 @@ export default function SchedulePage() {
           </div>
         )}
 
-        {!loading && activities.length > 0 && view === 'week' && (
+        {!busy && activities.length > 0 && view === 'week' && (
           <div className="overflow-x-auto">
           {/* Mobile: a horizontal scroll strip showing ~2 day cards at a time,
               so each card is wide enough to read its sessions and you swipe
@@ -385,7 +401,7 @@ export default function SchedulePage() {
           </div>
         )}
 
-        {!loading && activities.length > 0 && view === 'month' && (
+        {!busy && activities.length > 0 && view === 'month' && (
           <div className="overflow-x-auto">
             <div className="grid min-w-[760px] grid-cols-7 gap-px overflow-hidden rounded-t-xl border border-b-0 border-gray-200 bg-gray-200">
               {weekDays.map((d) => (

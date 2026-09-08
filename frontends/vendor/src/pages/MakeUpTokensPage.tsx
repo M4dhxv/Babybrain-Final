@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gift, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { TableRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 
@@ -48,8 +49,14 @@ export default function MakeUpTokensPage() {
   const { provider, role } = useAuth();
   const navigate = useNavigate();
   const canManage = role === 'owner' || role === 'manager';
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refreshing, refetch } = useProviderQuery<Token[]>(
+    provider ? `make-up-tokens:${provider.id}` : null,
+    async () => {
+      const { data: rows } = await supabase.rpc('provider_make_up_tokens', { p_provider: provider!.id });
+      return (rows ?? []) as Token[];
+    },
+  );
+  const tokens = data ?? [];
   const [filter, setFilter] = useState<typeof statusFilters[number]>('All');
 
   // Inline expiry editor — one token open at a time. Issuance already lets you
@@ -60,16 +67,6 @@ export default function MakeUpTokensPage() {
   const [expiryDate, setExpiryDate] = useState<string>('');
   const [savingExpiry, setSavingExpiry] = useState(false);
   const [expiryError, setExpiryError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!provider) return;
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase.rpc('provider_make_up_tokens', { p_provider: provider.id });
-      setTokens((data ?? []) as Token[]);
-      setLoading(false);
-    })();
-  }, [provider]);
 
   // A token past its expiry that's still marked "issued" reads as active but
   // isn't — flag it here rather than waiting on a cron job to flip the status.
@@ -138,14 +135,13 @@ export default function MakeUpTokensPage() {
       setExpiryError(error.message);
       return;
     }
-    setTokens((prev) =>
-      prev.map((x) => (x.token_id === t.token_id ? { ...x, expires_at: expiresAt, status } : x))
-    );
     setEditingId(null);
+    refetch();
   }
 
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Make-up tokens</h1>
@@ -188,7 +184,7 @@ export default function MakeUpTokensPage() {
           ))}
         </div>
 
-        {loading && <RainbowLoader className="py-6" label="Loading make-up tokens" />}
+        {loading && <TableRowsSkeleton cols={5} count={6} />}
 
         {!loading && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">

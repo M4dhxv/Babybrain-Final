@@ -5,6 +5,7 @@ import { capturePageview } from './lib/posthog';
 import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './layouts/PortalLayout';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 
 // Every page is its own chunk, fetched when its route is first visited, so a
 // first load (or a hard reload) no longer ships all ~25 pages — plus recharts,
@@ -89,6 +90,12 @@ function App() {
         <RecoveryRedirect />
         <ScrollToTop />
         <PageviewTracker />
+        {/* Net around every routed page: a lazy chunk that fails to download
+            after a redeploy, or a render fault, shows a Reload panel instead of
+            an empty #root. Unkeyed so it never remounts the tree on a plain
+            navigation; portal pages get a second, route-keyed boundary inside
+            PortalLayout so recovering is as easy as switching tabs. */}
+        <RouteErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             {/* Public pages */}
@@ -129,6 +136,7 @@ function App() {
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
+        </RouteErrorBoundary>
       </HashRouter>
     </AuthProvider>
   );

@@ -3,6 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { identifyUser, resetUser } from '@/lib/posthog';
 import type { Provider, ProviderRole, SubscriptionPlan } from '@/lib/database.types';
+import { getCachedSubscription, setCachedSubscription, clearCachedSubscription } from '@/lib/providerCache';
+import { cacheInvalidate } from '@/lib/queryCache';
 
 export interface Subscription {
   plan: SubscriptionPlan;
@@ -75,7 +77,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(initialSession);
   const [provider, setProvider] = useState<Provider | null>(null);
   const [role, setRole] = useState<ProviderRole | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  // Seed the plan from the last-known value for THIS user, so the sidebar plan
+  // card and the Pro/paid tab locks paint correct on the first frame instead of
+  // flashing "free" for the beat between the provider lookup and its follow-up
+  // subscription query. The live query below always overwrites this.
+  const initialSubscription = useMemo<Subscription | null>(() => {
+    const cached = getCachedSubscription(initialSession?.user.id);
+    return cached ? (cached as Subscription) : null;
+  }, [initialSession]);
+  const [subscription, setSubscription] = useState<Subscription | null>(initialSubscription);
   // Only hold routing on the async check when there's nothing to render from.
   const [loading, setLoading] = useState(!initialSession);
   const [recovery, setRecovery] = useState(false);
@@ -85,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Returns whether the lookup actually answered. A failed query is NOT an
    *  answer: reporting it as "no business" is what dropped a real vendor onto
    *  the NoBusinessGate after a refresh. */
-  async function loadProvider(): Promise<boolean> {
+  async function loadProvider(userId?: string): Promise<boolean> {
     // Resolve the user's first active membership → its provider (RLS-scoped).
     const { data: member, error } = await supabase
       .from('provider_members')
@@ -104,11 +114,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select('plan, status, current_period_end, cancel_at_period_end')
         .eq('provider_id', prov.id)
         .maybeSingle();
-      setSubscription(sub ? (sub as Subscription) : { plan: 'free', status: 'active', current_period_end: null, cancel_at_period_end: false });
+      const resolved: Subscription = sub
+        ? (sub as Subscription)
+        : { plan: 'free', status: 'active', current_period_end: null, cancel_at_period_end: false };
+      setSubscription(resolved);
+      // Persist for the next cold load's first paint (see providerCache.ts).
+      if (userId) setCachedSubscription(userId, resolved);
     } else {
       setProvider(null);
       setRole(null);
       setSubscription(null);
+      clearCachedSubscription();
     }
     return true;
   }
@@ -116,13 +132,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** A page load can fire the lookup while the access token is still being
    *  renewed, and that first query comes back empty-handed. One miss isn't a
    *  verdict — retry briefly before settling on anything. */
-  async function resolveProvider(attempts = 3) {
+  async function resolveProvider(userId?: string, attempts = 3) {
     for (let i = 0; i < attempts; i++) {
       try {
         // Bounded: a request that never settles would otherwise hold the portal
         // on its spinner forever, which is the failure the 8s failsafe below
         // was there to prevent before this gate learned to wait.
-        if (await withTimeout(loadProvider(), 6000)) {
+        if (await withTimeout(loadProvider(userId), 6000)) {
           setProviderResolved(true);
           setProviderError(false);
           return true;
@@ -151,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         if (data.session) {
           identifyUser(data.session.user.id, data.session.user.email);
-          await resolveProvider();
+          await resolveProvider(data.session.user.id);
         }
       } catch (err) {
         console.warn('[auth] session init failed', err);
@@ -168,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         if (s) {
           identifyUser(s.user.id, s.user.email);
-          await resolveProvider();
+          await resolveProvider(s.user.id);
         } else {
           resetUser();
           setProvider(null);
@@ -176,6 +192,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSubscription(null);
           setProviderResolved(false);
           setProviderError(false);
+          // A different account must never inherit this one's cached plan or
+          // read rows.
+          clearCachedSubscription();
+          cacheInvalidate();
         }
       } catch (err) {
         console.warn('[auth] auth-state change failed', err);
@@ -195,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(data.session);
           // Coming back to a tab whose lookup had failed is the natural moment
           // to try again, rather than leaving it stuck on the retry panel.
-          if (data.session && !providerResolved) void resolveProvider();
+          if (data.session && !providerResolved) void resolveProvider(data.session.user.id);
         })
         .catch(() => {})
         .finally(settle);
@@ -235,9 +255,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return error ? { error: error.message } : {};
     },
     signOut: async () => {
+      clearCachedSubscription();
+      cacheInvalidate();
       await supabase.auth.signOut();
     },
-    refreshProvider: async () => { await resolveProvider(); },
+    refreshProvider: async () => {
+      const { data } = await supabase.auth.getSession();
+      await resolveProvider(data.session?.user.id);
+    },
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

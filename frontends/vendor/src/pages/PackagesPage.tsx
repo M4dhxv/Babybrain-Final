@@ -4,7 +4,8 @@ import { ChevronDown, Package as PackageIcon, Pencil, Trash2, Users } from 'luci
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { useProviderQuery } from '@/lib/useProviderQuery';
+import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 
 /**
@@ -42,10 +43,28 @@ export default function PackagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('Packs');
 
-  const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
-  const [packs, setPacks] = useState<Pack[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refreshing, refetch } = useProviderQuery<{
+    activities: { id: string; title: string }[];
+    packs: Pack[];
+    purchases: Purchase[];
+  }>(
+    provider ? `packages:${provider.id}` : null,
+    async () => {
+      const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
+        supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
+        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
+        supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
+      ]);
+      return {
+        activities: acts ?? [],
+        packs: (pks ?? []) as Pack[],
+        purchases: (purch ?? []) as Purchase[],
+      };
+    },
+  );
+  const activities = data?.activities ?? [];
+  const packs = data?.packs ?? [];
+  const purchases = data?.purchases ?? [];
 
   const [packForm, setPackForm] = useState(emptyPack);
   const [savingPack, setSavingPack] = useState(false);
@@ -54,20 +73,7 @@ export default function PackagesPage() {
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
   const [activityPickerOpen, setActivityPickerOpen] = useState(false);
 
-  async function load() {
-    if (!provider) return;
-    setLoading(true);
-    const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
-      supabase.from('activities').select('id, title').eq('provider_id', provider.id).is('archived_at', null),
-      supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider.id).order('created_at', { ascending: false }),
-      supabase.rpc('provider_package_purchases', { p_provider: provider.id }),
-    ]);
-    setActivities(acts ?? []);
-    setPacks((pks ?? []) as Pack[]);
-    setPurchases((purch ?? []) as Purchase[]);
-    setLoading(false);
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider]);
+  const load = refetch;
 
   // Dashboard's "Create a Package" shortcut deep-links here with ?new=pack.
   const newParam = searchParams.get('new');
@@ -171,6 +177,7 @@ export default function PackagesPage() {
 
   return (
     <div className="relative">
+      {refreshing && <RefreshBar />}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Packages</h1>
@@ -195,7 +202,7 @@ export default function PackagesPage() {
           ))}
         </div>
 
-        {loading && <RainbowLoader className="py-6" label="Loading packages" />}
+        {loading && <ListRowsSkeleton count={4} lines={1} />}
 
         {!loading && activeTab === 'Packs' && (
           <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">

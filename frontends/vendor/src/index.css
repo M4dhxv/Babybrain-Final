@@ -133,6 +133,26 @@
   height: 0.4375rem;
 }
 
+/* Indeterminate top bar shown while a page that ALREADY has content on screen
+   quietly revalidates it in the background (see <RefreshBar> in
+   components/Skeletons.tsx). A cached tab reappears populated and this is the
+   only "working" hint — never a full-page loader that would hide real data. */
+@keyframes bb-indeterminate {
+  0% { transform: translateX(-100%) scaleX(0.4); }
+  50% { transform: translateX(20%) scaleX(0.5); }
+  100% { transform: translateX(100%) scaleX(0.4); }
+}
+.bb-indeterminate-bar {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: linear-gradient(90deg, transparent, #FA4D8D, transparent);
+  animation: bb-indeterminate 1.15s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-indeterminate-bar { animation-duration: 2.6s; }
+}
+
 /* Scrollbars.
  *
  * The portal has two of its own — the sidebar and <main> — and at the OS
