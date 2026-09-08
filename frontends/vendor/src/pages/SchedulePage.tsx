@@ -133,19 +133,20 @@ export default function SchedulePage() {
         .lte('starts_at', rangeEnd.toISOString())
         .order('starts_at');
       const rows = sess ?? [];
+      // Held seats only — confirmed / completed / pending. Waitlisted rows
+      // (incl. a promoted-but-unpaid booking, which stays 'waitlisted' until
+      // Stripe confirms) are NOT counted, so the cell reads the same n/n as
+      // the Dashboard and Bookings page rather than an inflated n+queue/n.
       const counts: Record<string, number> = {};
-      // Held seats only (not the waitlist) — drives the Wix-class overflow
-      // readout, which must not count queued parents as "held on BabyBrain".
-      const seatCounts: Record<string, number> = {};
       if (rows.length) {
         const { data: bks } = await supabase
           .from('bookings')
           .select('session_id, status')
           .in('session_id', rows.map((s) => s.id));
         (bks ?? []).forEach((b) => {
-          if (b.status === 'cancelled') return;
-          counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
-          if (b.status !== 'waitlisted') seatCounts[b.session_id] = (seatCounts[b.session_id] ?? 0) + 1;
+          if (b.status === 'confirmed' || b.status === 'completed' || b.status === 'pending') {
+            counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+          }
         });
       }
       setSessions(
@@ -169,11 +170,10 @@ export default function SchedulePage() {
           const booked = Math.max(wixDerived, counts[s.id] ?? 0);
           // For a Wix class, capacity mirrors Wix and can't be raised from
           // here (00108) — held seats past it are BabyBrain's promoted-paid
-          // overflow. Uses the held-seat count (Wix's own filled figure or
-          // our confirmed rows), never the waitlist.
+          // overflow. `booked` already excludes the waitlist.
           const wixClassOverflow =
             act?.wix_service_type === 'CLASS' && s.capacity != null
-              ? Math.max(0, Math.max(wixDerived, seatCounts[s.id] ?? 0) - s.capacity)
+              ? Math.max(0, booked - s.capacity)
               : 0;
           return {
             id: s.id,
