@@ -36,8 +36,8 @@ const columns: {
     links: [
       { label: 'Contact Us', to: '/contact' },
       { label: 'FAQs', to: '/contact#faq' },
-      { label: 'Privacy Policy', href: '/terms#privacy', blank: true },
-      { label: 'Terms of Service', href: '/terms', blank: true },
+      { label: 'Privacy Policy', to: '/terms#privacy' },
+      { label: 'Terms of Service', to: '/terms' },
     ],
   },
   {

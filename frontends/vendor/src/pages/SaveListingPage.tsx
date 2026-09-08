@@ -763,7 +763,7 @@ export default function SaveListingPage() {
                   <label htmlFor="vendor-terms" className="cursor-pointer text-sm text-gray-700">
                     You hereby acknowledge that you have read our Terms of Service, Terms of Use and Privacy Policy and confirm that you are in agreement with and legally bound by such terms, as modified from time to time.
                   </label>
-                  <a href="/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
+                  <a href="#/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
                     Full site terms &amp; privacy
                   </a>
                 </div>
@@ -1050,7 +1050,7 @@ export default function SaveListingPage() {
                     <p className="text-sm leading-relaxed text-gray-600">{s.body}</p>
                   </div>
                 ))}
-                <a href="/terms" target="_blank" rel="noreferrer" className="inline-block text-xs text-[#FA4D8D] underline">
+                <a href="#/terms" target="_blank" rel="noreferrer" className="inline-block text-xs text-[#FA4D8D] underline">
                   Read the full BabyBrain site terms &amp; privacy policy
                 </a>
               </div>

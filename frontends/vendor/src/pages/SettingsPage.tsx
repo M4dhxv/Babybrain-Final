@@ -55,10 +55,12 @@ const complianceItems: ComplianceItem[] = [
 ];
 
 // Where "Read in details" in each agreement's Sheet points. Both live on the
-// single published Terms & Conditions page today; split when dedicated pages exist.
+// single published Terms & Conditions page today; split when dedicated pages
+// exist. `#/terms` is the in-app (vendor HashRouter) copy — a bare `/terms`
+// would open the parent app's page, parent chrome and all.
 const DOC_URL: Record<ComplianceDocument['key'], string> = {
-  vendor_terms: '/terms',
-  booking_messaging_terms: '/terms',
+  vendor_terms: '#/terms',
+  booking_messaging_terms: '#/terms',
 };
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };

@@ -14,6 +14,7 @@ const PlansPage = lazy(() => import('./pages/PlansPage'));
 const ClaimBusinessPage = lazy(() => import('./pages/ClaimBusinessPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
+const TermsPage = lazy(() => import('./pages/TermsPage'));
 const SaveListingPage = lazy(() => import('./pages/SaveListingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
@@ -99,6 +100,7 @@ function App() {
             <Route path="/claim-business" element={<ClaimBusinessPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="/save-listing" element={<SaveListingPage />} />
 
             {/* Vendor Portal — auth-gated, with sidebar layout */}

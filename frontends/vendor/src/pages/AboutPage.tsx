@@ -23,7 +23,7 @@ export default function AboutPage() {
         <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
           <BrandLogo className="h-10" />
         </button>
-        <Button variant="outline" className="gap-2 rounded-lg border-gray-300" onClick={() => navigate('/')}>
+        <Button variant="outline" className="gap-2 rounded-lg border-gray-300" onClick={() => navigate('/dashboard')}>
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
       </header>
