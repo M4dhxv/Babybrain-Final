@@ -483,7 +483,7 @@ export function useRecommendations(children: Child[]) {
             // this join `toCard` had nothing to print and the card rendered an
             // empty category pill where Explore shows a real one.
             .select(
-              "id, score, reasons, activities(*, activity_categories(name), activity_sessions(starts_at, ends_at))"
+              "id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
             )
             // Only the upcoming sessions ride along. Without this a Wix-linked
             // course carries every past slot it has ever run — hundreds of rows
@@ -500,7 +500,10 @@ export function useRecommendations(children: Child[]) {
             child,
             recs: (recs ?? []).map((r) => {
               const act = (r.activities as unknown as
-                | (ActivityRow & { activity_categories?: { name: string } | null })
+                | (ActivityRow & {
+                    activity_categories?: { name: string } | null;
+                    providers?: { business_name?: string | null; address?: string | null } | null;
+                  })
                 | null) ?? null;
               return {
                 id: r.id,
@@ -584,7 +587,7 @@ export function toCard(
   a: ActivityRow & {
     category_name?: string;
     provider_name?: string | null;
-    providers?: { business_name?: string | null } | null;
+    providers?: { business_name?: string | null; address?: string | null } | null;
     activity_sessions?: { starts_at: string; ends_at: string | null }[] | null;
   }
 ) {
@@ -617,7 +620,12 @@ export function toCard(
     category: a.category_name ?? "",
     image: a.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
     age: formatAgeRange(a.age_min_months, a.age_max_months),
-    venue: a.address ? a.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
+    // An activity with no address of its own inherits its provider's, same as
+    // search_activities' coalesce(a.address, p.address) on Explore.
+    venue: ((a.address ?? a.providers?.address) || "")
+      .split(",")
+      .map((s) => s.trim())
+      .pop() ?? "",
     date: sgCardDate(nextSession?.starts_at ?? null),
     time: sgCardTime(nextSession?.starts_at ?? null),
     // Empty when there are no reviews, so the card drops the rating line

@@ -1393,7 +1393,7 @@ export function ProfilePage() {
          parent with twenty favourites would otherwise pull thousands of rows
          to render twenty dates. */
       .select(
-        "activities(*, activity_categories(name), activity_sessions(starts_at, ends_at))"
+        "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
       )
       .gte("activities.activity_sessions.starts_at", new Date().toISOString())
       .then(({ data }) => {
