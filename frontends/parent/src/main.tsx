@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
+import { FavoritesProvider } from "./lib/favorites";
 import { initPostHog } from "./lib/posthog";
 import { goTo } from "./lib/nav";
 import "./styles/index.css";
@@ -36,7 +37,9 @@ if (import.meta.env.DEV) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthProvider>
-      <App />
+      <FavoritesProvider>
+        <App />
+      </FavoritesProvider>
     </AuthProvider>
   </React.StrictMode>,
 );

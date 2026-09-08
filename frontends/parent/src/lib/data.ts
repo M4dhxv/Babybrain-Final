@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { apiGet } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
+import { useFavoritesStore } from "./favorites";
 import { goTo } from "./nav";
 import {
   formatAgeRange,
@@ -346,22 +347,14 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
 export function useFavorite(activityId: string | undefined, onToggled?: (saved: boolean) => void) {
   const { session } = useAuth();
   const { isPlus, loading: planLoading } = usePlan();
-  const [saved, setSaved] = useState(false);
+  // Saved state comes from the one shared favourites fetch (see lib/favorites),
+  // not a per-card query. `busy` stays local — it's this heart's own click.
+  const favorites = useFavoritesStore();
   const [busy, setBusy] = useState(false);
+  const saved = Boolean(activityId) && favorites.isFavorited(activityId as string);
   // Never lock while the plan is still in flight — a Plus parent shouldn't be
   // shown an upgrade prompt because the request hadn't landed yet.
   const locked = Boolean(session) && !planLoading && !isPlus;
-
-  useEffect(() => {
-    if (!session || !activityId) return;
-    supabase
-      .from("favorites")
-      .select("activity_id")
-      .eq("user_id", session.user.id)
-      .eq("activity_id", activityId)
-      .maybeSingle()
-      .then(({ data }) => setSaved(Boolean(data)));
-  }, [session, activityId]);
 
   /** Returns false when the click was refused because the parent is on free. */
   async function toggle(): Promise<boolean> {
@@ -374,11 +367,11 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
     setBusy(true);
     if (saved) {
       await supabase.from("favorites").delete().eq("user_id", session.user.id).eq("activity_id", activityId);
-      setSaved(false);
+      favorites.setFavorited(activityId, false);
       onToggled?.(false);
     } else {
       await supabase.from("favorites").insert({ user_id: session.user.id, activity_id: activityId });
-      setSaved(true);
+      favorites.setFavorited(activityId, true);
       onToggled?.(true);
     }
     setBusy(false);
@@ -432,6 +425,14 @@ export function useRecommendations(children: Child[]) {
             .select(
               "id, score, reasons, activities(*, activity_categories(name), activity_sessions(starts_at, ends_at))"
             )
+            // Only the upcoming sessions ride along. Without this a Wix-linked
+            // course carries every past slot it has ever run — hundreds of rows
+            // per activity, times up to 8 recs, times each child — for a card
+            // that only ever shows the next one. Matches the favourites fetch
+            // in App.tsx. A rec whose activity has no upcoming session still
+            // comes back (embedded filters don't drop the parent row); its card
+            // falls back to "Schedule TBC", exactly as before.
+            .gte("activities.activity_sessions.starts_at", new Date().toISOString())
             .eq("child_id", child.id)
             .order("score", { ascending: false })
             .limit(8);
