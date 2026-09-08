@@ -756,6 +756,10 @@ export function ActivityCard({
         <img
           src={activity.image}
           alt=""
+          width={400}
+          height={108}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover"
         />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">
@@ -841,7 +845,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
   return (
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
-        <img src={activity.image} alt="" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
+        <img src={activity.image} alt="" width={220} height={176} loading="lazy" decoding="async" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">
           {activity.category}
         </span>

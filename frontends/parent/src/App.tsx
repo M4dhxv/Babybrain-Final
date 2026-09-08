@@ -1781,7 +1781,7 @@ function ActivityDetailPage() {
           </div>
           <div>
             <div className="relative">
-              <img src={images[0]} alt={activity.title} className="h-[305px] w-full rounded-[18px] object-cover" />
+              <img src={images[0]} alt={activity.title} width={860} height={305} decoding="async" fetchPriority="high" className="h-[305px] w-full rounded-[18px] object-cover" />
               <button
                 type="button"
                 onClick={() => setGalleryAt(0)}
@@ -1800,7 +1800,7 @@ function ActivityDetailPage() {
                     onClick={() => setGalleryAt(i + 1)}
                     className="overflow-hidden rounded-[8px] border-2 border-white shadow-soft transition hover:border-baby-blue"
                   >
-                    <img src={url} alt="" className="h-11 w-[76px] object-cover" />
+                    <img src={url} alt="" width={76} height={44} loading="lazy" decoding="async" className="h-11 w-[76px] object-cover" />
                   </button>
                 ))}
               </div>
@@ -2652,7 +2652,7 @@ function ChildForm({
 function ChildClassRow({ b }: { b: BookingItem }) {
   return (
     <a href={b.removed ? "/explore" : b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
-      <img src={b.image} alt="" className="h-14 w-14 rounded-[10px] object-cover" />
+      <img src={b.image} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 rounded-[10px] object-cover" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate font-black">{b.title}</h4>
         <p className="text-xs font-semibold text-[#59658d]">{b.when || "Schedule TBC"}</p>
@@ -4448,7 +4448,7 @@ function PastActivitiesTab({
     return (
       <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card">
         <div className="flex items-center gap-4">
-          <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
+          <img src={b.image} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
             <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
@@ -4824,7 +4824,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 slug renamed by unlinkWixActivities) — send those clicks to
                 the activities list instead of a dead link. */}
             <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-start gap-3 sm:items-center sm:gap-4">
-              <img src={b.image} alt="" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover sm:h-16 sm:w-16" />
+              <img src={b.image} alt="" width={64} height={64} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover sm:h-16 sm:w-16" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && (
@@ -6418,7 +6418,7 @@ function BookingPage() {
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
               <div className="grid gap-5 md:grid-cols-[245px_1fr]">
-                <img src={img} alt={activity.title} className="h-52 w-full rounded-[12px] object-cover" />
+                <img src={img} alt={activity.title} width={245} height={208} decoding="async" className="h-52 w-full rounded-[12px] object-cover" />
                 <div>
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
@@ -6723,7 +6723,7 @@ function BookingPage() {
             <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
-                <img src={img} alt="" className="h-24 w-28 rounded-[10px] object-cover" />
+                <img src={img} alt="" width={112} height={96} loading="lazy" decoding="async" className="h-24 w-28 rounded-[10px] object-cover" />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{activity.category_name}</span>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
