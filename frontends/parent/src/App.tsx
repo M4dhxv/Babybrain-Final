@@ -60,6 +60,7 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { RainbowLoader } from "./components/RainbowLoader";
+import { ActivityCardGridSkeleton } from "./components/Skeletons";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -864,7 +865,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
             {child ? `Matching activities for ${child.name}` : "Matching activities"}
           </SectionTitle>
           {recsLoading ? (
-            <RainbowLoader className="py-6" label="Loading matches" />
+            <ActivityCardGridSkeleton count={4} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {(shown?.recs ?? []).slice(0, 4).map((r) =>
@@ -3024,7 +3025,7 @@ function ProfilePage() {
     (childFilter ? children.find((c) => c.id === childFilter) : children.find((c) => c.id === journeyChildId)) ??
     children[0];
   const journey = useJourney(journeyChild?.id);
-  const { data: recsByChild } = useRecommendations(children);
+  const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
   // activity_id -> child ids it's assigned to. Empty/absent = whole family.
   const [favChildren, setFavChildren] = useState<Record<string, string[]>>({});
@@ -3840,10 +3841,14 @@ function ProfilePage() {
             <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>
               {journeyChild ? `Suggested for ${journeyChild.name}` : "Suggested activities"}
             </SectionTitle>
-            <div className="grid gap-4 md:grid-cols-3">
-              {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
-              {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
-            </div>
+            {recsLoading ? (
+              <ActivityCardGridSkeleton count={3} className="grid gap-4 md:grid-cols-3" />
+            ) : (
+              <div className="grid gap-4 md:grid-cols-3">
+                {recs.slice(0, 3).map((r) => r.activity && <ActivityCard key={r.id} activity={toCard(r.activity)} />)}
+                {recs.length === 0 && <p className="font-semibold text-[#68718f]">Recommendations appear once your child profile is complete.</p>}
+              </div>
+            )}
           </section>
 
           <section className="mt-6">

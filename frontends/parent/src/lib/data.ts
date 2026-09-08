@@ -405,9 +405,14 @@ export function useRecommendations(children: Child[]) {
 
   useEffect(() => {
     if (children.length === 0) {
+      setData([]);
       setLoading(false);
       return;
     }
+    // Children arrive after auth resolves — a beat after the first (empty) pass
+    // already flipped `loading` off. Re-enter loading here or the fetch runs
+    // with `loading === false` and the section renders an empty grid.
+    setLoading(true);
     let cancelled = false;
     (async () => {
       const out = await Promise.all(
