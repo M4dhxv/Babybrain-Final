@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
@@ -65,11 +65,49 @@ function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
   return Promise.race([p, new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
 }
 
+/**
+ * Read the Supabase session straight out of localStorage, synchronously, so a
+ * returning parent's first render is already the signed-in app (with its own
+ * skeletons) instead of a full-screen boot loader while `getSession()` — which
+ * can do a token-refresh round trip — settles. `getSession()` still runs right
+ * after to validate/refresh; this is only the optimistic starting point.
+ *
+ * Only a token that isn't already expired is trusted: an expired one needs a
+ * real refresh before it's usable, so that case falls through to the normal
+ * async flow. A malformed or blocked store returns null — no regression, just
+ * the old behaviour.
+ */
+function readStoredSession(): Session | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !/^sb-.*-auth-token$/.test(key)) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      // supabase-js v2 stores the session object directly; some setups wrap it.
+      const s = (parsed.access_token ? parsed : parsed.currentSession) as
+        | (Session & { expires_at?: number })
+        | undefined;
+      if (!s || !s.access_token || !s.user?.id) return null;
+      if (typeof s.expires_at === "number" && s.expires_at * 1000 <= Date.now()) return null;
+      return s;
+    }
+  } catch {
+    /* storage blocked or JSON malformed — fall back to the async path */
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  // Optimistic session from storage — lets routing render the signed-in app on
+  // the first paint. `getSession()` in the effect below still confirms it.
+  const initialSession = useMemo(readStoredSession, []);
+  const [session, setSession] = useState<Session | null>(initialSession);
   const [profile, setProfile] = useState<ParentProfile | null>(null);
   const [kids, setKids] = useState<Child[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Only hold routing on the async check when there's nothing to render from.
+  const [loading, setLoading] = useState(!initialSession);
   const [dataResolved, setDataResolved] = useState(false);
 
   /** Returns whether the fetch actually answered. A failed query is NOT an
