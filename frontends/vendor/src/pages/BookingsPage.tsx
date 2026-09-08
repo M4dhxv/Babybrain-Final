@@ -62,6 +62,9 @@ type SessionOpt = {
   // session; imported from Wix by importWixSessionStaff (lib/wix/sync.ts) for
   // a Wix-sourced one, so a Wix vendor's roster names the instructor too.
   teacher_name: string | null; studio: string | null;
+  // Wix's own last-known remaining count for a Wix slot — lets the Wix-class
+  // capacity readout show Wix's real filled figure, not just our local rows.
+  wix_remaining_capacity: number | null;
 };
 
 type RosterRow = {
@@ -301,14 +304,14 @@ export default function BookingsPage() {
         ids.flatMap((id) => [
           supabase
             .from('activity_sessions')
-            .select('id, starts_at, capacity, activity_id, teacher_name, studio')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity')
             .eq('activity_id', id)
             .gte('starts_at', dayStartIso)
             .order('starts_at', { ascending: true })
             .limit(perActivityCap),
           supabase
             .from('activity_sessions')
-            .select('id, starts_at, capacity, activity_id, teacher_name, studio')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity')
             .eq('activity_id', id)
             .gte('starts_at', pastStartIso)
             .lt('starts_at', dayStartIso)
@@ -323,7 +326,7 @@ export default function BookingsPage() {
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
       const opts = sess.map((s) => ({
         id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity',
-        teacher_name: s.teacher_name, studio: s.studio,
+        teacher_name: s.teacher_name, studio: s.studio, wix_remaining_capacity: s.wix_remaining_capacity,
       }));
       setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
       setSessions(opts);
@@ -383,13 +386,20 @@ export default function BookingsPage() {
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
   // A Wix class's capacity mirrors Wix and can't be written back (00108), so a
   // promoted + paid waitlist seat is carried *over* that number rather than
-  // inflating it. This is how many such extra seats BabyBrain is holding for
-  // the selected session — shown next to the Wix capacity on the Waitlist tab.
+  // inflating it. The Wix side is shown as "held/n on Wix"; paid seats past n
+  // are "+x on BabyBrain". Held count = the higher of Wix's own filled figure
+  // and our confirmed rows; the waitlist (incl. promoted-but-unpaid) never
+  // counts here — those stay in the Waitlist (N) until payment clears.
   const currentSessionIsWixClass = activityWixType[sessionActivity[sessionId]] === 'CLASS';
-  const wixClassOverflow =
-    currentSessionIsWixClass && currentSession?.capacity != null
-      ? Math.max(0, booked.length - currentSession.capacity)
+  const wixCap = currentSession?.capacity ?? null;
+  const wixFilled =
+    currentSession?.wix_remaining_capacity != null && wixCap != null
+      ? Math.max(0, wixCap - currentSession.wix_remaining_capacity)
       : 0;
+  const wixHeld = Math.max(booked.length, wixFilled);
+  const wixClassOnWix = currentSessionIsWixClass && wixCap != null ? Math.min(wixHeld, wixCap) : 0;
+  const wixClassOverflow =
+    currentSessionIsWixClass && wixCap != null ? Math.max(0, wixHeld - wixCap) : 0;
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   async function promote(bookingId: string) {
@@ -1098,11 +1108,15 @@ export default function BookingsPage() {
           {activeTab === 'Waitlist' && (
             <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex flex-wrap items-center gap-4 mb-5 text-sm">
-                {wixClassOverflow > 0 ? (
+                {currentSessionIsWixClass && wixCap != null ? (
                   <span>
-                    Capacity <strong className="text-gray-900">{currentSession?.capacity}/{currentSession?.capacity}</strong> on Wix
-                    <span className="text-gray-300"> · </span>
-                    <strong className="text-gray-900">+{wixClassOverflow}</strong> held on BabyBrain
+                    Capacity <strong className="text-gray-900">{wixClassOnWix}/{wixCap}</strong> on Wix
+                    {wixClassOverflow > 0 && (
+                      <>
+                        <span className="text-gray-300"> · </span>
+                        <strong className="text-gray-900">+{wixClassOverflow}</strong> on BabyBrain
+                      </>
+                    )}
                   </span>
                 ) : (
                   <span>Capacity <strong className="text-gray-900">{booked.length}/{currentSession?.capacity ?? '∞'}</strong></span>
