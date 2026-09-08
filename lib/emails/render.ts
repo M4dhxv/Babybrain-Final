@@ -42,8 +42,12 @@ const p = (html: string) => `<p style="margin:0 0 16px">${html}</p>`;
 const bold = (t: string) => `<strong style="color:#4a4a4a">${esc(t)}</strong>`;
 const sign = `<p style="margin:24px 0 0">All the best,<br/>Katie<br/>Founder, BabyBrain</p>`;
 
+// `path` is normally a root-relative path ("/activity?slug=…#reviews") that the
+// notification producer supplies; prefix it with the app origin. If a caller
+// (or a stale `data` payload) hands us a full URL, use it as-is rather than
+// concatenating a second origin in front of it.
 const link = (ctx: EmailCtx, path: string, label: string) =>
-  `<a href="${ctx.appUrl}${path}" style="color:${PINK};font-weight:400;text-decoration:underline">${esc(label)}</a>`;
+  `<a href="${/^https?:\/\//i.test(path) ? path : `${ctx.appUrl}${path}`}" style="color:${PINK};font-weight:400;text-decoration:underline">${esc(label)}</a>`;
 
 /** Bold activity name + date/time / duration / address block, when present. */
 function details(d: EmailData): string {
@@ -209,13 +213,18 @@ const T: Record<string, Template> = {
       p('We hope your family enjoys it!') +
       sign),
 
-  post_activity_checkin: (d, ctx) =>
-    wrap(ctx, 'How was it? 👶🧠',
+  post_activity_checkin: (d, ctx) => {
+    // The daily send_class_followups() cron writes `activity_name` (migration
+    // 00090); name the session when it's there, and read naturally when it
+    // isn't rather than falling back to a bare "your activity".
+    const name = str(d, 'activity_name');
+    return wrap(ctx, 'How was it? 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`We hope you enjoyed ${bold(str(d, 'activity_name') ?? 'your activity')}! If you would like to leave a review, you can do so ${link(ctx, str(d, 'url') ?? '/explore', 'here')}.`) +
+      p(`We hope you enjoyed your session${name ? ` of ${bold(name)}` : ''}! If you would like to leave a review, you can do so ${link(ctx, str(d, 'url') ?? '/explore', 'here')}.`) +
       p(`If you loved the activity, do ${link(ctx, str(d, 'rebook_url') ?? '/explore', 're-book')} or if you’d like to try something new, you can ${link(ctx, '/explore', 'explore more activities here')}.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
-      sign),
+      sign);
+  },
 
   missed_activity: (d, ctx) =>
     wrap(ctx, 'You were missed! 👶🧠',
