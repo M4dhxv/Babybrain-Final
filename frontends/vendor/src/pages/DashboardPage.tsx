@@ -42,7 +42,13 @@ const sessionColors = ['bg-pink-300 text-pink-800', 'bg-purple-300 text-purple-8
 const sgWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
-type UpcomingSession = { id: string; when: string; name: string; booked: number; capacity: number | null; location: string | null };
+type UpcomingSession = {
+  id: string; when: string; name: string; booked: number; capacity: number | null; location: string | null;
+  // Wix-linked weekly CLASS only: confirmed seats held past the (immutable,
+  // Wix-mirrored) capacity — promoted + paid from the waitlist (00108).
+  // Rendered as "n/n +x" instead of an oversold "n+x/n". 0 otherwise.
+  overflow: number;
+};
 type RecentBooking = {
   id: string; child: string; activity: string; time: string; status: string;
   isRepeat: boolean; packageName: string | null;
@@ -99,11 +105,12 @@ export default function DashboardPage() {
 
     (async () => {
       const [{ data: acts }, { data: locs }] = await Promise.all([
-        supabase.from('activities').select('id, title, location_id').eq('provider_id', provider.id),
+        supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider.id),
         supabase.from('provider_locations').select('id, name').eq('provider_id', provider.id),
       ]);
       const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const activityLocationOf = new Map((acts ?? []).map((a) => [a.id, a.location_id]));
+      const wixTypeOf = new Map((acts ?? []).map((a) => [a.id, a.wix_service_type]));
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
       if (!ids.length) { setLoaded(true); return; }
@@ -114,7 +121,7 @@ export default function DashboardPage() {
       const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
       const { data: sess } = await supabase
         .from('activity_sessions')
-        .select('id, activity_id, starts_at, capacity, location_id')
+        .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity')
         .in('activity_id', ids)
         .gte('starts_at', nowIso)
         .lte('starts_at', in90dIso)
@@ -133,10 +140,24 @@ export default function DashboardPage() {
       }
       setUpcoming((sess ?? []).map((s) => {
         const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
+        const booked = counts[s.id] ?? 0;
+        // A Wix class's capacity mirrors Wix and can't be raised from here
+        // (00108) — held seats past it are BabyBrain's promoted-paid overflow.
+        // Uses the higher of Wix's own filled figure and our confirmed rows;
+        // the waitlist never feeds `counts` above.
+        const wixFilled =
+          s.wix_remaining_capacity != null && s.capacity != null
+            ? Math.max(0, s.capacity - s.wix_remaining_capacity)
+            : 0;
+        const overflow =
+          wixTypeOf.get(s.activity_id) === 'CLASS' && s.capacity != null
+            ? Math.max(0, Math.max(booked, wixFilled) - s.capacity)
+            : 0;
         return {
           id: s.id, when: s.starts_at, name: titleOf.get(s.activity_id) ?? 'Activity',
-          booked: counts[s.id] ?? 0, capacity: s.capacity,
+          booked, capacity: s.capacity,
           location: locId ? locationNameOf.get(locId) ?? null : null,
+          overflow,
         };
       }));
 
@@ -360,8 +381,22 @@ export default function DashboardPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold text-gray-900">{session.booked}{session.capacity != null ? ` / ${session.capacity}` : ''}</div>
-                      <div className="text-xs text-gray-500">Booked</div>
+                      {session.overflow > 0 ? (
+                        <>
+                          <div
+                            className="text-sm font-semibold text-gray-900"
+                            title={`${session.capacity} on Wix · ${session.overflow} held on BabyBrain beyond Wix capacity`}
+                          >
+                            {session.capacity} / {session.capacity} <span className="text-[#FA4D8D]">+{session.overflow}</span>
+                          </div>
+                          <div className="text-xs text-gray-500">Booked · held on BabyBrain</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm font-semibold text-gray-900">{session.booked}{session.capacity != null ? ` / ${session.capacity}` : ''}</div>
+                          <div className="text-xs text-gray-500">Booked</div>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
