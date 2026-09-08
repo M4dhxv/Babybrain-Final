@@ -4,7 +4,7 @@ import {
   addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
   isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw, PauseCircle, PlayCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
@@ -53,7 +53,6 @@ export default function SchedulePage() {
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [wixError, setWixError] = useState<string | null>(null);
-  const [pauseError, setPauseError] = useState<string | null>(null);
   const [wixSyncedAt, setWixSyncedAt] = useState<Date | null>(null);
   const [syncNonce, setSyncNonce] = useState(0);
 
@@ -208,21 +207,6 @@ export default function SchedulePage() {
     [sessions, fActivity, fLocation, locations]
   );
 
-  // Close (or reopen) one slot to new parent bookings, straight from the
-  // calendar. Independent of the activity-wide pause; a manual booking can
-  // still be recorded against a paused session. Works for a Wix occurrence
-  // too — the flag lives on our own session row, sync never touches it, and
-  // the Wix booking routes honour it (isWixSessionPaused).
-  async function togglePause(s: EnrichedSession) {
-    setPauseError(null);
-    const { error } = await supabase
-      .from('activity_sessions')
-      .update({ bookings_paused: !s.bookingsPaused })
-      .eq('id', s.id);
-    if (error) { setPauseError(error.message); return; }
-    setSyncNonce((n) => n + 1);
-  }
-
   const goToday = () => setCursor(new Date());
   const goPrev = () => setCursor((c) => (view === 'week' ? addDays(c, -7) : addMonths(c, -1)));
   const goNext = () => setCursor((c) => (view === 'week' ? addDays(c, 7) : addMonths(c, 1)));
@@ -268,9 +252,6 @@ export default function SchedulePage() {
       <div className="px-4 pb-8 sm:px-8">
         {wixError && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{wixError}</div>
-        )}
-        {pauseError && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{pauseError}</div>
         )}
 
         {/* Controls. Mobile stacks them one per row, centred, in the order
@@ -393,7 +374,6 @@ export default function SchedulePage() {
                         key={s.id}
                         s={s}
                         onClick={() => navigate(`/bookings?session=${s.id}`)}
-                        onTogglePause={() => togglePause(s)}
                       />
                     ))}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
@@ -465,8 +445,8 @@ export default function SchedulePage() {
 }
 
 function SessionCard({
-  s, onClick, onTogglePause,
-}: { s: EnrichedSession; onClick: () => void; onTogglePause?: () => void }) {
+  s, onClick,
+}: { s: EnrichedSession; onClick: () => void }) {
   const full = s.capacity != null && s.booked >= s.capacity;
   const wixOverflow = s.wixClassOverflow;
   return (
@@ -475,7 +455,6 @@ function SessionCard({
         onClick={onClick}
         className={cn(
           'w-full rounded-lg border px-2.5 py-2 text-left transition-colors',
-          onTogglePause && 'pr-8',
           s.bookingsPaused
             ? 'border-amber-200 bg-amber-50/80 hover:bg-amber-50'
             : s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
@@ -529,19 +508,6 @@ function SessionCard({
         </span>
       </div>
       </button>
-      {onTogglePause && (
-        <button
-          type="button"
-          onClick={onTogglePause}
-          title={s.bookingsPaused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
-          className={cn(
-            'absolute right-1 top-1 rounded-md p-1',
-            s.bookingsPaused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
-          )}
-        >
-          {s.bookingsPaused ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
-        </button>
-      )}
     </div>
   );
 }
