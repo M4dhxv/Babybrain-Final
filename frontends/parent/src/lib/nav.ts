@@ -34,10 +34,43 @@ const SPA_ROUTES = new Set([
   "/privacy",
 ]);
 
-/** Strip the dev `/app` base and any trailing slash — mirrors routePath() in
- *  App(). */
+/** Strip the dev `/app` base and any trailing slash. */
 function normalisePath(pathname: string): string {
   return pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";
+}
+
+/** The current route, dev `/app` base and trailing slash stripped. The Vite
+ *  dev server serves this SPA under /app/ while production rewrites it to the
+ *  bare path, so anything branching on the route normalises both. */
+export function routePath(): string {
+  return normalisePath(window.location.pathname);
+}
+
+/** A `?name=` query param off the current URL, or null. */
+export function getParam(name: string): string | null {
+  return new URLSearchParams(window.location.search).get(name);
+}
+
+/**
+ * Scroll to an element that may not exist yet. The browser resolves a hash
+ * before the SPA has mounted and content often arrives a frame or two later
+ * still, so a single delayed shot silently misses. Polls briefly, then gives
+ * up quietly. Returns a cleanup for useEffect. Jumps rather than animates —
+ * someone on a deep link hasn't scrolled anywhere, and `behavior:"smooth"` is
+ * ignored in some environments.
+ */
+export function scrollToWhenReady(id: string, tries = 40, everyMs = 100): () => void {
+  let n = 0;
+  const timer = window.setInterval(() => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      window.clearInterval(timer);
+    } else if (++n > tries) {
+      window.clearInterval(timer);
+    }
+  }, everyMs);
+  return () => window.clearInterval(timer);
 }
 
 /** Whether `pathOrUrl` is a route this SPA renders in place (so a link to it
