@@ -35,6 +35,7 @@ import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { RainbowLoader } from "./components/RainbowLoader";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import RedirectToLanding from "./components/RedirectToLanding";
 import { Chip, REGION_FILTERS } from "./pages/prefChips";
 import {
@@ -1633,7 +1634,17 @@ function App() {
   // A lazily-loaded route's chunk still has to arrive; show the same boot
   // loader while it does. `data-bb-loading` keeps the index.html watchdog
   // treating a slow chunk as "still loading", not "wedged".
-  return <Suspense fallback={bootLoader}>{page}</Suspense>;
+  //
+  // The boundary catches a render fault or a chunk that fails to download
+  // (a stale build after a redeploy) — without it either one unwinds past
+  // React and leaves a blank screen with no way back but a manual reload,
+  // which is what QA saw clicking Profile. Keyed by route so navigating
+  // away clears a caught error.
+  return (
+    <RouteErrorBoundary key={pathname}>
+      <Suspense fallback={bootLoader}>{page}</Suspense>
+    </RouteErrorBoundary>
+  );
 }
 
 export default App;
