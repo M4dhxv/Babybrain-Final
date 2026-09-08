@@ -18,6 +18,8 @@ import {
   SectionTitle,
 } from "./components/ui";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -25,7 +27,6 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { MessagesTab } from "./components/MessagesTab";
 import { SelectField, Opt } from "./components/SelectField";
 import { useUnreadMessages } from "./lib/chat";
 import { categories } from "./data/content";
@@ -58,7 +59,6 @@ import { CHILD_AVATARS, PARENT_AVATARS, type AvatarOption } from "./lib/avatars"
 import type { ActivitySession, Child, Gender, ProviderPolicy } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
-import { ExploreMap } from "./components/ExploreMap";
 import { RainbowLoader } from "./components/RainbowLoader";
 import {
   ActivityCardGridSkeleton,
@@ -68,7 +68,18 @@ import {
   BookingPageSkeleton,
   JourneyStatsSkeleton,
   ListRowsSkeleton,
+  MessagesSkeleton,
 } from "./components/Skeletons";
+
+// Heavy, route-specific dependencies kept out of the entry bundle:
+// stream-chat + stream-chat-react (~550 KB, Messages tab only) and leaflet
+// (the Explore map only). They load the first time their screen is shown.
+const MessagesTab = lazy(() =>
+  import("./components/MessagesTab").then((m) => ({ default: m.MessagesTab }))
+);
+const ExploreMap = lazy(() =>
+  import("./components/ExploreMap").then((m) => ({ default: m.ExploreMap }))
+);
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -1312,7 +1323,11 @@ function ExplorePage() {
               {loading ? (
                 <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
               ) : (
-                <ExploreMap activities={shown} regions={regions} />
+                <Suspense
+                  fallback={<div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />}
+                >
+                  <ExploreMap activities={shown} regions={regions} />
+                </Suspense>
               )}
             </div>
           </section>
@@ -4149,13 +4164,17 @@ function ProfilePage() {
                 conversation with a provider, needs{" "}
                 <a href="/pricing" className="font-black text-baby-pink hover:underline">Plus</a>.
               </p>
-              <MessagesTab userId={session.user.id} readOnly />
+              <Suspense fallback={<MessagesSkeleton />}>
+                <MessagesTab userId={session.user.id} readOnly />
+              </Suspense>
             </div>
           )}
           {tab === "messages" && isPlus && session && (
             <div>
               <h1 className="mb-4 text-[26px] font-black">Messages</h1>
-              <MessagesTab userId={session.user.id} />
+              <Suspense fallback={<MessagesSkeleton />}>
+                <MessagesTab userId={session.user.id} />
+              </Suspense>
             </div>
           )}
 

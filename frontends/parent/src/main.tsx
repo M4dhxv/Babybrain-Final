@@ -13,7 +13,14 @@ import "./styles/index.css";
 const bootWin = window as unknown as { __BB_BOOT_JS__?: boolean; __BB_BOOTED__?: boolean };
 bootWin.__BB_BOOT_JS__ = true;
 
-initPostHog();
+// Analytics is off the critical path — load posthog-js once the browser is
+// idle (or shortly after) rather than competing with first paint.
+const startAnalytics = () => void initPostHog();
+if ("requestIdleCallback" in window) {
+  (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(startAnalytics);
+} else {
+  setTimeout(startAnalytics, 2000);
+}
 
 // Every internal link in this app is a plain `<a href="/x">` (see
 // Button/CategoryTile in components/ui.tsx). This turns those into client-side
