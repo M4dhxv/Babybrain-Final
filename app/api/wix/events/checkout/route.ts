@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { sgDateTime } from '@/lib/format';
 import { getStripe } from '@/lib/stripe';
 import { computeSplit, getTerms } from '@/lib/commercials';
 import {
@@ -73,7 +74,11 @@ export async function POST(request: Request) {
 
   const { data: event } = await admin
     .from('wix_events')
-    .select('id, provider_id, wix_event_id, title, slug, is_published, wix_removed_at')
+    // start_date/end_date and the location ride along for the confirmation
+    // page's summary and its "Add to calendar" button — see success_url below.
+    .select(
+      'id, provider_id, wix_event_id, title, slug, is_published, wix_removed_at, start_date, end_date, location_name, formatted_address, city, location_tbd'
+    )
     .eq('id', eventId)
     .maybeSingle();
   if (!event || !event.is_published || event.wix_removed_at) {
@@ -184,7 +189,28 @@ export async function POST(request: Request) {
       ticket_type_id: ticketType.id,
       wix_reservation_id: reservation.id,
     },
-    success_url: `${origin}/booked?title=${encodeURIComponent(title)}&slug=${encodeURIComponent(event.slug ?? '')}&status=confirmed&paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    /* Same as the native and Wix-bookings checkouts: the confirmation page
+       only renders its date, venue and "Add to calendar" button when it is
+       given them, and coming back from Stripe it never was (QA 04/09). The
+       event's timing and location are on the wix_events row we just read. */
+    success_url:
+      `${origin}/booked?` +
+      new URLSearchParams({
+        title,
+        slug: event.slug ?? '',
+        status: 'confirmed',
+        paid: '1',
+        when: event.start_date ? sgDateTime(event.start_date) : '',
+        start: event.start_date ?? '',
+        end: event.end_date ?? '',
+        venue: event.location_tbd
+          ? ''
+          : [event.location_name, event.formatted_address].filter(Boolean).join(', ') ||
+            event.city ||
+            '',
+      }).toString() +
+      // Stripe substitutes the real id into this placeholder — leave it raw.
+      `&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=bookings&booking=cancelled`,
   };
 
