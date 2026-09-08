@@ -357,8 +357,15 @@ export default function ActivitiesPage() {
         // community events) — that's what "N/A" means here.
         teacher_name: sessForm.teacher.trim() || null,
         studio: sessForm.studio.trim() || null,
-        // Blank inherits the activity's venue/price (migration 00074).
-        location_id: sessForm.location_id || null,
+        // Blank inherits the activity's venue/price (migration 00074). The
+        // picker is pre-filled with the activity's own venue, so "left as-is"
+        // must store null (inherit), not a copy — otherwise moving the
+        // activity later leaves these sessions, and their booking emails,
+        // pointing at the old place (migration 00112).
+        location_id:
+          sessForm.location_id && sessForm.location_id !== (scheduleFor.location_id ?? '')
+            ? sessForm.location_id
+            : null,
         // A Wix Event's price is Wix's — never override it per session.
         price: scheduleIsWixEvent || sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
       };
@@ -451,7 +458,12 @@ export default function ActivitiesPage() {
       capacity: Number(sessEditForm.capacity),
       teacher_name: sessEditForm.teacher.trim() || null,
       studio: sessEditForm.studio.trim() || null,
-      location_id: sessEditForm.location_id || null,
+      // Same as the venue that the activity carries -> store null (inherit),
+      // so a later activity move carries these sessions with it (00112).
+      location_id:
+        sessEditForm.location_id && sessEditForm.location_id !== (scheduleFor.location_id ?? '')
+          ? sessEditForm.location_id
+          : null,
       // A Wix Event's price is Wix's — never override it per session.
       price: scheduleIsWixEvent || sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
     }).eq('id', id);
