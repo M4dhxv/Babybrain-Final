@@ -162,7 +162,14 @@ export default function ContactPage() {
           <BrandLogo className="h-10" />
           
         </button>
-        <Button variant="outline" className="gap-2 rounded-lg border-gray-300" onClick={() => navigate('/')}>
+        {/* Return to wherever they came from (a footer link from any portal
+            page), not the marketing landing. Falls back to the dashboard when
+            there's no in-app history — e.g. the page was opened directly. */}
+        <Button
+          variant="outline"
+          className="gap-2 rounded-lg border-gray-300"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/dashboard'))}
+        >
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
       </header>
