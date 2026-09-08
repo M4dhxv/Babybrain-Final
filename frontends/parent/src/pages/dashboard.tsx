@@ -3396,9 +3396,13 @@ export function BookingPage() {
   }, [sessions]);
   const sessionVenueAddress = selected?.location_id ? sessionVenues[selected.location_id] ?? null : null;
   /* Where this booking actually happens: the chosen session's own venue once
-     it has one (migration 00074), the activity's address otherwise. Drives
-     the on-page displays as well as the /booked redirect below. */
-  const displayVenue = sessionVenueAddress ?? activity?.address ?? null;
+     it has one (migration 00074), then the activity's own address, then the
+     provider's — the last mirrors search_activities' coalesce(a.address,
+     p.address), so an activity that deliberately carries no address of its
+     own still shows its provider's here instead of a blank. Drives the
+     on-page displays as well as the /booked redirect below. */
+  const displayVenue =
+    sessionVenueAddress ?? activity?.address ?? activity?.provider_contact?.address ?? null;
   /* QA 24/08: "I added a teacher and studio to an activity but it doesn't show
      anywhere on the parent side — it should show on the class option, booking
      confirmation screen and they should be able to see under bookings."

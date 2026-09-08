@@ -95,6 +95,10 @@ export interface ProviderContact {
   contact_email: string | null;
   business_name: string | null;
   website: string | null;
+  // The provider's own address, as the venue fallback for an activity that
+  // deliberately carries none (it inherits — same as search_activities'
+  // coalesce(a.address, p.address)).
+  address: string | null;
 }
 
 /**
@@ -188,7 +192,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       // rendered a listing page with none of the contact buttons.
       const { data: act } = await supabase
         .from("activities")
-        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website)")
+        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address)")
         .eq("slug", slug)
         .eq("is_published", true)
         .maybeSingle();
