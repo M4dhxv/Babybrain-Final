@@ -12,6 +12,24 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "../../public/app"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split the rarely-changing vendor libs into their own chunks so a
+        // deploy only re-downloads app code, and the browser parses these in
+        // parallel with the entry chunk.
+        manualChunks(id) {
+          if (
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/scheduler")
+          ) {
+            return "react";
+          }
+          if (id.includes("node_modules/@supabase")) return "supabase";
+          return undefined;
+        },
+      },
+    },
   },
   // Dev server reachable behind the preview/proxy on a fixed port.
   server: {
