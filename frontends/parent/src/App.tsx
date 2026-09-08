@@ -60,7 +60,7 @@ import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
 import { ExploreMap } from "./components/ExploreMap";
 import { RainbowLoader } from "./components/RainbowLoader";
-import { ActivityCardGridSkeleton, ActivityRowListSkeleton } from "./components/Skeletons";
+import { ActivityCardGridSkeleton, ActivityRowListSkeleton, ChildCardSkeleton } from "./components/Skeletons";
 
 function getParam(name: string) {
   return new URLSearchParams(window.location.search).get(name);
@@ -841,7 +841,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                 </div>
               )}
             </div>
-            {child && (
+            {child ? (
               <article className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card">
                 <AnimalAvatar seed={child.avatar_seed ?? child.name} kind="child" gender={child.gender} className="h-32 w-32 ring-8 ring-[#FEEBF2]" />
                 <div>
@@ -852,6 +852,8 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                   ))}
                 </div>
               </article>
+            ) : (
+              (loading || recsLoading) && <ChildCardSkeleton />
             )}
           </div>
         </section>
@@ -3035,6 +3037,9 @@ function ProfilePage() {
   const journey = useJourney(journeyChild?.id);
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   const [favs, setFavs] = useState<ReturnType<typeof toCard>[]>([]);
+  // First favourites fetch still in flight — show a card skeleton rather than
+  // flashing the "nothing saved yet" empty state on a hard refresh.
+  const [favsLoaded, setFavsLoaded] = useState(false);
   // activity_id -> child ids it's assigned to. Empty/absent = whole family.
   const [favChildren, setFavChildren] = useState<Record<string, string[]>>({});
   const [bookings, setBookings] = useState<BookingItem[]>([]);
@@ -3373,7 +3378,10 @@ function ProfilePage() {
   }
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      setFavsLoaded(true);
+      return;
+    }
     supabase
       .from("favorites")
       /* Upcoming sessions ride along so the card can show the next class
@@ -3396,6 +3404,7 @@ function ProfilePage() {
             })
             .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
         );
+        setFavsLoaded(true);
       });
 
     // Which children each favourite is assigned to. A favourite with no rows is
@@ -3815,10 +3824,14 @@ function ProfilePage() {
               Saved activities
             </SectionTitle>
             {isPlus ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
-                {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
-              </div>
+              !favsLoaded ? (
+                <ActivityCardGridSkeleton count={3} className="grid gap-4 md:grid-cols-3" />
+              ) : (
+                <div className="grid gap-4 md:grid-cols-3">
+                  {favs.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)}
+                  {favs.length === 0 && <p className="font-semibold text-[#68718f]">Nothing saved yet — tap the heart on any activity.</p>}
+                </div>
+              )
             ) : (
               <div className="relative overflow-hidden rounded-[14px] border border-dashed border-[#FFC1D6] bg-[#FFF5F8]">
                 <div aria-hidden="true" className="pointer-events-none grid select-none gap-4 p-4 opacity-40 blur-[3px] md:grid-cols-3">
@@ -4041,7 +4054,9 @@ function ProfilePage() {
                   Showing what's saved for {filterChild.name}, plus anything saved for the whole family.
                 </p>
               )}
-              {favs.length === 0 ? (
+              {!favsLoaded ? (
+                <ActivityCardGridSkeleton count={6} className="grid gap-4 md:grid-cols-3" />
+              ) : favs.length === 0 ? (
                 <EmptyPanel icon="heart" copy="Nothing saved yet — tap the heart on any activity." cta="Browse activities" href="/explore" />
               ) : visibleFavs.length === 0 ? (
                 <EmptyPanel icon="heart" copy={`Nothing saved for ${filterChild?.name ?? "this child"} yet — use "Saved for" on any favourite to assign it.`} cta="Browse activities" href="/explore" />

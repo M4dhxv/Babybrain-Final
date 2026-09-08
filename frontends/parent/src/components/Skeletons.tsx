@@ -74,3 +74,22 @@ export function ActivityRowListSkeleton({ count = 6 }: { count?: number }) {
     </div>
   );
 }
+
+/** Placeholder for the Home page's child card (avatar + name + age + interest
+ *  pills), so the right column doesn't sit empty until auth resolves. */
+export function ChildCardSkeleton() {
+  return (
+    <article
+      aria-hidden="true"
+      className="flex gap-4 rounded-[18px] border border-[#EBE3E5] bg-white p-4 shadow-card"
+    >
+      <div className="h-32 w-32 flex-none animate-pulse rounded-full bg-[#FEEBF2] ring-8 ring-[#FEF4F8]" />
+      <div className="flex-1 pt-1">
+        <div className="h-4 w-2/5 animate-pulse rounded bg-[#F3EDF0]" />
+        <div className="mt-3 h-3 w-1/4 animate-pulse rounded bg-[#F6F1F3]" />
+        <div className="mt-4 h-6 w-4/5 animate-pulse rounded-full bg-[#FEF4EB]" />
+        <div className="mt-2 h-6 w-3/5 animate-pulse rounded-full bg-[#FEF4EB]" />
+      </div>
+    </article>
+  );
+}
