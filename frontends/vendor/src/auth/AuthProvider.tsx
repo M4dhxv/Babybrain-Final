@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { identifyUser, resetUser } from '@/lib/posthog';
@@ -39,12 +39,45 @@ function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
   return Promise.race([p, new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
 }
 
+/**
+ * Read the Supabase session straight out of localStorage, synchronously, so a
+ * returning vendor's first render isn't a full-screen boot loader while
+ * `getSession()` — which can do a token-refresh round trip — settles. The
+ * effect still calls `getSession()` right after to validate/refresh. Only a
+ * token that isn't already expired is trusted; a malformed or blocked store
+ * returns null, i.e. the old behaviour.
+ */
+function readStoredSession(): Session | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !/^sb-.*-auth-token$/.test(key)) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const s = (parsed.access_token ? parsed : parsed.currentSession) as
+        | (Session & { expires_at?: number })
+        | undefined;
+      if (!s || !s.access_token || !s.user?.id) return null;
+      if (typeof s.expires_at === 'number' && s.expires_at * 1000 <= Date.now()) return null;
+      return s;
+    }
+  } catch {
+    /* storage blocked or JSON malformed — fall back to the async path */
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  // Optimistic session from storage — lets the router render without a
+  // full-screen boot loader. `getSession()` in the effect still confirms it.
+  const initialSession = useMemo(readStoredSession, []);
+  const [session, setSession] = useState<Session | null>(initialSession);
   const [provider, setProvider] = useState<Provider | null>(null);
   const [role, setRole] = useState<ProviderRole | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Only hold routing on the async check when there's nothing to render from.
+  const [loading, setLoading] = useState(!initialSession);
   const [recovery, setRecovery] = useState(false);
   const [providerResolved, setProviderResolved] = useState(false);
   const [providerError, setProviderError] = useState(false);

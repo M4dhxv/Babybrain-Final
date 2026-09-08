@@ -11,6 +11,11 @@
          same type as the page it is previewing. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Warm the Supabase connection (DNS + TLS + HTTP/2) while the bundle is
+         still downloading, so the first getSession / query doesn't pay
+         ~400-800 ms of cold connection setup. -->
+    <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
+    <link rel="dns-prefetch" href="%VITE_SUPABASE_URL%" />
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
 
     <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
