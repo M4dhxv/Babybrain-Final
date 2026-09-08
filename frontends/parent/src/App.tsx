@@ -551,6 +551,11 @@ function ExplorePage() {
   const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
   const [showMore, setShowMore] = useState(false);
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
+  // Set only when `here` came from the "pick your area" fallback, not a real
+  // fix. Distance-to-a-single-centroid interleaves border listings of the next
+  // area with far-corner ones of your own; QA wants the whole area first, then
+  // the next-closest. So with an area pick we rank by area before distance.
+  const [herePickedArea, setHerePickedArea] = useState<string | null>(null);
   const query = getParam("q");
   // Render the list in pages of 50 rather than dumping ~300 rows (and their
   // images) into the DOM at once. The map and the "N activities found" count
@@ -603,6 +608,13 @@ function ExplorePage() {
   // above everything regardless, so picking "Nearest" changed nothing and QA
   // saw a class 30 minutes away above ones within 10. Instant book now only
   // breaks ties, which still keeps it first under the default "Most popular".
+  //
+  // With no precise location (the "pick your area" fallback), rank by area
+  // first — the whole chosen area, then the next-closest area, and so on —
+  // then by point distance within an area. Sorting purely by distance to the
+  // area's centre otherwise slots border listings of the neighbouring area
+  // ahead of far-corner ones of your own (QA).
+  const areaOrder = sort === "distance" && herePickedArea ? regionsByProximity(herePickedArea) : null;
   const shown = [...filtered].sort((x, y) => {
     if (sort === "soonest") {
       const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
@@ -610,6 +622,11 @@ function ExplorePage() {
       if (ax !== ay) return ax - ay;
     }
     if (sort === "distance" && here) {
+      if (areaOrder) {
+        const rx = areaRank(x, areaOrder);
+        const ry = areaRank(y, areaOrder);
+        if (rx !== ry) return rx - ry;
+      }
       const dx = distanceFrom(here, x);
       const dy = distanceFrom(here, y);
       if (dx !== dy) return dx - dy;
@@ -648,6 +665,7 @@ function ExplorePage() {
         .maybeSingle();
       if (!cancelled && p?.latitude != null && p?.longitude != null) {
         setHere({ lat: p.latitude, lng: p.longitude });
+        setHerePickedArea(null);
       }
     };
     if (!navigator.geolocation) {
@@ -655,7 +673,11 @@ function ExplorePage() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => !cancelled && setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (pos) => {
+        if (cancelled) return;
+        setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setHerePickedArea(null);
+      },
       () => void useProfile(),
       { timeout: 8000 }
     );
@@ -736,7 +758,7 @@ function ExplorePage() {
                 aria-label="Pick your area"
                 onChange={(v) => {
                   const centroid = REGION_CENTROIDS[v];
-                  if (centroid) setHere(centroid);
+                  if (centroid) { setHere(centroid); setHerePickedArea(v); }
                 }}
                 className="h-7 px-2 text-xs font-bold text-[#4a5680]"
               >
@@ -841,6 +863,29 @@ function ExplorePage() {
  *  it back through the category list the filter chips were built from. */
 function catSlugOf(a: { category: string }, cats: { slug: string; name: string }[]) {
   return cats.find((c) => c.name === a.category)?.slug ?? "";
+}
+
+/** The areas ordered by how near their centre is to `from`'s — `from` itself
+ *  first. Used to turn "Nearest" (with only an area, no fix) into "my area,
+ *  then the next-closest area". */
+function regionsByProximity(from: string): string[] {
+  const o = REGION_CENTROIDS[from];
+  if (!o) return [];
+  const d2 = (r: string) =>
+    (REGION_CENTROIDS[r].lat - o.lat) ** 2 + (REGION_CENTROIDS[r].lng - o.lng) ** 2;
+  return Object.keys(REGION_CENTROIDS).sort((a, b) => d2(a) - d2(b));
+}
+
+/** An activity's rank in `order` — the position of whichever of its areas is
+ *  closest to the picked one (0 = the picked area itself). No area → last. */
+function areaRank(a: { areas: string[] }, order: string[]): number {
+  if (!a.areas.length) return Infinity;
+  return Math.min(
+    ...a.areas.map((r) => {
+      const i = order.indexOf(r);
+      return i === -1 ? Infinity : i;
+    })
+  );
 }
 
 /** Rough great-circle distance (km) from a point to an activity's nearest venue. */
