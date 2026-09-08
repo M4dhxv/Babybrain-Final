@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: ticketType } = await admin
     .from('event_ticket_types')
-    .select('id, event_id, wix_ticket_definition_id, is_free, hidden')
+    .select('id, event_id, wix_ticket_definition_id, is_free, hidden, sold_out')
     .eq('id', ticketTypeId)
     .maybeSingle();
   if (!ticketType || ticketType.event_id !== eventId || ticketType.hidden) {
@@ -57,6 +57,12 @@ export async function POST(request: Request) {
   }
   if (!ticketType.is_free) {
     return NextResponse.json({ error: 'This ticket requires payment — use checkout, not RSVP' }, { status: 400 });
+  }
+  // Friendly stop before hitting Wix — the live reservation below is still the
+  // authority, but a synced sold-out flag saves the round trip. Wix Events
+  // have no BabyBrain waitlist (00107).
+  if (ticketType.sold_out) {
+    return NextResponse.json({ error: 'This ticket is sold out' }, { status: 409 });
   }
 
   const { data: event } = await admin

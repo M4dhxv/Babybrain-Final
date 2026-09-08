@@ -145,6 +145,10 @@ export interface ActivityDetail {
   // /api/wix/slots). `sessions` is future-only, so this is what the "Runs …"
   // span uses to stay right for a course viewed mid-run.
   courseSpan: { start: string; end: string } | null;
+  // Wix Event only: every non-hidden ticket type is sold out on Wix. Wix
+  // Events have no BabyBrain waitlist (00107), so the booking UI shows a
+  // disabled "Sold out" rather than "0 spots". Always false for non-events.
+  eventSoldOut: boolean;
   loading: boolean;
 }
 
@@ -154,6 +158,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     sessions: [],
     reviews: [],
     courseSpan: null,
+    eventSoldOut: false,
     loading: true,
   });
 
@@ -178,7 +183,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
         .eq("is_published", true)
         .maybeSingle();
       if (!act) {
-        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, loading: false });
+        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, eventSoldOut: false, loading: false });
         return;
       }
 
@@ -266,7 +271,27 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .then(withRemainingCapacity)
           );
 
-      const [sessions, { data: reviews }, providerCanMessage] = await Promise.all([
+      // Wix Event: does any bookable ticket remain? A type counts as sold out
+      // when Wix says so (sold_out) or its unsold count has hit zero. Every
+      // non-hidden type gone -> the event as a whole is sold out. Non-events
+      // resolve `false` without a query.
+      const eventSoldOutPromise: Promise<boolean> = act.wix_event_id
+        ? Promise.resolve(
+            supabase
+              .from("event_ticket_types")
+              .select("sold_out, capacity_remaining, hidden")
+              .eq("event_id", act.wix_event_id)
+              .eq("hidden", false)
+          ).then(({ data }) => {
+            const types = data ?? [];
+            return (
+              types.length > 0 &&
+              types.every((t) => t.sold_out || t.capacity_remaining === 0)
+            );
+          })
+        : Promise.resolve(false);
+
+      const [sessions, { data: reviews }, providerCanMessage, eventSoldOut] = await Promise.all([
         sessionsPromise,
         supabase
           .from("reviews")
@@ -279,6 +304,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
               .then((r) => r.canMessage)
               .catch(() => false)
           : Promise.resolve(false),
+        eventSoldOutPromise,
       ]);
       if (!cancelled)
         setState({
@@ -292,6 +318,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           sessions,
           reviews: reviews ?? [],
           courseSpan: wixCourseSpan,
+          eventSoldOut,
           loading: false,
         });
     })();

@@ -27,6 +27,10 @@ const ROSTER_COLS =
   'grid min-w-[570px] gap-x-4 grid-cols-[minmax(0,0.5fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
 
 const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
+// Wix Events and Wix COURSE enrolments have no BabyBrain waitlist (migration
+// 00107) — Wix owns their capacity — so the Waitlist roster tab is hidden for
+// a session belonging to one of these.
+const NO_WAITLIST_WIX_TYPES = ['EVENT', 'COURSE'];
 const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-yellow-300 text-yellow-800', 'bg-purple-300 text-purple-800', 'bg-green-300 text-green-800'];
 
 const sgDateTime = (iso: string) =>
@@ -167,7 +171,24 @@ export default function BookingsPage() {
   };
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
   const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
+  // activity id -> wix_service_type, so the roster can tell whether the
+  // selected session's activity is a Wix Event / COURSE (no Waitlist tab).
+  const [activityWixType, setActivityWixType] = useState<Record<string, string | null>>({});
   const [sessionId, setSessionId] = useState<string>('');
+  // No Waitlist tab for the currently-selected session when its activity is a
+  // Wix Event / COURSE (00107). `bookingsTabs` stays the full list for
+  // deep-link matching; only what's rendered — and reachable — is trimmed.
+  const hideWaitlistTab = NO_WAITLIST_WIX_TYPES.includes(
+    activityWixType[sessionActivity[sessionId]] ?? ''
+  );
+  const visibleTabs = hideWaitlistTab ? bookingsTabs.filter((t) => t !== 'Waitlist') : bookingsTabs;
+  useEffect(() => {
+    if (hideWaitlistTab && activeTab === 'Waitlist') {
+      setActiveTab('Bookings');
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideWaitlistTab, activeTab]);
   // Narrows the session picker to one calendar day — useful once a Wix-linked
   // activity's half-hourly slots push everything else off the (soonest-50)
   // list. Empty string = no filter, matching <input type="date">'s own "no
@@ -252,8 +273,12 @@ export default function BookingsPage() {
   useEffect(() => {
     if (!provider) return;
     (async () => {
-      const { data: acts } = await supabase.from('activities').select('id, title').eq('provider_id', provider.id);
+      const { data: acts } = await supabase
+        .from('activities')
+        .select('id, title, wix_service_type')
+        .eq('provider_id', provider.id);
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
+      setActivityWixType(Object.fromEntries((acts ?? []).map((a) => [a.id, a.wix_service_type])));
       const ids = [...map.keys()];
       if (!ids.length) { setSessions([]); setLoading(false); return; }
       // Capped per activity, not globally — a single high-frequency
@@ -708,7 +733,7 @@ export default function BookingsPage() {
 
         {/* Tabs */}
         <div className="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
-          {bookingsTabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button key={tab} onClick={() => selectTab(tab)}
               className={cn('flex items-center gap-2 text-sm font-medium pb-3 border-b-2 transition-colors',
                 activeTab === tab ? 'text-[#FA4D8D] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700')}>

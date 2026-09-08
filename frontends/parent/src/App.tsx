@@ -1601,7 +1601,7 @@ function ContactLink({
 }
 
 function ActivityDetailPage() {
-  const { activity, sessions, reviews, courseSpan, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const { isPlus } = usePlan();
@@ -1714,6 +1714,13 @@ function ActivityDetailPage() {
   const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
   const nextVenueAddress = nextVenue ?? activity.address ?? null;
   const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
+  // Wix Events and Wix COURSEs have no BabyBrain waitlist (00107): a sold-out
+  // event / a course with no dates left shows a disabled "Sold out" CTA
+  // instead of sending the parent into a booking flow that can't complete.
+  // Native and Wix CLASS activities keep the waitlist, so they are never
+  // "sold out" here — a full slot still routes to Book.
+  const soldOut =
+    eventSoldOut || (activity.wix_service_type === "COURSE" && sessions.length === 0);
 
   // Messaging needs an integrated provider on Growth-and-above, and a Plus
   // subscription on the parent's side. Signed-out visitors still get a live
@@ -1911,6 +1918,14 @@ function ActivityDetailPage() {
               >
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
+            ) : soldOut ? (
+              <button
+                type="button"
+                disabled
+                className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
+              >
+                <Icon name="calendar" className="h-4 w-4" /> {activity.wix_service_type === "EVENT" ? "Sold out" : "Currently full"}
+              </button>
             ) : (
               <Button href={`/book?slug=${activity.slug}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
@@ -2009,7 +2024,7 @@ function ActivityDetailPage() {
               {next?.capacity != null && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Spaces available</strong>
-                  <span className="text-right text-[#A7D8F8]">{next.capacity} spots</span>
+                  <span className="text-right text-[#A7D8F8]">{next.capacity > 0 ? `${next.capacity} spots` : "Sold out"}</span>
                 </p>
               )}
               {durationMins != null && (
@@ -5642,7 +5657,7 @@ function PackageOption({
 }
 
 function BookingPage() {
-  const { activity, sessions, courseSpan, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, courseSpan, eventSoldOut, loading } = useActivityDetail(getParam("slug"));
   const { session: auth, children: kids } = useAuth();
   const redeemToken = getParam("token");
   /* "A spot has opened up" emails deep-link here with the freed slot
@@ -5708,7 +5723,7 @@ function BookingPage() {
   // shown instead of (never alongside) the non-cancellable notice.
   const nonRefundableOnCancel =
     !nonCancellable && activity?.cancellation_refund_mode === "none";
-  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null };
+  type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null; sold_out: boolean };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
 
@@ -5838,6 +5853,11 @@ function BookingPage() {
   // a chosen date/time.
   const strands = isCourse ? courseStrands(sessions) : [];
   const courseSpots = isCourse ? sessions[0]?.capacity ?? null : null;
+  // Wix Events / Wix COURSEs have no BabyBrain waitlist (00107). "Sold out" =
+  // an event whose every ticket type is gone, or a course with no dates left
+  // (/api/wix/slots only returns occurrences that still have room). Blocks
+  // the pay button and swaps the CTA copy; never set for native / Wix CLASS.
+  const soldOut = isEvent ? eventSoldOut : isCourse ? sessions.length === 0 : false;
 
   useEffect(() => {
     if (!preselectPending || loading) return;
@@ -5872,7 +5892,7 @@ function BookingPage() {
     if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
     supabase
       .from("event_ticket_types")
-      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent")
+      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent, sold_out")
       .eq("event_id", activity.wix_event_id)
       .eq("hidden", false)
       .order("price_cents")
@@ -5880,7 +5900,11 @@ function BookingPage() {
   }, [isEvent, activity?.wix_event_id]);
 
   useEffect(() => {
-    if (ticketTypes.length > 0 && !ticketTypeId) setTicketTypeId(ticketTypes[0].id);
+    if (ticketTypes.length === 0 || ticketTypeId) return;
+    // Prefer a type that still has tickets; fall back to the first one so a
+    // fully sold-out event still has something selected for the "sold out"
+    // messaging to read from.
+    setTicketTypeId((ticketTypes.find((t) => !t.sold_out) ?? ticketTypes[0]).id);
   }, [ticketTypes, ticketTypeId]);
 
   // Default to an available credit — it's the cheapest option for the parent.
@@ -5994,6 +6018,13 @@ function BookingPage() {
     }
     if (isEvent && !ticketTypeId) {
       setErr("Please choose a ticket type first.");
+      return;
+    }
+    // No BabyBrain waitlist for Wix Events / COURSEs (00107) — a stale click
+    // on a sold-out event (or a sold-out ticket type within one) stops here
+    // rather than 409-ing against Wix.
+    if (soldOut || (isEvent && selectedTicketType?.sold_out)) {
+      setErr(isEvent ? "This ticket is sold out." : "This course is currently full.");
       return;
     }
     // A ticketed Wix event has no free/comp path — the isEvent branch below
@@ -6433,7 +6464,11 @@ function BookingPage() {
 
               <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
                 {sessions.length === 0 ? (
-                  <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider.</p>
+                  <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
+                    {isCourse
+                      ? "This course is currently full — no dates have spaces left. Check back soon, or try “Enquire Now” on the class page."
+                      : "No upcoming sessions scheduled yet — try “Enquire Now” on the class page to ask the provider."}
+                  </p>
                 ) : (
                   <>
                     {isCourse && (
@@ -6511,9 +6546,10 @@ function BookingPage() {
                             <PackageOption
                               key={t.id}
                               selected={ticketTypeId === t.id}
-                              onSelect={() => setTicketTypeId(t.id)}
+                              onSelect={() => { if (!t.sold_out) setTicketTypeId(t.id); }}
                               title={t.name}
                               price={t.is_free ? "Free" : `${t.currency} ${(ticketPriceCents(t) / 100).toFixed(2)}`}
+                              badge={t.sold_out ? "Sold out" : undefined}
                             />
                           ))}
                         </div>
@@ -6748,6 +6784,16 @@ function BookingPage() {
             /* 1.1: the vendor has paused bookings for this class */
             <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-palette-yellow">
               <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this class are temporarily paused by the provider. Please check back later or enquire with them directly.
+            </div>
+          ) : soldOut ? (
+            /* Wix Event / Wix COURSE with nothing left to book — no waitlist
+               here (00107), so the parent is told plainly rather than sent
+               into a checkout that would fail against Wix. */
+            <div className="rounded-[12px] bg-[#FAF7F7] p-4 text-center font-bold text-[#6D7486]">
+              <Icon name="calendar" className="mr-2 inline h-5 w-5" />
+              {isEvent
+                ? "This event is sold out."
+                : "This course is currently full — check back soon, or use “Enquire Now” on the class page."}
             </div>
           ) : (
             <Button type="button" size="lg" onClick={checkout} className={busy || !sessionId ? "opacity-60" : ""}>

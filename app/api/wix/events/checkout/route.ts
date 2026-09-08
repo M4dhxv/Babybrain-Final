@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: ticketType } = await admin
     .from('event_ticket_types')
-    .select('id, event_id, wix_ticket_definition_id, name, is_free, hidden, limit_per_checkout')
+    .select('id, event_id, wix_ticket_definition_id, name, is_free, hidden, limit_per_checkout, sold_out')
     .eq('id', ticketTypeId)
     .maybeSingle();
   if (!ticketType || ticketType.event_id !== eventId || ticketType.hidden) {
@@ -63,6 +63,12 @@ export async function POST(request: Request) {
   }
   if (ticketType.is_free) {
     return NextResponse.json({ error: 'This ticket is free — use the RSVP endpoint, not checkout' }, { status: 400 });
+  }
+  // Friendly stop before creating a Wix reservation / Stripe session — the
+  // reservation below is still authoritative. Wix Events have no BabyBrain
+  // waitlist (00107).
+  if (ticketType.sold_out) {
+    return NextResponse.json({ error: 'This ticket is sold out' }, { status: 409 });
   }
 
   const { data: event } = await admin

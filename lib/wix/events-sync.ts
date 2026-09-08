@@ -467,6 +467,11 @@ export async function syncProviderWixEvents(
               sale_start_date: def.saleStartDate,
               sale_end_date: def.saleEndDate,
               sale_status: def.saleStatus,
+              // Wix's own "no tickets left" flag — the parent booking UI reads
+              // this to show a disabled "Sold out" state (Wix Events have no
+              // BabyBrain waitlist, see 00107). Refreshed every sync, so a
+              // vendor raising the ticket limit on Wix clears it automatically.
+              sold_out: def.soldOut,
               hidden: def.hidden,
               fee_type: def.feeType,
               fee_rate_percent: feeRatePercent,

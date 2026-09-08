@@ -548,6 +548,7 @@ export type Database = {
           hidden: boolean;
           fee_type: string | null;
           fee_rate_percent: number | null;
+          sold_out: boolean;
           created_at: string;
           updated_at: string;
         };
