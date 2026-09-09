@@ -284,16 +284,21 @@ export default function SettingsPage() {
     setInviting(true);
     setInviteMsg(null);
     try {
-      const res = await apiPost<{ ok: boolean; linked: boolean }>('/api/vendor/staff/invite', {
+      const res = await apiPost<{
+        ok: boolean;
+        linked: boolean;
+        account_created: boolean;
+        set_password_email_sent: boolean;
+      }>('/api/vendor/staff/invite', {
         provider_id: provider.id,
         email: inviteEmail.trim(),
         role: inviteRole,
       });
       setInviteMsg({
         ok: true,
-        text: res.linked
-          ? 'Added to your team — they already have an account.'
-          : 'Invite sent. They join automatically when they sign up with this email.',
+        text: res.set_password_email_sent
+          ? 'Added to your team — we emailed them a link to set a password and sign in.'
+          : 'Added to your team — they already have an account.',
       });
       setInviteEmail('');
       const { data } = await supabase
