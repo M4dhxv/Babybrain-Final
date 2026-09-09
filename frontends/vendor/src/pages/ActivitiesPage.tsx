@@ -87,6 +87,63 @@ const formatDuration = (mins: number | null | undefined): string => {
 /** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
 
+/* Recurrence helpers for the "Add sessions" form. All operate on plain
+   yyyy-mm-dd calendar strings via UTC so a vendor in another timezone still
+   gets the Singapore calendar day they picked — the same reason the session
+   timestamps below are pinned to +08:00. */
+/** Weekday of a yyyy-mm-dd date, 0 = Sunday … 6 = Saturday. */
+const dowOfYmd = (ymd: string) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+};
+/** yyyy-mm-dd shifted by n whole days. */
+const shiftYmd = (ymd: string, n: number) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+};
+/** Human date from a yyyy-mm-dd, built from parts so it never shifts a day. */
+const fmtYmd = (ymd: string) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+/** Monday-first, so the toggle row reads the way a week is written here. */
+const WEEKDAY_TOGGLES = [
+  { i: 1, label: 'M', name: 'Monday' },
+  { i: 2, label: 'T', name: 'Tuesday' },
+  { i: 3, label: 'W', name: 'Wednesday' },
+  { i: 4, label: 'T', name: 'Thursday' },
+  { i: 5, label: 'F', name: 'Friday' },
+  { i: 6, label: 'S', name: 'Saturday' },
+  { i: 0, label: 'S', name: 'Sunday' },
+];
+/** Every yyyy-mm-dd a given recurrence setting would create a session on. */
+const plannedDates = (f: {
+  date: string; weeks: string; weekdays: number[]; customDates: string[];
+}): string[] => {
+  if (!f.date) return [];
+  if (f.weeks === 'custom') {
+    return [...new Set([f.date, ...f.customDates].filter(Boolean))].sort();
+  }
+  const nWeeks = Math.min(12, Math.max(1, Number(f.weeks) || 1));
+  const baseDow = dowOfYmd(f.date);
+  // No day ticked → just the start date's own weekday.
+  const days = f.weekdays.length ? f.weekdays : [baseDow];
+  const out = new Set<string>();
+  for (let w = 0; w < nWeeks; w++) {
+    for (const wd of days) {
+      // `(wd - baseDow + 7) % 7` keeps week 0 on/after the start date, so
+      // picking Wednesday as the start with Monday ticked lands on the NEXT
+      // Monday, never the one two days before.
+      out.add(shiftYmd(f.date, w * 7 + ((wd - baseDow + 7) % 7)));
+    }
+  }
+  return [...out].sort();
+};
+/** Guardrail on one "Add to schedule" click. */
+const MAX_SESSIONS_PER_ADD = 100;
+
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
@@ -220,9 +277,25 @@ export default function ActivitiesPage() {
   /* QA 21/08: location and price move to the schedule, so the same class at
      three venues (or three prices) is ONE activity. Blank inherits the
      activity's own value. */
-  const [sessForm, setSessForm] = useState({ date: '', time: '', duration: '45', capacity: '', repeat: '1', teacher: '', studio: '', location_id: '', price: '' });
+  /* Recurrence is now two independent controls plus an escape hatch:
+       weekdays   — which days of the week a session lands on
+       weeks      — how many weeks the pattern runs for ('1'..'12', or
+                    'custom' to hand-pick dates instead)
+       customDates — the hand-picked list, used only when weeks === 'custom'
+     `date` is the anchor: week 0 of the pattern, and always the first custom
+     date. See plannedDates() for how the three combine. */
+  const [sessForm, setSessForm] = useState({
+    date: '', time: '', duration: '45', capacity: '',
+    weekdays: [] as number[], weeks: '1', customDates: [] as string[],
+    teacher: '', studio: '', location_id: '', price: '',
+  });
+  // The date sitting in the "extra dates" picker before it's added to the list.
+  const [customDateDraft, setCustomDateDraft] = useState('');
   const [savingSess, setSavingSess] = useState(false);
   const [sessError, setSessError] = useState<string | null>(null);
+  // Every date the current recurrence settings would create a session on —
+  // drives the count shown under the form and the rows addSessions() inserts.
+  const plannedSessionDates = useMemo(() => plannedDates(sessForm), [sessForm]);
 
   // Per-session teacher/studio can also be set after the fact (a substitute
   // teacher, or a room reassignment) without recreating the session.
@@ -334,7 +407,10 @@ export default function ActivitiesPage() {
       // sessions the same) is still one click.
       location_id: a.location_id ?? '',
       price: a.price != null ? String(a.price) : '',
+      // Don't carry a half-built recurrence from a previous activity.
+      date: '', weekdays: [], weeks: '1', customDates: [],
     }));
+    setCustomDateDraft('');
     await loadSessions(a.id);
   }
 
@@ -369,15 +445,23 @@ export default function ActivitiesPage() {
       setSessError('Set a capacity for this session.');
       return;
     }
+    const dates = plannedSessionDates;
+    if (dates.length === 0) {
+      setSessError(sessForm.weeks === 'custom' ? 'Add at least one date.' : 'Pick at least one day of the week.');
+      return;
+    }
+    if (dates.length > MAX_SESSIONS_PER_ADD) {
+      setSessError(`That works out to ${dates.length} sessions in one go — trim the days or weeks, or add them in a couple of batches.`);
+      return;
+    }
     setSavingSess(true);
     setSessError(null);
     const durationMins = Math.max(15, Number(sessForm.duration) || 45);
-    const weeks = Math.min(12, Math.max(1, Number(sessForm.repeat) || 1));
-    // Times are entered as Singapore time (the platform's timezone), not the
-    // browser's — pin the offset so a vendor travelling abroad still gets SGT.
-    const first = new Date(`${sessForm.date}T${sessForm.time}:00+08:00`);
-    const rows = Array.from({ length: weeks }).map((_, i) => {
-      const starts = new Date(first.getTime() + i * 7 * 864e5);
+    // Each date is a Singapore calendar day (plannedDates keeps it TZ-safe);
+    // the start time is pinned to +08:00 so a vendor travelling abroad still
+    // schedules in the platform's timezone.
+    const rows = dates.map((ymd) => {
+      const starts = new Date(`${ymd}T${sessForm.time}:00+08:00`);
       const ends = new Date(starts.getTime() + durationMins * 60000);
       return {
         activity_id: scheduleFor.id,
@@ -433,7 +517,12 @@ export default function ActivitiesPage() {
       setSessError(error.message);
       return;
     }
-    setSessForm({ date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity, repeat: '1', teacher: sessForm.teacher, studio: sessForm.studio, location_id: sessForm.location_id, price: sessForm.price });
+    setSessForm({
+      date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity,
+      weekdays: [], weeks: '1', customDates: [],
+      teacher: sessForm.teacher, studio: sessForm.studio, location_id: sessForm.location_id, price: sessForm.price,
+    });
+    setCustomDateDraft('');
     await loadSessions(scheduleFor.id);
     load(); // refresh the upcoming counts in the table
   }
@@ -1831,8 +1920,23 @@ export default function ActivitiesPage() {
               <h4 className="text-sm font-medium text-gray-900 mb-2">Add sessions</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
-                  <DatePicker className={inputCls} value={sessForm.date} onChange={(v) => setSessForm({ ...sessForm, date: v })} aria-label="Session date" />
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Start date</label>
+                  <DatePicker
+                    className={inputCls}
+                    value={sessForm.date}
+                    onChange={(v) =>
+                      setSessForm((f) => {
+                        // Seed the weekday toggles from the start date, but only
+                        // while they still match the old start date (i.e. the
+                        // vendor hasn't hand-picked their own set yet).
+                        const untouched =
+                          f.weekdays.length === 0 ||
+                          (!!f.date && f.weekdays.length === 1 && f.weekdays[0] === dowOfYmd(f.date));
+                        return { ...f, date: v, weekdays: untouched && v ? [dowOfYmd(v)] : f.weekdays };
+                      })
+                    }
+                    aria-label="Session start date"
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Start time</label>
@@ -1880,13 +1984,118 @@ export default function ActivitiesPage() {
                     disabled={scheduleIsWixEvent}
                   />
                 </div>
-                <div className="col-span-2">
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat weekly</label>
-                  <SelectField className={inputCls} value={sessForm.repeat} onChange={(v) => setSessForm({ ...sessForm, repeat: v })} aria-label="Repeat weekly">
-                    {[1, 2, 4, 6, 8, 12].map((n) => (
-                      <Opt key={n} value={String(n)}>{n === 1 ? 'Just this session' : `${n} weeks (same day & time)`}</Opt>
-                    ))}
-                  </SelectField>
+                {/* Recurrence — two independent controls (which weekdays, and
+                    for how many weeks), plus a "Custom dates" escape hatch so a
+                    term that doesn't fit a clean weekly pattern isn't forced
+                    into one. */}
+                <div className="col-span-2 space-y-3 rounded-xl bg-gray-50 p-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat for</label>
+                    <SelectField
+                      className={inputCls}
+                      value={sessForm.weeks}
+                      onChange={(v) => setSessForm({ ...sessForm, weeks: v })}
+                      aria-label="Repeat for"
+                    >
+                      <Opt value="1">Just the start date</Opt>
+                      {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                        <Opt key={n} value={String(n)}>{n} weeks</Opt>
+                      ))}
+                      <Opt value="custom">Custom dates…</Opt>
+                    </SelectField>
+                  </div>
+
+                  {sessForm.weeks !== 'custom' ? (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">On these days</label>
+                      <div className="flex gap-1">
+                        {WEEKDAY_TOGGLES.map((d) => {
+                          const on = sessForm.weekdays.includes(d.i);
+                          return (
+                            <button
+                              type="button"
+                              key={d.i}
+                              title={d.name}
+                              aria-pressed={on}
+                              onClick={() =>
+                                setSessForm((f) => ({
+                                  ...f,
+                                  weekdays: on
+                                    ? f.weekdays.filter((x) => x !== d.i)
+                                    : [...f.weekdays, d.i],
+                                }))
+                              }
+                              className={cn(
+                                'h-8 w-8 rounded-lg text-xs font-semibold transition-colors',
+                                on
+                                  ? 'bg-[#FA4D8D] text-white'
+                                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-100'
+                              )}
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        {sessForm.weekdays.length === 0
+                          ? "None ticked — uses the start date's own day."
+                          : 'First occurrence is on or after the start date.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Dates</label>
+                      <div className="flex gap-2">
+                        <DatePicker
+                          className={inputCls}
+                          value={customDateDraft}
+                          onChange={setCustomDateDraft}
+                          aria-label="Add a session date"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = customDateDraft;
+                            if (!d || d === sessForm.date || sessForm.customDates.includes(d)) return;
+                            setSessForm((f) => ({ ...f, customDates: [...f.customDates, d].sort() }));
+                            setCustomDateDraft('');
+                          }}
+                          disabled={!customDateDraft}
+                          className="flex-shrink-0 rounded-xl border border-gray-200 px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {sessForm.date && (
+                          <span className="inline-flex items-center rounded-full bg-white border border-gray-200 px-2 py-0.5 text-xs text-gray-500">
+                            {fmtYmd(sessForm.date)} (start)
+                          </span>
+                        )}
+                        {sessForm.customDates.map((d) => (
+                          <span key={d} className="inline-flex items-center gap-1 rounded-full bg-white border border-gray-200 px-2 py-0.5 text-xs text-gray-700">
+                            {fmtYmd(d)}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${fmtYmd(d)}`}
+                              onClick={() => setSessForm((f) => ({ ...f, customDates: f.customDates.filter((x) => x !== d) }))}
+                              className="text-gray-400 hover:text-gray-700"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {plannedSessionDates.length > 0 && (
+                    <p className="text-xs font-medium text-gray-600">
+                      Adds {plannedSessionDates.length} session{plannedSessionDates.length > 1 ? 's' : ''}
+                      {plannedSessionDates.length > 1 && `, ${fmtYmd(plannedSessionDates[0])} – ${fmtYmd(plannedSessionDates[plannedSessionDates.length - 1])}`}.
+                    </p>
+                  )}
                 </div>
               </div>
               {sessError && <p className="mt-2 text-xs font-medium text-red-600">{sessError}</p>}
