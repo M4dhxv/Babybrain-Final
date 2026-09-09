@@ -27,7 +27,8 @@ import {
  *  plan — callers hold gated UI neutral (not "free") until it flips. */
 export function usePlan() {
   const { session, loading: authLoading } = useAuth();
-  const cached = getPlanCache();
+  const userId = session?.user.id;
+  const cached = getPlanCache(userId);
   const [plan, setPlan] = useState<Plan>(cached?.plan ?? "free");
   // We "know" the plan as soon as there's any cached/persisted value; without
   // one the first render is a guess, so callers keep gated UI neutral.
@@ -46,7 +47,7 @@ export function usePlan() {
       return;
     }
     // 60s is short enough that returning from Stripe shows the new plan.
-    const fresh = getPlanCache();
+    const fresh = getPlanCache(userId);
     if (fresh && Date.now() - fresh.at < 60_000) {
       setPlan(fresh.plan);
       setKnown(true);
@@ -56,7 +57,7 @@ export function usePlan() {
     let cancelled = false;
     apiGet<{ plan: "free" | "plus" }>("/api/customer/stripe/subscription")
       .then((p) => {
-        setPlanCache(p.plan);
+        setPlanCache(userId, p.plan);
         if (!cancelled) setPlan(p.plan);
       })
       .catch(() => {})
@@ -84,9 +85,10 @@ export function invalidatePlan() {
 
 /** Record an authoritative plan learned elsewhere (e.g. the billing panel's
  *  fuller subscription fetch) so `usePlan` and the next hard refresh pick it
- *  up without waiting on another round-trip. */
-export function primePlan(plan: Plan) {
-  setPlanCache(plan);
+ *  up without waiting on another round-trip. Pass the signed-in user's id so
+ *  the value is bound to their account. */
+export function primePlan(userId: string | undefined, plan: Plan) {
+  setPlanCache(userId, plan);
 }
 
 export interface ProviderContact {

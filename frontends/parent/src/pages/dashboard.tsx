@@ -1529,7 +1529,7 @@ export function ProfilePage() {
         .then((p) => {
           setBillingPlan(p);
           // Keep usePlan's persisted value in step with this fuller fetch.
-          primePlan(p.plan);
+          primePlan(session?.user?.id, p.plan);
         })
         .catch(() => {});
     };

@@ -95,6 +95,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not resolve the invitee account' }, { status: 502 });
   }
 
+  // Never let an invite DOWNGRADE an existing owner. The upsert below replaces
+  // `role` on conflict, so inviting an address that already owns this business
+  // (the owner's own address, or a co-owner) as manager/staff would strip
+  // ownership — and there's no re-promote path, so the business could be left
+  // with no owner. Leave an existing owner's row untouched and say so.
+  const { data: existing } = await admin
+    .from('provider_members')
+    .select('role, status')
+    .eq('provider_id', providerId)
+    .eq('user_id', member.id)
+    .maybeSingle();
+  if (existing?.role === 'owner') {
+    return NextResponse.json(
+      { error: 'That person already owns this business — they can’t be re-added as staff.' },
+      { status: 409 }
+    );
+  }
+
   const { error: upsertError } = await admin.from('provider_members').upsert(
     { provider_id: providerId, user_id: member.id, role, status: 'active', invited_email: normalized },
     { onConflict: 'provider_id,user_id' }
