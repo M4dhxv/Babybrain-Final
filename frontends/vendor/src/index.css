@@ -187,6 +187,20 @@
   background: transparent;
 }
 
+/* Opt-out for a single scroll container. The mobile booking-detail sheet
+   scrolls internally, but a track running down its rounded edge looks wrong;
+   scrolling still works, only the bar is hidden. Beats the `*` rules above on
+   specificity (class + pseudo-element). */
+.no-scrollbar {
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* legacy Edge */
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;              /* Chromium, Safari */
+}
+
 /* Stream Chat's own theme, repainted in the brand's CTA pink.
    `stream-chat-react`'s v2 stylesheet defaults `--str-chat__primary-color` and
    its neighbours to a blue scale, which drove the send button, the selected

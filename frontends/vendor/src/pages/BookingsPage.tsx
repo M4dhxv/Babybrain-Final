@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
-  Pencil, Trash2, XCircle, ChevronLeft,
+  Pencil, Trash2, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -259,9 +259,10 @@ export default function BookingsPage() {
   const [selected, setSelected] = useState(0);
   /* Mobile only: the roster list and the detail card are stacked, so with 5+
      families picking a name meant scrolling the whole list to reach the
-     details. On a narrow screen we now show one or the other — tapping a
-     booking swaps to its details, a "back" link returns to the list. Desktop
-     keeps both side by side (this flag is ignored at lg+). */
+     details. On a narrow screen the details now open as a bottom sheet over
+     the list — tapping a booking raises it, the backdrop / ✕ / Escape close
+     it. Desktop is unaffected: the same markup is the right-hand column and
+     this flag does nothing (ignored at lg+). */
   const [mobileDetail, setMobileDetail] = useState(false);
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
@@ -415,8 +416,8 @@ export default function BookingsPage() {
     }
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
-  // Changing session (or tab) is a fresh context — drop back to the list on
-  // mobile rather than showing the previous booking's details.
+  // Changing session (or tab) is a fresh context — close the mobile detail
+  // sheet rather than leaving the previous booking's details open over it.
   useEffect(() => { setMobileDetail(false); }, [sessionId, activeTab]);
 
   // Keep the refresh-restore stash current. It's read back only after a genuine
@@ -717,6 +718,22 @@ export default function BookingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel?.booking_id]);
 
+  // While the mobile detail sheet is up: Escape closes it, and the page behind
+  // it doesn't scroll. Skipped from lg up, where the same markup is just the
+  // right-hand column and `mobileDetail` has no visual effect.
+  const sheetOpen = mobileDetail && !!sel;
+  useEffect(() => {
+    if (!sheetOpen || !window.matchMedia('(max-width: 1023px)').matches) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileDetail(false); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [sheetOpen]);
+
   return (
     <div className="relative">
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
@@ -828,12 +845,9 @@ export default function BookingsPage() {
         {loading && <RainbowLoader className="py-6" label="Loading bookings" />}
 
         <div className="flex flex-col gap-6 lg:flex-row">
-          {/* Booking list. On mobile it gives way to the detail card once a
-              booking is picked (see mobileDetail); always shown from lg up. */}
-          <div className={cn(
-            'w-full flex-shrink-0 lg:block lg:w-80',
-            activeTab === 'Bookings' && mobileDetail && sel ? 'hidden' : 'block',
-          )}>
+          {/* Booking list — always on screen. On mobile the detail opens as a
+              sheet over it (see mobileDetail); on lg it's the left column. */}
+          <div className="w-full flex-shrink-0 lg:w-80">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
@@ -880,20 +894,35 @@ export default function BookingsPage() {
             </div>
           </div>
 
-          {/* Bookings detail. On mobile this is shown in place of the list once
-              a booking is picked; from lg up it sits alongside the list. */}
+          {/* Bookings detail. Desktop: the right-hand column. Mobile: a bottom
+              sheet that slides up over the list when a booking is tapped
+              (mobileDetail). It's one element re-styled at the lg breakpoint —
+              the detail markup isn't duplicated. */}
           {activeTab === 'Bookings' && (
-            <div className={cn(
-              'flex-1 bg-white rounded-xl border border-gray-200 p-5 lg:block',
-              mobileDetail && sel ? 'block' : 'hidden',
-            )}>
-              <button
-                type="button"
+            <>
+              {/* Dimmer behind the mobile sheet; tap to dismiss. */}
+              <div
                 onClick={() => setMobileDetail(false)}
-                className="lg:hidden -mt-1 mb-4 flex items-center gap-1 text-sm font-medium text-[#FA4D8D]"
-              >
-                <ChevronLeft className="h-4 w-4" /> All bookings
-              </button>
+                aria-hidden="true"
+                className={cn(
+                  'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 lg:hidden',
+                  mobileDetail && sel ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+              />
+              <div className={cn(
+                'no-scrollbar fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-gray-200 bg-white p-5 shadow-2xl transition-transform duration-300',
+                mobileDetail && sel ? 'translate-y-0' : 'translate-y-full',
+                'lg:static lg:z-auto lg:max-h-none lg:flex-1 lg:translate-y-0 lg:overflow-visible lg:rounded-xl lg:border lg:shadow-none lg:transition-none',
+              )}>
+                <div aria-hidden="true" className="mx-auto -mt-1 mb-4 h-1 w-9 rounded-full bg-gray-300 lg:hidden" />
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setMobileDetail(false)}
+                  className="absolute right-3 top-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 lg:hidden"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               {sel ? (
                 <>
                   <div className="flex items-center gap-3 mb-5">
@@ -1183,7 +1212,8 @@ export default function BookingsPage() {
               ) : (
                 <div className="text-sm text-gray-400">Select a booking.</div>
               )}
-            </div>
+              </div>
+            </>
           )}
 
           {/* Waitlist */}
