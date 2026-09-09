@@ -168,7 +168,7 @@ export default function OnboardingPage() {
       if (dobProblem) return `${who}: ${dobProblem.charAt(0).toLowerCase()}${dobProblem.slice(1)}`;
       if (k.interests.length === 0) return `Pick at least one interest for ${k.name.trim() || who.toLowerCase()}.`;
     }
-    if (!acceptedTerms) return "Please accept the Terms & Conditions and Privacy Policy to continue.";
+    if (!acceptedTerms) return "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
     return null;
   }
 
@@ -435,10 +435,11 @@ export default function OnboardingPage() {
             className="mt-0.5 h-4 w-4 accent-baby-pink"
           />
           <span>
-            I agree to BabyBrain's{" "}
-            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms &amp; Conditions</a>{" "}
-            and{" "}
-            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>.
+            I hereby acknowledge that you have read our{" "}
+            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
+            {", Terms of Use and "}
+            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
+            {" and confirm that you are in agreement with and legally bound by such terms, as modified from time to time."}
           </span>
         </label>
 
