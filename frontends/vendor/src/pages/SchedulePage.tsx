@@ -12,7 +12,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
-import DayDetailDialog from '@/components/DayDetailDialog';
+import DayDetailDialog, { type OriginRect } from '@/components/DayDetailDialog';
 
 type ScheduleActivity = { id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null };
 type ScheduleLocation = { id: string; name: string };
@@ -55,6 +55,7 @@ export default function SchedulePage() {
   const [fActivity, setFActivity] = useState('');
   const [fLocation, setFLocation] = useState('');
   const [dayDetail, setDayDetail] = useState<Date | null>(null);
+  const [dayOrigin, setDayOrigin] = useState<OriginRect | null>(null);
 
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -223,7 +224,18 @@ export default function SchedulePage() {
   const goToday = () => setCursor(new Date());
   const goPrev = () => setCursor((c) => (view === 'week' ? addDays(c, -7) : addMonths(c, -1)));
   const goNext = () => setCursor((c) => (view === 'week' ? addDays(c, 7) : addMonths(c, 1)));
-  const openDay = (d: Date) => setDayDetail(d);
+  // Open the day popup with the clicked number's screen rect, so it can morph
+  // out of it. `el` is the date-number element (week view) or the cell's
+  // number span (month view).
+  const openDay = (d: Date, el: Element | null) => {
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setDayOrigin({ left: r.left, top: r.top, width: r.width, height: r.height, radius: Math.min(r.width, r.height) / 2 });
+    } else {
+      setDayOrigin(null);
+    }
+    setDayDetail(d);
+  };
 
   const rangeLabel =
     view === 'week'
@@ -379,7 +391,7 @@ export default function SchedulePage() {
                     <span className="text-xs font-medium text-gray-500">{format(d, 'EEE')}</span>
                     <button
                       type="button"
-                      onClick={() => setDayDetail(d)}
+                      onClick={(e) => openDay(d, e.currentTarget)}
                       aria-label={`View bookings for ${format(d, 'EEEE d MMMM')}`}
                       className={cn(
                         'text-sm font-semibold transition-transform hover:scale-110',
@@ -425,13 +437,14 @@ export default function SchedulePage() {
                 return (
                   <button
                     key={d.toISOString()}
-                    onClick={() => openDay(d)}
+                    onClick={(e) => openDay(d, e.currentTarget.querySelector('[data-daynum]'))}
                     className={cn(
                       'min-h-[110px] bg-white p-2 text-left align-top hover:bg-gray-50 transition-colors',
                       !isSameMonth(d, cursor) && 'bg-gray-50/60'
                     )}
                   >
                     <span
+                      data-daynum
                       className={cn(
                         'inline-grid h-6 w-6 place-items-center rounded-full text-xs font-semibold',
                         isToday(d) ? 'bg-[#FA4D8D] text-white' : !isSameMonth(d, cursor) ? 'text-gray-300' : 'text-gray-900'
@@ -466,6 +479,7 @@ export default function SchedulePage() {
 
       <DayDetailDialog
         date={dayDetail}
+        origin={dayOrigin}
         sessions={dayDetail ? sessionsFor(dayDetail) : []}
         onClose={() => setDayDetail(null)}
         onOpenSession={(id) => { setDayDetail(null); navigate(`/bookings?session=${id}`); }}

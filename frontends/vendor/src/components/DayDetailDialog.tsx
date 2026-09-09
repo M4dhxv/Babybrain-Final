@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { MapPin, User as UserIcon, ExternalLink, ChevronDown } from 'lucide-react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { MapPin, User as UserIcon, ExternalLink, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+
+// Screen rect of the date number that was clicked — the popup morphs out of
+// this. `radius` seeds the starting border-radius so a round "today" badge
+// grows from a circle.
+export type OriginRect = { left: number; top: number; width: number; height: number; radius: number };
 
 // A structural subset of SchedulePage's EnrichedSession — only what the day
 // popup needs to render a session in the list.
@@ -210,14 +215,21 @@ function RosterBody({
   );
 }
 
+const MORPH_MS = 340;
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export default function DayDetailDialog({
   date,
+  origin,
   sessions,
   onClose,
   onOpenSession,
 }: {
   // null keeps the dialog closed; a Date opens it for that day.
   date: Date | null;
+  // Where the click came from — the popup grows out of this rect.
+  origin: OriginRect | null;
   // That day's sessions, already time-sorted (SchedulePage's sessionsFor).
   sessions: DaySession[];
   onClose: () => void;
@@ -230,6 +242,46 @@ export default function DayDetailDialog({
   // dialog — moving between sessions is then instant. Cleared on day change.
   const [rosters, setRosters] = useState<Record<string, RosterRow[]>>({});
   const reqSeq = useRef(0);
+
+  // ---- container-morph open animation (FLIP) ----
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [morph, setMorph] = useState<{ transform: string; borderRadius: string; transition: string }>();
+  const [bodyShown, setBodyShown] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!date) { setMorph(undefined); setBodyShown(false); return; }
+    const el = panelRef.current;
+    if (!el || !origin || prefersReducedMotion()) {
+      setMorph({ transform: 'translate(-50%, -50%)', borderRadius: '12px', transition: 'none' });
+      setBodyShown(true);
+      return;
+    }
+    const F = el.getBoundingClientRect();
+    const sx = Math.max(origin.width / F.width, 0.04);
+    const sy = Math.max(origin.height / F.height, 0.04);
+    const tx = origin.left + origin.width / 2 - (F.left + F.width / 2);
+    const ty = origin.top + origin.height / 2 - (F.top + F.height / 2);
+    // First frame: sit exactly on the clicked badge.
+    setMorph({
+      transform: `translate(-50%, -50%) translate(${tx}px, ${ty}px) scale(${sx}, ${sy})`,
+      borderRadius: `${origin.radius}px`,
+      transition: 'none',
+    });
+    setBodyShown(false);
+    // Next frame: release to the resting position and fade the contents in.
+    const r1 = requestAnimationFrame(() => {
+      const r2 = requestAnimationFrame(() => {
+        setMorph({
+          transform: 'translate(-50%, -50%)',
+          borderRadius: '12px',
+          transition: `transform ${MORPH_MS}ms cubic-bezier(.3,.7,.2,1), border-radius ${MORPH_MS}ms ease`,
+        });
+        setBodyShown(true);
+      });
+      return () => cancelAnimationFrame(r2);
+    });
+    return () => cancelAnimationFrame(r1);
+  }, [date, origin]);
 
   useEffect(() => {
     if (!date) return;
@@ -261,93 +313,117 @@ export default function DayDetailDialog({
     : `${sessions.length} session${sessions.length > 1 ? 's' : ''} · ${totalBooked} booked`;
 
   return (
-    <Dialog open={!!date} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
-        {date && (
-          <>
-            <div className="shrink-0 border-b border-gray-200 px-5 py-4">
-              <h2 className="text-base font-semibold text-gray-900">{format(date, 'EEEE d MMMM')}</h2>
-              <p className="mt-0.5 text-xs text-gray-500">{summary}</p>
-            </div>
+    <DialogPrimitive.Root open={!!date} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0" />
+        <DialogPrimitive.Content
+          ref={panelRef}
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          style={morph}
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden border bg-background shadow-lg outline-none will-change-transform sm:max-w-3xl lg:max-w-4xl',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-150'
+          )}
+        >
+          {date && (
+            <div
+              className={cn('flex min-h-0 flex-1 flex-col transition-opacity', bodyShown ? 'opacity-100' : 'opacity-0')}
+              style={{ transitionDuration: '160ms', transitionDelay: bodyShown ? '120ms' : '0ms' }}
+            >
+              <div className="shrink-0 border-b border-gray-200 px-5 py-4">
+                <DialogPrimitive.Title asChild>
+                  <h2 className="text-base font-semibold text-gray-900">{format(date, 'EEEE d MMMM')}</h2>
+                </DialogPrimitive.Title>
+                <p className="mt-0.5 text-xs text-gray-500">{summary}</p>
+              </div>
 
-            {sessions.length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-gray-400">Nothing scheduled for this day.</div>
-            ) : isMobile ? (
-              // Design A — one column, each session expands its roster inline.
-              <div className="flex-1 divide-y divide-gray-100 overflow-y-auto">
-                {sessions.map((s) => {
-                  const full = s.capacity != null && s.booked >= s.capacity;
-                  const expanded = openId === s.id;
-                  return (
-                    <div key={s.id}>
-                      <button
-                        onClick={() => setOpenId(expanded ? null : s.id)}
-                        aria-expanded={expanded}
-                        className="flex w-full items-start justify-between gap-3 px-5 py-3 text-left"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
-                          <div className="truncate text-sm text-gray-800">{s.title}</div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+              {sessions.length === 0 ? (
+                <div className="px-5 py-10 text-center text-sm text-gray-400">Nothing scheduled for this day.</div>
+              ) : isMobile ? (
+                // Design A — one column, each session expands its roster inline.
+                <div className="min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto">
+                  {sessions.map((s) => {
+                    const full = s.capacity != null && s.booked >= s.capacity;
+                    const expanded = openId === s.id;
+                    return (
+                      <div key={s.id}>
+                        <button
+                          onClick={() => setOpenId(expanded ? null : s.id)}
+                          aria-expanded={expanded}
+                          className="flex w-full items-start justify-between gap-3 px-5 py-3 text-left"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
+                            <div className="truncate text-sm text-gray-800">{s.title}</div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                              <span className={cn('text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
+                                {s.booked}{s.capacity != null ? `/${s.capacity}` : ''}{full ? ' · Full' : ''}
+                              </span>
+                              <SessionBadges s={s} />
+                            </div>
+                          </div>
+                          <ChevronDown className={cn('mt-1 h-4 w-4 shrink-0 text-gray-400 transition-transform', expanded && 'rotate-180')} />
+                        </button>
+                        {expanded && (
+                          <div className="px-5 pb-4">
+                            <RosterBody session={s} roster={rosters[s.id]} compact onOpen={() => onOpenSession(s.id)} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                // Design B — sessions left, selected session's roster right.
+                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,240px)_minmax(0,1fr)] overflow-hidden">
+                  <div className="overflow-y-auto border-r border-gray-200 p-2">
+                    {sessions.map((s) => {
+                      const full = s.capacity != null && s.booked >= s.capacity;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setActiveId(s.id)}
+                          className={cn(
+                            'mb-1 w-full rounded-lg border px-3 py-2 text-left transition-colors',
+                            s.id === activeId ? 'border-[#FA4D8D] bg-pink-50' : 'border-transparent hover:bg-gray-50'
+                          )}
+                        >
+                          <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)}</div>
+                          <div className="truncate text-xs text-gray-700">{s.title}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             <span className={cn('text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
                               {s.booked}{s.capacity != null ? `/${s.capacity}` : ''}{full ? ' · Full' : ''}
                             </span>
                             <SessionBadges s={s} />
                           </div>
-                        </div>
-                        <ChevronDown className={cn('mt-1 h-4 w-4 shrink-0 text-gray-400 transition-transform', expanded && 'rotate-180')} />
-                      </button>
-                      {expanded && (
-                        <div className="px-5 pb-4">
-                          <RosterBody session={s} roster={rosters[s.id]} compact onOpen={() => onOpenSession(s.id)} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              // Design B — sessions left, selected session's roster right.
-              <div className="grid flex-1 grid-cols-[minmax(0,240px)_minmax(0,1fr)] overflow-hidden">
-                <div className="overflow-y-auto border-r border-gray-200 p-2">
-                  {sessions.map((s) => {
-                    const full = s.capacity != null && s.booked >= s.capacity;
-                    return (
-                      <button
-                        key={s.id}
-                        onClick={() => setActiveId(s.id)}
-                        className={cn(
-                          'mb-1 w-full rounded-lg border px-3 py-2 text-left transition-colors',
-                          s.id === activeId ? 'border-[#FA4D8D] bg-pink-50' : 'border-transparent hover:bg-gray-50'
-                        )}
-                      >
-                        <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)}</div>
-                        <div className="truncate text-xs text-gray-700">{s.title}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <span className={cn('text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
-                            {s.booked}{s.capacity != null ? `/${s.capacity}` : ''}{full ? ' · Full' : ''}
-                          </span>
-                          <SessionBadges s={s} />
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="overflow-y-auto p-4">
+                    {active && (
+                      <RosterBody
+                        session={active}
+                        roster={rosters[active.id]}
+                        compact={false}
+                        onOpen={() => onOpenSession(active.id)}
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className="overflow-y-auto p-4">
-                  {active && (
-                    <RosterBody
-                      session={active}
-                      roster={rosters[active.id]}
-                      compact={false}
-                      onOpen={() => onOpenSession(active.id)}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+              )}
+
+              <DialogPrimitive.Close
+                aria-label="Close"
+                className="absolute right-4 top-4 rounded-xs text-gray-500 opacity-70 transition-opacity hover:opacity-100 focus:outline-none"
+              >
+                <X className="h-4 w-4" />
+              </DialogPrimitive.Close>
+            </div>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
