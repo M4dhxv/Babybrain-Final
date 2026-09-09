@@ -58,7 +58,14 @@ const REGION_LABELS: Record<string, string> = {
 
 export default function ClaimBusinessPage() {
   const navigate = useNavigate();
-  const { session, signIn } = useAuth();
+  const { session, signIn, signOut } = useAuth();
+  // When someone is already signed in, the verification code — and therefore
+  // ownership — is bound to THEIR address on the server. Letting them type a
+  // different business email here only sets up a confusing failure (the server
+  // now treats a mismatched session as signed-out). So the field is locked to
+  // the session identity, with an explicit "use a different account" escape
+  // that signs out first. See the claim/verify route's "layer 1" note.
+  const sessionEmail = session?.user.email ?? '';
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ClaimableBusiness[]>([]);
@@ -66,7 +73,11 @@ export default function ClaimBusinessPage() {
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<ClaimableBusiness | null>(null);
 
-  const [email, setEmail] = useState('');
+  // Seeded from the signed-in identity and held read-only while a session
+  // exists (see the note above) — ownership follows the address the code goes
+  // to, and the server binds that to the session. Cleared by "Claim as a
+  // different account", which signs out first.
+  const [email, setEmail] = useState(() => session?.user.email ?? '');
   const [phone, setPhone] = useState('');
   const [uen, setUen] = useState('');
 
@@ -424,7 +435,27 @@ export default function ClaimBusinessPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@yourbusiness.com"
                     className="rounded-xl border-gray-200"
+                    readOnly={Boolean(sessionEmail)}
+                    aria-readonly={Boolean(sessionEmail)}
                   />
+                  {sessionEmail && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      You're signed in as <span className="font-medium text-gray-700">{sessionEmail}</span>, so
+                      this business will be added to that account.{' '}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await signOut();
+                          setEmail('');
+                          setClaimId(null);
+                          setEmailCode('');
+                        }}
+                        className="font-semibold text-[#FA4D8D]"
+                      >
+                        Claim as a different account
+                      </button>
+                    </p>
+                  )}
                 </div>
 
                 <div>

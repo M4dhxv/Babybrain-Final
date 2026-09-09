@@ -164,6 +164,39 @@ try {
     secondMember?.role === 'owner' && secondMember?.status === 'active', JSON.stringify(secondMember));
   await admin.from('providers').delete().eq('id', secondProvider.id);
 
+  // --- 8b. Signed in as account A, a claim whose code went to a DIFFERENT
+  //         address must NOT attach the business to A. (The bug: a vendor
+  //         mid-session hits "Claim your listing", enters another business's
+  //         email, types the code from that inbox — and A silently became the
+  //         owner.) The mismatched session is treated as signed-out. ---
+  const { data: crossProvider } = await admin
+    .from('providers')
+    .insert({ business_name: `Claim Cross Co ${stamp}`, status: 'active', description: 'validation fixture' })
+    .select()
+    .single();
+  const crossEmail = `delivered+cross.${stamp}@resend.dev`;
+  const crossStart = await post('/api/vendor/claim/start', { provider_id: crossProvider.id, email: crossEmail });
+  await setCode(crossStart.body.claim_id, '555555');
+  // `stillWorks` is account A's session (email = claimEmail), NOT crossEmail.
+  const cross = await post(
+    '/api/vendor/claim/verify',
+    { claim_id: crossStart.body.claim_id, email_code: '555555' },
+    stillWorks?.session?.access_token
+  );
+  check('A mismatched session is treated as signed-out (asks for a password)',
+    cross.r.ok && cross.body.next === 'set_password', `HTTP ${cross.r.status} ${JSON.stringify(cross.body)}`);
+  check('…ownership is NOT handed to the signed-in account', cross.body.claimed !== true, String(cross.body.claimed));
+  const { data: crossLeak } = await admin
+    .from('provider_members')
+    .select('id')
+    .eq('provider_id', crossProvider.id)
+    .eq('user_id', created?.id ?? '')
+    .maybeSingle();
+  check('…and no membership row was created for the signed-in account', !crossLeak, JSON.stringify(crossLeak));
+  const { data: crossProv } = await admin.from('providers').select('is_claimed, owner_id').eq('id', crossProvider.id).single();
+  check('…and the business stays unclaimed', crossProv.is_claimed === false && !crossProv.owner_id, JSON.stringify(crossProv));
+  await admin.from('providers').delete().eq('id', crossProvider.id);
+
   // --- 9. An expired code is refused even with a password ---
   const { data: exp } = await admin
     .from('providers')

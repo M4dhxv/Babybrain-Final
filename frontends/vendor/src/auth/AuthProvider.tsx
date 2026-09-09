@@ -96,11 +96,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    *  answer: reporting it as "no business" is what dropped a real vendor onto
    *  the NoBusinessGate after a refresh. */
   async function loadProvider(userId?: string): Promise<boolean> {
-    // Resolve the user's first active membership → its provider (RLS-scoped).
+    // Resolve the user's active membership → its provider (RLS-scoped).
+    //
+    // `order('created_at')` is load-bearing, not cosmetic: the portal shows
+    // exactly one business and has no switcher, so which row wins here IS the
+    // account's identity in the app. Without an explicit order Postgres could
+    // return either membership when an account has more than one, and a
+    // spuriously-added membership (e.g. from a mis-aimed "Claim your listing")
+    // could quietly take over the portal — with a sign-out/in cycle unable to
+    // shake it, because the row is in the database. Oldest membership = the
+    // vendor's original business = home.
     const { data: member, error } = await supabase
       .from('provider_members')
-      .select('role, provider:providers(*)')
+      .select('role, created_at, provider:providers(*)')
       .eq('status', 'active')
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
     if (error) return false;

@@ -88,11 +88,33 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
+  const contactEmail = claim.contact_email.trim().toLowerCase();
   const { user: signedInUser } = await getAuthedContext(request);
-  let user = signedInUser;
 
-  /* Signed out: the code is right, so create the login they need. Without this
-     the flow ended on a sign-in page for an account that did not exist. */
+  /* SECURITY (layer 1 — identity binding).
+     A claim is proven only by control of `claim.contact_email` — the emailed
+     code. Ownership must therefore go to the account that owns THAT address,
+     never to whatever session happens to ride along on the request.
+
+     The bug this closes: a vendor already signed in as account A hits "Claim
+     your listing", picks a different business, and enters a different email B.
+     The code lands in inbox B, they type it — and because this route trusted
+     the ambient session, business B was silently bolted onto account A as
+     `owner`, with `providers.owner_id` overwritten too. Signing out didn't
+     help: the membership row outlives the session, and the portal's
+     single-provider lookup then surfaced the wrong business.
+
+     A session whose email is NOT the claim's contact email is treated exactly
+     like signed-out here: the claimer must set (new account) or enter
+     (existing account) the password for `contact_email`, so the granted
+     account is always the one that received the code. */
+  const sessionMatchesClaim =
+    !!signedInUser?.email && signedInUser.email.trim().toLowerCase() === contactEmail;
+  let user = sessionMatchesClaim ? signedInUser : null;
+
+  /* Signed out (or signed in as someone other than the claim's contact email):
+     the code is right, so create / adopt the login for `contact_email`. Without
+     this the flow ended on a sign-in page for an account that did not exist. */
   let createdAccount = false;
   if (!user && password) {
     if (password.length < 8) {
@@ -146,7 +168,11 @@ export async function POST(request: Request) {
     .eq('id', claim.id);
 
   if (!user) {
-    // Verified but no password supplied — the page asks for one and re-posts.
+    // Verified but no usable account yet — the page collects a password (new
+    // account) or the contact email's existing password, then re-posts. Note
+    // this branch is also where a caller signed in as a *different* account
+    // lands: `user` was deliberately cleared above so ownership can't attach
+    // to the wrong identity.
     return NextResponse.json({
       verified: true,
       claimed: false,
@@ -154,6 +180,28 @@ export async function POST(request: Request) {
       email: claim.contact_email,
       provider_id: claim.provider_id,
     });
+  }
+
+  /* SECURITY (layer 2 — no silent takeover / race).
+     `start` already refuses an is_claimed provider, but a second claim can be
+     finished in the window between two starts, or this route retried. Re-read
+     the provider immediately before the write and refuse to move ownership
+     away from an account that already holds it. The DB also enforces a single
+     active owner per provider (migration 00113); this returns a readable 409
+     instead of a raw constraint error. */
+  const { data: current } = await admin
+    .from('providers')
+    .select('is_claimed, owner_id')
+    .eq('id', claim.provider_id)
+    .maybeSingle();
+  if (current?.is_claimed && current.owner_id && current.owner_id !== user.id) {
+    return NextResponse.json(
+      {
+        error:
+          'This business has just been claimed by someone else. Email hello@babybrain.sg if that wasn’t expected.',
+      },
+      { status: 409 }
+    );
   }
 
   // Hand over ownership. `on conflict do nothing` keeps a retry harmless.
@@ -172,7 +220,10 @@ export async function POST(request: Request) {
       verification_status: 'verified',
       status: 'active',
     })
-    .eq('id', claim.provider_id);
+    .eq('id', claim.provider_id)
+    // Belt-and-braces with the layer-2 check above: only claim a row that is
+    // still unclaimed or already ours, so a lost race can't overwrite an owner.
+    .or(`is_claimed.is.false,owner_id.eq.${user.id}`);
 
   return NextResponse.json({
     verified: true,
