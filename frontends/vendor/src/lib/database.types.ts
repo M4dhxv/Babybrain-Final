@@ -663,6 +663,29 @@ export type Database = {
         Update: { role?: ProviderRole; status?: 'invited' | 'active' | 'disabled' };
         Relationships: [];
       };
+      // Basic per-member details shown in Settings -> Team (00116). One row per
+      // membership. Email and role live on provider_members / auth and are not
+      // editable here.
+      provider_member_profiles: {
+        Row: {
+          provider_id: string;
+          user_id: string;
+          full_name: string | null;
+          job_title: string | null;
+          phone: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          user_id: string;
+          full_name?: string | null;
+          job_title?: string | null;
+          phone?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['provider_member_profiles']['Insert']>;
+        Relationships: [];
+      };
       provider_locations: {
         Row: {
           id: string;
@@ -1039,6 +1062,7 @@ export type StreamUser = Database['public']['Tables']['stream_users']['Row'];
 export type Booking = Database['public']['Tables']['bookings']['Row'];
 export type Provider = Database['public']['Tables']['providers']['Row'];
 export type ProviderMember = Database['public']['Tables']['provider_members']['Row'];
+export type ProviderMemberProfile = Database['public']['Tables']['provider_member_profiles']['Row'];
 export type ProviderLocation = Database['public']['Tables']['provider_locations']['Row'];
 /** A vendor's own consent / waiver / disclosure, accepted by parents at booking. */
 export type ProviderPolicy = Database['public']['Tables']['provider_policies']['Row'];

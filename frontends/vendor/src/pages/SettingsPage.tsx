@@ -64,6 +64,10 @@ const DOC_URL: Record<ComplianceDocument['key'], string> = {
 };
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
+/* Basic per-member details (Settings -> Team), keyed by user_id. Email and
+   role are deliberately not here — they're shown read-only from the row
+   above / auth (see the "Member details" panel). */
+type MemberProfileLite = { full_name: string | null; job_title: string | null; phone: string | null };
 
 /* QA 21/08: "under settings, edit profile, there is nowhere to edit
    photos/videos. Display photo will be the logo. More photos/videos will be on
@@ -112,6 +116,8 @@ export default function SettingsPage() {
 
   const [viewingDoc, setViewingDoc] = useState<ComplianceDocument | null>(null);
   const [team, setTeam] = useState<Member[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, MemberProfileLite>>({});
+  const [expandedMember, setExpandedMember] = useState<string | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [form, setForm] = useState(emptyProfileForm);
   const [saving, setSaving] = useState(false);
@@ -127,6 +133,26 @@ export default function SettingsPage() {
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const isOwner = role === 'owner';
+
+  /* Re-pull the team's basic details. Called on load and after any member
+     panel saves its row. */
+  const refreshProfiles = () => {
+    if (!provider) return;
+    supabase
+      .from('provider_member_profiles')
+      .select('user_id, full_name, job_title, phone')
+      .eq('provider_id', provider.id)
+      .then(({ data }) =>
+        setProfiles(
+          Object.fromEntries(
+            (data ?? []).map((p) => [
+              p.user_id,
+              { full_name: p.full_name, job_title: p.job_title, phone: p.phone },
+            ])
+          )
+        )
+      );
+  };
 
   useEffect(() => {
     if (!provider) return;
@@ -148,6 +174,7 @@ export default function SettingsPage() {
     });
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
       .then(({ data }) => setTeam((data as Member[]) ?? []));
+    refreshProfiles();
 
     /* Deep link from "Save your listing" and its pencils (`/settings?edit=1`):
        open the profile editor straight away rather than dropping the vendor on
@@ -571,20 +598,49 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500">{team.length} Team Member{team.length === 1 ? '' : 's'}</p>
               </div>
             </div>
-            <div className="space-y-3 mb-5">
+            <div className="space-y-2 mb-5">
               {team.map((m) => {
                 const isYou = m.user_id === session?.user.id;
-                const label = isYou ? 'You' : m.invited_email ?? 'Member';
+                const prof = profiles[m.user_id];
+                const email = isYou ? (session?.user.email ?? '') : (m.invited_email ?? '');
+                const label = prof?.full_name || (isYou ? 'You' : m.invited_email ?? 'Member');
+                const open = expandedMember === m.id;
+                /* Staff edit only their own row; owners and managers edit anyone's.
+                   Enforced again by RLS on provider_member_profiles (00116). */
+                const canEditMember = isYou || canManage;
                 return (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-green-300 text-green-800">
-                      {(label[0] ?? '?').toUpperCase()}
-                    </div>
-                    <div className="flex-1"><div className="text-sm font-medium text-gray-900 truncate">{label}</div></div>
-                    <span className={cn('px-2 py-0.5 text-xs rounded-full capitalize',
-                      m.role === 'owner' ? 'bg-green-300 text-green-800' : m.role === 'manager' ? 'bg-purple-300 text-purple-800' : 'bg-blue-300 text-blue-800')}>
-                      {m.role}
-                    </span>
+                  <div key={m.id} className="rounded-xl border border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedMember(open ? null : m.id)}
+                      aria-expanded={open}
+                      className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-gray-50"
+                    >
+                      <div className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-sm font-bold bg-green-300 text-green-800">
+                        {(label[0] ?? '?').toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 truncate">{label}</div>
+                        {prof?.job_title && <div className="text-xs text-gray-500 truncate">{prof.job_title}</div>}
+                      </div>
+                      <span className={cn('shrink-0 px-2 py-0.5 text-xs rounded-full capitalize',
+                        m.role === 'owner' ? 'bg-green-300 text-green-800' : m.role === 'manager' ? 'bg-purple-300 text-purple-800' : 'bg-blue-300 text-blue-800')}>
+                        {m.role}
+                      </span>
+                      <ChevronDown className={cn('w-4 h-4 shrink-0 text-gray-400 transition-transform', open && 'rotate-180')} />
+                    </button>
+                    {open && provider && (
+                      <div className="px-3 pb-3">
+                        <MemberDetailsPanel
+                          providerId={provider.id}
+                          member={m}
+                          email={email}
+                          profile={prof}
+                          canEdit={canEditMember}
+                          onSaved={refreshProfiles}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -708,6 +764,127 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* Settings -> Team -> a member row, expanded. Shows the five basic details:
+   name / job title / phone are editable (by the member themselves, or by an
+   owner/manager); email and role are read-only here — email is the login
+   identity and role is changed through the owner's invite control above.
+   Writes go straight to provider_member_profiles, which RLS scopes to the
+   same rule as `canEdit` (00116). */
+function MemberDetailsPanel({
+  providerId, member, email, profile, canEdit, onSaved,
+}: {
+  providerId: string;
+  member: Member;
+  email: string;
+  profile: MemberProfileLite | undefined;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [phone, setPhone] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // The read view renders straight off `profile`; the local fields exist only
+  // while editing, so seed them at the moment editing starts rather than
+  // mirroring the prop with an effect.
+  function startEditing() {
+    setFullName(profile?.full_name ?? '');
+    setJobTitle(profile?.job_title ?? '');
+    setPhone(profile?.phone ?? '');
+    setErr(null);
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    const { error } = await supabase.from('provider_member_profiles').upsert(
+      {
+        provider_id: providerId,
+        user_id: member.user_id,
+        full_name: fullName.trim() || null,
+        job_title: jobTitle.trim() || null,
+        phone: phone.trim() || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'provider_id,user_id' }
+    );
+    setSaving(false);
+    if (error) { setErr(error.message); return; }
+    setEditing(false);
+    onSaved();
+  }
+
+  const fieldCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-300';
+  const rowCls = 'flex items-baseline justify-between gap-4 py-1.5 text-sm';
+  const dash = <span className="text-gray-400">—</span>;
+
+  return (
+    <div className="mt-2 rounded-xl bg-gray-50 p-4">
+      {!editing ? (
+        <>
+          <dl className="divide-y divide-gray-100">
+            <div className={rowCls}><dt className="text-gray-500">Name</dt><dd className="text-right text-gray-900">{profile?.full_name || dash}</dd></div>
+            <div className={rowCls}><dt className="text-gray-500">Job title</dt><dd className="text-right text-gray-900">{profile?.job_title || dash}</dd></div>
+            <div className={rowCls}><dt className="text-gray-500">Phone</dt><dd className="text-right text-gray-900">{profile?.phone || dash}</dd></div>
+            <div className={rowCls}><dt className="text-gray-500">Email</dt><dd className="text-right text-gray-500 break-all">{email || dash}</dd></div>
+            <div className={rowCls}><dt className="text-gray-500">Role</dt><dd className="text-right capitalize text-gray-500">{member.role}</dd></div>
+          </dl>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={startEditing}
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:underline"
+            >
+              <Pencil className="w-3 h-3" /> Edit details
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Full name</label>
+            <input className={fieldCls} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Job title</label>
+            <input className={fieldCls} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Lead coach" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Contact phone</label>
+            <input className={fieldCls} value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </div>
+          <p className="text-xs text-gray-400">
+            Email <span className="text-gray-500">{email || '—'}</span> and role{' '}
+            <span className="capitalize text-gray-500">{member.role}</span> can’t be changed here.
+          </p>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-xl bg-green-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setErr(null); }}
+              className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
