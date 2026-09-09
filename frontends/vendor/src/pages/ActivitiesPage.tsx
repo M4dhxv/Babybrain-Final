@@ -290,6 +290,37 @@ export default function ActivitiesPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [previewFor]);
 
+  /* The edit / schedule drawers pin to the right edge with no backdrop, so
+     they sit directly over the table's right-most column — the row-actions
+     three-dots. A drawer left open (or one whose small ✕ was missed) therefore
+     makes every three-dots button unclickable. Escape now closes them too, the
+     same as the preview, so the table can't get silently "covered". */
+  useEffect(() => {
+    if (!showDrawer && !scheduleFor) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setShowDrawer(false);
+      setScheduleFor(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showDrawer, scheduleFor]);
+
+  /* Defence in depth. Nothing on this page should ever leave the document
+     locked, but if a portaled overlay somewhere does hand back a body with
+     `pointer-events: none` (the page would feel frozen), release it the moment
+     every menu / drawer / preview here is closed — unless another Radix popper
+     (a filter dropdown) is legitimately open. Pure DOM, no network, no cost. */
+  useEffect(() => {
+    if (showMenu || showDrawer || scheduleFor || previewFor) return;
+    if (
+      document.body.style.pointerEvents === 'none' &&
+      !document.querySelector('[data-radix-popper-content-wrapper]')
+    ) {
+      document.body.style.pointerEvents = '';
+    }
+  }, [showMenu, showDrawer, scheduleFor, previewFor]);
+
   async function openSchedule(a: Activity) {
     setShowMenu(null);
     setScheduleFor(a);
@@ -659,10 +690,18 @@ export default function ActivitiesPage() {
     { icon: MapPin, label: 'Locations', value: String(locations.length), sub: 'Venues added', color: 'text-blue-600', bg: 'bg-blue-100' },
   ];
 
+  /* These three row actions used to re-run the whole page load() — refetching
+     every activity, session and booking, and flipping `loading` — to reflect a
+     single boolean flip on one row. That was the "lag": a menu pick froze the
+     table for a second and hammered the database. They now patch the one row in
+     place (nothing they change affects the session/booking counts) and only
+     fall back to a full reload if the write actually fails. */
   async function archive(id: string) {
-    await supabase.from('activities').update({ archived_at: new Date().toISOString(), is_published: false }).eq('id', id);
     setShowMenu(null);
-    load();
+    const archived_at = new Date().toISOString();
+    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, archived_at, is_published: false } : a)));
+    const { error } = await supabase.from('activities').update({ archived_at, is_published: false }).eq('id', id);
+    if (error) load();
   }
 
   function openCreate() {
@@ -703,11 +742,14 @@ export default function ActivitiesPage() {
     setShowDrawer(true);
   }
 
-  // 1.1: pause/resume parent bookings for one activity.
+  // 1.1: pause/resume parent bookings for one activity. Optimistic — see the
+  // note on archive().
   async function togglePause(a: Activity) {
-    await supabase.from('activities').update({ bookings_paused: !a.bookings_paused }).eq('id', a.id);
     setShowMenu(null);
-    load();
+    const bookings_paused = !a.bookings_paused;
+    setActivities((prev) => prev.map((x) => (x.id === a.id ? { ...x, bookings_paused } : x)));
+    const { error } = await supabase.from('activities').update({ bookings_paused }).eq('id', a.id);
+    if (error) load();
   }
 
   async function uploadImage(file: File) {
@@ -864,9 +906,11 @@ export default function ActivitiesPage() {
     // account, or deleted on Wix) — reconnecting the right account, or the
     // service reappearing, is what clears this on the next sync.
     if (a.wix_missing_since) return;
-    await supabase.from('activities').update({ is_published: !a.is_published, archived_at: null }).eq('id', a.id);
     setShowMenu(null);
-    load();
+    const is_published = !a.is_published;
+    setActivities((prev) => prev.map((x) => (x.id === a.id ? { ...x, is_published, archived_at: null } : x)));
+    const { error } = await supabase.from('activities').update({ is_published, archived_at: null }).eq('id', a.id);
+    if (error) load();
   }
 
   const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
@@ -1133,58 +1177,73 @@ export default function ActivitiesPage() {
                     vertically, so an in-flow menu on the last rows was cut off
                     by the table's own edge. This portals the panel to the body
                     (escaping that clip), flips it above the trigger when there
-                    isn't room below, and closes on outside click / Escape —
-                    the old one only closed by hitting the same three dots. */}
+                    isn't room below, and closes on outside click / Escape.
+
+                    `modal={false}` is deliberate: the default modal mode locks
+                    `document.body` with `pointer-events: none` and an app-wide
+                    `aria-hidden` sweep for as long as the menu is open, then
+                    relies on one shared teardown to undo it. With a menu per
+                    row and several items that open a drawer in the same click,
+                    that teardown could lose the race and leave the whole page
+                    unclickable — the "three dots does nothing / page is stuck"
+                    report. A lightweight row menu needs none of that. */}
                 <div className="flex justify-end">
                   <DropdownMenu
+                    modal={false}
                     open={showMenu === a.id}
                     onOpenChange={(open) => setShowMenu(open ? a.id : null)}
                   >
                     <DropdownMenuTrigger asChild>
-                      <button className="p-1.5 hover:bg-gray-100 rounded-lg">
+                      <button aria-label="Activity actions" className="p-1.5 hover:bg-gray-100 rounded-lg">
                         <MoreVertical className="w-4 h-4 text-gray-400" />
                       </button>
                     </DropdownMenuTrigger>
-                    {canManage && (
-                      <DropdownMenuContent
-                        align="end"
-                        // Radix flips to the opposite side on its own when the
-                        // preferred one doesn't fit; the collision padding just
-                        // stops the panel sitting flush against the viewport.
-                        collisionPadding={12}
-                        className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg"
-                      >
-                        <DropdownMenuItem onSelect={() => openPreview(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                          <Eye className="w-3.5 h-3.5" />
-                          Preview
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => openEdit(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => openSchedule(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                          <Clock className="w-3.5 h-3.5" />
-                          Manage schedule
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => togglePublish(a)}
-                          disabled={!!a.wix_missing_since}
-                          title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
-                          className="gap-2 px-3 py-2 text-sm text-gray-700"
-                        >
-                          <CalendarCheck className="w-3.5 h-3.5" />
-                          {a.is_published ? 'Unpublish' : 'Publish'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => togglePause(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                          {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                          {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Archive
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    )}
+                    {/* Rendered for every role. Preview is read-only and always
+                        available; the managing actions are gated. Gating the
+                        whole panel (the old behaviour) left a staff member
+                        clicking the trigger and getting nothing back. */}
+                    <DropdownMenuContent
+                      align="end"
+                      // Radix flips to the opposite side on its own when the
+                      // preferred one doesn't fit; the collision padding just
+                      // stops the panel sitting flush against the viewport.
+                      collisionPadding={12}
+                      className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg"
+                    >
+                      <DropdownMenuItem onSelect={() => openPreview(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                      </DropdownMenuItem>
+                      {canManage && (
+                        <>
+                          <DropdownMenuItem onSelect={() => openEdit(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => openSchedule(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                            <Clock className="w-3.5 h-3.5" />
+                            Manage schedule
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => togglePublish(a)}
+                            disabled={!!a.wix_missing_since}
+                            title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
+                            className="gap-2 px-3 py-2 text-sm text-gray-700"
+                          >
+                            <CalendarCheck className="w-3.5 h-3.5" />
+                            {a.is_published ? 'Unpublish' : 'Publish'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => togglePause(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                            {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                            {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Archive
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
