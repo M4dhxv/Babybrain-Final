@@ -12,6 +12,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import DayDetailDialog from '@/components/DayDetailDialog';
 
 type ScheduleActivity = { id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null };
 type ScheduleLocation = { id: string; name: string };
@@ -53,6 +54,7 @@ export default function SchedulePage() {
   const [cursor, setCursor] = useState(new Date());
   const [fActivity, setFActivity] = useState('');
   const [fLocation, setFLocation] = useState('');
+  const [dayDetail, setDayDetail] = useState<Date | null>(null);
 
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -221,7 +223,7 @@ export default function SchedulePage() {
   const goToday = () => setCursor(new Date());
   const goPrev = () => setCursor((c) => (view === 'week' ? addDays(c, -7) : addMonths(c, -1)));
   const goNext = () => setCursor((c) => (view === 'week' ? addDays(c, 7) : addMonths(c, 1)));
-  const openDay = (d: Date) => { setCursor(d); setView('week'); };
+  const openDay = (d: Date) => setDayDetail(d);
 
   const rangeLabel =
     view === 'week'
@@ -375,14 +377,19 @@ export default function SchedulePage() {
                 <div key={d.toISOString()} className="min-h-[240px] w-[calc(50%-0.375rem)] shrink-0 snap-start rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="text-xs font-medium text-gray-500">{format(d, 'EEE')}</span>
-                    <span
+                    <button
+                      type="button"
+                      onClick={() => setDayDetail(d)}
+                      aria-label={`View bookings for ${format(d, 'EEEE d MMMM')}`}
                       className={cn(
-                        'text-sm font-semibold',
-                        isToday(d) ? 'grid h-6 w-6 place-items-center rounded-full bg-[#FA4D8D] text-white' : 'text-gray-900'
+                        'text-sm font-semibold transition-transform hover:scale-110',
+                        isToday(d)
+                          ? 'grid h-6 w-6 place-items-center rounded-full bg-[#FA4D8D] text-white'
+                          : 'text-gray-900 hover:text-[#FA4D8D]'
                       )}
                     >
                       {format(d, 'd')}
-                    </span>
+                    </button>
                   </div>
                   <div className="space-y-2">
                     {daySessions.map((s) => (
@@ -456,6 +463,13 @@ export default function SchedulePage() {
           </div>
         )}
       </div>
+
+      <DayDetailDialog
+        date={dayDetail}
+        sessions={dayDetail ? sessionsFor(dayDetail) : []}
+        onClose={() => setDayDetail(null)}
+        onOpenSession={(id) => { setDayDetail(null); navigate(`/bookings?session=${id}`); }}
+      />
     </div>
   );
 }
