@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -1494,10 +1494,11 @@ function PoliciesManager({
   const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const emptyForm = { title: '', body: '', document_url: '', required: true, activity_id: '' };
+  const emptyForm = { title: '', body: '', document_url: '', required: true, activity_ids: [] as string[] };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -1538,7 +1539,8 @@ function PoliciesManager({
       body: form.body.trim(),
       document_url: form.document_url.trim() || null,
       required: form.required,
-      activity_id: form.activity_id || null,
+      // Empty selection = provider-wide (applies to every class).
+      activity_ids: form.activity_ids.length ? form.activity_ids : null,
     };
     const { error: err } = editingId
       ? await supabase.from('provider_policies').update(fields).eq('id', editingId)
@@ -1548,6 +1550,7 @@ function PoliciesManager({
     setForm(emptyForm);
     setShowForm(false);
     setEditingId(null);
+    setActivityPickerOpen(false);
     load();
   }
 
@@ -1555,12 +1558,13 @@ function PoliciesManager({
     setEditingId(p.id);
     setShowForm(true);
     setError(null);
+    setActivityPickerOpen(false);
     setForm({
       title: p.title,
       body: p.body ?? '',
       document_url: p.document_url ?? '',
       required: p.required,
-      activity_id: p.activity_id ?? '',
+      activity_ids: p.activity_ids ?? [],
     });
   }
 
@@ -1584,7 +1588,7 @@ function PoliciesManager({
           </div>
         </div>
         {canManage && !showForm && (
-          <Button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); }} className="gradient-primary text-white rounded-xl hover:opacity-90">
+          <Button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); setActivityPickerOpen(false); }} className="gradient-primary text-white rounded-xl hover:opacity-90">
             <Plus className="w-4 h-4 mr-1" /> Add
           </Button>
         )}
@@ -1620,9 +1624,13 @@ function PoliciesManager({
                   </div>
                 )}
                 <p className="mt-3 text-xs text-gray-500 sm:mt-1">
-                  {p.activity_id
-                    ? `Only for ${activities.find((a) => a.id === p.activity_id)?.title ?? 'one activity'}`
-                    : 'All of your activities'}
+                  {!p.activity_ids || p.activity_ids.length === 0
+                    ? 'All of your activities'
+                    : p.activity_ids.length <= 2
+                      ? `Only for ${p.activity_ids
+                          .map((id) => activities.find((a) => a.id === id)?.title ?? 'one activity')
+                          .join(' & ')}`
+                      : `Only for ${p.activity_ids.length} activities`}
                 </p>
                 {p.body && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{p.body}</p>}
                 {p.document_url && (
@@ -1660,10 +1668,59 @@ function PoliciesManager({
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
-              <SelectField className={inputCls} value={form.activity_id} onChange={(v) => setForm({ ...form, activity_id: v })} aria-label="Applies to">
-                <Opt value="">All of my activities</Opt>
-                {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
-              </SelectField>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setActivityPickerOpen((v) => !v)}
+                  className={cn(inputCls, 'flex items-center justify-between gap-2 text-left')}
+                  aria-label="Applies to"
+                >
+                  <span className="truncate">
+                    {form.activity_ids.length === 0
+                      ? 'All of my activities'
+                      : form.activity_ids.length <= 2
+                        ? form.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? '').join(' & ')
+                        : `${form.activity_ids.length} activities selected`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                </button>
+                {activityPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
+                    <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-[#FA4D8D]"
+                          checked={form.activity_ids.length === 0}
+                          onChange={() => setForm({ ...form, activity_ids: [] })}
+                        />
+                        All of my activities
+                      </label>
+                      {activities.length > 0 && <div className="my-1 border-t border-gray-100" />}
+                      {activities.map((a) => (
+                        <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-[#FA4D8D]"
+                            checked={form.activity_ids.includes(a.id)}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                activity_ids: e.target.checked
+                                  ? [...form.activity_ids, a.id]
+                                  : form.activity_ids.filter((id) => id !== a.id),
+                              })
+                            }
+                          />
+                          <span className="truncate">{a.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">Leave as “All of my activities”, or tick the specific classes this applies to.</p>
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Document (optional)</label>
@@ -1692,7 +1749,7 @@ function PoliciesManager({
             <Button onClick={save} disabled={saving || !form.title.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add'}
             </Button>
-            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setError(null); setActivityPickerOpen(false); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
           </div>
         </div>
       )}

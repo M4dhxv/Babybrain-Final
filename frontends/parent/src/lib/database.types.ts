@@ -806,16 +806,16 @@ export type Database = {
       };
       provider_policies: {
         Row: {
-          id: string; provider_id: string; activity_id: string | null; title: string;
+          id: string; provider_id: string; activity_ids: string[] | null; title: string;
           body: string; document_url: string | null; required: boolean; active: boolean;
           sort_order: number; created_at: string; updated_at: string;
         };
         Insert: {
-          provider_id: string; activity_id?: string | null; title: string; body?: string;
+          provider_id: string; activity_ids?: string[] | null; title: string; body?: string;
           document_url?: string | null; required?: boolean; active?: boolean; sort_order?: number;
         };
         Update: {
-          activity_id?: string | null; title?: string; body?: string; document_url?: string | null;
+          activity_ids?: string[] | null; title?: string; body?: string; document_url?: string | null;
           required?: boolean; active?: boolean; sort_order?: number;
         };
         Relationships: [];

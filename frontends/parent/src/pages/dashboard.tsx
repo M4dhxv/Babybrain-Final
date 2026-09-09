@@ -3147,14 +3147,17 @@ export function BookingPage() {
     if (!activity?.provider_id) return;
     supabase
       .from("provider_policies")
-      .select("id, title, body, document_url, required, activity_id")
+      .select("id, title, body, document_url, required, activity_ids")
       .eq("provider_id", activity.provider_id)
       .eq("active", true)
       .order("sort_order")
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as ProviderPolicy[];
-        // A policy is either provider-wide (no activity) or pinned to this class.
-        setPolicies(rows.filter((p) => !p.activity_id || p.activity_id === activity.id));
+        // A policy is provider-wide (no activities listed) or scoped to a set
+        // of classes — keep it if this class is in that set.
+        setPolicies(
+          rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)),
+        );
       });
   }, [activity?.provider_id, activity?.id]);
 
