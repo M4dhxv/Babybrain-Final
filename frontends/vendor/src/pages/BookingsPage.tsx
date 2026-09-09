@@ -53,6 +53,35 @@ const sgKeyShift = (key: string, days: number) => {
 };
 // How far back the date filter can reach.
 const PAST_FILTER_DAYS = 30;
+
+/* The date filter and the chosen session are the vendor's working context on
+   this page. A full-page refresh used to drop both, bouncing them back to
+   today's first session mid-roster. They're now stashed in sessionStorage and
+   read back — but ONLY when the page was genuinely reloaded (performance
+   navigation type 'reload'). Arriving here from another route instead clears
+   the stash and starts fresh, so "keep the filter on refresh" and "reset the
+   filter when the page changes" stay independent of each other. */
+const BOOKINGS_FILTER_KEY = 'bb.vendor.bookings.filter';
+type BookingsFilterStash = { dateFilter?: string; sessionId?: string };
+function wasReloaded(): boolean {
+  try {
+    const [nav] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    return nav?.type === 'reload';
+  } catch {
+    return false;
+  }
+}
+function readBookingsFilterStash(): BookingsFilterStash {
+  if (!wasReloaded()) {
+    try { sessionStorage.removeItem(BOOKINGS_FILTER_KEY); } catch { /* ignore */ }
+    return {};
+  }
+  try {
+    return JSON.parse(sessionStorage.getItem(BOOKINGS_FILTER_KEY) || '{}') as BookingsFilterStash;
+  } catch {
+    return {};
+  }
+}
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const ageLabel = (m: number | null) => (m == null ? '' : m < 24 ? `${m} months` : `${Math.round(m / 12)} years`);
 
@@ -118,6 +147,8 @@ export default function BookingsPage() {
   const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
+  // Read once, on mount, before the deep-link params below are consumed.
+  const filterStash = useMemo(readBookingsFilterStash, []);
   const [issuing, setIssuing] = useState(false);
   const [issuedFor, setIssuedFor] = useState<string | null>(null);
   /* QA 24/08: "Can't currently adjust expiry on a make up token — need to be
@@ -199,8 +230,8 @@ export default function BookingsPage() {
   // Narrows the session picker to one calendar day — useful once a Wix-linked
   // activity's half-hourly slots push everything else off the (soonest-50)
   // list. Empty string = no filter, matching <input type="date">'s own "no
-  // value" state.
-  const [dateFilter, setDateFilter] = useState('');
+  // value" state. Seeded from the refresh stash (see BOOKINGS_FILTER_KEY).
+  const [dateFilter, setDateFilter] = useState(filterStash.dateFilter ?? '');
   // Recomputed on mount (and if `sessions` changes) — fine for a page a
   // vendor doesn't leave open across midnight.
   const startTodayIso = useMemo(() => sgStartOfDayIso(sgTodayKey()), []);
@@ -339,11 +370,17 @@ export default function BookingsPage() {
       // session happened to load first.
       const requested = searchParams.get('session');
       const preselect = requested && opts.some((o) => o.id === requested) ? requested : '';
+      // A session held over from a refresh (see BOOKINGS_FILTER_KEY) — only if
+      // it's still a real option; a ?session= deep-link still wins over it.
+      const stashed =
+        filterStash.sessionId && opts.some((o) => o.id === filterStash.sessionId)
+          ? filterStash.sessionId
+          : '';
       // Default to the first session from today onward (past ones are only
       // there for the date filter); fall back to the most recent past one if
       // there's nothing upcoming.
       const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso);
-      setSessionId((cur) => cur || preselect || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
+      setSessionId((cur) => cur || preselect || stashed || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
       if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
       setLoading(false);
     })();
@@ -371,6 +408,14 @@ export default function BookingsPage() {
     }
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
+
+  // Keep the refresh-restore stash current. It's read back only after a genuine
+  // page reload (see BOOKINGS_FILTER_KEY); a route change clears it instead.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(BOOKINGS_FILTER_KEY, JSON.stringify({ dateFilter, sessionId }));
+    } catch { /* private mode / quota — remembering the filter is best-effort */ }
+  }, [dateFilter, sessionId]);
 
   const currentSession = sessions.find((s) => s.id === sessionId);
   /* Whether the roster on screen belongs to a session that has already run —
