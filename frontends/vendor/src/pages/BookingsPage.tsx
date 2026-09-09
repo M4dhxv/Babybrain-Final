@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
-  Pencil, Trash2, XCircle,
+  Pencil, Trash2, XCircle, ChevronLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -205,6 +205,7 @@ export default function BookingsPage() {
     // The left-hand list is a different set of people per tab, so a held
     // selection index would point at the wrong family after switching.
     setSelected(0);
+    setMobileDetail(false);
     setSearchParams(t === 'Bookings' ? {} : { tab: t }, { replace: true });
   };
   const [sessions, setSessions] = useState<SessionOpt[]>([]);
@@ -256,6 +257,12 @@ export default function BookingsPage() {
   }, [filteredSessions]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [selected, setSelected] = useState(0);
+  /* Mobile only: the roster list and the detail card are stacked, so with 5+
+     families picking a name meant scrolling the whole list to reach the
+     details. On a narrow screen we now show one or the other — tapping a
+     booking swaps to its details, a "back" link returns to the list. Desktop
+     keeps both side by side (this flag is ignored at lg+). */
+  const [mobileDetail, setMobileDetail] = useState(false);
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
@@ -408,6 +415,9 @@ export default function BookingsPage() {
     }
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);
+  // Changing session (or tab) is a fresh context — drop back to the list on
+  // mobile rather than showing the previous booking's details.
+  useEffect(() => { setMobileDetail(false); }, [sessionId, activeTab]);
 
   // Keep the refresh-restore stash current. It's read back only after a genuine
   // page reload (see BOOKINGS_FILTER_KEY); a route change clears it instead.
@@ -546,6 +556,7 @@ export default function BookingsPage() {
     if (!count) { setRowError('That entry could not be deleted — only manually-added bookings can be.'); return; }
     setRowError(null);
     setSelected(0);
+    setMobileDetail(false);
     loadRoster(sessionId);
   }
 
@@ -576,6 +587,7 @@ export default function BookingsPage() {
     setRowError(null);
     setCancelFor(null);
     setSelected(0);
+    setMobileDetail(false);
     loadRoster(sessionId);
   }
 
@@ -816,8 +828,12 @@ export default function BookingsPage() {
         {loading && <RainbowLoader className="py-6" label="Loading bookings" />}
 
         <div className="flex flex-col gap-6 lg:flex-row">
-          {/* Booking list */}
-          <div className="w-full flex-shrink-0 lg:w-80">
+          {/* Booking list. On mobile it gives way to the detail card once a
+              booking is picked (see mobileDetail); always shown from lg up. */}
+          <div className={cn(
+            'w-full flex-shrink-0 lg:block lg:w-80',
+            activeTab === 'Bookings' && mobileDetail && sel ? 'hidden' : 'block',
+          )}>
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
@@ -825,7 +841,7 @@ export default function BookingsPage() {
             </div>
             <div className="space-y-2">
               {visibleBookings.map((b, idx) => (
-                <div key={b.booking_id} onClick={() => setSelected(idx)}
+                <div key={b.booking_id} onClick={() => { setSelected(idx); if (activeTab === 'Bookings') setMobileDetail(true); }}
                   className={cn('flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors',
                     selected === idx ? 'bg-pink-50 border border-pink-300' : 'hover:bg-gray-50 border border-transparent')}>
                   <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0', PALETTE[idx % PALETTE.length])}>
@@ -864,9 +880,20 @@ export default function BookingsPage() {
             </div>
           </div>
 
-          {/* Bookings detail */}
+          {/* Bookings detail. On mobile this is shown in place of the list once
+              a booking is picked; from lg up it sits alongside the list. */}
           {activeTab === 'Bookings' && (
-            <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
+            <div className={cn(
+              'flex-1 bg-white rounded-xl border border-gray-200 p-5 lg:block',
+              mobileDetail && sel ? 'block' : 'hidden',
+            )}>
+              <button
+                type="button"
+                onClick={() => setMobileDetail(false)}
+                className="lg:hidden -mt-1 mb-4 flex items-center gap-1 text-sm font-medium text-[#FA4D8D]"
+              >
+                <ChevronLeft className="h-4 w-4" /> All bookings
+              </button>
               {sel ? (
                 <>
                   <div className="flex items-center gap-3 mb-5">
