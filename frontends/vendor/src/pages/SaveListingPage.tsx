@@ -269,7 +269,7 @@ export default function SaveListingPage() {
     const [{ data: provider }, { data: acts }, { data: locs }, { data: cats }] = await Promise.all([
       supabase
         .from('providers')
-        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, marketing_consent_at')
+        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, vendor_terms_accepted_at, marketing_consent_at')
         .eq('id', providerId)
         .maybeSingle(),
       // Drafts come back too: during onboarding a vendor often has an
@@ -304,6 +304,9 @@ export default function SaveListingPage() {
       uen: provider?.uen ?? '',
     };
     setProv(profile);
+    // Pre-tick both agreements from what the vendor already accepted — on the
+    // claim flow's set-password step for a fresh claimer, or a previous save.
+    setAgreedVendor(!!provider?.vendor_terms_accepted_at);
     setMarketingConsentAt(provider?.marketing_consent_at ?? null);
     setMarketingConsent(!!provider?.marketing_consent_at);
 

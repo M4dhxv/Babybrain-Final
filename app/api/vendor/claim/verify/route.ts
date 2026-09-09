@@ -29,7 +29,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * with the session (no password) — the signed-in branch then finishes the
  * claim. That second post is the same path a manually-signed-in vendor takes.
  *
- * Body: { claim_id, email_code, phone_code?, password? }
+ * Body: { claim_id, email_code, phone_code?, password?, terms_accepted?, marketing_consent? }
+ *
+ * `terms_accepted` / `marketing_consent` ride along only on the set-password
+ * pass (a brand-new claimer). They are recorded on the provider as ownership is
+ * handed over, so /save-listing can show the same two checkboxes already
+ * ticked. Terms is enforced in the UI; the server still only writes the
+ * acceptance timestamp when it actually arrives true.
  */
 
 const MAX_ATTEMPTS = 6;
@@ -41,11 +47,15 @@ export async function POST(request: Request) {
     email_code: emailCode,
     phone_code: phoneCode,
     password,
+    terms_accepted: termsAccepted,
+    marketing_consent: marketingConsent,
   } = (await request.json().catch(() => ({}))) as {
     claim_id?: string;
     email_code?: string;
     phone_code?: string;
     password?: string;
+    terms_accepted?: boolean;
+    marketing_consent?: boolean;
   };
 
   if (!claimId || !emailCode) {
@@ -212,6 +222,19 @@ export async function POST(request: Request) {
       { onConflict: 'provider_id,user_id' }
     );
 
+  /* Consent captured on the claim's set-password step. Only written when it
+     actually rode along (the new-account pass) — an existing owner re-running
+     verification with a session never sends these, so their prior consent is
+     left untouched. Marketing follows the same NULL-means-no-consent shape the
+     listing page uses. */
+  const consentPatch: Record<string, string | null> = {};
+  if (createdAccount && termsAccepted === true) {
+    consentPatch.vendor_terms_accepted_at = now;
+  }
+  if (createdAccount && typeof marketingConsent === 'boolean') {
+    consentPatch.marketing_consent_at = marketingConsent ? now : null;
+  }
+
   await admin
     .from('providers')
     .update({
@@ -219,6 +242,7 @@ export async function POST(request: Request) {
       owner_id: user.id,
       verification_status: 'verified',
       status: 'active',
+      ...consentPatch,
     })
     .eq('id', claim.provider_id)
     // Belt-and-braces with the layer-2 check above: only claim a row that is
