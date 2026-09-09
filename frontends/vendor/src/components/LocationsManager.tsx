@@ -284,7 +284,7 @@ export default function LocationsManager({
                 <input className={inputCls} placeholder="Postal code" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} />
               </div>
               <div className="flex gap-2">
-                <button onClick={() => saveEdit(loc.id)} disabled={editSaving} className="px-3 py-1.5 bg-[#C90044] text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                <button onClick={() => saveEdit(loc.id)} disabled={editSaving} className="px-3 py-1.5 bg-[#FA4D8D] text-white rounded-lg text-xs font-medium disabled:opacity-50">
                   {editSaving ? 'Saving…' : 'Save'}
                 </button>
                 <button onClick={() => setEditingId(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700">Cancel</button>

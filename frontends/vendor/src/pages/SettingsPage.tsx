@@ -1679,7 +1679,7 @@ function PoliciesManager({
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={form.required} onChange={(e) => setForm({ ...form, required: e.target.checked })} className="h-4 w-4 accent-[#C90044]" />
+              <input type="checkbox" checked={form.required} onChange={(e) => setForm({ ...form, required: e.target.checked })} className="h-4 w-4 accent-[#FA4D8D]" />
               Parents must accept this before they can book
             </label>
           </div>

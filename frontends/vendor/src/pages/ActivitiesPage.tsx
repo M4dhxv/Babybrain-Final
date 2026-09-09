@@ -1896,7 +1896,7 @@ export default function ActivitiesPage() {
                         </p>
                       )}
                       <div className="flex gap-2">
-                        <button onClick={() => saveSessEdit(s.id)} disabled={savingSessEdit} className="px-3 py-1.5 bg-[#C90044] text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                        <button onClick={() => saveSessEdit(s.id)} disabled={savingSessEdit} className="px-3 py-1.5 bg-[#FA4D8D] text-white rounded-lg text-xs font-medium disabled:opacity-50">
                           {savingSessEdit ? 'Saving…' : 'Save'}
                         </button>
                         <button onClick={() => setEditingSessId(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700">Cancel</button>

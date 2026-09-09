@@ -256,7 +256,7 @@ export default function PackagesPage() {
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Valid for (days)</label>
                     <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
-                  <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
+                  <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
                     {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
                   </button>
                   {editingPackId && (

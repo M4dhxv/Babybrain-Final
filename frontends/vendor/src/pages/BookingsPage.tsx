@@ -743,10 +743,10 @@ export default function BookingsPage() {
                 <input value={manualForm.contact} onChange={(e) => setManualForm({ ...manualForm, contact: e.target.value })} placeholder="Phone or email" className="h-9 w-52 rounded-lg border border-gray-300 px-3 text-sm" />
               </div>
               <label className="flex h-9 items-center gap-2 text-sm text-gray-700">
-                <Checkbox checked={manualForm.paid} onCheckedChange={(v) => setManualForm({ ...manualForm, paid: Boolean(v) })} className="data-[state=checked]:bg-[#C90044]" />
+                <Checkbox checked={manualForm.paid} onCheckedChange={(v) => setManualForm({ ...manualForm, paid: Boolean(v) })} className="data-[state=checked]:bg-[#FA4D8D]" />
                 Paid outside BabyBrain
               </label>
-              <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50">
+              <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50">
                 {savingManual ? 'Adding…' : 'Add booking'}
               </button>
               <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -1001,7 +1001,7 @@ export default function BookingsPage() {
                             <Checkbox
                               checked={manualEdit.paid}
                               onCheckedChange={(v) => setManualEdit({ ...manualEdit, paid: Boolean(v) })}
-                              className="data-[state=checked]:bg-[#C90044]"
+                              className="data-[state=checked]:bg-[#FA4D8D]"
                             />
                             Paid outside BabyBrain
                           </label>
@@ -1009,7 +1009,7 @@ export default function BookingsPage() {
                             <button
                               onClick={() => saveManualEdit(sel.booking_id)}
                               disabled={rowBusy || !manualEdit.name.trim()}
-                              className="h-9 rounded-lg bg-[#C90044] px-4 text-sm font-medium text-white disabled:opacity-50"
+                              className="h-9 rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50"
                             >
                               {rowBusy ? 'Saving…' : 'Save changes'}
                             </button>
@@ -1215,7 +1215,7 @@ export default function BookingsPage() {
                   const tok = tokenStatus[c.booking_id];
                   return (
                     <div key={c.booking_id} className={cn(ROSTER_COLS, 'px-4 py-3 border-t border-gray-100 items-center')}>
-                      <Checkbox className="data-[state=checked]:bg-[#C90044]" checked={cur === 'present'}
+                      <Checkbox className="data-[state=checked]:bg-[#FA4D8D]" checked={cur === 'present'}
                         onCheckedChange={(v) => setAttDraft({ ...attDraft, [c.booking_id]: v ? 'present' : 'absent' })} />
                       <div className="flex min-w-0 items-center gap-2">
                         <div className="w-8 h-8 flex-shrink-0 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-xs font-bold">{initials(c.child_name)}</div>

@@ -378,7 +378,7 @@ export default function SchedulePage() {
                     <span
                       className={cn(
                         'text-sm font-semibold',
-                        isToday(d) ? 'grid h-6 w-6 place-items-center rounded-full bg-[#C90044] text-white' : 'text-gray-900'
+                        isToday(d) ? 'grid h-6 w-6 place-items-center rounded-full bg-[#FA4D8D] text-white' : 'text-gray-900'
                       )}
                     >
                       {format(d, 'd')}
@@ -427,7 +427,7 @@ export default function SchedulePage() {
                     <span
                       className={cn(
                         'inline-grid h-6 w-6 place-items-center rounded-full text-xs font-semibold',
-                        isToday(d) ? 'bg-[#C90044] text-white' : !isSameMonth(d, cursor) ? 'text-gray-300' : 'text-gray-900'
+                        isToday(d) ? 'bg-[#FA4D8D] text-white' : !isSameMonth(d, cursor) ? 'text-gray-300' : 'text-gray-900'
                       )}
                     >
                       {format(d, 'd')}

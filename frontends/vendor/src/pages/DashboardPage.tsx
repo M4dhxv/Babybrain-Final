@@ -506,7 +506,7 @@ export default function DashboardPage() {
       >
         <MessageSquare className="w-6 h-6 text-white" />
         {!!unreadCount && (
-          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#C90044] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
+          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-[#FA4D8D] text-white text-xs rounded-full flex items-center justify-center border-2 border-white">
             {unreadCount}
           </span>
         )}
