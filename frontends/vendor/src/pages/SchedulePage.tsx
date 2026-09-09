@@ -505,7 +505,7 @@ function SessionCard({
       <div className="mt-1 flex items-center gap-1 text-[11px]">
         <Users className="h-3 w-3 text-gray-400" />
         <span
-          className={cn(full ? 'font-medium text-red-600' : 'text-gray-500')}
+          className={cn(full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}
           title={wixOverflow > 0 ? `${s.capacity} on Wix · ${wixOverflow} held on BabyBrain beyond Wix capacity` : undefined}
         >
           {wixOverflow > 0
