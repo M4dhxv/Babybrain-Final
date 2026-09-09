@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
@@ -264,6 +264,43 @@ export default function BookingsPage() {
      it. Desktop is unaffected: the same markup is the right-hand column and
      this flag does nothing (ignored at lg+). */
   const [mobileDetail, setMobileDetail] = useState(false);
+  /* Drag-to-dismiss for that sheet. `dragY` is the live finger offset in px:
+     a downward pull is followed 1:1 and dismisses past DISMISS_PX; an upward
+     pull is denied — rubber-banded to an asymptotic ~RUBBER_GIVE px of give,
+     then eased back home on release. `dragging` drops the CSS transition so the
+     sheet tracks the finger, then restores it for the ease-back. */
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragMeta = useRef({ startY: 0, y: 0, active: false });
+  const RUBBER_GIVE = 34;
+  const DISMISS_PX = 100;
+  const rubberBand = (over: number) => RUBBER_GIVE * (1 - 1 / (over / RUBBER_GIVE + 1));
+  const onSheetGrabStart = (e: React.PointerEvent) => {
+    if (window.matchMedia('(min-width: 1024px)').matches) return;
+    dragMeta.current = { startY: e.clientY, y: 0, active: true };
+    setDragging(true);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onSheetGrabMove = (e: React.PointerEvent) => {
+    const m = dragMeta.current;
+    if (!m.active) return;
+    const raw = e.clientY - m.startY;
+    const y = raw >= 0 ? raw : -rubberBand(-raw);
+    m.y = y;
+    setDragY(y);
+  };
+  const onSheetGrabEnd = () => {
+    const m = dragMeta.current;
+    if (!m.active) return;
+    const pulledDown = m.y;
+    m.active = false;
+    m.y = 0;
+    setDragging(false);
+    setDragY(0);
+    // Pulled far enough down → let go: the sheet slides out (translateY(100%)).
+    // Otherwise setDragY(0) with the transition back on eases it home.
+    if (pulledDown > DISMISS_PX) setMobileDetail(false);
+  };
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
@@ -734,6 +771,15 @@ export default function BookingsPage() {
     };
   }, [sheetOpen]);
 
+  // Never carry a drag offset across an open/close of the sheet.
+  useEffect(() => {
+    if (!sheetOpen) {
+      dragMeta.current.active = false;
+      setDragging(false);
+      setDragY(0);
+    }
+  }, [sheetOpen]);
+
   return (
     <div className="relative">
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
@@ -906,23 +952,51 @@ export default function BookingsPage() {
                 aria-hidden="true"
                 className={cn(
                   'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 lg:hidden',
-                  mobileDetail && sel ? 'opacity-100' : 'pointer-events-none opacity-0',
+                  sheetOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
                 )}
               />
-              <div className={cn(
-                'no-scrollbar fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-gray-200 bg-white p-5 shadow-2xl transition-transform duration-300',
-                mobileDetail && sel ? 'translate-y-0' : 'translate-y-full',
-                'lg:static lg:z-auto lg:max-h-none lg:flex-1 lg:translate-y-0 lg:overflow-visible lg:rounded-xl lg:border lg:shadow-none lg:transition-none',
-              )}>
-                <div aria-hidden="true" className="mx-auto -mt-1 mb-4 h-1 w-9 rounded-full bg-gray-300 lg:hidden" />
+              <div
+                style={{ transform: sheetOpen ? `translateY(${dragY}px)` : 'translateY(100%)' }}
+                className={cn(
+                  // Mobile: a bottom sheet. One transform channel drives both the
+                  // open/close slide and the live drag offset.
+                  'fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl',
+                  // White apron below the sheet, so an upward rubber-band pull
+                  // doesn't flash the page behind it.
+                  "after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-white after:content-['']",
+                  // Ease back (no bounce) on release — a down-pull past the
+                  // threshold has already triggered the close by now, so this
+                  // only ever animates a short drag or a denied up-pull home.
+                  dragging ? 'transition-none' : 'transition-transform duration-200 ease-out',
+                  // Desktop: plain right-hand column — no transform, no sheet chrome.
+                  'lg:static lg:z-auto lg:block lg:max-h-none lg:flex-1 lg:rounded-xl lg:border lg:shadow-none lg:!transform-none lg:!transition-none lg:after:hidden',
+                )}
+              >
+                {/* Drag handle — pointer-only, above the scrolling body so it
+                    stays put. Down drags the sheet 1:1 and dismisses past a
+                    threshold; up is rubber-banded and springs back. */}
+                <div
+                  aria-hidden="true"
+                  onPointerDown={onSheetGrabStart}
+                  onPointerMove={onSheetGrabMove}
+                  onPointerUp={onSheetGrabEnd}
+                  onPointerCancel={onSheetGrabEnd}
+                  className="flex shrink-0 touch-none cursor-grab justify-center py-3 active:cursor-grabbing lg:hidden"
+                >
+                  <div className={cn(
+                    'h-1.5 rounded-full transition-all duration-150',
+                    dragging ? 'w-14 bg-[#FA4D8D]' : 'w-10 bg-gray-300',
+                  )} />
+                </div>
                 <button
                   type="button"
                   aria-label="Close"
                   onClick={() => setMobileDetail(false)}
-                  className="absolute right-3 top-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 lg:hidden"
+                  className="absolute right-3 top-2 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 lg:hidden"
                 >
                   <X className="h-4 w-4" />
                 </button>
+                <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-1 lg:overflow-visible lg:p-5">
               {sel ? (
                 <>
                   <div className="flex items-center gap-3 mb-5">
@@ -1212,6 +1286,7 @@ export default function BookingsPage() {
               ) : (
                 <div className="text-sm text-gray-400">Select a booking.</div>
               )}
+                </div>
               </div>
             </>
           )}
