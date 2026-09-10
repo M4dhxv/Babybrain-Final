@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
@@ -96,12 +95,8 @@ export default function ClaimBusinessPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  /* Taken up-front in step 2, before any verification code goes out. Carried
-     through to /save-listing, where the same two boxes appear pre-ticked — the
-     claimer doesn't re-consent. Terms is mandatory (gates "Send verification
-     code"); marketing is optional. */
-  const [agreedTerms, setAgreedTerms] = useState(false);
-  const [agreedMarketing, setAgreedMarketing] = useState(false);
+  /* Consent (Terms + marketing) is taken once, on /save-listing, right before
+     the listing is published — not here. Claiming only proves ownership. */
   /* The code's email already has a BabyBrain login. Rather than bounce to
      /login (where nothing knew to finish the claim), the owner signs in right
      here and we re-run verification with the session — the route then hands
@@ -187,12 +182,8 @@ export default function ClaimBusinessPage() {
         claim_id: claimId,
         email_code: emailCode,
         phone_code: phoneCode || undefined,
-        // The consent boxes live on the set-password step, so they only ride
-        // along on that pass; the server records them on the provider as it
-        // hands over ownership.
-        ...(withPassword
-          ? { password: withPassword, terms_accepted: agreedTerms, marketing_consent: agreedMarketing }
-          : {}),
+        // Consent is captured later, on /save-listing — not part of claiming.
+        ...(withPassword ? { password: withPassword } : {}),
       });
       setEmailVerified(res.verified);
 
@@ -241,7 +232,6 @@ export default function ClaimBusinessPage() {
   async function submitPassword() {
     if (password.length < 8) return setError('Choose a password of at least 8 characters.');
     if (password !== password2) return setError('Those passwords don’t match.');
-    if (!agreedTerms) return setError('Please agree to the Terms of Service and Privacy Policy to continue.');
     await verify(password);
   }
 
@@ -269,7 +259,7 @@ export default function ClaimBusinessPage() {
   }
 
   const canSendCodes = Boolean(
-    selected && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && uen.trim() && agreedTerms
+    selected && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && uen.trim()
   );
 
   return (
@@ -509,48 +499,6 @@ export default function ClaimBusinessPage() {
                   />
                 </div>
 
-                {/* Agreements, taken up-front — before any code is sent — so
-                    consent is on record from the first step and is visible to
-                    anyone reviewing the page. The same two boxes appear
-                    pre-ticked on /save-listing (the server writes the choice to
-                    the provider as it hands over ownership). Terms gates "Send
-                    verification code"; marketing is optional. Hidden once a
-                    code is out — the choice is already locked in. Wording is
-                    kept identical to /save-listing so the record is consistent. */}
-                {!claimId && (
-                  <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-start gap-2.5">
-                      <Checkbox
-                        id="claim-terms"
-                        checked={agreedTerms}
-                        onCheckedChange={(c) => setAgreedTerms(c === true)}
-                        className="mt-0.5"
-                      />
-                      <label htmlFor="claim-terms" className="cursor-pointer text-xs text-gray-600">
-                        You hereby acknowledge that you have read our Terms of Service, Terms of Use and Privacy
-                        Policy and confirm that you are in agreement with and legally bound by such terms, as
-                        modified from time to time.{' '}
-                        <a href="#/terms" target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
-                          View terms
-                        </a>
-                      </label>
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <Checkbox
-                        id="claim-marketing"
-                        checked={agreedMarketing}
-                        onCheckedChange={(c) => setAgreedMarketing(c === true)}
-                        className="mt-0.5"
-                      />
-                      <label htmlFor="claim-marketing" className="cursor-pointer text-xs text-gray-600">
-                        I agree and consent to receive marketing communications from BabyBrain to update me on
-                        offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
-                        services via any means of communication such as via email.
-                      </label>
-                    </div>
-                  </div>
-                )}
-
                 {!claimId ? (
                   <Button
                     onClick={sendCodes}
@@ -623,7 +571,7 @@ export default function ClaimBusinessPage() {
                     />
                     <Button
                       onClick={submitPassword}
-                      disabled={busy || password.length < 8 || password !== password2 || !agreedTerms}
+                      disabled={busy || password.length < 8 || password !== password2}
                       className="gradient-primary mt-4 w-full rounded-xl text-white hover:opacity-90"
                     >
                       {busy ? 'Finishing…' : 'Finish claiming this business'}
@@ -728,7 +676,7 @@ export default function ClaimBusinessPage() {
               !(
                 claimComplete ||
                 (session && emailVerified) ||
-                (needsPassword && password.length >= 8 && password === password2 && agreedTerms) ||
+                (needsPassword && password.length >= 8 && password === password2) ||
                 (needsSignIn && password.length > 0)
               ) || busy
             }
