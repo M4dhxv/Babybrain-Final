@@ -37,7 +37,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { BrandLogo, BrandStacked } from '@/components/BrandLogo';
 import { VENDOR_CATEGORIES, categoryLabel } from '@/lib/categories';
@@ -226,12 +225,9 @@ export default function SaveListingPage() {
   const { provider: activeProvider, refreshProvider } = useAuth();
   const providerId = activeProvider?.id ?? null;
   const [desktopOpen, setDesktopOpen] = useState(false);
-  const [agreedVendor, setAgreedVendor] = useState(false);
-  // Marketing consent (00094) — optional, never blocks the save. Pre-filled
-  // from what the provider already agreed to; the original timestamp is kept
-  // so re-saving doesn't move the consent date, and unticking clears it back
-  // to NULL (how consent is withdrawn).
-  const [marketingConsent, setMarketingConsent] = useState(false);
+  // Marketing consent (00094) — now mandatory: it is recorded on every save,
+  // there is no opt-out checkbox. The original timestamp is kept so re-saving
+  // doesn't move the consent date.
   const [marketingConsentAt, setMarketingConsentAt] = useState<string | null>(null);
   const [prov, setProv] = useState<ProfileDraft>(EMPTY_PROFILE);
   const [venues, setVenues] = useState<VenueRow[]>([]);
@@ -251,8 +247,6 @@ export default function SaveListingPage() {
   const [savingListing, setSavingListing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const canSave = agreedVendor;
-
   // Both previews carry the same footnote — it says where the details came
   // from, so nobody mistakes a draft for something families can already find.
   const previewNote =
@@ -269,7 +263,7 @@ export default function SaveListingPage() {
     const [{ data: provider }, { data: acts }, { data: locs }, { data: cats }] = await Promise.all([
       supabase
         .from('providers')
-        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, vendor_terms_accepted_at, marketing_consent_at')
+        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, marketing_consent_at')
         .eq('id', providerId)
         .maybeSingle(),
       // Drafts come back too: during onboarding a vendor often has an
@@ -304,11 +298,9 @@ export default function SaveListingPage() {
       uen: provider?.uen ?? '',
     };
     setProv(profile);
-    // Pre-tick both agreements from what the vendor already accepted — on the
-    // claim flow's set-password step for a fresh claimer, or a previous save.
-    setAgreedVendor(!!provider?.vendor_terms_accepted_at);
+    // Keep the vendor's first marketing-consent date if they already have one,
+    // so re-saving the listing doesn't reset it to today.
     setMarketingConsentAt(provider?.marketing_consent_at ?? null);
-    setMarketingConsent(!!provider?.marketing_consent_at);
 
     const activities = acts ?? [];
     const published = activities.filter((a) => a.is_published);
@@ -475,16 +467,18 @@ export default function SaveListingPage() {
   }
 
   async function handleSave() {
-    if (!providerId || !canSave || savingListing) return;
+    if (!providerId || savingListing) return;
     setSavingListing(true);
     setSaveError(null);
     const now = new Date().toISOString();
     const { error } = await supabase
       .from('providers')
       .update({
+        // Saving the listing is the agreement: the vendor terms are accepted
+        // and marketing consent is recorded as of this save. Marketing consent
+        // is mandatory now, so keep the first consent date if there is one.
         vendor_terms_accepted_at: now,
-        // Optional — keep the first consent date; unticking withdraws it.
-        marketing_consent_at: marketingConsent ? (marketingConsentAt ?? now) : null,
+        marketing_consent_at: marketingConsentAt ?? now,
       })
       .eq('id', providerId);
     setSavingListing(false);
@@ -749,51 +743,33 @@ export default function SaveListingPage() {
               </div>
             </div>
 
-            {/* Required to publish */}
+            {/* Terms & consent — captured by the Save action itself. There is
+                no opt-out: saving the listing accepts the vendor terms and
+                records marketing consent (00094). */}
             <div className="mt-6 rounded-xl border border-gray-200 p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Shield className="h-5 w-5 text-[#FA4D8D]" />
-                <h4 className="font-semibold text-gray-900">Required to publish</h4>
+                <h4 className="font-semibold text-gray-900">Terms &amp; consent</h4>
               </div>
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id="vendor-terms"
-                  checked={agreedVendor}
-                  onCheckedChange={(c) => setAgreedVendor(c === true)}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <label htmlFor="vendor-terms" className="cursor-pointer text-sm text-gray-700">
-                    You hereby acknowledge that you have read our Terms of Service, Terms of Use and Privacy Policy and confirm that you are in agreement with and legally bound by such terms, as modified from time to time.
-                  </label>
-                  <a href="#/terms" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[11px] text-gray-400 underline hover:text-gray-600">
-                    Full site terms &amp; privacy
-                  </a>
-                </div>
+              <p className="text-sm text-gray-700">
+                By saving your listing you acknowledge that you have read our Terms of Service, Terms
+                of Use and Privacy Policy and confirm that you are in agreement with and legally bound
+                by such terms, as modified from time to time. You also agree and consent to receive
+                marketing communications from BabyBrain to update you on offers, promotions, discounts,
+                events, news, etc. relating to BabyBrain's products and services via any means of
+                communication such as via email.
+              </p>
+              <div className="mt-2 flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setViewingDoc(VENDOR_TERMS)}
-                  className="flex-shrink-0 text-xs text-[#FA4D8D] hover:underline"
+                  className="text-xs text-[#FA4D8D] hover:underline"
                 >
                   View terms
                 </button>
-              </div>
-            </div>
-
-            {/* Marketing consent (00094) — optional, does not gate the save. */}
-            <div className="mt-3 rounded-xl border border-gray-200 p-4">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id="vendor-marketing"
-                  checked={marketingConsent}
-                  onCheckedChange={(c) => setMarketingConsent(c === true)}
-                  className="mt-0.5"
-                />
-                <label htmlFor="vendor-marketing" className="flex-1 cursor-pointer text-sm text-gray-700">
-                  I agree and consent to receive marketing communications from BabyBrain to update me
-                  on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products
-                  and services via any means of communication such as via email.
-                </label>
+                <a href="#/terms" target="_blank" rel="noreferrer" className="text-[11px] text-gray-400 underline hover:text-gray-600">
+                  Full site terms &amp; privacy
+                </a>
               </div>
             </div>
           </div>
@@ -918,24 +894,16 @@ export default function SaveListingPage() {
           <div className="flex flex-col items-end gap-1">
             <Button
               onClick={handleSave}
-              disabled={!canSave || savingListing}
+              disabled={savingListing}
               className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90 disabled:opacity-50"
             >
               {savingListing ? 'Saving…' : 'Save'}
               <Send className="h-4 w-4" />
             </Button>
-            {/* One message slot, always taking its line — hidden rather than
-                removed. Dropping it out of the layout changed the bar's height,
-                so ticking the box shunted Back, the lock line and Save. Now
-                only the button's own colour changes. */}
-            <p
-              className={cn(
-                'text-[11px]',
-                saveError ? 'text-red-500' : 'text-gray-400',
-                !saveError && canSave && 'invisible'
-              )}
-            >
-              {saveError || 'Tick the Vendor Terms to continue.'}
+            {/* Error slot keeps its line whether or not it's filled, so a save
+                failure doesn't change the bar's height and shunt Back/Save. */}
+            <p className={cn('text-[11px] text-red-500', !saveError && 'invisible')}>
+              {saveError || ' '}
             </p>
           </div>
         </div>
