@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -131,6 +131,8 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeErr, setRemoveErr] = useState<{ id: string; text: string } | null>(null);
 
   const isOwner = role === 'owner';
 
@@ -337,6 +339,28 @@ export default function SettingsPage() {
       setInviteMsg({ ok: false, text: e instanceof Error ? e.message : 'Invite failed' });
     } finally {
       setInviting(false);
+    }
+  }
+
+  async function removeMember(m: Member) {
+    if (!provider) return;
+    const who = profiles[m.user_id]?.full_name || m.invited_email || 'this member';
+    if (!window.confirm(`Remove ${who} from the team? They lose access to this business immediately.`)) return;
+    setRemovingId(m.id);
+    setRemoveErr(null);
+    try {
+      await apiPost('/api/vendor/staff/remove', { provider_id: provider.id, user_id: m.user_id });
+      setExpandedMember(null);
+      const { data } = await supabase
+        .from('provider_members')
+        .select('id, user_id, role, invited_email, status')
+        .eq('provider_id', provider.id);
+      setTeam((data as Member[]) ?? []);
+      refreshProfiles();
+    } catch (e) {
+      setRemoveErr({ id: m.id, text: e instanceof Error ? e.message : 'Could not remove this member.' });
+    } finally {
+      setRemovingId(null);
     }
   }
 
@@ -608,6 +632,13 @@ export default function SettingsPage() {
                 /* Staff edit only their own row; owners and managers edit anyone's.
                    Enforced again by RLS on provider_member_profiles (00116). */
                 const canEditMember = isYou || canManage;
+                /* Owner removes managers + staff; a manager removes staff only.
+                   Nobody removes the owner or themselves. Re-checked server-side
+                   in /api/vendor/staff/remove. */
+                const canRemoveMember =
+                  !isYou &&
+                  m.role !== 'owner' &&
+                  (isOwner || (role === 'manager' && m.role === 'staff'));
                 return (
                   <div key={m.id} className="rounded-xl border border-gray-100">
                     <button
@@ -639,6 +670,22 @@ export default function SettingsPage() {
                           canEdit={canEditMember}
                           onSaved={refreshProfiles}
                         />
+                        {canRemoveMember && (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => removeMember(m)}
+                              disabled={removingId === m.id}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              {removingId === m.id ? 'Removing…' : 'Remove from team'}
+                            </button>
+                            {removeErr?.id === m.id && (
+                              <p className="mt-1 text-xs text-red-600">{removeErr.text}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

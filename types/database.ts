@@ -926,6 +926,34 @@ export type Database = {
         Update: { role?: ProviderRole; status?: 'invited' | 'active' | 'disabled' };
         Relationships: [];
       };
+      // One row per membership, holding a member's editable basic details
+      // (00116). Kept off provider_members so a staff/manager can maintain
+      // their own row without owner-only write access to the membership.
+      provider_member_profiles: {
+        Row: {
+          provider_id: string;
+          user_id: string;
+          full_name: string | null;
+          job_title: string | null;
+          phone: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          provider_id: string;
+          user_id: string;
+          full_name?: string | null;
+          job_title?: string | null;
+          phone?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          full_name?: string | null;
+          job_title?: string | null;
+          phone?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       provider_locations: {
         Row: {
           id: string;

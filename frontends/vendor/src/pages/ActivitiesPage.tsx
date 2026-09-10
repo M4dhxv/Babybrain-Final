@@ -1034,13 +1034,13 @@ export default function ActivitiesPage() {
      silently dropping it. */
   const teacherOptions = (current: string) => {
     const known = new Set(teamMembers.map((m) => m.name));
-    return (
-      <>
-        <Opt value="">N/A</Opt>
-        {teamMembers.map((m) => <Opt key={m.name} value={m.name}>{m.name}</Opt>)}
-        {current && !known.has(current) && <Opt value={current}>{current} (not on team)</Opt>}
-      </>
-    );
+    return [
+      <Opt key="__na" value="">N/A</Opt>,
+      ...teamMembers.map((m) => <Opt key={m.name} value={m.name}>{m.name}</Opt>),
+      ...(current && !known.has(current)
+        ? [<Opt key="__ext" value={current}>{current} (not on team)</Opt>]
+        : []),
+    ];
   };
 
   return (
