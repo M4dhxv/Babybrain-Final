@@ -28,12 +28,15 @@ import {
   Heart,
   PauseCircle,
   PlayCircle,
+  FileText,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
+import { PoliciesManager } from '@/components/PoliciesManager';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -147,7 +150,7 @@ const MAX_SESSIONS_PER_ADD = 100;
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
-  location_id: '', default_capacity: '', image_url: '', requires_medical_disclosure: false,
+  location_id: '', default_capacity: '', image_url: '',
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
   cancellation_refund_mode: 'refund' as 'refund' | 'none',
@@ -159,7 +162,7 @@ const emptyForm = {
 };
 
 export default function ActivitiesPage() {
-  const { provider, role } = useAuth();
+  const { provider, role, refreshProvider } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
 
   const [showDrawer, setShowDrawer] = useState(false);
@@ -186,19 +189,71 @@ export default function ActivitiesPage() {
      redirecting from activities to there — can location move to sit under the
      'activities' tab." Venues now live here, next to the activities that use
      them; Settings redirects its old tab across so existing links still land. */
-  const [pageTab, setPageTab] = useState<'activities' | 'locations'>('activities');
+  const [pageTab, setPageTab] = useState<'activities' | 'locations' | 'policies'>('activities');
   const [openNewLocation, setOpenNewLocation] = useState(false);
 
-  /* Deep-linkable: Settings forwards its retired ?tab=locations here, and the
-     dashboard's "Add a location" adds &new=location to open the form straight
-     away. Driven off the router's params rather than read once at mount, so
-     arriving from another page while already on /activities still switches. */
+  /* Deep-linkable: Settings forwards its retired ?tab=locations here (and its
+     retired Waivers & consents tab as ?tab=policies), and the dashboard's
+     "Add a location" adds &new=location to open the form straight away. Driven
+     off the router's params rather than read once at mount, so arriving from
+     another page while already on /activities still switches. */
   useEffect(() => {
-    if (searchParams.get('tab') === 'locations') {
+    const t = searchParams.get('tab');
+    if (t === 'locations') {
       setPageTab('locations');
       if (searchParams.get('new') === 'location') setOpenNewLocation(true);
+    } else if (t === 'policies') {
+      setPageTab('policies');
     }
   }, [searchParams]);
+
+  /* Policy & consent management → Medical disclosure. A provider-level rule
+     (00117): off, or on for "all" / "some" of the vendor's classes. The DB
+     mirrors it onto activities.requires_medical_disclosure — which the parent
+     booking form and every Wix checkout path already read — so a new class
+     picks up an "all" rule automatically. */
+  const mdMode = (provider?.medical_disclosure_mode ?? 'off') as 'off' | 'all' | 'some';
+  const mdIdsSaved = provider?.medical_disclosure_activity_ids ?? [];
+  const [mdDraftMode, setMdDraftMode] = useState<'off' | 'all' | 'some'>(mdMode);
+  const [mdDraftIds, setMdDraftIds] = useState<string[]>(mdIdsSaved);
+  const [mdSaving, setMdSaving] = useState(false);
+  const [mdMsg, setMdMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mdPickerOpen, setMdPickerOpen] = useState(false);
+  // Re-seed the draft whenever the stored rule changes (first load, or after a
+  // save round-trips through refreshProvider).
+  useEffect(() => {
+    setMdDraftMode(mdMode);
+    setMdDraftIds(mdIdsSaved);
+    setMdMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider?.id, mdMode, mdIdsSaved.join(',')]);
+
+  const mdDirty =
+    mdDraftMode !== mdMode ||
+    (mdDraftMode === 'some' &&
+      (mdDraftIds.length !== mdIdsSaved.length ||
+        [...mdDraftIds].sort().join(',') !== [...mdIdsSaved].sort().join(',')));
+
+  async function saveMedicalDisclosure() {
+    if (!provider) return;
+    setMdSaving(true);
+    setMdMsg(null);
+    const { error } = await supabase
+      .from('providers')
+      .update({
+        medical_disclosure_mode: mdDraftMode,
+        medical_disclosure_activity_ids: mdDraftMode === 'some' ? mdDraftIds : [],
+      })
+      .eq('id', provider.id);
+    setMdSaving(false);
+    if (error) {
+      setMdMsg({ ok: false, text: error.message });
+      return;
+    }
+    setMdMsg({ ok: true, text: 'Saved' });
+    await refreshProvider();
+    load();
+  }
 
   const [locations, setLocations] = useState<{ id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]>([]);
   /* Active team members, for the session "Teacher" dropdown. `name` is what
@@ -834,7 +889,6 @@ export default function ActivitiesPage() {
       location_id: a.location_id ?? '',
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_url: a.image_urls?.[0] ?? '',
-      requires_medical_disclosure: a.requires_medical_disclosure ?? false,
       allow_cancellation: a.allow_cancellation ?? true,
       allow_rescheduling: a.allow_rescheduling ?? true,
       cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
@@ -926,7 +980,9 @@ export default function ActivitiesPage() {
             longitude: loc?.longitude ?? null,
           }),
       image_urls: form.image_url ? [form.image_url] : [],
-      requires_medical_disclosure: form.requires_medical_disclosure,
+      // requires_medical_disclosure is owned by the provider-level rule under
+      // Policy & consent management (migration 00117) — the drawer no longer
+      // writes it, so editing a class here can't clear it.
       // Wix Events / Courses are always non-cancellable — force the flag off
       // regardless of any stale form value so the parent app and the
       // cancel_booking RPC both treat them as such.
@@ -1073,25 +1129,30 @@ export default function ActivitiesPage() {
         {/* Tabs and Filters */}
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="flex flex-col gap-3 px-5 py-3 border-b border-gray-200 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            {/* Two sections now: the activities themselves and the venues they
-                run at. Centred on a phone, where it sits above the toolbar. */}
-            <div className="flex justify-center gap-6 sm:justify-start">
-              {(['activities', 'locations'] as const).map((t) => (
+            {/* Three sections: the activities themselves, the venues they run
+                at, and the booking gates (medical disclosure + waivers &
+                consents). Centred on a phone, where it sits above the toolbar. */}
+            <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 sm:justify-start">
+              {(['activities', 'locations', 'policies'] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => {
                     setPageTab(t);
                     const next = new URLSearchParams(searchParams);
-                    if (t === 'locations') next.set('tab', 'locations');
-                    else { next.delete('tab'); next.delete('new'); }
+                    if (t === 'activities') { next.delete('tab'); next.delete('new'); }
+                    else next.set('tab', t);
                     setSearchParams(next, { replace: true });
                   }}
                   className={cn(
-                    'text-sm font-medium pb-2 border-b-2 capitalize',
+                    'text-sm font-medium pb-2 border-b-2',
                     pageTab === t ? 'text-[#FA4D8D] border-[#C90044]' : 'text-gray-500 border-transparent hover:text-gray-700'
                   )}
                 >
-                  {t === 'locations' ? `Locations (${locations.length})` : 'Activities'}
+                  {t === 'locations'
+                    ? `Locations (${locations.length})`
+                    : t === 'policies'
+                      ? 'Policy & consent management'
+                      : 'Activities'}
                 </button>
               ))}
             </div>
@@ -1207,7 +1268,27 @@ export default function ActivitiesPage() {
           </div>
           )}
 
-          {pageTab === 'locations' ? (
+          {pageTab === 'policies' ? (
+            <div className="p-5">
+              <MedicalDisclosureCard
+                canManage={canManage}
+                activities={activities}
+                mode={mdDraftMode}
+                ids={mdDraftIds}
+                setMode={setMdDraftMode}
+                setIds={setMdDraftIds}
+                pickerOpen={mdPickerOpen}
+                setPickerOpen={setMdPickerOpen}
+                dirty={mdDirty}
+                saving={mdSaving}
+                msg={mdMsg}
+                onSave={saveMedicalDisclosure}
+              />
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <PoliciesManager provider={provider} canManage={canManage} />
+              </div>
+            </div>
+          ) : pageTab === 'locations' ? (
             <div className="p-5">
               <LocationsManager
                 provider={provider}
@@ -1603,16 +1684,8 @@ export default function ActivitiesPage() {
                 <button onClick={() => setForm({ ...form, image_url: '' })} className="mt-1.5 text-xs text-gray-500 hover:text-red-600">Remove image</button>
               )}
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-gray-900">Require medical disclosure</div>
-                <div className="text-xs text-gray-500">
-                  Parents must fill in a health declaration before this activity can be booked. For your own
-                  waivers and consents, use Settings → Waivers &amp; Consents.
-                </div>
-              </div>
-              <Switch checked={form.requires_medical_disclosure} onCheckedChange={(v) => setForm({ ...form, requires_medical_disclosure: v })} />
-            </div>
+            {/* Medical disclosure is set for all / certain classes at once under
+                Activities → Policy & consent management, not per activity here. */}
 
             {/* 2.2: cancellation & rescheduling policy for this class */}
             <div className="rounded-xl border border-gray-200 p-4 space-y-4">
@@ -2272,6 +2345,152 @@ export default function ActivitiesPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Activities → Policy & consent management → Medical disclosure.
+ *
+ * One provider-level control for the pre-booking health declaration: a master
+ * toggle, then "all activities" or "certain activities" with a class picker.
+ * The choice is stored on the provider (providers.medical_disclosure_mode /
+ * _activity_ids, migration 00117) and a DB trigger mirrors it onto each
+ * activity's requires_medical_disclosure flag, so the parent booking form and
+ * the Wix checkout paths need no change and a class added later inherits an
+ * "all" rule.
+ */
+function MedicalDisclosureCard({
+  canManage, activities, mode, ids, setMode, setIds, pickerOpen, setPickerOpen,
+  dirty, saving, msg, onSave,
+}: {
+  canManage: boolean;
+  activities: Activity[];
+  mode: 'off' | 'all' | 'some';
+  ids: string[];
+  setMode: (m: 'off' | 'all' | 'some') => void;
+  setIds: (ids: string[]) => void;
+  pickerOpen: boolean;
+  setPickerOpen: (v: boolean) => void;
+  dirty: boolean;
+  saving: boolean;
+  msg: { ok: boolean; text: string } | null;
+  onSave: () => void;
+}) {
+  const named = activities
+    .filter((a) => a.title)
+    .sort((a, b) => a.title.localeCompare(b.title));
+  const summary =
+    ids.length === 0
+      ? 'Select activities'
+      : ids.length <= 2
+        ? ids.map((id) => named.find((a) => a.id === id)?.title ?? 'one activity').join(' & ')
+        : `${ids.length} activities selected`;
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-amber-600" /></div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Medical disclosure</h3>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-md">
+              Parents must fill in a health declaration before this activity can be booked.
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={mode !== 'off'}
+          disabled={!canManage}
+          onCheckedChange={(v) => setMode(v ? 'all' : 'off')}
+          aria-label="Require a health declaration"
+        />
+      </div>
+
+      {mode !== 'off' && (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="md-scope"
+                className="h-4 w-4 accent-[#FA4D8D]"
+                checked={mode === 'all'}
+                disabled={!canManage}
+                onChange={() => setMode('all')}
+              />
+              All activities
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="md-scope"
+                className="h-4 w-4 accent-[#FA4D8D]"
+                checked={mode === 'some'}
+                disabled={!canManage}
+                onChange={() => setMode('some')}
+              />
+              Certain activities
+            </label>
+          </div>
+
+          {mode === 'some' && (
+            <div className="relative max-w-md">
+              <button
+                type="button"
+                disabled={!canManage}
+                onClick={() => setPickerOpen(!pickerOpen)}
+                className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm disabled:opacity-60"
+                aria-label="Activities that need a health declaration"
+              >
+                <span className="truncate text-gray-700">{summary}</span>
+                <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
+              </button>
+              {pickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
+                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                    {named.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-gray-400">No activities yet.</p>
+                    )}
+                    {named.map((a) => (
+                      <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-[#FA4D8D]"
+                          checked={ids.includes(a.id)}
+                          onChange={(e) =>
+                            setIds(e.target.checked ? [...ids, a.id] : ids.filter((x) => x !== a.id))
+                          }
+                        />
+                        <span className="truncate">{a.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+              {ids.length === 0 && (
+                <p className="mt-1 text-[11px] text-amber-600">Pick at least one activity, or switch to “All activities”.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {canManage && (
+        <div className="mt-4 flex items-center gap-3">
+          <Button
+            onClick={onSave}
+            disabled={saving || !dirty || (mode === 'some' && ids.length === 0)}
+            className="gradient-primary text-white rounded-xl hover:opacity-90 px-5"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+          {msg && (
+            <span className={cn('text-xs font-medium', msg.ok ? 'text-green-600' : 'text-red-600')}>{msg.text}</span>
+          )}
         </div>
       )}
     </div>

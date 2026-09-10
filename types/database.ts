@@ -652,6 +652,10 @@ export type Database = {
           vendor_terms_accepted_at: string | null;
           booking_messaging_terms_accepted_at: string | null;
           marketing_consent_at: string | null;
+          // Pre-booking health declaration scope (00117). Mirrored onto
+          // activities.requires_medical_disclosure by trigger.
+          medical_disclosure_mode: 'off' | 'all' | 'some';
+          medical_disclosure_activity_ids: string[];
           created_at: string;
           updated_at: string;
         };
@@ -685,6 +689,8 @@ export type Database = {
           vendor_terms_accepted_at?: string | null;
           booking_messaging_terms_accepted_at?: string | null;
           marketing_consent_at?: string | null;
+          medical_disclosure_mode?: 'off' | 'all' | 'some';
+          medical_disclosure_activity_ids?: string[];
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
