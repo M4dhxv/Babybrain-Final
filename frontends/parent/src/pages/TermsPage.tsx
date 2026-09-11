@@ -214,7 +214,7 @@ export default function TermsPage() {
           </p>
 
           {/* Tabs */}
-          <div className="mt-7 inline-flex gap-1.5 overflow-x-auto rounded-full bg-[#F4EFF0] p-1.5">
+          <div className="mt-7 inline-flex max-w-full gap-1.5 overflow-x-auto rounded-full bg-[#F4EFF0] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {LEGAL_DOCS.map((d) => (
               <button
                 key={d.key}
