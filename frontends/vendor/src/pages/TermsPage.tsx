@@ -19,12 +19,36 @@ import { LEGAL_DOCS, type LegalBlock, type LegalDoc } from '@/data/legalDocs';
  * frontends/parent/src/data/legalDocs.ts — keep the two in sync.
  */
 
+/** Underlines site links (www.babybrain.sg, https://…) inside a plain-text
+ *  run — the legal text names its own domain a few times and those reads
+ *  more like a link than plain prose. */
+function withLinks(text: string, keyPrefix: string): React.ReactNode[] {
+  const parts = text.split(/(https?:\/\/[^\s"']+|www\.[^\s"']+)/g);
+  return parts.map((part, i) =>
+    /^(https?:\/\/|www\.)/.test(part) ? (
+      <span key={`${keyPrefix}-${i}`} className="underline">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
+
 /** Renders "**bold**" spans inside otherwise-plain legal text as <strong>. */
 function Inline({ text }: { text: string }) {
   const parts = text.split(/\*\*(.+?)\*\*/g);
   return (
     <>
-      {parts.map((part, i) => (i % 2 === 1 ? <strong key={i} className="font-bold text-[#111A4C]">{part}</strong> : part))}
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <strong key={i} className="font-bold text-[#111A4C]">
+            {withLinks(part, `b${i}`)}
+          </strong>
+        ) : (
+          withLinks(part, `p${i}`)
+        )
+      )}
     </>
   );
 }

@@ -6,8 +6,9 @@
  * sign-off flow, not a public page).
  *
  * A string block is a paragraph; a string[] block renders as a bullet list.
- * "**bold**" inside any string renders as <strong> (see renderInline in
- * TermsPage.tsx). This file is a verbatim mirror of
+ * "**bold**" marks text that is genuinely bold in the source PDF (checked
+ * against its embedded font, not guessed) and renders as <strong> (see
+ * Inline in TermsPage.tsx). This file is a verbatim mirror of
  * frontends/vendor/src/data/legalDocs.ts — keep the two in sync.
  */
 
@@ -39,9 +40,9 @@ const TOS: LegalDoc = {
       number: "1",
       title: "General Terms",
       blocks: [
-        'We are BabyBrain Pte. Ltd. (UEN 202627181H) trading as https://www.babybrain.sg/ ("BabyBrain").',
-        'In these terms of service ("Terms"), the words "we", "our" and "us" refer to BabyBrain and "Platform" means collectively BabyBrain\'s websites, webpages and/or applications which we may manage, own or operate from time to time, each of which shall be described as a "Platform", including all content, information, applications, programmes, images/graphics, links, sounds, videos and materials which may be displayed on such Platforms, and the functions or services provided therein.',
-        'By accessing and using our Platform and/or our services accessible from and on such Platform ("Services") as either a business ("Vendor", "your" or "you") using our Platform to list and place activities, or a customer of a Vendor ("Client", "your" or "you") browsing or making a booking (each, a "Booking") with respect to activities, classes or events listed on our Platform by Vendors (the "Vendor Services"), or otherwise transacting through any booking page, widget or checkout flow powered by BabyBrain, you confirm that you are in agreement with and legally bound by these Terms, our Terms of Use and Privacy Policy as modified from time to time. Please continue accessing our Platform only if these Terms are acceptable to you. These terms apply to our Platforms and any email or other type of communication between you and BabyBrain, as well as our Services and any payment you make to us using a bank account, credit card or debit card ("Payment Method") for Subscription to our Services and one-time purchases.',
+        'We are **BabyBrain Pte. Ltd.** (UEN 202627181H) trading as https://www.babybrain.sg/ ("**BabyBrain**").',
+        'In these terms of service ("**Terms**"), the words "we", "our" and "us" refer to BabyBrain and "Platform" means collectively BabyBrain\'s websites, webpages and/or applications which we may manage, own or operate from time to time, each of which shall be described as a "Platform", including all content, information, applications, programmes, images/graphics, links, sounds, videos and materials which may be displayed on such Platforms, and the functions or services provided therein.',
+        'By accessing and using our Platform and/or our services accessible from and on such Platform ("**Services**") as either a business ("**Vendor**", "your" or "you") using our Platform to list and place activities, or a customer of a Vendor ("**Client**", "your" or "you") browsing or making a booking (each, a "**Booking**") with respect to activities, classes or events listed on our Platform by Vendors (the "**Vendor Services**"), or otherwise transacting through any booking page, widget or checkout flow powered by BabyBrain, you confirm that you are in agreement with and legally bound by these Terms, our Terms of Use and Privacy Policy as modified from time to time. Please continue accessing our Platform only if these Terms are acceptable to you. These terms apply to our Platforms and any email or other type of communication between you and BabyBrain, as well as our Services and any payment you make to us using a bank account, credit card or debit card ("**Payment Method**") for Subscription to our Services and one-time purchases.',
         'BabyBrain is a platform which facilitates bookings and communications between Vendors and Clients in respect of Vendor Activities and provides scheduling, messaging and calendar integration tools, customer and waitlist management, point-of-sale functions, attendance and performance tracking and analytics and additional operational features. For the avoidance of doubt, BabyBrain does not provide, offer, oversee, manage, licence or supervise any Vendor Activities. Instead, we offer digital tools that help Vendors and Customers manage their operations and bookings in respect of such Vendor Services, as the case may be. Vendors hereby represent, warrant and undertake that you shall only use our Services exclusively for purposes relating to your trade, business, craft or profession.',
         "You must be at least 18 years old to use our Platform and Services. By accessing and using the same, you hereby represent and warrant that you are at least 18 years old.",
         "Capitalised terms used in these Terms shall have the following meanings:",
@@ -118,7 +119,7 @@ const TOS: LegalDoc = {
       number: "6",
       title: "Commission on Bookings",
       blocks: [
-        '**(a) Commission:** In consideration for the use of our Platform, BabyBrain charges a non-refundable commission ("Commission") on each Booking made through our Platform, calculated as a percentage of the Total Payment, which may differ depending on the plan which the Vendor has subscribed to. Each Vendor hereby authorises the Payment Processor to deduct the Commission payable to BabyBrain from the Total Payment and pay out the same to BabyBrain. Where a Vendor decides to give a discount due to failure to provide a Vendor Service, unsatisfactory service or similar circumstances, such discount shall not affect the Total Payment for the purposes of calculating the Commission. Vendors hereby agree not to charge Clients separately for the Commission you owe or would owe us for any Booking made through our Platform. All rights and obligations in respect of payment of any Commission are binding on each Vendor and BabyBrain as well as their respective assignees and successors.',
+        '**(a) Commission:** In consideration for the use of our Platform, BabyBrain charges a **non-refundable** commission ("**Commission**") on each Booking made through our Platform, calculated as a percentage of the Total Payment, which may differ depending on the plan which the Vendor has subscribed to. Each Vendor hereby authorises the Payment Processor to deduct the Commission payable to BabyBrain from the Total Payment and pay out the same to BabyBrain. Where a Vendor decides to give a discount due to failure to provide a Vendor Service, unsatisfactory service or similar circumstances, such discount shall not affect the Total Payment for the purposes of calculating the Commission. Vendors hereby agree not to charge Clients separately for the Commission you owe or would owe us for any Booking made through our Platform. All rights and obligations in respect of payment of any Commission are binding on each Vendor and BabyBrain as well as their respective assignees and successors.',
         "**(b) Payment processing for Bookings:** Stripe is the current Payment Processor for credit and debit card payments. Whenever a payment is processed by Stripe, the terms and conditions of the Stripe Services Agreement and Stripe Connected Account Agreement, as well as other applicable Stripe terms and policies, shall apply as may be amended by Stripe from time to time. Each Vendor is responsible for reviewing, accepting and complying with all such terms and conditions. A Vendor's use of such payment processing is subject to its compliance with all the applicable terms and conditions of Stripe, and each Vendor using such payment processing will be required to set up a Stripe Connect Account and complete a required verification process. For the avoidance of doubt, the Payment Processor (not BabyBrain) collects, processes, authorises, settles and pays out the funds to the Vendor and Commission to BabyBrain, and deducts its own processing fees. The Vendor remains the merchant of record for all Bookings made via our Platform. BabyBrain will not be responsible for the acts or omissions of the Payment Processor or how personal information is treated by the Payment Processor.",
         "**(c) Chargebacks and disputes:** BabyBrain is not responsible for, and you release BabyBrain from liability arising out of, any chargebacks, disputes, refunds and the funds required to cover them, failed, declined, duplicated or reversed transactions, processing fees, payout timing, reserves, holds, account reviews or suspensions imposed by the Payment Processor, or the Payment Processor's availability, errors or changes to its services, fees or terms, or a Vendor's eligibility for, or onboarding to, the Payment Processor. Each Vendor remains solely responsible for funding any refunds or chargebacks, any applicable taxes (including goods and services tax) on your sales, and for complying with applicable laws and card-network rules when accepting payments. None of these matters shall affect the Total Payment for the purpose of calculating the Commission, and no refund of the Commission shall be made under any circumstances.",
       ],
@@ -127,10 +128,10 @@ const TOS: LegalDoc = {
       number: "7",
       title: "Subscription Fees",
       blocks: [
-        '**(a) Subscription:** BabyBrain may charge both Clients and Vendors subscription fees for premium platform features. If you have purchased a subscription to a paid plan ("Subscription"), whether as a Client or Vendor, you may either pay on a monthly basis and cancel anytime with 14 days\' notice on the monthly plan, or pay on an annual basis with no refund in the event of early cancellation on the annual plan. BabyBrain reserves the right to adjust the Subscription fees at any time and for any reason with 14 days\' notice. To continue to use our Services, you must agree to any such change in fee. If you do not agree to such change, you may cancel your Subscription in accordance with these Terms.',
+        '**(a) Subscription:** BabyBrain may charge both Clients and Vendors subscription fees for premium platform features. If you have purchased a subscription to a paid plan ("**Subscription**"), whether as a Client or Vendor, you may either pay on a monthly basis and cancel anytime with 14 days\' notice on the monthly plan, or pay on an annual basis with no refund in the event of early cancellation on the annual plan. BabyBrain reserves the right to adjust the Subscription fees at any time and for any reason with 14 days\' notice. To continue to use our Services, you must agree to any such change in fee. If you do not agree to such change, you may cancel your Subscription in accordance with these Terms.',
         "**(b) Automatic renewal:** Unless otherwise stated herein, if you have purchased a Subscription, payment authorisation provided under these Terms will continue for the length of the Service you've selected (e.g. annual or monthly) and will automatically renew pursuant to the contract for the Service on an annual or monthly basis, at the rates in effect at the time, unless terminated in accordance with these Terms.",
         "**(c) Payment methods:** We may elect to accept or decline any Payment Method for any reason, in our sole discretion. If any payment falls on a weekend or public holiday, such payment may be processed on the next business day. If a recurring payment is not authorised, we will send you a notice at the email address provided to us. You will have 14 calendar days from that date to make alternative arrangements to make the payment, failing which we may cancel your access to the Services and/or any Subscription and terminate these Terms.",
-        '**(d) Card payments:** Payment for our Services may only be made with a credit or debit card ("Card") that we accept and that has been issued to you as the cardholder, and for which you have provided us with the information we require to process payments. We may obtain updated information regarding your selected Payment Method as made available by your financial institution or through a Card updater service. You hereby authorise BabyBrain (or its agent) to obtain payment of all fees incurred or agreed to be incurred for the Services, either now or any time in the future, via charge(s) to the account accessed using the Card (including any applicable taxes, fees and costs). All Card and payment details are entered only through the Payment Processor\'s secure technology.',
+        '**(d) Card payments:** Payment for our Services may only be made with a credit or debit card ("**Card**") that we accept and that has been issued to you as the cardholder, and for which you have provided us with the information we require to process payments. We may obtain updated information regarding your selected Payment Method as made available by your financial institution or through a Card updater service. You hereby authorise BabyBrain (or its agent) to obtain payment of all fees incurred or agreed to be incurred for the Services, either now or any time in the future, via charge(s) to the account accessed using the Card (including any applicable taxes, fees and costs). All Card and payment details are entered only through the Payment Processor\'s secure technology.',
         "**(e) Duration and recurring payments:** The authorisation to charge your Payment Method of choice will remain in effect until you cancel it in accordance with our procedures, which may be amended from time to time, as described in these Terms. You may cancel this authorisation at any time if you notify us at least 14 days prior to the next billing date. If you agree to a recurring payment, you are authorising regularly scheduled charges to your Payment Method of choice. You will be charged the applicable payment for each billing period. A receipt for each payment will be provided to you at the email address you have provided to us, and the charge will appear on the next periodic statement you receive for transactions on your bank statement or Card. You agree that we are not required to provide you with prior notification of recurring payments unless the date or amount of the payment changes other than as previously notified to you, in which case we will send you a notice, addressed to the email address you have provided to us, prior to the date the payment is processed.",
         "**(f) Late or non-payments:** If you do not pay your balance, we may terminate your Subscription or access to the Services and these Terms, and charge a late fee, in our sole discretion. For unpaid amounts, we reserve the right to retry your Payment Method. If you choose to reactivate your Subscription, we may charge a reactivation fee, and will apply payments first to any past due amounts and then to your current and future obligations. BabyBrain may, in our sole discretion, refuse this payment option to anyone or any user without notice for any reason at any time.",
         "**(g) Your undertakings:** You hereby undertake, represent and warrant the following:",
@@ -149,7 +150,7 @@ const TOS: LegalDoc = {
       number: "8",
       title: "Refund Policies",
       blocks: [
-        "Vendors set their own cancellation, no-show, and refund policies. BabyBrain does not set, mandate, or guarantee any particular refund outcome, and its Commission remains fully payable regardless of whether a Booking is cancelled or amended in any way.",
+        "**Vendors set their own cancellation, no-show, and refund policies.** BabyBrain does not set, mandate, or guarantee any particular refund outcome, and its Commission remains fully payable regardless of whether a Booking is cancelled or amended in any way.",
         "Each Vendor is solely responsible for:",
         [
           "Clearly disclosing its deposit, cancellation, no-show, and refund terms to your customers before they pay, and obtaining their agreement and any required consent to save a card",
@@ -210,7 +211,7 @@ const TOS: LegalDoc = {
       number: "12",
       title: "Features",
       blocks: [
-        'BabyBrain may from time to time provide enhancements or improvements to the features/functionality of our Platform and Services, which may include patches, bug fixes, updates, upgrades and other modifications ("Updates"). Updates may modify or delete certain features and/or functionalities of our Platform and Services. You agree that BabyBrain has no obligation to: (a) provide any Updates; or (b) continue to provide or enable any particular features and/or functionalities of our Platform and/or Services to you. You further agree that all Updates will be: (i) deemed to constitute an integral part of our Platform and Services; and (ii) subject to these Terms.',
+        'BabyBrain may from time to time provide enhancements or improvements to the features/functionality of our Platform and Services, which may include patches, bug fixes, updates, upgrades and other modifications ("**Updates**"). Updates may modify or delete certain features and/or functionalities of our Platform and Services. You agree that BabyBrain has no obligation to: (a) provide any Updates; or (b) continue to provide or enable any particular features and/or functionalities of our Platform and/or Services to you. You further agree that all Updates will be: (i) deemed to constitute an integral part of our Platform and Services; and (ii) subject to these Terms.',
         "We reserve the right to change prices, scope and/or contents of our Services and our resources usage policy at any time without prior notice, save that we shall notify you prior to any substantial increase in price. Subject to applicable laws, if you disagree with any proposed price increase, your sole remedy shall be to cancel your Subscription in accordance with the terms herein, and your continued use of the Services without such termination constitutes your agreement to the increased price.",
       ],
     },
@@ -218,7 +219,7 @@ const TOS: LegalDoc = {
       number: "13",
       title: "Information Rights",
       blocks: [
-        'BabyBrain will not share any data that may be collected, processed or stored using the Services with respect to the characteristics and activities of Clients ("Client Data") with any third parties unless it: (a) has your consent for any Client Data to be shared in accordance with any relevant privacy policy; (b) concludes that it is required by applicable law or has a good faith belief that access, preservation or disclosure of Client Data is reasonably necessary to protect the rights, property or safety of BabyBrain, its users or the public; or (c) provides Client Data in certain limited circumstances to third parties to carry out tasks on BabyBrain\'s behalf (e.g., billing or data storage) with strict restrictions that prevent the data from being used or shared except as directed by BabyBrain. When this is done, it is subject to agreements that oblige those parties to process Client Data only on BabyBrain\'s express instructions and in compliance with these Terms and appropriate confidentiality and security measures.',
+        'BabyBrain will not share any data that may be collected, processed or stored using the Services with respect to the characteristics and activities of Clients ("**Client Data**") with any third parties unless it: (a) has your consent for any Client Data to be shared in accordance with any relevant privacy policy; (b) concludes that it is required by applicable law or has a good faith belief that access, preservation or disclosure of Client Data is reasonably necessary to protect the rights, property or safety of BabyBrain, its users or the public; or (c) provides Client Data in certain limited circumstances to third parties to carry out tasks on BabyBrain\'s behalf (e.g., billing or data storage) with strict restrictions that prevent the data from being used or shared except as directed by BabyBrain. When this is done, it is subject to agreements that oblige those parties to process Client Data only on BabyBrain\'s express instructions and in compliance with these Terms and appropriate confidentiality and security measures.',
       ],
     },
     {
@@ -281,7 +282,7 @@ const TOS: LegalDoc = {
       number: "19",
       title: "Indemnification",
       blocks: [
-        "To the furthest extent permitted by applicable law, each Vendor and Client hereby agrees to indemnify and hold BabyBrain, its directors, management, employees, agents and affiliates harmless from any third party claims, liability, damages and/or costs, including but not limited to legal fees, due to or arising out of: (a) Content you submit, post, transmit or make available through our Platform; (b) your use of or connection to our Platform and Services and/or Vendor Services; (c) your breach of these Terms; (d) your violation of any rights of or obligations to another or any applicable laws; (e) your use of any analytics or data provided to you pursuant to our Services; (f) any claims made by or on behalf of any third party to which you provide access to your account or for which you use the Service to collect information on such party's behalf (\"Third Party\") pertaining directly or indirectly to your use of our Platform and Services; (g) any claims with respect to acts or omissions of any Third Party in connection with our Platform and Services and/or Vendor Services; (h) any payment handling, cancellation or refund policies, chargebacks or payment disputes; (i) any interaction or communication between Vendors and Clients; or (j) your handling, use or management of Client Data. BabyBrain will provide you with written notice of any relevant claim, suit or action. You will cooperate as fully as reasonably required in the defense of any claim.",
+        "To the furthest extent permitted by applicable law, each Vendor and Client hereby agrees to indemnify and hold BabyBrain, its directors, management, employees, agents and affiliates harmless from any third party claims, liability, damages and/or costs, including but not limited to legal fees, due to or arising out of: (a) Content you submit, post, transmit or make available through our Platform; (b) your use of or connection to our Platform and Services and/or Vendor Services; (c) your breach of these Terms; (d) your violation of any rights of or obligations to another or any applicable laws; (e) your use of any analytics or data provided to you pursuant to our Services; (f) any claims made by or on behalf of any third party to which you provide access to your account or for which you use the Service to collect information on such party's behalf (\"**Third Party**\") pertaining directly or indirectly to your use of our Platform and Services; (g) any claims with respect to acts or omissions of any Third Party in connection with our Platform and Services and/or Vendor Services; (h) any payment handling, cancellation or refund policies, chargebacks or payment disputes; (i) any interaction or communication between Vendors and Clients; or (j) your handling, use or management of Client Data. BabyBrain will provide you with written notice of any relevant claim, suit or action. You will cooperate as fully as reasonably required in the defense of any claim.",
       ],
     },
     {
@@ -316,8 +317,8 @@ const TOS: LegalDoc = {
       number: "24",
       title: "Confidentiality",
       blocks: [
-        'All information or materials provided to or disclosed to the other party (or by a third party on their behalf) by BabyBrain, and all information that either of us and those working for us or on our behalf had access to, been entrusted with and/or become acquainted with in connection with the production and delivery of the Services under these Terms, which are not the subject of general public knowledge, shall be deemed to be confidential information ("Confidential Information"). Each of us shall only use the other party\'s Confidential Information for the purposes of the provision and acceptance of Services under these Terms, and for no other purpose. Each of us shall take steps to prevent, protect and avoid unauthorised disclosure, use and reproduction of the other party\'s Confidential Information. Each of us shall not, during or after the term of the provision of Services, disclose or use any such Confidential Information of the other party without first obtaining the other party\'s written authorisation. Each of us shall, at the other party\'s request, require those engaged by either of us to sign confidentiality agreements, in which such persons agree not to use or disclose the other party\'s Confidential Information.',
-        'With respect to any Service features which are identified as "Alpha" or "Beta" or as otherwise preliminary, experimental or confidential ("Beta Features"), you may not disclose any information relating to such Beta Features or the terms or existence of any such Beta Features. You hereby agree that BabyBrain has no liability arising out of or relating to any Beta Features. Any use of and access to Beta Features shall be at your own risk and may be subject to additional requirements as specified by BabyBrain. BabyBrain is not obliged to provide support for Beta Features, and it may, in its sole discretion, cease providing Beta Features at any time, for any reason.',
+        'All information or materials provided to or disclosed to the other party (or by a third party on their behalf) by BabyBrain, and all information that either of us and those working for us or on our behalf had access to, been entrusted with and/or become acquainted with in connection with the production and delivery of the Services under these Terms, which are not the subject of general public knowledge, shall be deemed to be confidential information ("**Confidential Information**"). Each of us shall only use the other party\'s Confidential Information for the purposes of the provision and acceptance of Services under these Terms, and for no other purpose. Each of us shall take steps to prevent, protect and avoid unauthorised disclosure, use and reproduction of the other party\'s Confidential Information. Each of us shall not, during or after the term of the provision of Services, disclose or use any such Confidential Information of the other party without first obtaining the other party\'s written authorisation. Each of us shall, at the other party\'s request, require those engaged by either of us to sign confidentiality agreements, in which such persons agree not to use or disclose the other party\'s Confidential Information.',
+        'With respect to any Service features which are identified as "Alpha" or "Beta" or as otherwise preliminary, experimental or confidential ("**Beta Features**"), you may not disclose any information relating to such Beta Features or the terms or existence of any such Beta Features. You hereby agree that BabyBrain has no liability arising out of or relating to any Beta Features. Any use of and access to Beta Features shall be at your own risk and may be subject to additional requirements as specified by BabyBrain. BabyBrain is not obliged to provide support for Beta Features, and it may, in its sole discretion, cease providing Beta Features at any time, for any reason.',
         "These Terms impose no obligations with respect to information which: (a) was in either party's possession before receipt from the disclosing party; (b) is or becomes a matter of public knowledge through no fault of the receiving party; (c) was rightfully disclosed to the receiving party by a third party without restriction on disclosure; or (d) is developed by the receiving party without use of the Confidential Information, as can be shown by documentary evidence. The receiving party may make disclosures to the extent required by applicable law, government authorities or court order, provided the receiving party makes commercially reasonable efforts to provide the disclosing party with notice of such disclosure as promptly as possible and uses diligent efforts to limit such disclosure and obtain confidential treatment or a protective order, and has allowed the disclosing party to participate in the proceeding.",
       ],
     },
@@ -378,9 +379,9 @@ const TOU: LegalDoc = {
       number: "1",
       title: "General Terms",
       blocks: [
-        'We are BabyBrain Pte. Ltd. (UEN 202627181H) trading as https://www.babybrain.sg/ ("BabyBrain").',
-        'In these terms of use ("Terms"), the words "we", "our" and "us" refer to BabyBrain and "Platform" means collectively BabyBrain\'s websites, webpages and/or applications which we may manage, own or operate from time to time, each of which shall be described as a "Platform", including all content, information, applications, programmes, images/graphics, links, sounds, videos and materials which may be displayed on such Platforms, and the functions or services provided therein.',
-        'By accessing and using our Platform, you confirm that you are in agreement with and legally bound by these Terms, our Terms of Service and Privacy Policy as modified from time to time. Please continue accessing our Platform only if these Terms are acceptable to you. These Terms apply only to your use of our Site and Platform. If you make bookings, purchases, or use services ("Vendor Services") offered by third-party businesses (our "Vendors") as a customer ("Client"), those are governed separately by our Terms of Service and the Vendor\'s own policies.',
+        'We are **BabyBrain Pte. Ltd.** (UEN 202627181H) trading as https://www.babybrain.sg/ ("**BabyBrain**").',
+        'In these terms of use ("**Terms**"), the words "we", "our" and "us" refer to BabyBrain and "Platform" means collectively BabyBrain\'s websites, webpages and/or applications which we may manage, own or operate from time to time, each of which shall be described as a "Platform", including all content, information, applications, programmes, images/graphics, links, sounds, videos and materials which may be displayed on such Platforms, and the functions or services provided therein.',
+        'By accessing and using our Platform, you confirm that you are in agreement with and legally bound by these Terms, our Terms of Service and Privacy Policy as modified from time to time. Please continue accessing our Platform only if these Terms are acceptable to you. These Terms apply only to your use of our Site and Platform. If you make bookings, purchases, or use services ("**Vendor Services**") offered by third-party businesses (our "**Vendors**") as a customer ("**Client**"), those are governed separately by our Terms of Service and the Vendor\'s own policies.',
       ],
     },
     {
@@ -424,7 +425,7 @@ const TOU: LegalDoc = {
       number: "5",
       title: "Intellectual Property",
       blocks: [
-        'All intellectual property rights and copyrights in the content displayed on our Platform ("Content"), including all features and functionality (including but not limited to all information, software, text, displays, images, video and audio and the design, selection and arrangement thereof), belong to BabyBrain or its licensors, as the case may be. The Platform and all Services provided (which includes all software therein) is, and will remain, the property of BabyBrain. All such rights are reserved by BabyBrain and its licensors, as the case may be. BabyBrain grants you a revocable, non-exclusive, non-sublicensable, non-transferable, limited license to download, install and use our Platform strictly in accordance with these Terms and solely as necessary for you to access and view our Platform.',
+        'All intellectual property rights and copyrights in the content displayed on our Platform ("**Content**"), including all features and functionality (including but not limited to all information, software, text, displays, images, video and audio and the design, selection and arrangement thereof), belong to BabyBrain or its licensors, as the case may be. The Platform and all Services provided (which includes all software therein) is, and will remain, the property of BabyBrain. All such rights are reserved by BabyBrain and its licensors, as the case may be. BabyBrain grants you a revocable, non-exclusive, non-sublicensable, non-transferable, limited license to download, install and use our Platform strictly in accordance with these Terms and solely as necessary for you to access and view our Platform.',
       ],
     },
     {
@@ -468,7 +469,7 @@ const TOU: LegalDoc = {
       number: "8",
       title: "Features",
       blocks: [
-        'BabyBrain may from time to time provide enhancements or improvements to the features/functionality of our Platform and Services, which may include patches, bug fixes, updates, upgrades and other modifications ("Updates"). Updates may modify or delete certain features and/or functionalities of our Platform and Services. You agree that BabyBrain has no obligation to: (a) provide any Updates; or (b) continue to provide or enable any particular features and/or functionalities of our Platform and/or Services to you. You further agree that all Updates will be: (i) deemed to constitute an integral part of our Platform and Services; and (ii) subject to these Terms.',
+        'BabyBrain may from time to time provide enhancements or improvements to the features/functionality of our Platform and Services, which may include patches, bug fixes, updates, upgrades and other modifications ("**Updates**"). Updates may modify or delete certain features and/or functionalities of our Platform and Services. You agree that BabyBrain has no obligation to: (a) provide any Updates; or (b) continue to provide or enable any particular features and/or functionalities of our Platform and/or Services to you. You further agree that all Updates will be: (i) deemed to constitute an integral part of our Platform and Services; and (ii) subject to these Terms.',
         "We reserve the right to change prices, scope and/or contents of our Services and our resources usage policy at any time without prior notice, save that we shall notify you prior to any substantial increase in price. Subject to applicable laws, if you disagree with any proposed price increase, your sole remedy shall be to cancel your Subscription in accordance with the terms herein, and your continued use of the Services without such termination constitutes your agreement to the increased price.",
       ],
     },
@@ -476,7 +477,7 @@ const TOU: LegalDoc = {
       number: "9",
       title: "Information Rights",
       blocks: [
-        'BabyBrain will not share any data that may be collected, processed or stored using the Services with respect to the characteristics and activities of users of the Platform ("Client Data") with any third parties unless it: (a) has your consent for any Client Data to be shared in accordance with any relevant privacy policy; (b) concludes that it is required by applicable law or has a good faith belief that access, preservation or disclosure of Client Data is reasonably necessary to protect the rights, property or safety of BabyBrain, its users or the public; or (c) provides Client Data in certain limited circumstances to third parties to carry out tasks on BabyBrain\'s behalf (e.g., billing or data storage) with strict restrictions that prevent the data from being used or shared except as directed by BabyBrain. When this is done, it is subject to agreements that oblige those parties to process Client Data only on BabyBrain\'s express instructions and in compliance with these Terms and appropriate confidentiality and security measures.',
+        'BabyBrain will not share any data that may be collected, processed or stored using the Services with respect to the characteristics and activities of users of the Platform ("**Client Data**") with any third parties unless it: (a) has your consent for any Client Data to be shared in accordance with any relevant privacy policy; (b) concludes that it is required by applicable law or has a good faith belief that access, preservation or disclosure of Client Data is reasonably necessary to protect the rights, property or safety of BabyBrain, its users or the public; or (c) provides Client Data in certain limited circumstances to third parties to carry out tasks on BabyBrain\'s behalf (e.g., billing or data storage) with strict restrictions that prevent the data from being used or shared except as directed by BabyBrain. When this is done, it is subject to agreements that oblige those parties to process Client Data only on BabyBrain\'s express instructions and in compliance with these Terms and appropriate confidentiality and security measures.',
       ],
     },
     {
@@ -554,7 +555,7 @@ const TOU: LegalDoc = {
       number: "17",
       title: "Indemnification",
       blocks: [
-        "To the furthest extent permitted by applicable law, you agree to indemnify and hold BabyBrain, its directors, management, employees, agents and affiliates harmless from any third party claims, liability, damages and/or costs, including but not limited to legal fees, due to or arising out of: (a) Content you submit, post, transmit or make available through our Platform; (b) your use of or connection to our Platform and Services and/or Vendor Services; (c) your breach of these Terms; (d) your violation of any rights of or obligations to another or any applicable laws; (e) your use of any analytics or data provided to you pursuant to our Services; (f) any claims made by or on behalf of any third party to which you provide access to your account or for which you use the Service to collect information on such party's behalf (\"Third Party\") pertaining directly or indirectly to your use of our Platform and Services; (g) any claims with respect to acts or omissions of any Third Party in connection with our Platform and Services and/or Vendor Services; (h) any payment handling, cancellation or refund policies, chargebacks or payment disputes; (i) any interaction or communication between Vendors and Clients; or (j) your handling, use or management of Client Data. BabyBrain will provide you with written notice of any relevant claim, suit or action. You will cooperate as fully as reasonably required in the defense of any claim.",
+        "To the furthest extent permitted by applicable law, you agree to indemnify and hold BabyBrain, its directors, management, employees, agents and affiliates harmless from any third party claims, liability, damages and/or costs, including but not limited to legal fees, due to or arising out of: (a) Content you submit, post, transmit or make available through our Platform; (b) your use of or connection to our Platform and Services and/or Vendor Services; (c) your breach of these Terms; (d) your violation of any rights of or obligations to another or any applicable laws; (e) your use of any analytics or data provided to you pursuant to our Services; (f) any claims made by or on behalf of any third party to which you provide access to your account or for which you use the Service to collect information on such party's behalf (\"**Third Party**\") pertaining directly or indirectly to your use of our Platform and Services; (g) any claims with respect to acts or omissions of any Third Party in connection with our Platform and Services and/or Vendor Services; (h) any payment handling, cancellation or refund policies, chargebacks or payment disputes; (i) any interaction or communication between Vendors and Clients; or (j) your handling, use or management of Client Data. BabyBrain will provide you with written notice of any relevant claim, suit or action. You will cooperate as fully as reasonably required in the defense of any claim.",
       ],
     },
     {
@@ -589,8 +590,8 @@ const TOU: LegalDoc = {
       number: "22",
       title: "Confidentiality",
       blocks: [
-        'All information or materials provided to or disclosed to the other party (or by a third party on their behalf) by BabyBrain, and all information that either of us and those working for us or on our behalf had access to, been entrusted with and/or become acquainted with in connection with the production and delivery of the Services under these Terms, which are not the subject of general public knowledge, shall be deemed to be confidential information ("Confidential Information"). Each of us shall only use the other party\'s Confidential Information for the purposes of the provision and acceptance of Services under these Terms, and for no other purpose. Each of us shall take steps to prevent, protect and avoid unauthorised disclosure, use and reproduction of the other party\'s Confidential Information. Each of us shall not, during or after the term of the provision of Services, disclose or use any such Confidential Information of the other party without first obtaining the other party\'s written authorisation. Each of us shall, at the other party\'s request, require those engaged by either of us to sign confidentiality agreements, in which such persons agree not to use or disclose the other party\'s Confidential Information.',
-        'With respect to any Service features which are identified as "Alpha" or "Beta" or as otherwise preliminary, experimental or confidential ("Beta Features"), you may not disclose any information relating to such Beta Features or the terms or existence of any such Beta Features. You hereby agree that BabyBrain has no liability arising out of or relating to any Beta Features. Any use of and access to Beta Features shall be at your own risk and may be subject to additional requirements as specified by BabyBrain. BabyBrain is not obliged to provide support for Beta Features, and it may, in its sole discretion, cease providing Beta Features at any time, for any reason.',
+        'All information or materials provided to or disclosed to the other party (or by a third party on their behalf) by BabyBrain, and all information that either of us and those working for us or on our behalf had access to, been entrusted with and/or become acquainted with in connection with the production and delivery of the Services under these Terms, which are not the subject of general public knowledge, shall be deemed to be confidential information ("**Confidential Information**"). Each of us shall only use the other party\'s Confidential Information for the purposes of the provision and acceptance of Services under these Terms, and for no other purpose. Each of us shall take steps to prevent, protect and avoid unauthorised disclosure, use and reproduction of the other party\'s Confidential Information. Each of us shall not, during or after the term of the provision of Services, disclose or use any such Confidential Information of the other party without first obtaining the other party\'s written authorisation. Each of us shall, at the other party\'s request, require those engaged by either of us to sign confidentiality agreements, in which such persons agree not to use or disclose the other party\'s Confidential Information.',
+        'With respect to any Service features which are identified as "Alpha" or "Beta" or as otherwise preliminary, experimental or confidential ("**Beta Features**"), you may not disclose any information relating to such Beta Features or the terms or existence of any such Beta Features. You hereby agree that BabyBrain has no liability arising out of or relating to any Beta Features. Any use of and access to Beta Features shall be at your own risk and may be subject to additional requirements as specified by BabyBrain. BabyBrain is not obliged to provide support for Beta Features, and it may, in its sole discretion, cease providing Beta Features at any time, for any reason.',
         "These Terms impose no obligations with respect to information which: (a) was in either party's possession before receipt from the disclosing party; (b) is or becomes a matter of public knowledge through no fault of the receiving party; (c) was rightfully disclosed to the receiving party by a third party without restriction on disclosure; or (d) is developed by the receiving party without use of the Confidential Information, as can be shown by documentary evidence. The receiving party may make disclosures to the extent required by applicable law, government authorities or court order, provided the receiving party makes commercially reasonable efforts to provide the disclosing party with notice of such disclosure as promptly as possible and uses diligent efforts to limit such disclosure and obtain confidential treatment or a protective order, and has allowed the disclosing party to participate in the proceeding.",
       ],
     },
@@ -639,7 +640,7 @@ const PRIVACY: LegalDoc = {
   shortLabel: "Privacy",
   updated: "9 September 2026",
   intro: [
-    "This website and platform are directed only to residents of Singapore. BabyBrain's services are intended for use by individuals located in Singapore, and our handling of personal data is governed by the Singapore Personal Data Protection Act 2012 (the \"PDPA\"). If you are accessing our platform from outside Singapore, you do so on your own initiative and are responsible for compliance with your local laws.",
+    "**This website and platform are directed only to residents of Singapore.** BabyBrain's services are intended for use by individuals located in Singapore, and our handling of personal data is governed by the Singapore Personal Data Protection Act 2012 (the \"PDPA\"). If you are accessing our platform from outside Singapore, you do so on your own initiative and are responsible for compliance with your local laws.",
   ],
   sections: [
     {
@@ -647,9 +648,9 @@ const PRIVACY: LegalDoc = {
       title: "Introduction",
       blocks: [
         "This Privacy Policy explains how BabyBrain collects, uses, discloses, protects and retains your personal data, and the rights available to you under the PDPA.",
-        'We are BabyBrain Pte. Ltd. (UEN 202627181H), a company incorporated in Singapore with its registered office at 133 New Bridge Road, #23-09, Chinatown Point, Singapore 059413, trading as BabyBrain at www.babybrain.sg ("BabyBrain", "we", "our", "us").',
-        'In this Policy, "Platform" means our websites, webpages and applications and the services provided through them; "Vendor" means a business that lists activities, classes or events on the Platform; "Client" or "parent" means a customer who browses or makes a booking; and "personal data" has the meaning given to it under the PDPA.',
-        "BabyBrain is a marketplace platform that connects parents with children's enrichment activities and helps Vendors and Clients manage bookings and communications. We are not the provider of the activities themselves, and we are not a party to any booking between a Client and a Vendor.",
+        'We are **BabyBrain Pte. Ltd.** (UEN 202627181H), a company incorporated in Singapore with its registered office at **133 New Bridge Road, #23-09, Chinatown Point, Singapore 059413**, trading as BabyBrain at www.babybrain.sg ("BabyBrain", "we", "our", "us").',
+        'In this Policy, **"Platform"** means our websites, webpages and applications and the services provided through them; **"Vendor"** means a business that lists activities, classes or events on the Platform; **"Client"** or **"parent"** means a customer who browses or makes a booking; and **"personal data"** has the meaning given to it under the PDPA.',
+        "BabyBrain is a **marketplace platform** that connects parents with children's enrichment activities and helps Vendors and Clients manage bookings and communications. We are **not** the provider of the activities themselves, and we are not a party to any booking between a Client and a Vendor.",
         "By creating an account, making a booking, or otherwise using the Platform, you acknowledge that you have read and understood this Policy and, where required, consent to our collection, use and disclosure of your personal data as described here.",
       ],
     },
@@ -658,7 +659,7 @@ const PRIVACY: LegalDoc = {
       title: "Data Protection Officer",
       blocks: [
         'We have appointed a Data Protection Officer ("DPO") responsible for overseeing our compliance with the PDPA. You may contact our DPO about anything in this Policy, including access, correction or withdrawal-of-consent requests:',
-        ["Data Protection Officer: Katie Crowson", "Email: hello@babybrain.sg"],
+        ["**Data Protection Officer:** Katie Crowson", "**Email:** hello@babybrain.sg"],
       ],
     },
     {
@@ -675,7 +676,7 @@ const PRIVACY: LegalDoc = {
           "Postcode (used to show activities near you)",
           "The areas and preferences you select (for example, preferred regions, days, times and price ranges)",
         ],
-        "**3.2 About your child** — Because BabyBrain helps you find and book children's activities, we collect limited information about your child that you provide as the account holder:",
+        "**3.2 About your child** — Because BabyBrain helps you find and book children's activities, we collect limited information about your child that **you provide as the account holder**:",
         [
           "Your child's name",
           "Date of birth",
@@ -684,10 +685,10 @@ const PRIVACY: LegalDoc = {
         ],
         "When you make a booking, the relevant Vendor may also ask you to provide, and you may choose to disclose:",
         [
-          "Medical, allergy or dietary information about your child, where relevant to the safe delivery of an activity",
-          "Address and contact information for sessions held out of your home",
+          "**Medical, allergy or dietary information** about your child, where relevant to the safe delivery of an activity",
+          "**Address and contact information** for sessions held out of your home",
         ],
-        "This information is sensitive and is treated with additional care — see Section 7 (Children's personal data) for how we handle it.",
+        "This information is **sensitive** and is treated with additional care — see Section 7 (Children's personal data) for how we handle it.",
         "**3.3 From Vendors** — When a business registers as a Vendor, we may collect:",
         [
           "Business name and business address",
@@ -697,7 +698,7 @@ const PRIVACY: LegalDoc = {
           "Details of team members or staff whom the Vendor invites to their account (for example, name and email address)",
         ],
         "Where a Vendor provides us with personal data about its staff or other individuals, the Vendor is responsible for ensuring it is authorised to do so.",
-        "**3.4 Payment information** — Payments are processed by our third-party payment processor (currently Stripe). Card and payment details are entered directly with the payment processor through its secure technology. BabyBrain does not collect or store your full card or bank details.",
+        "**3.4 Payment information** — Payments are processed by our third-party payment processor (currently Stripe). Card and payment details are entered directly with the payment processor through its secure technology. **BabyBrain does not collect or store your full card or bank details.**",
         "**3.5 Information collected automatically** — When you use the Platform, we (and our service providers) may collect technical and usage information such as device and browser type, IP address, and how you interact with the Platform, including through cookies and similar technologies — see Section 15 (Cookies and analytics).",
       ],
     },
@@ -737,18 +738,18 @@ const PRIVACY: LegalDoc = {
       number: "6",
       title: "What we share with Vendors",
       blocks: [
-        "When you make a booking, we share with the relevant Vendor only the information the Vendor needs to deliver the activity.",
+        "When you make a booking, we share with the relevant Vendor **only the information the Vendor needs to deliver the activity**.",
         "Each Vendor is an independent organisation, and once your information is shared with them, the Vendor is responsible for handling it in accordance with the PDPA and its own privacy practices. We encourage you to review the Vendor's own policies.",
-        "**Photographs at activities** — Some Vendors ask parents whether they consent to photographs being taken during an activity (for example, for the Vendor's own social media). Where you give this consent, any resulting photographs are collected and stored by the Vendor, not by BabyBrain. The Vendor is responsible for those images as a separate organisation. Photo consent is optional and is not required to make a booking.",
+        "**Photographs at activities** — Some Vendors ask parents whether they consent to photographs being taken during an activity (for example, for the Vendor's own social media). Where you give this consent, **any resulting photographs are collected and stored by the Vendor, not by BabyBrain.** The Vendor is responsible for those images as a separate organisation. Photo consent is optional and is not required to make a booking.",
       ],
     },
     {
       number: "7",
       title: "Children's personal data",
       blocks: [
-        "BabyBrain is a service for adults. You must be at least 18 years old to create an account and use the Platform. Children do not hold accounts and are not the intended users of the Platform.",
-        "Where information about a child is provided, it is provided by the parent or guardian who holds the account, acting on the child's behalf. By providing your child's information, you confirm that you are the child's parent or legal guardian (or are otherwise authorised to provide it) and that you consent, on the child's behalf, to our collection, use and disclosure of that information as described in this Policy.",
-        "We limit children's data to what is needed to help you find and book activities. Sensitive information — such as medical, allergy or dietary details — is collected only where you choose to provide it for a booking, is shared only with the relevant Vendor for the safe delivery of that activity, and is otherwise protected as described in Section 9.",
+        "BabyBrain is a service **for adults**. You must be at least 18 years old to create an account and use the Platform. Children do not hold accounts and are not the intended users of the Platform.",
+        "Where information about a child is provided, it is provided **by the parent or guardian who holds the account**, acting on the child's behalf. By providing your child's information, you confirm that you are the child's parent or legal guardian (or are otherwise authorised to provide it) and that you consent, on the child's behalf, to our collection, use and disclosure of that information as described in this Policy.",
+        "We limit children's data to what is needed to help you find and book activities. **Sensitive information** — such as medical, allergy or dietary details — is collected only where you choose to provide it for a booking, is shared only with the relevant Vendor for the safe delivery of that activity, and is otherwise protected as described in Section 9.",
         "If you believe a child's personal data has been provided to us without proper authority, please contact our DPO and we will take appropriate steps to address it.",
       ],
     },
@@ -758,12 +759,12 @@ const PRIVACY: LegalDoc = {
       blocks: [
         "We may disclose personal data:",
         [
-          "To Vendors, as described in Section 6, to enable your bookings;",
-          "To service providers who process personal data on our behalf, as described in Section 10;",
-          "In connection with a business transfer, as described in Section 16;",
-          "Where required or permitted by law, including to comply with legal obligations, respond to lawful requests from public authorities, or protect our rights, safety and property or those of others.",
+          "**To Vendors**, as described in Section 6, to enable your bookings;",
+          "**To service providers** who process personal data on our behalf, as described in Section 10;",
+          "**In connection with a business transfer**, as described in Section 16;",
+          "**Where required or permitted by law**, including to comply with legal obligations, respond to lawful requests from public authorities, or protect our rights, safety and property or those of others.",
         ],
-        "We do not sell your personal data.",
+        "We do **not** sell your personal data.",
       ],
     },
     {
@@ -778,7 +779,7 @@ const PRIVACY: LegalDoc = {
       number: "10",
       title: "Third-party service providers and AI tools",
       blocks: [
-        "To operate the Platform, we use reputable third-party providers that may process personal data on our behalf as our data intermediaries. These fall into categories such as:",
+        "To operate the Platform, we use reputable third-party providers that may process personal data **on our behalf** as our data intermediaries. These fall into categories such as:",
         [
           "Payment processing;",
           "Cloud hosting and data storage;",
@@ -794,7 +795,7 @@ const PRIVACY: LegalDoc = {
       number: "11",
       title: "Transfer of personal data outside Singapore",
       blocks: [
-        "Some of our service providers store or process personal data outside Singapore. Where we transfer personal data overseas, we comply with the PDPA's Transfer Limitation Obligation by taking reasonable steps to ensure that the receiving organisation is bound by legally enforceable obligations to provide a standard of protection at least comparable to that under the PDPA (for example, through contractual terms).",
+        "Some of our service providers store or process personal data **outside Singapore**. Where we transfer personal data overseas, we comply with the PDPA's Transfer Limitation Obligation by taking reasonable steps to ensure that the receiving organisation is bound by legally enforceable obligations to provide a standard of protection at least comparable to that under the PDPA (for example, through contractual terms).",
         "By using the Platform, you acknowledge that your personal data may be transferred to, and processed in, jurisdictions outside Singapore for the purposes described in this Policy.",
       ],
     },
@@ -813,10 +814,10 @@ const PRIVACY: LegalDoc = {
       blocks: [
         "Under the PDPA, you may request:",
         [
-          "Access to the personal data we hold about you and information about how it has been used or disclosed; and",
-          "Correction of any personal data that is inaccurate or out of date.",
+          "**Access** to the personal data we hold about you and information about how it has been used or disclosed; and",
+          "**Correction** of any personal data that is inaccurate or out of date.",
         ],
-        "To make a request, contact our DPO at hello@babybrain.sg. We may need to verify your identity before responding, and we will respond within the timeframes required by the PDPA. A reasonable fee may apply to certain access requests, and we will inform you in advance if so.",
+        "To make a request, contact our DPO at **hello@babybrain.sg**. We may need to verify your identity before responding, and we will respond within the timeframes required by the PDPA. A reasonable fee may apply to certain access requests, and we will inform you in advance if so.",
       ],
     },
     {
@@ -832,10 +833,10 @@ const PRIVACY: LegalDoc = {
       blocks: [
         "We use cookies and similar technologies to operate the Platform, remember your preferences, improve performance through caching, and understand how the Platform is used so that we can improve it. The cookies and technologies we use include:",
         [
-          "Essential cookies that are necessary for the Platform to function and to keep you signed in;",
-          "Preference cookies that remember your settings and choices;",
-          "Caching, which temporarily stores data to make the Platform load faster; and",
-          "Analytics cookies from third-party analytics services (such as Google Analytics), which help us understand how visitors use the Platform. These services may collect information such as your IP address, device and browser type, and the pages you visit, and may set their own cookies.",
+          "**Essential cookies** that are necessary for the Platform to function and to keep you signed in;",
+          "**Preference cookies** that remember your settings and choices;",
+          "**Caching**, which temporarily stores data to make the Platform load faster; and",
+          "**Analytics cookies** from third-party analytics services (such as Google Analytics), which help us understand how visitors use the Platform. These services may collect information such as your IP address, device and browser type, and the pages you visit, and may set their own cookies.",
         ],
         "You can control or disable cookies through your browser settings, and you can opt out of Google Analytics using the tools Google provides. Disabling some cookies may affect how the Platform works.",
       ],
@@ -844,17 +845,17 @@ const PRIVACY: LegalDoc = {
       number: "16",
       title: "Business transfers / change of control",
       blocks: [
-        "If BabyBrain is involved in a merger, acquisition, financing, reorganisation, sale of assets, or other transaction in which our business or assets are transferred, personal data held by us may be transferred as part of that transaction, subject to the acquiring party continuing to handle it in accordance with this Policy or a materially similar policy.",
-        "The PDPA permits the collection, use and disclosure of personal data for the purposes of such a business asset transaction without fresh consent, subject to the conditions set out in the PDPA. Where any such transfer proceeds and notification is required, we will provide notice as required by law.",
+        "If BabyBrain is involved in a merger, acquisition, financing, reorganisation, sale of assets, or other transaction in which our business or assets are transferred, personal data held by us may be **transferred as part of that transaction**, subject to the acquiring party continuing to handle it in accordance with this Policy or a materially similar policy.",
+        "The PDPA permits the collection, use and disclosure of personal data for the purposes of such a **business asset transaction** without fresh consent, subject to the conditions set out in the PDPA. Where any such transfer proceeds and notification is required, we will provide notice as required by law.",
       ],
     },
     {
       number: "17",
       title: "Retention of personal data",
       blocks: [
-        "There is no single fixed retention period prescribed by the PDPA. We retain personal data for as long as your account remains active and for as long as is necessary to fulfil the purposes set out in this Policy, or as required to comply with our legal, accounting or regulatory obligations.",
+        "There is no single fixed retention period prescribed by the PDPA. We retain personal data **for as long as your account remains active and for as long as is necessary** to fulfil the purposes set out in this Policy, or as required to comply with our legal, accounting or regulatory obligations.",
         [
-          "If you close your account, your personal data is deleted from our active systems immediately, except where we are required or permitted by law to retain certain information (for example, transaction records). For a short period after deletion, residual copies may remain in our secure encrypted backups for up to 7 days before being permanently overwritten.",
+          "If you **close your account**, your personal data is deleted from our active systems immediately, except where we are required or permitted by law to retain certain information (for example, transaction records). For a short period after deletion, residual copies may remain in our secure encrypted backups for up to 7 days before being permanently overwritten.",
           "We will cease to retain personal data, or remove the means by which it can be associated with you, when it is reasonable to assume that retention no longer serves the purposes for which it was collected and is no longer necessary for legal or business purposes.",
         ],
       ],
@@ -879,9 +880,9 @@ const PRIVACY: LegalDoc = {
       blocks: [
         "For any questions, requests or complaints about this Policy or your personal data, please contact:",
         [
-          "Data Protection Officer: Katie Crowson",
-          "Email: hello@babybrain.sg",
-          "BabyBrain Pte. Ltd. (UEN 202627181H), 133 New Bridge Road, #23-09, Chinatown Point, Singapore 059413",
+          "**Data Protection Officer:** Katie Crowson",
+          "**Email:** hello@babybrain.sg",
+          "**BabyBrain Pte. Ltd.** (UEN 202627181H), 133 New Bridge Road, #23-09, Chinatown Point, Singapore 059413",
         ],
         "We will endeavour to respond to your request or resolve your complaint within a reasonable time. If you are not satisfied with our response, you may have the right to lodge a complaint with the Personal Data Protection Commission (PDPC) of Singapore.",
       ],

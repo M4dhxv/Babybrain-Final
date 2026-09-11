@@ -105,16 +105,16 @@ export default function SiteFooter() {
         {columns.map((col) => (
           <div key={col.title} className="text-base">
             <h3 className="mb-4 font-bold text-gray-900">{col.title}</h3>
-            <div className="space-y-2.5 font-bold text-gray-500">
+            <div className="space-y-2.5 text-gray-500">
               {col.links.map((l) => (
                 <p key={l.label}>
                   {l.to ? (
-                    <Link to={l.to} className="underline underline-offset-2 hover:text-[#FA4D8D]">{l.label}</Link>
+                    <Link to={l.to} className="hover:text-[#FA4D8D]">{l.label}</Link>
                   ) : (
                     <a
                       href={l.href}
                       {...(l.blank ? { target: '_blank', rel: 'noreferrer' } : {})}
-                      className="underline underline-offset-2 hover:text-[#FA4D8D]"
+                      className="hover:text-[#FA4D8D]"
                     >
                       {l.label}
                     </a>
