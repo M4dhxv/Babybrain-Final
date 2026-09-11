@@ -231,3 +231,23 @@
   --str-chat__primary-surface-color-low-emphasis: #feebf2;
   --str-chat__primary-overlay-color: rgba(250, 77, 141, 0.6);
 }
+
+/* Indeterminate bar for an in-flight route chunk (ChunkProgress.tsx). */
+@keyframes bb-chunk-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.bb-chunk-bar {
+  animation: bb-chunk-bar 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-chunk-bar {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+}

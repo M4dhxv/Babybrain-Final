@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { capturePageview } from './lib/posthog';
@@ -6,34 +6,35 @@ import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './layouts/PortalLayout';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
+import { lazyRoute } from '@/lib/lazyRoute';
 
 // Every page is its own chunk, fetched when its route is first visited, so a
 // first load (or a hard reload) no longer ships all ~25 pages — plus recharts,
 // stream-chat and the whole Radix set — in one bundle.
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const PlansPage = lazy(() => import('./pages/PlansPage'));
-const ClaimBusinessPage = lazy(() => import('./pages/ClaimBusinessPage'));
-const ContactPage = lazy(() => import('./pages/ContactPage'));
-const AboutPage = lazy(() => import('./pages/AboutPage'));
-const TermsPage = lazy(() => import('./pages/TermsPage'));
-const SaveListingPage = lazy(() => import('./pages/SaveListingPage'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const ActivitiesPage = lazy(() => import('./pages/ActivitiesPage'));
-const SchedulePage = lazy(() => import('./pages/SchedulePage'));
-const BookingsPage = lazy(() => import('./pages/BookingsPage'));
-const PackagesPage = lazy(() => import('./pages/PackagesPage'));
-const MakeUpTokensPage = lazy(() => import('./pages/MakeUpTokensPage'));
-const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
-const MessagesPage = lazy(() => import('./pages/MessagesPage'));
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
-const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const BillingPage = lazy(() => import('./pages/BillingPage'));
-const EarningsPage = lazy(() => import('./pages/EarningsPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const LandingPage = lazyRoute(() => import('./pages/LandingPage'), 'LandingPage');
+const PlansPage = lazyRoute(() => import('./pages/PlansPage'), 'PlansPage');
+const ClaimBusinessPage = lazyRoute(() => import('./pages/ClaimBusinessPage'), 'ClaimBusinessPage');
+const ContactPage = lazyRoute(() => import('./pages/ContactPage'), 'ContactPage');
+const AboutPage = lazyRoute(() => import('./pages/AboutPage'), 'AboutPage');
+const TermsPage = lazyRoute(() => import('./pages/TermsPage'), 'TermsPage');
+const SaveListingPage = lazyRoute(() => import('./pages/SaveListingPage'), 'SaveListingPage');
+const LoginPage = lazyRoute(() => import('./pages/LoginPage'), 'LoginPage');
+const ForgotPasswordPage = lazyRoute(() => import('./pages/ForgotPasswordPage'), 'ForgotPasswordPage');
+const ResetPasswordPage = lazyRoute(() => import('./pages/ResetPasswordPage'), 'ResetPasswordPage');
+const DashboardPage = lazyRoute(() => import('./pages/DashboardPage'), 'DashboardPage');
+const ActivitiesPage = lazyRoute(() => import('./pages/ActivitiesPage'), 'ActivitiesPage');
+const SchedulePage = lazyRoute(() => import('./pages/SchedulePage'), 'SchedulePage');
+const BookingsPage = lazyRoute(() => import('./pages/BookingsPage'), 'BookingsPage');
+const PackagesPage = lazyRoute(() => import('./pages/PackagesPage'), 'PackagesPage');
+const MakeUpTokensPage = lazyRoute(() => import('./pages/MakeUpTokensPage'), 'MakeUpTokensPage');
+const InsightsPage = lazyRoute(() => import('@/pages/InsightsPage'), 'InsightsPage');
+const MessagesPage = lazyRoute(() => import('./pages/MessagesPage'), 'MessagesPage');
+const NotificationsPage = lazyRoute(() => import('./pages/NotificationsPage'), 'NotificationsPage');
+const ReviewsPage = lazyRoute(() => import('./pages/ReviewsPage'), 'ReviewsPage');
+const SettingsPage = lazyRoute(() => import('./pages/SettingsPage'), 'SettingsPage');
+const BillingPage = lazyRoute(() => import('./pages/BillingPage'), 'BillingPage');
+const EarningsPage = lazyRoute(() => import('./pages/EarningsPage'), 'EarningsPage');
+const NotFoundPage = lazyRoute(() => import('./pages/NotFoundPage'), 'NotFoundPage');
 
 /**
  * When Supabase parses a password-reset link it fires PASSWORD_RECOVERY. Because

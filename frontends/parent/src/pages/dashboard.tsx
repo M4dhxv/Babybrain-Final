@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useEffect,
   useMemo,
@@ -58,9 +57,11 @@ import type { ActivitySession, Child, Gender, ProviderPolicy } from "../lib/data
 import { CHILD_AVATARS, PARENT_AVATARS, type AvatarOption } from "../lib/avatars";
 import { dobError, postcodeError } from "../lib/validation";
 import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
+import { lazyRoute } from "../lib/lazyRoute";
 
-const MessagesTab = lazy(() =>
-  import("../components/MessagesTab").then((m) => ({ default: m.MessagesTab }))
+const MessagesTab = lazyRoute(
+  () => import("../components/MessagesTab").then((m) => ({ default: m.MessagesTab })),
+  "MessagesTab"
 );
 
 type BookingItem = {
@@ -1003,7 +1004,7 @@ export function EditProfilePage() {
 }
 
 export function ProfilePage() {
-  const { session, profile, children, loading, signOut, refresh } = useAuth();
+  const { session, profile, children, loading, dataResolved, signOut, refresh } = useAuth();
   // Plan gating (sidebar pill, tab locks, per-tab Plus panels) reads from
   // usePlan, which is backed by a persisted last-known value — so a hard
   // refresh renders the real plan straight away instead of flashing the
@@ -1054,6 +1055,11 @@ export function ProfilePage() {
     terms_accepted_at: string | null;
     terms_version: string | null;
   } | null>(null);
+  // The Settings plan card's headline. The full subscription fetch (dates,
+  // trial, terms) lands seconds after a refresh; until then use usePlan's
+  // persisted plan instead of rendering "Free" + Upgrade for a Plus parent.
+  // null = never resolved on this device, so the card holds a skeleton.
+  const shownPlan = billingPlan?.plan ?? (planKnown ? (isPlus ? "plus" : "free") : null);
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
   /* Unread badge on the Messages tab (QA 04/09). Free parents can read their
@@ -1873,7 +1879,9 @@ export function ProfilePage() {
             <SectionTitle action={<a href="/matches" className="font-bold text-[#FFC1D6]">See all matches →</a>}>
               {journeyChild ? `Suggested for ${journeyChild.name}` : "Suggested activities"}
             </SectionTitle>
-            {recsLoading ? (
+            {/* Children land after a refresh's first paint — until they do, an
+                empty list is "unknown", not "profile incomplete". */}
+            {recsLoading || (Boolean(session) && !dataResolved) ? (
               <ActivityCardGridSkeleton count={3} className="grid gap-4 md:grid-cols-3" />
             ) : (
               <div className="grid gap-4 md:grid-cols-3">
@@ -2210,16 +2218,20 @@ export function ProfilePage() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Plan</p>
-                    <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
-                      <Icon name={billingPlan?.plan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
-                      {billingPlan?.plan === "plus" ? "BabyBrain Plus" : "Free"}
-                      {billingPlan?.status === "trialing" && (
-                        <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-baby-cta">Free trial</span>
-                      )}
-                      {billingPlan?.cancel_at_period_end && (
-                        <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#FFD77A]">Cancels at period end</span>
-                      )}
-                    </p>
+                    {shownPlan === null ? (
+                      <div aria-hidden="true" className="mt-2 h-6 w-40 animate-pulse rounded bg-[#F3EDF0]" />
+                    ) : (
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-black">
+                        <Icon name={shownPlan === "plus" ? "star" : "heart"} className="h-5 w-5 text-baby-pink" />
+                        {shownPlan === "plus" ? "BabyBrain Plus" : "Free"}
+                        {billingPlan?.status === "trialing" && (
+                          <span className="rounded-full bg-[#FED7E4] px-2 py-0.5 text-xs font-bold text-baby-cta">Free trial</span>
+                        )}
+                        {billingPlan?.cancel_at_period_end && (
+                          <span className="rounded-full bg-[#FEF4EB] px-2 py-0.5 text-xs font-bold text-[#FFD77A]">Cancels at period end</span>
+                        )}
+                      </p>
+                    )}
                     {billingPlan?.plan === "plus" && billingPlan.current_period_end && (
                       <p className="mt-1 text-sm font-semibold text-[#59658d]">
                         {billingPlan.cancel_at_period_end ? "Access until" : "Renews on"}{" "}
@@ -2227,7 +2239,9 @@ export function ProfilePage() {
                       </p>
                     )}
                   </div>
-                  {billingPlan?.plan === "plus" ? (
+                  {shownPlan === null ? (
+                    <div aria-hidden="true" className="h-10 w-36 animate-pulse rounded-full bg-[#F3EDF0]" />
+                  ) : shownPlan === "plus" ? (
                     <Button type="button" variant="outline" onClick={manageBilling} disabled={billingBusy}>
                       {billingBusy ? "Opening…" : "Manage / Cancel"}
                     </Button>

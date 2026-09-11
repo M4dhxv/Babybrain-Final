@@ -25,6 +25,10 @@ window.addEventListener("error", (e) => {
 window.addEventListener("unhandledrejection", (e) => {
   if (isChunkLoadError(e.reason)) reloadForChunkError();
 });
+// Vite's own signal for a failed chunk preload; only swallow it when a reload is actually on its way.
+window.addEventListener("vite:preloadError", (e) => {
+  if (reloadForChunkError()) e.preventDefault();
+});
 
 // Signals the boot-splash watchdog in index.html. `__BB_BOOT_JS__` means the
 // entry bundle executed (so a stale/failed asset is ruled out and it stops

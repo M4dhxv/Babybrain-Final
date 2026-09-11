@@ -1,25 +1,28 @@
 import { useEffect, useState } from "react";
 import { PageShell, Button, Icon } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
-import { apiGet, apiPost } from "../lib/api";
+import { apiPost } from "../lib/api";
 import { goTo, getParam } from "../lib/nav";
+import { usePlan } from "../lib/data";
 
 export default function PricingPage() {
   const { session } = useAuth();
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
-  const [plan, setPlan] = useState<"free" | "plus">("free");
+  // usePlan reads the last-known plan synchronously, so refreshing as a Plus
+  // parent shows "Manage subscription" straight away instead of "Upgrade to
+  // Plus" for the few seconds the Stripe lookup takes; it revalidates behind.
+  const { plan, known: planKnown } = usePlan();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Signed in on a device that has never resolved a plan: hold the button
+  // neutral rather than guessing Free.
+  const planPending = Boolean(session) && !planKnown;
 
   useEffect(() => {
     if (getParam("billing") === "cancelled") {
       setError("Checkout cancelled — you have not been charged.");
     }
-    if (!session) return;
-    apiGet<{ plan: "free" | "plus" }>("/api/customer/stripe/subscription")
-      .then((s) => setPlan(s.plan))
-      .catch(() => {});
-  }, [session]);
+  }, []);
 
   async function upgrade() {
     if (!session) {
@@ -166,15 +169,17 @@ export default function PricingPage() {
             <Button
               type="button"
               onClick={upgrade}
-              disabled={busy}
+              disabled={busy || planPending}
               variant="blue"
               className="mt-5 w-full"
             >
               {busy
                 ? "Please wait…"
-                : plan === "plus"
-                  ? "Manage subscription"
-                  : "Upgrade to Plus"}
+                : planPending
+                  ? "Checking your plan…"
+                  : plan === "plus"
+                    ? "Manage subscription"
+                    : "Upgrade to Plus"}
             </Button>
             <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
               Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.

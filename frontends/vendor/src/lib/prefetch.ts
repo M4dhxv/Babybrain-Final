@@ -4,7 +4,7 @@
  * downloads.
  *
  * The dynamic `import()` expressions here are the same ones App.tsx passes to
- * `lazy()`, so the bundler emits one chunk per page and the module graph caches
+ * `lazyRoute()`, so the bundler emits one chunk per page and the module graph caches
  * it — a prefetch plus the real navigation cost exactly one download between
  * them, in whichever order they happen. A failed prefetch is swallowed and
  * un-latched so the real navigation (or a later hover) retries; a genuine
@@ -12,6 +12,13 @@
  */
 
 const thunks: Record<string, () => Promise<unknown>> = {
+  '/': () => import('../pages/LandingPage'),
+  '/plans': () => import('../pages/PlansPage'),
+  '/login': () => import('../pages/LoginPage'),
+  '/claim-business': () => import('../pages/ClaimBusinessPage'),
+  '/contact': () => import('../pages/ContactPage'),
+  '/about': () => import('../pages/AboutPage'),
+  '/terms': () => import('../pages/TermsPage'),
   '/dashboard': () => import('../pages/DashboardPage'),
   '/activities': () => import('../pages/ActivitiesPage'),
   '/schedule': () => import('../pages/SchedulePage'),

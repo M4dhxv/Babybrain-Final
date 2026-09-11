@@ -15,6 +15,8 @@ const nextConfig = {
       { source: '/vendor', headers: NO_STORE },
       { source: '/vendor/', headers: NO_STORE },
       { source: '/', headers: NO_STORE },
+      // Parent SPA deep links (same exclusions as the rewrite below); anything with a dot is a real file and keeps its caching.
+      { source: '/((?!api|auth/|admin|vendor|app/|_next/|assets/|favicon)[^.]*)', headers: NO_STORE },
     ];
   },
 

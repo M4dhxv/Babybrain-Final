@@ -449,10 +449,15 @@ export function useRecommendations(children: Child[]) {
   const seed = ids ? cacheGet<ChildRecommendations[]>(cacheKey) : undefined;
   const [data, setData] = useState<ChildRecommendations[]>(seed?.data ?? []);
   const [loading, setLoading] = useState(!seed);
+  // Which children `data` belongs to. The render that delivers the children
+  // paints before the effect below re-enters loading, so without this that
+  // frame showed an empty grid ahead of the skeleton.
+  const [dataKey, setDataKey] = useState<string | null>(seed ? cacheKey : null);
 
   useEffect(() => {
     if (children.length === 0) {
       setData([]);
+      setDataKey(cacheKey);
       setLoading(false);
       return;
     }
@@ -460,6 +465,7 @@ export function useRecommendations(children: Child[]) {
     const cached = cacheGet<ChildRecommendations[]>(cacheKey);
     if (cached) {
       setData(cached.data);
+      setDataKey(cacheKey);
       setLoading(false);
       if (cached.age < RECS_FRESH_MS) return; // fresh — no refetch
       // else revalidate in the background, keeping the cached cards on screen
@@ -522,6 +528,7 @@ export function useRecommendations(children: Child[]) {
       cacheSet(cacheKey, out);
       if (!cancelled) {
         setData(out);
+        setDataKey(cacheKey);
         setLoading(false);
       }
     })();
@@ -531,7 +538,7 @@ export function useRecommendations(children: Child[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
 
-  return { data, loading };
+  return { data, loading: loading || dataKey !== cacheKey };
 }
 
 export function useJourney(childId: string | undefined) {

@@ -17,6 +17,10 @@ import { Button } from '@/components/ui/button';
 import SiteFooter from '@/components/SiteFooter';
 import { BrandLogo } from '@/components/BrandLogo';
 import { HeroDashboardPreview } from '@/components/HeroDashboardPreview';
+import { prefetchRoute } from '@/lib/prefetch';
+
+// Start the destination's chunk on hover/focus so the click itself rarely waits on the network.
+const intent = (path: string) => ({ onPointerEnter: () => prefetchRoute(path), onFocus: () => prefetchRoute(path) });
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -45,18 +49,20 @@ export default function LandingPage() {
         <BrandLogo className="h-9 sm:h-10 justify-self-start" />
         <nav className="hidden items-center gap-10 md:flex">
           <button className="text-sm font-medium text-[#FA4D8D] border-b-2 border-[#FA4D8D] pb-1">Home</button>
-          <button onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
-          <button onClick={() => navigate('/contact')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
+          <button {...intent('/plans')} onClick={() => navigate('/plans')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Plans</button>
+          <button {...intent('/contact')} onClick={() => navigate('/contact')} className="text-sm font-medium text-gray-700 hover:text-gray-900 pb-1">Contact</button>
         </nav>
         <div className="flex items-center gap-2 sm:gap-3 justify-self-end">
           <Button
             variant="outline"
+            {...intent('/login')}
             onClick={() => navigate('/login')}
             className="rounded-full px-4 sm:px-6 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Log in
           </Button>
           <Button
+            {...intent('/claim-business')}
             onClick={() => navigate('/claim-business')}
             className="hidden rounded-full px-6 bg-gradient-to-r from-[#FA4D8D] to-[#FF6B9B] text-white shadow-[0_8px_20px_rgba(250,93,147,0.32)] hover:brightness-105 transition border-0 sm:inline-flex"
           >

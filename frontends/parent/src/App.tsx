@@ -15,13 +15,13 @@ import {
   SectionTitle,
 } from "./components/ui";
 import {
-  lazy,
   Suspense,
   useEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { lazyRoute } from "./lib/lazyRoute";
 import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
@@ -52,8 +52,9 @@ import {
 
 // leaflet (the Explore map only) stays out of the entry bundle — loaded the
 // first time the map is shown.
-const ExploreMap = lazy(() =>
-  import("./components/ExploreMap").then((m) => ({ default: m.ExploreMap }))
+const ExploreMap = lazyRoute(
+  () => import("./components/ExploreMap").then((m) => ({ default: m.ExploreMap })),
+  "ExploreMap"
 );
 
 // Routes a first visit rarely lands on — each its own chunk, fetched when the
@@ -61,17 +62,17 @@ const ExploreMap = lazy(() =>
 // pages (About / Terms / Pricing / Contact) are a few kB each and built only
 // from entry-bundle components, so they're imported eagerly at the top
 // instead — a chunk apiece just bought a round-trip and a Suspense flash.
-const BookedPage = lazy(() => import("./pages/BookedPage"));
-const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
+const BookedPage = lazyRoute(() => import("./pages/BookedPage"), "BookedPage");
+const OnboardingPage = lazyRoute(() => import("./pages/OnboardingPage"), "OnboardingPage");
 // The signed-in dashboard + booking + payment surface — the bulk of the app
 // by size, and a first visit never lands here.
-const ProfilePage = lazy(() => import("./pages/dashboard").then((m) => ({ default: m.ProfilePage })));
-const EditProfilePage = lazy(() => import("./pages/dashboard").then((m) => ({ default: m.EditProfilePage })));
-const PaymentPage = lazy(() => import("./pages/dashboard").then((m) => ({ default: m.PaymentPage })));
-const BookingPage = lazy(() => import("./pages/dashboard").then((m) => ({ default: m.BookingPage })));
-const LoginPage = lazy(() => import("./pages/authPages").then((m) => ({ default: m.LoginPage })));
-const ForgotPasswordPage = lazy(() => import("./pages/authPages").then((m) => ({ default: m.ForgotPasswordPage })));
-const ResetPasswordPage = lazy(() => import("./pages/authPages").then((m) => ({ default: m.ResetPasswordPage })));
+const ProfilePage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.ProfilePage })), "ProfilePage");
+const EditProfilePage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.EditProfilePage })), "EditProfilePage");
+const PaymentPage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.PaymentPage })), "PaymentPage");
+const BookingPage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.BookingPage })), "BookingPage");
+const LoginPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.LoginPage })), "LoginPage");
+const ForgotPasswordPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.ForgotPasswordPage })), "ForgotPasswordPage");
+const ResetPasswordPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.ResetPasswordPage })), "ResetPasswordPage");
 
 function HomePage() {
   return (
@@ -260,6 +261,10 @@ function HomePage() {
 function MatchesPage({ active = "/matches" }: { active?: string }) {
   const { session, profile, children, loading, dataResolved } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
+  // A stored session renders this page on the first paint, before the
+  // profile/children lookup answers. Until it does an empty child list means
+  // "unknown", not "none" — hold the skeletons rather than an empty page.
+  const pending = recsLoading || (Boolean(session) && !dataResolved);
   // Which child's suggestions are on screen; defaults to the first.
   const [homeChildId, setHomeChildId] = useState<string | null>(null);
 
@@ -295,7 +300,15 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
               {/* The greeting is the page header; the suggestion line sits a
                   step below it. */}
               <h1 className="text-[36px] font-black leading-tight">
-                Hi <span className="text-baby-lilac">{firstName}</span>!
+                Hi{" "}
+                <span className="text-baby-lilac">
+                  {profile || dataResolved ? (
+                    firstName
+                  ) : (
+                    <span aria-hidden="true" className="inline-block h-8 w-28 animate-pulse rounded-lg bg-[#F3EDF0] align-middle" />
+                  )}
+                </span>
+                !
               </h1>
               <p className="mt-2 text-[26px] font-black leading-tight">
                 Here are some suggested activities for <span className="text-baby-lilac">{child?.name ?? "your child"}</span>
@@ -335,7 +348,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
                 </div>
               </article>
             ) : (
-              (loading || recsLoading) && <ChildCardSkeleton />
+              (loading || pending) && <ChildCardSkeleton />
             )}
           </div>
         </section>
@@ -348,7 +361,7 @@ function MatchesPage({ active = "/matches" }: { active?: string }) {
           >
             {child ? `Matching activities for ${child.name}` : "Matching activities"}
           </SectionTitle>
-          {recsLoading ? (
+          {pending ? (
             <ActivityCardGridSkeleton count={4} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
