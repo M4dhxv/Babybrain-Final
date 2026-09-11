@@ -24,11 +24,12 @@ const settingsTabs = [
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
-// `#/terms#…` is the vendor HashRouter's own copy; opened in a new tab so Settings stays put.
+// In-router navigation on purpose: a new-tab link leaves the vendor app's context, and on devices with the
+// parent app installed (scope "/") the OS/browser can hand that URL to the parent app instead.
 const LEGAL_DOC_ROWS = [
-  { icon: FileText, label: 'Terms of Service', href: '#/terms#tos' },
-  { icon: ScrollText, label: 'Terms of Use', href: '#/terms#tou' },
-  { icon: Lock, label: 'Privacy Policy', href: '#/terms#privacy' },
+  { icon: FileText, label: 'Terms of Service', to: '/terms#tos' },
+  { icon: ScrollText, label: 'Terms of Use', to: '/terms#tou' },
+  { icon: Lock, label: 'Privacy Policy', to: '/terms#privacy' },
 ];
 
 // Worded exactly as the checkbox vendors tick on Save-your-listing.
@@ -65,18 +66,16 @@ function ComplianceTab() {
       </div>
       <div className="space-y-3">
         {LEGAL_DOC_ROWS.map((row) => (
-          <a
+          <Link
             key={row.label}
-            href={row.href}
-            target="_blank"
-            rel="noreferrer"
+            to={row.to}
             className={cn(complianceRowClass, 'cursor-pointer hover:bg-gray-100')}
           >
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-100"><row.icon className="w-4 h-4 text-green-600" /></div>
             <div className="flex-1 text-sm font-medium text-gray-900">{row.label}</div>
             {termsAccepted && <AcceptedPill />}
-            <ExternalLink className="w-4 h-4 text-gray-400" aria-label="Opens in a new tab" />
-          </a>
+            <ExternalLink className="w-4 h-4 text-gray-400" aria-hidden="true" />
+          </Link>
         ))}
 
         <div className="bg-gray-50 rounded-xl">
