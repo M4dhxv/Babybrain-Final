@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "run_timestamp": "2026-08-19T10:54:40.330956+00:00",
+    "site_id": "",
+    "lookback_days": 7
+  },
+  "services": [],
+  "resources": [],
+  "target_service": null,
+  "target_resource": null,
+  "available_slots": [],
+  "booking_result": null
+}
