@@ -125,7 +125,14 @@ function DocContent({ doc }: { doc: LegalDoc }) {
  *  persistent sidebar. */
 function OnThisPage({ doc }: { doc: LegalDoc }) {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // On phones the label folds into just the icon after a few seconds, so the pill stops covering the text.
+  useEffect(() => {
+    const timer = setTimeout(() => setCollapsed(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -160,10 +167,16 @@ function OnThisPage({ doc }: { doc: LegalDoc }) {
       )}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-full bg-baby-cta px-4 py-3 text-sm font-black text-white shadow-pink"
+        aria-label="On this page"
+        className={`flex items-center rounded-full bg-baby-cta py-3 text-sm font-black text-white shadow-pink transition-all duration-300 motion-reduce:transition-none md:gap-2 md:px-4 ${collapsed ? "gap-0 px-3.5" : "gap-2 px-4"}`}
       >
         <Icon name="menu" className="h-4 w-4" />
-        On this page
+        <span
+          aria-hidden="true"
+          className={`overflow-hidden whitespace-nowrap transition-all duration-300 motion-reduce:transition-none md:max-w-[8rem] md:opacity-100 ${collapsed ? "max-w-0 opacity-0" : "max-w-[8rem] opacity-100"}`}
+        >
+          On this page
+        </span>
       </button>
     </div>
   );
