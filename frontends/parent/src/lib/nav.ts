@@ -149,7 +149,7 @@ const subscribe = (cb: () => void) => {
     listeners.delete(cb);
   };
 };
-const snapshot = () => window.location.pathname + window.location.search;
+const snapshot = () => window.location.pathname + window.location.search + window.location.hash;
 
 /** Re-renders the caller whenever the route changes (pushState via `goTo`, or
  *  the browser back/forward buttons). App() calls this so its page switch is

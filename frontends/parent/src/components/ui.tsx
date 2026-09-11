@@ -981,7 +981,7 @@ export function Footer() {
         </div>
         {([
           ["Explore", exploreLinks],
-          ["Support", [["Contact Us", "/contact"], ["FAQs", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms"]]],
+          ["Support", [["Contact Us", "/contact"], ["FAQs", "/contact#faq"], ["Privacy Policy", "/terms#privacy"], ["Terms of Service", "/terms#tos"]]],
           /* QA 21/08: "change the 'Follow Us' to 'For Partners' listing out 'Why
              BabyBrain', 'Plans & Pricing', 'Claim Your Business' and 'Log in'".
              Instagram moves to the contact buttons above, so nothing is lost.
@@ -995,14 +995,14 @@ export function Footer() {
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
           <div key={title} className="text-sm">
             <h3 className="mb-3 font-black">{title}</h3>
-            <div className="space-y-1.5 font-semibold text-[#59658d]">
+            <div className="space-y-1.5 font-bold text-[#59658d]">
               {links.map(([label, href, icon]) => {
                 const external = !!href && /^https?:\/\//.test(href);
                 return href ? (
                   <p key={label}>
                     <a
                       href={href}
-                      className="inline-flex items-center gap-1.5 hover:text-baby-pink"
+                      className="inline-flex items-center gap-1.5 underline underline-offset-2 hover:text-baby-pink"
                       {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
                     >
                       {icon && <Icon name={icon} className="h-4 w-4" />}

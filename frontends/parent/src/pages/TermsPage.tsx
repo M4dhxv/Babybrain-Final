@@ -1,119 +1,217 @@
-import { useEffect } from "react";
-import { PageShell, Footer } from "../components/ui";
-import { routePath, scrollToWhenReady } from "../lib/nav";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PageShell, Footer, Icon } from "../components/ui";
+import { routePath, useLocation } from "../lib/nav";
+import { LEGAL_DOCS, type LegalBlock, type LegalDoc } from "../data/legalDocs";
+
+/** Renders "**bold**" spans inside otherwise-plain legal text as <strong>. */
+function Inline({ text }: { text: string }) {
+  const parts = text.split(/\*\*(.+?)\*\*/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? <strong key={i} className="font-black text-baby-ink">{part}</strong> : part
+      )}
+    </>
+  );
+}
+
+/** A clause written entirely in caps (Limitation of Liability etc.) gets a
+ *  callout treatment instead of being buried as a wall of shouty text. */
+function isShoutClause(text: string): boolean {
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  return letters.length > 60 && letters === letters.toUpperCase();
+}
+
+function Block({ block }: { block: LegalBlock }) {
+  if (Array.isArray(block)) {
+    return (
+      <ul className="mt-2 space-y-1.5 pl-1">
+        {block.map((item, i) => (
+          <li key={i} className="flex gap-2 font-semibold leading-7 text-[#59658d]">
+            <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-baby-pink" />
+            <span><Inline text={item} /></span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (isShoutClause(block)) {
+    return (
+      <div className="mt-3 rounded-xl border border-[#FED7E4] bg-[#FFF5F8] p-4">
+        <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-baby-cta">
+          <Icon name="shield" className="h-3.5 w-3.5" /> Important
+        </p>
+        <p className="mt-1.5 text-[13px] font-bold leading-6 tracking-tight text-[#59658d]">
+          <Inline text={block} />
+        </p>
+      </div>
+    );
+  }
+  return (
+    <p className="mt-3 font-semibold leading-7 text-[#59658d]">
+      <Inline text={block} />
+    </p>
+  );
+}
+
+function DocContent({ doc }: { doc: LegalDoc }) {
+  return (
+    <div>
+      {doc.intro.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-400 bg-[#FAF7F7] p-4">
+          {doc.intro.map((b, i) => (
+            <p key={i} className="font-semibold leading-7 text-[#59658d]">
+              <Inline text={b as string} />
+            </p>
+          ))}
+        </div>
+      )}
+      <div className="space-y-9">
+        {doc.sections.map((s) => (
+          <section key={s.number} id={`${doc.key}-s${s.number}`} className="scroll-mt-28">
+            <h2 className="text-lg font-black text-baby-ink">
+              {s.number}. {s.title}
+            </h2>
+            {s.blocks.map((b, i) => <Block key={i} block={b} />)}
+          </section>
+        ))}
+      </div>
+      {doc.key === "privacy" && (
+        <div className="mt-9 flex items-start gap-3 rounded-xl bg-[#F1EDFB] p-4">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white">
+            <Icon name="mail" className="h-4 w-4 text-[#6B5AA8]" />
+          </span>
+          <div>
+            <p className="font-black text-baby-ink">Questions about your data?</p>
+            <p className="mt-0.5 font-semibold text-[#59658d]">
+              Our Data Protection Officer, Katie Crowson, handles access, correction and consent
+              requests — email{" "}
+              <a href="mailto:hello@babybrain.sg" className="text-baby-cta underline">
+                hello@babybrain.sg
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Floating "On this page" pill + popover — the sole way to jump to a
+ *  section, on every screen size, so a long legal document never needs a
+ *  persistent sidebar. */
+function OnThisPage({ doc }: { doc: LegalDoc }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  useEffect(() => setOpen(false), [doc.key]);
+
+  return (
+    <div ref={ref} className="fixed bottom-6 right-6 z-40">
+      {open && (
+        <nav className="absolute bottom-[calc(100%+10px)] right-0 max-h-[60vh] w-64 space-y-0.5 overflow-y-auto rounded-2xl border border-[#EBE3E5] bg-white p-2 shadow-soft">
+          {doc.sections.map((s) => (
+            <a
+              key={s.number}
+              href={`#${doc.key}-s${s.number}`}
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById(`${doc.key}-s${s.number}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                setOpen(false);
+              }}
+              className="block rounded-lg px-3 py-2 text-sm font-semibold text-[#59658d] hover:bg-[#FAF7F7] hover:text-baby-ink"
+            >
+              {s.number}. {s.title}
+            </a>
+          ))}
+        </nav>
+      )}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-full bg-baby-cta px-4 py-3 text-sm font-black text-white shadow-pink"
+      >
+        <Icon name="menu" className="h-4 w-4" />
+        On this page
+      </button>
+    </div>
+  );
+}
 
 export default function TermsPage() {
-  /* Reached either as /terms#privacy or as the bare /privacy route (which
-     Stripe's billing portal links to). Both should land on the privacy
-     section, not the top of the Terms. */
-  useEffect(() => {
-    const wantsPrivacy = window.location.hash === "#privacy" || routePath() === "/privacy";
-    if (!wantsPrivacy) return;
-    return scrollToWhenReady("privacy");
-  }, []);
+  const [activeKey, setActiveKey] = useState<LegalDoc["key"]>("tos");
+  const doc = useMemo(() => LEGAL_DOCS.find((d) => d.key === activeKey)!, [activeKey]);
+  const loc = useLocation();
 
-  const sections: { id?: string; title: string; body: React.ReactNode }[] = [
-    {
-      title: "1. Acceptance of Terms",
-      body: "By creating an account, browsing, booking, or subscribing on BabyBrain.sg (\"BabyBrain\", \"we\", \"us\"), you agree to these Terms & Conditions and the disclosures below. If you do not agree, please do not use the platform.",
-    },
-    {
-      title: "2. Accounts & Eligibility",
-      body: "You must be at least 18 and provide accurate information. You are responsible for activity under your account and for keeping your login secure.",
-    },
-    {
-      id: "privacy",
-      title: "3. Privacy & PDPA",
-      body: "We collect and process personal data in accordance with Singapore's Personal Data Protection Act (PDPA). We collect what we need to run the service (your profile, your children's ages/interests, bookings, and usage). You consent to this processing when you use BabyBrain. Our full Privacy Policy forms part of these Terms.",
-    },
-    {
-      title: "4. Cookie Consent",
-      body: "We use cookies and similar technologies for authentication, preferences, and basic analytics. By continuing to use the site you consent to essential cookies; non-essential cookies are used only where permitted.",
-    },
-    {
-      title: "5. Children's Data",
-      body: "Child details (name, date of birth, interests) are provided by you as the parent/guardian to personalise recommendations. We process them solely to deliver the service and never sell them. You may edit or delete them at any time.",
-    },
-    {
-      title: "6. Vendor Data Sharing",
-      body: "When you book, enquire, or join a class chat, we share the information necessary to fulfil that booking (e.g. your name and relevant details) with the activity provider. Providers are independent businesses responsible for their own services.",
-    },
-    {
-      title: "7. Bookings & Payments",
-      body: "Bookings are contracts between you and the provider. Payments are processed securely by Stripe; by paying you accept Stripe's payment terms. BabyBrain is not the provider of the classes and is not liable for the conduct or cancellation of a class by a provider.",
-    },
-    {
-      title: "8. BabyBrain Plus — Subscription Terms",
-      body: "BabyBrain Plus costs SGD 9/month or SGD 99/year, plus GST. New subscribers get a 30-day free trial (first month free). Billing and card details are handled by Stripe.",
-    },
-    {
-      title: "9. Auto-Renewal Disclosure",
-      body: "Plus is a recurring subscription. After any free trial, it automatically renews at the end of each billing period (monthly or yearly) and your payment method is charged until you cancel. The renewal date is shown in Profile → Settings.",
-    },
-    {
-      title: "10. Managing & Cancelling Your Subscription",
-      body: "You can view, update your card, or cancel Plus at any time from Profile → Settings → Manage / Cancel, which opens the Stripe billing portal. Cancelling stops future renewals; you keep Plus access until the end of the current paid period. See our refund policy below.",
-    },
-    {
-      title: "11. Refunds & Cancellation Policy",
-      body: "Subscription fees are non-refundable except where required by law; cancelling prevents the next charge. Class booking refunds and reschedules follow the individual provider's cancellation policy shown at booking.",
-    },
-    {
-      title: "12. AI Planner Disclaimer",
-      body: "The AI planning tool provides suggestions to help you organise activities around your schedule. It may be inaccurate or incomplete and is not professional, medical, or developmental advice. Always use your own judgement; you are responsible for decisions made using it.",
-    },
-    {
-      title: "13. Recommendations & Personalisation",
-      body: "We generate recommendations from the preferences and child details you provide and your activity on the platform. Recommendations are suggestions only and are not guarantees of suitability.",
-    },
-    {
-      title: "14. Marketing Consent",
-      body: "With your consent, we send curated-activity emails and updates. You can opt in or out at any time in your settings or via the unsubscribe link in any marketing email. Essential service messages (bookings, billing) are always sent.",
-    },
-    {
-      title: "15. Calendar Integration Consent",
-      body: "If you enable calendar reminders/sync or export, you consent to BabyBrain creating calendar entries for your bookings. You can disable this at any time.",
-    },
-    {
-      title: "16. Reviews & Moderation",
-      body: "You may review any class listed on BabyBrain, whether or not you booked it through us. Reviews must be honest, first-hand and lawful. We may moderate or remove content that is abusive, misleading, or violates these Terms.",
-    },
-    {
-      title: "17. Messaging Rules",
-      body: "All users can read messages on their booked classes. Sending messages to other parents and providers is a Plus feature. Messaging must be respectful and used only for coordinating activities; misuse may lead to suspension.",
-    },
-    {
-      title: "18. Data Retention, Deletion & Account Closure",
-      body: "You have the right to access and delete your personal data. You can delete your account from your settings or by contacting us; we then remove or anonymise your data except where we must retain records (e.g. transaction records) under applicable law.",
-    },
-    {
-      title: "19. Security",
-      body: "We apply reasonable technical and organisational controls (encryption in transit, access controls, RLS) to protect your data. No system is perfectly secure, so please protect your own credentials.",
-    },
-    {
-      title: "20. Changes & Contact",
-      body: "We may update these Terms; material changes will be notified in-app or by email. Questions? Contact hello@babybrain.sg.",
-    },
-  ];
+  /* Reached as /terms#privacy, /terms (bare), or the bare /privacy route
+     (which Stripe's billing portal links to) — each should select the
+     matching tab. Keyed on `loc` (not just on mount): client-side nav keeps
+     this page mounted for any /terms* URL, so a footer link clicked while
+     already on this page (e.g. switching from the Privacy tab back to
+     Terms of Service) only shows up as a hash change, not a remount. */
+  useEffect(() => {
+    if (window.location.hash === "#privacy" || routePath() === "/privacy") setActiveKey("privacy");
+    else if (window.location.hash === "#tou") setActiveKey("tou");
+    else if (window.location.hash === "" || window.location.hash === "#tos") setActiveKey("tos");
+  }, [loc]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [activeKey]);
+
+  /* Keep the URL's hash in step with the active tab, so a link back to this
+     page (e.g. the footer's Terms of Service / Privacy Policy links) always
+     lands on the right tab even when this page never unmounts to pick it up
+     fresh — a plain state change wouldn't touch the address bar at all. */
+  function selectDoc(key: LegalDoc["key"]) {
+    setActiveKey(key);
+    const hash = `#${key}`;
+    if (window.location.hash !== hash) {
+      window.history.replaceState({}, "", window.location.pathname + window.location.search + hash);
+    }
+  }
 
   return (
     <PageShell active="/terms" auth="public">
-      <main className="mx-auto max-w-[820px] px-6 py-10">
-        <h1 className="text-[36px] font-black leading-tight">Terms &amp; Conditions</h1>
-        <p className="mt-2 text-sm font-bold text-[#6D748A]">Last updated: July 2026</p>
-        <p className="mt-4 font-semibold leading-7 text-[#59658d]">
-          These Terms cover your use of BabyBrain, including bookings, the BabyBrain Plus
-          subscription, privacy, and the disclosures we're required to make. Please read them.
-        </p>
-        <div className="mt-8 space-y-7">
-          {sections.map((s) => (
-            <section key={s.title} id={s.id} className="scroll-mt-24">
-              <h2 className="text-lg font-black text-baby-ink">{s.title}</h2>
-              <p className="mt-2 font-semibold leading-7 text-[#59658d]">{s.body}</p>
-            </section>
-          ))}
+      <main className="mx-auto max-w-[760px] px-6 py-10">
+        <div className="text-center">
+          <h1 className="text-[36px] font-black leading-tight">Terms &amp; Policies</h1>
+          <p className="mt-2 text-sm font-bold text-[#6D748A]">Last updated: {doc.updated}</p>
+          <p className="mx-auto mt-4 max-w-[560px] font-semibold leading-7 text-[#59658d]">
+            Our Terms of Service, Terms of Use and Privacy Policy in full — covering bookings,
+            payments, vendor obligations and how we handle your data under Singapore's PDPA.
+          </p>
+
+          {/* Tabs */}
+          <div className="mt-7 inline-flex gap-1.5 overflow-x-auto rounded-full bg-[#F4EFF0] p-1.5">
+            {LEGAL_DOCS.map((d) => (
+              <button
+                key={d.key}
+                onClick={() => selectDoc(d.key)}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black transition ${
+                  d.key === activeKey ? "bg-white text-baby-cta shadow-soft" : "text-[#6D748A] hover:text-baby-ink"
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10">
+          <DocContent doc={doc} />
         </div>
       </main>
+      <OnThisPage doc={doc} />
       <Footer />
     </PageShell>
   );
