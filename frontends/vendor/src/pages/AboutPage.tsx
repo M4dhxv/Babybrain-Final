@@ -100,7 +100,7 @@ export default function AboutPage() {
               We want to help you spend less time on administration and more time having meaningful experiences.
             </p>
           </div>
-          <img src={`${base}assets/crops/mission-target.png`} alt="" className="mx-auto h-48 object-contain" />
+          <img src={`${base}assets/crops/mission-target.svg`} alt="" className="mx-auto h-48 object-contain" />
         </section>
       </main>
 

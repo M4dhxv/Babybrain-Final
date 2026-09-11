@@ -48,7 +48,7 @@ export default function AboutPage() {
             <p className="mt-4 max-w-[440px] font-semibold leading-7 text-[#3f4b78]">We want to help you spend less time on administration and more time having meaningful experiences.</p>
             <Button href="/onboarding" size="lg" className="mt-6">Join today →</Button>
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.png`} alt="" className="mx-auto h-48 object-contain" />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.svg`} alt="" className="mx-auto h-48 object-contain" />
         </section>
       </main>
       <Footer />
