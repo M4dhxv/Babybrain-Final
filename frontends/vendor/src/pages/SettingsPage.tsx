@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, MessageSquare, HelpCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2 } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Progress } from '@/components/ui/progress';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { geocodePostal } from '@/lib/geocode';
 import { useAuth } from '@/auth/AuthProvider';
 import type { VendorCategory } from '@/lib/database.types';
-import { VENDOR_TERMS, BOOKING_MESSAGING_TERMS, type ComplianceDocument } from '@/lib/complianceTerms';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
 import { SelectField, Opt } from '@/components/ui/select-field';
 
@@ -26,41 +24,95 @@ const settingsTabs = [
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
-// Lists only what the vendor actually agreed to at sign-up (the two "Required
-// to publish" / "Required for bookings" boxes on Save-your-listing) plus the
-// Refund Policy they maintain themselves — no placeholder rows.
-//   'view'          → opens the exact agreement text in a right-hand Sheet,
-//                     which itself carries a "Read in details" link to the
-//                     full published page (DOC_URL below).
-//   'edit-policies' → the vendor's own Refund Policy under Waivers & Consents
-// The acceptance timestamps exist (providers.vendor_terms_accepted_at /
-// booking_messaging_terms_accepted_at) but this tab still shows a flat
-// "Accepted" rather than the real date.
-// TODO: surface the real accepted-on date from the provider row.
-type ComplianceItem = {
-  icon: typeof FileText;
-  label: string;
-  status: string;
-  statusColor: string;
-  bg: string;
-  accepted: boolean;
-  kind: 'view' | 'edit-policies';
-  doc: ComplianceDocument | null;
-};
-const complianceItems: ComplianceItem[] = [
-  { icon: FileText, label: 'Vendor Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: VENDOR_TERMS },
-  { icon: MessageSquare, label: 'Booking & Messaging Terms', status: 'Accepted', statusColor: 'text-green-600', bg: 'bg-green-100', accepted: true, kind: 'view', doc: BOOKING_MESSAGING_TERMS },
-  { icon: CreditCard, label: 'Refund Policy', status: 'Edit', statusColor: 'text-blue-600', bg: 'bg-blue-100', accepted: false, kind: 'edit-policies', doc: null },
+// `#/terms#…` is the vendor HashRouter's own copy; opened in a new tab so Settings stays put.
+const LEGAL_DOC_ROWS = [
+  { icon: FileText, label: 'Terms of Service', href: '#/terms#tos' },
+  { icon: ScrollText, label: 'Terms of Use', href: '#/terms#tou' },
+  { icon: Lock, label: 'Privacy Policy', href: '#/terms#privacy' },
 ];
 
-// Where "Read in details" in each agreement's Sheet points. Both live on the
-// single published Terms & Conditions page today; split when dedicated pages
-// exist. `#/terms` is the in-app (vendor HashRouter) copy — a bare `/terms`
-// would open the parent app's page, parent chrome and all.
-const DOC_URL: Record<ComplianceDocument['key'], string> = {
-  vendor_terms: '#/terms',
-  booking_messaging_terms: '#/terms',
-};
+// Worded exactly as the checkbox vendors tick on Save-your-listing.
+const MARKETING_CONSENT_TEXT =
+  "I agree and consent to receive marketing communications from BabyBrain to update me on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and services via any means of communication such as via email.";
+
+const complianceRowClass = 'flex items-center gap-3 p-3 bg-gray-50 rounded-xl';
+
+function AcceptedPill() {
+  return (
+    <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full">
+      <CheckCircle className="w-3 h-3" />
+      Accepted
+    </span>
+  );
+}
+
+function ComplianceTab() {
+  const { provider } = useAuth();
+  const navigate = useNavigate();
+  const [consentOpen, setConsentOpen] = useState(false);
+  // One checkbox on Save-your-listing covers all three documents.
+  const termsAccepted = !!provider?.vendor_terms_accepted_at;
+  const marketingAccepted = !!provider?.marketing_consent_at;
+
+  return (
+    <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
+      <div className="mb-5 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
+        <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Shield className="w-5 h-5 text-purple-600" /></div>
+        <div>
+          <h3 className="font-semibold text-gray-900">Compliance</h3>
+          <p className="text-xs text-gray-500">Ensure your profile is compliant and up to date.</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {LEGAL_DOC_ROWS.map((row) => (
+          <a
+            key={row.label}
+            href={row.href}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(complianceRowClass, 'cursor-pointer hover:bg-gray-100')}
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-100"><row.icon className="w-4 h-4 text-green-600" /></div>
+            <div className="flex-1 text-sm font-medium text-gray-900">{row.label}</div>
+            {termsAccepted && <AcceptedPill />}
+            <ExternalLink className="w-4 h-4 text-gray-400" aria-label="Opens in a new tab" />
+          </a>
+        ))}
+
+        <div className="bg-gray-50 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setConsentOpen((v) => !v)}
+            aria-expanded={consentOpen}
+            className={cn(complianceRowClass, 'w-full text-left cursor-pointer hover:bg-gray-100')}
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-100"><Megaphone className="w-4 h-4 text-green-600" /></div>
+            <div className="flex-1 text-sm font-medium text-gray-900">Marketing Consent</div>
+            {marketingAccepted && <AcceptedPill />}
+            <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', consentOpen && 'rotate-180')} />
+          </button>
+          {consentOpen && (
+            <p className="px-4 pb-4 pl-14 text-sm leading-relaxed text-gray-600">{MARKETING_CONSENT_TEXT}</p>
+          )}
+        </div>
+
+        <div
+          onClick={() => navigate('/activities?tab=policies')}
+          className={cn(complianceRowClass, 'cursor-pointer hover:bg-gray-100')}
+        >
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-100"><CreditCard className="w-4 h-4 text-blue-600" /></div>
+          <div className="flex-1"><div className="text-sm font-medium text-gray-900">Refund Policy</div></div>
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate('/activities?tab=policies'); }}
+            className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"
+          >
+            <Pencil className="w-3 h-3" />Edit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Member = { id: string; user_id: string; role: string; invited_email: string | null; status: string };
 /* Basic per-member details (Settings -> Team), keyed by user_id. Email and
@@ -113,7 +165,6 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const [viewingDoc, setViewingDoc] = useState<ComplianceDocument | null>(null);
   const [team, setTeam] = useState<Member[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfileLite>>({});
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
@@ -721,82 +772,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {activeTab === 'compliance' && (
-          <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
-            <div className="mb-5 flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><Shield className="w-5 h-5 text-purple-600" /></div>
-              <div>
-                <h3 className="font-semibold text-gray-900">Compliance</h3>
-                <p className="text-xs text-gray-500">Ensure your profile is compliant and up to date.</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {complianceItems.map((item, idx) => {
-                const clickable = item.kind === 'view' || item.kind === 'edit-policies';
-                const onClick = () => {
-                  if (item.kind === 'view' && item.doc) setViewingDoc(item.doc);
-                  // Waivers & consents now lives under Activities.
-                  else if (item.kind === 'edit-policies') navigate('/activities?tab=policies');
-                };
-                return (
-                  <div
-                    key={idx}
-                    onClick={clickable ? onClick : undefined}
-                    className={cn('flex items-center gap-3 p-3 bg-gray-50 rounded-xl', clickable && 'cursor-pointer hover:bg-gray-100')}
-                  >
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', item.bg)}><item.icon className={cn('w-4 h-4', item.statusColor)} /></div>
-                    <div className="flex-1"><div className="text-sm font-medium text-gray-900">{item.label}</div></div>
-                    {item.accepted ? (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-green-300 text-green-800 text-xs rounded-full"><CheckCircle className="w-3 h-3" />Accepted</span>
-                    ) : item.status === 'Edit' ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); navigate('/activities?tab=policies'); }}
-                        className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"
-                      >
-                        <Pencil className="w-3 h-3" />Edit
-                      </button>
-                    ) : (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full"><HelpCircle className="w-3 h-3" />{item.status}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <Sheet open={!!viewingDoc} onOpenChange={(open) => { if (!open) setViewingDoc(null); }}>
-          <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
-            {viewingDoc && (
-              <>
-                <SheetHeader>
-                  <SheetTitle>{viewingDoc.title}</SheetTitle>
-                  <SheetDescription>{viewingDoc.summary}</SheetDescription>
-                </SheetHeader>
-                <div className="px-4 pb-6 space-y-5">
-                  <a
-                    href={DOC_URL[viewingDoc.key]}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="-mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[#FA4D8D] hover:underline"
-                  >
-                    Read in details
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                  <p className="text-xs text-gray-400">
-                    This is the agreement you accepted when setting up your listing — shown here exactly as it was presented then.
-                  </p>
-                  {viewingDoc.sections.map((s) => (
-                    <div key={s.heading} className="rounded-xl border-2 border-gray-300 bg-white p-4 shadow-sm">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-1">{s.heading}</h4>
-                      <p className="text-sm text-gray-600 leading-relaxed">{s.body}</p>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </SheetContent>
-        </Sheet>
+        {activeTab === 'compliance' && <ComplianceTab />}
 
         {activeTab === 'integrations' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
