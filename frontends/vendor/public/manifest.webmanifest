@@ -4,7 +4,7 @@
   "description": "Manage your BabyBrain listing, schedule, bookings and messages.",
   "id": "/vendor/",
   "start_url": "/vendor/",
-  "scope": "/vendor/",
+  "scope": "/vendor",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#FFFCF8",

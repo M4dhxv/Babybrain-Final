@@ -20,7 +20,10 @@
 
     <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
          the favicon (it is 385x256, not square) and draws a grey letter tile
-         instead. The icons below are square crops of the same brand mark. -->
+         instead. The icons below are square crops of the same brand mark.
+         Its scope is "/vendor" with no trailing slash on purpose: Vercel
+         redirects /vendor/ to /vendor, which "/vendor/" wouldn't cover, leaving
+         portal links to the parent app (scope "/") on devices that have it. -->
     <link rel="manifest" href="/vendor/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/vendor/assets/brand/apple-touch-icon.png" />
     <meta name="theme-color" content="#FA4D8D" />
