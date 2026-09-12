@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, CreditCard, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -49,7 +49,6 @@ function AcceptedPill() {
 
 function ComplianceTab() {
   const { provider } = useAuth();
-  const navigate = useNavigate();
   const [consentOpen, setConsentOpen] = useState(false);
   // One checkbox on Claim your business covers all three documents.
   const termsAccepted = !!provider?.vendor_terms_accepted_at;
@@ -93,20 +92,6 @@ function ComplianceTab() {
           {consentOpen && (
             <p className="px-4 pb-4 pl-14 text-sm leading-relaxed text-gray-600">{MARKETING_CONSENT_TEXT}</p>
           )}
-        </div>
-
-        <div
-          onClick={() => navigate('/activities?tab=policies')}
-          className={cn(complianceRowClass, 'cursor-pointer hover:bg-gray-100')}
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-100"><CreditCard className="w-4 h-4 text-blue-600" /></div>
-          <div className="flex-1"><div className="text-sm font-medium text-gray-900">Refund Policy</div></div>
-          <button
-            onClick={(e) => { e.stopPropagation(); navigate('/activities?tab=policies'); }}
-            className="flex items-center gap-1 px-3 py-1.5 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50"
-          >
-            <Pencil className="w-3 h-3" />Edit
-          </button>
         </div>
       </div>
     </div>
