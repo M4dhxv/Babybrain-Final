@@ -218,6 +218,99 @@ const fallbackImage = (category: string) => {
   return `${import.meta.env.BASE_URL}assets/${img}`;
 };
 
+/** One editable summary row: label, current value, pencil, inline editor.
+ *  Hoisted to module scope — defined inside SaveListingPage, it was a new
+ *  function identity on every render, so React remounted the <Input> on
+ *  every keystroke (losing focus after the first character typed). */
+function FieldRow({
+  field,
+  value,
+  isEditing,
+  draft,
+  setDraft,
+  fieldError,
+  fieldBusy,
+  onStartEdit,
+  onSave,
+  onCancel,
+}: {
+  field: SummaryField;
+  value: string;
+  isEditing: boolean;
+  draft: Record<string, string>;
+  setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  fieldError: string | null;
+  fieldBusy: boolean;
+  onStartEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl bg-gray-50 p-3">
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white">
+        <field.icon className="h-4 w-4 text-gray-500" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 text-xs text-gray-500">{field.label}</div>
+        {isEditing ? (
+          <div className="space-y-2">
+            {field.key === 'description' ? (
+              <Textarea
+                rows={4}
+                value={draft.description ?? ''}
+                onChange={(e) => setDraft({ description: e.target.value })}
+                placeholder="What you do, who it's for, what makes it special."
+                className="resize-none rounded-lg border-gray-300 text-sm"
+              />
+            ) : field.key === 'address' ? (
+              <>
+                <Input
+                  value={draft.address ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))}
+                  placeholder="Street address"
+                  className="rounded-lg border-gray-300 text-sm"
+                />
+                <Input
+                  value={draft.postal_code ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, postal_code: e.target.value }))}
+                  placeholder="Postal code"
+                  className="rounded-lg border-gray-300 text-sm"
+                />
+              </>
+            ) : (
+              <Input
+                value={draft[field.key] ?? ''}
+                onChange={(e) => setDraft({ [field.key]: e.target.value })}
+                placeholder={field.key === 'website' ? 'https://…' : field.label}
+                className="rounded-lg border-gray-300 text-sm"
+              />
+            )}
+            {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
+            <div className="flex gap-2">
+              <Button size="sm" onClick={onSave} disabled={fieldBusy} className="gradient-primary h-7 rounded-lg text-xs text-white hover:opacity-90">
+                {fieldBusy ? 'Saving…' : 'Save'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={onCancel} className="h-7 rounded-lg border-gray-300 text-xs">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className={cn('whitespace-pre-line text-sm', value ? 'text-gray-900' : 'text-gray-400')}>
+            {value || 'Not set'}
+          </div>
+        )}
+        {field.hint && !isEditing && <p className="mt-1 text-[11px] text-gray-400">{field.hint}</p>}
+      </div>
+      {!isEditing && (
+        <button type="button" aria-label={`Edit ${field.label}`} onClick={onStartEdit} className="flex-shrink-0">
+          <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SaveListingPage() {
   const navigate = useNavigate();
   const { provider: activeProvider, providerResolved, session, refreshProvider } = useAuth();
@@ -462,76 +555,6 @@ export default function SaveListingPage() {
     navigate('/settings');
   }
 
-  /** One editable summary row: label, current value, pencil, inline editor. */
-  function FieldRow({ field }: { field: SummaryField }) {
-    const isEditing = editKey === field.key;
-    const value = fieldValue(field.key);
-    return (
-      <div className="flex items-start gap-3 rounded-xl bg-gray-50 p-3">
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white">
-          <field.icon className="h-4 w-4 text-gray-500" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="mb-0.5 text-xs text-gray-500">{field.label}</div>
-          {isEditing ? (
-            <div className="space-y-2">
-              {field.key === 'description' ? (
-                <Textarea
-                  rows={4}
-                  value={draft.description ?? ''}
-                  onChange={(e) => setDraft({ description: e.target.value })}
-                  placeholder="What you do, who it's for, what makes it special."
-                  className="resize-none rounded-lg border-gray-300 text-sm"
-                />
-              ) : field.key === 'address' ? (
-                <>
-                  <Input
-                    value={draft.address ?? ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))}
-                    placeholder="Street address"
-                    className="rounded-lg border-gray-300 text-sm"
-                  />
-                  <Input
-                    value={draft.postal_code ?? ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, postal_code: e.target.value }))}
-                    placeholder="Postal code"
-                    className="rounded-lg border-gray-300 text-sm"
-                  />
-                </>
-              ) : (
-                <Input
-                  value={draft[field.key] ?? ''}
-                  onChange={(e) => setDraft({ [field.key]: e.target.value })}
-                  placeholder={field.key === 'website' ? 'https://…' : field.label}
-                  className="rounded-lg border-gray-300 text-sm"
-                />
-              )}
-              {fieldError && <p className="text-xs text-red-500">{fieldError}</p>}
-              <div className="flex gap-2">
-                <Button size="sm" onClick={saveField} disabled={fieldBusy} className="gradient-primary h-7 rounded-lg text-xs text-white hover:opacity-90">
-                  {fieldBusy ? 'Saving…' : 'Save'}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => { setEditKey(null); setFieldError(null); }} className="h-7 rounded-lg border-gray-300 text-xs">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className={cn('whitespace-pre-line text-sm', value ? 'text-gray-900' : 'text-gray-400')}>
-              {value || 'Not set'}
-            </div>
-          )}
-          {field.hint && !isEditing && <p className="mt-1 text-[11px] text-gray-400">{field.hint}</p>}
-        </div>
-        {!isEditing && (
-          <button type="button" aria-label={`Edit ${field.label}`} onClick={() => startEdit(field.key)} className="flex-shrink-0">
-            <Pencil className="h-4 w-4 cursor-pointer text-gray-400 hover:text-[#FA4D8D]" />
-          </button>
-        )}
-      </div>
-    );
-  }
-
   // The whole page edits `providers` rows for `providerId`. Coming here straight
   // from the claim flow, the membership lookup that resolves `providerId` can
   // still be in flight for a beat — render a wait state rather than a page whose
@@ -685,7 +708,21 @@ export default function SaveListingPage() {
               <div key={section.title} className="mt-5">
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{section.title}</h4>
                 <div className="space-y-2">
-                  {section.fields.map((f) => <FieldRow key={f.key} field={f} />)}
+                  {section.fields.map((f) => (
+                    <FieldRow
+                      key={f.key}
+                      field={f}
+                      value={fieldValue(f.key)}
+                      isEditing={editKey === f.key}
+                      draft={draft}
+                      setDraft={setDraft}
+                      fieldError={fieldError}
+                      fieldBusy={fieldBusy}
+                      onStartEdit={() => startEdit(f.key)}
+                      onSave={saveField}
+                      onCancel={() => { setEditKey(null); setFieldError(null); }}
+                    />
+                  ))}
                 </div>
               </div>
             ))}
