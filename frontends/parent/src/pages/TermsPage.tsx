@@ -186,6 +186,16 @@ export default function TermsPage() {
   const [activeKey, setActiveKey] = useState<LegalDoc["key"]>("tos");
   const doc = useMemo(() => LEGAL_DOCS.find((d) => d.key === activeKey)!, [activeKey]);
   const loc = useLocation();
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  // The pill capsule scrolls horizontally on narrow screens, and landing
+  // straight on a tab other than the first (e.g. a footer link to
+  // /terms#privacy) never scrolled it into view — Privacy Policy sat
+  // half-clipped at the trailing edge. `nearest` only moves the capsule, not
+  // the page, since the tab is already vertically in view.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeKey]);
 
   /* Reached as /terms#privacy, /terms (bare), or the bare /privacy route
      (which Stripe's billing portal links to) — each should select the
@@ -231,6 +241,7 @@ export default function TermsPage() {
             {LEGAL_DOCS.map((d) => (
               <button
                 key={d.key}
+                ref={d.key === activeKey ? activeTabRef : undefined}
                 onClick={() => selectDoc(d.key)}
                 className={`shrink-0 rounded-full px-4 py-2 text-sm font-black transition ${
                   d.key === activeKey ? "bg-white text-baby-cta shadow-soft" : "text-[#6D748A] hover:text-baby-ink"
