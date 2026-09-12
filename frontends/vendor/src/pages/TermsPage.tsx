@@ -206,15 +206,28 @@ export default function TermsPage() {
   const location = useLocation();
   const [activeKey, setActiveKey] = useState<LegalDoc['key']>('tos');
   const doc = useMemo(() => LEGAL_DOCS.find((d) => d.key === activeKey)!, [activeKey]);
+  const tabsListRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
 
   // The pill capsule scrolls horizontally on narrow screens, and landing
   // straight on a tab other than the first (e.g. a footer link to
   // /terms#privacy) never scrolled it into view — Privacy Policy sat
-  // half-clipped at the trailing edge. `nearest` only moves the capsule, not
-  // the page, since the tab is already vertically in view.
+  // half-clipped at the trailing edge. A plain scrollIntoView fixed that but
+  // aligned the tab flush with the capsule's edge, swallowing its own p-1.5
+  // padding so the white pill looked fused to the outer capsule's rounded
+  // corner; scrolling a few extra px further keeps that padding visible.
   useEffect(() => {
-    activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const list = tabsListRef.current;
+    const tab = activeTabRef.current;
+    if (!list || !tab) return;
+    const listRect = list.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const pad = 6; // matches the capsule's p-1.5
+    if (tabRect.right > listRect.right) {
+      list.scrollLeft += tabRect.right - listRect.right + pad;
+    } else if (tabRect.left < listRect.left) {
+      list.scrollLeft -= listRect.left - tabRect.left + pad;
+    }
   }, [activeKey]);
 
   /* Footer links here as `/terms#privacy` (or `/terms#tos`); under HashRouter
@@ -272,7 +285,10 @@ export default function TermsPage() {
           </p>
 
           <Tabs value={activeKey} onValueChange={(v) => selectDoc(v as LegalDoc['key'])} className="mt-7 items-center">
-            <TabsList className="no-scrollbar h-auto w-fit max-w-full justify-start gap-1 overflow-x-auto rounded-full bg-gray-100 p-1.5">
+            <TabsList
+              ref={tabsListRef}
+              className="no-scrollbar h-auto w-fit max-w-full justify-start gap-1 overflow-x-auto rounded-full bg-gray-100 p-1.5"
+            >
               {LEGAL_DOCS.map((d) => (
                 <TabsTrigger
                   key={d.key}
