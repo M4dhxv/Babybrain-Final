@@ -3,6 +3,7 @@ import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { stripeConfig } from '@/lib/stripe-config';
 
 /**
  * Stripe Billing Portal for a parent — manage payment method, view invoices,
@@ -28,18 +29,15 @@ export async function POST(request: Request) {
   // monthly and annual. The vendor configuration can't be reused — it lists
   // only the Growth and Pro products. Created by `npm run stripe:portal`; if
   // that hasn't been run the session still opens on Stripe's default.
-  const { data: cfg } = await admin
-    .from('app_config')
-    .select('value')
-    .eq('key', 'stripe_parent_portal_configuration_id')
-    .maybeSingle();
+  const configurationId = (await stripeConfig(admin, ['stripe_parent_portal_configuration_id']))
+    .stripe_parent_portal_configuration_id;
 
   const origin = appOrigin(request);
   let portal;
   try {
     portal = await getStripe().billingPortal.sessions.create({
       customer: sub.stripe_customer_id,
-      ...(cfg?.value ? { configuration: cfg.value } : {}),
+      ...(configurationId ? { configuration: configurationId } : {}),
       return_url: `${origin}/profile?tab=settings`,
     });
   } catch (e) {

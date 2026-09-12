@@ -66,10 +66,40 @@ async function checkAll(label, rows) {
 console.log(`Stripe mode: ${mode}\n`);
 try {
   // 1. app_config — read on every checkout, so a stale id breaks all new signups.
-  const cfg = await sql`select key, value from public.app_config
+  //
+  // Rows are mode-scoped (`live_…` / `test_…`, see lib/stripe-config.ts), and
+  // the OTHER mode's ids are supposed to be unresolvable here — checking them
+  // would report a correct setup as broken. Bare legacy keys belong to
+  // whichever mode was current when they were written, so they are checked.
+  const other = mode === 'LIVE' ? 'test_' : 'live_';
+  const cfgAll = await sql`select key, value from public.app_config
     where value ~ '^(price|prod|bpc)_' order by key`;
+  const cfg = cfgAll.filter((r) => !r.key.startsWith(other));
   await checkAll('app_config Stripe ids resolve',
     cfg.map((r) => ({ id: r.value, label: r.key })));
+  if (cfgAll.length !== cfg.length) {
+    console.log(`   (skipped ${cfgAll.length - cfg.length} row(s) belonging to the other mode)`);
+  }
+
+  /* 1b. The preflight that actually matters before pointing production at a
+     key: can a checkout resolve a price AT ALL in this mode? A missing row
+     here 500s every new subscription, not just the users who already have
+     one. Mirrors stripeConfig() — mode-scoped key first, bare key second. */
+  const scope = mode.toLowerCase() + '_';
+  const byKey = new Map(cfgAll.map((r) => [r.key, r.value]));
+  const REQUIRED = [
+    'stripe_plus_price_id', 'stripe_plus_price_id_annual',
+    'stripe_growth_price_id', 'stripe_growth_price_id_annual',
+    'stripe_pro_price_id', 'stripe_pro_price_id_annual',
+  ];
+  const unresolved = REQUIRED.filter((k) => !(byKey.get(scope + k) ?? byKey.get(k)));
+  check(`Every plan price resolves in ${mode} mode`, unresolved.length === 0,
+    unresolved.length ? `missing: ${unresolved.join(', ')} — run stripe:bootstrap` : `${REQUIRED.length} plan prices`);
+
+  const portals = ['stripe_portal_configuration_id', 'stripe_parent_portal_configuration_id'];
+  const noPortal = portals.filter((k) => !(byKey.get(scope + k) ?? byKey.get(k)));
+  check(`Both billing portal configurations are pinned in ${mode} mode`, noPortal.length === 0,
+    noPortal.length ? `missing: ${noPortal.join(', ')} — run stripe:portal --apply` : 'vendor + parent');
 
   // 2. connected accounts — a vendor whose account is missing cannot be paid.
   const accts = await sql`select business_name b, stripe_account_id a from public.providers

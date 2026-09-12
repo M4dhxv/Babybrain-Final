@@ -37,9 +37,16 @@ for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
 }
 
 const APPLY = process.argv.includes('--apply');
-const CONFIG_KEY = 'stripe_portal_configuration_id';
-const PARENT_CONFIG_KEY = 'stripe_parent_portal_configuration_id';
-const PRICE_KEYS = [
+// Mode-scoped, like every other stored Stripe id: a `bpc_` created in test
+// does not exist in live, and one shared database serves both (see
+// lib/stripe-config.ts). Reads fall back to the bare key so the rows that
+// already exist keep working.
+const MODE = (process.env.STRIPE_SECRET_KEY ?? '').startsWith('sk_live') ? 'live' : 'test';
+const CONFIG_KEY = `${MODE}_stripe_portal_configuration_id`;
+const PARENT_CONFIG_KEY = `${MODE}_stripe_parent_portal_configuration_id`;
+const LEGACY_CONFIG_KEY = 'stripe_portal_configuration_id';
+const LEGACY_PARENT_CONFIG_KEY = 'stripe_parent_portal_configuration_id';
+const LOGICAL_PRICE_KEYS = [
   'stripe_growth_price_id',
   'stripe_growth_price_id_annual',
   'stripe_pro_price_id',
@@ -47,14 +54,26 @@ const PRICE_KEYS = [
   'stripe_plus_price_id',
   'stripe_plus_price_id_annual',
 ];
+const PRICE_KEYS = LOGICAL_PRICE_KEYS;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), ...{ ssl: 'require' } });
 const mode = process.env.STRIPE_SECRET_KEY.startsWith('sk_live') ? 'LIVE' : 'TEST';
 
 try {
-  const rows = await sql`select key, value from app_config where key in ${sql([...PRICE_KEYS, CONFIG_KEY, PARENT_CONFIG_KEY])}`;
-  const cfg = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const wanted = [
+    ...LOGICAL_PRICE_KEYS,
+    ...LOGICAL_PRICE_KEYS.map((k) => `${MODE}_${k}`),
+    CONFIG_KEY, PARENT_CONFIG_KEY, LEGACY_CONFIG_KEY, LEGACY_PARENT_CONFIG_KEY,
+  ];
+  const rows = await sql`select key, value from app_config where key in ${sql(wanted)}`;
+  const raw = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  // Mode-scoped value wins; bare key is the fallback.
+  const cfg = {
+    ...Object.fromEntries(LOGICAL_PRICE_KEYS.map((k) => [k, raw[`${MODE}_${k}`] ?? raw[k]])),
+    [CONFIG_KEY]: raw[CONFIG_KEY] ?? raw[LEGACY_CONFIG_KEY],
+    [PARENT_CONFIG_KEY]: raw[PARENT_CONFIG_KEY] ?? raw[LEGACY_PARENT_CONFIG_KEY],
+  };
 
   const missing = PRICE_KEYS.filter((k) => !cfg[k]);
   if (missing.length) {

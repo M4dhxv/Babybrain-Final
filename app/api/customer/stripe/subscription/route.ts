@@ -4,6 +4,7 @@ import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { dbStatus } from '@/lib/plans';
+import { stripeConfig } from '@/lib/stripe-config';
 
 /**
  * Parent "Plus" subscription.
@@ -62,8 +63,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   const priceKey = billing === 'annual' ? 'stripe_plus_price_id_annual' : 'stripe_plus_price_id';
-  const { data: cfg } = await admin.from('app_config').select('value').eq('key', priceKey).maybeSingle();
-  const priceId = cfg?.value;
+  const priceId = (await stripeConfig(admin, [priceKey]))[priceKey];
   if (!priceId) {
     return NextResponse.json({ error: `Plus price not configured (${priceKey} missing from app_config)` }, { status: 500 });
   }

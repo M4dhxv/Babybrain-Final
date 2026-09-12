@@ -3,6 +3,7 @@ import { getStripe, GROWTH_TRIAL_DAYS, LIVE_STATUSES } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { vendorPageUrl } from '@/lib/cors';
+import { stripeConfig } from '@/lib/stripe-config';
 import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
 
 /**
@@ -106,17 +107,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ switched: true, plan: 'free', canceled });
   }
 
-  // Resolve the plan's price (monthly/annual) from app_config.
+  // Resolve the plan's price (monthly/annual) from app_config, preferring the
+  // current Stripe mode's row — test and live price ids are not interchangeable.
   const monthlyKey = `stripe_${plan}_price_id`;
   const annualKey = `stripe_${plan}_price_id_annual`;
-  const { data: cfg } = await admin
-    .from('app_config')
-    .select('key, value')
-    .in('key', [monthlyKey, annualKey]);
-  const priceId =
-    billing === 'annual'
-      ? cfg?.find((c) => c.key === annualKey)?.value
-      : cfg?.find((c) => c.key === monthlyKey)?.value;
+  const cfg = await stripeConfig(admin, [monthlyKey, annualKey]);
+  const priceId = billing === 'annual' ? cfg[annualKey] : cfg[monthlyKey];
   if (!priceId) {
     return NextResponse.json(
       { error: `${planLabel(plan)} price not configured (${billing === 'annual' ? annualKey : monthlyKey} missing from app_config)` },

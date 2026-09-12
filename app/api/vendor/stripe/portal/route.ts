@@ -3,6 +3,7 @@ import { getStripe } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { vendorPageUrl } from '@/lib/cors';
+import { stripeConfig } from '@/lib/stripe-config';
 
 /**
  * Stripe Billing Portal link (manage/cancel subscription, invoices, card).
@@ -42,17 +43,14 @@ export async function POST(request: Request) {
   // the portal offered cancel and invoices but no way to change tier
   // ("Can't downgrade anywhere", QA 23/08). Created by `npm run stripe:portal`;
   // if that hasn't been run the session still opens on Stripe's default.
-  const { data: cfg } = await admin
-    .from('app_config')
-    .select('value')
-    .eq('key', 'stripe_portal_configuration_id')
-    .maybeSingle();
+  const configurationId = (await stripeConfig(admin, ['stripe_portal_configuration_id']))
+    .stripe_portal_configuration_id;
 
   let portal;
   try {
     portal = await getStripe().billingPortal.sessions.create({
       customer: sub.stripe_customer_id,
-      ...(cfg?.value ? { configuration: cfg.value } : {}),
+      ...(configurationId ? { configuration: configurationId } : {}),
       return_url: intent === 'cancel'
         ? vendorPageUrl(request, '/billing', 'status=cancel_returned')
         : vendorPageUrl(request, '/billing'),

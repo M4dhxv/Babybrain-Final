@@ -4,6 +4,7 @@ import { getStripe, LIVE_STATUSES, periodEndIso, intervalOf } from '@/lib/stripe
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 import { recordSale } from '@/lib/commercials';
+import { stripeConfigKeyFor } from '@/lib/stripe-config';
 import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
 import { dbStatus, planFromMetadata, type PaidPlan } from '@/lib/plans';
@@ -74,18 +75,18 @@ async function planForPrice(
   priceId: string | undefined
 ): Promise<PaidPlan | null> {
   if (!priceId) return null;
-  const { data } = await admin
-    .from('app_config')
-    .select('key, value')
-    .in('key', [
+  const match = await stripeConfigKeyFor(
+    admin,
+    [
       'stripe_growth_price_id',
       'stripe_growth_price_id_annual',
       'stripe_pro_price_id',
       'stripe_pro_price_id_annual',
-    ]);
-  const match = data?.find((row) => row.value === priceId);
+    ],
+    priceId
+  );
   if (!match) return null;
-  return match.key.startsWith('stripe_pro_') ? 'pro' : 'growth';
+  return match.startsWith('stripe_pro_') ? 'pro' : 'growth';
 }
 
 // Every Wix API call is bounded at 20s by wixFetch, and these routes make

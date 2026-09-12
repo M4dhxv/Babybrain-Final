@@ -18,6 +18,7 @@
     "stripe:webhooks": "node scripts/setup-stripe-webhooks.mjs",
     "validate:payments": "node scripts/validate-payments.mjs",
     "stripe:portal": "node scripts/setup-stripe-portal.mjs",
+    "stripe:bootstrap": "node scripts/bootstrap-stripe-mode.mjs",
     "stripe:dedupe": "node scripts/dedupe-vendor-subscriptions.mjs",
     "stripe:dedupe-parents": "node scripts/dedupe-parent-subscriptions.mjs",
     "validate:plan-changes": "node scripts/validate-plan-changes.mjs",
