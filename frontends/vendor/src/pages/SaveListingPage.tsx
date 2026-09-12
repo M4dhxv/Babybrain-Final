@@ -630,8 +630,11 @@ export default function SaveListingPage() {
             </div>
           </div>
 
-          {/* Center — the profile summary */}
-          <div className="min-w-0 flex-1">
+          {/* Center — the profile summary. A real min-width (not min-w-0's
+              shrink-to-nothing) so the row's flex-wrap actually has a floor
+              to hit — otherwise this column just kept yielding space to a
+              wider desktop preview instead of ever wrapping it below. */}
+          <div className="min-w-[320px] flex-1">
             <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
             <p className="mb-4 mt-1 text-xs text-gray-500">
               These are the details on your profile. Edit anything here and it saves straight away.
@@ -786,15 +789,19 @@ export default function SaveListingPage() {
               screen, in its own browser-window mockup — it used to open that
               in a pop-up over the page, but that moved the vendor away from
               the summary they were reviewing. It now renders right here
-              instead, laid out at its normal (landscape) proportions and
-              zoomed down to fit this column, so nothing else on the page
-              shifts when switching.
+              instead, at its natural (wider, landscape) size — max-w-3xl,
+              comparable in visual weight to the phone frame — rather than
+              shrunk to the phone's 300px, which read as a tiny chip beside
+              it. The summary column's min-w-[320px] (see above) gives
+              `flex-wrap` on the row below a real floor to hit, so at that
+              width this drops onto a row of its own below the sidebar and
+              summary instead of crushing the summary for room.
 
               Both are copies of real parent components (ActivityCard and
               ActivityRow in frontends/parent components/ui.tsx), down to their
               palette, radii and Nunito face: a vendor-styled approximation
               showed fields and buttons (Call, Map) families never see. */}
-          <div className="w-80 flex-shrink-0">
+          <div className={cn('flex-shrink-0', desktopOpen ? 'w-full max-w-3xl' : 'w-80')}>
             <h3 className="font-semibold text-gray-900">Preview on BabyBrain.sg</h3>
             <p className="mb-3 mt-1 text-xs text-gray-500">This is how parents will see your business.</p>
 
@@ -825,65 +832,62 @@ export default function SaveListingPage() {
 
             {desktopOpen ? (
               /* Same browser-window mockup that used to fill the pop-up,
-                 unchanged — just laid out at its natural 640px width and
-                 zoomed to the 300px this column has, so it reflows as a
-                 whole (no cropping, no manual height math) instead of being
-                 redrawn at phone-sized text. */
-              <div className="mx-auto w-[300px] overflow-hidden rounded-xl border border-gray-200 shadow-xl">
-                <div className="w-[640px]" style={{ zoom: 300 / 640 }}>
-                  <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-                    <div className="ml-3 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-400">
-                      babybrain.sg/explore
-                    </div>
+                 unchanged — at its natural size instead of shrunk to the
+                 phone's width, so it reads at a size comparable to the
+                 phone frame rather than a tiny thumbnail. */
+              <div className="w-full overflow-hidden rounded-xl border border-gray-200 shadow-xl">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                  <div className="ml-3 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-400">
+                    babybrain.sg/explore
                   </div>
-                  <div
-                    className="bg-[#FFFCF8] p-4"
-                    style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+                </div>
+                <div
+                  className="bg-[#FFFCF8] p-4"
+                  style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+                >
+                  <article
+                    className="grid grid-cols-[170px_1fr] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white xl:grid-cols-[220px_1fr]"
+                    style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
                   >
-                    <article
-                      className="grid grid-cols-[170px_1fr] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white xl:grid-cols-[220px_1fr]"
-                      style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
-                    >
-                      <div className="relative">
-                        <img src={card.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
-                        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
-                          {card.category}
+                    <div className="relative">
+                      <img src={card.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
+                      <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
+                        {card.category}
+                      </span>
+                      {card.instantBook && (
+                        <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
+                          <Sparkles className="h-3 w-3" /> Instant book
                         </span>
-                        {card.instantBook && (
-                          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
-                            <Sparkles className="h-3 w-3" /> Instant book
-                          </span>
+                      )}
+                    </div>
+                    <div className="relative p-4">
+                      <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
+                        <Heart className="h-[18px] w-[18px]" />
+                      </span>
+                      <h3 className="mb-0.5 text-[16px] font-black text-[#111A4C]">{card.title}</h3>
+                      {card.providerName && (
+                        <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#A7D8F8]">
+                          <Store className="h-3.5 w-3.5" /> {card.providerName}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
+                        <p className="flex items-center gap-1"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
+                        <p className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
+                        <p className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
+                        <p>{card.time}</p>
+                        {card.duration && (
+                          <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
+                        )}
+                        {card.price && <p className="font-black text-[#A7D8F8]">{card.price}</p>}
+                        {card.rating && (
+                          <p className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
                         )}
                       </div>
-                      <div className="relative p-4">
-                        <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
-                          <Heart className="h-[18px] w-[18px]" />
-                        </span>
-                        <h3 className="mb-0.5 text-[16px] font-black text-[#111A4C]">{card.title}</h3>
-                        {card.providerName && (
-                          <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#A7D8F8]">
-                            <Store className="h-3.5 w-3.5" /> {card.providerName}
-                          </p>
-                        )}
-                        <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
-                          <p className="flex items-center gap-1"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
-                          <p className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
-                          <p className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
-                          <p>{card.time}</p>
-                          {card.duration && (
-                            <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
-                          )}
-                          {card.price && <p className="font-black text-[#A7D8F8]">{card.price}</p>}
-                          {card.rating && (
-                            <p className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  </div>
+                    </div>
+                  </article>
                 </div>
               </div>
             ) : (
