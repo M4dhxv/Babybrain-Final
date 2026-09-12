@@ -71,8 +71,14 @@ try {
   // Mode-scoped value wins; bare key is the fallback.
   const cfg = {
     ...Object.fromEntries(LOGICAL_PRICE_KEYS.map((k) => [k, raw[`${MODE}_${k}`] ?? raw[k]])),
-    [CONFIG_KEY]: raw[CONFIG_KEY] ?? raw[LEGACY_CONFIG_KEY],
-    [PARENT_CONFIG_KEY]: raw[PARENT_CONFIG_KEY] ?? raw[LEGACY_PARENT_CONFIG_KEY],
+    // Deliberately NOT falling back to the bare legacy key here. Price ids
+    // above fall back because a sandbox price is still a usable *lookup* while
+    // live rows are being written; a portal configuration id is different — it
+    // decides update-vs-create. Falling back handed the LIVE run the sandbox
+    // `bpc_`, so it tried to update a configuration that does not exist in
+    // live and died with resource_missing before it could create either one.
+    [CONFIG_KEY]: raw[CONFIG_KEY],
+    [PARENT_CONFIG_KEY]: raw[PARENT_CONFIG_KEY],
   };
 
   const missing = PRICE_KEYS.filter((k) => !cfg[k]);
@@ -151,12 +157,22 @@ try {
   const upsertConfiguration = async (label, key, feats) => {
     let configuration;
     if (cfg[key]) {
-      configuration = await stripe.billingPortal.configurations.update(cfg[key], {
-        features: feats,
-        business_profile: businessProfile,
-      });
-      console.log(`\n[${mode}] ${label}: updated ${configuration.id}`);
-    } else {
+      try {
+        configuration = await stripe.billingPortal.configurations.update(cfg[key], {
+          features: feats,
+          business_profile: businessProfile,
+        });
+        console.log(`\n[${mode}] ${label}: updated ${configuration.id}`);
+      } catch (e) {
+        // A pinned id Stripe no longer knows (deleted, or belonging to the
+        // other mode). Fall through to creating a fresh one rather than
+        // aborting the whole run.
+        if (e.code !== 'resource_missing') throw e;
+        console.log(`\n[${mode}] ${label}: pinned ${cfg[key]} is unknown in ${mode} — creating a new one`);
+        cfg[key] = null;
+      }
+    }
+    if (!configuration) {
       configuration = await stripe.billingPortal.configurations.create({
         features: feats,
         business_profile: businessProfile,
