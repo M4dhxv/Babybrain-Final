@@ -365,13 +365,29 @@ export async function syncWixServicesToActivities(
  * instead of a per-row round trip, which is what made this take minutes on a
  * half-hourly appointment service with hundreds of materialized slots across
  * the 60-day window.
+ *
+ * A session created in the last few minutes is never swept, "unbooked" or
+ * not — createWixBookingAndSession (lib/wix/sync.ts) creates the real
+ * reservation in Wix and materializes this row FIRST, and only afterwards
+ * does the calling route insert the local `bookings` row (the free and
+ * redeem-package routes) — there is a real gap where a booking is
+ * genuinely in flight but no local `bookings` row references this session
+ * yet. Confirmed against production data: a vendor unchecking this same
+ * activity in the Import picker while a parent's redeem-package request was
+ * mid-flight deleted the just-created course anchor before its booking row
+ * landed, leaving a real, confirmed Wix booking with no local trace at all
+ * (the parent's payment/credit spend and the roster both silently lost it).
+ * A short grace window costs nothing — a truly unbooked session created
+ * minutes ago is swept on the very next unlink anyway.
  */
 async function deleteUnbookedSessions(admin: SupabaseClient<Database>, activityId: string): Promise<void> {
+  const graceCutoff = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: sessions } = await admin
     .from('activity_sessions')
     .select('id, capacity, wix_slot_key, wix_remaining_capacity')
     .eq('activity_id', activityId)
-    .neq('status', 'cancelled');
+    .neq('status', 'cancelled')
+    .lt('created_at', graceCutoff);
   if (!sessions || sessions.length === 0) return;
 
   const sessionIds = sessions.map((s) => s.id);
