@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, LIVE_STATUSES, periodEndIso, intervalOf } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
 import { recordSale } from '@/lib/commercials';
@@ -47,7 +47,8 @@ function signingSecrets(): string[] {
  */
 async function liveSubscriptionFor(
   ended: Stripe.Subscription,
-  providerId: string
+  owner: 'provider_id' | 'user_id',
+  ownerId: string
 ): Promise<Stripe.Subscription | null> {
   const customerId = typeof ended.customer === 'string' ? ended.customer : ended.customer?.id;
   if (!customerId) return null;
@@ -56,8 +57,8 @@ async function liveSubscriptionFor(
     return (
       all.data
         .filter((s) => s.id !== ended.id)
-        .filter((s) => s.metadata?.provider_id === providerId)
-        .filter((s) => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
+        .filter((s) => s.metadata?.[owner] === ownerId)
+        .filter((s) => LIVE_STATUSES.includes(s.status))
         .sort((a, b) => a.created - b.created)[0] ?? null
     );
   } catch {
@@ -121,8 +122,6 @@ export async function POST(request: Request) {
     case 'customer.subscription.deleted': {
       const sub = event.data.object as Stripe.Subscription;
       const active = ['active', 'trialing'].includes(sub.status);
-      const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
-      const periodEndIso = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
       // Vendor subscription — Growth or Pro.
       //
@@ -143,14 +142,13 @@ export async function POST(request: Request) {
         // which is exactly what happened when the eight duplicates the demo
         // account had accumulated were cancelled: eight `deleted` events
         // landed and left a still-subscribed vendor recorded as Free.
-        const survivor = active ? null : await liveSubscriptionFor(sub, providerId);
+        const survivor = active ? null : await liveSubscriptionFor(sub, 'provider_id', providerId);
         const row = survivor ?? sub;
         const rowActive = active || Boolean(survivor);
         const rowPlan = survivor
           ? (await planForPrice(admin, survivor.items.data[0]?.price?.id)) ??
             planFromMetadata(survivor.metadata)
           : vendorPlan;
-        const rowPeriodEnd = (row as unknown as { current_period_end?: number }).current_period_end;
 
         await admin
           .from('subscriptions')
@@ -158,7 +156,7 @@ export async function POST(request: Request) {
             plan: rowActive ? rowPlan : 'free',
             stripe_subscription_id: row.id,
             status: dbStatus(row.status) as never,
-            current_period_end: rowPeriodEnd ? new Date(rowPeriodEnd * 1000).toISOString() : null,
+            current_period_end: periodEndIso(row),
             cancel_at_period_end: row.cancel_at_period_end,
           })
           .eq('provider_id', providerId);
@@ -167,14 +165,30 @@ export async function POST(request: Request) {
       // Customer "Plus" subscription.
       const customerUserId = sub.metadata?.user_id;
       if (customerUserId) {
+        // Same last-one-standing rule as the vendor branch above. Parents
+        // could stack subscriptions too (the route only guarded on the local
+        // plan until it was made to ask Stripe), so an unconditional 'free'
+        // on one `deleted` event dropped a parent who was still paying for
+        // another.
+        const survivor = active ? null : await liveSubscriptionFor(sub, 'user_id', customerUserId);
+        const row = survivor ?? sub;
+        const rowActive = active || Boolean(survivor);
+        const interval = intervalOf(row);
+
         await admin.from('customer_subscriptions').upsert(
           {
             user_id: customerUserId,
-            plan: active ? 'plus' : 'free',
-            stripe_subscription_id: sub.id,
-            status: dbStatus(sub.status) as never,
-            current_period_end: periodEndIso,
-            cancel_at_period_end: sub.cancel_at_period_end,
+            plan: rowActive ? 'plus' : 'free',
+            // Interval read off the price being billed, not off the metadata
+            // the checkout was created with: a monthly ⇄ annual switch moves
+            // the price, so `billing_interval` otherwise stayed on whatever
+            // they first signed up for and the Settings page showed the wrong
+            // renewal terms.
+            ...(interval ? { billing_interval: interval as never } : {}),
+            stripe_subscription_id: row.id,
+            status: dbStatus(row.status) as never,
+            current_period_end: periodEndIso(row),
+            cancel_at_period_end: row.cancel_at_period_end,
           },
           { onConflict: 'user_id' }
         );

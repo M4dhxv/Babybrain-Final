@@ -22,11 +22,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No subscription to manage yet.' }, { status: 400 });
   }
 
+  // Pin the parent portal configuration when one has been set up. Stripe's
+  // default configuration has `subscription_update` disabled, so the portal
+  // offered cancel, card updates and invoices but no way to move between Plus
+  // monthly and annual. The vendor configuration can't be reused — it lists
+  // only the Growth and Pro products. Created by `npm run stripe:portal`; if
+  // that hasn't been run the session still opens on Stripe's default.
+  const { data: cfg } = await admin
+    .from('app_config')
+    .select('value')
+    .eq('key', 'stripe_parent_portal_configuration_id')
+    .maybeSingle();
+
   const origin = appOrigin(request);
   let portal;
   try {
     portal = await getStripe().billingPortal.sessions.create({
       customer: sub.stripe_customer_id,
+      ...(cfg?.value ? { configuration: cfg.value } : {}),
       return_url: `${origin}/profile?tab=settings`,
     });
   } catch (e) {

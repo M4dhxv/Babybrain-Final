@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getStripe } from '@/lib/stripe';
+import { getStripe, LIVE_STATUSES, periodEndIso } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
+import { dbStatus } from '@/lib/plans';
 
 /**
  * Parent "Plus" subscription.
@@ -81,10 +82,6 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (existing?.plan === 'plus') {
-    return NextResponse.json({ error: 'You are already on Plus.' }, { status: 409 });
-  }
-
   const stripe = getStripe();
   let customerId = existing?.stripe_customer_id ?? undefined;
   if (!customerId) {
@@ -104,13 +101,72 @@ export async function POST(request: Request) {
       { onConflict: 'user_id' }
     );
 
+  // What does Stripe think this parent already has? Asked of Stripe rather
+  // than of `customer_subscriptions.plan`, which is only written once the
+  // webhook lands: guarding on the local plan let a second click during that
+  // window mint a second subscription, and the parent side never got the
+  // anti-stacking fix the vendor route did (one test parent had four live at
+  // once). `stripe_subscription_id` is no help either — it records only the
+  // most recent one, so it cannot see a stacked duplicate.
+  const existingSubs = await stripe.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 100,
+  });
+  const live = existingSubs.data
+    .filter((s) => LIVE_STATUSES.includes(s.status))
+    .sort((a, b) => a.created - b.created);
+  const current = live[0];
+
+  if (current) {
+    if (current.items.data[0]?.price?.id === priceId) {
+      return NextResponse.json(
+        { error: 'You are already on Plus.', code: 'already_on_plan', billing },
+        { status: 409 }
+      );
+    }
+
+    // Same Plus tier, different billing interval (or a legacy inline price
+    // from before the Product catalog existed). Move it on the subscription
+    // they already have: a 409 here was a dead end, because the parent
+    // billing portal runs on Stripe's default configuration where
+    // `subscription_update` is disabled, so monthly ⇄ annual was impossible
+    // from either side.
+    const item = current.items.data[0];
+    const updated = await stripe.subscriptions.update(current.id, {
+      items: [{ id: item.id, price: priceId }],
+      proration_behavior: 'create_prorations',
+      metadata: { ...current.metadata, user_id: user.id, billing },
+    });
+
+    await admin
+      .from('customer_subscriptions')
+      .update({
+        plan: 'plus',
+        billing_interval: billing,
+        stripe_subscription_id: updated.id,
+        status: dbStatus(updated.status) as never,
+        current_period_end: periodEndIso(updated),
+        cancel_at_period_end: updated.cancel_at_period_end,
+      })
+      .eq('user_id', user.id);
+
+    return NextResponse.json({ switched: true, billing, duplicates: live.length - 1 });
+  }
+
+  // First Plus subscription for this parent, or they cancelled and are coming
+  // back. The trial is for the former only: `trial_period_days` was passed
+  // unconditionally, so cancel → resubscribe handed out another free 30 days
+  // every time, indefinitely. Mirrors the vendor route's `neverSubscribed`.
+  const neverSubscribed = existingSubs.data.length === 0;
+
   const origin = appOrigin(request);
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: {
-      trial_period_days: PLUS_TRIAL_DAYS,
+      ...(neverSubscribed ? { trial_period_days: PLUS_TRIAL_DAYS } : {}),
       metadata: { user_id: user.id, billing },
     },
     metadata: { kind: 'customer_subscription', user_id: user.id, billing },

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStripe, GROWTH_TRIAL_DAYS } from '@/lib/stripe';
+import { getStripe, GROWTH_TRIAL_DAYS, LIVE_STATUSES } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { vendorPageUrl } from '@/lib/cors';
@@ -41,7 +41,6 @@ import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
  */
 
 /** Stripe statuses that mean "this subscription still occupies the vendor's plan slot". */
-const LIVE_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
 
 export async function POST(request: Request) {
   const { provider_id: providerId, plan = 'growth', billing = 'monthly' } = (await request.json()) as {
