@@ -630,11 +630,8 @@ export default function SaveListingPage() {
             </div>
           </div>
 
-          {/* Center — the profile summary. A real min-width (not min-w-0's
-              shrink-to-nothing) so the row's flex-wrap actually has a floor
-              to hit — otherwise this column just kept yielding space to a
-              wider desktop preview instead of ever wrapping it below. */}
-          <div className="min-w-[320px] flex-1">
+          {/* Center — the profile summary */}
+          <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-gray-900">Summary of your listing</h3>
             <p className="mb-4 mt-1 text-xs text-gray-500">
               These are the details on your profile. Edit anything here and it saves straight away.
@@ -789,19 +786,19 @@ export default function SaveListingPage() {
               screen, in its own browser-window mockup — it used to open that
               in a pop-up over the page, but that moved the vendor away from
               the summary they were reviewing. It now renders right here
-              instead, at its natural (wider, landscape) size — max-w-3xl,
-              comparable in visual weight to the phone frame — rather than
-              shrunk to the phone's 300px, which read as a tiny chip beside
-              it. The summary column's min-w-[320px] (see above) gives
-              `flex-wrap` on the row below a real floor to hit, so at that
-              width this drops onto a row of its own below the sidebar and
-              summary instead of crushing the summary for room.
+              instead, in the same spot the phone frame occupies — this
+              column's own width never changes, so the sidebar and summary
+              beside it never move or resize either way. Only the mockup
+              inside it is wider than the column (768px against the
+              column's 320px) and, since nothing here clips, it simply
+              overflows into the page's own right-hand margin instead of
+              being squeezed down to the phone's size.
 
               Both are copies of real parent components (ActivityCard and
               ActivityRow in frontends/parent components/ui.tsx), down to their
               palette, radii and Nunito face: a vendor-styled approximation
               showed fields and buttons (Call, Map) families never see. */}
-          <div className={cn('flex-shrink-0', desktopOpen ? 'w-full max-w-3xl' : 'w-80')}>
+          <div className="w-80 flex-shrink-0">
             <h3 className="font-semibold text-gray-900">Preview on BabyBrain.sg</h3>
             <p className="mb-3 mt-1 text-xs text-gray-500">This is how parents will see your business.</p>
 
@@ -832,10 +829,10 @@ export default function SaveListingPage() {
 
             {desktopOpen ? (
               /* Same browser-window mockup that used to fill the pop-up,
-                 unchanged — at its natural size instead of shrunk to the
-                 phone's width, so it reads at a size comparable to the
-                 phone frame rather than a tiny thumbnail. */
-              <div className="w-full overflow-hidden rounded-xl border border-gray-200 shadow-xl">
+                 unchanged — fixed wider than its column on purpose, so it
+                 overflows rightward from the same top-left spot the phone
+                 frame starts at, rather than being shrunk to fit inside it. */
+              <div className="w-[768px] overflow-hidden rounded-xl border border-gray-200 shadow-xl">
                 <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
                   <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
