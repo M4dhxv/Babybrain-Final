@@ -10,7 +10,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiPost } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -94,6 +94,14 @@ type SessionOpt = {
   // Wix's own last-known remaining count for a Wix slot — lets the Wix-class
   // capacity readout show Wix's real filled figure, not just our local rows.
   wix_remaining_capacity: number | null;
+};
+
+// A booking made directly on the vendor's own Wix site rather than through
+// BabyBrain — see app/api/vendor/wix-session-bookings/route.ts. Read-only:
+// there's no local booking_id to attend/edit/cancel against.
+type WixNativeAttendee = {
+  id: string; firstName: string; lastName: string; email: string; phone: string;
+  participants: number; startDate: string; endDate: string;
 };
 
 type RosterRow = {
@@ -456,6 +464,28 @@ export default function BookingsPage() {
   // Changing session (or tab) is a fresh context — close the mobile detail
   // sheet rather than leaving the previous booking's details open over it.
   useEffect(() => { setMobileDetail(false); }, [sessionId, activeTab]);
+
+  // A customer who booked directly on the vendor's Wix site (not through
+  // BabyBrain) has no local `bookings` row — see wix-session-bookings/route.ts.
+  // Only worth asking Wix for when the local roster came back empty; a session
+  // with real local bookings already shows them accurately (including a
+  // COURSE, now that provider_session_roster resolves to its anchor row).
+  const [wixAttendees, setWixAttendees] = useState<WixNativeAttendee[]>([]);
+  const [wixAttendeesLoading, setWixAttendeesLoading] = useState(false);
+  useEffect(() => {
+    setWixAttendees([]);
+    if (!sessionId || !provider || !activityWixType[sessionActivity[sessionId]]) return;
+    let cancelled = false;
+    setWixAttendeesLoading(true);
+    apiGet<{ attendees: WixNativeAttendee[] }>(
+      `/api/vendor/wix-session-bookings?providerId=${provider.id}&sessionId=${sessionId}`
+    )
+      .then((res) => { if (!cancelled) setWixAttendees(res.attendees); })
+      .catch(() => { /* best-effort display only — the local roster is still accurate */ })
+      .finally(() => { if (!cancelled) setWixAttendeesLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, provider]);
 
   // Keep the refresh-restore stash current. It's read back only after a genuine
   // page reload (see BOOKINGS_FILTER_KEY); a route change clears it instead.
@@ -929,6 +959,32 @@ export default function BookingsPage() {
               {!loading && visibleBookings.length === 0 && (
                 <div className="text-sm text-gray-400 px-1">
                   {activeTab === 'Waitlist' ? 'No one on the waitlist for this session.' : 'No bookings for this session.'}
+                </div>
+              )}
+              {activeTab === 'Bookings' && visibleBookings.length === 0 && wixAttendeesLoading && (
+                <div className="px-1 text-xs text-gray-400">Checking Wix for direct bookings…</div>
+              )}
+              {activeTab === 'Bookings' && visibleBookings.length === 0 && wixAttendees.length > 0 && (
+                <div className="space-y-2">
+                  <div className="px-1 text-xs font-medium text-gray-500">
+                    Booked directly on Wix — not through BabyBrain, so these can't be edited or marked for attendance here.
+                  </div>
+                  {wixAttendees.map((a) => (
+                    <div key={a.id} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-200 text-sm font-bold text-indigo-800">
+                        {initials(`${a.firstName} ${a.lastName}`.trim() || 'Wix Customer')}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900">
+                          {`${a.firstName} ${a.lastName}`.trim() || 'Wix customer'}
+                        </div>
+                        <div className="truncate text-xs text-gray-500">
+                          {[a.email, a.phone].filter(Boolean).join(' · ')}
+                          {a.participants > 1 ? ` · ${a.participants} participants` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

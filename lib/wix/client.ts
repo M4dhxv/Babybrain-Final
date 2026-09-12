@@ -864,6 +864,64 @@ export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials
     .map((b) => ({ start: b.startDate!, end: b.endDate! }));
 }
 
+export interface WixSessionBookingAttendee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  participants: number;
+  startDate: string;
+  endDate: string;
+}
+
+/** Confirmed bookings against one service, made directly on the vendor's own
+ *  Wix site/dashboard rather than through BabyBrain — a customer BabyBrain's
+ *  own `bookings` table has no record of, since a local row is only ever
+ *  created by BabyBrain's own checkout flow (there's no webhook that ingests
+ *  a native Wix booking). Used to fill in the vendor Bookings page for a
+ *  session that shows a real Wix remaining-capacity drop but an empty local
+ *  roster.
+ *
+ *  A CLASS/APPOINTMENT booking's `bookedEntity` carries `.slot.serviceId`; a
+ *  COURSE enrolment's carries `.schedule.serviceId` instead (see
+ *  createWixClassBooking's isCourse branch) — queried with both since the
+ *  caller only knows the activity's `wix_service_type` well after this
+ *  returns, if at all. */
+export async function fetchWixSessionBookings(creds: WixCredentials, serviceId: string): Promise<WixSessionBookingAttendee[]> {
+  interface RawBooking {
+    id: string;
+    status: string;
+    totalParticipants?: number;
+    startDate?: string;
+    endDate?: string;
+    contactDetails?: { firstName?: string; lastName?: string; email?: string; phone?: string };
+  }
+  const data = await wixFetch<{ bookings?: RawBooking[] }>(creds, '/bookings/v2/bookings/query', {
+    query: {
+      filter: {
+        $or: [
+          { 'bookedEntity.slot.serviceId': serviceId },
+          { 'bookedEntity.schedule.serviceId': serviceId },
+        ],
+      },
+      paging: { limit: 100 },
+    },
+  });
+  return (data.bookings ?? [])
+    .filter((b) => b.status === 'CONFIRMED')
+    .map((b) => ({
+      id: b.id,
+      firstName: b.contactDetails?.firstName ?? '',
+      lastName: b.contactDetails?.lastName ?? '',
+      email: b.contactDetails?.email ?? '',
+      phone: b.contactDetails?.phone ?? '',
+      participants: b.totalParticipants ?? 1,
+      startDate: b.startDate ?? '',
+      endDate: b.endDate ?? '',
+    }));
+}
+
 export interface WixBusyRange {
   start: string; // ISO timestamp
   end: string; // ISO timestamp
