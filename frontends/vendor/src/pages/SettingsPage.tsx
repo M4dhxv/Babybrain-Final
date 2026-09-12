@@ -32,7 +32,7 @@ const LEGAL_DOC_ROWS = [
   { icon: Lock, label: 'Privacy Policy', to: '/terms#privacy' },
 ];
 
-// Worded exactly as the checkbox vendors tick on Save-your-listing.
+// Worded exactly as the checkbox vendors tick on Claim your business.
 const MARKETING_CONSENT_TEXT =
   "I agree and consent to receive marketing communications from BabyBrain to update me on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and services via any means of communication such as via email.";
 
@@ -51,7 +51,7 @@ function ComplianceTab() {
   const { provider } = useAuth();
   const navigate = useNavigate();
   const [consentOpen, setConsentOpen] = useState(false);
-  // One checkbox on Save-your-listing covers all three documents.
+  // One checkbox on Claim your business covers all three documents.
   const termsAccepted = !!provider?.vendor_terms_accepted_at;
   const marketingAccepted = !!provider?.marketing_consent_at;
 

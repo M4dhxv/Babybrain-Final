@@ -36,7 +36,6 @@ import { Progress } from '@/components/ui/progress';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { BrandLogo, BrandStacked } from '@/components/BrandLogo';
 import { VENDOR_CATEGORIES, categoryLabel } from '@/lib/categories';
@@ -44,13 +43,6 @@ import { formatAgeRange, regionLabel } from '@/lib/database.types';
 import type { Database, VendorCategory } from '@/lib/database.types';
 
 type ProviderUpdate = Database['public']['Tables']['providers']['Update'];
-
-/* Fully-qualified so it resolves the same whether opened in this tab or a new
-   one, and regardless of the current hash route or the app's `base` path. The
-   vendor portal renders the site-wide Terms & Conditions (which include the
-   Terms of Use and the Privacy Policy) at `#/terms`. */
-const TERMS_URL = `${window.location.origin}${import.meta.env.BASE_URL}#/terms`;
-const PRIVACY_URL = `${TERMS_URL}#privacy`;
 
 /** The profile as it is edited here — the same columns Settings → Profile owns. */
 interface ProfileDraft {
@@ -231,12 +223,6 @@ export default function SaveListingPage() {
   const { provider: activeProvider, providerResolved, session, refreshProvider } = useAuth();
   const providerId = activeProvider?.id ?? null;
   const [desktopOpen, setDesktopOpen] = useState(false);
-  // Both consents are required to publish (ticked here, right before Save).
-  const [agreedTerms, setAgreedTerms] = useState(false);
-  const [agreedMarketing, setAgreedMarketing] = useState(false);
-  // Marketing consent (00094) — the vendor's first consent date is kept so
-  // re-saving the listing doesn't move it forward.
-  const [marketingConsentAt, setMarketingConsentAt] = useState<string | null>(null);
   const [prov, setProv] = useState<ProfileDraft>(EMPTY_PROFILE);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [glance, setGlance] = useState<GlanceRow[]>(EMPTY_GLANCE);
@@ -249,11 +235,6 @@ export default function SaveListingPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [fieldBusy, setFieldBusy] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
-
-  const [savingListing, setSavingListing] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const canSave = agreedTerms && agreedMarketing;
 
   // Both previews carry the same footnote — it says where the details came
   // from, so nobody mistakes a draft for something families can already find.
@@ -271,7 +252,7 @@ export default function SaveListingPage() {
     const [{ data: provider }, { data: acts }, { data: locs }, { data: cats }] = await Promise.all([
       supabase
         .from('providers')
-        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen, vendor_terms_accepted_at, marketing_consent_at')
+        .select('business_name, vendor_category, description, logo_url, cover_image_url, address, postal_code, website, contact_email, contact_phone, whatsapp, uen')
         .eq('id', providerId)
         .maybeSingle(),
       // Drafts come back too: during onboarding a vendor often has an
@@ -306,11 +287,6 @@ export default function SaveListingPage() {
       uen: provider?.uen ?? '',
     };
     setProv(profile);
-    // Pre-tick both boxes from what the vendor has already accepted (a previous
-    // save). Keep the first marketing-consent date so re-saving doesn't move it.
-    setAgreedTerms(!!provider?.vendor_terms_accepted_at);
-    setMarketingConsentAt(provider?.marketing_consent_at ?? null);
-    setAgreedMarketing(!!provider?.marketing_consent_at);
 
     const activities = acts ?? [];
     const published = activities.filter((a) => a.is_published);
@@ -479,24 +455,10 @@ export default function SaveListingPage() {
     await refreshProvider();
   }
 
-  async function handleSave() {
-    if (!providerId || !canSave || savingListing) return;
-    setSavingListing(true);
-    setSaveError(null);
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('providers')
-      .update({
-        // Both boxes are ticked to reach here, so both consents are recorded.
-        // Keep the vendor's first marketing-consent date if they have one.
-        vendor_terms_accepted_at: now,
-        marketing_consent_at: marketingConsentAt ?? now,
-      })
-      .eq('id', providerId);
-    setSavingListing(false);
-    if (error) return setSaveError(error.message);
-    await refreshProvider();
-    // Land on the profile that now exists, not the portal home.
+  function handleSave() {
+    if (!providerId) return;
+    // Consent is captured earlier, on /claim-business — nothing left to write
+    // here. Land on the profile that now exists, not the portal home.
     navigate('/settings');
   }
 
@@ -788,54 +750,6 @@ export default function SaveListingPage() {
                 </div>
               </div>
             </div>
-
-            {/* Required to publish — both boxes must be ticked. This is the
-                only place consent is taken; the claim flow no longer asks. */}
-            <div className="mt-6 rounded-xl border border-gray-200 p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Shield className="h-5 w-5 text-[#FA4D8D]" />
-                <h4 className="font-semibold text-gray-900">Required to publish</h4>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    id="vendor-terms"
-                    checked={agreedTerms}
-                    onCheckedChange={(c) => setAgreedTerms(c === true)}
-                    className="mt-0.5"
-                  />
-                  <label htmlFor="vendor-terms" className="cursor-pointer text-sm text-gray-700">
-                    You hereby acknowledge that you have read our{' '}
-                    <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
-                      Terms &amp; Conditions
-                    </a>
-                    ,{' '}
-                    <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
-                      Terms of Use
-                    </a>{' '}
-                    and{' '}
-                    <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
-                      Privacy Policy
-                    </a>{' '}
-                    and confirm that you are in agreement with and legally bound by such terms, as
-                    modified from time to time.
-                  </label>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    id="vendor-marketing"
-                    checked={agreedMarketing}
-                    onCheckedChange={(c) => setAgreedMarketing(c === true)}
-                    className="mt-0.5"
-                  />
-                  <label htmlFor="vendor-marketing" className="cursor-pointer text-sm text-gray-700">
-                    I agree and consent to receive marketing communications from BabyBrain to update me
-                    on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products
-                    and services via any means of communication such as via email.
-                  </label>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Right — the parent app's own listing card, on a phone; the
@@ -955,28 +869,13 @@ export default function SaveListingPage() {
             <Lock className="h-4 w-4" />
             Your information is secure
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <Button
-              onClick={handleSave}
-              disabled={!canSave || savingListing}
-              className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {savingListing ? 'Saving…' : 'Save'}
-              <Send className="h-4 w-4" />
-            </Button>
-            {/* One message slot, always taking its line — hidden rather than
-                removed, so ticking the boxes doesn't change the bar's height
-                and shunt Back / the lock line / Save. */}
-            <p
-              className={cn(
-                'text-[11px]',
-                saveError ? 'text-red-500' : 'text-gray-400',
-                !saveError && canSave && 'invisible'
-              )}
-            >
-              {saveError || 'Tick both boxes to publish.'}
-            </p>
-          </div>
+          <Button
+            onClick={handleSave}
+            className="gradient-primary gap-2 rounded-xl px-8 text-white hover:opacity-90"
+          >
+            Save
+            <Send className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 

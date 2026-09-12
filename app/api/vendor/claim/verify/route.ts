@@ -32,10 +32,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * Body: { claim_id, email_code, phone_code?, password?, terms_accepted?, marketing_consent? }
  *
  * `terms_accepted` / `marketing_consent` ride along only on the set-password
- * pass (a brand-new claimer). They are recorded on the provider as ownership is
- * handed over, so /save-listing can show the same two checkboxes already
- * ticked. Terms is enforced in the UI; the server still only writes the
- * acceptance timestamp when it actually arrives true.
+ * pass (a brand-new claimer) — that's the only step where the claim page shows
+ * the two consent checkboxes. They are recorded on the provider as ownership
+ * is handed over. Terms is enforced in the UI; the server still only writes
+ * the acceptance timestamp when it actually arrives true.
  */
 
 const MAX_ATTEMPTS = 6;

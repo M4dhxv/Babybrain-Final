@@ -15,9 +15,11 @@ import {
   MessageCircle,
   Bell,
   Loader2,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiPost } from '@/lib/api';
@@ -55,6 +57,9 @@ const REGION_LABELS: Record<string, string> = {
   central: 'Central', east: 'East', 'north-east': 'North-East',
   north: 'North', west: 'West', sentosa: 'Sentosa',
 };
+
+const TERMS_URL = `${window.location.origin}${import.meta.env.BASE_URL}#/terms`;
+const PRIVACY_URL = `${TERMS_URL}#privacy`;
 
 export default function ClaimBusinessPage() {
   const navigate = useNavigate();
@@ -95,8 +100,12 @@ export default function ClaimBusinessPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  /* Consent (Terms + marketing) is taken once, on /save-listing, right before
-     the listing is published — not here. Claiming only proves ownership. */
+  /* Consent (Terms + marketing) is taken once, here, right after the email
+     code is confirmed and the new owner is setting a password — not on
+     /save-listing, which used to ask again. Both boxes are required, same as
+     the page they moved from. */
+  const [agreedTerms, setAgreedTerms] = useState(false);
+  const [agreedMarketing, setAgreedMarketing] = useState(false);
   /* The code's email already has a BabyBrain login. Rather than bounce to
      /login (where nothing knew to finish the claim), the owner signs in right
      here and we re-run verification with the session — the route then hands
@@ -182,7 +191,10 @@ export default function ClaimBusinessPage() {
         claim_id: claimId,
         email_code: emailCode,
         phone_code: phoneCode || undefined,
-        // Consent is captured later, on /save-listing — not part of claiming.
+        // Only actually written by the server on the account-creation pass
+        // (see the route's consentPatch) — harmless to send on every call.
+        terms_accepted: agreedTerms,
+        marketing_consent: agreedMarketing,
         ...(withPassword ? { password: withPassword } : {}),
       });
       setEmailVerified(res.verified);
@@ -232,6 +244,7 @@ export default function ClaimBusinessPage() {
   async function submitPassword() {
     if (password.length < 8) return setError('Choose a password of at least 8 characters.');
     if (password !== password2) return setError('Those passwords don’t match.');
+    if (!agreedTerms || !agreedMarketing) return setError('Please accept both boxes below to continue.');
     await verify(password);
   }
 
@@ -569,9 +582,58 @@ export default function ClaimBusinessPage() {
                       placeholder="Type it again"
                       className="mt-2 rounded-xl border-gray-200"
                     />
+
+                    {/* Required to claim — moved here from /save-listing, which
+                        used to ask a second time. */}
+                    <div className="mt-4 rounded-xl border border-gray-200 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Shield className="h-5 w-5 text-[#FA4D8D]" />
+                        <h4 className="font-semibold text-gray-900">Required to claim</h4>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id="claim-terms"
+                            checked={agreedTerms}
+                            onCheckedChange={(c) => setAgreedTerms(c === true)}
+                            className="mt-0.5"
+                          />
+                          <label htmlFor="claim-terms" className="cursor-pointer text-sm text-gray-700">
+                            You hereby acknowledge that you have read our{' '}
+                            <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
+                              Terms &amp; Conditions
+                            </a>
+                            ,{' '}
+                            <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
+                              Terms of Use
+                            </a>{' '}
+                            and{' '}
+                            <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
+                              Privacy Policy
+                            </a>{' '}
+                            and confirm that you are in agreement with and legally bound by such terms, as
+                            modified from time to time.
+                          </label>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id="claim-marketing"
+                            checked={agreedMarketing}
+                            onCheckedChange={(c) => setAgreedMarketing(c === true)}
+                            className="mt-0.5"
+                          />
+                          <label htmlFor="claim-marketing" className="cursor-pointer text-sm text-gray-700">
+                            I agree and consent to receive marketing communications from BabyBrain to update me
+                            on offers, promotions, discounts, events, news, etc. relating to BabyBrain's products
+                            and services via any means of communication such as via email.
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
                     <Button
                       onClick={submitPassword}
-                      disabled={busy || password.length < 8 || password !== password2}
+                      disabled={busy || password.length < 8 || password !== password2 || !agreedTerms || !agreedMarketing}
                       className="gradient-primary mt-4 w-full rounded-xl text-white hover:opacity-90"
                     >
                       {busy ? 'Finishing…' : 'Finish claiming this business'}
@@ -676,7 +738,7 @@ export default function ClaimBusinessPage() {
               !(
                 claimComplete ||
                 (session && emailVerified) ||
-                (needsPassword && password.length >= 8 && password === password2) ||
+                (needsPassword && password.length >= 8 && password === password2 && agreedTerms && agreedMarketing) ||
                 (needsSignIn && password.length > 0)
               ) || busy
             }
