@@ -900,71 +900,77 @@ export default function SaveListingPage() {
                  a guessed constant: a fixed number either left a lot of
                  dead space after a short title or clipped/wrapped a long
                  one, so it's measured from the title, provider name and
-                 info-grid actually being rendered below. */
+                 info-grid actually being rendered below. Bezel matches the
+                 phone frame's — same thin dark border (p-[1.8px] on
+                 bg-gray-800), not the plain gray card border it had. */
               <div
                 style={{ width: desktopFrameWidth }}
-                className="overflow-hidden rounded-xl border border-gray-200 shadow-xl"
+                className="rounded-xl bg-gray-800 p-[1.8px] shadow-xl"
               >
-                <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-                  <div className="ml-3 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-400">
-                    babybrain.sg/explore
-                  </div>
-                </div>
-                <div
-                  className="bg-[#FFFCF8] p-4"
-                  style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
-                >
-                  <article
-                    className="grid grid-cols-[170px_1fr] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white xl:grid-cols-[220px_1fr]"
-                    style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
-                  >
-                    <div className="relative">
-                      <img src={card.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
-                      <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
-                        {card.category}
-                      </span>
-                      {card.instantBook && (
-                        <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
-                          <Sparkles className="h-3 w-3" /> Instant book
-                        </span>
-                      )}
+                <div className="overflow-hidden rounded-[0.7rem]">
+                  <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                    <div className="ml-3 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-400">
+                      babybrain.sg/explore
                     </div>
-                    <div className="relative p-4">
-                      <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
-                        <Heart className="h-[18px] w-[18px]" />
-                      </span>
-                      <h3 ref={titleRef} className="mb-0.5 whitespace-nowrap text-[16px] font-black text-[#111A4C]">{card.title}</h3>
-                      {card.providerName && (
-                        <p ref={providerRef} className="mb-2 flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-bold text-[#A7D8F8]">
-                          <Store className="h-3.5 w-3.5" /> {card.providerName}
-                        </p>
-                      )}
-                      <div ref={infoGridRef} className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
-                        <p className="flex items-center gap-1 whitespace-nowrap"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
-                        <p className="flex items-center gap-1 whitespace-nowrap"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
-                        <p className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
-                        <p className="whitespace-nowrap">{card.time}</p>
-                        {card.duration && (
-                          <p className="flex items-center gap-1 whitespace-nowrap"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
-                        )}
-                        {card.price && <p className="whitespace-nowrap font-black text-[#A7D8F8]">{card.price}</p>}
-                        {card.rating && (
-                          <p className="flex items-center gap-1 whitespace-nowrap"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
+                  </div>
+                  <div
+                    className="bg-[#FFFCF8] p-4"
+                    style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
+                  >
+                    <article
+                      className="grid grid-cols-[170px_1fr] overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white xl:grid-cols-[220px_1fr]"
+                      style={{ boxShadow: '0 1px 2px rgba(17,26,76,0.04), 0 6px 16px rgba(17,26,76,0.06)' }}
+                    >
+                      <div className="relative">
+                        <img src={card.image} alt="" className="h-full min-h-[100px] w-full object-cover" />
+                        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#A7D8F8]">
+                          {card.category}
+                        </span>
+                        {card.instantBook && (
+                          <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A]">
+                            <Sparkles className="h-3 w-3" /> Instant book
+                          </span>
                         )}
                       </div>
-                    </div>
-                  </article>
+                      <div className="relative p-4">
+                        <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
+                          <Heart className="h-[18px] w-[18px]" />
+                        </span>
+                        <h3 ref={titleRef} className="mb-0.5 whitespace-nowrap text-[16px] font-black text-[#111A4C]">{card.title}</h3>
+                        {card.providerName && (
+                          <p ref={providerRef} className="mb-2 flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-bold text-[#A7D8F8]">
+                            <Store className="h-3.5 w-3.5" /> {card.providerName}
+                          </p>
+                        )}
+                        <div ref={infoGridRef} className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
+                          <p className="flex items-center gap-1 whitespace-nowrap"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
+                          <p className="flex items-center gap-1 whitespace-nowrap"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
+                          <p className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
+                          <p className="whitespace-nowrap">{card.time}</p>
+                          {card.duration && (
+                            <p className="flex items-center gap-1 whitespace-nowrap"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
+                          )}
+                          {card.price && <p className="whitespace-nowrap font-black text-[#A7D8F8]">{card.price}</p>}
+                          {card.rating && (
+                            <p className="flex items-center gap-1 whitespace-nowrap"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  </div>
                 </div>
               </div>
             ) : (
               /* Phone frame — the vertical ActivityCard, as it appears on the
-                 parent app's home, matches and favourites rails. */
-              <div className="mx-auto w-[300px] rounded-[1.8rem] bg-gray-800 p-1.5 shadow-xl">
+                 parent app's home, matches and favourites rails. The bezel
+                 is just this padding (was p-1.5/6px — a modern thin-bezel
+                 phone, not the original chunky one, so 1.8px: 70% thinner). */
+              <div className="mx-auto w-[300px] rounded-[1.8rem] bg-gray-800 p-[1.8px] shadow-xl">
                 <div
-                  className="overflow-hidden rounded-[1.4rem] bg-[#FFFCF8] p-3"
+                  className="overflow-hidden rounded-[1.7rem] bg-[#FFFCF8] p-3"
                   style={{ fontFamily: "Nunito, 'Inter', -apple-system, sans-serif" }}
                 >
                   <article
