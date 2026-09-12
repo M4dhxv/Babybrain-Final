@@ -4,13 +4,16 @@ import { requireProviderRole } from '@/lib/vendor';
 import { getProviderWixCredentials, fetchWixSessionBookings } from '@/lib/wix/client';
 
 /**
- * Read-only fallback for the vendor Bookings page: a customer who booked
- * directly on the vendor's own Wix site (not through BabyBrain) has no row
- * in the local `bookings` table — nothing creates one for a native Wix
- * booking, so the roster looked empty even though Wix's own remaining
- * capacity showed real enrolments. Fetches Wix's own attendee list for the
- * session's service instead, purely for display — nothing here is written
- * locally.
+ * Read-only fallback for the vendor Bookings page: a session can be
+ * confirmed on Wix with no matching local `bookings` row for two reasons —
+ * a customer booked directly on the vendor's own Wix site (nothing creates
+ * a local row for that), or a BabyBrain booking's local insert failed after
+ * the real Wix reservation had already gone through (see the grace-period
+ * comment on deleteUnbookedSessions in lib/wix/sync.ts for one confirmed
+ * cause of the latter). Either way the roster looked empty even though
+ * Wix's own remaining capacity showed real enrolments. Fetches Wix's own
+ * attendee list for the session's service instead, purely for display —
+ * nothing here is written locally.
  *
  * A COURSE enrolment is booked once for the whole run (see the anchor-row
  * comments in lib/wix/sync.ts), so every attendee returned belongs to every

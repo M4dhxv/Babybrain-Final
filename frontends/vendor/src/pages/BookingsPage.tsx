@@ -967,7 +967,7 @@ export default function BookingsPage() {
               {activeTab === 'Bookings' && visibleBookings.length === 0 && wixAttendees.length > 0 && (
                 <div className="space-y-2">
                   <div className="px-1 text-xs font-medium text-gray-500">
-                    Booked directly on Wix — not through BabyBrain, so these can't be edited or marked for attendance here.
+                    Confirmed on Wix, but with no local booking record here — either booked directly on Wix, or a BabyBrain booking that failed to save locally. Can't be edited or marked for attendance from this page.
                   </div>
                   {wixAttendees.map((a) => (
                     <div key={a.id} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
