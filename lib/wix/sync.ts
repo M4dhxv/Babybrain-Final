@@ -354,11 +354,17 @@ export async function syncWixServicesToActivities(
  * Schedule/Bookings immediately. Any session with a real booking is
  * preserved regardless of how long ago it happened.
  *
- * Deletes one row at a time and swallows individual failures: `bookings.
- * session_id` has no cascade, so a session with even a *cancelled* booking
- * against it (not counted as "booked" here, but still FK-referenced) would
- * fail to delete — doing this per-row means that one blocked row doesn't
- * roll back the rest.
+ * Deleted in bulk where it's safe to, falling back to one row at a time only
+ * for rows that need it: `bookings.session_id` has no cascade, so a session
+ * with even a *cancelled* booking against it (not counted as "booked" here,
+ * but still FK-referenced) fails to delete — a single bulk statement is one
+ * transaction, so one such row in the batch would roll back every row in it,
+ * not just itself. Those go through individually and swallow their own
+ * failure; everything else (the common case — an appointment service's
+ * unbooked slots have no booking row at all) goes in chunked bulk deletes
+ * instead of a per-row round trip, which is what made this take minutes on a
+ * half-hourly appointment service with hundreds of materialized slots across
+ * the 60-day window.
  */
 async function deleteUnbookedSessions(admin: SupabaseClient<Database>, activityId: string): Promise<void> {
   const { data: sessions } = await admin
@@ -373,15 +379,29 @@ async function deleteUnbookedSessions(admin: SupabaseClient<Database>, activityI
     .from('bookings')
     .select('session_id, status')
     .in('session_id', sessionIds);
-  const bookedIds = new Set(
-    (bookings ?? []).filter((b) => b.status !== 'cancelled').map((b) => b.session_id)
-  );
+  const activeBookedIds = new Set<string>();
+  const anyBookingIds = new Set<string>();
+  for (const b of bookings ?? []) {
+    anyBookingIds.add(b.session_id);
+    if (b.status !== 'cancelled') activeBookedIds.add(b.session_id);
+  }
 
+  const bulkDeletable: string[] = [];
+  const deleteIndividually: string[] = [];
   for (const s of sessions) {
-    if (bookedIds.has(s.id)) continue;
+    if (activeBookedIds.has(s.id)) continue;
     const bookedOnWix = !!s.wix_slot_key && s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
     if (bookedOnWix) continue;
-    await admin.from('activity_sessions').delete().eq('id', s.id);
+    (anyBookingIds.has(s.id) ? deleteIndividually : bulkDeletable).push(s.id);
+  }
+
+  // Chunked for the same request-url-length reason importWixSessionStaff
+  // chunks its own `.in(...)` deletes.
+  for (let i = 0; i < bulkDeletable.length; i += 500) {
+    await admin.from('activity_sessions').delete().in('id', bulkDeletable.slice(i, i + 500));
+  }
+  for (const id of deleteIndividually) {
+    await admin.from('activity_sessions').delete().eq('id', id);
   }
 }
 
