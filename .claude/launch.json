@@ -4,43 +4,102 @@
     {
       "name": "babybrain",
       "runtimeExecutable": "C:\\Users\\amanz\\OneDrive\\Documents\\Work\\wix\\Babybrain-Final\\.claude\\npm-with-path.cmd",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "vendor",
       "runtimeExecutable": "C:\\Users\\amanz\\OneDrive\\Documents\\Work\\wix\\Babybrain-Final\\.claude\\npm-with-path.cmd",
-      "runtimeArgs": ["--prefix", "frontends/vendor", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/vendor",
+        "run",
+        "dev"
+      ],
       "port": 5174,
       "autoPort": true
     },
     {
       "name": "vendor-alt",
       "runtimeExecutable": "C:\\Users\\amanz\\OneDrive\\Documents\\Work\\wix\\Babybrain-Final\\.claude\\npm-with-path.cmd",
-      "runtimeArgs": ["--prefix", "frontends/vendor", "run", "dev", "--", "--port", "5175"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/vendor",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5175"
+      ],
       "port": 5175,
       "autoPort": true
     },
     {
       "name": "parent",
       "runtimeExecutable": "C:\\Users\\amanz\\OneDrive\\Documents\\Work\\wix\\Babybrain-Final\\.claude\\npm-with-path.cmd",
-      "runtimeArgs": ["--prefix", "frontends/parent", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/parent",
+        "run",
+        "dev"
+      ],
       "port": 5173,
       "autoPort": true
     },
     {
       "name": "parent-alt",
       "runtimeExecutable": "C:\\Users\\amanz\\OneDrive\\Documents\\Work\\wix\\Babybrain-Final\\.claude\\npm-with-path.cmd",
-      "runtimeArgs": ["--prefix", "frontends/parent", "run", "dev", "--", "--port", "5176"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/parent",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176"
+      ],
       "port": 5176,
       "autoPort": true
     },
     {
       "name": "email-preview",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4599", "--directory", "email-previews"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4599",
+        "--directory",
+        "email-previews"
+      ],
       "port": 4599,
+      "autoPort": true
+    },
+    {
+      "name": "parent-mac",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/parent",
+        "run",
+        "dev"
+      ],
+      "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "vendor-mac",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "frontends/vendor",
+        "run",
+        "dev"
+      ],
+      "port": 5174,
       "autoPort": true
     }
   ]

@@ -55,6 +55,10 @@ const FIELD_GROUPS: Array<[RegExp, string]> = [
   [/\.address(\.|$)/, 'address'],
   [/\.dob(\.|$)/, 'date of birth'],
   [/\.verification\.additional_document(\.|$)/, 'proof of address'],
+  // Before the catch-all below: a liveness check is a selfie on a phone, not
+  // a document to dig out, and Stripe asks for it alongside the document —
+  // so labelling both "identity document" listed the same thing twice.
+  [/\.verification\.proof_of_liveness(\.|$)/, 'identity selfie'],
   [/\.verification(\.|$)/, 'identity document'],
   [/\.(first_name|last_name|full_name_aliases)$/, 'full name'],
   [/\.id_number$/, 'NRIC / FIN'],
@@ -78,6 +82,14 @@ function requirementLabel(key: string): string {
   if (REQUIREMENT_LABELS[key]) return REQUIREMENT_LABELS[key];
 
   const prefix = key.split('.')[0];
+
+  // Some requirements are named per sub-field where only the family means
+  // anything to the vendor: Stripe asks for `tos_acceptance.date` AND
+  // `tos_acceptance.ip`, which fell through to the raw fallback and showed up
+  // as two rows reading "Tos acceptance date" / "Tos acceptance ip" for what
+  // is a single click. Matching the prefix collapses them onto the one label.
+  if (REQUIREMENT_LABELS[prefix]) return REQUIREMENT_LABELS[prefix];
+
   const group = FIELD_GROUPS.find(([re]) => re.test(key));
   if (group && WHOSE[prefix]) return `${WHOSE[prefix]} ${group[1]}`;
 
