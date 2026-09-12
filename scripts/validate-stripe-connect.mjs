@@ -7,6 +7,14 @@
  *
  * Creates a throwaway owner + provider and a real test-mode Express account,
  * then cleans both up. Refuses to run against a live Stripe key.
+ *
+ * Section 10 closes the gap validate-commercials.mjs's header promises this
+ * file covers: it settles a REAL destination charge against a REAL connected
+ * account and asserts the money actually split. Until it existed, the split
+ * was only ever checked as arithmetic — `computeSplit` in isolation — while
+ * the one place `payouts_enabled: true` appeared here used a deliberately
+ * fake account id. So nothing would have caught the `payment_intent_data`
+ * block in app/api/bookings/checkout/route.ts regressing.
  */
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
@@ -26,6 +34,25 @@ const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUP
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? ` — ${d}` : ''}`); ok ? pass++ : fail++; };
+
+/**
+ * Re-read until `done` accepts the result, or give up.
+ *
+ * A destination charge's transfer, the connected account's balance
+ * transaction and the platform's application fee are all created
+ * asynchronously — they are not there in the same tick the PaymentIntent
+ * comes back `succeeded`. Asserting immediately reported a correct split as
+ * four failures.
+ */
+async function settle(read, done, tries = 12, waitMs = 1000) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    last = await read();
+    if (done(last)) return last;
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return last;
+}
 
 const stamp = Date.now();
 const email = `connect.owner.${stamp}@babybrain-validation.test`;
@@ -63,6 +90,8 @@ const post = () =>
   }).then(async (r) => ({ r, body: await r.json() }));
 
 let accountId = null;
+let splitAccountId = null;
+let splitChargeId = null;
 try {
   // --- 1. Nothing connected yet ---
   const before = await get();
@@ -148,7 +177,125 @@ try {
   // --- 9. Anonymous is refused ---
   const anonGet = await fetch(`${API}/api/vendor/stripe/connect?provider_id=${provider.id}`);
   check('Unauthenticated is refused', anonGet.status === 401, `HTTP ${anonGet.status}`);
+
+  /* --- 10. A real destination charge actually splits the money ---
+
+     The Express accounts the app creates cannot be completed from the API
+     (Stripe refuses `tos_acceptance` when it collects the requirements
+     itself), so this stands up a PLATFORM-collected account instead. It is
+     not the account type the app creates — the point is only to get a
+     payable `transfers` capability to charge against, so that the split
+     parameters the booking route builds can be settled for real.
+
+     What is asserted is the shape of what the route sends: the same
+     `application_fee_amount` + `transfer_data.destination` pair that
+     app/api/bookings/checkout/route.ts puts in `payment_intent_data`. */
+  splitAccountId = (await stripe.accounts.create({
+    country: 'SG',
+    email: `connect.split.${stamp}@babybrain-validation.test`,
+    controller: {
+      losses: { payments: 'application' },
+      fees: { payer: 'application' },
+      requirement_collection: 'application',
+      stripe_dashboard: { type: 'none' },
+    },
+    capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+    business_type: 'individual',
+    business_profile: { mcc: '8299', url: 'https://babybrain.sg', product_description: 'Baby classes' },
+    individual: {
+      first_name: 'Jenny', last_name: 'Rosen',
+      dob: { day: 1, month: 1, year: 1990 },
+      address: { line1: 'address_full_match', city: 'Singapore', postal_code: '069542', country: 'SG' },
+      email: 'jenny@babybrain-validation.test', phone: '+6598765432',
+      id_number: 'S0000000A', nationality: 'SG',
+      // NOT `[]` — an empty array leaves `individual.full_name_aliases`
+      // outstanding forever. One empty string is how you declare "no aliases".
+      full_name_aliases: [''],
+    },
+    tos_acceptance: { date: Math.floor(Date.now() / 1000), ip: '8.8.8.8' },
+    external_account: {
+      object: 'bank_account', country: 'SG', currency: 'sgd',
+      account_number: '000123456', routing_number: '1100-000',
+    },
+  })).id;
+
+  const splitAccount = await stripe.accounts.retrieve(splitAccountId);
+  check('A fully-provisioned connected account can take charges',
+    splitAccount.capabilities?.transfers === 'active' && splitAccount.capabilities?.card_payments === 'active',
+    JSON.stringify(splitAccount.capabilities));
+
+  // Default terms for a new vendor: 12% and the vendor absorbs the Stripe fee
+  // (validate-commercials asserts those defaults are what a new row gets).
+  const SALE = 10000;
+  const commission = Math.round(SALE * 0.12);
+  const feeRecovery = Math.round(SALE * 0.034) + 50;
+  const expectedFee = Math.min(commission + feeRecovery, SALE);
+  const expectedNet = SALE - expectedFee;
+
+  const pi = await stripe.paymentIntents.create({
+    amount: SALE,
+    currency: 'sgd',
+    payment_method: 'pm_card_visa',
+    confirm: true,
+    automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+    application_fee_amount: expectedFee,
+    transfer_data: { destination: splitAccountId },
+    description: 'validate-stripe-connect destination charge',
+  });
+  check('Destination charge succeeds', pi.status === 'succeeded', pi.status);
+
+  splitChargeId = pi.latest_charge;
+  const charge = await settle(
+    () => stripe.charges.retrieve(splitChargeId, { expand: ['transfer'] }),
+    (c) => Boolean(c.transfer?.destination)
+  );
+  check('Platform took exactly the application fee',
+    charge.application_fee_amount === expectedFee, `${charge.application_fee_amount} (expected ${expectedFee})`);
+  check('…routed to the connected account',
+    charge.transfer?.destination === splitAccountId, String(charge.transfer?.destination));
+
+  /* The vendor's real credit is the balance transaction ON THEIR account, not
+     `transfer.amount`. The transfer carries the GROSS sale and the application
+     fee is levied on the connected account, so `transfer.amount` reads 10000
+     on a correct 1590/8410 split — asserting on it makes a working split look
+     broken. */
+  const payment = await settle(
+    async () => {
+      const txns = await stripe.balanceTransactions.list({ limit: 10 }, { stripeAccount: splitAccountId });
+      return txns.data.find((t) => t.type === 'payment');
+    },
+    (t) => typeof t?.net === 'number'
+  );
+  check('Vendor is credited the sale less the commission and fee',
+    payment?.net === expectedNet, `net ${payment?.net} (expected ${expectedNet})`);
+  check('…and their ledger agrees on gross and deduction',
+    payment?.amount === SALE && payment?.fee === expectedFee,
+    `amount ${payment?.amount} fee ${payment?.fee}`);
+
+  const fees = await settle(
+    () => stripe.applicationFees.list({ limit: 25 }),
+    (l) => l.data.some((f) => f.account === splitAccountId)
+  );
+  check('The application fee is recorded against the platform',
+    fees.data.some((f) => f.account === splitAccountId && f.amount === expectedFee),
+    `${fees.data.filter((f) => f.account === splitAccountId).length} fee(s) for this account`);
+
+  // A refund must claw back both sides, or the vendor keeps money BabyBrain
+  // has already returned to the parent (lib/refunds.ts relies on this).
+  await stripe.refunds.create({
+    charge: splitChargeId, refund_application_fee: true, reverse_transfer: true,
+  });
+  const refunded = await stripe.charges.retrieve(splitChargeId, { expand: ['transfer'] });
+  check('Refunding reverses the transfer and the application fee',
+    refunded.refunded === true && refunded.transfer?.amount_reversed === SALE,
+    `refunded=${refunded.refunded} reversed=${refunded.transfer?.amount_reversed}`);
 } finally {
+  if (splitChargeId) {
+    await stripe.refunds
+      .create({ charge: splitChargeId, refund_application_fee: true, reverse_transfer: true })
+      .catch(() => {}); // already refunded on the happy path
+  }
+  if (splitAccountId) await stripe.accounts.del(splitAccountId).catch(() => {});
   if (accountId) await stripe.accounts.del(accountId).catch(() => {});
   await admin.from('providers').delete().eq('id', provider.id);
   await admin.auth.admin.deleteUser(owner.user.id);
