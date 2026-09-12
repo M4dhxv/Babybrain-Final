@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -322,6 +322,59 @@ export default function SaveListingPage() {
   // profile still shows the shape rather than an empty phone.
   const [card, setCard] = useState<PreviewCard>(EMPTY_CARD);
 
+  /* The desktop mockup is sized to its own content instead of a guessed
+     constant — a fixed width either wasted a lot of space after a short
+     title or clipped/wrapped a long one. `desktopFrameWidth` starts at a
+     sane fallback and is recomputed below from the actual rendered title,
+     provider name and info-grid items, so it always ends right after the
+     longest of them regardless of what this vendor's listing says. */
+  const [desktopFrameWidth, setDesktopFrameWidth] = useState(600);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const providerRef = useRef<HTMLParagraphElement>(null);
+  const infoGridRef = useRef<HTMLDivElement>(null);
+
+  // useLayoutEffect, not useEffect: this measures the just-rendered DOM and
+  // writes the result straight back into layout (the frame's width), so it
+  // has to happen before the browser paints — otherwise switching to
+  // Desktop would flash at the fallback width for a frame first.
+  useLayoutEffect(() => {
+    if (!desktopOpen) return;
+    // The image column follows the same xl: breakpoint as the mockup's own
+    // Tailwind classes (170px below 1280px viewport width, 220px at/above).
+    const imageCol = window.innerWidth >= 1280 ? 220 : 170;
+    // Reads each element's true single-line width via Range rather than
+    // getBoundingClientRect() on the element itself — a block/flex element
+    // with no explicit width reports its filled CELL width, not its text's
+    // width. That measurement is only trustworthy because these elements
+    // are whitespace-nowrap: read while already wrapped (e.g. right after
+    // a narrower title shrank the frame), it'd report the widest *line*,
+    // not the width needed to stop wrapping — permanently undersizing the
+    // frame from then on.
+    const measure = (el: Element | null) => {
+      if (!el) return 0;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getBoundingClientRect().width;
+    };
+    const titleWidth = measure(titleRef.current);
+    const providerWidth = measure(providerRef.current);
+    const infoItemWidths = infoGridRef.current
+      ? Array.from(infoGridRef.current.children).map(measure)
+      : [];
+    const maxInfoItem = infoItemWidths.length ? Math.max(...infoItemWidths) : 0;
+    // Each candidate is "the content" plus however much of the pane's own
+    // p-4/pr-10 padding and the heart button actually sit in its way — the
+    // title runs under the top-right heart icon, the two-column info grid
+    // stops at pr-10 well short of it, so their clearances differ.
+    const paneWidth = Math.max(
+      titleWidth + 76, // p-4 left (16) + clearing the heart button (52) + a little air
+      providerWidth + 32, // p-4 both sides (16 + 16)
+      maxInfoItem * 2 + 56 // p-4 left (16) + pr-10 (40), columns split the rest evenly
+    );
+    const next = Math.round(imageCol + paneWidth + 32); // the card's own p-4 wrapper (16 + 16)
+    setDesktopFrameWidth(Math.max(480, Math.min(880, next)));
+  }, [desktopOpen, card]);
+
   // Inline edit state — one field at a time.
   const [editKey, setEditKey] = useState<FieldKey | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -581,7 +634,12 @@ export default function SaveListingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    // overflow-x-hidden: the desktop preview below deliberately overflows
+    // its column to the right. Without this, that turned into a page-level
+    // horizontal scrollbar that appeared/disappeared switching Mobile ↔
+    // Desktop, and the fixed bottom bar visibly jumped by the scrollbar's
+    // height each time — clip it instead of scrolling to it.
+    <div className="min-h-screen overflow-x-hidden bg-white">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-100 px-8 py-4">
         <div className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
@@ -789,10 +847,16 @@ export default function SaveListingPage() {
               instead, in the same spot the phone frame occupies — this
               column's own width never changes, so the sidebar and summary
               beside it never move or resize either way. Only the mockup
-              inside it is wider than the column (768px against the
+              inside it is wider than the column (desktopFrameWidth, sized
+              to the actual title/provider/details below rather than the
               column's 320px) and, since nothing here clips, it simply
               overflows into the page's own right-hand margin instead of
-              being squeezed down to the phone's size.
+              being squeezed down to the phone's size. The page itself is
+              overflow-x-hidden (see the top-level div) so that overflow can
+              never turn into a horizontal scrollbar — without that, the
+              bottom bar (position: fixed) visibly jumped up and down by the
+              scrollbar's height every time the scrollbar appeared or
+              disappeared switching modes.
 
               Both are copies of real parent components (ActivityCard and
               ActivityRow in frontends/parent components/ui.tsx), down to their
@@ -829,10 +893,18 @@ export default function SaveListingPage() {
 
             {desktopOpen ? (
               /* Same browser-window mockup that used to fill the pop-up,
-                 unchanged — fixed wider than its column on purpose, so it
+                 unchanged — wider than its column on purpose, so it
                  overflows rightward from the same top-left spot the phone
-                 frame starts at, rather than being shrunk to fit inside it. */
-              <div className="w-[768px] overflow-hidden rounded-xl border border-gray-200 shadow-xl">
+                 frame starts at, rather than being shrunk to fit inside it.
+                 The width itself (desktopFrameWidth, computed above) isn't
+                 a guessed constant: a fixed number either left a lot of
+                 dead space after a short title or clipped/wrapped a long
+                 one, so it's measured from the title, provider name and
+                 info-grid actually being rendered below. */
+              <div
+                style={{ width: desktopFrameWidth }}
+                className="overflow-hidden rounded-xl border border-gray-200 shadow-xl"
+              >
                 <div className="flex items-center gap-1.5 border-b border-gray-200 bg-gray-100 px-3 py-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
                   <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
@@ -864,23 +936,23 @@ export default function SaveListingPage() {
                       <span className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white text-[#FFC1D6] shadow">
                         <Heart className="h-[18px] w-[18px]" />
                       </span>
-                      <h3 className="mb-0.5 text-[16px] font-black text-[#111A4C]">{card.title}</h3>
+                      <h3 ref={titleRef} className="mb-0.5 whitespace-nowrap text-[16px] font-black text-[#111A4C]">{card.title}</h3>
                       {card.providerName && (
-                        <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-[#A7D8F8]">
+                        <p ref={providerRef} className="mb-2 flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-bold text-[#A7D8F8]">
                           <Store className="h-3.5 w-3.5" /> {card.providerName}
                         </p>
                       )}
-                      <div className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
-                        <p className="flex items-center gap-1"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
-                        <p className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
-                        <p className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
-                        <p>{card.time}</p>
+                      <div ref={infoGridRef} className="grid grid-cols-2 gap-y-1.5 pr-10 text-[11.5px] font-semibold text-[#52608b]">
+                        <p className="flex items-center gap-1 whitespace-nowrap"><User className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.age}</p>
+                        <p className="flex items-center gap-1 whitespace-nowrap"><MapPin className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.place}</p>
+                        <p className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.date || 'Schedule TBC'}</p>
+                        <p className="whitespace-nowrap">{card.time}</p>
                         {card.duration && (
-                          <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
+                          <p className="flex items-center gap-1 whitespace-nowrap"><Clock className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.duration}</p>
                         )}
-                        {card.price && <p className="font-black text-[#A7D8F8]">{card.price}</p>}
+                        {card.price && <p className="whitespace-nowrap font-black text-[#A7D8F8]">{card.price}</p>}
                         {card.rating && (
-                          <p className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
+                          <p className="flex items-center gap-1 whitespace-nowrap"><Star className="h-3.5 w-3.5 text-[#A7D8F8]" /> {card.rating}</p>
                         )}
                       </div>
                     </div>
