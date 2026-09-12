@@ -18,7 +18,7 @@
  *
  * Acts on whichever mode STRIPE_SECRET_KEY is in. Run once per mode.
  */
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import Stripe from 'stripe';
 
 process.loadEnvFile('.env.local');
@@ -66,6 +66,28 @@ const CONNECT_EVENTS = [
 
 const isConnect = (endpoint) => endpoint.metadata?.connect === 'true';
 
+/**
+ * A signing secret is readable ONCE, at creation. Append it to a gitignored
+ * file rather than printing it, so it survives terminal scrollback but does
+ * not leak into logs or a screen share.
+ *
+ * This used to write into .env.local, which broke the moment that file already
+ * held a secret for the other mode: it printed "not overwriting" and the live
+ * secret was lost for good (recoverable only from the Dashboard). A per-mode
+ * file sidesteps that entirely.
+ */
+const SECRETS_FILE = '.stripe-webhook-secrets.local.md';
+function stashSecret(label, endpoint) {
+  if (!existsSync(SECRETS_FILE)) {
+    appendFileSync(SECRETS_FILE, '# Stripe webhook signing secrets\n\nGitignored. Set these in the deployment env.\n');
+  }
+  appendFileSync(
+    SECRETS_FILE,
+    `\n## ${mode} — ${label}\n- endpoint: ${endpoint.id}\n- env var: ${label === 'connect' ? 'STRIPE_CONNECT_WEBHOOK_SECRET' : 'STRIPE_WEBHOOK_SECRET'}\n- secret: ${endpoint.secret}\n`
+  );
+  console.log(`  → signing secret written to ${SECRETS_FILE} (${endpoint.secret.slice(0, 8)}…)`);
+}
+
 console.log(`Stripe mode : ${mode}`);
 console.log(`Endpoint URL: ${url}`);
 console.log(apply ? 'Mode        : APPLY\n' : 'Mode        : dry run (pass --apply to change anything)\n');
@@ -76,8 +98,21 @@ const account = mine.find((e) => !isConnect(e));
 const connect = mine.find(isConnect);
 
 // --- 1. account endpoint ---
-if (!account) {
-  console.log('! No account endpoint found at this URL — create one in the Stripe Dashboard first.');
+if (!account && apply) {
+  // Previously this only ever told you to go and make one by hand, which is
+  // fine for the sandbox (where one predated this script) but meant a fresh
+  // account — i.e. every go-live — ended up with ONLY the Connect endpoint and
+  // no way to confirm a payment.
+  const created = await stripe.webhookEndpoints.create({
+    url,
+    enabled_events: ACCOUNT_EVENTS,
+    description: 'BabyBrain — account events (checkout + subscriptions)',
+    metadata: { connect: 'false' },
+  });
+  console.log(`✓ created account endpoint ${created.id} with ${ACCOUNT_EVENTS.length} events`);
+  stashSecret('account', created);
+} else if (!account) {
+  console.log(`→ would create an account endpoint with ${ACCOUNT_EVENTS.length} events`);
 } else {
   const missing = ACCOUNT_EVENTS.filter((e) => !account.enabled_events.includes(e));
   const extra = account.enabled_events.filter(
@@ -118,18 +153,7 @@ if (connect) {
   });
   console.log(`✓ created connect endpoint ${created.id}`);
 
-  // The signing secret is only readable at creation. Store it rather than
-  // printing it, so it doesn't end up in terminal scrollback or logs.
-  const envFile = '.env.local';
-  const current = readFileSync(envFile, 'utf8');
-  if (current.includes('STRIPE_CONNECT_WEBHOOK_SECRET=')) {
-    console.log('  ! .env.local already has STRIPE_CONNECT_WEBHOOK_SECRET — not overwriting.');
-    console.log('    Replace it by hand with the secret shown in the Stripe Dashboard.');
-  } else {
-    appendFileSync(envFile, `\nSTRIPE_CONNECT_WEBHOOK_SECRET=${created.secret}\n`);
-    console.log(`  → signing secret written to ${envFile} (${created.secret.slice(0, 8)}…)`);
-    console.log('    Set the same value in the deployment env before the next deploy.');
-  }
+  stashSecret('connect', created);
 } else {
   console.log('→ would create a connect endpoint (connect: true) with:');
   console.log(`  ${CONNECT_EVENTS.join(', ')}`);

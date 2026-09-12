@@ -35,3 +35,4 @@ email-previews/
 # macOS finder metadata.
 .DS_Store
 **/.DS_Store
+.stripe-webhook-secrets.local.md
