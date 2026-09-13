@@ -193,7 +193,7 @@ const T: Record<string, Template> = {
     wrap(ctx, 'You have an upcoming booking 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Reminding you that your booking is coming up as follows:') +
-      details(d) +
+      details(d, false) +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys the activity!') +
       sign),
