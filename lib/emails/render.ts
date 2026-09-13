@@ -174,6 +174,7 @@ const T: Record<string, Template> = {
       p(`If you haven’t already, you can start discovering what is available for your family’s specific needs and ${link(ctx, '/explore', 'booking activities here')}.`) +
       p(`Once you have ${link(ctx, '/profile', 'completed your profile')}, you will start receiving suggested activities with availability based on your preferences.`) +
       p('If you have any questions or requests, please do not hesitate to reply to this email and we will be sure to get back to you.') +
+      p('We look forward to helping you create meaningful experiences for your little ones!') +
       sign),
 
   booking_confirmed: (d, ctx) =>
