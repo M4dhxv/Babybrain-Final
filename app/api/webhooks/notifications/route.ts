@@ -54,33 +54,49 @@ export async function POST(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const data = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
 
-  // Branded template for this type, or a safe generic fallback.
-  const rendered = renderEmail(notification.type, data, { appUrl, recipientName: name });
-  const subject = rendered?.subject ?? notification.title;
-  // The generic fallback (used for any notification type without a branded
-  // template, e.g. provider_message) interpolates title/body/url that can be
-  // user-controlled — chat text most notably — so every field is HTML-escaped
-  // to prevent HTML/script injection into the delivered email.
-  const html =
-    rendered?.html ??
-    `<div style="font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;color:#767676;font-size:18px">
-      <h2 style="color:#4a4a4a">${esc(notification.title)}</h2>
-      <p>${esc(notification.body)}</p>
-      <p><a href="${esc(appUrl)}${typeof data.url === 'string' ? esc(data.url) : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
-    </div>`;
+  // Everything from here on can throw (a bad template, Resend rejecting the
+  // request) — without the try/catch that used to leave the row uncaught,
+  // email_status stayed 'pending' forever with no record of why, since the
+  // update below never ran. Always land on 'sent' or 'failed'.
+  let sendError: unknown = null;
+  let subject = notification.title;
+  let html = '';
+  try {
+    // Branded template for this type, or a safe generic fallback.
+    const rendered = renderEmail(notification.type, data, { appUrl, recipientName: name });
+    subject = rendered?.subject ?? notification.title;
+    // The generic fallback (used for any notification type without a branded
+    // template, e.g. provider_message) interpolates title/body/url that can be
+    // user-controlled — chat text most notably — so every field is HTML-escaped
+    // to prevent HTML/script injection into the delivered email.
+    html =
+      rendered?.html ??
+      `<div style="font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;color:#767676;font-size:18px">
+        <h2 style="color:#4a4a4a">${esc(notification.title)}</h2>
+        <p>${esc(notification.body)}</p>
+        <p><a href="${esc(appUrl)}${typeof data.url === 'string' ? esc(data.url) : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
+      </div>`;
 
-  const resend = new Resend(process.env.RESEND_API_KEY!);
-  const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'Katie from BabyBrain <hello@updates.babybrain.sg>',
-    replyTo: 'hello@babybrain.sg',
-    to: email,
-    subject,
-    html,
-  });
+    const resend = new Resend(process.env.RESEND_API_KEY!);
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM ?? 'Katie from BabyBrain <hello@updates.babybrain.sg>',
+      replyTo: 'hello@babybrain.sg',
+      to: email,
+      subject,
+      html,
+    });
+    sendError = error;
+  } catch (err) {
+    sendError = err;
+  }
+
+  if (sendError) {
+    console.error(`[notifications webhook] send failed for ${notification.type} (${notificationId}):`, sendError);
+  }
 
   await admin
     .from('notifications')
-    .update({ email_status: error ? 'failed' : 'sent' })
+    .update({ email_status: sendError ? 'failed' : 'sent' })
     .eq('id', notificationId);
 
   // Mirror the event into Klaviyo so the marketing flows have something to
@@ -97,5 +113,5 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ ok: !error });
+  return NextResponse.json({ ok: !sendError });
 }
