@@ -225,7 +225,7 @@ const T: Record<string, Template> = {
     const name = str(d, 'activity_name');
     return wrap(ctx, 'How was it? 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`We hope you enjoyed your session${name ? ` of ${bold(name)}` : ''}! If you would like to leave a review, you can do so ${link(ctx, str(d, 'url') ?? '/explore', 'here')}.`) +
+      p(`We hope you enjoyed ${name ? bold(name) : 'your session'}! If you would like to leave a review, you can do so ${link(ctx, str(d, 'url') ?? '/explore', 'here')}.`) +
       p(`If you loved the activity, do ${link(ctx, str(d, 'rebook_url') ?? '/explore', 're-book')} or if you’d like to try something new, you can ${link(ctx, '/explore', 'explore more activities here')}.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign);
