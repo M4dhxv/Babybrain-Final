@@ -176,10 +176,22 @@ export async function POST(request: Request) {
         const rowActive = active || Boolean(survivor);
         const interval = intervalOf(row);
 
+        // Read the plan as it stood before this write, so a renewal or a
+        // billing-portal price switch (both land here as `updated`) doesn't
+        // re-send the "welcome to Plus" email to someone already on Plus —
+        // it should fire once, on the free→plus transition only.
+        const { data: existingSub } = await admin
+          .from('customer_subscriptions')
+          .select('plan')
+          .eq('user_id', customerUserId)
+          .maybeSingle();
+        const wasPlus = existingSub?.plan === 'plus';
+        const newPlan = rowActive ? 'plus' : 'free';
+
         await admin.from('customer_subscriptions').upsert(
           {
             user_id: customerUserId,
-            plan: rowActive ? 'plus' : 'free',
+            plan: newPlan,
             // Interval read off the price being billed, not off the metadata
             // the checkout was created with: a monthly ⇄ annual switch moves
             // the price, so `billing_interval` otherwise stayed on whatever
@@ -193,6 +205,16 @@ export async function POST(request: Request) {
           },
           { onConflict: 'user_id' }
         );
+
+        if (!wasPlus && newPlan === 'plus') {
+          await admin.from('notifications').insert({
+            user_id: customerUserId,
+            type: 'parent_welcome_paid',
+            title: 'Welcome to BabyBrain Plus!',
+            body: 'Complete your profile to start getting suggested activities based on your preferences.',
+            data: { url: '/explore' },
+          });
+        }
       }
       break;
     }
@@ -455,10 +477,24 @@ export async function POST(request: Request) {
         const sub = await getStripe().subscriptions.retrieve(session.subscription as string);
         const active = ['active', 'trialing'].includes(sub.status);
         const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
+        const checkoutUserId = session.metadata.user_id;
+
+        // This usually lands before customer.subscription.created, so the
+        // free→plus transition (and the one-time "welcome to Plus" email) is
+        // caught here, not there — see the matching guard in the
+        // customer.subscription.* handler above.
+        const { data: existingSub } = await admin
+          .from('customer_subscriptions')
+          .select('plan')
+          .eq('user_id', checkoutUserId)
+          .maybeSingle();
+        const wasPlus = existingSub?.plan === 'plus';
+        const newPlan = active ? 'plus' : 'free';
+
         await admin.from('customer_subscriptions').upsert(
           {
-            user_id: session.metadata.user_id,
-            plan: active ? 'plus' : 'free',
+            user_id: checkoutUserId,
+            plan: newPlan,
             stripe_subscription_id: sub.id,
             status: dbStatus(sub.status) as never,
             current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
@@ -466,6 +502,16 @@ export async function POST(request: Request) {
           },
           { onConflict: 'user_id' }
         );
+
+        if (!wasPlus && newPlan === 'plus') {
+          await admin.from('notifications').insert({
+            user_id: checkoutUserId,
+            type: 'parent_welcome_paid',
+            title: 'Welcome to BabyBrain Plus!',
+            body: 'Complete your profile to start getting suggested activities based on your preferences.',
+            data: { url: '/explore' },
+          });
+        }
       }
       break;
     }

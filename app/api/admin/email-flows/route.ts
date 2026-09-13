@@ -36,7 +36,7 @@ const FLOWS: FlowMeta[] = [
 
   // ---- Parent lifecycle ----
   { type: 'parent_welcome_free', dbType: 'welcome', category: 'Parent', label: 'Welcome (Free)', description: 'First email after signing up on the Free plan.', wired: true, trigger: 'DB trigger on new parent signup.' },
-  { type: 'parent_welcome_paid', category: 'Parent', label: 'Welcome (Plus)', description: 'Welcome variant for parents who sign up already on Plus.', wired: false, trigger: 'Not wired — the signup trigger always sends the Free welcome regardless of plan.' },
+  { type: 'parent_welcome_paid', category: 'Parent', label: 'Welcome (Plus)', description: 'Sent the first time a parent upgrades to Plus (signup is always Free — there is no combined sign-up-and-pay flow).', wired: true, trigger: 'Stripe webhook, on the free→plus transition only (checkout.session.completed and customer.subscription.* both guard against re-firing on renewals).' },
   { type: 'booking_confirmed', category: 'Parent', label: 'Booking confirmed', description: 'Sent the moment a booking is confirmed.', wired: true, trigger: 'DB trigger on bookings insert/update.' },
   { type: 'booking_reminder', category: 'Parent', label: 'Booking reminder', description: 'Reminder ahead of an upcoming session.', wired: true, trigger: 'Hourly pg_cron job.' },
   { type: 'waitlist_available', category: 'Parent', label: 'Waitlist spot available', description: 'A seat came free on a class this parent is waitlisted for, and is theirs to book.', wired: true, trigger: 'Fired when a booking is cancelled, or a session’s capacity is raised, and the freed seat has not been paid for (migration 00083).' },
