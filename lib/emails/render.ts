@@ -49,14 +49,17 @@ const sign = `<p style="margin:24px 0 0">All the best,<br/>Katie<br/>Founder, Ba
 const link = (ctx: EmailCtx, path: string, label: string) =>
   `<a href="${/^https?:\/\//i.test(path) ? path : `${ctx.appUrl}${path}`}" style="color:${PINK};font-weight:400;text-decoration:underline">${esc(label)}</a>`;
 
-/** Bold activity name + date/time / duration / address block, when present. */
-function details(d: EmailData): string {
+/** Bold activity name + date/time / duration / address block, when present.
+ *  `includeType` adds the provider's business name as a trailing line — the
+ *  email-flows spec doesn't call for it on every template that uses this
+ *  block (e.g. booking_confirmed lists just name/date/duration/address). */
+function details(d: EmailData, includeType = true): string {
   const rows = [
     str(d, 'activity_name') ? bold(str(d, 'activity_name')!) : null,
     str(d, 'date_time'),
     str(d, 'duration'),
     str(d, 'address'),
-    str(d, 'type'),
+    includeType ? str(d, 'type') : null,
   ].filter(Boolean).map((r) => (r!.startsWith('<strong') ? r : esc(r!)));
   return rows.length ? `<p style="margin:0 0 16px">${rows.join('<br/>')}</p>` : '';
 }
@@ -181,7 +184,7 @@ const T: Record<string, Template> = {
     wrap(ctx, 'Your booking is confirmed 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Your booking is confirmed as follows:') +
-      details(d) +
+      details(d, false) +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys the activity when it comes!') +
       sign),
