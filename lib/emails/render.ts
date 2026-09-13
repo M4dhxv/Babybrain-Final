@@ -41,6 +41,8 @@ const greet = (name?: string | null) => `Hi ${name ? esc(name) : 'there'} 👋`;
 const p = (html: string) => `<p style="margin:0 0 16px">${html}</p>`;
 const bold = (t: string) => `<strong style="color:#4a4a4a">${esc(t)}</strong>`;
 const sign = `<p style="margin:24px 0 0">All the best,<br/>Katie<br/>Founder, BabyBrain</p>`;
+// Signature per the email-flows spec doc: plain "All the best, Katie" with no title line.
+const signKatie = `<p style="margin:24px 0 0">All the best,<br/>Katie</p>`;
 
 // `path` is normally a root-relative path ("/activity?slug=…#reviews") that the
 // notification producer supplies; prefix it with the app origin. If a caller
@@ -163,7 +165,8 @@ const T: Record<string, Template> = {
       p(`You can ${link(ctx, '/pricing', 'upgrade your plan')} at any time, to benefit from:`) +
       bullets(PARENT_UPGRADE_BENEFITS) +
       p('If you have any questions or requests, please do not hesitate to reply to this email and we will be sure to get back to you.') +
-      sign),
+      p('We look forward to helping you create meaningful experiences for your little ones!') +
+      signKatie),
 
   parent_welcome_paid: (d, ctx) =>
     wrap(ctx, 'Welcome to BabyBrain 👶🧠',
