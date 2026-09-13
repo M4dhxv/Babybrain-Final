@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     { appUrl }
   )!;
   const { error: sendError } = await resend.emails.send({
-    from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
+    from: process.env.EMAIL_FROM ?? 'Katie from BabyBrain <hello@updates.babybrain.sg>',
     replyTo: 'hello@babybrain.sg',
     to: email.trim(),
     subject: rendered.subject,

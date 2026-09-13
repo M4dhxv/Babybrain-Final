@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { appOrigin, vendorPageUrl } from '@/lib/cors';
+import { renderEmail } from '@/lib/emails/render';
 import type { ProviderRole } from '@/types/database';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
@@ -145,25 +146,27 @@ export async function POST(request: Request) {
   // /vendor/#/login — a bare /vendor/login has no rewrite and lands on
   // Vercel's own 404, not the sign-in page.
   const signInUrl = vendorPageUrl(request, '/login');
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
 
-  const cta = setPasswordUrl
-    ? `<p><a href="${setPasswordUrl}">Set your password</a> to activate your account, then sign in at
-         <a href="${signInUrl}">the vendor portal</a>.</p>
-       <p style="color:#6b7280;font-size:12px">This link expires in 24 hours. If it lapses, use
-         &ldquo;Forgot password?&rdquo; on the sign-in page with this email address.</p>`
-    : `<p><a href="${signInUrl}">Sign in</a> with this email to access the dashboard.</p>`;
+  const rendered = renderEmail(
+    'provider_staff_invite',
+    {
+      business_name: businessName,
+      role,
+      set_password_url: setPasswordUrl ?? undefined,
+      sign_in_url: signInUrl,
+    },
+    { appUrl }
+  )!;
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY!);
     await resend.emails.send({
-      from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
+      from: process.env.EMAIL_FROM ?? 'Katie from BabyBrain <hello@updates.babybrain.sg>',
+      replyTo: 'hello@babybrain.sg',
       to: email,
-      subject: `You've been invited to ${businessName} on BabyBrain`,
-      html: `<div style="font-family:sans-serif">
-        <h2>You're invited as ${role}</h2>
-        <p>${businessName} added you to their BabyBrain vendor account.</p>
-        ${cta}
-      </div>`,
+      subject: rendered.subject,
+      html: rendered.html,
     });
   } catch {
     /* email best-effort */

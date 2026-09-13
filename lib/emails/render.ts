@@ -336,6 +336,17 @@ const T: Record<string, Template> = {
       p('If you have any questions or requests, please do not hesitate to reply to this email and we will be sure to get back to you.') +
       sign),
 
+  provider_staff_invite: (d, ctx) =>
+    wrap(ctx, `You’ve been invited to ${esc(str(d, 'business_name') ?? 'a business')} on BabyBrain 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'business_name') ?? 'A business')} has added you to their BabyBrain vendor account as ${esc(str(d, 'role') ?? 'a team member')}.`) +
+      (str(d, 'set_password_url')
+        ? cta(str(d, 'set_password_url')!, 'Set your password') +
+          p('This link expires in 24 hours. If it lapses, use “Forgot password?” on the sign-in page with this email address.') +
+          fallbackLink(str(d, 'set_password_url')!)
+        : cta(str(d, 'sign_in_url') ?? ctx.appUrl, 'Sign in to the vendor portal')) +
+      sign),
+
   provider_message_response: (d, ctx) =>
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +
