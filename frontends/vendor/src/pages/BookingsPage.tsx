@@ -434,6 +434,14 @@ export default function BookingsPage() {
       // there's nothing upcoming.
       const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso);
       setSessionId((cur) => cur || preselect || stashed || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
+      // A leftover date filter (from a stale reload-stash — `wasReloaded()`
+      // stays true for the rest of the tab's life, not just the reload that
+      // triggered it) can otherwise hide a deep-linked slot outside that one
+      // day, and then the "current selection out of view" effect below snaps
+      // away from it entirely. A ?session= deep-link always wins: drop the
+      // filter so the clicked slot's day, today, and the calendar all stay
+      // reachable.
+      if (preselect) setDateFilter('');
       if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
       setLoading(false);
     })();
