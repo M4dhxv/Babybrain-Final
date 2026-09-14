@@ -2016,7 +2016,7 @@ export function ProfilePage() {
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {filterChild && (
                 <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
-                  Some pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus any still untouched.
+                  Some pack's credits can be spent on any of your children — this shows the packs {filterChild.name} has used, plus credits to be used.
                 </p>
               )}
               {!packagesLoaded ? (
