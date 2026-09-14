@@ -215,6 +215,25 @@ export async function POST(request: Request) {
             data: { url: '/explore' },
           });
         }
+
+        // Only a genuine cancellation ends the subscription outright
+        // (event.type 'deleted') — a lapsed/declined card lands here as
+        // 'updated' with status 'past_due' while Stripe retries, and that is
+        // not the parent choosing to downgrade, so it must not get this
+        // email. `newPlan === 'free'` on top of that excludes a parent who
+        // still has another live subscription (the survivor logic above).
+        // Distinct from unsubscribe_response, which fires on account
+        // deletion (app/api/customer/account/route.ts) — this is a parent
+        // who drops back to Free but keeps their account.
+        if (event.type === 'customer.subscription.deleted' && wasPlus && newPlan === 'free') {
+          await admin.from('notifications').insert({
+            user_id: customerUserId,
+            type: 'downgrade_response',
+            title: 'We are sad you have downgraded',
+            body: 'Your BabyBrain Plus subscription has ended.',
+            data: { url: '/pricing' },
+          });
+        }
       }
       break;
     }
