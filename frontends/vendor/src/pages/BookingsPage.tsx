@@ -433,7 +433,14 @@ export default function BookingsPage() {
       // there for the date filter); fall back to the most recent past one if
       // there's nothing upcoming.
       const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso);
-      setSessionId((cur) => cur || preselect || stashed || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
+      // A ?session= deep-link always wins, even over an already-selected
+      // session from before this navigation — otherwise a session left
+      // over from a previous visit to this tab silently outranks the
+      // slot the vendor just clicked from the Schedule calendar, and every
+      // action (viewing the roster, marking attendance, saving) quietly
+      // applies to the wrong class. See the comments above: that was
+      // already the stated intent for `stashed`, just not for `cur`.
+      setSessionId((cur) => preselect || cur || stashed || firstUpcoming?.id || opts[opts.length - 1]?.id || '');
       // A leftover date filter (from a stale reload-stash — `wasReloaded()`
       // stays true for the rest of the tab's life, not just the reload that
       // triggered it) can otherwise hide a deep-linked slot outside that one
