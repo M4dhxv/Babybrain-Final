@@ -245,6 +245,51 @@ const T: Record<string, Template> = {
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
+  // Fired right after a package_purchases row is created (Stripe webhook /
+  // /api/stripe/reconcile, lib/notify-package-purchased.ts). Free-tier
+  // parents can't see Packages on /profile (PlusLock), so this is their only
+  // way to know what they bought and how to use it.
+  package_purchased: (d, ctx) =>
+    wrap(ctx, 'Your package is ready to use 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready — you have ${bold(str(d, 'credits') ?? 'your')} class credits to use.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your first class')} whenever you’re ready.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
+  // Fired by compensate_cancelled_booking()'s "Path 2" (migration 00081+,
+  // url updated in 00126 to deep-link straight to booking rather than the
+  // Plus-gated /profile?tab=makeup) whenever a paid/expired-pack booking is
+  // cancelled and a make-up token is issued as compensation.
+  make_up_token_issued: (d, ctx) =>
+    wrap(ctx, 'Your make-up token is ready 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a class')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
+  // Fired by compensate_cancelled_booking()'s "Path 0" when a booking made by
+  // redeeming a make-up token is itself later cancelled — the token is
+  // reinstated so it can be used again.
+  make_up_token_returned: (d, ctx) =>
+    wrap(ctx, 'Your make-up token is available again 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Your make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')} is back — the class it was booked on has been cancelled, so it’s free to use again.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
+  // Fired by compensate_cancelled_booking()'s "Path 1" when a booking made
+  // against a package credit is cancelled and the credit is returned.
+  package_credit_returned: (d, ctx) =>
+    wrap(ctx, 'Your package credit is back 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Your credit for ${bold(str(d, 'activity_name') ?? 'a class')} is back on your ${bold(str(d, 'provider_name') ?? 'provider')} package — the booking it was used on has been cancelled.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=packages', 'Book another class with it')} whenever suits you.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
   // notify_session_rescheduled (migration 00044/00126) fires when a vendor
   // changes a booked session's date/time or location — the in-app
   // notification's own title/body say what changed; this email stays

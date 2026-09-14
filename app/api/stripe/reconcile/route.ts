@@ -3,6 +3,7 @@ import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
@@ -124,6 +125,14 @@ export async function POST(request: Request) {
         packagePurchaseId: purchase.id,
         grossCents: pkg.price_cents,
         paymentIntentId: paymentIntent,
+      });
+      // Free-tier parents can't see Packages on /profile — this email is
+      // their only way to know they've got credits and how to use them.
+      await notifyPackagePurchased(admin, {
+        userId: user.id,
+        packageId: pkg.id,
+        providerId: pkg.provider_id,
+        credits: pkg.credits,
       });
     }
     return NextResponse.json({ applied: true, kind, credits: pkg.credits });

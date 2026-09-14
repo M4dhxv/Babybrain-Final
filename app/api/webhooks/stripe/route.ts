@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { getStripe, LIVE_STATUSES, periodEndIso, intervalOf } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { stripeConfigKeyFor } from '@/lib/stripe-config';
 import { applyPayout } from '@/lib/payouts';
@@ -483,6 +484,14 @@ export async function POST(request: Request) {
               packagePurchaseId: purchase.id,
               grossCents: pkg.price_cents,
               paymentIntentId: paymentIntent,
+            });
+            // Free-tier parents can't see Packages on /profile — this email
+            // is their only way to know they've got credits and how to use them.
+            await notifyPackagePurchased(admin, {
+              userId: session.metadata.user_id,
+              packageId: pkg.id,
+              providerId: pkg.provider_id,
+              credits: pkg.credits,
             });
           }
         }
