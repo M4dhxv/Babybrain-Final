@@ -64,6 +64,22 @@ function details(d: EmailData, includeType = true): string {
   return rows.length ? `<p style="margin:0 0 16px">${rows.join('<br/>')}</p>` : '';
 }
 
+/** Accent-rail activity card for suggested_activities — a pink-tinted fill
+ *  with a solid left rail, chosen (option B of 4) over a plain detail list
+ *  so a multi-activity digest reads as distinct picks rather than one long
+ *  block of text. */
+function activityCard(ctx: EmailCtx, a: EmailData): string {
+  const name = str(a, 'activity_name');
+  const metaLine = [str(a, 'date_time'), str(a, 'duration')].filter(Boolean).join(' · ');
+  const metaRows = [metaLine, str(a, 'address'), str(a, 'type')].filter(Boolean).map((r) => esc(r!));
+  const href = /^https?:\/\//i.test(str(a, 'url') ?? '') ? str(a, 'url')! : `${ctx.appUrl}${str(a, 'url') ?? '/explore'}`;
+  return `<div style="background:#FCEFF4;border-left:4px solid ${PINK};border-radius:4px 10px 10px 4px;padding:16px 20px 18px 18px;margin:0 0 12px">
+    ${name ? `<h3 style="margin:0 0 8px;font-size:16.5px;font-weight:600;color:#3a3a3a;font-family:'Fredoka','Helvetica Neue',Arial,sans-serif">${esc(name)}</h3>` : ''}
+    ${metaRows.length ? `<div style="font-size:14.5px;color:#767676;line-height:1.75">${metaRows.join('<br/>')}</div>` : ''}
+    <a href="${href}" style="display:inline-block;margin-top:10px;color:${PINK};font-weight:600;font-size:14.5px;text-decoration:none">Book now →</a>
+  </div>`;
+}
+
 function layout(ctx: EmailCtx, inner: string): string {
   const { appUrl } = ctx;
   return `<div style="background:#FFFFFF;margin:0;padding:0">
@@ -239,7 +255,7 @@ const T: Record<string, Template> = {
 
   suggested_activities: (d, ctx) => {
     const list = Array.isArray(d.activities) ? (d.activities as EmailData[]) : [];
-    const blocks = list.map((a) => details(a) + p(link(ctx, str(a, 'url') ?? '/explore', 'Book now'))).join('<hr style="border:none;border-top:1px solid #f0f0f0;margin:8px 0 16px"/>');
+    const blocks = list.map((a) => activityCard(ctx, a)).join('');
     return wrap(ctx, 'Here are your curated activities 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Below are some options for activities with availability in the next week that we think you’d love:') +
