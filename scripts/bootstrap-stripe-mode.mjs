@@ -49,10 +49,17 @@ const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUP
  * numbers the vendor and parent Plans copy has hardcoded.
  */
 const CURRENCY = 'sgd';
+//
+// `plan` is the DATABASE key and `product` is the Stripe product name, and the
+// two deliberately disagree: the tiers were renamed on the Plans page long
+// after the db keys were set, and the keys were kept so `stripe_growth_price_id`
+// and friends kept working (see lib/plans.ts). Stripe's product names now
+// follow the page — a Premium subscriber reads as "Premium" on their invoice —
+// so do NOT "tidy" these to match the plan keys.
 const CATALOG = [
   { plan: 'plus', product: 'Plus', monthly: 900, annual: 9900 },
-  { plan: 'growth', product: 'Growth', monthly: 9900, annual: 108900 },
-  { plan: 'pro', product: 'Pro', monthly: 19900, annual: 218900 },
+  { plan: 'growth', product: 'Pro', monthly: 9900, annual: 108900 },
+  { plan: 'pro', product: 'Premium', monthly: 19900, annual: 218900 },
 ];
 
 const money = (c) => `${(c / 100).toFixed(2)} ${CURRENCY.toUpperCase()}`;
