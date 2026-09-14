@@ -349,7 +349,13 @@ export function DatePicker({
                     aria-current={isToday ? 'date' : undefined}
                     disabled={off}
                     tabIndex={-1}
-                    onMouseEnter={() => !off && setActive(c.iso)}
+                    // Hovering an outside-month cell must not move `active` —
+                    // the effect above shifts `view` to follow it, which
+                    // redraws the grid under a stationary cursor, lands a
+                    // *different* adjacent-month cell under it, and repeats:
+                    // a runaway month-jump loop on hover alone. Clicking one
+                    // still navigates via `pick` below.
+                    onMouseEnter={() => !off && !c.outside && setActive(c.iso)}
                     onClick={() => pick(c.iso)}
                     className={[
                       'relative flex h-8 items-center justify-center rounded-full text-[12.5px]',
