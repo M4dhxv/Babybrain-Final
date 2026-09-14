@@ -98,22 +98,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function loadProvider(userId?: string): Promise<boolean> {
     // Resolve the user's active membership → its provider (RLS-scoped).
     //
-    // `order('created_at')` is load-bearing, not cosmetic: the portal shows
-    // exactly one business and has no switcher, so which row wins here IS the
-    // account's identity in the app. Without an explicit order Postgres could
-    // return either membership when an account has more than one, and a
-    // spuriously-added membership (e.g. from a mis-aimed "Claim your listing")
-    // could quietly take over the portal — with a sign-out/in cycle unable to
-    // shake it, because the row is in the database. Oldest membership = the
-    // vendor's original business = home.
-    const { data: member, error } = await supabase
+    // The portal shows exactly one business and has no switcher, so which row
+    // wins here IS the account's identity in the app. An account can hold more
+    // than one active membership — most often a genuine owner of Business A who
+    // was also invited as staff/manager onto Business B — and the higher-role
+    // one wins (owner > manager > staff), oldest-created as the tiebreak. An
+    // owner row can only ever come from that person proving control of the
+    // business's own contact email (see claim/verify's identity-binding check)
+    // or their own signup, never from an invite (staff/invite only ever grants
+    // manager/staff) — so unlike a plain "oldest wins" pick, ranking by role
+    // can't be hijacked by a spuriously-added lower-privilege membership, and
+    // it stops a real owner from being silently stuck on a staff-only view
+    // just because that row happened to be created first.
+    const { data: members, error } = await supabase
       .from('provider_members')
       .select('role, created_at, provider:providers(*)')
       .eq('status', 'active')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .order('created_at', { ascending: true });
     if (error) return false;
+    const ROLE_RANK: Record<ProviderRole, number> = { staff: 1, manager: 2, owner: 3 };
+    const member = (members ?? []).reduce<(typeof members)[number] | null>((best, m) => {
+      if (!best) return m;
+      const rank = ROLE_RANK[m.role as ProviderRole] ?? 0;
+      const bestRank = ROLE_RANK[best.role as ProviderRole] ?? 0;
+      return rank > bestRank ? m : best;
+    }, null);
     if (member?.provider) {
       const prov = member.provider as unknown as Provider;
       setProvider(prov);
