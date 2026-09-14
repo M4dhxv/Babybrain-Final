@@ -50,7 +50,7 @@ const FLOWS: FlowMeta[] = [
   { type: 'downgrade_response', category: 'Parent', label: 'Sorry you downgraded', description: 'Sent when a Plus parent drops to Free but keeps their account.', wired: true, trigger: 'Stripe webhook, on customer.subscription.deleted only, plus→free transition (app/api/webhooks/stripe/route.ts). Distinct from unsubscribe_response, which is account deletion.' },
   { type: 'upgrade_nudge', category: 'Parent', label: 'Upgrade nudge', description: 'Reminds a Free parent what Plus unlocks.', wired: true, trigger: 'pg_cron, 1st Saturday of Jan/Apr/Jul/Oct SGT, every Free parent (migration 00122).' },
   { type: 'providers_added', category: 'Parent', label: 'New vendors added', description: 'Announces newly onboarded, active, published vendors.', wired: true, trigger: 'pg_cron, weekly Monday 09:00 SGT, skipped if none qualified that week, every parent (migration 00123).' },
-  { type: 'package_rebook', category: 'Parent', label: 'Re-book your package', description: 'Nudge to re-buy a package after it runs out.', wired: false, trigger: 'Not wired to anything yet.' },
+  { type: 'package_rebook', category: 'Parent', label: 'Re-book your package', description: 'Nudge to re-buy a package the day after it expires.', wired: true, trigger: 'Daily pg_cron job, matches package_purchases.expires_at (SGT date) against yesterday (migration 00124).' },
 
   // ---- Provider lifecycle ----
   { type: 'provider_welcome_free', category: 'Provider', label: 'Welcome (Free)', description: 'First email after a vendor signs up on Free.', wired: false, trigger: 'Not wired to anything yet.' },
