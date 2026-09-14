@@ -234,6 +234,17 @@ const T: Record<string, Template> = {
       p('We hope your family enjoys it!') +
       sign),
 
+  // Fired only when a VENDOR cancels a class and a make-up token gets
+  // issued as compensation (public.compensate_cancelled_booking, gated on
+  // cancelled_by is not null) — distinct from the generic booking_cancelled
+  // notification, which fires for any cancellation including a parent's own.
+  class_cancelled: (d, ctx) =>
+    wrap(ctx, 'Unfortunately your class has been cancelled 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your class')} has been cancelled. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
   post_activity_checkin: (d, ctx) => {
     // The daily send_class_followups() cron writes `activity_name` (migration
     // 00090); name the session when it's there, and read naturally when it
