@@ -25,16 +25,20 @@ export async function GET(request: Request) {
   const stream = getStreamServerClient();
   const channelId = supportChannelId(user.id);
 
-  await stream.upsertUsers([
-    { id: user.id, name },
-    { id: SUPPORT_USER_ID, name: 'BabyBrain Support' },
-  ]);
-
   const channel = stream.channel('messaging', channelId, {
     members: [user.id, SUPPORT_USER_ID],
     created_by_id: SUPPORT_USER_ID,
   });
-  await channel.create();
+  // Neither call depends on the other's result — both only need user.id /
+  // SUPPORT_USER_ID, known upfront — so run them together instead of one
+  // after the other on every /support visit.
+  await Promise.all([
+    stream.upsertUsers([
+      { id: user.id, name },
+      { id: SUPPORT_USER_ID, name: 'BabyBrain Support' },
+    ]),
+    channel.create(),
+  ]);
 
   const admin = createAdminClient();
   await admin.from('stream_users').upsert(

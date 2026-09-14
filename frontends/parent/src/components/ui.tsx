@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DatePicker } from "./DatePicker";
 import { resolveAvatar } from "../lib/avatars";
@@ -10,6 +10,19 @@ import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
 import { goTo, useLocation } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
+
+/** Requests a resized rendition from Wix's own CDN (documented `/v1/fill/`
+ *  URL transform) instead of the full original upload — a card renders at a
+ *  few hundred px wide, but an unresized Wix photo is routinely 1500px+, so
+ *  every card view was downloading many times the bytes it displays. A
+ *  non-Wix URL (a placeholder, Supabase Storage) is returned unchanged. */
+function wixThumbUrl(url: string, w: number, h: number): string {
+  if (!/^https:\/\/static\.wixstatic\.com\/media\//.test(url)) return url;
+  const extMatch = /\.([a-zA-Z0-9]+)$/.exec(url.split("?")[0].split("#")[0]);
+  const ext = extMatch?.[1].toLowerCase() === "jpeg" ? "jpg" : extMatch?.[1].toLowerCase();
+  const safeExt = ext && ["jpg", "png", "webp", "gif"].includes(ext) ? ext : "jpg";
+  return `${url}/v1/fill/w_${w},h_${h}/file.${safeExt}`;
+}
 
 /** "That's a Plus feature" prompt.
  *
@@ -745,7 +758,11 @@ export function InstantBookBadge({ className = "" }: { className?: string }) {
   );
 }
 
-export function ActivityCard({
+// Explore can mount 50+ of these at once, growing with every "Show more" —
+// memoized so a parent re-render (e.g. the sort dropdown, an unrelated
+// favourite toggling elsewhere) doesn't re-render every card whose own props
+// haven't changed.
+export const ActivityCard = memo(function ActivityCard({
   activity,
   compact = false,
   onFavoriteToggled,
@@ -759,7 +776,7 @@ export function ActivityCard({
     <article className="flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
         <img
-          src={activity.image}
+          src={wixThumbUrl(activity.image, 640, 174)}
           alt=""
           width={400}
           height={108}
@@ -843,14 +860,14 @@ export function ActivityCard({
       </div>
     </article>
   );
-}
+});
 
-export function ActivityRow({ activity }: { activity: Activity }) {
+export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
-        <img src={activity.image} alt="" width={220} height={176} loading="lazy" decoding="async" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
+        <img src={wixThumbUrl(activity.image, 440, 352)} alt="" width={220} height={176} loading="lazy" decoding="async" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">
           {activity.category}
         </span>
@@ -896,7 +913,7 @@ export function ActivityRow({ activity }: { activity: Activity }) {
       </div>
     </a>
   );
-}
+});
 
 export function CategoryTile({
   icon,

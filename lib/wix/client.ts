@@ -55,7 +55,7 @@ function wixHeaders(creds: WixCredentials): Record<string, string> {
   };
 }
 
-async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
+async function wixFetchOnce<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
   // Bound every call so one hung Wix endpoint can't burn the whole function
   // budget and leave the client with a bare "Failed to fetch" when the
   // platform kills the process. Surfaces as a WixApiError the callers already
@@ -85,6 +85,25 @@ async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): 
     throw new WixApiError(res.status, path, text);
   }
   return res.json() as Promise<T>;
+}
+
+// A 429 is the one failure mode worth a retry here: it means Wix itself is
+// momentarily rate-limiting this site's key, not that the request is bad or
+// Wix is down. Exactly one retry after a short fixed delay — not a general
+// 5xx/timeout retry, since those already cost the full 20s abort window per
+// attempt above, and a caller like /api/wix/slots already chains 2-3 of
+// these calls inside one 60s route budget; a broader retry policy there
+// risks the route missing its deadline instead of failing fast.
+async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
+  try {
+    return await wixFetchOnce<T>(creds, path, body);
+  } catch (e) {
+    if (e instanceof WixApiError && e.status === 429) {
+      await new Promise((r) => setTimeout(r, 400));
+      return wixFetchOnce<T>(creds, path, body);
+    }
+    throw e;
+  }
 }
 
 /** Turn a WixApiError into a message a vendor can actually act on, instead

@@ -27,5 +27,10 @@ export async function GET(request: Request) {
   // pro/premium rename — treat it the same as 'pro' (see vendor lib/plans.ts).
   const plan = data?.plan ?? 'free';
   const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
-  return NextResponse.json({ canMessage });
+  // Public, and a provider's plan tier changes rarely — let Vercel's edge
+  // absorb repeat/concurrent lookups instead of hitting Supabase every time.
+  return NextResponse.json(
+    { canMessage },
+    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
+  );
 }

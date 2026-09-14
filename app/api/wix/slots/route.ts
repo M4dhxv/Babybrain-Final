@@ -219,18 +219,26 @@ export async function GET(request: Request) {
         windowEnd
       );
 
-      return NextResponse.json({
-        slots: sessions
-          .filter((s) => s.remainingCapacity > 0)
-          .map((s) => ({
-            id: `wix:${encodeWixSlotKey({ kind: 'class', sessionId: s.id })}`,
-            starts_at: s.start,
-            ends_at: s.end,
-            capacity: s.remainingCapacity,
-          }))
-          .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
-        ...(course ? { course } : {}),
-      });
+      return NextResponse.json(
+        {
+          slots: sessions
+            .filter((s) => s.remainingCapacity > 0)
+            .map((s) => ({
+              id: `wix:${encodeWixSlotKey({ kind: 'class', sessionId: s.id })}`,
+              starts_at: s.start,
+              ends_at: s.end,
+              capacity: s.remainingCapacity,
+            }))
+            .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
+          ...(course ? { course } : {}),
+        },
+        // Concurrent viewers of the same activity's availability collapse to
+        // one Wix round-trip (and one sync/reconcile pass) per window instead
+        // of one each — a short, deliberate staleness trade for load. Booking
+        // still re-verifies live availability at checkout, so this never
+        // affects correctness, only how quickly a change shows up here.
+        { headers: { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=30' } }
+      );
     }
 
     const [rawSlots, confirmedBookings, knownStaffIds] = await Promise.all([
@@ -306,17 +314,20 @@ export async function GET(request: Request) {
       windowEnd
     );
 
-    return NextResponse.json({
-      slots: slots
-        .filter((s) => s.bookable)
-        .map((s) => ({
-          id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate })}`,
-          starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
-          ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
-          capacity: 1,
-        }))
-        .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
-    });
+    return NextResponse.json(
+      {
+        slots: slots
+          .filter((s) => s.bookable)
+          .map((s) => ({
+            id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate })}`,
+            starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
+            ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
+            capacity: 1,
+          }))
+          .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
+      },
+      { headers: { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=30' } }
+    );
   } catch (e) {
     console.error('Wix availability fetch failed', e);
     return NextResponse.json({ error: 'Could not reach Wix' }, { status: 502 });

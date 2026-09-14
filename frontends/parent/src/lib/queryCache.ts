@@ -55,3 +55,33 @@ export function cacheInvalidate(prefix?: string): void {
     if (k.startsWith(prefix)) store.delete(k);
   }
 }
+
+// Requests for the same key that are still in flight when a second caller
+// asks for it — e.g. two components mounting in the same tick, or a fast
+// back-and-forth nav — used to each fire their own network call, since
+// cacheGet only knows about *resolved* entries. Tracked separately from
+// `store` so a slow/failed fetch never blocks a later, independent one.
+const inflight = new Map<string, Promise<unknown>>();
+
+/**
+ * `data` for `key` if it's fresher than `freshMs`; otherwise runs `fetcher`
+ * once — even if called again for the same key before it resolves — caches
+ * the result, and returns it. A stale (or absent) cache entry still resolves
+ * immediately once the shared in-flight request lands.
+ */
+export async function cacheFetch<T>(key: string, freshMs: number, fetcher: () => PromiseLike<T>): Promise<T> {
+  const hit = cacheGet<T>(key);
+  if (hit && hit.age < freshMs) return hit.data;
+  const pending = inflight.get(key) as Promise<T> | undefined;
+  if (pending) return pending;
+  const p = Promise.resolve(fetcher())
+    .then((data) => {
+      cacheSet(key, data);
+      return data;
+    })
+    .finally(() => {
+      inflight.delete(key);
+    });
+  inflight.set(key, p);
+  return p;
+}

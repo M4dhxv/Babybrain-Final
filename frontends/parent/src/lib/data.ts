@@ -4,7 +4,7 @@ import { apiGet } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
-import { cacheGet, cacheSet } from "./queryCache";
+import { cacheGet, cacheSet, cacheInvalidate } from "./queryCache";
 import { goTo } from "./nav";
 import {
   formatAgeRange,
@@ -378,6 +378,8 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
       await supabase.from("favorite_providers").insert({ user_id: session.user.id, provider_id: providerId });
       setSaved(true);
     }
+    // Don't leave the Profile tab's cached "Saved providers" list one toggle behind.
+    cacheInvalidate(`profile:favProviders:${session.user.id}`);
     setBusy(false);
   }
 
@@ -422,6 +424,8 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
       favorites.setFavorited(activityId, true);
       onToggled?.(true);
     }
+    // Don't leave the Profile tab's cached favourites list one toggle behind.
+    cacheInvalidate(`profile:favs:${session.user.id}`);
     setBusy(false);
     return true;
   }
@@ -476,55 +480,62 @@ export function useRecommendations(children: Child[]) {
       setLoading(true);
     }
     (async () => {
-      const out = await Promise.all(
-        children.map(async (child) => {
-          const { data: recs } = await supabase
-            .from("user_recommendations")
-            // Sessions come along so the card can show a duration. Unlike the
-            // Explore list, these rows don't go through `search_activities`
-            // (which derives duration_mins server-side), and `activities` has
-            // no duration column of its own.
-            //
-            // QA: "the activity type label for the pop outs under home and
-            // suggested activities are incorrect… should be the same as under
-            // explore". `activities` only carries `category_id`, so without
-            // this join `toCard` had nothing to print and the card rendered an
-            // empty category pill where Explore shows a real one.
-            .select(
-              "id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
-            )
-            // Only the upcoming sessions ride along. Without this a Wix-linked
-            // course carries every past slot it has ever run — hundreds of rows
-            // per activity, times up to 8 recs, times each child — for a card
-            // that only ever shows the next one. Matches the favourites fetch
-            // in App.tsx. A rec whose activity has no upcoming session still
-            // comes back (embedded filters don't drop the parent row); its card
-            // falls back to "Schedule TBC", exactly as before.
-            .gte("activities.activity_sessions.starts_at", new Date().toISOString())
-            .eq("child_id", child.id)
-            .order("score", { ascending: false })
-            .limit(8);
+      // One IN(child_ids) query instead of one per child — ordered by
+      // child_id then score so each child's rows stay contiguous and
+      // already-sorted, letting the per-child top-8 below just slice instead
+      // of re-sorting.
+      const { data: recs } = await supabase
+        .from("user_recommendations")
+        // Sessions come along so the card can show a duration. Unlike the
+        // Explore list, these rows don't go through `search_activities`
+        // (which derives duration_mins server-side), and `activities` has
+        // no duration column of its own.
+        //
+        // QA: "the activity type label for the pop outs under home and
+        // suggested activities are incorrect… should be the same as under
+        // explore". `activities` only carries `category_id`, so without
+        // this join `toCard` had nothing to print and the card rendered an
+        // empty category pill where Explore shows a real one.
+        .select(
+          "id, child_id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
+        )
+        // Only the upcoming sessions ride along. Without this a Wix-linked
+        // course carries every past slot it has ever run — hundreds of rows
+        // per activity, times up to 8 recs, times each child — for a card
+        // that only ever shows the next one. Matches the favourites fetch
+        // in App.tsx. A rec whose activity has no upcoming session still
+        // comes back (embedded filters don't drop the parent row); its card
+        // falls back to "Schedule TBC", exactly as before.
+        .gte("activities.activity_sessions.starts_at", new Date().toISOString())
+        .in("child_id", children.map((c) => c.id))
+        .order("child_id", { ascending: true })
+        .order("score", { ascending: false });
+      type RecRow = NonNullable<typeof recs>[number];
+      const byChild = new Map<string, RecRow[]>();
+      for (const r of recs ?? []) {
+        const list = byChild.get(r.child_id) ?? [];
+        list.push(r);
+        byChild.set(r.child_id, list);
+      }
+      const out = children.map((child) => ({
+        child,
+        recs: (byChild.get(child.id) ?? []).slice(0, 8).map((r) => {
+          const act = (r.activities as unknown as
+            | (ActivityRow & {
+                activity_categories?: { name: string } | null;
+                providers?: { business_name?: string | null; address?: string | null } | null;
+              })
+            | null) ?? null;
           return {
-            child,
-            recs: (recs ?? []).map((r) => {
-              const act = (r.activities as unknown as
-                | (ActivityRow & {
-                    activity_categories?: { name: string } | null;
-                    providers?: { business_name?: string | null; address?: string | null } | null;
-                  })
-                | null) ?? null;
-              return {
-                id: r.id,
-                score: r.score,
-                reasons: r.reasons,
-                activity: act
-                  ? { ...act, category_name: act.activity_categories?.name ?? undefined }
-                  : null,
-              };
-            }),
+            id: r.id,
+            score: r.score,
+            reasons: r.reasons,
+            activity: act
+              ? { ...act, category_name: act.activity_categories?.name ?? undefined }
+              : null,
           };
-        })
-      );
+        }),
+      }));
       cacheSet(cacheKey, out);
       if (!cancelled) {
         setData(out);

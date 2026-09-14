@@ -45,5 +45,13 @@ export async function GET(request: Request) {
 
   const counts: Record<string, number> = {};
   for (const row of data ?? []) counts[row.session_id] = (counts[row.session_id] ?? 0) + 1;
-  return NextResponse.json({ counts });
+  // Public, deterministic for a given sessionIds set — lets Vercel's edge
+  // collapse concurrent parents browsing the same cards into one origin hit
+  // instead of one bookings query per viewer. Checkout re-validates capacity
+  // server-side regardless, so a short staleness window here is advisory
+  // only, same as the "spots left" figure always has been.
+  return NextResponse.json(
+    { counts },
+    { headers: { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=45' } }
+  );
 }

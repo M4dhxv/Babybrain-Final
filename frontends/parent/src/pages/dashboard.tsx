@@ -37,6 +37,7 @@ import {
 import { useAuth } from "../auth/AuthProvider";
 import { useUnreadMessages } from "../lib/chat";
 import { supabase } from "../lib/supabase";
+import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { apiGet, apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam } from "../lib/nav";
@@ -63,6 +64,13 @@ const MessagesTab = lazyRoute(
   () => import("../components/MessagesTab").then((m) => ({ default: m.MessagesTab })),
   "MessagesTab"
 );
+
+// How long ProfilePage's own reads (favourites, reviews, notifications,
+// packages, tokens, saved providers) stay usable without a refetch — matches
+// useActivities's FRESH_MS. Every write path that touches one of these
+// tables calls cacheInvalidate on its key, so this is purely about cutting
+// repeat-visit/duplicate-mount fetches, not risking stale-after-your-own-edit.
+const PROFILE_FRESH_MS = 60_000;
 
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
@@ -1311,18 +1319,25 @@ export function ProfilePage() {
     // an `activity_ids` array now), so the old `packages(activities(slug))`
     // embed no longer resolves — PostgREST 400s the whole select and the tab
     // was stuck on "No packages yet" even with credits sitting on the account.
-    const { data, error } = await supabase
-      .from("package_purchases")
-      .select(
-        "id, credits_total, credits_remaining, status, expires_at, packages(name, activity_ids), providers(business_name)"
-      )
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.warn("[packages] load failed:", error.message);
+    let data;
+    try {
+      data = await cacheFetch(`profile:packages:${session?.user?.id}`, PROFILE_FRESH_MS, async () => {
+        const { data, error } = await supabase
+          .from("package_purchases")
+          .select(
+            "id, credits_total, credits_remaining, status, expires_at, packages(name, activity_ids), providers(business_name)"
+          )
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        return data ?? [];
+      });
+    } catch (error) {
+      console.warn("[packages] load failed:", error instanceof Error ? error.message : error);
       setPackagesLoaded(true);
       return;
     }
-    const rows = (data ?? []) as unknown as Array<{
+    const rows = data as unknown as Array<{
       id: string;
       credits_total: number;
       credits_remaining: number;
@@ -1392,96 +1407,115 @@ export function ProfilePage() {
       setTokensLoaded(true);
       return;
     }
-    supabase
-      .from("favorites")
-      /* Upcoming sessions ride along so the card can show the next class
-         rather than "Schedule TBC" (QA 24/08). Filtered to the future on the
-         server — a Wix-linked class can carry hundreds of past slots, and a
-         parent with twenty favourites would otherwise pull thousands of rows
-         to render twenty dates. */
-      .select(
-        "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
-      )
-      .gte("activities.activity_sessions.starts_at", new Date().toISOString())
-      .then(({ data }) => {
-        setFavs(
-          (data ?? [])
-            .map((f) => {
-              const a = f.activities as unknown as
-                | (Parameters<typeof toCard>[0] & { activity_categories?: { name: string } })
-                | null;
-              return a ? toCard({ ...a, category_name: a.activity_categories?.name }) : null;
-            })
-            .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
-        );
-        setFavsLoaded(true);
-      });
+    const uid = session.user.id;
+
+    cacheFetch(`profile:favs:${uid}`, PROFILE_FRESH_MS, () =>
+      supabase
+        .from("favorites")
+        /* Upcoming sessions ride along so the card can show the next class
+           rather than "Schedule TBC" (QA 24/08). Filtered to the future on the
+           server — a Wix-linked class can carry hundreds of past slots, and a
+           parent with twenty favourites would otherwise pull thousands of rows
+           to render twenty dates. */
+        .select(
+          "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
+        )
+        .gte("activities.activity_sessions.starts_at", new Date().toISOString())
+        .limit(100)
+        .then(({ data }) => data ?? [])
+    ).then((data) => {
+      setFavs(
+        data
+          .map((f) => {
+            const a = f.activities as unknown as
+              | (Parameters<typeof toCard>[0] & { activity_categories?: { name: string } })
+              | null;
+            return a ? toCard({ ...a, category_name: a.activity_categories?.name }) : null;
+          })
+          .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
+      );
+      setFavsLoaded(true);
+    });
 
     // Which children each favourite is assigned to. A favourite with no rows is
     // saved for the whole family, which is what every pre-existing favourite is.
-    supabase
-      .from("favorite_children")
-      .select("activity_id, child_id")
-      .then(({ data }) => {
-        const m: Record<string, string[]> = {};
-        for (const r of (data ?? []) as { activity_id: string; child_id: string }[]) {
-          (m[r.activity_id] ??= []).push(r.child_id);
-        }
-        setFavChildren(m);
-      });
+    cacheFetch(`profile:favChildren:${uid}`, PROFILE_FRESH_MS, () =>
+      supabase
+        .from("favorite_children")
+        .select("activity_id, child_id")
+        .limit(200)
+        .then(({ data }) => (data ?? []) as { activity_id: string; child_id: string }[])
+    ).then((rows) => {
+      const m: Record<string, string[]> = {};
+      for (const r of rows) (m[r.activity_id] ??= []).push(r.child_id);
+      setFavChildren(m);
+    });
 
     loadBookings();
 
-    supabase
-      .from("reviews")
-      .select("id, rating, comment, provider_response, activities(title, slug)")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{
-          id: string;
-          rating: number;
-          comment: string | null;
-          provider_response: string | null;
-          activities: { title: string; slug: string } | null;
-        }>;
-        setReviews(
-          rows.map((r) => ({
-            id: r.id,
-            rating: r.rating,
-            comment: r.comment,
-            title: r.activities?.title ?? "Activity",
-            slug: r.activities?.slug ?? "",
-            providerResponse: r.provider_response,
-          }))
-        );
-        setReviewsLoaded(true);
-      });
+    cacheFetch(`profile:reviews:${uid}`, PROFILE_FRESH_MS, () =>
+      supabase
+        .from("reviews")
+        .select("id, rating, comment, provider_response, activities(title, slug)")
+        .order("created_at", { ascending: false })
+        .limit(100)
+        .then(({ data }) => data ?? [])
+    ).then((data) => {
+      const rows = data as unknown as Array<{
+        id: string;
+        rating: number;
+        comment: string | null;
+        provider_response: string | null;
+        activities: { title: string; slug: string } | null;
+      }>;
+      setReviews(
+        rows.map((r) => ({
+          id: r.id,
+          rating: r.rating,
+          comment: r.comment,
+          title: r.activities?.title ?? "Activity",
+          slug: r.activities?.slug ?? "",
+          providerResponse: r.provider_response,
+        }))
+      );
+      setReviewsLoaded(true);
+    });
 
-    supabase
-      .from("notifications")
-      .select("id, title, body, read_at, created_at")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        setNotifications((data ?? []) as unknown as NotifItem[]);
-        setNotifsLoaded(true);
-      });
+    cacheFetch(`profile:notifications:${uid}`, PROFILE_FRESH_MS, () =>
+      supabase
+        .from("notifications")
+        .select("id, title, body, read_at, created_at")
+        .order("created_at", { ascending: false })
+        .limit(100)
+        .then(({ data }) => data ?? [])
+    ).then((data) => {
+      setNotifications(data as unknown as NotifItem[]);
+      setNotifsLoaded(true);
+    });
 
     loadPackages();
 
-    supabase
-      .from("favorite_providers")
-      .select("provider_id, providers(business_name)")
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ provider_id: string; providers: { business_name: string } | null }>;
-        setSavedProviders(rows.map((r) => ({ id: r.provider_id, name: r.providers?.business_name ?? "Provider" })));
-      });
+    cacheFetch(`profile:favProviders:${uid}`, PROFILE_FRESH_MS, () =>
+      supabase
+        .from("favorite_providers")
+        .select("provider_id, providers(business_name)")
+        .limit(100)
+        .then(({ data }) => data ?? [])
+    ).then((data) => {
+      const rows = data as unknown as Array<{ provider_id: string; providers: { business_name: string } | null }>;
+      setSavedProviders(rows.map((r) => ({ id: r.provider_id, name: r.providers?.business_name ?? "Provider" })));
+    });
 
     (async () => {
-      const { data } = await supabase
-        .from("make_up_tokens")
-        .select("id, status, created_at, expires_at, origin_booking_id, child_id, providers(business_name)")
-        .order("created_at", { ascending: false });
-      const rows = (data ?? []) as unknown as Array<{
+      const data = await cacheFetch(`profile:tokens:${uid}`, PROFILE_FRESH_MS, () =>
+        supabase
+          .from("make_up_tokens")
+          .select("id, status, created_at, expires_at, origin_booking_id, child_id, providers(business_name)")
+          .order("created_at", { ascending: false })
+          .limit(100)
+          .then(({ data }) => data ?? [])
+      );
+      const rows = data as unknown as Array<{
         id: string;
         status: string;
         created_at: string;
@@ -1550,6 +1584,10 @@ export function ProfilePage() {
         .finally(() => {
           invalidatePlan();
           fetchPlan();
+          // The Stripe purchase this session just reconciled can be a new
+          // package — cacheFetch's 60s TTL would otherwise hand loadPackages
+          // its stale pre-purchase list.
+          cacheInvalidate(`profile:packages:${uid}`);
           loadPackages();
           loadBookings();
         });
@@ -1626,6 +1664,11 @@ export function ProfilePage() {
       : await q.insert({ user_id: session.user.id, activity_id: activityId, child_id: childId });
     if (error) {
       setFavChildren((prev) => ({ ...prev, [activityId]: assigned }));
+    } else {
+      // Local state is already correct (optimistic update above) — this just
+      // keeps a later remount within the cache TTL from overwriting it with
+      // the pre-toggle cached list.
+      cacheInvalidate(`profile:favChildren:${session.user.id}`);
     }
   }
 
@@ -3178,15 +3221,19 @@ export function BookingPage() {
   // Packs this provider sells that apply to this class (or to all of theirs).
   useEffect(() => {
     if (!activity?.provider_id) return;
-    supabase
-      .from("packages")
-      .select("id, name, credits, price_cents, activity_ids")
-      .eq("provider_id", activity.provider_id)
-      .eq("active", true)
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
-        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
-      });
+    const providerId = activity.provider_id;
+    // Shared cache key with ActivityDetailPage's identical query (App.tsx) —
+    // Explore → listing → Book for the same provider fires this once, not twice.
+    cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
+      supabase
+        .from("packages")
+        .select("id, name, credits, price_cents, activity_ids")
+        .eq("provider_id", providerId)
+        .eq("active", true)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>)
+    ).then((rows) => {
+      setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
+    });
   }, [activity?.provider_id, activity?.id]);
 
   // What this parent has already booked on this activity's sessions, so the
@@ -3667,6 +3714,9 @@ export function BookingPage() {
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
     });
+    // This path can have just redeemed a make-up token — don't leave the
+    // Profile tab's cached token list showing it as still unredeemed.
+    if (auth?.user?.id) cacheInvalidate(`profile:tokens:${auth.user.id}`);
     goTo(`/booked?${q.toString()}`);
   }
 
@@ -3738,6 +3788,9 @@ export function BookingPage() {
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
     });
+    // Just spent a package credit — don't leave the Profile tab's cached
+    // packages list showing the pre-redemption remaining count.
+    if (auth?.user?.id) cacheInvalidate(`profile:packages:${auth.user.id}`);
     goTo(`/booked?${q.toString()}`);
   }
 

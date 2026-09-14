@@ -17,6 +17,7 @@ import {
 import {
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -28,6 +29,7 @@ import { useActivities } from "./lib/useActivities";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard } from "./lib/data";
 import { supabase } from "./lib/supabase";
+import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands } from "./lib/schedule";
@@ -49,6 +51,19 @@ import {
   ChildCardSkeleton,
   ActivityDetailSkeleton,
 } from "./components/Skeletons";
+
+/** Trails `value` by `delay`ms of no further change — for gating an
+ *  expensive derived computation (a filter/sort recompute here) behind a
+ *  fast-changing input (a drag slider) without holding back the input's own
+ *  on-screen value, which should stay instant. */
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
 
 // leaflet (the Explore map only) stays out of the entry bundle — loaded the
 // first time the map is shown.
@@ -596,31 +611,47 @@ function ExplorePage() {
     categories_.length > 0 || ages.length > 0 || regions.length > 0 ||
     !!dateFrom || priceActive || timeActive;
 
-  const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
+  // The price/time sliders fire onChange continuously while dragging — the
+  // label above each ("Up to $X" / a time range) tracks that live, but what
+  // actually drives the filtered list is debounced so a drag doesn't
+  // recompute + re-render every card on every pixel of movement, only once
+  // motion settles.
+  const debouncedMaxPrice = useDebouncedValue(maxPrice, 120);
+  const debouncedTimeRange = useDebouncedValue(timeRange, 120);
+  const [debouncedMinH, debouncedMaxH] = debouncedTimeRange;
+  const debouncedPriceActive = debouncedMaxPrice < PRICE_MAX;
+  const debouncedTimeActive = debouncedMinH > 0 || debouncedMaxH < 23;
 
-  const filtered = activities.filter((a) => {
-    if (categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
-    // A class matches an age band when its own range overlaps that band.
-    if (selectedBands.length &&
-        !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
-    if (regions.length) {
-      /* `areas` is where this class actually runs (see useActivities). It used
-         to be "the listing's region OR any venue the provider owns anywhere",
-         which put a Katong class in front of a parent filtering on Sentosa
-         purely because the provider also had a Sentosa branch — QA 17/08. */
-      if (!a.areas.some((x) => regions.includes(x))) return false;
-    }
-    if (priceActive && a.price != null && a.price > maxPrice) return false;
-    if (dateFrom) {
-      if (!a.nextSessionAt) return false;
-      if (new Date(a.nextSessionAt) < new Date(`${dateFrom}T00:00:00+08:00`)) return false;
-    }
-    if (timeActive) {
-      const h = sgHour(a.nextSessionAt);
-      if (h == null || h < minH || h > maxH) return false;
-    }
-    return true;
-  });
+  // Recomputed only when something a filter actually reads changes — this
+  // used to re-run (and re-render every visible card below it) on every
+  // render, including every tick of the price/time sliders while dragging.
+  const filtered = useMemo(() => {
+    const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
+    return activities.filter((a) => {
+      if (categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
+      // A class matches an age band when its own range overlaps that band.
+      if (selectedBands.length &&
+          !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
+      if (regions.length) {
+        /* `areas` is where this class actually runs (see useActivities). It used
+           to be "the listing's region OR any venue the provider owns anywhere",
+           which put a Katong class in front of a parent filtering on Sentosa
+           purely because the provider also had a Sentosa branch — QA 17/08. */
+        if (!a.areas.some((x) => regions.includes(x))) return false;
+      }
+      if (debouncedPriceActive && a.price != null && a.price > debouncedMaxPrice) return false;
+      if (dateFrom) {
+        if (!a.nextSessionAt) return false;
+        if (new Date(a.nextSessionAt) < new Date(`${dateFrom}T00:00:00+08:00`)) return false;
+      }
+      if (debouncedTimeActive) {
+        const h = sgHour(a.nextSessionAt);
+        if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, debouncedTimeActive, debouncedMinH, debouncedMaxH]);
 
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
@@ -632,26 +663,29 @@ function ExplorePage() {
   // then by point distance within an area. Sorting purely by distance to the
   // area's centre otherwise slots border listings of the neighbouring area
   // ahead of far-corner ones of your own (QA).
-  const areaOrder = sort === "distance" && herePickedArea ? regionsByProximity(herePickedArea) : null;
-  const shown = [...filtered].sort((x, y) => {
-    if (sort === "soonest") {
-      const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
-      const ay = y.nextSessionAt ? Date.parse(y.nextSessionAt) : Infinity;
-      if (ax !== ay) return ax - ay;
-    }
-    if (sort === "distance" && here) {
-      if (areaOrder) {
-        const rx = areaRank(x, areaOrder);
-        const ry = areaRank(y, areaOrder);
-        if (rx !== ry) return rx - ry;
+  const shown = useMemo(() => {
+    const areaOrder = sort === "distance" && herePickedArea ? regionsByProximity(herePickedArea) : null;
+    return [...filtered].sort((x, y) => {
+      if (sort === "soonest") {
+        const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
+        const ay = y.nextSessionAt ? Date.parse(y.nextSessionAt) : Infinity;
+        if (ax !== ay) return ax - ay;
       }
-      const dx = distanceFrom(here, x);
-      const dy = distanceFrom(here, y);
-      if (dx !== dy) return dx - dy;
-    }
-    if (x.instantBook !== y.instantBook) return x.instantBook ? -1 : 1;
-    return 0;
-  });
+      if (sort === "distance" && here) {
+        if (areaOrder) {
+          const rx = areaRank(x, areaOrder);
+          const ry = areaRank(y, areaOrder);
+          if (rx !== ry) return rx - ry;
+        }
+        const dx = distanceFrom(here, x);
+        const dy = distanceFrom(here, y);
+        if (dx !== dy) return dx - dy;
+      }
+      if (x.instantBook !== y.instantBook) return x.instantBook ? -1 : 1;
+      return 0;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sort, herePickedArea, here]);
 
   function resetFilters() {
     setCategories([]); setAges([]); setRegions([]);
@@ -1119,15 +1153,19 @@ function ActivityDetailPage() {
 
   useEffect(() => {
     if (!activity?.provider_id) return;
-    supabase
-      .from("packages")
-      .select("id, name, credits, price_cents, activity_ids")
-      .eq("provider_id", activity.provider_id)
-      .eq("active", true)
-      .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>;
-        setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
-      });
+    const providerId = activity.provider_id;
+    // Shared cache key with BookingPage's identical query (dashboard.tsx) —
+    // Explore → listing → Book for the same provider fires this once, not twice.
+    cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
+      supabase
+        .from("packages")
+        .select("id, name, credits, price_cents, activity_ids")
+        .eq("provider_id", providerId)
+        .eq("active", true)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>)
+    ).then((rows) => {
+      setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
+    });
   }, [activity?.provider_id, activity?.id]);
 
   async function buyPack(packageId: string) {
