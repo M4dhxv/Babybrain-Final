@@ -49,7 +49,7 @@ const FLOWS: FlowMeta[] = [
   { type: 'unsubscribe_response', category: 'Parent', label: 'Sorry to see you go', description: 'Sent when a parent deletes their account.', wired: true, trigger: 'Sent directly (not via the notifications table — parent_profiles is gone by the time it would fire) from app/api/customer/account/route.ts, right after account deletion succeeds.' },
   { type: 'downgrade_response', category: 'Parent', label: 'Sorry you downgraded', description: 'Sent when a Plus parent drops to Free but keeps their account.', wired: true, trigger: 'Stripe webhook, on customer.subscription.deleted only, plus→free transition (app/api/webhooks/stripe/route.ts). Distinct from unsubscribe_response, which is account deletion.' },
   { type: 'upgrade_nudge', category: 'Parent', label: 'Upgrade nudge', description: 'Reminds a Free parent what Plus unlocks.', wired: true, trigger: 'pg_cron, 1st Saturday of Jan/Apr/Jul/Oct SGT, every Free parent (migration 00122).' },
-  { type: 'providers_added', category: 'Parent', label: 'New vendors added', description: 'Announces newly onboarded vendors.', wired: false, trigger: 'Not wired to anything yet.' },
+  { type: 'providers_added', category: 'Parent', label: 'New vendors added', description: 'Announces newly onboarded, active, published vendors.', wired: true, trigger: 'pg_cron, weekly Monday 09:00 SGT, skipped if none qualified that week, every parent (migration 00123).' },
   { type: 'package_rebook', category: 'Parent', label: 'Re-book your package', description: 'Nudge to re-buy a package after it runs out.', wired: false, trigger: 'Not wired to anything yet.' },
 
   // ---- Provider lifecycle ----
