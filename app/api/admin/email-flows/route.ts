@@ -48,7 +48,7 @@ const FLOWS: FlowMeta[] = [
   { type: 'message_response', dbType: 'support_message', category: 'Parent', label: "You've got a message", description: 'A message the parent sent got a reply.', wired: true, trigger: 'Stream chat webhook.' },
   { type: 'unsubscribe_response', category: 'Parent', label: 'Sorry to see you go', description: 'Sent when a Plus subscription is genuinely cancelled (not a payment retry).', wired: true, trigger: 'Stripe webhook, on customer.subscription.deleted only, plus→free transition (app/api/webhooks/stripe/route.ts).' },
   { type: 'downgrade_response', category: 'Parent', label: 'Sorry you downgraded', description: 'Sent on downgrade from Plus.', wired: false, trigger: 'Not wired to anything yet.' },
-  { type: 'upgrade_nudge', category: 'Parent', label: 'Upgrade nudge', description: 'Reminds a Free parent what Plus unlocks.', wired: false, trigger: 'Not wired — candidate for a "N days since signup, still Free" cron.' },
+  { type: 'upgrade_nudge', category: 'Parent', label: 'Upgrade nudge', description: 'Reminds a Free parent what Plus unlocks.', wired: true, trigger: 'pg_cron, 1st Saturday of Jan/Apr/Jul/Oct SGT, every Free parent (migration 00122).' },
   { type: 'providers_added', category: 'Parent', label: 'New vendors added', description: 'Announces newly onboarded vendors.', wired: false, trigger: 'Not wired to anything yet.' },
   { type: 'package_rebook', category: 'Parent', label: 'Re-book your package', description: 'Nudge to re-buy a package after it runs out.', wired: false, trigger: 'Not wired to anything yet.' },
 
