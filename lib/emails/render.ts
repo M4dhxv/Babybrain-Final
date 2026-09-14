@@ -245,6 +245,17 @@ const T: Record<string, Template> = {
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
+  // notify_session_rescheduled (migration 00044/00126) fires when a vendor
+  // changes a booked session's date/time or location — the in-app
+  // notification's own title/body say what changed; this email stays
+  // generic per the spec ("review the details") rather than restating it.
+  session_rescheduled: (d, ctx) =>
+    wrap(ctx, 'There has been a change to an activity you have booked 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`There has been some changes to your ${bold(str(d, 'activity_name') ?? 'activity')} booking. Please make sure you review the details ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'here')}.`) +
+      p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
+      sign),
+
   post_activity_checkin: (d, ctx) => {
     // The daily send_class_followups() cron writes `activity_name` (migration
     // 00090); name the session when it's there, and read naturally when it
