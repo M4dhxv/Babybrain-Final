@@ -465,6 +465,11 @@ const ALIASES: Record<string, string> = {
   // had already been auto-confirmed, which read as a mistake to the parent.
   waitlist_promoted: 'waitlist_confirmed',
   support_message: 'message_response',
+  // A reply on a parent↔provider chat (app/api/webhooks/stream/route.ts)
+  // inserts this type for the parent — it had no template or alias at all,
+  // so it silently fell through to the generic unbranded fallback email
+  // instead of "You've got a message" like every other reply notification.
+  provider_message: 'message_response',
 };
 
 /** Returns the branded email for a notification type, or null if unmapped. */
