@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { dbStatus } from '@/lib/plans';
 import { stripeConfig } from '@/lib/stripe-config';
+import { renewalTerms } from '@/lib/subscription-terms';
 
 /**
  * Parent "Plus" subscription.
@@ -18,7 +19,6 @@ import { stripeConfig } from '@/lib/stripe-config';
  * GST is billed separately once Stripe Tax is configured.
  */
 
-const PLUS_TRIAL_DAYS = 30;
 // Bump when the Terms & Conditions materially change; stored alongside the
 // acceptance timestamp so we know which version a user agreed to. Kept local:
 // App Router route files may only export handlers + Next's config fields.
@@ -154,21 +154,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ switched: true, billing, duplicates: live.length - 1 });
   }
 
-  // First Plus subscription for this parent, or they cancelled and are coming
-  // back. The trial is for the former only: `trial_period_days` was passed
-  // unconditionally, so cancel → resubscribe handed out another free 30 days
-  // every time, indefinitely. Mirrors the vendor route's `neverSubscribed`.
-  const neverSubscribed = existingSubs.data.length === 0;
-
   const origin = appOrigin(request);
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    subscription_data: {
-      ...(neverSubscribed ? { trial_period_days: PLUS_TRIAL_DAYS } : {}),
-      metadata: { user_id: user.id, billing },
-    },
+    // No trial, deliberately: the first period is charged on sign-up. There
+    // used to be 30 free days here.
+    subscription_data: { metadata: { user_id: user.id, billing } },
+    // Lets a parent redeem a Stripe promotion code (how a waived fee is given).
+    allow_promotion_codes: true,
+    // The Billing Portal cannot render arbitrary text, so the renewal terms
+    // are stated here, at the one point before money moves.
+    custom_text: { submit: { message: renewalTerms('plus', billing) } },
     metadata: { kind: 'customer_subscription', user_id: user.id, billing },
     // Payment methods are whatever is enabled in the Stripe Dashboard and is
     // eligible for recurring SGD charges. PayNow is single-use and can't

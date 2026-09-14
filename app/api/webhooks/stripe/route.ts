@@ -9,6 +9,7 @@ import { stripeConfigKeyFor } from '@/lib/stripe-config';
 import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
 import { dbStatus, planFromMetadata, type PaidPlan } from '@/lib/plans';
+import { sendPaymentAlert } from '@/lib/payment-alert';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
@@ -541,6 +542,11 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      // Founder alert on every completed checkout. Fires last and swallows its
+      // own errors — a failed email must not fail the webhook, or Stripe
+      // retries the event and the booking is processed twice.
+      await sendPaymentAlert(session);
       break;
     }
 

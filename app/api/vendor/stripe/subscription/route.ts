@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getStripe, GROWTH_TRIAL_DAYS, LIVE_STATUSES } from '@/lib/stripe';
+import { getStripe, LIVE_STATUSES } from '@/lib/stripe';
+import { renewalTerms } from '@/lib/subscription-terms';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { vendorPageUrl } from '@/lib/cors';
@@ -202,20 +203,19 @@ export async function POST(request: Request) {
     });
   }
 
-  // First paid subscription for this customer, or they cancelled and are
-  // coming back. The trial is for the former only: a vendor who has already
-  // had a subscription (any status, including canceled) doesn't get another
-  // free month.
-  const neverSubscribed = existing.data.length === 0;
-
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    subscription_data: {
-      ...(neverSubscribed ? { trial_period_days: GROWTH_TRIAL_DAYS } : {}),
-      metadata: { provider_id: providerId, plan },
-    },
+    // No trial, deliberately: the first period is charged on sign-up on both
+    // the vendor and the parent side. There used to be 30 free days here.
+    subscription_data: { metadata: { provider_id: providerId, plan } },
+    // Lets a vendor redeem a Stripe promotion code — how a waived or
+    // discounted subscription fee is granted, rather than editing prices.
+    allow_promotion_codes: true,
+    // The Billing Portal cannot render arbitrary text, so the renewal and
+    // commission terms are stated here, at the one point before money moves.
+    custom_text: { submit: { message: renewalTerms(plan, billing) } },
     metadata: { provider_id: providerId, kind: 'subscription', plan },
     success_url: vendorPageUrl(request, '/billing', 'status=success'),
     cancel_url: vendorPageUrl(request, '/billing', 'status=cancelled'),

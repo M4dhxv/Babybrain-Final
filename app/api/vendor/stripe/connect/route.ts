@@ -73,9 +73,10 @@ function accountSeed(provider: {
     },
     // Vendor "autopay": once onboarding + verification finish, payouts go
     // out automatically on this schedule rather than needing anyone to
-    // trigger them manually. Express accounts default to daily anyway, but
-    // set it explicitly so it doesn't depend on Stripe's own default.
-    settings: { payouts: { schedule: { interval: 'daily' } } },
+    // trigger them manually. Monthly on the 1st, to match how BabyBrain's own
+    // platform account is paid out — Express defaults to daily, so this has to
+    // be set explicitly. Stripe still applies its own new-account delay on top.
+    settings: { payouts: { schedule: { interval: 'monthly', monthly_anchor: 1 } } },
   };
 }
 

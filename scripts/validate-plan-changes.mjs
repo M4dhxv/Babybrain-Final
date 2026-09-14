@@ -84,13 +84,17 @@ const subscribe = (plan) =>
 const sessionIdOf = (url) => (String(url).match(/cs_(?:test|live)_[A-Za-z0-9]+/) ?? [])[0];
 
 /**
- * Whether a checkout session grants the free trial. `subscription_data` is a
- * create-only parameter and is not returned when the session is read back, so
- * the trial is asserted through what it actually does to the price: a trialing
- * subscription checkout collects nothing up front (amount_total 0), a normal
- * one collects the first period.
+ * Whether a checkout session collects the first period up front.
+ *
+ * `subscription_data` is a create-only parameter and is not returned when the
+ * session is read back, so the absence of a trial is asserted through what it
+ * does to the price: a trialing checkout collects nothing (amount_total 0),
+ * a normal one collects the first period.
+ *
+ * There is no trial on either side any more — every subscriber is charged on
+ * sign-up — so a zero here is a regression, not a feature.
  */
-const grantsTrial = (session) => session.amount_total === 0;
+const chargesUpFront = (session) => session.amount_total > 0;
 
 /** Mirrors liveSubscriptionFor() in app/api/webhooks/stripe/route.ts. */
 const surviving = async (ended, providerId) => {
@@ -111,7 +115,7 @@ const liveSubs = async (customerId) => {
 
 let customerId = null;
 try {
-  // --- 1. First time: a checkout link, and it carries the free trial ---
+  // --- 1. First time: a checkout link, and it charges straight away ---
   const first = await subscribe('growth');
   check('First subscribe returns a Stripe Checkout URL',
     String(first.body?.url ?? '').startsWith('https://checkout.stripe.com/'), first.body?.error ?? '');
@@ -122,8 +126,8 @@ try {
 
   if (!sessionIdOf(first.body.url)) throw new Error(`No checkout session in the response: ${JSON.stringify(first.body)}`);
   const session = await stripe.checkout.sessions.retrieve(sessionIdOf(first.body.url));
-  check('First-time checkout collects nothing up front (the 30-day trial)',
-    grantsTrial(session), `amount_total ${session.amount_total}`);
+  check('First-time checkout charges the first period (no trial)',
+    chargesUpFront(session), `amount_total ${session.amount_total}`);
   await stripe.checkout.sessions.expire(session.id).catch(() => {});
 
   // --- 2. Stand up a live Growth subscription, as a completed checkout would ---
@@ -168,8 +172,8 @@ try {
   check('After cancelling, a returning vendor gets a checkout link again',
     String(returning.body?.url ?? '').startsWith('https://checkout.stripe.com/'), returning.body?.error ?? '');
   const returnSession = await stripe.checkout.sessions.retrieve(sessionIdOf(returning.body.url));
-  check('…but NOT another free trial — the first period is charged',
-    !grantsTrial(returnSession) && returnSession.amount_total > 0,
+  check('A returning vendor is charged too',
+    chargesUpFront(returnSession),
     `amount_total ${returnSession.amount_total}`);
   await stripe.checkout.sessions.expire(returnSession.id).catch(() => {});
 
