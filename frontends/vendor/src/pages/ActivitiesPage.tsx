@@ -1022,6 +1022,7 @@ export default function ActivitiesPage() {
     // Per-session exceptions are redone from Manage schedule. Best-effort, so
     // a hiccup here never blocks the save that already went through.
     const newCap = Number(form.default_capacity);
+    let cascadeError: string | null = null;
     if (editingId && !isWixLinked && Number.isFinite(newCap) && newCap >= 1) {
       try {
         const nowIso = new Date().toISOString();
@@ -1039,7 +1040,15 @@ export default function ActivitiesPage() {
             .in('session_id', rows.map((s) => s.id));
           const booked: Record<string, number> = {};
           (bks ?? []).forEach((b) => {
-            if (b.status !== 'cancelled') booked[b.session_id] = (booked[b.session_id] ?? 0) + 1;
+            // Only a seat actually held counts as "booked" — the on_session_
+            // capacity_increase trigger's own v_taken (00102) counts just
+            // pending/confirmed, so a waitlisted row must not inflate the
+            // floor here too, or the capacity this writes ends up higher
+            // than the vendor typed (QA: "increased capacity, no email
+            // sent" traced to this floor silently absorbing the increase).
+            if (b.status === 'pending' || b.status === 'confirmed') {
+              booked[b.session_id] = (booked[b.session_id] ?? 0) + 1;
+            }
           });
           // One update per distinct target value (most sessions share it)
           // rather than a round-trip per session; skip the already-correct.
@@ -1049,15 +1058,32 @@ export default function ActivitiesPage() {
             if (cap === s.capacity) continue;
             groups.set(cap, [...(groups.get(cap) ?? []), s.id]);
           }
-          await Promise.all(
+          const results = await Promise.all(
             [...groups].map(([cap, gids]) =>
               supabase.from('activity_sessions').update({ capacity: cap }).in('id', gids)
             )
           );
+          // Used to go unchecked, so a refused write (RLS, a stale session
+          // id) looked identical to success — the activity's default_capacity
+          // saved, but the sessions it's supposed to cascade to (and the
+          // on_session_capacity_increase trigger that emails the waitlist)
+          // silently never ran.
+          const failed = results.filter((r) => r.error);
+          if (failed.length) {
+            console.error('[ActivitiesPage] session capacity cascade failed', failed.map((r) => r.error));
+            cascadeError = 'Activity saved, but some upcoming sessions could not be updated to the new capacity, so waitlisted families on those sessions were not emailed. Please try saving again, or update capacity per-session under Manage schedule.';
+          }
         }
-      } catch {
-        /* activity saved; leave the sessions as-is on any failure */
+      } catch (e) {
+        console.error('[ActivitiesPage] session capacity cascade threw', e);
+        cascadeError = 'Activity saved, but upcoming sessions could not be re-synced to the new capacity, so waitlisted families were not emailed. Please try saving again, or update capacity per-session under Manage schedule.';
       }
+    }
+
+    if (cascadeError) {
+      setFormError(cascadeError);
+      load();
+      return;
     }
 
     setShowDrawer(false);
