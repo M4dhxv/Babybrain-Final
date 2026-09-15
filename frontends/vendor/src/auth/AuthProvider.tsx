@@ -36,9 +36,18 @@ interface AuthState {
 const Ctx = createContext<AuthState | undefined>(undefined);
 
 /** Resolves to `false` if `p` hasn't settled within `ms` — a hung lookup is a
- *  failed lookup, not an answer to wait on indefinitely. */
-function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
-  return Promise.race([p, new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
+ *  failed lookup, not an answer to wait on indefinitely. Also aborts `p`'s
+ *  underlying request via `controller` on timeout, so the stale request
+ *  doesn't keep running (and competing with) the next retry attempt. */
+function withTimeout(p: Promise<boolean>, ms: number, controller: AbortController): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => { controller.abort(); resolve(false); }, ms);
+    p.then((v) => { clearTimeout(timer); resolve(v); }).catch((err) => {
+      clearTimeout(timer);
+      if ((err as { name?: string })?.name !== 'AbortError') console.warn('[auth] provider lookup failed', err);
+      resolve(false);
+    });
+  });
 }
 
 /**
@@ -79,8 +88,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<ProviderRole | null>(null);
   // Seed the plan from the last-known value for THIS user, so the sidebar plan
   // card and the Pro/paid tab locks paint correct on the first frame instead of
-  // flashing "free" for the beat between the provider lookup and its follow-up
-  // subscription query. The live query below always overwrites this.
+  // flashing "free" while the provider lookup is in flight. The live query
+  // below always overwrites this.
   const initialSubscription = useMemo<Subscription | null>(() => {
     const cached = getCachedSubscription(initialSession?.user.id);
     return cached ? (cached as Subscription) : null;
@@ -95,8 +104,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Returns whether the lookup actually answered. A failed query is NOT an
    *  answer: reporting it as "no business" is what dropped a real vendor onto
    *  the NoBusinessGate after a refresh. */
-  async function loadProvider(userId?: string): Promise<boolean> {
-    // Resolve the user's active membership → its provider (RLS-scoped).
+  async function loadProvider(userId?: string, signal?: AbortSignal): Promise<boolean> {
+    // Resolve the user's active membership → its provider (RLS-scoped), with
+    // its subscription embedded in the same request (subscriptions.provider_id
+    // is providers' 1:1 child, so PostgREST can join it server-side) — this
+    // used to be two sequential awaited round trips, which doubled the latency
+    // of every retry attempt for no reason.
     //
     // The portal shows exactly one business and has no switcher, so which row
     // wins here IS the account's identity in the app. An account can hold more
@@ -110,11 +123,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // can't be hijacked by a spuriously-added lower-privilege membership, and
     // it stops a real owner from being silently stuck on a staff-only view
     // just because that row happened to be created first.
-    const { data: members, error } = await supabase
+    const query = supabase
       .from('provider_members')
-      .select('role, created_at, provider:providers(*)')
+      .select('role, created_at, provider:providers(*, subscription:subscriptions(*))')
       .eq('status', 'active')
       .order('created_at', { ascending: true });
+    const { data: members, error } = await (signal ? query.abortSignal(signal) : query);
     if (error) return false;
     const ROLE_RANK: Record<ProviderRole, number> = { staff: 1, manager: 2, owner: 3 };
     const member = (members ?? []).reduce<(typeof members)[number] | null>((best, m) => {
@@ -124,18 +138,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return rank > bestRank ? m : best;
     }, null);
     if (member?.provider) {
-      const prov = member.provider as unknown as Provider;
-      setProvider(prov);
+      const { subscription: sub, ...prov } = member.provider as unknown as Provider & {
+        subscription: Subscription | null;
+      };
+      setProvider(prov as Provider);
       setRole(member.role as ProviderRole);
-      // The provider's real subscription tier (free/growth/…) — RLS-scoped.
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('plan, status, current_period_end, cancel_at_period_end')
-        .eq('provider_id', prov.id)
-        .maybeSingle();
-      const resolved: Subscription = sub
-        ? (sub as Subscription)
-        : { plan: 'free', status: 'active', current_period_end: null, cancel_at_period_end: false };
+      const resolved: Subscription = sub ?? {
+        plan: 'free',
+        status: 'active',
+        current_period_end: null,
+        cancel_at_period_end: false,
+      };
       setSubscription(resolved);
       // Persist for the next cold load's first paint (see providerCache.ts).
       if (userId) setCachedSubscription(userId, resolved);
@@ -152,20 +165,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    *  renewed, and that first query comes back empty-handed. One miss isn't a
    *  verdict — retry briefly before settling on anything. */
   async function resolveProvider(userId?: string, attempts = 3) {
+    // Bounded: a request that never settles would otherwise hold the portal on
+    // its spinner forever, which is the failure the 8s failsafe below was
+    // there to prevent before this gate learned to wait. Kept comfortably
+    // under index.html's 20s "wedged on a loading gate" watchdog — that
+    // reload discards whatever attempt is in flight and restarts the whole
+    // bootstrap from scratch, so a retry budget that only just fits under it
+    // is worse than no retries at all on a merely-slow connection.
     for (let i = 0; i < attempts; i++) {
-      try {
-        // Bounded: a request that never settles would otherwise hold the portal
-        // on its spinner forever, which is the failure the 8s failsafe below
-        // was there to prevent before this gate learned to wait.
-        if (await withTimeout(loadProvider(userId), 6000)) {
-          setProviderResolved(true);
-          setProviderError(false);
-          return true;
-        }
-      } catch (err) {
-        console.warn('[auth] provider lookup failed', err);
+      const controller = new AbortController();
+      if (await withTimeout(loadProvider(userId, controller.signal), 4500, controller)) {
+        setProviderResolved(true);
+        setProviderError(false);
+        return true;
       }
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
     }
     setProviderError(true);
     return false;
