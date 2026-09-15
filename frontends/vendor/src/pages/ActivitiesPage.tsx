@@ -758,50 +758,82 @@ export default function ActivitiesPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Only a server-authored message is fit to show a vendor; anything else is
+  // this page's own bug and its text is browser jargon. Same fallback rule
+  // SettingsPage's describeWixError uses.
+  function describeSyncError(e: unknown, fallback: string): string {
+    if (e instanceof ApiError) return e.message || fallback;
+    console.error('[wix sync] unexpected error', e);
+    return `${fallback}. If this keeps happening, contact support.`;
+  }
+
   async function syncServices() {
     if (!provider) return;
     setSyncing(true);
     setSyncError(null);
     setSyncNotice(null);
-    try {
-      const [servicesRes, eventsRes] = await Promise.all([
-        apiPost<{ sync?: Partial<{ created: number; updated: number; removed: number; revived: number }> }>(
-          '/api/vendor/wix-services-sync',
-          { provider_id: provider.id }
-        ),
-        apiPost<{ sync?: Partial<{ created: number; updated: number; removed: number; revived: number }> }>(
-          '/api/vendor/wix-events-sync',
-          { provider_id: provider.id }
-        ),
-      ]);
-      // Every count is read defensively. Adding them straight off the
-      // response threw "Cannot read properties of undefined (reading
-      // 'created')" at a vendor when a sync came back 2xx without its `sync`
-      // field — and by then the sync had already run, so the only thing that
-      // actually failed was the sentence describing it. Same guard as
-      // summarizeSync in SettingsPage.
-      const tally = (field: 'created' | 'updated' | 'revived' | 'removed') =>
-        (servicesRes?.sync?.[field] ?? 0) + (eventsRes?.sync?.[field] ?? 0);
-      const parts = [];
-      if (tally('created')) parts.push(`${tally('created')} new`);
-      if (tally('updated')) parts.push(`${tally('updated')} updated`);
-      if (tally('revived')) parts.push(`${tally('revived')} restored`);
-      if (tally('removed')) parts.push(`${tally('removed')} removed`);
-      setSyncNotice(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
-      await load();
-    } catch (e) {
-      // Only a server-authored message is fit to show a vendor; anything else
-      // is this page's own bug and its text is browser jargon.
-      if (e instanceof ApiError) {
-        setSyncError(e.message || 'Could not sync services');
-      } else {
-        console.error('[wix sync] unexpected error', e);
-        setSyncError('Could not sync services. If this keeps happening, contact support.');
+    type SyncResult = { sync?: Partial<{
+      created: number; updated: number; removed: number; revived: number;
+      skipped: { name: string; reason: string }[];
+    }> };
+    // Both calls fire together (unlike Settings, which runs them one after
+    // the other) — they're independent Wix apps, so there's no reason to
+    // make a vendor wait twice. allSettled instead of Promise.all so one
+    // call's failure can't swallow the other's — a vendor who imports only
+    // Bookings services has no Events app installed at all (a real, common
+    // case: the connected key's account has no Events & Tickets), and
+    // that alone used to blank out a services sync that had already landed
+    // and never refreshed the list.
+    const [servicesOutcome, eventsOutcome] = await Promise.allSettled([
+      apiPost<SyncResult>('/api/vendor/wix-services-sync', { provider_id: provider.id }),
+      apiPost<SyncResult>('/api/vendor/wix-events-sync', { provider_id: provider.id }),
+    ]);
+
+    // Every count is read defensively. Adding them straight off the response
+    // threw "Cannot read properties of undefined (reading 'created')" at a
+    // vendor when a sync came back 2xx without its `sync` field — and by then
+    // the sync had already run, so the only thing that actually failed was
+    // the sentence describing it. Same guard as summarizeSync in
+    // SettingsPage.
+    const servicesSync = servicesOutcome.status === 'fulfilled' ? servicesOutcome.value?.sync : undefined;
+    const eventsSync = eventsOutcome.status === 'fulfilled' ? eventsOutcome.value?.sync : undefined;
+    const tally = (field: 'created' | 'updated' | 'revived' | 'removed') =>
+      (servicesSync?.[field] ?? 0) + (eventsSync?.[field] ?? 0);
+    const parts = [];
+    if (tally('created')) parts.push(`${tally('created')} new`);
+    if (tally('updated')) parts.push(`${tally('updated')} updated`);
+    if (tally('revived')) parts.push(`${tally('revived')} restored`);
+    if (tally('removed')) parts.push(`${tally('removed')} removed`);
+
+    const lines: string[] = [];
+    if (servicesOutcome.status === 'fulfilled' || eventsOutcome.status === 'fulfilled') {
+      lines.push(`Synced from Wix: ${parts.length ? parts.join(', ') : 'nothing new'}.`);
+      // Surfaces *why* a Wix service didn't come through (unsupported type,
+      // no bookable staff, …) — dropped silently before this, even though
+      // the sync response always carried it (SettingsPage's summarizeSync
+      // has shown this same list all along).
+      const skipped = servicesSync?.skipped ?? [];
+      if (skipped.length) {
+        lines.push(`${skipped.length} skipped — ${skipped.map((s) => `"${s.name}" (${s.reason})`).join('; ')}.`);
       }
-    } finally {
-      setSyncing(false);
-      window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);
     }
+    if (servicesOutcome.status === 'rejected') {
+      lines.push(`Services couldn't be synced — ${describeSyncError(servicesOutcome.reason, 'please try again')}`);
+    }
+    if (eventsOutcome.status === 'rejected') {
+      lines.push(`Events couldn't be synced — ${describeSyncError(eventsOutcome.reason, 'please try again')}`);
+    }
+
+    if (servicesOutcome.status === 'rejected' && eventsOutcome.status === 'rejected') {
+      setSyncError(lines.join(' '));
+    } else {
+      setSyncNotice(lines.join(' '));
+      // At least one side actually wrote something — reflect it, same as the
+      // all-succeeded path always did.
+      await load();
+    }
+    setSyncing(false);
+    window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);
   }
 
   // Activities removed from the Wix import picker stay around (unpublished)
