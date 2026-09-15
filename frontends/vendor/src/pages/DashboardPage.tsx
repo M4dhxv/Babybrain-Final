@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
+import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { DashboardSkeleton, RefreshBar } from '@/components/Skeletons';
 import type { ProviderOverview } from '@/lib/database.types';
 import {
@@ -130,7 +131,7 @@ export default function DashboardPage() {
       const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
       const { data: sess } = await supabase
         .from('activity_sessions')
-        .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity')
+        .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
         .in('activity_id', ids)
         .gte('starts_at', nowIso)
         .lte('starts_at', in90dIso)
@@ -144,24 +145,21 @@ export default function DashboardPage() {
           .select('session_id, status')
           .in('session_id', sessIds);
         (bks ?? []).forEach((b) => {
-          if (b.status === 'confirmed' || b.status === 'completed') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+          if (isHeldBookingStatus(b.status)) counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
       const upcoming: UpcomingSession[] = (sess ?? []).map((s) => {
         const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
-        const booked = counts[s.id] ?? 0;
-        // A Wix class's capacity mirrors Wix and can't be raised from here
-        // (00108) — held seats past it are BabyBrain's promoted-paid overflow.
-        // Uses the higher of Wix's own filled figure and our confirmed rows;
-        // the waitlist never feeds `counts` above.
-        const wixFilled =
-          s.wix_remaining_capacity != null && s.capacity != null
-            ? Math.max(0, s.capacity - s.wix_remaining_capacity)
-            : 0;
-        const overflow =
-          wixTypeOf.get(s.activity_id) === 'CLASS' && s.capacity != null
-            ? Math.max(0, Math.max(booked, wixFilled) - s.capacity)
-            : 0;
+        // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
+        // figure and our held local rows, so a Wix class booked directly on
+        // Wix's own site doesn't read as emptier than it really is.
+        const { booked, overflow } = computeWixAwareCapacity({
+          wixSlotKey: s.wix_slot_key,
+          wixRemainingCapacity: s.wix_remaining_capacity,
+          capacity: s.capacity,
+          wixServiceType: wixTypeOf.get(s.activity_id),
+          localHeldCount: counts[s.id] ?? 0,
+        });
         return {
           id: s.id, when: s.starts_at, name: titleOf.get(s.activity_id) ?? 'Activity',
           booked, capacity: s.capacity,

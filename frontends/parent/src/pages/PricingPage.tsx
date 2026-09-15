@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { apiPost } from "../lib/api";
 import { goTo, getParam } from "../lib/nav";
 import { usePlan } from "../lib/data";
+import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
 export default function PricingPage() {
   const { session } = useAuth();
@@ -50,31 +51,10 @@ export default function PricingPage() {
     }
   }
 
-  /* These two lists are the tier spec, so they have to describe what the app
-   * actually gates. Previously Free advertised "See messages from parents and
-   * class providers on booked classes" while ChatButton is gated on isPlus —
-   * i.e. it promised Free users something they could not do. Messaging is
-   * stated as Plus here, matching the code.
-   *
-   * The saved family profile and preference-based suggestions are Free: the
-   * children tab and the recommendations that feed Matches are ungated. What
-   * is Plus is everything behind a plusOnly tab or an isPlus check —
-   * favourites, packages, make-up tokens, calendar export and messaging. */
-  const freeItems = [
-    "Browse & book activities",
-    "Leave reviews",
-    "Saved family profile",
-    "Suggestions provided based on your preferences",
-  ];
-  const plusItems = [
-    "Everything in Free",
-    "Twice weekly e-mails with available activities curated for your little ones",
-    "Packages & make-up tokens for all vendors stored in one place",
-    "Save favourite providers",
-    "Export & share booked activities in calendar view",
-    "For integrated activity providers, message them & other parents booked on the same activity",
-    "Priority support",
-  ];
+  // Tier spec lives in lib/planFeatures.ts — shared with OnboardingPage's
+  // sign-up plan step so the two can't drift the way they used to.
+  const freeItems = FREE_PLAN_ITEMS;
+  const plusItems = PLUS_PLAN_ITEMS;
   const plusPrice = billing === "monthly" ? "9" : "99";
   const plusPeriod = billing === "monthly" ? "/mo" : "/yr";
 

@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
+import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import DayDetailDialog, { type OriginRect } from '@/components/DayDetailDialog';
@@ -146,10 +147,11 @@ export default function SchedulePage() {
         .lte('starts_at', rangeEnd.toISOString())
         .order('starts_at');
       const rows = sess ?? [];
-      // Held seats only — confirmed / completed / pending. Waitlisted rows
-      // (incl. a promoted-but-unpaid booking, which stays 'waitlisted' until
-      // Stripe confirms) are NOT counted, so the cell reads the same n/n as
-      // the Dashboard and Bookings page rather than an inflated n+queue/n.
+      // Held seats only — confirmed / completed / pending (see
+      // lib/wixCapacity.ts). Waitlisted rows (incl. a promoted-but-unpaid
+      // booking, which stays 'waitlisted' until Stripe confirms) are NOT
+      // counted, so the cell reads the same n/n as the Dashboard and
+      // Bookings page rather than an inflated n+queue/n.
       const counts: Record<string, number> = {};
       if (rows.length) {
         const { data: bks } = await supabase
@@ -157,9 +159,7 @@ export default function SchedulePage() {
           .select('session_id, status')
           .in('session_id', rows.map((s) => s.id));
         (bks ?? []).forEach((b) => {
-          if (b.status === 'confirmed' || b.status === 'completed' || b.status === 'pending') {
-            counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
-          }
+          if (isHeldBookingStatus(b.status)) counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
       setSessions(
@@ -167,27 +167,20 @@ export default function SchedulePage() {
           const act = activityMap.get(s.activity_id);
           const locId = s.location_id ?? act?.location_id ?? null;
           const fromWix = !!s.wix_slot_key;
-          // A Wix-sourced slot can be booked directly on Wix's own site, so
-          // our local `bookings` count alone would under-report it — Wix's
-          // remaining-capacity figure (kept fresh by the sync above) catches
-          // that case. But the reverse also happens: Wix's own availability
-          // endpoint has been observed to lag behind a booking that was just
-          // created through Wix's own booking API (confirmed, real, but not
-          // yet reflected in remainingCapacity) — trusting it exclusively
-          // then hides a real BabyBrain-made booking. Taking the higher of
-          // the two numbers covers both directions instead of picking one.
-          const wixDerived =
-            fromWix && s.wix_remaining_capacity != null && s.capacity != null
-              ? Math.max(0, s.capacity - s.wix_remaining_capacity)
-              : 0;
-          const booked = Math.max(wixDerived, counts[s.id] ?? 0);
-          // For a Wix class, capacity mirrors Wix and can't be raised from
-          // here (00108) — held seats past it are BabyBrain's promoted-paid
-          // overflow. `booked` already excludes the waitlist.
-          const wixClassOverflow =
-            act?.wix_service_type === 'CLASS' && s.capacity != null
-              ? Math.max(0, booked - s.capacity)
-              : 0;
+          // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
+          // figure and our held local rows — a Wix-sourced slot can be
+          // booked directly on Wix's own site, so the local count alone
+          // would under-report it; the reverse also happens (Wix's own
+          // availability endpoint has been observed to lag a booking just
+          // made through BabyBrain), so this always takes the higher number
+          // rather than trusting either side exclusively.
+          const { booked, overflow: wixClassOverflow } = computeWixAwareCapacity({
+            wixSlotKey: s.wix_slot_key,
+            wixRemainingCapacity: s.wix_remaining_capacity,
+            capacity: s.capacity,
+            wixServiceType: act?.wix_service_type,
+            localHeldCount: counts[s.id] ?? 0,
+          });
           return {
             id: s.id,
             activity_id: s.activity_id,

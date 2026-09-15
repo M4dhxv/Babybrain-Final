@@ -12,6 +12,7 @@ import {
   postcodeError,
 } from "../lib/validation";
 import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
+import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
 type ChildDraft = { key: number; name: string; dob: string; gender: string; interests: string[] };
 
@@ -22,24 +23,6 @@ const newChildDraft = (): ChildDraft => ({
   gender: "unspecified",
   interests: [],
 });
-
-/* Plan feature lists for the sign-up plan step — kept in step with the same
-   two lists on PricingPage.tsx (the tier spec the app actually gates on). */
-const FREE_PLAN_ITEMS = [
-  "Browse & book activities",
-  "Leave reviews",
-  "Saved family profile",
-  "Suggestions based on your preferences",
-];
-const PLUS_PLAN_ITEMS = [
-  "Everything in Free",
-  "Twice-weekly emails with activities curated for your little ones",
-  "Packages & make-up tokens for all vendors in one place",
-  "Save favourite providers",
-  "Export & share booked activities to your calendar",
-  "Message integrated providers & other parents on your classes",
-  "Priority support",
-];
 
 /** One child's fields inside the sign-up form (repeated per child). */
 function ChildDraftFields({

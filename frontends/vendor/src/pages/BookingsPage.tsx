@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet, apiPost } from '@/lib/api';
+import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -94,6 +95,9 @@ type SessionOpt = {
   // Wix's own last-known remaining count for a Wix slot — lets the Wix-class
   // capacity readout show Wix's real filled figure, not just our local rows.
   wix_remaining_capacity: number | null;
+  // Only trust wix_remaining_capacity above when the slot is actually
+  // Wix-materialized (see lib/wixCapacity.ts) — null for a site-native session.
+  wix_slot_key: string | null;
 };
 
 // A booking made directly on the vendor's own Wix site rather than through
@@ -392,14 +396,14 @@ export default function BookingsPage() {
         ids.flatMap((id) => [
           supabase
             .from('activity_sessions')
-            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key')
             .eq('activity_id', id)
             .gte('starts_at', dayStartIso)
             .order('starts_at', { ascending: true })
             .limit(perActivityCap),
           supabase
             .from('activity_sessions')
-            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity')
+            .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key')
             .eq('activity_id', id)
             .gte('starts_at', pastStartIso)
             .lt('starts_at', dayStartIso)
@@ -415,6 +419,7 @@ export default function BookingsPage() {
       const opts = sess.map((s) => ({
         id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity',
         teacher_name: s.teacher_name, studio: s.studio, wix_remaining_capacity: s.wix_remaining_capacity,
+        wix_slot_key: s.wix_slot_key,
       }));
       setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
       setSessions(opts);
@@ -516,6 +521,10 @@ export default function BookingsPage() {
      the same Singapore day boundary the picker does, so "past" means an
      earlier day rather than merely an earlier hour of today. */
   const currentSessionIsPast = !!currentSession && currentSession.starts_at < startTodayIso;
+  // Confirmed/completed only — this is the attendance-taking roster (present/
+  // absent, the visible list of names), not a capacity count: a 'pending'
+  // booking (payment still in flight) has nothing to take attendance against
+  // yet, even though it already holds a real seat (see wixHeld below).
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
   /* QA 04/09: "Under bookings, when there is a waitlist and you click on that
@@ -526,22 +535,23 @@ export default function BookingsPage() {
   const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
-  // A Wix class's capacity mirrors Wix and can't be written back (00108), so a
-  // promoted + paid waitlist seat is carried *over* that number rather than
-  // inflating it. The Wix side is shown as "held/n on Wix"; paid seats past n
-  // are "+x on BabyBrain". Held count = the higher of Wix's own filled figure
-  // and our confirmed rows; the waitlist (incl. promoted-but-unpaid) never
-  // counts here — those stay in the Waitlist (N) until payment clears.
+  // The capacity readout (unlike `booked` above) has to count every held
+  // seat, including 'pending' — see lib/wixCapacity.ts, which this and
+  // Dashboard/Schedule all now share. The Wix side is shown as "held/n on
+  // Wix"; paid seats past n are "+x on BabyBrain". The waitlist (incl.
+  // promoted-but-unpaid) never counts here — those stay in the Waitlist (N)
+  // until payment clears.
   const currentSessionIsWixClass = activityWixType[sessionActivity[sessionId]] === 'CLASS';
   const wixCap = currentSession?.capacity ?? null;
-  const wixFilled =
-    currentSession?.wix_remaining_capacity != null && wixCap != null
-      ? Math.max(0, wixCap - currentSession.wix_remaining_capacity)
-      : 0;
-  const wixHeld = Math.max(booked.length, wixFilled);
+  const heldCount = useMemo(() => roster.filter((r) => isHeldBookingStatus(r.status)).length, [roster]);
+  const { booked: wixHeld, overflow: wixClassOverflow } = computeWixAwareCapacity({
+    wixSlotKey: currentSession?.wix_slot_key,
+    wixRemainingCapacity: currentSession?.wix_remaining_capacity,
+    capacity: wixCap,
+    wixServiceType: currentSessionIsWixClass ? 'CLASS' : null,
+    localHeldCount: heldCount,
+  });
   const wixClassOnWix = currentSessionIsWixClass && wixCap != null ? Math.min(wixHeld, wixCap) : 0;
-  const wixClassOverflow =
-    currentSessionIsWixClass && wixCap != null ? Math.max(0, wixHeld - wixCap) : 0;
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   async function promote(bookingId: string) {
