@@ -416,7 +416,18 @@ export default function SchedulePage() {
         {!busy && activities.length > 0 && view === 'month' && (
           <div className="overflow-x-auto">
             <div className="grid min-w-[760px] grid-cols-7 gap-px overflow-hidden rounded-t-xl border border-b-0 border-gray-200 bg-gray-200">
-              {weekDays.map((d) => (
+              {/* The grid below is Monday-first (monthDays, from
+                  startOfWeek(..., WEEK_OPTS)) — this header used to reuse
+                  `weekDays`, the WEEK view's own *rolling 7-day-from-cursor*
+                  window, which only happens to line up with the grid when
+                  `cursor` itself is a Monday. Any other cursor shifted every
+                  column's label by however many days off Monday it was (e.g.
+                  cursor on a Tuesday labelled the Monday column "Tue"), so a
+                  date's weekday looked wrong even though the underlying
+                  schedule data was correct. Deriving the header from the same
+                  `monthDays` array the cells use guarantees they can't drift
+                  apart. */}
+              {monthDays.slice(0, 7).map((d) => (
                 <div key={d.toISOString()} className="bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500">
                   {format(d, 'EEE')}
                 </div>
