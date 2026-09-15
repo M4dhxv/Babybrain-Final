@@ -10,6 +10,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
 import { goTo, useLocation } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
+import { FALLBACK_LOGO_URL } from "../lib/activityMedia";
 
 /** Requests a resized rendition from Wix's own CDN (documented `/v1/fill/`
  *  URL transform) instead of the full original upload — a card renders at a
@@ -782,7 +783,11 @@ export const ActivityCard = memo(function ActivityCard({
           height={108}
           loading="lazy"
           decoding="async"
-          className="h-full w-full object-cover"
+          className={
+            activity.image === FALLBACK_LOGO_URL
+              ? "h-full w-full bg-[#F3EDF0] object-contain p-4"
+              : "h-full w-full object-cover"
+          }
         />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">
           {activity.category}
@@ -867,7 +872,19 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
   return (
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
-        <img src={wixThumbUrl(activity.image, 440, 352)} alt="" width={220} height={176} loading="lazy" decoding="async" className="h-44 w-full object-cover sm:h-full sm:min-h-[100px]" />
+        <img
+          src={wixThumbUrl(activity.image, 440, 352)}
+          alt=""
+          width={220}
+          height={176}
+          loading="lazy"
+          decoding="async"
+          className={
+            activity.image === FALLBACK_LOGO_URL
+              ? "h-44 w-full bg-[#F3EDF0] object-contain p-6 sm:h-full sm:min-h-[100px]"
+              : "h-44 w-full object-cover sm:h-full sm:min-h-[100px]"
+          }
+        />
         <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">
           {activity.category}
         </span>

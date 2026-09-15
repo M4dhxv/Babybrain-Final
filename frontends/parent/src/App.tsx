@@ -33,7 +33,7 @@ import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands } from "./lib/schedule";
-import { resolveActivityImages } from "./lib/activityMedia";
+import { resolveActivityImages, FALLBACK_LOGO_URL } from "./lib/activityMedia";
 import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
@@ -1267,7 +1267,7 @@ function ActivityDetailPage() {
     { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
     activity.provider_contact
   );
-  const images = providerImages.length ? providerImages : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
+  const images = providerImages.length ? providerImages : [FALLBACK_LOGO_URL];
   // Wix Events and Wix COURSEs have no BabyBrain waitlist (00107): a sold-out
   // event / a course with no dates left shows a disabled "Sold out" CTA
   // instead of sending the parent into a booking flow that can't complete.
@@ -1376,7 +1376,11 @@ function ActivityDetailPage() {
                     decoding="async"
                     fetchPriority={i === 0 ? "high" : "low"}
                     loading={i === 0 ? "eager" : "lazy"}
-                    className="h-[305px] w-full shrink-0 object-cover"
+                    className={
+                      url === FALLBACK_LOGO_URL
+                        ? "h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12"
+                        : "h-[305px] w-full shrink-0 object-cover"
+                    }
                   />
                 ))}
               </div>

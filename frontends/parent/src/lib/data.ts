@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
 import { cacheGet, cacheSet, cacheInvalidate } from "./queryCache";
 import { goTo } from "./nav";
-import { resolveActivityImage } from "./activityMedia";
+import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
 import {
   formatAgeRange,
   type Activity as ActivityRow,
@@ -656,7 +656,7 @@ export function toCard(
       resolveActivityImage(
         { image_urls: a.image_urls, image_source: a.image_source, cover_image_url: a.cover_image_url },
         a.providers ?? null
-      ) ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
+      ) ?? FALLBACK_LOGO_URL,
     age: formatAgeRange(a.age_min_months, a.age_max_months),
     // An activity with no address of its own inherits its provider's, same as
     // search_activities' coalesce(a.address, p.address) on Explore.

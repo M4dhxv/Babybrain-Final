@@ -8,6 +8,13 @@
 
 export type ImageSource = "profile" | "custom";
 
+/** Last-resort image when neither the activity nor its provider has any
+ *  photo at all (no activity upload, no profile picture, no catalogue) —
+ *  the brand mark itself rather than a generic stock crop. Exported so
+ *  callers can also detect it, e.g. to render it `object-contain` instead
+ *  of `object-cover` (a real photo crops fine; a logo shouldn't be cropped). */
+export const FALLBACK_LOGO_URL = `${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`;
+
 export interface ActivityMediaInput {
   image_urls: string[] | null | undefined;
   image_source?: ImageSource | string | null;

@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 import { cacheGet, cacheSet } from "./queryCache";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
-import { resolveActivityImage } from "./activityMedia";
+import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
 
 /** One physical venue a listing runs at. Multi-venue businesses (Kindermusik,
  *  Lucy Sparkles, My Gym…) keep several, and every one gets a map pin. */
@@ -115,7 +115,7 @@ function toLiveActivity(
       resolveActivityImage(
         { image_urls: r.image_urls, image_source: r.image_source, cover_image_url: r.cover_image_url },
         { logo_url: r.provider_logo_url, cover_image_url: r.provider_cover_image_url, gallery_urls: r.provider_gallery_urls }
-      ) ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
+      ) ?? FALLBACK_LOGO_URL,
     age: formatAgeRange(r.age_min_months, r.age_max_months),
     venue: r.address ? r.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
     date: sgDate(r.next_session_at),
