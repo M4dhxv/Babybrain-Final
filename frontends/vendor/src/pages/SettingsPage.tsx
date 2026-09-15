@@ -113,7 +113,7 @@ const emptyProfileForm = {
   business_name: '', vendor_category: '' as VendorCategory | '', description: '',
   logo_url: '', cover_image_url: '', contact_phone: '', contact_email: '', whatsapp: '', website: '',
   address: '', postal_code: '', uen: '',
-  gallery_urls: [] as string[], video_urls: [] as string[],
+  gallery_urls: [] as string[],
 };
 
 export default function SettingsPage() {
@@ -158,7 +158,6 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
-  const [videoInput, setVideoInput] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
@@ -205,7 +204,6 @@ export default function SettingsPage() {
       postal_code: provider.postal_code ?? '',
       uen: provider.uen ?? '',
       gallery_urls: provider.gallery_urls ?? [],
-      video_urls: provider.video_urls ?? [],
     });
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
       .then(({ data }) => setTeam((data as Member[]) ?? []));
@@ -258,23 +256,6 @@ export default function SettingsPage() {
     if (urls.length) setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, ...urls].slice(0, GALLERY_MAX) }));
   }
 
-  /* Accepts a YouTube/Vimeo/direct link. Validated as a URL so a typo doesn't
-     end up rendered as a broken embed on the public profile. */
-  function addVideo() {
-    const raw = videoInput.trim();
-    if (!raw) return;
-    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-    try {
-      new URL(withScheme);
-    } catch {
-      setProfileError('That video link doesn\'t look like a URL.');
-      return;
-    }
-    setProfileError(null);
-    setForm((f) => ({ ...f, video_urls: [...f.video_urls, withScheme].slice(0, 12) }));
-    setVideoInput('');
-  }
-
   async function saveProfile() {
     if (!provider) return;
     setSaving(true);
@@ -292,7 +273,6 @@ export default function SettingsPage() {
       logo_url: form.logo_url || null,
       cover_image_url: form.cover_image_url || null,
       gallery_urls: form.gallery_urls,
-      video_urls: form.video_urls,
       contact_phone: form.contact_phone || null,
       contact_email: form.contact_email || null,
       whatsapp: form.whatsapp || null,
@@ -331,7 +311,6 @@ export default function SettingsPage() {
         postal_code: provider.postal_code ?? '',
         uen: provider.uen ?? '',
         gallery_urls: provider.gallery_urls ?? [],
-        video_urls: provider.video_urls ?? [],
       });
     }
     setProfileError(null);
@@ -553,11 +532,11 @@ export default function SettingsPage() {
                     <input className={inputCls} value={form.uen} onChange={(e) => setForm({ ...form, uen: e.target.value })} />
                   </div>
                 </div>
-                {/* Photos & videos (QA 21/08). The logo above is the display
-                    photo; everything here is the rest of the public profile. */}
+                {/* Photos (QA 21/08). The logo above is the display photo;
+                    everything here is the rest of the public profile. */}
                 <div className="space-y-4 border-t border-gray-100 pt-4">
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-900">Photos &amp; videos</h4>
+                    <h4 className="text-sm font-semibold text-gray-900">Photos</h4>
                     {/* No separate "cover photo" — your logo above already is the
                         default photo shown wherever one's needed (e.g. a class
                         with none of its own); catalogue photos follow it. One
@@ -595,39 +574,6 @@ export default function SettingsPage() {
                     ) : (
                       <p className="text-xs text-gray-400">Up to {GALLERY_MAX} photos — remove one to add another.</p>
                     )}
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Videos ({form.video_urls.length})</label>
-                    {form.video_urls.length > 0 && (
-                      <ul className="mb-2 space-y-1.5">
-                        {form.video_urls.map((url, i) => (
-                          <li key={`${url}-${i}`} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
-                            <span className="min-w-0 flex-1 truncate text-xs text-gray-700">{url}</span>
-                            <button
-                              type="button"
-                              aria-label="Remove video"
-                              onClick={() => setForm({ ...form, video_urls: form.video_urls.filter((_, j) => j !== i) })}
-                              className="text-xs font-medium text-red-600 hover:underline"
-                            >
-                              Remove
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <input
-                        className={inputCls}
-                        placeholder="Paste a YouTube, Vimeo or video link"
-                        value={videoInput}
-                        onChange={(e) => setVideoInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVideo(); } }}
-                      />
-                      <Button type="button" variant="outline" onClick={addVideo} className="shrink-0 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">
-                        Add
-                      </Button>
-                    </div>
                   </div>
                 </div>
 
