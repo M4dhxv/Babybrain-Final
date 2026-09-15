@@ -898,17 +898,10 @@ export default function ActivitiesPage() {
     return `${import.meta.env.BASE_URL}assets/${img}`;
   };
 
-  /** The provider's real photos — cover + gallery — with the logo/avatar
-   *  excluded whenever either exists. A logo is branding, not a photo of the
-   *  activity, so stacking it next to a real cover photo made it look like a
-   *  mismatched extra shot in the gallery. Falls back to the logo alone only
-   *  when the provider has no cover or gallery photos at all. */
-  const providerPhotoPool = (): string[] => {
-    const photos = [provider?.cover_image_url, ...(provider?.gallery_urls ?? [])].filter(
-      (u): u is string => !!u
-    );
-    return photos.length > 0 ? photos : provider?.logo_url ? [provider.logo_url] : [];
-  };
+  /** Logo first (the default cover), then the catalogue. The dedicated
+   *  Cover photo field (Settings) is deliberately not part of this. */
+  const providerPhotoPool = (): string[] =>
+    [provider?.logo_url, ...(provider?.gallery_urls ?? [])].filter((u): u is string => !!u);
 
   /** What a parent actually sees for this activity (00130) — its own cover
    *  photo when set to 'custom' with real uploads, else the provider's own
@@ -1045,8 +1038,7 @@ export default function ActivitiesPage() {
   }
 
   /** Every image the "use my profile photos" mode's cover picker offers —
-   *  see providerPhotoPool: real cover/gallery photos when there are any,
-   *  the logo alone only as a last resort. */
+   *  see providerPhotoPool: the logo first, then the catalogue. */
   const profileImages = providerPhotoPool();
 
   async function saveActivity() {

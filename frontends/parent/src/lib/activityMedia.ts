@@ -1,9 +1,9 @@
 /**
  * Where an activity's parent-facing photos come from — its own uploads, or
- * (default, and whenever it has none of its own) the provider's profile
- * photo/cover/gallery. One resolver shared by the Explore/search cards and
- * the activity detail page so the two can never disagree about which image
- * a listing shows.
+ * (default, and whenever it has none of its own) the provider's own profile
+ * picture (as the default cover) followed by their catalogue. One resolver
+ * shared by the Explore/search cards and the activity detail page so the
+ * two can never disagree about which image a listing shows.
  */
 
 export type ImageSource = "profile" | "custom";
@@ -53,21 +53,14 @@ export function resolveActivityImages(
 }
 
 /**
- * The provider's real photos — cover + gallery — with the logo/avatar
- * excluded whenever either of those exists. A logo is branding (a small
- * square mark meant to identify the business, e.g. next to its name), not a
- * photo of the activity itself; concatenating it onto a real cover photo put
- * it side-by-side in the gallery as if it were an equally-valid second shot
- * of the class, which looked exactly like what it is — a mismatched logo
- * stuck in a photo gallery. Only used as a single last-resort image when the
- * provider has genuinely nothing else at all — better than no image.
+ * The provider's photos in display order: their profile picture (logo_url)
+ * leads as the default cover, then the catalogue (gallery_urls). The
+ * dedicated cover_image_url field (Settings' separate "Cover photo" upload)
+ * is deliberately not part of this — the vendor's own instruction was
+ * "logo as cover, then catalogue," full stop.
  */
 function providerPhotoPool(provider: ProviderMediaInput | null | undefined): string[] {
-  const photos = [provider?.cover_image_url, ...(provider?.gallery_urls ?? [])].filter(
-    (u): u is string => !!u
-  );
-  if (photos.length > 0) return photos;
-  return provider?.logo_url ? [provider.logo_url] : [];
+  return [provider?.logo_url, ...(provider?.gallery_urls ?? [])].filter((u): u is string => !!u);
 }
 
 function orderWithCover(images: string[], cover: string | null | undefined): string[] {

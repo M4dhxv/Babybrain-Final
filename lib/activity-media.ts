@@ -1,9 +1,10 @@
 /**
  * Where an activity's parent-facing photos come from — its own uploads, or
- * (default, and whenever it has none of its own) the provider's profile
- * photo/cover/gallery. Mirrors frontends/parent/src/lib/activityMedia.ts —
- * kept as a small duplicate rather than a shared import since this Next.js
- * app and the Vite parent SPA are separate builds with no shared lib layer.
+ * (default, and whenever it has none of its own) the provider's own profile
+ * picture (as the default cover) followed by their catalogue. Mirrors
+ * frontends/parent/src/lib/activityMedia.ts — kept as a small duplicate
+ * rather than a shared import since this Next.js app and the Vite parent
+ * SPA are separate builds with no shared lib layer.
  */
 
 export interface ActivityMediaInput {
@@ -37,16 +38,10 @@ export function resolveActivityImages(
   return ownImages;
 }
 
-/** The provider's real photos (cover + gallery), logo excluded whenever
- *  either exists — see frontends/parent/src/lib/activityMedia.ts's doc
- *  comment. Logo only as a last-resort single image when there's nothing
- *  else. */
+/** Logo first (the default cover), then the catalogue. The dedicated
+ *  cover_image_url field is deliberately not part of this. */
 function providerPhotoPool(provider: ProviderMediaInput | null | undefined): string[] {
-  const photos = [provider?.cover_image_url, ...(provider?.gallery_urls ?? [])].filter(
-    (u): u is string => !!u
-  );
-  if (photos.length > 0) return photos;
-  return provider?.logo_url ? [provider.logo_url] : [];
+  return [provider?.logo_url, ...(provider?.gallery_urls ?? [])].filter((u): u is string => !!u);
 }
 
 function orderWithCover(images: string[], cover: string | null | undefined): string[] {
