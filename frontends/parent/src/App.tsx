@@ -757,25 +757,27 @@ function ExplorePage() {
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EBE3E5] bg-white/95 backdrop-blur shadow-[0_-2px_10px_rgba(0,0,0,0.08)] sm:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {(
-            [
-              { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
-              { key: "age", label: "Age", icon: "user", active: ages.length > 0 },
-              { key: "area", label: "Area", icon: "pin", active: regions.length > 0 },
-              { key: "sort", label: "Sort & more", icon: "chart", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setMobileSheet(t.key)}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-bold ${t.active ? "text-baby-cta" : "text-[#4a5680]"}`}
-            >
-              <Icon name={t.icon} className="h-[19px] w-[19px]" />
-              {t.label}
-            </button>
-          ))}
+        <div className="fixed inset-x-0 bottom-0 z-30 px-3 sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+          <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F4EFF0] bg-white p-1.5 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
+            {(
+              [
+                { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
+                { key: "age", label: "Age", icon: "user", active: ages.length > 0 },
+                { key: "area", label: "Area", icon: "pin", active: regions.length > 0 },
+                { key: "sort", label: "Sort", icon: "chart", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setMobileSheet(t.key)}
+                className={`flex flex-1 flex-col items-center gap-0.5 rounded-full py-2.5 text-[10px] font-bold ${t.active ? "bg-[#FED7E4] text-baby-cta" : "text-[#4a5680]"}`}
+              >
+                <Icon name={t.icon} className="h-6 w-6" />
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {mobileSheet && (
