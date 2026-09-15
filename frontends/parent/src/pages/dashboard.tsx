@@ -3189,10 +3189,14 @@ export function BookingPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   type CreditPurchase = {
-    id: string; remaining: number; expires_at: string | null;
+    id: string; name: string; remaining: number; expires_at: string | null;
     activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null;
   };
   const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
+  // When 2+ purchases are simultaneously eligible for this session (e.g. a
+  // broad "any class" pack alongside an activity-restricted one), the parent
+  // picks which to spend from; null defers to the oldest eligible one.
+  const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>("single");
@@ -3294,7 +3298,7 @@ export function BookingPage() {
     if (!auth || !activity?.provider_id) return;
     supabase
       .from("package_purchases")
-      .select("id, credits_remaining, expires_at, packages(activity_ids, allowed_weekday, allowed_start_time)")
+      .select("id, credits_remaining, expires_at, packages(name, activity_ids, allowed_weekday, allowed_start_time)")
       .eq("provider_id", activity.provider_id)
       .eq("status", "active")
       .gt("credits_remaining", 0)
@@ -3302,13 +3306,14 @@ export function BookingPage() {
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as Array<{
           id: string; credits_remaining: number; expires_at: string | null;
-          packages: { activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
+          packages: { name: string; activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null } | null;
         }>;
         setPurchases(
           rows
             .filter((r) => !r.expires_at || new Date(r.expires_at) > new Date())
             .map((r) => ({
               id: r.id,
+              name: r.packages?.name ?? "Package",
               remaining: r.credits_remaining,
               expires_at: r.expires_at,
               activity_ids: r.packages?.activity_ids ?? null,
@@ -3335,7 +3340,11 @@ export function BookingPage() {
     }
     return true;
   }
-  const packageCredit = purchases.find((p) => creditMatches(p, selectedForCredit())) ?? null;
+  const matchingCredits = purchases.filter((p) => creditMatches(p, selectedForCredit()));
+  // Defaults to the oldest eligible purchase (first-in, first-spent) unless
+  // the parent has explicitly picked a different one below; a stale pick
+  // (no longer eligible after changing date/time) falls back the same way.
+  const packageCredit = matchingCredits.find((p) => p.id === selectedCreditId) ?? matchingCredits[0] ?? null;
   const restrictedCredit = !packageCredit && purchases.length > 0 ? purchases[0] : null;
   function selectedForCredit() {
     return sessions.find((s) => s.id === sessionId) ?? null;
@@ -4156,7 +4165,7 @@ export function BookingPage() {
                             title="Single class"
                             price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
                           />
-                          {packageCredit && (
+                          {packageCredit && matchingCredits.length === 1 && (
                             <PackageOption
                               selected={payWith === "credit"}
                               onSelect={() => setPayWith("credit")}
@@ -4168,6 +4177,23 @@ export function BookingPage() {
                               price="No charge"
                             />
                           )}
+                          {/* 2+ purchases apply to this session (e.g. a broad
+                              "any class" pack and an activity-restricted one)
+                              — let the parent choose which to spend instead
+                              of always silently taking the oldest. */}
+                          {matchingCredits.length > 1 && matchingCredits.map((p) => (
+                            <PackageOption
+                              key={p.id}
+                              selected={payWith === "credit" && packageCredit?.id === p.id}
+                              onSelect={() => { setSelectedCreditId(p.id); setPayWith("credit"); }}
+                              title={
+                                count > 1
+                                  ? `${p.name} — use ${count} credits (${p.remaining} left)`
+                                  : `${p.name} — use a credit (${p.remaining} left)`
+                              }
+                              price="No charge"
+                            />
+                          ))}
                           {packs.map((p) => (
                             <PackageOption
                               key={p.id}
