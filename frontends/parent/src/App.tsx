@@ -857,7 +857,7 @@ function ExplorePage() {
               <button
                 type="button"
                 onClick={() => setMobileSheet(null)}
-                className="mt-4 h-11 w-full rounded-[10px] bg-baby-pink text-sm font-black text-white"
+                className="mt-4 h-11 w-full rounded-[10px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-sm font-black text-white shadow-pink"
               >
                 Show {shown.length} results
               </button>
