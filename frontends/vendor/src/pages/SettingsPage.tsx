@@ -495,6 +495,24 @@ export default function SettingsPage() {
                   <ReadField icon={MapPin} label="Address" value={form.address} />
                   <ReadField icon={Hash} label="UEN" value={form.uen} />
                 </section>
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                    Catalogue {form.gallery_urls.length > 0 && `(${form.gallery_urls.length}/${GALLERY_MAX})`}
+                  </h4>
+                  {form.gallery_urls.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {form.gallery_urls.map((url, i) => (
+                        <div key={`${url}-${i}`} className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                          <img src={url} alt="" className="h-full w-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400">
+                      No catalogue photos yet — used as the default photos for any class that doesn&rsquo;t have its own.
+                    </p>
+                  )}
+                </section>
               </div>
             ) : (
               <div className="space-y-5">
