@@ -150,7 +150,13 @@ const MAX_SESSIONS_PER_ADD = 100;
 const emptyForm = {
   title: '', category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
-  location_id: '', default_capacity: '', image_url: '',
+  location_id: '', default_capacity: '',
+  // Images (00130): 'profile' (default) borrows the provider's own
+  // logo/cover/gallery; 'custom' uses this activity's own uploads. Either
+  // way cover_image_url is an explicit pick from whichever set is active.
+  image_source: 'profile' as 'profile' | 'custom',
+  image_urls: [] as string[],
+  cover_image_url: '',
   allow_cancellation: true, allow_rescheduling: true,
   cancellation_cutoff_hours: '24', reschedule_cutoff_hours: '24',
   cancellation_refund_mode: 'refund' as 'refund' | 'none',
@@ -892,6 +898,24 @@ export default function ActivitiesPage() {
     return `${import.meta.env.BASE_URL}assets/${img}`;
   };
 
+  /** What a parent actually sees for this activity (00130) — its own cover
+   *  photo when set to 'custom' with real uploads, else the provider's own
+   *  cover/logo/gallery, else the category placeholder above. Keeps this
+   *  list's thumbnails honest about which photo is really live. */
+  const resolveThumbnail = (a: Activity): string => {
+    const own = (a.image_urls ?? []).filter(Boolean);
+    if (a.image_source === 'custom' && own.length > 0) {
+      return a.cover_image_url && own.includes(a.cover_image_url) ? a.cover_image_url : own[0];
+    }
+    const fromProfile = [provider?.cover_image_url, provider?.logo_url, ...(provider?.gallery_urls ?? [])].filter(
+      (u): u is string => !!u
+    );
+    if (fromProfile.length > 0) {
+      return a.cover_image_url && fromProfile.includes(a.cover_image_url) ? a.cover_image_url : fromProfile[0];
+    }
+    return own[0] || fallbackImage(a);
+  };
+
   // Reads left to right as the life of an activity: live → still a draft →
   // actually on the calendar → the venues it all runs at.
   const stats = [
@@ -937,7 +961,9 @@ export default function ActivitiesPage() {
       price: a.price != null ? String(a.price) : '',
       location_id: a.location_id ?? '',
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
-      image_url: a.image_urls?.[0] ?? '',
+      image_source: (a.image_source === 'custom' ? 'custom' : 'profile') as 'profile' | 'custom',
+      image_urls: a.image_urls ?? [],
+      cover_image_url: a.cover_image_url ?? '',
       allow_cancellation: a.allow_cancellation ?? true,
       allow_rescheduling: a.allow_rescheduling ?? true,
       cancellation_cutoff_hours: String(a.cancellation_cutoff_hours ?? 24),
@@ -964,17 +990,55 @@ export default function ActivitiesPage() {
     if (error) load();
   }
 
-  async function uploadImage(file: File) {
-    if (!provider) return;
-    setUploading(true);
-    setFormError(null);
+  const ACTIVITY_IMAGES_MAX = 10;
+
+  async function uploadOneImage(file: File): Promise<string | null> {
+    if (!provider) return null;
     const path = `${provider.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
-    setUploading(false);
-    if (error) { setFormError(`Image upload failed: ${error.message}`); return; }
-    const { data } = supabase.storage.from('activity-images').getPublicUrl(path);
-    setForm((f) => ({ ...f, image_url: data.publicUrl }));
+    if (error) { setFormError(`Image upload failed: ${error.message}`); return null; }
+    return supabase.storage.from('activity-images').getPublicUrl(path).data.publicUrl;
   }
+
+  /** Appends up to however many of `files` still fit under the 10-image cap. */
+  async function uploadImages(files: FileList) {
+    const room = ACTIVITY_IMAGES_MAX - form.image_urls.length;
+    if (room <= 0) return;
+    const oversized = Array.from(files).some((f) => f.size > 5 * 1024 * 1024);
+    if (oversized) { setFormError('Each image must be under 5MB.'); return; }
+    setUploading(true);
+    setFormError(null);
+    const urls: string[] = [];
+    for (const file of Array.from(files).slice(0, room)) {
+      const url = await uploadOneImage(file);
+      if (url) urls.push(url);
+    }
+    setUploading(false);
+    if (urls.length) {
+      setForm((f) => ({
+        ...f,
+        image_urls: [...f.image_urls, ...urls].slice(0, ACTIVITY_IMAGES_MAX),
+        // First upload for this class becomes its cover by default — better
+        // than leaving the parent-facing hero blank until the vendor thinks
+        // to pick one.
+        cover_image_url: f.cover_image_url || urls[0],
+      }));
+    }
+  }
+
+  function removeActivityImage(url: string) {
+    setForm((f) => ({
+      ...f,
+      image_urls: f.image_urls.filter((u) => u !== url),
+      cover_image_url: f.cover_image_url === url ? '' : f.cover_image_url,
+    }));
+  }
+
+  /** Every image the vendor's own profile currently offers — logo, cover
+   *  photo, gallery — for the "use my profile photos" mode's cover picker. */
+  const profileImages = [
+    provider?.cover_image_url, provider?.logo_url, ...(provider?.gallery_urls ?? []),
+  ].filter((u): u is string => !!u);
 
   async function saveActivity() {
     if (!provider) return;
@@ -1028,7 +1092,12 @@ export default function ActivitiesPage() {
             latitude: loc?.latitude ?? null,
             longitude: loc?.longitude ?? null,
           }),
-      image_urls: form.image_url ? [form.image_url] : [],
+      // image_urls is kept regardless of the current toggle — switching back
+      // to "use my profile photos" shouldn't discard photos already
+      // uploaded for this class, only stop showing them.
+      image_urls: form.image_urls,
+      image_source: form.image_source,
+      cover_image_url: form.cover_image_url || null,
       // requires_medical_disclosure is owned by the provider-level rule under
       // Policy & consent management (migration 00117) — the drawer no longer
       // writes it, so editing a class here can't clear it.
@@ -1408,7 +1477,7 @@ export default function ActivitiesPage() {
                 className={cn(TABLE_COLS, 'px-5 py-4 border-t border-gray-100 items-center hover:bg-gray-50 transition-colors')}
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <img src={a.image_urls?.[0] || fallbackImage(a)} alt={a.title} className="w-12 h-12 flex-shrink-0 rounded-lg object-cover" />
+                  <img src={resolveThumbnail(a)} alt={a.title} className="w-12 h-12 flex-shrink-0 rounded-lg object-cover" />
                   <div className="min-w-0">
                     <div className="font-medium text-gray-900 text-sm break-words">{a.title}</div>
                     <div className="text-xs text-gray-500 break-words">{a.vendor_category ?? ''}</div>
@@ -1729,34 +1798,110 @@ export default function ActivitiesPage() {
               </>
             )}
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Activity image</label>
-              <label className={cn(
-                'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 px-4 py-6 cursor-pointer hover:border-pink-300 transition-colors',
-                uploading && 'opacity-60 pointer-events-none'
-              )}>
-                {form.image_url ? (
-                  <img src={form.image_url} alt="Activity" className="h-24 w-full rounded-lg object-cover" />
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Images</label>
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, image_source: 'profile' }))}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                    form.image_source === 'profile' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  Use my profile photos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, image_source: 'custom' }))}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                    form.image_source === 'custom' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  Upload for this class
+                </button>
+              </div>
+
+              {form.image_source === 'profile' ? (
+                profileImages.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="mb-1.5 text-xs text-gray-500">Parents will see your profile photos. Pick which one leads for this class:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {profileImages.map((url) => (
+                        <button
+                          key={url}
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, cover_image_url: url }))}
+                          className={cn(
+                            'relative h-16 w-16 shrink-0 overflow-hidden rounded-lg ring-2 ring-offset-1 transition',
+                            (form.cover_image_url || profileImages[0]) === url ? 'ring-[#FA4D8D]' : 'ring-transparent hover:ring-gray-300'
+                          )}
+                        >
+                          <img src={url} alt="" className="h-full w-full object-cover" />
+                          {(form.cover_image_url || profileImages[0]) === url && (
+                            <span className="absolute bottom-0.5 right-0.5 rounded-full bg-[#FA4D8D] px-1 py-0.5 text-[9px] font-bold leading-none text-white">Cover</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ) : (
-                  <>
-                    <ImageUp className="w-6 h-6 text-[#FA4D8D]" />
-                    <span className="text-sm font-medium text-[#FA4D8D]">{uploading ? 'Uploading…' : 'Upload image'}</span>
-                    <span className="text-xs text-gray-500">PNG, JPG up to 5MB</span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    if (f.size > 5 * 1024 * 1024) { setFormError('Image must be under 5MB.'); return; }
-                    uploadImage(f);
-                  }}
-                />
-              </label>
-              {form.image_url && (
-                <button onClick={() => setForm({ ...form, image_url: '' })} className="mt-1.5 text-xs text-gray-500 hover:text-red-600">Remove image</button>
+                  <p className="mt-2 text-xs text-gray-500">
+                    You haven&rsquo;t added any profile photos yet — add some under{' '}
+                    <a href="/vendor/#/settings" className="font-medium text-[#FA4D8D] hover:underline">Settings</a>, or switch to uploading photos just for this class.
+                  </p>
+                )
+              ) : (
+                <div className="mt-2">
+                  {form.image_urls.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {form.image_urls.map((url) => (
+                        <div key={url} className="relative h-16 w-16 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, cover_image_url: url }))}
+                            className={cn(
+                              'h-full w-full overflow-hidden rounded-lg ring-2 ring-offset-1 transition',
+                              (form.cover_image_url || form.image_urls[0]) === url ? 'ring-[#FA4D8D]' : 'ring-transparent hover:ring-gray-300'
+                            )}
+                          >
+                            <img src={url} alt="" className="h-full w-full object-cover" />
+                          </button>
+                          {(form.cover_image_url || form.image_urls[0]) === url && (
+                            <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded-full bg-[#FA4D8D] px-1 py-0.5 text-[9px] font-bold leading-none text-white">Cover</span>
+                          )}
+                          <button
+                            type="button"
+                            aria-label="Remove photo"
+                            onClick={() => removeActivityImage(url)}
+                            className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {form.image_urls.length < ACTIVITY_IMAGES_MAX ? (
+                    <label className={cn(
+                      'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 px-4 py-6 cursor-pointer hover:border-pink-300 transition-colors',
+                      uploading && 'opacity-60 pointer-events-none'
+                    )}>
+                      <ImageUp className="w-6 h-6 text-[#FA4D8D]" />
+                      <span className="text-sm font-medium text-[#FA4D8D]">{uploading ? 'Uploading…' : 'Upload photos'}</span>
+                      <span className="text-xs text-gray-500">PNG, JPG up to 5MB each — up to {ACTIVITY_IMAGES_MAX} ({form.image_urls.length}/{ACTIVITY_IMAGES_MAX})</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => { const fs = e.target.files; if (fs?.length) uploadImages(fs); }}
+                      />
+                    </label>
+                  ) : (
+                    <p className="text-xs text-gray-400">Up to {ACTIVITY_IMAGES_MAX} photos — remove one to add another.</p>
+                  )}
+                </div>
               )}
             </div>
             {/* Medical disclosure is set for all / certain classes at once under
@@ -1982,7 +2127,7 @@ export default function ActivitiesPage() {
                     </div>
                     <div className="relative">
                       <img
-                        src={previewFor.image_urls?.[0] || fallbackImage(previewFor)}
+                        src={resolveThumbnail(previewFor)}
                         alt={previewFor.title}
                         className="h-[240px] w-full rounded-[18px] object-cover lg:h-[305px]"
                       />

@@ -5,6 +5,7 @@ import { IconArrowRight, IconStar } from '@/components/icons';
 import { catMeta } from '@/lib/categories';
 import { areaFromAddress, initials, sgDateTime } from '@/lib/format';
 import { formatAgeRange } from '@/types/database';
+import { resolveActivityImage } from '@/lib/activity-media';
 
 const TESTIMONIALS = [
   ['We found so many engaging activities that our daughter loves.', 'Jolene Tan', 'Mum of 2.5 year old'],
@@ -179,7 +180,12 @@ export default async function HomePage() {
             key={a.id}
             slug={a.slug}
             title={a.title}
-            imageUrl={a.image_urls[0]}
+            imageUrl={
+              resolveActivityImage(
+                { image_urls: a.image_urls, image_source: a.image_source, cover_image_url: a.cover_image_url },
+                { logo_url: a.provider_logo_url, cover_image_url: a.provider_cover_image_url, gallery_urls: a.provider_gallery_urls }
+              ) ?? undefined
+            }
             categorySlug={a.category_slug}
             categoryName={a.category_name}
             ageText={formatAgeRange(a.age_min_months, a.age_max_months)}

@@ -33,6 +33,7 @@ import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands } from "./lib/schedule";
+import { resolveActivityImages } from "./lib/activityMedia";
 import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
@@ -1223,7 +1224,16 @@ function ActivityDetailPage() {
      booking page and booking trigger use. */
   const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
   const nextVenueAddress = nextVenue ?? activity.address ?? null;
-  const images = activity.image_urls.length ? activity.image_urls : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
+  // Falls back to the provider's own cover/logo/gallery when this listing
+  // has no photos of its own (or is explicitly set to borrow theirs) — see
+  // activityMedia.ts. Recomputed on every load, so clearing an activity's
+  // photos (or the provider's) shows up the next time this page is opened,
+  // no separate sync step.
+  const providerImages = resolveActivityImages(
+    { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
+    activity.provider_contact
+  );
+  const images = providerImages.length ? providerImages : [`${import.meta.env.BASE_URL}assets/crops/detail-hero.png`];
   // Wix Events and Wix COURSEs have no BabyBrain waitlist (00107): a sold-out
   // event / a course with no dates left shows a disabled "Sold out" CTA
   // instead of sending the parent into a booking flow that can't complete.
@@ -1328,7 +1338,10 @@ function ActivityDetailPage() {
         {/* About sits on its own so on mobile it can come between the hero and
             the booking rail; on desktop it's just row 2 of column 1. */}
         <section className="order-2 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-1 lg:row-start-2">
-          <InfoBlock title="About" items={[activity.description]} />
+          {/* Same idea as the images above: an activity with no "about" of
+              its own borrows the provider's, rather than showing a blank
+              section. */}
+          <InfoBlock title="About" items={[activity.description?.trim() || activity.provider_contact?.description?.trim() || ""]} />
         </section>
 
         <div className="order-4 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-3">

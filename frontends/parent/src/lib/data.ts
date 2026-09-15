@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
 import { cacheGet, cacheSet, cacheInvalidate } from "./queryCache";
 import { goTo } from "./nav";
+import { resolveActivityImage } from "./activityMedia";
 import {
   formatAgeRange,
   type Activity as ActivityRow,
@@ -101,6 +102,13 @@ export interface ProviderContact {
   // deliberately carries none (it inherits — same as search_activities'
   // coalesce(a.address, p.address)).
   address: string | null;
+  // Profile media/about — the fallback source for an activity with none of
+  // its own (or explicitly set to borrow the provider's). See
+  // activityMedia.ts / activity.image_source.
+  description: string | null;
+  logo_url: string | null;
+  cover_image_url: string | null;
+  gallery_urls: string[] | null;
 }
 
 /**
@@ -194,7 +202,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       // rendered a listing page with none of the contact buttons.
       const { data: act } = await supabase
         .from("activities")
-        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address)")
+        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
         .eq("slug", slug)
         .eq("is_published", true)
         .maybeSingle();
@@ -607,7 +615,13 @@ export function toCard(
   a: ActivityRow & {
     category_name?: string;
     provider_name?: string | null;
-    providers?: { business_name?: string | null; address?: string | null } | null;
+    providers?: {
+      business_name?: string | null; address?: string | null;
+      // Optional — a caller that also selects these gets the same
+      // provider-photo fallback Explore and the detail page use; one that
+      // doesn't just keeps today's "own image or placeholder" behaviour.
+      logo_url?: string | null; cover_image_url?: string | null; gallery_urls?: string[] | null;
+    } | null;
     activity_sessions?: { starts_at: string; ends_at: string | null }[] | null;
   }
 ) {
@@ -638,7 +652,11 @@ export function toCard(
     slug: a.slug,
     title: a.title,
     category: a.category_name ?? "",
-    image: a.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
+    image:
+      resolveActivityImage(
+        { image_urls: a.image_urls, image_source: a.image_source, cover_image_url: a.cover_image_url },
+        a.providers ?? null
+      ) ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
     age: formatAgeRange(a.age_min_months, a.age_max_months),
     // An activity with no address of its own inherits its provider's, same as
     // search_activities' coalesce(a.address, p.address) on Explore.

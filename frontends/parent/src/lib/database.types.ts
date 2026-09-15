@@ -186,6 +186,11 @@ export type Database = {
           /** Derived from the postal sector by migration 00032. */
           region: SgRegion | null;
           image_urls: string[];
+          /** Where the parent-facing photos come from — this activity's own
+           *  image_urls ('custom'), or the provider's profile media
+           *  (default 'profile'). See activityMedia.ts. */
+          image_source: string;
+          cover_image_url: string | null;
           is_published: boolean;
           rating_avg: number;
           rating_count: number;
@@ -1133,6 +1138,11 @@ export interface ActivitySearchResult {
   duration_mins: number | null;
   /** True when the class can be booked on BabyBrain (no external booking URL). */
   instant_book: boolean;
+  image_source: string | null;
+  cover_image_url: string | null;
+  provider_logo_url: string | null;
+  provider_cover_image_url: string | null;
+  provider_gallery_urls: string[] | null;
 }
 
 /** Singapore areas used by the Explore "Area" filter and shown on cards. */

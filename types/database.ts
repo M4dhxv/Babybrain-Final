@@ -184,6 +184,8 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           image_urls: string[];
+          image_source: 'profile' | 'custom';
+          cover_image_url: string | null;
           is_published: boolean;
           rating_avg: number;
           rating_count: number;
@@ -246,6 +248,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           image_urls?: string[];
+          image_source?: 'profile' | 'custom';
+          cover_image_url?: string | null;
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;
@@ -1529,6 +1533,11 @@ export interface ActivitySearchResult {
   next_session_at: string | null;
   dist_km: number | null;
   boosted: boolean;
+  image_source?: 'profile' | 'custom' | null;
+  cover_image_url?: string | null;
+  provider_logo_url?: string | null;
+  provider_cover_image_url?: string | null;
+  provider_gallery_urls?: string[] | null;
 }
 
 /** Returned by the child_journey_stats RPC (dashboard "Journey" card). */

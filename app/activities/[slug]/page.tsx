@@ -17,6 +17,7 @@ import {
 import { catMeta } from '@/lib/categories';
 import { sgDateTime, sgTime } from '@/lib/format';
 import { formatAgeRange } from '@/types/database';
+import { resolveActivityImages } from '@/lib/activity-media';
 
 export default async function ActivityDetailPage({
   params,
@@ -28,10 +29,14 @@ export default async function ActivityDetailPage({
 
   const { data: activity } = await supabase
     .from('activities')
-    .select('*, activity_categories(name, slug)')
+    .select('*, activity_categories(name, slug), providers(description, logo_url, cover_image_url, gallery_urls)')
     .eq('slug', slug)
     .single();
   if (!activity) notFound();
+
+  const provider = activity.providers as unknown as {
+    description: string | null; logo_url: string | null; cover_image_url: string | null; gallery_urls: string[] | null;
+  } | null;
 
   const {
     data: { user },
@@ -89,7 +94,11 @@ export default async function ActivityDetailPage({
         (new Date(nextSession.ends_at).getTime() - new Date(nextSession.starts_at).getTime()) / 60000
       )
     : null;
-  const images = activity.image_urls;
+  const images = resolveActivityImages(
+    { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
+    provider
+  );
+  const description = activity.description?.trim() || provider?.description?.trim() || '';
 
   return (
     <main className="container">
@@ -108,8 +117,8 @@ export default async function ActivityDetailPage({
             </span>
           )}
           <p className="muted" style={{ fontSize: 16, lineHeight: 1.6, fontWeight: 600, margin: '14px 0 10px', maxWidth: '56ch' }}>
-            {activity.description.split('.').slice(0, 2).join('.')}
-            {activity.description.includes('.') ? '.' : ''}
+            {description.split('.').slice(0, 2).join('.')}
+            {description.includes('.') ? '.' : ''}
           </p>
           {activity.rating_count > 0 && (
             <div className="rating" style={{ fontSize: 15 }}>
@@ -175,7 +184,7 @@ export default async function ActivityDetailPage({
 
           <section className="detail-sec">
             <h2>About this class</h2>
-            <p className="body">{activity.description}</p>
+            <p className="body">{description}</p>
             {activity.tags.length > 0 && (
               <div className="card" style={{ marginTop: 14, background: 'var(--blue-soft)', border: 0 }}>
                 <strong style={{ fontSize: 14 }}>

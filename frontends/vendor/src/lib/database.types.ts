@@ -188,6 +188,11 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           image_urls: string[];
+          /** Where the parent-facing photos come from — this activity's own
+           *  image_urls ('custom'), or the provider's profile media
+           *  (default 'profile'). */
+          image_source: 'profile' | 'custom';
+          cover_image_url: string | null;
           is_published: boolean;
           rating_avg: number;
           rating_count: number;
@@ -242,6 +247,8 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           image_urls?: string[];
+          image_source?: 'profile' | 'custom';
+          cover_image_url?: string | null;
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;

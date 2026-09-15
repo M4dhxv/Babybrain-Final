@@ -251,15 +251,19 @@ export default function SettingsPage() {
     if (url) setForm((f) => ({ ...f, cover_image_url: url }));
   }
 
+  const GALLERY_MAX = 9;
+
   async function uploadGallery(files: FileList) {
+    const room = GALLERY_MAX - form.gallery_urls.length;
+    if (room <= 0) return;
     setUploadingGallery(true);
     const urls: string[] = [];
-    for (const file of Array.from(files).slice(0, 12)) {
+    for (const file of Array.from(files).slice(0, room)) {
       const url = await uploadImage(file, 'photo');
       if (url) urls.push(url);
     }
     setUploadingGallery(false);
-    if (urls.length) setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, ...urls].slice(0, 24) }));
+    if (urls.length) setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, ...urls].slice(0, GALLERY_MAX) }));
   }
 
   /* Accepts a YouTube/Vimeo/direct link. Validated as a URL so a typo doesn't
@@ -568,7 +572,10 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">More photos ({form.gallery_urls.length})</label>
+                    <label className="text-xs text-gray-500 mb-1 block">Catalogue photos ({form.gallery_urls.length}/{GALLERY_MAX})</label>
+                    <p className="mb-2 text-xs text-gray-500">
+                      Shown for any class that doesn't have its own photos (see Activities → edit → Images).
+                    </p>
                     {form.gallery_urls.length > 0 && (
                       <div className="mb-2 flex flex-wrap gap-2">
                         {form.gallery_urls.map((url, i) => (
@@ -586,10 +593,14 @@ export default function SettingsPage() {
                         ))}
                       </div>
                     )}
-                    <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50', uploadingGallery && 'pointer-events-none opacity-60')}>
-                      <Plus className="h-3.5 w-3.5" /> {uploadingGallery ? 'Uploading…' : 'Add photos'}
-                      <input type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const fs = e.target.files; if (fs?.length) uploadGallery(fs); }} />
-                    </label>
+                    {form.gallery_urls.length < GALLERY_MAX ? (
+                      <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50', uploadingGallery && 'pointer-events-none opacity-60')}>
+                        <Plus className="h-3.5 w-3.5" /> {uploadingGallery ? 'Uploading…' : 'Add photos'}
+                        <input type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const fs = e.target.files; if (fs?.length) uploadGallery(fs); }} />
+                      </label>
+                    ) : (
+                      <p className="text-xs text-gray-400">Up to {GALLERY_MAX} photos — remove one to add another.</p>
+                    )}
                   </div>
 
                   <div>

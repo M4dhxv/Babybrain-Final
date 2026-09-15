@@ -11,6 +11,7 @@ import {
 import { catMeta } from '@/lib/categories';
 import { areaFromAddress, sgDateTime } from '@/lib/format';
 import { formatAgeRange, type SortOption } from '@/types/database';
+import { resolveActivityImage } from '@/lib/activity-media';
 
 const AGE_OPTIONS: [string, string][] = [
   ['', 'All Ages'],
@@ -159,7 +160,16 @@ export default async function ExplorePage({
               <Link key={a.id} href={`/activities/${a.slug}`} className="row-card">
                 <div className="row-media">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={a.image_urls[0] ?? ''} alt="" loading="lazy" />
+                  <img
+                    src={
+                      resolveActivityImage(
+                        { image_urls: a.image_urls, image_source: a.image_source, cover_image_url: a.cover_image_url },
+                        { logo_url: a.provider_logo_url, cover_image_url: a.provider_cover_image_url, gallery_urls: a.provider_gallery_urls }
+                      ) ?? ''
+                    }
+                    alt=""
+                    loading="lazy"
+                  />
                   <span className={`cat-pill ${meta.solid}`}>{a.category_name}</span>
                 </div>
                 <div className="row-body">
