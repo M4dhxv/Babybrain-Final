@@ -281,9 +281,17 @@ async function syncWixActivityAvailability(
   ]);
   const slots = selectNonOverlappingSlots(rawSlots);
   const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
+  // See lib/wix/client.ts's WixSlotKey doc comment: a vendor with more than
+  // one business location offering the same appointment service returns one
+  // time-slot entry per location for the same wall-clock start/end — `loc`
+  // keeps those from colliding into one key (they used to, and the upsert
+  // below failed outright — "ON CONFLICT DO UPDATE... cannot affect row a
+  // second time" — silently killing the whole sync for that activity).
+  const appointmentKey = (s: WixTimeSlot) =>
+    encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate, loc: s.location?.id ?? '' });
   const staffBySlotKey = new Map(
     slots.map((s) => [
-      encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+      appointmentKey(s),
       formatWixStaffNames(wixSlotStaff(s), knownStaffIds ?? undefined),
     ])
   );
@@ -299,7 +307,7 @@ async function syncWixActivityAvailability(
           ends_at: endsAtUtc,
           capacity: 1,
           wix_remaining_capacity: bookedStarts.has(new Date(startsAtUtc).toISOString()) ? 0 : 1,
-          wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+          wix_slot_key: appointmentKey(s),
         };
       }),
       { onConflict: 'activity_id,wix_slot_key' }
@@ -310,7 +318,7 @@ async function syncWixActivityAvailability(
   await reconcileStaleWixSessions(
     admin,
     activity.id,
-    new Set(slots.map((s) => encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }))),
+    new Set(slots.map(appointmentKey)),
     windowStart,
     windowEnd
   );

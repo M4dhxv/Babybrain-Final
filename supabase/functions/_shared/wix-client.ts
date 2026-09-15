@@ -353,7 +353,7 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
  *  needs to read a key back, only write one Wix/the DB will compare as an
  *  opaque string. */
 export type WixSlotKey =
-  | { kind: 'appointment'; s: string; e: string }
+  | { kind: 'appointment'; s: string; e: string; loc: string }
   | { kind: 'class'; sessionId: string };
 
 export function encodeWixSlotKey(payload: WixSlotKey): string {

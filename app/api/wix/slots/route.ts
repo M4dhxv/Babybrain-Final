@@ -123,7 +123,7 @@ export async function GET(request: Request) {
         slots: result.slots
           .filter((s) => s.bookable)
           .map((s) => ({
-            id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate })}`,
+            id: `wix:${encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate, loc: s.location?.id ?? '' })}`,
             starts_at: wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC'),
             ends_at: wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC'),
             capacity: 1,

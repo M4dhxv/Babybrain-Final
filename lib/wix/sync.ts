@@ -818,9 +818,13 @@ export async function syncWixActivityAvailability(
   // An appointment names its staff from the slot's own availableResources —
   // the exact resource createWixBooking then books against — rather than
   // from the activity's stored fallback.
+  // See WixSlotKey's own doc comment: two locations offering the same
+  // service at the same wall-clock time otherwise collide into one key.
+  const appointmentKey = (s: WixTimeSlot) =>
+    encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate, loc: s.location?.id ?? '' });
   const staffBySlotKey = new Map(
     slots.map((s) => [
-      encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+      appointmentKey(s),
       formatWixStaffNames(wixSlotStaff(s), knownStaffIds ?? undefined),
     ])
   );
@@ -840,7 +844,7 @@ export async function syncWixActivityAvailability(
           // site-local strings Wix gave us, since re-fetching availability
           // and creating the actual booking both compare/send this exact
           // same untouched value back to Wix.
-          wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+          wix_slot_key: appointmentKey(s),
         };
       }),
       { onConflict: 'activity_id,wix_slot_key' }
@@ -851,7 +855,7 @@ export async function syncWixActivityAvailability(
   await reconcileStaleWixSessions(
     admin,
     activity.id,
-    new Set(slots.map((s) => encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }))),
+    new Set(slots.map(appointmentKey)),
     windowStart,
     windowEnd
   );
@@ -1103,7 +1107,14 @@ async function resolveWixSlot(
       // here would reject a slot that is genuinely still bookable just
       // because the canonical grid shifted under it after the parent opened
       // the picker.
-      const slot = available.find((s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e);
+      // Location has to match too, not just start/end — a vendor with more
+      // than one business location can offer the same appointment service at
+      // the same wall-clock time from each (see WixSlotKey's doc comment);
+      // matching on start/end alone could resolve a parent's chosen slot to
+      // a *different* location's identical-looking one.
+      const slot = available.find(
+        (s) => s.bookable && s.localStartDate === slotKey.s && s.localEndDate === slotKey.e && (s.location?.id ?? '') === slotKey.loc
+      );
       if (!slot) {
         return { ok: false, status: 409, error: 'That slot is no longer available' };
       }

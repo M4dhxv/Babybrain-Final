@@ -647,9 +647,25 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
 /** Stable id for a slot/session, used both as `activity_sessions.wix_slot_key`
  *  and (prefixed with "wix:") as the frontend's session id. Re-fetching
  *  availability and matching on this key is how a booking attempt is
- *  re-validated against Wix without trusting client-supplied slot data. */
+ *  re-validated against Wix without trusting client-supplied slot data.
+ *
+ *  `loc` (an appointment slot's `location.id`) is load-bearing, not just
+ *  descriptive: a vendor with more than one business location offering the
+ *  same appointment service gets one time-slot entry per location for the
+ *  exact same wall-clock start/end (confirmed live — "Playspace 2" with two
+ *  locations returned two 9:00-10:00 entries, one per location). Without
+ *  `loc` here, both encoded to the identical key, and upserting both into
+ *  activity_sessions in the same batch failed outright — Postgres refuses
+ *  "ON CONFLICT DO UPDATE... cannot affect row a second time" — which
+ *  silently killed the *entire* sync for that activity, not just the
+ *  colliding rows: it never had a single session, for any location, ever.
+ *  Also fixes a quieter version of the same bug in resolveWixSlot below,
+ *  which matched a booking attempt on start/end alone and could resolve to
+ *  *whichever* location's slot happened to come first in the list — a
+ *  parent picking the Tanglin Road slot could have been booked at Ridley
+ *  Park instead. */
 export type WixSlotKey =
-  | { kind: 'appointment'; s: string; e: string }
+  | { kind: 'appointment'; s: string; e: string; loc: string }
   | { kind: 'class'; sessionId: string };
 
 export function encodeWixSlotKey(payload: WixSlotKey): string {
