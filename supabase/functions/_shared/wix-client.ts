@@ -161,6 +161,238 @@ export async function fetchWixResources(creds: WixCredentials): Promise<WixResou
   return data.resources ?? [];
 }
 
+/** See lib/wix/client.ts's WixTimeSlot — identical shape. */
+export interface WixTimeSlot {
+  scheduleId?: string;
+  serviceId: string;
+  localStartDate: string;
+  localEndDate: string;
+  bookable: boolean;
+  location?: { id?: string; name?: string; formattedAddress?: string; locationType?: string };
+  availableResources?: { resourceTypeId?: string; resources?: { id: string; name?: string }[] }[];
+  timeZone?: string;
+}
+
+/** See lib/wix/client.ts's wixLocalToUtcIso — identical logic. */
+export function wixLocalToUtcIso(naiveLocal: string, timeZone: string): string {
+  if (timeZone === 'UTC') return `${naiveLocal}Z`;
+  const assumedUtc = new Date(`${naiveLocal}Z`);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).formatToParts(assumedUtc).map((p) => [p.type, p.value])
+  );
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const readAsUtc = Date.UTC(+parts.year, Number(parts.month) - 1, +parts.day, hour, +parts.minute, +parts.second);
+  const offsetMs = readAsUtc - assumedUtc.getTime();
+  return new Date(assumedUtc.getTime() - offsetMs).toISOString();
+}
+
+/** See lib/wix/client.ts's fetchWixCourseSpan — identical logic. */
+export async function fetchWixCourseSpan(
+  creds: WixCredentials,
+  serviceId: string
+): Promise<{ start: string | null; end: string | null }> {
+  const data = await wixFetch<{ services?: WixService[] }>(creds, '/bookings/v2/services/query', {
+    query: { filter: { id: serviceId }, paging: { limit: 1 } },
+  });
+  const svc = (data.services ?? []).find((s) => s.id === serviceId) ?? (data.services ?? [])[0];
+  return {
+    start: svc?.schedule?.firstSessionStart ?? null,
+    end: svc?.schedule?.lastSessionEnd ?? null,
+  };
+}
+
+/** See lib/wix/client.ts's fetchWixAvailability — identical logic (including
+ *  the doc comment's warning: localStartDate/localEndDate are naive
+ *  site-local wall-clock strings regardless of the `timezone` param, and
+ *  must go through wixLocalToUtcIso using the response's own `timeZone`
+ *  field before storage/display). */
+export async function fetchWixAvailability(
+  creds: WixCredentials,
+  serviceId: string,
+  days = 7,
+  resourceIds?: (string | null | undefined)[]
+): Promise<WixTimeSlot[]> {
+  const now = new Date();
+  const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  const localDate = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, '');
+  const ids = (resourceIds ?? []).filter((id): id is string => !!id);
+
+  const data = await wixFetch<{ timeSlots?: WixTimeSlot[]; timeZone?: string }>(creds, '/_api/service-availability/v2/time-slots', {
+    serviceId,
+    fromLocalDate: localDate(now),
+    toLocalDate: localDate(to),
+    timezone: 'UTC',
+    ...(ids.length > 0 ? { resourceIds: ids } : {}),
+  });
+  const timeZone = data.timeZone ?? 'UTC';
+  return (data.timeSlots ?? []).map((s) => ({ ...s, timeZone }));
+}
+
+/** See lib/wix/client.ts's WixStaffMember/wixSlotStaff/formatWixStaffNames —
+ *  identical logic. */
+export interface WixStaffMember {
+  id: string;
+  name: string;
+}
+
+export function wixSlotStaff(slot: WixTimeSlot): WixStaffMember[] {
+  const out: WixStaffMember[] = [];
+  for (const group of slot.availableResources ?? []) {
+    for (const r of group.resources ?? []) {
+      if (r.id && r.name && !out.some((s) => s.id === r.id)) out.push({ id: r.id, name: r.name });
+    }
+  }
+  return out;
+}
+
+export function formatWixStaffNames(
+  staff: WixStaffMember[],
+  knownStaffIds?: Set<string>
+): string | null {
+  const names = staff
+    .filter((s) => !knownStaffIds || knownStaffIds.has(s.id))
+    .map((s) => s.name.trim())
+    .filter(Boolean);
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return null;
+  if (unique.length > 2) return `${unique[0]} +${unique.length - 1} more`;
+  return unique.join(' & ');
+}
+
+/** See lib/wix/client.ts's selectNonOverlappingSlots — identical logic. */
+export function selectNonOverlappingSlots(slots: WixTimeSlot[]): WixTimeSlot[] {
+  const groups = new Map<string, WixTimeSlot[]>();
+  for (const slot of slots) {
+    const key = `${slot.location?.id ?? ''}|${slot.localStartDate.slice(0, 10)}`;
+    const group = groups.get(key);
+    if (group) group.push(slot);
+    else groups.set(key, [slot]);
+  }
+
+  const kept: WixTimeSlot[] = [];
+  for (const group of groups.values()) {
+    group.sort(
+      (a, b) => a.localStartDate.localeCompare(b.localStartDate) || a.localEndDate.localeCompare(b.localEndDate)
+    );
+    let lastEnd = '';
+    for (const slot of group) {
+      if (slot.localStartDate < lastEnd) continue;
+      kept.push(slot);
+      lastEnd = slot.localEndDate;
+    }
+  }
+  return kept.sort((a, b) => a.localStartDate.localeCompare(b.localStartDate));
+}
+
+/** See lib/wix/client.ts's WixClassSession/fetchWixClassSessions — identical
+ *  logic. */
+export interface WixClassSession {
+  id: string;
+  scheduleId: string;
+  eventId: string;
+  serviceId: string;
+  start: string;
+  end: string;
+  capacity: number;
+  remainingCapacity: number;
+  staff: WixStaffMember[];
+}
+
+export async function fetchWixClassSessions(creds: WixCredentials, serviceId: string, days = 7): Promise<WixClassSession[]> {
+  const now = new Date();
+  const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  const iso = (d: Date) => d.toISOString();
+
+  interface RawSession {
+    id: string;
+    scheduleId: string;
+    scheduleOwnerId: string;
+    eventId: string;
+    status: string;
+    capacity: number;
+    remainingCapacity: number;
+    start: { timestamp: string };
+    end: { timestamp: string };
+    affectedSchedules?: { scheduleOwnerId?: string; scheduleOwnerName?: string }[];
+  }
+  const data = await wixFetch<{ sessions?: RawSession[] }>(creds, '/bookings/v2/calendar/sessions/query', {
+    query: { paging: { limit: 100 } },
+    fromDate: iso(now),
+    toDate: iso(to),
+  });
+  return (data.sessions ?? [])
+    .filter((s) => s.scheduleOwnerId === serviceId && s.status === 'CONFIRMED')
+    .map((s) => ({
+      id: s.id,
+      scheduleId: s.scheduleId,
+      eventId: s.eventId,
+      serviceId: s.scheduleOwnerId,
+      start: s.start.timestamp,
+      end: s.end.timestamp,
+      capacity: s.capacity,
+      remainingCapacity: s.remainingCapacity,
+      staff: (s.affectedSchedules ?? [])
+        .filter((a): a is { scheduleOwnerId: string; scheduleOwnerName: string } =>
+          !!a.scheduleOwnerId && !!a.scheduleOwnerName)
+        .map((a) => ({ id: a.scheduleOwnerId, name: a.scheduleOwnerName })),
+    }));
+}
+
+/** See lib/wix/client.ts's WixSlotKey/encodeWixSlotKey — same shape and
+ *  encoding (base64url of the JSON payload), so a key written by either
+ *  runtime matches the other exactly. The original uses Node's `Buffer`;
+ *  this file avoids Node-only APIs (see the module doc), so this encodes via
+ *  the same web-standard `btoa` this Deno runtime already has, converted to
+ *  base64url by hand (`+`/`/` -> `-`/`_`, padding stripped) — byte-for-byte
+ *  the same output `Buffer.from(json).toString('base64url')` produces.
+ *  Decoding is deliberately not ported: nothing on this sync-only path ever
+ *  needs to read a key back, only write one Wix/the DB will compare as an
+ *  opaque string. */
+export type WixSlotKey =
+  | { kind: 'appointment'; s: string; e: string }
+  | { kind: 'class'; sessionId: string };
+
+export function encodeWixSlotKey(payload: WixSlotKey): string {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** See lib/wix/client.ts's courseAnchorSlotKey — identical logic. */
+export function courseAnchorSlotKey(scheduleId: string): string {
+  return `wixcourse:${scheduleId}`;
+}
+
+/** See lib/wix/client.ts's WixConfirmedBooking/fetchWixConfirmedAppointmentBookings
+ *  — identical logic. */
+export interface WixConfirmedBooking {
+  start: string;
+  end: string;
+}
+
+export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials, serviceId: string): Promise<WixConfirmedBooking[]> {
+  interface RawBooking {
+    status: string;
+    startDate?: string;
+    endDate?: string;
+  }
+  const data = await wixFetch<{ bookings?: RawBooking[] }>(creds, '/bookings/v2/bookings/query', {
+    query: {
+      filter: { 'bookedEntity.slot.serviceId': serviceId },
+      paging: { limit: 100 },
+    },
+  });
+  return (data.bookings ?? [])
+    .filter((b) => b.status === 'CONFIRMED' && b.startDate && b.endDate)
+    .map((b) => ({ start: b.startDate!, end: b.endDate! }));
+}
+
 export interface WixLocation {
   id: string;
   name: string;

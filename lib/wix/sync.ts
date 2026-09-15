@@ -7,17 +7,22 @@ import {
   fetchWixAvailability,
   fetchWixClassSessions,
   fetchWixCourseSpan,
+  fetchWixConfirmedAppointmentBookings,
   createWixBooking,
   createWixClassBooking,
   fetchWixBookingRevision,
   cancelWixBooking,
   rescheduleWixClassBooking,
   decodeWixSlotKey,
+  encodeWixSlotKey,
   courseAnchorSlotKey,
   wixServicePrice,
   wixServiceCapacity,
   wixServiceImageUrl,
   wixLocalToUtcIso,
+  wixSlotStaff,
+  formatWixStaffNames,
+  selectNonOverlappingSlots,
   WIX_AVAILABILITY_WINDOW_DAYS,
   type WixCredentials,
   type WixService,
@@ -184,6 +189,11 @@ export async function syncWixServicesToActivities(
     .single();
 
   const result: WixServiceSyncResult = { created: 0, updated: 0, skipped: [], removed: 0, revived: 0 };
+  // Every APPOINTMENT/CLASS/COURSE this run touches (create or update),
+  // collected for the availability pass below — see the comment there for
+  // why this exists at all: date/time/duration used to depend entirely on
+  // some parent happening to open this exact activity's detail page first.
+  const activitiesForAvailabilitySync: WixSlotActivity[] = [];
 
   // Creation is opt-in. `onlyServiceIds` is the set of services the "Import
   // specific activities" picker wants turned into activities — the ONLY way
@@ -288,6 +298,12 @@ export async function syncWixServicesToActivities(
         .eq('id', existing.id);
       if (existing.wix_missing_since) result.revived++;
       result.updated++;
+      activitiesForAvailabilitySync.push({
+        id: existing.id,
+        wix_service_id: service.id,
+        wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+        wix_service_type: type,
+      });
       continue;
     }
 
@@ -302,30 +318,67 @@ export async function syncWixServicesToActivities(
     const description =
       wixDescription ||
       'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.';
-    const { error } = await admin.from('activities').insert({
-      slug,
-      title: service.name,
-      description,
-      category_id: category.id,
-      provider_id: providerId,
-      is_published: false,
-      wix_service_id: service.id,
-      wix_service_type: type,
-      wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
-      location_id: locationId,
-      address,
-      postal_code: postalCode,
-      price,
-      wix_price: price,
-      default_capacity: capacity,
-      image_urls: imageUrl ? [imageUrl] : [],
-    });
-    if (error) {
-      result.skipped.push({ name: service.name, reason: error.message });
+    const { data: inserted, error } = await admin
+      .from('activities')
+      .insert({
+        slug,
+        title: service.name,
+        description,
+        category_id: category.id,
+        provider_id: providerId,
+        is_published: false,
+        wix_service_id: service.id,
+        wix_service_type: type,
+        wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+        location_id: locationId,
+        address,
+        postal_code: postalCode,
+        price,
+        wix_price: price,
+        default_capacity: capacity,
+        image_urls: imageUrl ? [imageUrl] : [],
+      })
+      .select('id')
+      .single();
+    if (error || !inserted) {
+      result.skipped.push({ name: service.name, reason: error?.message ?? 'insert returned no row' });
       continue;
     }
     result.created++;
+    activitiesForAvailabilitySync.push({
+      id: inserted.id,
+      wix_service_id: service.id,
+      wix_resource_id: type === 'APPOINTMENT' ? resource!.id : null,
+      wix_service_type: type,
+    });
   }
+
+  // Every touched APPOINTMENT/CLASS/COURSE gets its near-term availability
+  // pulled and materialized into activity_sessions right here — this used to
+  // be the one thing "Sync services" (and the 15-min scheduled sync) never
+  // did: price/capacity/location/photo/description were kept in step, but a
+  // freshly-imported (or long-unvisited) Wix service's actual date/time/
+  // duration stayed genuinely blank until some parent happened to open that
+  // exact activity's detail page — the only other caller of
+  // syncWixActivityAvailability (app/api/wix/slots/route.ts). Concurrent
+  // across activities (allSettled) since each is an independent Wix fetch
+  // with no shared state, unlike the serial per-service loop above — one
+  // activity's Wix hiccup (or a slow response) can't hold up or fail the
+  // rest. A COURSE gets the same wide 60-day window app/api/wix/slots/
+  // route.ts always forces for it (it's typically booked well ahead and
+  // reviewed far less often); everything else gets 14 days — enough to
+  // cover what Explore/the vendor's own preview show without fetching a
+  // full 60-day appointment book on every 15-minute cron tick.
+  const availabilitySettled = await Promise.allSettled(
+    activitiesForAvailabilitySync.map((a) =>
+      syncWixActivityAvailability(admin, a, creds, a.wix_service_type === 'COURSE' ? 60 : 14)
+    )
+  );
+  availabilitySettled.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error('Wix availability sync failed for activity', activitiesForAvailabilitySync[i].id, r.reason);
+    }
+  });
 
   // Anything still linked (wix_service_id set) that this fetch didn't
   // return is no longer on the account BabyBrain is actually connected to
@@ -593,6 +646,216 @@ export async function importWixSessionStaff(
     }
   }
   return updated;
+}
+
+/** Removes local `activity_sessions` rows for slots this same fetch's window
+ *  covered but Wix no longer offers — the vendor edited their weekly hours,
+ *  changed a session's duration, swapped staff, etc., and the old candidate
+ *  times (upserted from an earlier fetch, keyed by their own now-defunct
+ *  `wix_slot_key`) otherwise linger forever, since upsert only ever adds or
+ *  updates, never removes. Scoped to `[windowStart, windowEnd)` — the exact
+ *  range this fetch actually queried — so a session further out that a
+ *  narrower `days` window simply didn't ask about is never touched. Only
+ *  deletes a session with no real booking against it (local or Wix-side) —
+ *  a booked slot disappearing from live availability is exactly what a
+ *  confirmed booking should do, not grounds for deleting the booking's own
+ *  session. Moved here from app/api/wix/slots/route.ts so
+ *  syncWixActivityAvailability below can share it. */
+async function reconcileStaleWixSessions(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  currentKeys: Set<string>,
+  windowStart: Date,
+  windowEnd: Date
+): Promise<void> {
+  const { data: existing } = await admin
+    .from('activity_sessions')
+    .select('id, wix_slot_key, wix_remaining_capacity, capacity')
+    .eq('activity_id', activityId)
+    .not('wix_slot_key', 'is', null)
+    // A COURSE enrolment's anchor row (wix_slot_key 'wixcourse:<scheduleId>')
+    // isn't one of the per-occurrence slots this fetch enumerates — it spans
+    // the whole run and is managed at booking time — so it must never be
+    // treated as a stale occurrence and swept.
+    .not('wix_slot_key', 'like', 'wixcourse:%')
+    .gte('starts_at', windowStart.toISOString())
+    .lt('starts_at', windowEnd.toISOString());
+  const stale = (existing ?? []).filter((s) => !currentKeys.has(s.wix_slot_key!));
+  if (stale.length === 0) return;
+
+  const { data: bookings } = await admin
+    .from('bookings')
+    .select('session_id, status')
+    .in('session_id', stale.map((s) => s.id));
+  const bookedSessionIds = new Set(
+    (bookings ?? []).filter((b) => b.status !== 'cancelled').map((b) => b.session_id)
+  );
+
+  for (const s of stale) {
+    // Wix's own remaining-capacity snapshot from the last time this slot was
+    // fetched is the other signal a real seat is filled (a class booked
+    // directly on Wix's own site, not just through BabyBrain).
+    const bookedOnWix = s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
+    if (bookedSessionIds.has(s.id) || bookedOnWix) continue;
+    await admin.from('activity_sessions').delete().eq('id', s.id);
+  }
+}
+
+export type WixAvailabilitySyncResult =
+  | { kind: 'class'; sessions: WixClassSession[]; courseSpan: { start: string; end: string } | null }
+  | { kind: 'appointment'; slots: WixTimeSlot[] };
+
+/** Fetches one activity's live Wix availability and upserts it into
+ *  activity_sessions — branching the same way app/api/wix/slots/route.ts's
+ *  GET handler does (APPOINTMENT via the time-slots API, CLASS/COURSE via
+ *  the calendar/sessions API), because this *is* that route's own logic,
+ *  extracted so a second caller can run it too instead of copying it a
+ *  second time (see the module doc on syncWixServicesToActivities for why
+ *  a Wix-linked activity's schedule was never proactively kept in step:
+ *  only a parent or vendor actually opening this one activity ever
+ *  triggered it before now).
+ *
+ *  Throws on a genuine Wix/DB failure — the route wants to turn that into a
+ *  502, while a caller syncing many activities at once wants to catch it
+ *  per-activity (Promise.allSettled) so one account's Wix hiccup doesn't
+ *  sink the rest. Neither concern belongs in here. */
+export async function syncWixActivityAvailability(
+  admin: SupabaseClient<Database>,
+  activity: WixSlotActivity,
+  creds: WixCredentials,
+  days: number
+): Promise<WixAvailabilitySyncResult> {
+  const isClass = activity.wix_service_type === 'CLASS' || activity.wix_service_type === 'COURSE';
+  if (!isClass && !activity.wix_resource_id) {
+    throw new Error('Activity is not linked to a bookable Wix service');
+  }
+
+  const windowStart = new Date();
+  const windowEnd = new Date(windowStart.getTime() + days * 24 * 60 * 60 * 1000);
+  // Fetched alongside availability rather than before it so it costs no
+  // extra wall-clock time — a failure just means sessions keep whatever
+  // staff name they already had.
+  const staffIdsPromise: Promise<Set<string> | null> = fetchWixResources(creds)
+    .then((rs) => new Set(rs.filter((r) => r.bookable).map((r) => r.id)))
+    .catch(() => null);
+
+  if (isClass) {
+    const [sessions, knownStaffIds] = await Promise.all([
+      fetchWixClassSessions(creds, activity.wix_service_id, days),
+      staffIdsPromise,
+    ]);
+    const staffBySlotKey = new Map(
+      sessions.map((s) => [
+        encodeWixSlotKey({ kind: 'class', sessionId: s.id }),
+        formatWixStaffNames(s.staff, knownStaffIds ?? undefined),
+      ])
+    );
+
+    // A COURSE is enrolled as one whole run — callers that show a
+    // "Runs <start> – <end>" span need Wix's real schedule bounds, since
+    // `sessions` only holds *future* occurrences (a course mid-run, or one
+    // down to its last session, would otherwise understate the span).
+    let courseSpan: { start: string; end: string } | null = null;
+    if (activity.wix_service_type === 'COURSE') {
+      try {
+        const span = await fetchWixCourseSpan(creds, activity.wix_service_id);
+        if (span.start && span.end) courseSpan = { start: span.start, end: span.end };
+      } catch (e) {
+        console.error('Wix course span lookup failed', e);
+      }
+    }
+
+    if (sessions.length > 0) {
+      const { error: syncError } = await admin.from('activity_sessions').upsert(
+        sessions.map((s) => ({
+          activity_id: activity.id,
+          starts_at: s.start,
+          ends_at: s.end,
+          capacity: s.capacity,
+          wix_remaining_capacity: s.remainingCapacity,
+          wix_slot_key: encodeWixSlotKey({ kind: 'class', sessionId: s.id }),
+        })),
+        { onConflict: 'activity_id,wix_slot_key' }
+      );
+      if (syncError) console.error('Wix class session sync failed', syncError);
+      // After the upsert, so every row it just created/refreshed is there
+      // to be named.
+      await importWixSessionStaff(admin, activity.id, staffBySlotKey);
+    }
+    await reconcileStaleWixSessions(
+      admin,
+      activity.id,
+      new Set(sessions.map((s) => encodeWixSlotKey({ kind: 'class', sessionId: s.id }))),
+      windowStart,
+      windowEnd
+    );
+    return { kind: 'class', sessions, courseSpan };
+  }
+
+  const [rawSlots, confirmedBookings, knownStaffIds] = await Promise.all([
+    // The resource id is passed so each slot comes back carrying the staff
+    // member Wix says is free for it — both to keep this list honest for a
+    // multi-staff service and because the booking path relies on the same
+    // field (see createWixBooking).
+    fetchWixAvailability(creds, activity.wix_service_id, days, [activity.wix_resource_id!]),
+    // A slot's own `bookable` flag conflates "a customer holds this time"
+    // with every other reason Wix won't offer it to someone new (e.g. the
+    // service's minimum-notice booking policy blocking same-day slots) —
+    // cross-checking against real confirmed bookings is what actually tells
+    // a caller whether a slot is booked vs. simply not offered right now.
+    fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
+    staffIdsPromise,
+  ]);
+  // Wix offers a rolling start time every split-interval (a 45-minute
+  // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,
+  // 11:00-11:45, ...) — alternative starts for one opening, not distinct
+  // appointments. See selectNonOverlappingSlots for the full reasoning.
+  const slots = selectNonOverlappingSlots(rawSlots);
+  // `b.start` (from the real bookings resource) is a genuine UTC timestamp;
+  // comparing it against a slot means first converting that slot's own
+  // site-local `localStartDate` the same way.
+  const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
+  // An appointment names its staff from the slot's own availableResources —
+  // the exact resource createWixBooking then books against — rather than
+  // from the activity's stored fallback.
+  const staffBySlotKey = new Map(
+    slots.map((s) => [
+      encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+      formatWixStaffNames(wixSlotStaff(s), knownStaffIds ?? undefined),
+    ])
+  );
+
+  if (slots.length > 0) {
+    const { error: syncError } = await admin.from('activity_sessions').upsert(
+      slots.map((s) => {
+        const startsAtUtc = wixLocalToUtcIso(s.localStartDate, s.timeZone ?? 'UTC');
+        const endsAtUtc = wixLocalToUtcIso(s.localEndDate, s.timeZone ?? 'UTC');
+        return {
+          activity_id: activity.id,
+          starts_at: startsAtUtc,
+          ends_at: endsAtUtc,
+          capacity: 1,
+          wix_remaining_capacity: bookedStarts.has(new Date(startsAtUtc).toISOString()) ? 0 : 1,
+          // The slot key is Wix's own round-trip identifier — stays the raw
+          // site-local strings Wix gave us, since re-fetching availability
+          // and creating the actual booking both compare/send this exact
+          // same untouched value back to Wix.
+          wix_slot_key: encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }),
+        };
+      }),
+      { onConflict: 'activity_id,wix_slot_key' }
+    );
+    if (syncError) console.error('Wix appointment slot sync failed', syncError);
+    await importWixSessionStaff(admin, activity.id, staffBySlotKey);
+  }
+  await reconcileStaleWixSessions(
+    admin,
+    activity.id,
+    new Set(slots.map((s) => encodeWixSlotKey({ kind: 'appointment', s: s.localStartDate, e: s.localEndDate }))),
+    windowStart,
+    windowEnd
+  );
+  return { kind: 'appointment', slots };
 }
 
 export interface WixSlotActivity {

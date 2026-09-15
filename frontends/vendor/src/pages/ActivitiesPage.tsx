@@ -471,6 +471,23 @@ export default function ActivitiesPage() {
       date: '', weekdays: [], weeks: '1', customDates: [],
     }));
     setCustomDateDraft('');
+    // This drawer's own copy tells a vendor "these sessions mirror live
+    // availability on your Wix calendar" — but until now nothing here ever
+    // actually asked Wix for it. SchedulePage already does this same live
+    // refresh on every load (for every Wix-linked activity in one batch),
+    // so a vendor who's visited that tab even once already has fresh data
+    // here too; this closes the gap for the vendor who opens this preview
+    // straight after importing, before ever visiting Schedule, and would
+    // otherwise see a blank date/time/duration for a fully-configured Wix
+    // appointment/class/course. Best-effort: a slow or failing Wix call
+    // never blocks the drawer from opening with whatever's already cached.
+    if (a.wix_service_id) {
+      try {
+        await apiGet(`/api/wix/slots?activityId=${a.id}&days=${a.wix_service_type === 'COURSE' ? 60 : 30}`);
+      } catch {
+        // best-effort — loadSessions below still shows the last saved copy
+      }
+    }
     await loadSessions(a.id);
   }
 
