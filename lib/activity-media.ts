@@ -29,16 +29,24 @@ export function resolveActivityImages(
     return orderWithCover(ownImages, activity.cover_image_url);
   }
 
-  const providerImages = [
-    provider?.cover_image_url,
-    provider?.logo_url,
-    ...(provider?.gallery_urls ?? []),
-  ].filter((u): u is string => !!u);
+  const providerImages = providerPhotoPool(provider);
   if (providerImages.length > 0) {
     return orderWithCover(providerImages, activity.cover_image_url);
   }
 
   return ownImages;
+}
+
+/** The provider's real photos (cover + gallery), logo excluded whenever
+ *  either exists — see frontends/parent/src/lib/activityMedia.ts's doc
+ *  comment. Logo only as a last-resort single image when there's nothing
+ *  else. */
+function providerPhotoPool(provider: ProviderMediaInput | null | undefined): string[] {
+  const photos = [provider?.cover_image_url, ...(provider?.gallery_urls ?? [])].filter(
+    (u): u is string => !!u
+  );
+  if (photos.length > 0) return photos;
+  return provider?.logo_url ? [provider.logo_url] : [];
 }
 
 function orderWithCover(images: string[], cover: string | null | undefined): string[] {

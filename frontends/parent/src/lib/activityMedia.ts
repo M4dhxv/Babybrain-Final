@@ -42,11 +42,7 @@ export function resolveActivityImages(
     return orderWithCover(ownImages, activity.cover_image_url);
   }
 
-  const providerImages = [
-    provider?.cover_image_url,
-    provider?.logo_url,
-    ...(provider?.gallery_urls ?? []),
-  ].filter((u): u is string => !!u);
+  const providerImages = providerPhotoPool(provider);
   if (providerImages.length > 0) {
     return orderWithCover(providerImages, activity.cover_image_url);
   }
@@ -54,6 +50,24 @@ export function resolveActivityImages(
   // Nothing from the intended source — fall back to whichever side has
   // anything at all rather than showing nothing.
   return ownImages;
+}
+
+/**
+ * The provider's real photos — cover + gallery — with the logo/avatar
+ * excluded whenever either of those exists. A logo is branding (a small
+ * square mark meant to identify the business, e.g. next to its name), not a
+ * photo of the activity itself; concatenating it onto a real cover photo put
+ * it side-by-side in the gallery as if it were an equally-valid second shot
+ * of the class, which looked exactly like what it is — a mismatched logo
+ * stuck in a photo gallery. Only used as a single last-resort image when the
+ * provider has genuinely nothing else at all — better than no image.
+ */
+function providerPhotoPool(provider: ProviderMediaInput | null | undefined): string[] {
+  const photos = [provider?.cover_image_url, ...(provider?.gallery_urls ?? [])].filter(
+    (u): u is string => !!u
+  );
+  if (photos.length > 0) return photos;
+  return provider?.logo_url ? [provider.logo_url] : [];
 }
 
 function orderWithCover(images: string[], cover: string | null | undefined): string[] {
