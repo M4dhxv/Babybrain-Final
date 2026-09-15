@@ -1184,6 +1184,7 @@ export type Database = {
           active: boolean;
           created_at: string;
           validity_days: number | null;
+          expiry_date: string | null;
           allowed_weekday: number | null;
           allowed_start_time: string | null;
         };
@@ -1195,7 +1196,7 @@ export type Database = {
           price_cents: number;
           active?: boolean;
         };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null };
         Relationships: [];
       };
       package_purchases: {

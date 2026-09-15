@@ -7,6 +7,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { DatePicker } from '@/components/ui/date-picker';
 
 /**
  * The package purchases table's column tracks. Header and body rows are separate grids, so the
@@ -24,7 +25,7 @@ const tabs = ['Packs', 'Purchases'];
 
 type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
-  activity_ids: string[] | null; validity_days: number | null;
+  activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
   allowed_weekday: number | null; allowed_start_time: string | null;
 };
 type Purchase = {
@@ -33,8 +34,19 @@ type Purchase = {
   created_at: string; expires_at: string | null;
 };
 
-const emptyPack = { name: '', credits: '', price: '', validity_days: '', activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '' };
+type ExpiryMode = 'none' | 'days' | 'date';
+const emptyPack = {
+  name: '', credits: '', price: '',
+  expiryMode: 'none' as ExpiryMode, validity_days: '', expiry_date: '',
+  activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '',
+};
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+/** A plain YYYY-MM-DD (no time component) formatted without a UTC round-trip,
+ *  so it can't drift a day off depending on the viewer's timezone. */
+const fmtPlainDate = (isoDate: string) => {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
 export default function PackagesPage() {
   const { provider, role } = useAuth();
@@ -52,7 +64,7 @@ export default function PackagesPage() {
     async () => {
       const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
         supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
-        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, allowed_weekday, allowed_start_time').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
+        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
         supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
       ]);
       return {
@@ -100,6 +112,7 @@ export default function PackagesPage() {
       parts.push(`${p.allowed_start_time.slice(0, 5)} slot only`);
     }
     if (p.validity_days) parts.push(`expires ${p.validity_days}d after purchase`);
+    else if (p.expiry_date) parts.push(`expires ${fmtPlainDate(p.expiry_date)}`);
     return parts.join(' · ');
   };
 
@@ -111,7 +124,9 @@ export default function PackagesPage() {
       name: p.name,
       credits: String(p.credits),
       price: String(p.price_cents / 100),
+      expiryMode: p.expiry_date ? 'date' : p.validity_days != null ? 'days' : 'none',
       validity_days: p.validity_days != null ? String(p.validity_days) : '',
+      expiry_date: p.expiry_date ?? '',
       activity_ids: p.activity_ids ?? [],
       allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
       allowed_start_time: p.allowed_start_time ?? '',
@@ -147,13 +162,15 @@ export default function PackagesPage() {
     if (!packForm.name.trim()) return setPackError('Give the pack a name.');
     if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
     if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
+    if (packForm.expiryMode === 'date' && !packForm.expiry_date) return setPackError('Pick an expiry date.');
 
     setSavingPack(true);
     const fields = {
       name: packForm.name.trim(),
       credits,
       price_cents: Math.round((price || 0) * 100),
-      validity_days: packForm.validity_days ? Number(packForm.validity_days) : null,
+      validity_days: packForm.expiryMode === 'days' && packForm.validity_days ? Number(packForm.validity_days) : null,
+      expiry_date: packForm.expiryMode === 'date' ? packForm.expiry_date : null,
       activity_ids: packForm.activity_ids.length ? packForm.activity_ids : null,
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
@@ -260,8 +277,25 @@ export default function PackagesPage() {
                     <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Valid for (days)</label>
-                    <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="No expiry" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Expiry</label>
+                    <div className="flex w-full gap-2">
+                      <SelectField
+                        value={packForm.expiryMode}
+                        onChange={(v) => setPackForm({ ...packForm, expiryMode: v as ExpiryMode, validity_days: '', expiry_date: '' })}
+                        aria-label="Pack expiry type"
+                        className="h-9 flex-1 px-3 sm:flex-none sm:w-40"
+                      >
+                        <Opt value="none">No expiry</Opt>
+                        <Opt value="days">Days after purchase</Opt>
+                        <Opt value="date">Fixed date</Opt>
+                      </SelectField>
+                      {packForm.expiryMode === 'days' && (
+                        <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="90" className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" />
+                      )}
+                      {packForm.expiryMode === 'date' && (
+                        <DatePicker value={packForm.expiry_date} onChange={(v) => setPackForm({ ...packForm, expiry_date: v })} aria-label="Pack expiry date" className="w-36 flex-shrink-0" />
+                      )}
+                    </div>
                   </div>
                   <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
                     {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
