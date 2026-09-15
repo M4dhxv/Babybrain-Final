@@ -1387,7 +1387,13 @@ export default function BookingsPage() {
                     )}
                   </span>
                 ) : (
-                  <span>Capacity <strong className="text-gray-900">{booked.length}/{currentSession?.capacity ?? '∞'}</strong></span>
+                  // wixHeld degrades to the plain held-local count (pending
+                  // included) for a non-Wix session, since wixDerived is 0
+                  // when there's no wix_slot_key to trust — using it here too
+                  // instead of `booked.length` keeps this in step with the
+                  // same figure Dashboard/Schedule show for the identical
+                  // session, not just the Wix-class branch above.
+                  <span>Capacity <strong className="text-gray-900">{wixHeld}/{currentSession?.capacity ?? '∞'}</strong></span>
                 )}
                 <span className="text-gray-300">•</span>
                 <span>Waitlist <strong className="text-gray-900">{waitlisted.length}</strong></span>
