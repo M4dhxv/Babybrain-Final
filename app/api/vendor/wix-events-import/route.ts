@@ -37,7 +37,17 @@ export async function POST(request: Request) {
     const [{ data: eventRows }, { data: linkedActivities }, wixEvents] = await Promise.all([
       admin.from('wix_events').select('id, wix_event_id').eq('provider_id', providerId),
       admin.from('activities').select('wix_event_id').eq('provider_id', providerId).not('wix_event_id', 'is', null),
-      fetchWixEvents(creds),
+      // Must match the picker's own window (GET /api/vendor/wix-events uses
+      // 365, same as syncProviderWixEvents's DAYS_AHEAD) — this call feeds
+      // wixVisibleIds below, which decides whether an unchecked event counts
+      // as "still on the account, please unlink" at all. Left at the
+      // fetchWixEvents default (90) here, any event 90-365 days out that the
+      // vendor could see and uncheck in the picker was silently never in
+      // wixVisibleIds, so toRemove never included it, unlinkWixEventActivities
+      // was never called for it, and the uncheck appeared to do nothing —
+      // the box came back ticked on every reload even though nothing was
+      // protecting it.
+      fetchWixEvents(creds, 365),
     ]);
     const localIdToWixId = new Map((eventRows ?? []).map((r) => [r.id, r.wix_event_id]));
     const currentIds = new Set(
