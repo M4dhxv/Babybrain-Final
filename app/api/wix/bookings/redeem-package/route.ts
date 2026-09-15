@@ -99,7 +99,9 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!purchase || purchase.status !== 'active' || purchase.credits_remaining < count ||
       (purchase.expires_at && new Date(purchase.expires_at) <= new Date())) {
-    return NextResponse.json({ error: 'Not enough credits available on this package (it may have expired)' }, { status: 409 });
+    // Several distinct causes collapse into this one check (wrong owner,
+    // inactive, too few credits, expired) — don't guess which one it was.
+    return NextResponse.json({ error: 'You are not able to use this package to book this class.' }, { status: 409 });
   }
   if (purchase.provider_id !== activity.provider_id) {
     return NextResponse.json({ error: "This package can only be used for its provider's classes" }, { status: 409 });

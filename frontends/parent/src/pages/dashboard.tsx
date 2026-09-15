@@ -1329,14 +1329,22 @@ export function ProfilePage() {
     // an `activity_ids` array now), so the old `packages(activities(slug))`
     // embed no longer resolves — PostgREST 400s the whole select and the tab
     // was stuck on "No packages yet" even with credits sitting on the account.
+    if (!session?.user?.id) { setPackagesLoaded(true); return; }
+    const uid = session.user.id;
     let data;
     try {
-      data = await cacheFetch(`profile:packages:${session?.user?.id}`, PROFILE_FRESH_MS, async () => {
+      data = await cacheFetch(`profile:packages:${uid}`, PROFILE_FRESH_MS, async () => {
         const { data, error } = await supabase
           .from("package_purchases")
           .select(
             "id, credits_total, credits_remaining, status, expires_at, packages(name, activity_ids), providers(business_name)"
           )
+          // RLS also lets a provider's own staff read every purchase for
+          // that provider (for the vendor portal) — without this filter, a
+          // parent who's *also* a vendor member sees other customers' packs
+          // here as if they were their own, then hits "not enough credits"
+          // at redemption because ownership is (rightly) enforced there.
+          .eq("user_id", uid)
           .order("created_at", { ascending: false })
           .limit(100);
         if (error) throw error;
@@ -3300,6 +3308,12 @@ export function BookingPage() {
       .from("package_purchases")
       .select("id, credits_remaining, expires_at, packages(name, activity_ids, allowed_weekday, allowed_start_time)")
       .eq("provider_id", activity.provider_id)
+      // RLS also lets a provider's own staff read every purchase for that
+      // provider (for the vendor portal) — without this, a parent who's
+      // *also* a vendor member sees other customers' packs here as if they
+      // were their own, then hits "not enough credits" at redemption
+      // because ownership is (rightly) enforced there, not here.
+      .eq("user_id", auth.user.id)
       .eq("status", "active")
       .gt("credits_remaining", 0)
       .order("created_at")
