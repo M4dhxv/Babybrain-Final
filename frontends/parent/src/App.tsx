@@ -537,7 +537,7 @@ function ChipFilter({
 }) {
   return (
     <div>
-      <p className="mb-1.5 text-xs font-bold text-[#68718f]">{label}</p>
+      {label && <p className="mb-1.5 text-xs font-bold text-[#68718f]">{label}</p>}
       <div className="flex flex-wrap gap-2">
         <Chip on={selected.length === 0} onClick={() => onChange([])}>{allLabel}</Chip>
         {options.map((o) => (
@@ -584,6 +584,7 @@ function ExplorePage() {
   const [timeRange, setTimeRange] = useState<[number, number]>([0, 23]);
   const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
   const [showMore, setShowMore] = useState(false);
+  const [mobileSheet, setMobileSheet] = useState<null | "type" | "age" | "area" | "sort">(null);
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
   // Set only when `here` came from the "pick your area" fallback, not a real
   // fix. Distance-to-a-single-centroid interleaves border listings of the next
@@ -745,7 +746,7 @@ function ExplorePage() {
   return (
     <PageShell active="/explore">
       <EmailCapturePopup />
-      <main className="mx-auto max-w-[1180px] px-4 py-5 sm:px-6">
+      <main className="mx-auto max-w-[1180px] px-4 pt-5 pb-24 sm:px-6 sm:py-5">
         <div className="mb-4 flex items-end justify-between">
           <div>
             <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="search" className="inline h-6 w-6 text-baby-green" /></h1>
@@ -756,7 +757,113 @@ function ExplorePage() {
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
-        <div className="mb-4 space-y-3 rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+        <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EBE3E5] bg-white/95 backdrop-blur shadow-[0_-2px_10px_rgba(0,0,0,0.08)] sm:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {(
+            [
+              { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
+              { key: "age", label: "Age", icon: "user", active: ages.length > 0 },
+              { key: "area", label: "Area", icon: "pin", active: regions.length > 0 },
+              { key: "sort", label: "Sort & more", icon: "chart", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setMobileSheet(t.key)}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-bold ${t.active ? "text-baby-cta" : "text-[#4a5680]"}`}
+            >
+              <Icon name={t.icon} className="h-[19px] w-[19px]" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {mobileSheet && (
+          <div className="fixed inset-0 z-40 sm:hidden">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setMobileSheet(null)} />
+            <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-y-auto rounded-t-[20px] bg-white p-4 shadow-card" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-base font-black">
+                  {mobileSheet === "type" ? "Type of activity" : mobileSheet === "age" ? "Age" : mobileSheet === "area" ? "Area" : "Sort & more filters"}
+                </h3>
+                <button type="button" onClick={() => setMobileSheet(null)} aria-label="Close">
+                  <Icon name="close" className="h-5 w-5 text-[#4a5680]" />
+                </button>
+              </div>
+
+              {mobileSheet === "type" && (
+                <ChipFilter label="" allLabel="All types of activity" options={cats.map((c) => ({ key: c.slug, label: c.name }))} selected={categories_} onChange={setCategories} />
+              )}
+              {mobileSheet === "age" && (
+                <ChipFilter label="" allLabel="All ages" options={AGE_BANDS.map((b) => ({ key: b.key, label: b.label }))} selected={ages} onChange={setAges} />
+              )}
+              {mobileSheet === "area" && (
+                <ChipFilter label="" allLabel="All areas" options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))} selected={regions} onChange={setRegions} />
+              )}
+              {mobileSheet === "sort" && (
+                <div className="space-y-4">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-bold text-[#68718f]">Sort by</span>
+                    <SelectField value={sort} onChange={(v) => setSort(v as typeof sort)} aria-label="Sort by" className="h-10 w-full px-3 text-[13px] font-bold">
+                      <Opt value="popular">Most popular</Opt>
+                      <Opt value="distance">Nearest</Opt>
+                      <Opt value="soonest">Starting soonest</Opt>
+                    </SelectField>
+                  </label>
+                  {sort === "distance" && !here && (
+                    <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
+                      <span>Allow location access to sort by how near activities are to you, or</span>
+                      <SelectField
+                        value=""
+                        placeholder="pick your area"
+                        aria-label="Pick your area"
+                        onChange={(v) => {
+                          const centroid = REGION_CENTROIDS[v];
+                          if (centroid) { setHere(centroid); setHerePickedArea(v); }
+                        }}
+                        className="h-7 px-2 text-xs font-bold text-[#4a5680]"
+                      >
+                        {REGION_FILTERS.map(([v, l]) => (
+                          <Opt key={v} value={v}>{l}</Opt>
+                        ))}
+                      </SelectField>
+                    </p>
+                  )}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-bold text-[#68718f]">Date from</span>
+                    <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
+                    <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
+                      <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
+                    </div>
+                  </label>
+                  {anyFilter && (
+                    <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-pink hover:underline">
+                      Reset filters
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setMobileSheet(null)}
+                className="mt-4 h-11 w-full rounded-[10px] bg-baby-pink text-sm font-black text-white"
+              >
+                Show {shown.length} results
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="hidden sm:mb-4 sm:block sm:space-y-3 sm:rounded-[16px] sm:border sm:border-[#EBE3E5] sm:bg-white sm:p-4 sm:shadow-card">
           <ChipFilter
             label="Type of activity"
             allLabel="All types of activity"
