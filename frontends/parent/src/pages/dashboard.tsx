@@ -104,6 +104,13 @@ type BookingItem = {
   // A Wix COURSE — one enrolment covers the whole run, so there's no single
   // session to move it to; reschedule is blocked.
   isCourse: boolean;
+  // Linked to a real Wix Bookings service — cancel must also tell Wix (see
+  // /api/wix/bookings/cancel), or the seat stays "taken" there forever.
+  isWixLinked: boolean;
+  // Wix-linked AND a CLASS specifically — reschedule must also tell Wix (see
+  // /api/wix/bookings/reschedule). Not APPOINTMENT/COURSE: see that route's
+  // own doc for why those stay local-only for now.
+  isWixClass: boolean;
   // A multi-child booking (00084): every seat is its own booking row sharing
   // one booking_group_id, collapsed here into a single card. `places` lists
   // them in seat order — seat 1 is the chosen child, the rest are guests
@@ -1225,6 +1232,7 @@ export function ProfilePage() {
             wix_removed_at: string | null;
             wix_missing_since: string | null;
             wix_service_type: string | null;
+            wix_service_id: string | null;
           } | null;
         } | null;
         compensation: "token" | "credit" | "none" | null;
@@ -1297,6 +1305,8 @@ export function ProfilePage() {
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
               isEvent: act?.wix_service_type === "EVENT",
               isCourse: courseBooking,
+              isWixLinked: act?.wix_service_id != null,
+              isWixClass: act?.wix_service_id != null && act?.wix_service_type === "CLASS",
               groupId: r.booking_group_id ?? null,
               places: ordered.map((x) => ({
                 bookingId: x.id,
@@ -2744,6 +2754,20 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
       : `Cancel your booking for ${b.title}? ${tail}`;
     if (!window.confirm(q)) return;
     setBusyId(b.id);
+    // A Wix-linked booking's cancellation has to reach Wix too (see
+    // /api/wix/bookings/cancel), so it also frees the seat there instead of
+    // leaving it stale — the plain RPCs only ever touched local data.
+    if (b.isWixLinked) {
+      try {
+        await apiPost("/api/wix/bookings/cancel", party(b) && b.groupId ? { groupId: b.groupId } : { bookingId: b.id });
+        onChanged?.();
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Couldn't cancel this booking — please try again.");
+      } finally {
+        setBusyId(null);
+      }
+      return;
+    }
     const { error } = party(b) && b.groupId
       ? await supabase.rpc("cancel_booking_group", { p_group_id: b.groupId })
       : await supabase.rpc("cancel_booking", { p_booking_id: b.id });
@@ -2791,6 +2815,21 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   async function doReschedule(newSessionId: string) {
     if (!reschedFor) return;
     setBusyId(reschedFor.id);
+    // A Wix-linked class's reschedule has to move the booking in Wix too
+    // (see /api/wix/bookings/reschedule) — one call for the whole party
+    // (every seat shares one Wix booking), not one RPC call per seat.
+    if (reschedFor.isWixClass) {
+      try {
+        await apiPost("/api/wix/bookings/reschedule", { bookingId: reschedFor.id, newSessionId });
+        onChanged?.();
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Couldn't move this booking — please try again.");
+      } finally {
+        setBusyId(null);
+        setReschedFor(null);
+      }
+      return;
+    }
     // A party moves every seat to the same new session, one call each.
     let error: { message: string; code?: string | null } | null = null;
     for (const id of reschedFor.allIds) {

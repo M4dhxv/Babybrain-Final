@@ -850,6 +850,82 @@ export async function createWixClassBooking(
   return confirmWixBooking(creds, data.booking);
 }
 
+/** A booking's current `revision` — required by both {@link cancelWixBooking}
+ *  and {@link rescheduleWixClassBooking} for optimistic concurrency (a stale
+ *  revision is rejected). There's no "Get Booking" endpoint on Bookings
+ *  Writer V2; Wix's own docs point at Bookings *Reader* V2's Query Extended
+ *  Bookings filtered to one id instead. Always fetched fresh right before a
+ *  cancel/reschedule call rather than reusing whatever `revision` a much
+ *  earlier create/confirm response carried — anything that's touched the
+ *  booking since (a manual edit on Wix, this same booking rescheduled once
+ *  already) would make a cached one stale. Returns null if Wix has no
+ *  record of this booking at all (already gone there, or a bad id) — the
+ *  caller decides what that means for its own flow. */
+export async function fetchWixBookingRevision(creds: WixCredentials, bookingId: string): Promise<string | null> {
+  const data = await wixFetch<{ extendedBookings?: { booking?: WixBooking }[] }>(
+    creds,
+    '/_api/bookings-reader/v2/extended-bookings/query',
+    { query: { filter: { id: bookingId } } }
+  );
+  return data.extendedBookings?.[0]?.booking?.revision ?? null;
+}
+
+/** Cancels a booking in Wix so its calendar/availability actually frees the
+ *  slot back up. `cancel_booking`/`cancel_booking_group`
+ *  (supabase/migrations/00099) only ever flip the LOCAL `bookings.status` —
+ *  nothing in this codebase ever told Wix a cancellation happened, so a
+ *  cancelled seat stayed "taken" there forever. Works the same for
+ *  APPOINTMENT, CLASS and COURSE bookings — unlike reschedule, cancel takes
+ *  no target slot, so there's nothing type-specific here.
+ *
+ *  `ignoreCancellationPolicy: true` because BabyBrain's own
+ *  allow_cancellation/cancellation_cutoff_hours check has already run by the
+ *  time this is called (same reasoning createWixClassBooking documents for
+ *  `ignoreBookingWindow`) — a vendor's separately-configured Wix
+ *  cancellation policy shouldn't be able to reject a cancellation BabyBrain
+ *  already decided was allowed. */
+export async function cancelWixBooking(creds: WixCredentials, bookingId: string, revision: string): Promise<void> {
+  await wixFetch(creds, `/_api/bookings-service/v2/bookings/${bookingId}/cancel`, {
+    revision,
+    flowControlSettings: { ignoreCancellationPolicy: true },
+  });
+}
+
+/** Reschedules a CLASS booking to a different occurrence of the same class,
+ *  so Wix's own availability reflects the move instead of going stale —
+ *  `reschedule_booking` (supabase/migrations/00091) only ever moved the
+ *  LOCAL `bookings.session_id`. Per Wix's own docs, a class reschedule
+ *  should specify *only* `slot.eventId`, not a full slot object, to avoid
+ *  spurious unavailability errors.
+ *
+ *  `newEventId` is Wix's own `WixClassSession.eventId` for the target
+ *  occurrence — NOT `activity_sessions.wix_slot_key` directly. That column
+ *  holds `encodeWixSlotKey({kind:'class', sessionId})`, keyed on the
+ *  session's `id`, which is a different Wix field from its `eventId`
+ *  (see {@link fetchWixClassSessions}); the caller must decode the target
+ *  session's `wix_slot_key`, re-fetch live class sessions the same way
+ *  `resolveWixSlot` does for a new booking, and pass the matched session's
+ *  `eventId` here — both to get the right id and to re-validate the
+ *  occurrence is still live on Wix before moving a real booking onto it.
+ *
+ *  APPOINTMENT and COURSE bookings deliberately don't go through this:
+ *  Wix doesn't support rescheduling a course booking at all, and an
+ *  appointment's target isn't a fixed, pre-listed occurrence the way a
+ *  class's is — it would need a real availability-slot resolution this
+ *  function doesn't attempt. */
+export async function rescheduleWixClassBooking(
+  creds: WixCredentials,
+  bookingId: string,
+  revision: string,
+  newEventId: string
+): Promise<void> {
+  await wixFetch(creds, `/_api/bookings-service/v2/bookings/${bookingId}/reschedule`, {
+    slot: { eventId: newEventId },
+    revision,
+    flowControlSettings: { ignoreReschedulePolicy: true },
+  });
+}
+
 export interface WixConfirmedBooking {
   start: string; // ISO timestamp
   end: string; // ISO timestamp

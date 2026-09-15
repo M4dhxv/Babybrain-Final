@@ -590,6 +590,14 @@ export type Database = {
           cancel_refund_mode?: 'refund' | 'none' | null;
           cancel_reason?: string | null;
           cancelled_by?: string | null;
+          // Only ever written by the service-role client, and only from
+          // app/api/wix/bookings/reschedule — the plain reschedule_booking
+          // Postgres RPC (00091) moves this via raw SQL as `security
+          // definer`, which isn't subject to this type at all. A Wix-linked
+          // class's reschedule has to move Wix's own booking first, which
+          // means doing the local update from server code instead of the
+          // RPC, so this needs to be a legitimate update path now too.
+          session_id?: string;
         };
               Relationships: [
           {

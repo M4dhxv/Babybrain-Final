@@ -9,6 +9,9 @@ import {
   fetchWixCourseSpan,
   createWixBooking,
   createWixClassBooking,
+  fetchWixBookingRevision,
+  cancelWixBooking,
+  rescheduleWixClassBooking,
   decodeWixSlotKey,
   courseAnchorSlotKey,
   wixServicePrice,
@@ -948,6 +951,93 @@ export async function createWixBookingAndSession(
     return { ok: false, status: 500, error: 'Booked in Wix but failed to save locally — contact support' };
   }
   return { ok: true, sessionId, wixBookingId };
+}
+
+/**
+ * Cancels a Wix-linked booking in Wix itself, given the `wix_booking_id`
+ * stamped on it at creation. `cancel_booking`/`cancel_booking_group`
+ * (supabase/migrations/00099) only ever flip the local `bookings.status` —
+ * this is the piece that actually frees the seat back up on Wix's calendar.
+ * A booking with no `wix_booking_id` (a non-Wix activity) isn't this
+ * function's problem — callers only reach for this once they already know
+ * the activity is Wix-linked.
+ */
+export async function cancelWixLinkedBooking(
+  creds: WixCredentials,
+  wixBookingId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  try {
+    const revision = await fetchWixBookingRevision(creds, wixBookingId);
+    if (revision == null) {
+      // Wix has no record of this booking any more (already cancelled there
+      // by the vendor, or the account's changed since) — nothing to cancel,
+      // and the local cancellation should proceed rather than block on it.
+      return { ok: true };
+    }
+    await cancelWixBooking(creds, wixBookingId, revision);
+    return { ok: true };
+  } catch (e) {
+    console.error('Wix booking cancellation failed', wixBookingId, e);
+    return { ok: false, status: 502, error: 'Could not cancel this booking in Wix — please try again' };
+  }
+}
+
+/**
+ * Moves a Wix-linked CLASS booking to a different occurrence of the same
+ * class in Wix itself, given the `wix_booking_id` stamped on it at creation
+ * and the `activity_sessions` row the parent is moving to.
+ * `reschedule_booking` (supabase/migrations/00091) only ever moved the local
+ * `bookings.session_id` — this is the piece that actually moves the Wix
+ * calendar entry, so the old occurrence frees up and the new one shows the
+ * seat as taken.
+ *
+ * Only ever called for a CLASS-type Wix service — see
+ * {@link rescheduleWixClassBooking}'s own doc for why APPOINTMENT and
+ * COURSE aren't handled here. `newSession.wix_slot_key` must decode to a
+ * `{kind:'class'}` key; anything else (a non-Wix session, a COURSE anchor
+ * row) is a caller bug, not a Wix-side failure, so it's rejected before any
+ * Wix call is made.
+ */
+export async function rescheduleWixClassBookingToSession(
+  creds: WixCredentials,
+  wixServiceId: string,
+  wixBookingId: string,
+  newSession: { wix_slot_key: string | null }
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (!newSession.wix_slot_key) {
+    return { ok: false, status: 400, error: 'That session is not linked to Wix' };
+  }
+  let sessionId: string;
+  try {
+    const decoded = decodeWixSlotKey(newSession.wix_slot_key);
+    if (decoded.kind !== 'class') return { ok: false, status: 400, error: 'That session is not linked to Wix' };
+    sessionId = decoded.sessionId;
+  } catch {
+    return { ok: false, status: 400, error: 'That session is not linked to Wix' };
+  }
+
+  try {
+    // Re-fetched live rather than trusted from whenever this local session
+    // row was created — the same "never trust stale slot data" rule
+    // resolveWixSlot follows for a brand-new booking, and the only way to
+    // get the target occurrence's `eventId` (see rescheduleWixClassBooking's
+    // own doc for why that's a different value from `wix_slot_key`).
+    const sessions = await fetchWixClassSessions(creds, wixServiceId, WIX_AVAILABILITY_WINDOW_DAYS);
+    const live = sessions.find((s) => s.id === sessionId);
+    if (!live) {
+      return { ok: false, status: 409, error: 'That class occurrence is no longer available on Wix' };
+    }
+
+    const revision = await fetchWixBookingRevision(creds, wixBookingId);
+    if (revision == null) {
+      return { ok: false, status: 409, error: 'This booking is no longer found on Wix — contact support' };
+    }
+    await rescheduleWixClassBooking(creds, wixBookingId, revision, live.eventId);
+    return { ok: true };
+  } catch (e) {
+    console.error('Wix booking reschedule failed', wixBookingId, e);
+    return { ok: false, status: 502, error: 'Could not move this booking in Wix — please try again' };
+  }
 }
 
 /**
