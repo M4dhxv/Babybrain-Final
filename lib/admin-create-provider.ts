@@ -188,7 +188,11 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
       // `undefined` rather than null on the optional text columns: the Insert
       // types treat an omitted field as "take the column default", which is
       // what an empty form field means here.
-      description: input.description?.trim() || undefined,
+      // `''`, never undefined: providers.description is NOT NULL DEFAULT ''.
+      // PostgREST only falls back to a column default when the key is absent
+      // from EVERY row of an insert; send undefined and it writes an explicit
+      // NULL instead, which the constraint rejects.
+      description: input.description?.trim() || '',
       vendor_category: input.vendor_category,
       contact_email: input.contact_email?.trim() || null,
       contact_phone: input.contact_phone?.trim() || null,
@@ -273,7 +277,12 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
       return {
         slug: `${slug}-${slugify(a.title) || 'class'}-${i}`.slice(0, 70),
         title: a.title.trim().slice(0, 120),
-        description: a.description?.trim() || input.description?.trim() || undefined,
+        // Same NOT NULL DEFAULT '' story as the provider above, and this one
+        // is a BULK insert, where PostgREST normalises the key set across all
+        // rows — so one class without a description made the whole create fail
+        // with a raw Postgres error and roll the vendor back. Description is
+        // optional in the form, so blank has to be a legal value.
+        description: a.description?.trim() || input.description?.trim() || '',
         category_id: catId[a.category_slug],
         provider_id: created.id,
         provider_name: business_name,

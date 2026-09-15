@@ -335,7 +335,9 @@ export async function updateProviderWithCatalogue(
       }
       const row: Record<string, unknown> = {};
       if (a.title !== undefined) row.title = a.title.slice(0, 120);
-      if (a.description !== undefined) row.description = a.description || null;
+      // `''` not null — clearing a class description in the editor would
+      // otherwise violate the NOT NULL constraint (see admin-create-provider).
+      if (a.description !== undefined) row.description = a.description || '';
       if (a.price !== undefined) row.price = a.price;
       if (a.is_published !== undefined) row.is_published = a.is_published;
       if (a.image_urls !== undefined) row.image_urls = a.image_urls.map((u) => u.trim()).filter(Boolean);
