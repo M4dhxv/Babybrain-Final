@@ -52,40 +52,68 @@ function slugify(s: string): string {
  *  resolveWixServiceLocation in sync.ts, which dedupes on that id) — so this
  *  dedupes on matching formatted-address text against this provider's
  *  existing locations instead. Returns null for an ONLINE or TBD event, or
- *  one with no address at all — nothing real to link. */
+ *  one with no address at all — nothing real to link.
+ *
+ *  `cache` is every one of this provider's existing provider_locations,
+ *  pre-loaded once by the caller (address -> id) rather than a per-event
+ *  "does this address already exist?" SELECT — a real cost when a blanket
+ *  sync mirrors a few dozen events every run. `countRef` mirrors what used
+ *  to be a fresh `count(*)` per newly-created location (only the FIRST
+ *  location for a provider is `is_primary`); seeded once from the same
+ *  prefetch and incremented in place as this run creates new ones, so two
+ *  events sharing a not-yet-seen address within the same run still only
+ *  create it once and never both claim `is_primary` — the whole point of
+ *  keeping this loop serial (see the caller's own comment on that). */
 async function resolveEventLocation(
   admin: SupabaseClient<Database>,
   providerId: string,
-  event: WixEvent
+  event: WixEvent,
+  cache: Map<string, string>,
+  countRef: { count: number }
 ): Promise<string | null> {
   if (event.location.locationTbd || event.location.type === 'ONLINE' || !event.location.formattedAddress) {
     return null;
   }
-  const { data: existing } = await admin
-    .from('provider_locations')
-    .select('id')
-    .eq('provider_id', providerId)
-    .eq('address', event.location.formattedAddress)
-    .maybeSingle();
-  if (existing) return existing.id;
-
-  const { count } = await admin
-    .from('provider_locations')
-    .select('id', { count: 'exact', head: true })
-    .eq('provider_id', providerId);
+  const address = event.location.formattedAddress;
+  const cached = cache.get(address);
+  if (cached) return cached;
 
   const { data: created } = await admin
     .from('provider_locations')
     .insert({
       provider_id: providerId,
       name: event.location.name || event.location.city || 'Event location',
-      address: event.location.formattedAddress,
+      address,
       postal_code: event.location.postalCode,
-      is_primary: (count ?? 0) === 0,
+      is_primary: countRef.count === 0,
     })
     .select('id')
     .single();
+  if (created) {
+    cache.set(address, created.id);
+    countRef.count++;
+  }
   return created?.id ?? null;
+}
+
+/** Everything syncEventActivityMirror needs that used to be its own
+ *  per-event SELECT — gathered once by the caller across every event being
+ *  mirrored this run instead of re-fetched per event, which is what made a
+ *  blanket sync of a few dozen already-imported events slow enough to risk
+ *  the route's own time budget (each mirror call was 4-5 sequential Supabase
+ *  REST round trips). See the long comment on syncProviderWixEvents's own
+ *  prefetching for why each piece here is safe to read once up front. */
+interface EventMirrorContext {
+  locationCache: Map<string, string>;
+  locationCountRef: { count: number };
+  ticketTypesByEventId: Map<
+    string,
+    { price_cents: number; capacity_total: number | null; fee_type: string | null; fee_rate_percent: number | null }[]
+  >;
+  existingActivityIdByLocalEventId: Map<string, string>;
+  sessionsByActivityId: Map<string, { id: string }[]>;
+  bookedSessionIds: Set<string>;
+  communityEventsCategoryId: number | null;
 }
 
 /** Mirrors a synced Wix Event into `activities` (+ one `activity_sessions`
@@ -103,7 +131,8 @@ async function syncEventActivityMirror(
   admin: SupabaseClient<Database>,
   providerId: string,
   localEventId: string,
-  event: WixEvent
+  event: WixEvent,
+  ctx: EventMirrorContext
 ): Promise<void> {
   // Cheapest non-hidden ticket type's price stands in for `activities.price`
   // (a single flat number) — the real per-type prices live on
@@ -112,28 +141,19 @@ async function syncEventActivityMirror(
   // stands in for `activities.default_capacity`/`activity_sessions.capacity`
   // similarly — null (unknown, or genuinely unlimited on Wix) leaves
   // whatever's already there alone rather than blanking it, same convention
-  // wixServiceCapacity/wixServicePrice use for Bookings. Both re-selected
-  // fresh rather than threaded through from the caller's ticket-definitions
-  // fetch, so this stays correct even on a run where that fetch failed/was
-  // skipped (see isMissingEventsApp above) and existing ticket_types rows
-  // were simply left as they were.
-  const { data: ticketTypes } = await admin
-    .from('event_ticket_types')
-    .select('price_cents, capacity_total, fee_type, fee_rate_percent')
-    .eq('event_id', localEventId)
-    .eq('hidden', false)
-    .order('price_cents', { ascending: true });
-  // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
-  // discovered once per ticket type, see fetchTicketFeeRatePercent) — so
-  // this mirrored price, which both the parent explore/detail pages and the
-  // vendor's own activity price field read directly, is never an
-  // understatement of the real charge.
+  // wixServiceCapacity/wixServicePrice use for Bookings. Sourced from
+  // ctx.ticketTypesByEventId — a real DB read the caller did in bulk *after*
+  // this run's own ticket-type upserts landed, not from the caller's
+  // in-memory Wix fetch — so this stays correct even on a run where that
+  // fetch failed/was skipped (see isMissingEventsApp above) and existing
+  // ticket_types rows were simply left as they were.
+  const ticketTypes = ctx.ticketTypesByEventId.get(localEventId) ?? [];
   const price =
-    ticketTypes && ticketTypes.length > 0
+    ticketTypes.length > 0
       ? ticketPriceWithFeeCents(ticketTypes[0].price_cents, ticketTypes[0].fee_type, ticketTypes[0].fee_rate_percent) / 100
       : null;
   const capacity =
-    ticketTypes && ticketTypes.length > 0 && ticketTypes.every((t) => t.capacity_total != null)
+    ticketTypes.length > 0 && ticketTypes.every((t) => t.capacity_total != null)
       ? ticketTypes.reduce((sum, t) => sum + (t.capacity_total as number), 0)
       : null;
 
@@ -142,17 +162,12 @@ async function syncEventActivityMirror(
   // syncWixServicesToActivities documents for Bookings-linked activities.
   // Category, age range and publish state are the vendor's own to set and
   // are never touched here past first import.
-  const locationId = await resolveEventLocation(admin, providerId, event);
+  const locationId = await resolveEventLocation(admin, providerId, event, ctx.locationCache, ctx.locationCountRef);
 
-  const { data: existing } = await admin
-    .from('activities')
-    .select('id')
-    .eq('provider_id', providerId)
-    .eq('wix_event_id', localEventId)
-    .maybeSingle();
+  const existingActivityId = ctx.existingActivityIdByLocalEventId.get(localEventId);
 
   let activityId: string;
-  if (existing) {
+  if (existingActivityId) {
     await admin
       .from('activities')
       .update({
@@ -168,15 +183,10 @@ async function syncEventActivityMirror(
         // revival rule the wix_events row itself just got above.
         wix_missing_since: null,
       })
-      .eq('id', existing.id);
-    activityId = existing.id;
+      .eq('id', existingActivityId);
+    activityId = existingActivityId;
   } else {
-    const { data: category } = await admin
-      .from('activity_categories')
-      .select('id')
-      .eq('slug', 'community-events')
-      .maybeSingle();
-    if (!category) return; // no fallback category exists yet — extremely unlikely; mirrors syncWixServicesToActivities's own bail-out in lib/wix/sync.ts
+    if (!ctx.communityEventsCategoryId) return; // no fallback category exists yet — extremely unlikely; mirrors syncWixServicesToActivities's own bail-out in lib/wix/sync.ts
 
     const { data: inserted, error } = await admin
       .from('activities')
@@ -184,7 +194,7 @@ async function syncEventActivityMirror(
         slug: `${slugify(event.title)}-${event.id.slice(0, 6)}`,
         title: event.title,
         description: event.description || 'Imported from Wix Events. Review and publish this listing when ready.',
-        category_id: category.id,
+        category_id: ctx.communityEventsCategoryId,
         provider_id: providerId,
         is_published: false,
         wix_event_id: localEventId,
@@ -226,13 +236,12 @@ async function syncEventActivityMirror(
   // per scheduled run. Collapse to one instead — keep a single canonical row
   // (whichever already has a live booking on it, so a sold ticket is never
   // stranded; otherwise the earliest), point it at the event's current
-  // date/time, and delete any other unbooked rows.
-  const { data: sessionRows } = await admin
-    .from('activity_sessions')
-    .select('id')
-    .eq('activity_id', activityId)
-    .order('starts_at', { ascending: true });
-  const rows = sessionRows ?? [];
+  // date/time, and delete any other unbooked rows. `rows` (and which of them
+  // are booked) come from ctx — a brand-new activityId just inserted above
+  // simply won't be a key in either map, which correctly falls through to
+  // "no existing sessions" below exactly like the old per-activity SELECT
+  // would have for a row that didn't exist yet.
+  const rows = ctx.sessionsByActivityId.get(activityId) ?? [];
   if (rows.length === 0) {
     await admin.from('activity_sessions').insert({
       activity_id: activityId,
@@ -242,12 +251,7 @@ async function syncEventActivityMirror(
     });
   } else {
     const ids = rows.map((r) => r.id);
-    const { data: bookedRows } = await admin
-      .from('bookings')
-      .select('session_id')
-      .in('session_id', ids)
-      .neq('status', 'cancelled');
-    const booked = new Set((bookedRows ?? []).map((b) => b.session_id));
+    const booked = ctx.bookedSessionIds;
     const canonicalId = rows.find((r) => booked.has(r.id))?.id ?? rows[0].id;
     await admin
       .from('activity_sessions')
@@ -391,12 +395,7 @@ export async function syncProviderWixEvents(
   // actually wrong, the request just ran out of time before finishing.
   // Prefetching them concurrently here (allSettled, so one event's failure
   // doesn't stop the others) turns N sequential 20s-worst-case calls into
-  // roughly one. Every DB write below is untouched and still runs in the
-  // same serial, per-event order as before — this only moves independent
-  // Wix reads earlier; it must NOT be extended to the event loop itself,
-  // which does check-then-insert location dedup by address (see
-  // resolveEventLocation) that isn't safe to run concurrently across events
-  // sharing a venue.
+  // roughly one.
   const ticketDefsSettled = await Promise.allSettled(events.map((event) => fetchWixTicketDefinitions(creds, event.id)));
   const ticketDefsByEventId = new Map<string, Awaited<ReturnType<typeof fetchWixTicketDefinitions>>>();
   const ticketDefsErrorByEventId = new Map<string, unknown>();
@@ -405,16 +404,45 @@ export async function syncProviderWixEvents(
     if (settled.status === 'fulfilled') ticketDefsByEventId.set(event.id, settled.value);
     else ticketDefsErrorByEventId.set(event.id, settled.reason);
   });
-
+  // Matches the old per-event behaviour exactly: any ticket-definitions
+  // fetch failure that isn't "this account has no Events & Tickets app" is
+  // treated as fatal for the whole run — checked up front now rather than
+  // discovered mid-loop, so this never leaves a half-synced run behind
+  // (some events' wix_events rows written, later ones not) the way throwing
+  // partway through the old per-event loop could.
   for (const event of events) {
-    const { data: existing } = await admin
-      .from('wix_events')
-      .select('id, wix_missing_since')
-      .eq('provider_id', providerId)
-      .eq('wix_event_id', event.id)
-      .maybeSingle();
+    const prefetchError = ticketDefsErrorByEventId.get(event.id);
+    if (prefetchError !== undefined && !isMissingEventsApp(prefetchError)) throw prefetchError;
+  }
 
-    const fields = {
+  // --- Batch 1: wix_events (was 1-2 round trips PER event) ------------------
+  // The one Supabase write every fetched event needs regardless of whether
+  // it ends up mirrored — a plain upsert on (provider_id, wix_event_id)
+  // works because, unlike activities below, `fields` is identical whichever
+  // branch would have run: there's no insert-only column (slug/category/
+  // is_published) that a blind upsert could clobber on an existing row.
+  const existingEventRows = events.length
+    ? (
+        await admin
+          .from('wix_events')
+          .select('id, wix_event_id, wix_missing_since')
+          .eq('provider_id', providerId)
+          .in('wix_event_id', events.map((e) => e.id))
+      ).data ?? []
+    : [];
+  const existingEventByWixId = new Map(existingEventRows.map((r) => [r.wix_event_id, r]));
+
+  const eventRowsToUpsert = events.map((event) => {
+    const existing = existingEventByWixId.get(event.id);
+    if (existing) {
+      result.updated++;
+      if (existing.wix_missing_since) result.revived++;
+    } else {
+      result.created++;
+    }
+    return {
+      provider_id: providerId,
+      wix_event_id: event.id,
       title: event.title,
       slug: event.slug,
       description: event.description,
@@ -432,57 +460,76 @@ export async function syncProviderWixEvents(
       // revival rule syncWixServicesToActivities uses for wix_missing_since.
       wix_missing_since: null,
     };
-
-    let localEventId: string;
-    if (existing) {
-      await admin.from('wix_events').update(fields).eq('id', existing.id);
-      if (existing.wix_missing_since) result.revived++;
-      result.updated++;
-      localEventId = existing.id;
+  });
+  const localEventIdByWixId = new Map(existingEventRows.map((r) => [r.wix_event_id, r.id] as const));
+  if (eventRowsToUpsert.length) {
+    const { data: upserted, error } = await admin
+      .from('wix_events')
+      .upsert(eventRowsToUpsert, { onConflict: 'provider_id,wix_event_id' })
+      .select('id, wix_event_id');
+    if (error) {
+      // One malformed row used to only cost that one event (the old
+      // per-event insert logged-and-skipped; an update's error wasn't even
+      // checked) — a single bulk call fails atomically, so surfacing this as
+      // a hard throw would turn one bad event into an aborted run for every
+      // event, including ones that already had a perfectly good id from the
+      // prefetch above. Log and carry on instead: existing events keep the
+      // id they already had (their fields just don't get this run's refresh
+      // this one time), and any brand-new event simply has no id to find
+      // below, which the eventsWithLocalId filter already treats as "skip
+      // ticket sync/mirroring for it this run" rather than a crash.
+      console.error('wix_events bulk upsert failed', error);
     } else {
-      const { data: inserted, error } = await admin
-        .from('wix_events')
-        .insert({ provider_id: providerId, wix_event_id: event.id, ...fields })
-        .select('id')
-        .single();
-      if (error || !inserted) {
-        console.error('Could not insert wix_events row', event.id, error);
-        continue;
-      }
-      result.created++;
-      localEventId = inserted.id;
+      for (const row of upserted ?? []) localEventIdByWixId.set(row.wix_event_id, row.id);
     }
+  }
 
+  // Every event this run actually knows a local id for, in original Wix
+  // order — an id can be missing only if the upsert above somehow didn't
+  // return a row for it, which .select() on a successful upsert never does;
+  // kept as a filter rather than a throw so one unexplained gap can't take
+  // down ticket pricing/mirroring for every other event in the batch.
+  const eventsWithLocalId = events
+    .map((event) => ({ event, localEventId: localEventIdByWixId.get(event.id) }))
+    .filter((x): x is { event: WixEvent; localEventId: string } => !!x.localEventId);
+
+  // --- Batch 2: event_ticket_types fee-rate cache + upsert (was 2 round
+  // trips PER TICKET DEFINITION) --------------------------------------------
+  const eventsNeedingTicketSync = eventsWithLocalId.filter(({ event }) => {
     const prefetchError = ticketDefsErrorByEventId.get(event.id);
     if (prefetchError !== undefined) {
-      if (isMissingEventsApp(prefetchError)) {
-        result.ticketPricingSkipped.push(event.title);
-      } else {
-        throw prefetchError;
-      }
-    } else {
-      const defs = ticketDefsByEventId.get(event.id) ?? [];
-      // Different ticket definitions upsert different rows (unique on
-      // event_id + wix_ticket_definition_id) and their cache-check reads are
-      // independent of one another, so — unlike the event loop itself —
-      // running a whole event's definitions concurrently is safe and is
-      // where the other slow Wix call lives: fetchTicketFeeRatePercent is a
-      // live reservation, one per definition without a cached rate yet
-      // (i.e. every definition on a first import).
-      await Promise.all(
-        defs.map(async (def) => {
-          const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+      result.ticketPricingSkipped.push(event.title); // must be isMissingEventsApp — anything else already threw above
+      return false;
+    }
+    return true;
+  });
+  const localEventIdsForTickets = eventsNeedingTicketSync.map(({ localEventId }) => localEventId);
+  const { data: cachedTicketTypeRows } = localEventIdsForTickets.length
+    ? await admin
+        .from('event_ticket_types')
+        .select('event_id, wix_ticket_definition_id, fee_rate_percent')
+        .in('event_id', localEventIdsForTickets)
+    : { data: [] };
+  const cachedFeeRateByKey = new Map(
+    (cachedTicketTypeRows ?? []).map((r) => [`${r.event_id}:${r.wix_ticket_definition_id}`, r.fee_rate_percent])
+  );
 
+  // Different ticket definitions upsert different rows (unique on event_id +
+  // wix_ticket_definition_id) with no shared state between them, so — unlike
+  // the location-dedup step below — resolving every definition across every
+  // event concurrently is safe. This is also where the other slow Wix call
+  // lives: fetchTicketFeeRatePercent is a live reservation, one per
+  // definition without a cached rate yet (i.e. every definition on a first
+  // import).
+  const ticketTypeRows = (
+    await Promise.all(
+      eventsNeedingTicketSync.flatMap(({ event, localEventId }) =>
+        (ticketDefsByEventId.get(event.id) ?? []).map(async (def) => {
+          const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
           // The fee *rate* only ever comes from a live reservation, so it's
           // discovered once (a throwaway hold, see fetchTicketFeeRatePercent)
           // and cached rather than re-reserved on every sync.
-          const { data: existingType } = await admin
-            .from('event_ticket_types')
-            .select('fee_rate_percent')
-            .eq('event_id', localEventId)
-            .eq('wix_ticket_definition_id', def.id)
-            .maybeSingle();
-          let feeRatePercent = existingType?.fee_rate_percent ?? null;
+          let feeRatePercent = cachedFeeRateByKey.get(`${localEventId}:${def.id}`) ?? null;
           if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
             try {
               feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
@@ -490,42 +537,124 @@ export async function syncProviderWixEvents(
               // best-effort — display falls back to the bare price this run, retried next sync
             }
           }
-
-          await admin
-            .from('event_ticket_types')
-            .upsert(
-              {
-                event_id: localEventId,
-                wix_ticket_definition_id: def.id,
-                name: def.name,
-                price_cents: priceCents,
-                currency: def.currency ?? 'SGD',
-                is_free: def.free,
-                capacity_total: def.initialLimit,
-                capacity_remaining: def.unsoldCount,
-                limit_per_checkout: def.limitPerCheckout,
-                sale_start_date: def.saleStartDate,
-                sale_end_date: def.saleEndDate,
-                sale_status: def.saleStatus,
-                // Wix's own "no tickets left" flag — the parent booking UI reads
-                // this to show a disabled "Sold out" state (Wix Events have no
-                // BabyBrain waitlist, see 00107). Refreshed every sync, so a
-                // vendor raising the ticket limit on Wix clears it automatically.
-                sold_out: def.soldOut,
-                hidden: def.hidden,
-                fee_type: def.feeType,
-                fee_rate_percent: feeRatePercent,
-              },
-              { onConflict: 'event_id,wix_ticket_definition_id' }
-            );
+          return {
+            event_id: localEventId,
+            wix_ticket_definition_id: def.id,
+            name: def.name,
+            price_cents: priceCents,
+            currency: def.currency ?? 'SGD',
+            is_free: def.free,
+            capacity_total: def.initialLimit,
+            capacity_remaining: def.unsoldCount,
+            limit_per_checkout: def.limitPerCheckout,
+            sale_start_date: def.saleStartDate,
+            sale_end_date: def.saleEndDate,
+            sale_status: def.saleStatus,
+            // Wix's own "no tickets left" flag — the parent booking UI reads
+            // this to show a disabled "Sold out" state (Wix Events have no
+            // BabyBrain waitlist, see 00107). Refreshed every sync, so a
+            // vendor raising the ticket limit on Wix clears it automatically.
+            sold_out: def.soldOut,
+            hidden: def.hidden,
+            fee_type: def.feeType,
+            fee_rate_percent: feeRatePercent,
+          };
         })
-      );
+      )
+    )
+  );
+  if (ticketTypeRows.length) {
+    await admin.from('event_ticket_types').upsert(ticketTypeRows, { onConflict: 'event_id,wix_ticket_definition_id' });
+  }
+
+  // --- Batch 3: everything syncEventActivityMirror used to SELECT per event
+  // (was 3-4 more round trips PER MIRRORED event) ----------------------------
+  // Explicitly requested by the picker, or already imported and just being
+  // kept fresh — a blanket run never mirrors a brand-new event.
+  const eventsToMirror = eventsWithLocalId.filter(
+    ({ event, localEventId }) =>
+      (explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))
+  );
+  const localEventIdsToMirror = eventsToMirror.map(({ localEventId }) => localEventId);
+
+  if (localEventIdsToMirror.length) {
+    const { data: existingLocationRows } = await admin.from('provider_locations').select('id, address').eq('provider_id', providerId);
+    const locationCache = new Map<string, string>();
+    for (const l of existingLocationRows ?? []) if (l.address) locationCache.set(l.address, l.id);
+    const locationCountRef = { count: (existingLocationRows ?? []).length };
+
+    const { data: existingMirrorRows } = await admin
+      .from('activities')
+      .select('id, wix_event_id')
+      .eq('provider_id', providerId)
+      .in('wix_event_id', localEventIdsToMirror);
+    const existingActivityIdByLocalEventId = new Map(
+      (existingMirrorRows ?? []).map((r) => [r.wix_event_id as string, r.id])
+    );
+
+    type FreshTicketTypeRow = {
+      event_id: string;
+      price_cents: number;
+      capacity_total: number | null;
+      fee_type: string | null;
+      fee_rate_percent: number | null;
+    };
+    const { data: freshTicketTypeRows }: { data: FreshTicketTypeRow[] | null } = await admin
+      .from('event_ticket_types')
+      .select('event_id, price_cents, capacity_total, fee_type, fee_rate_percent')
+      .in('event_id', localEventIdsToMirror)
+      .eq('hidden', false)
+      .order('price_cents', { ascending: true });
+    const ticketTypesByEventId = new Map<string, FreshTicketTypeRow[]>();
+    for (const row of freshTicketTypeRows ?? []) {
+      const list = ticketTypesByEventId.get(row.event_id) ?? [];
+      list.push(row);
+      ticketTypesByEventId.set(row.event_id, list);
     }
 
-    // Explicitly requested by the picker, or already imported and just
-    // being kept fresh — a blanket run never mirrors a brand-new event.
-    if ((explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))) {
-      await syncEventActivityMirror(admin, providerId, localEventId, event);
+    const knownActivityIds = [...existingActivityIdByLocalEventId.values()];
+    const { data: existingSessionRows } = knownActivityIds.length
+      ? await admin.from('activity_sessions').select('id, activity_id').in('activity_id', knownActivityIds).order('starts_at', { ascending: true })
+      : { data: [] };
+    const sessionsByActivityId = new Map<string, { id: string }[]>();
+    for (const row of existingSessionRows ?? []) {
+      const list = sessionsByActivityId.get(row.activity_id) ?? [];
+      list.push({ id: row.id });
+      sessionsByActivityId.set(row.activity_id, list);
+    }
+
+    const knownSessionIds = (existingSessionRows ?? []).map((r) => r.id);
+    const { data: bookedRows } = knownSessionIds.length
+      ? await admin.from('bookings').select('session_id').in('session_id', knownSessionIds).neq('status', 'cancelled')
+      : { data: [] };
+    const bookedSessionIds = new Set((bookedRows ?? []).map((b) => b.session_id));
+
+    const { data: communityEventsCategory } = await admin
+      .from('activity_categories')
+      .select('id')
+      .eq('slug', 'community-events')
+      .maybeSingle();
+
+    const mirrorCtx: EventMirrorContext = {
+      locationCache,
+      locationCountRef,
+      ticketTypesByEventId,
+      existingActivityIdByLocalEventId,
+      sessionsByActivityId,
+      bookedSessionIds,
+      communityEventsCategoryId: communityEventsCategory?.id ?? null,
+    };
+
+    // The actual per-event writes — still fully serial, in original Wix
+    // order, exactly as before. This is the one part that must NOT be
+    // parallelized: resolveEventLocation does check-then-insert location
+    // dedup by address (now against mirrorCtx.locationCache, updated in
+    // place as each new address is created) that isn't safe to run
+    // concurrently across events sharing a venue — two events landing on the
+    // same not-yet-seen address at once could each miss the other's insert
+    // and create two location rows for one address.
+    for (const { event, localEventId } of eventsToMirror) {
+      await syncEventActivityMirror(admin, providerId, localEventId, event, mirrorCtx);
     }
   }
 

@@ -36,73 +36,77 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'wix-event';
 }
 
+/** `cache`/`countRef` are prefetched once by the caller across the whole
+ *  run (address -> id, and the provider's total location count) instead of
+ *  a per-event SELECT + COUNT — see the identical rewrite and its full
+ *  reasoning in lib/wix/events-sync.ts. */
 async function resolveEventLocation(
   admin: SupabaseClient,
   providerId: string,
-  event: WixEvent
+  event: WixEvent,
+  cache: Map<string, string>,
+  countRef: { count: number }
 ): Promise<string | null> {
   if (event.location.locationTbd || event.location.type === 'ONLINE' || !event.location.formattedAddress) {
     return null;
   }
-  const { data: existing } = await admin
-    .from('provider_locations')
-    .select('id')
-    .eq('provider_id', providerId)
-    .eq('address', event.location.formattedAddress)
-    .maybeSingle();
-  if (existing) return existing.id;
-
-  const { count } = await admin
-    .from('provider_locations')
-    .select('id', { count: 'exact', head: true })
-    .eq('provider_id', providerId);
+  const address = event.location.formattedAddress;
+  const cached = cache.get(address);
+  if (cached) return cached;
 
   const { data: created } = await admin
     .from('provider_locations')
     .insert({
       provider_id: providerId,
       name: event.location.name || event.location.city || 'Event location',
-      address: event.location.formattedAddress,
+      address,
       postal_code: event.location.postalCode,
-      is_primary: (count ?? 0) === 0,
+      is_primary: countRef.count === 0,
     })
     .select('id')
     .single();
+  if (created) {
+    cache.set(address, created.id);
+    countRef.count++;
+  }
   return created?.id ?? null;
+}
+
+/** Everything this used to SELECT per event, gathered once by the caller —
+ *  see EventMirrorContext in lib/wix/events-sync.ts for the full reasoning. */
+interface EventMirrorContext {
+  locationCache: Map<string, string>;
+  locationCountRef: { count: number };
+  ticketTypesByEventId: Map<string, any[]>;
+  existingActivityIdByLocalEventId: Map<string, string>;
+  sessionsByActivityId: Map<string, { id: string }[]>;
+  bookedSessionIds: Set<string>;
+  communityEventsCategoryId: number | null;
 }
 
 async function syncEventActivityMirror(
   admin: SupabaseClient,
   providerId: string,
   localEventId: string,
-  event: WixEvent
+  event: WixEvent,
+  ctx: EventMirrorContext
 ): Promise<void> {
-  const { data: ticketTypes } = await admin
-    .from('event_ticket_types')
-    .select('price_cents, capacity_total, fee_type, fee_rate_percent')
-    .eq('event_id', localEventId)
-    .eq('hidden', false)
-    .order('price_cents', { ascending: true });
+  const ticketTypes = ctx.ticketTypesByEventId.get(localEventId) ?? [];
   const price =
-    ticketTypes && ticketTypes.length > 0
+    ticketTypes.length > 0
       ? ticketPriceWithFeeCents(ticketTypes[0].price_cents, ticketTypes[0].fee_type, ticketTypes[0].fee_rate_percent) / 100
       : null;
   const capacity =
-    ticketTypes && ticketTypes.length > 0 && ticketTypes.every((t: any) => t.capacity_total != null)
+    ticketTypes.length > 0 && ticketTypes.every((t: any) => t.capacity_total != null)
       ? ticketTypes.reduce((sum: number, t: any) => sum + (t.capacity_total as number), 0)
       : null;
 
-  const locationId = await resolveEventLocation(admin, providerId, event);
+  const locationId = await resolveEventLocation(admin, providerId, event, ctx.locationCache, ctx.locationCountRef);
 
-  const { data: existing } = await admin
-    .from('activities')
-    .select('id')
-    .eq('provider_id', providerId)
-    .eq('wix_event_id', localEventId)
-    .maybeSingle();
+  const existingActivityId = ctx.existingActivityIdByLocalEventId.get(localEventId);
 
   let activityId: string;
-  if (existing) {
+  if (existingActivityId) {
     await admin
       .from('activities')
       .update({
@@ -116,15 +120,10 @@ async function syncEventActivityMirror(
         ...(event.mainImageUrl ? { image_urls: [event.mainImageUrl] } : {}),
         wix_missing_since: null,
       })
-      .eq('id', existing.id);
-    activityId = existing.id;
+      .eq('id', existingActivityId);
+    activityId = existingActivityId;
   } else {
-    const { data: category } = await admin
-      .from('activity_categories')
-      .select('id')
-      .eq('slug', 'community-events')
-      .maybeSingle();
-    if (!category) return;
+    if (!ctx.communityEventsCategoryId) return;
 
     const { data: inserted, error } = await admin
       .from('activities')
@@ -132,7 +131,7 @@ async function syncEventActivityMirror(
         slug: `${slugify(event.title)}-${event.id.slice(0, 6)}`,
         title: event.title,
         description: event.description || 'Imported from Wix Events. Review and publish this listing when ready.',
-        category_id: category.id,
+        category_id: ctx.communityEventsCategoryId,
         provider_id: providerId,
         is_published: false,
         wix_event_id: localEventId,
@@ -153,12 +152,7 @@ async function syncEventActivityMirror(
     activityId = inserted.id;
   }
 
-  const { data: sessionRows } = await admin
-    .from('activity_sessions')
-    .select('id')
-    .eq('activity_id', activityId)
-    .order('starts_at', { ascending: true });
-  const rows = sessionRows ?? [];
+  const rows = ctx.sessionsByActivityId.get(activityId) ?? [];
   if (rows.length === 0) {
     await admin.from('activity_sessions').insert({
       activity_id: activityId,
@@ -167,19 +161,14 @@ async function syncEventActivityMirror(
       capacity,
     });
   } else {
-    const ids = rows.map((r: any) => r.id);
-    const { data: bookedRows } = await admin
-      .from('bookings')
-      .select('session_id')
-      .in('session_id', ids)
-      .neq('status', 'cancelled');
-    const booked = new Set((bookedRows ?? []).map((b: any) => b.session_id));
-    const canonicalId = rows.find((r: any) => booked.has(r.id))?.id ?? rows[0].id;
+    const ids = rows.map((r) => r.id);
+    const booked = ctx.bookedSessionIds;
+    const canonicalId = rows.find((r) => booked.has(r.id))?.id ?? rows[0].id;
     await admin
       .from('activity_sessions')
       .update({ starts_at: event.startDate, ends_at: event.endDate, ...(capacity != null ? { capacity } : {}) })
       .eq('id', canonicalId);
-    const stale = ids.filter((id: string) => id !== canonicalId && !booked.has(id));
+    const stale = ids.filter((id) => id !== canonicalId && !booked.has(id));
     if (stale.length > 0) {
       await admin.from('activity_sessions').delete().in('id', stale);
     }
@@ -229,9 +218,7 @@ export async function syncProviderWixEvents(
   // Prefetch every event's ticket definitions concurrently — see
   // lib/wix/events-sync.ts's syncProviderWixEvents for the full reasoning
   // (a per-event 20s-worst-case call run serially risked the sync itself
-  // timing out for an account with many events). Every DB write below stays
-  // serial, per-event, exactly as before — only these independent Wix reads
-  // move earlier.
+  // timing out for an account with many events).
   const ticketDefsSettled = await Promise.allSettled(events.map((event) => fetchWixTicketDefinitions(creds, event.id)));
   const ticketDefsByEventId = new Map<string, Awaited<ReturnType<typeof fetchWixTicketDefinitions>>>();
   const ticketDefsErrorByEventId = new Map<string, unknown>();
@@ -240,16 +227,41 @@ export async function syncProviderWixEvents(
     if (settled.status === 'fulfilled') ticketDefsByEventId.set(event.id, settled.value);
     else ticketDefsErrorByEventId.set(event.id, settled.reason);
   });
-
   for (const event of events) {
-    const { data: existing } = await admin
-      .from('wix_events')
-      .select('id, wix_missing_since')
-      .eq('provider_id', providerId)
-      .eq('wix_event_id', event.id)
-      .maybeSingle();
+    const prefetchError = ticketDefsErrorByEventId.get(event.id);
+    if (prefetchError !== undefined && !isMissingEventsApp(prefetchError)) throw prefetchError;
+  }
 
-    const fields = {
+  // Batched read/writes below — see the identical rewrite (and its full
+  // reasoning, comment-by-comment) in lib/wix/events-sync.ts's
+  // syncProviderWixEvents. This turned a per-event chain of ~7 sequential
+  // Supabase REST round trips (the actual bottleneck, not the Wix API calls
+  // above) into a handful of bulk queries, which is what let a ~20-event
+  // account's sync drop from ~40s to ~10s and stop timing out on this
+  // Edge Function's own budget. Keep this in step with the Vercel original
+  // the same way every other function in this file already has to.
+  const existingEventRows = events.length
+    ? (
+        await admin
+          .from('wix_events')
+          .select('id, wix_event_id, wix_missing_since')
+          .eq('provider_id', providerId)
+          .in('wix_event_id', events.map((e) => e.id))
+      ).data ?? []
+    : [];
+  const existingEventByWixId = new Map(existingEventRows.map((r: any) => [r.wix_event_id, r]));
+
+  const eventRowsToUpsert = events.map((event) => {
+    const existing = existingEventByWixId.get(event.id) as any;
+    if (existing) {
+      result.updated++;
+      if (existing.wix_missing_since) result.revived++;
+    } else {
+      result.created++;
+    }
+    return {
+      provider_id: providerId,
+      wix_event_id: event.id,
       title: event.title,
       slug: event.slug,
       description: event.description,
@@ -265,91 +277,147 @@ export async function syncProviderWixEvents(
       wix_status: event.status,
       wix_missing_since: null,
     };
-
-    let localEventId: string;
-    if (existing) {
-      await admin.from('wix_events').update(fields).eq('id', existing.id);
-      if (existing.wix_missing_since) result.revived++;
-      result.updated++;
-      localEventId = existing.id;
+  });
+  const localEventIdByWixId = new Map(existingEventRows.map((r: any) => [r.wix_event_id, r.id] as const));
+  if (eventRowsToUpsert.length) {
+    const { data: upserted, error } = await admin
+      .from('wix_events')
+      .upsert(eventRowsToUpsert, { onConflict: 'provider_id,wix_event_id' })
+      .select('id, wix_event_id');
+    if (error) {
+      console.error('wix_events bulk upsert failed', error);
     } else {
-      const { data: inserted, error } = await admin
-        .from('wix_events')
-        .insert({ provider_id: providerId, wix_event_id: event.id, ...fields })
-        .select('id')
-        .single();
-      if (error || !inserted) {
-        console.error('Could not insert wix_events row', event.id, error);
-        continue;
-      }
-      result.created++;
-      localEventId = inserted.id;
+      for (const row of upserted ?? []) localEventIdByWixId.set(row.wix_event_id, row.id);
     }
+  }
 
+  const eventsWithLocalId = events
+    .map((event) => ({ event, localEventId: localEventIdByWixId.get(event.id) }))
+    .filter((x): x is { event: WixEvent; localEventId: string } => !!x.localEventId);
+
+  const eventsNeedingTicketSync = eventsWithLocalId.filter(({ event }) => {
     const prefetchError = ticketDefsErrorByEventId.get(event.id);
     if (prefetchError !== undefined) {
-      if (isMissingEventsApp(prefetchError)) {
-        result.ticketPricingSkipped.push(event.title);
-      } else {
-        throw prefetchError;
-      }
-    } else {
-      const defs = ticketDefsByEventId.get(event.id) ?? [];
-      // Safe to run a whole event's definitions concurrently (different
-      // rows, independent cache-check reads) — see the Vercel original.
-      await Promise.all(
-        defs.map(async (def) => {
-          const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+      result.ticketPricingSkipped.push(event.title);
+      return false;
+    }
+    return true;
+  });
+  const localEventIdsForTickets = eventsNeedingTicketSync.map(({ localEventId }) => localEventId);
+  const { data: cachedTicketTypeRows } = localEventIdsForTickets.length
+    ? await admin
+        .from('event_ticket_types')
+        .select('event_id, wix_ticket_definition_id, fee_rate_percent')
+        .in('event_id', localEventIdsForTickets)
+    : { data: [] };
+  const cachedFeeRateByKey = new Map(
+    (cachedTicketTypeRows ?? []).map((r: any) => [`${r.event_id}:${r.wix_ticket_definition_id}`, r.fee_rate_percent])
+  );
 
-          const { data: existingType } = await admin
-            .from('event_ticket_types')
-            .select('fee_rate_percent')
-            .eq('event_id', localEventId)
-            .eq('wix_ticket_definition_id', def.id)
-            .maybeSingle();
-          let feeRatePercent = existingType?.fee_rate_percent ?? null;
-          if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
-            try {
-              feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
-            } catch {
-              // best-effort — display falls back to the bare price this run, retried next sync
-            }
+  const ticketTypeRows = await Promise.all(
+    eventsNeedingTicketSync.flatMap(({ event, localEventId }) =>
+      (ticketDefsByEventId.get(event.id) ?? []).map(async (def) => {
+        const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+        let feeRatePercent = cachedFeeRateByKey.get(`${localEventId}:${def.id}`) ?? null;
+        if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
+          try {
+            feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
+          } catch {
+            // best-effort — display falls back to the bare price this run, retried next sync
           }
+        }
+        return {
+          event_id: localEventId,
+          wix_ticket_definition_id: def.id,
+          name: def.name,
+          price_cents: priceCents,
+          currency: def.currency ?? 'SGD',
+          is_free: def.free,
+          capacity_total: def.initialLimit,
+          capacity_remaining: def.unsoldCount,
+          limit_per_checkout: def.limitPerCheckout,
+          sale_start_date: def.saleStartDate,
+          sale_end_date: def.saleEndDate,
+          sale_status: def.saleStatus,
+          sold_out: def.soldOut,
+          hidden: def.hidden,
+          fee_type: def.feeType,
+          fee_rate_percent: feeRatePercent,
+        };
+      })
+    )
+  );
+  if (ticketTypeRows.length) {
+    await admin.from('event_ticket_types').upsert(ticketTypeRows, { onConflict: 'event_id,wix_ticket_definition_id' });
+  }
 
-          await admin
-            .from('event_ticket_types')
-            .upsert(
-              {
-                event_id: localEventId,
-                wix_ticket_definition_id: def.id,
-                name: def.name,
-                price_cents: priceCents,
-                currency: def.currency ?? 'SGD',
-                is_free: def.free,
-                capacity_total: def.initialLimit,
-                capacity_remaining: def.unsoldCount,
-                limit_per_checkout: def.limitPerCheckout,
-                sale_start_date: def.saleStartDate,
-                sale_end_date: def.saleEndDate,
-                sale_status: def.saleStatus,
-                // Wix's own "no tickets left" flag — see lib/wix/events-sync.ts.
-                // Was missing from this Deno copy entirely (00107 never got
-                // ported here), so a ticket type synced only by the cron kept
-                // whatever sold_out value it was created with (or the column
-                // default) forever, regardless of what Wix actually reported.
-                sold_out: def.soldOut,
-                hidden: def.hidden,
-                fee_type: def.feeType,
-                fee_rate_percent: feeRatePercent,
-              },
-              { onConflict: 'event_id,wix_ticket_definition_id' }
-            );
-        })
-      );
+  const eventsToMirror = eventsWithLocalId.filter(
+    ({ event, localEventId }) =>
+      (explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))
+  );
+  const localEventIdsToMirror = eventsToMirror.map(({ localEventId }) => localEventId);
+
+  if (localEventIdsToMirror.length) {
+    const { data: existingLocationRows } = await admin.from('provider_locations').select('id, address').eq('provider_id', providerId);
+    const locationCache = new Map<string, string>();
+    for (const l of existingLocationRows ?? []) if (l.address) locationCache.set(l.address, l.id);
+    const locationCountRef = { count: (existingLocationRows ?? []).length };
+
+    const { data: existingMirrorRows } = await admin
+      .from('activities')
+      .select('id, wix_event_id')
+      .eq('provider_id', providerId)
+      .in('wix_event_id', localEventIdsToMirror);
+    const existingActivityIdByLocalEventId = new Map((existingMirrorRows ?? []).map((r: any) => [r.wix_event_id, r.id]));
+
+    const { data: freshTicketTypeRows } = await admin
+      .from('event_ticket_types')
+      .select('event_id, price_cents, capacity_total, fee_type, fee_rate_percent')
+      .in('event_id', localEventIdsToMirror)
+      .eq('hidden', false)
+      .order('price_cents', { ascending: true });
+    const ticketTypesByEventId = new Map<string, any[]>();
+    for (const row of freshTicketTypeRows ?? []) {
+      const list = ticketTypesByEventId.get(row.event_id) ?? [];
+      list.push(row);
+      ticketTypesByEventId.set(row.event_id, list);
     }
 
-    if ((explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))) {
-      await syncEventActivityMirror(admin, providerId, localEventId, event);
+    const knownActivityIds = [...existingActivityIdByLocalEventId.values()] as string[];
+    const { data: existingSessionRows } = knownActivityIds.length
+      ? await admin.from('activity_sessions').select('id, activity_id').in('activity_id', knownActivityIds).order('starts_at', { ascending: true })
+      : { data: [] };
+    const sessionsByActivityId = new Map<string, { id: string }[]>();
+    for (const row of existingSessionRows ?? []) {
+      const list = sessionsByActivityId.get(row.activity_id) ?? [];
+      list.push({ id: row.id });
+      sessionsByActivityId.set(row.activity_id, list);
+    }
+
+    const knownSessionIds = (existingSessionRows ?? []).map((r: any) => r.id);
+    const { data: bookedRows } = knownSessionIds.length
+      ? await admin.from('bookings').select('session_id').in('session_id', knownSessionIds).neq('status', 'cancelled')
+      : { data: [] };
+    const bookedSessionIds = new Set((bookedRows ?? []).map((b: any) => b.session_id));
+
+    const { data: communityEventsCategory } = await admin
+      .from('activity_categories')
+      .select('id')
+      .eq('slug', 'community-events')
+      .maybeSingle();
+
+    const mirrorCtx: EventMirrorContext = {
+      locationCache,
+      locationCountRef,
+      ticketTypesByEventId,
+      existingActivityIdByLocalEventId: existingActivityIdByLocalEventId as Map<string, string>,
+      sessionsByActivityId,
+      bookedSessionIds,
+      communityEventsCategoryId: communityEventsCategory?.id ?? null,
+    };
+
+    for (const { event, localEventId } of eventsToMirror) {
+      await syncEventActivityMirror(admin, providerId, localEventId, event, mirrorCtx);
     }
   }
 
