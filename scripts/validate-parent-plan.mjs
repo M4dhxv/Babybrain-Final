@@ -40,11 +40,18 @@ const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUP
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? ` — ${d}` : ''}`); ok ? pass++ : fail++; };
 
+/* Config is mode-scoped (see lib/stripe-config.ts): the app reads
+   `test_`/`live_` first and only falls back to the bare key. Reading the bare
+   key alone reported a correctly-provisioned portal as missing, because
+   `stripe:portal --apply` writes the scoped one. */
+const MODE = KEY.startsWith('sk_live') ? 'live' : 'test';
+const LOGICAL = ['stripe_plus_price_id', 'stripe_plus_price_id_annual', 'stripe_parent_portal_configuration_id'];
 const { data: cfgRows } = await admin
   .from('app_config')
   .select('key, value')
-  .in('key', ['stripe_plus_price_id', 'stripe_plus_price_id_annual', 'stripe_parent_portal_configuration_id']);
-const cfg = Object.fromEntries((cfgRows ?? []).map((r) => [r.key, r.value]));
+  .in('key', [...LOGICAL, ...LOGICAL.map((k) => `${MODE}_${k}`)]);
+const raw = Object.fromEntries((cfgRows ?? []).map((r) => [r.key, r.value]));
+const cfg = Object.fromEntries(LOGICAL.map((k) => [k, raw[`${MODE}_${k}`] ?? raw[k]]));
 const MONTHLY = cfg.stripe_plus_price_id;
 const ANNUAL = cfg.stripe_plus_price_id_annual;
 if (!MONTHLY || !ANNUAL) {
@@ -231,7 +238,7 @@ try {
       String(conf.features.subscription_update.enabled));
   } else {
     check('Parent portal configuration is pinned in app_config', false,
-      'stripe_parent_portal_configuration_id missing — run `npm run stripe:portal -- --apply`');
+      `${MODE}_stripe_parent_portal_configuration_id missing — run \`npm run stripe:portal -- --apply\``);
   }
 
   // --- 9. Auth ---
