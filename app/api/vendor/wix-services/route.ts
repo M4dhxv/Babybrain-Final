@@ -42,8 +42,16 @@ export async function GET(request: Request) {
 
     const list = services.map((s) => {
       const type = s.type === 'APPOINTMENT' || s.type === 'CLASS' || s.type === 'COURSE' ? s.type : null;
+      // UNKNOWN_SERVICE_TYPE is Wix's own catch-all for a "service" that
+      // isn't really a bookable one — confirmed live: things like an
+      // AI-site-builder "Contact and Lead Capture" or "Service Detail Pages"
+      // stub, not a class/course/appointment a vendor set up to book. The
+      // generic "Unsupported Wix service type" wording just repeated that
+      // same raw enum string back at a vendor with no explanation.
       const reason = !type
-        ? `Unsupported Wix service type "${s.type}"`
+        ? s.type === 'UNKNOWN_SERVICE_TYPE'
+          ? "Not a bookable class, course or appointment — looks like a website page Wix created, not something to import"
+          : `Unsupported Wix service type "${s.type}"`
         : type === 'APPOINTMENT' && !hasBookableResource
           ? 'No bookable staff/resource found on the Wix account'
           : null;

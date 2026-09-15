@@ -1334,6 +1334,21 @@ function WixIntegrationManager({
     });
   }
 
+  const noEventsSelected = selectedEventIds.size === 0;
+
+  // Mirror of selectAllEvents — see the comment there: Save still routes
+  // every removal through unlinkWixEventActivities, which refuses per-event
+  // to touch one with a real, non-cancelled booking, so clearing every
+  // checkbox in one click is no less safe than unchecking them one at a
+  // time.
+  function deselectAllEvents() {
+    if (noEventsSelected) return;
+    setEventImportNotice(null);
+    const next = new Set<string>();
+    writeWixImportDraft(provider?.id, 'events', computeWixImportDelta(next, baselineEventIds));
+    setSelectedEventIds(next);
+  }
+
   async function saveEventImport() {
     if (!provider || !hasEventSelectionChanges) return;
     setEventImportSaving(true);
@@ -1450,6 +1465,22 @@ function WixIntegrationManager({
       writeWixImportDraft(provider?.id, 'services', computeWixImportDelta(next, baselineIds));
       return next;
     });
+  }
+
+  const noServicesSelected = selectedIds.size === 0;
+
+  // The mirror of selectAllServices — clearing every checkbox, including
+  // already-imported ones, is exactly what "unselect a service" already does
+  // one at a time, just batched. The comment above selectAllServices already
+  // covers why that's safe to do in one click: Save still routes every
+  // removal through unlinkWixServiceActivities, which refuses per-service to
+  // touch one with a real, non-cancelled booking on it.
+  function deselectAllServices() {
+    if (noServicesSelected) return;
+    setImportNotice(null);
+    const next = new Set<string>();
+    writeWixImportDraft(provider?.id, 'services', computeWixImportDelta(next, baselineIds));
+    setSelectedIds(next);
   }
 
   async function saveImport() {
@@ -1596,7 +1627,15 @@ function WixIntegrationManager({
 
               {!servicesLoading && wixServices && wixServices.length > 0 && (
                 <>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={deselectAllServices}
+                      disabled={noServicesSelected}
+                      className="text-xs font-semibold text-pink-600 hover:text-pink-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Deselect all
+                    </button>
                     <button
                       type="button"
                       onClick={selectAllServices}
@@ -1628,7 +1667,13 @@ function WixIntegrationManager({
                         />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-gray-800 truncate">{s.name}</div>
-                          <div className="text-xs text-gray-400">{s.type}{s.reason ? ` — ${s.reason}` : ''}</div>
+                          <div className="text-xs text-gray-400">
+                            {/* UNKNOWN_SERVICE_TYPE's reason already explains
+                                plainly what this is — showing the raw enum
+                                as a badge in front of it just repeated the
+                                same jargon a second time. */}
+                            {s.type === 'UNKNOWN_SERVICE_TYPE' ? s.reason : `${s.type}${s.reason ? ` — ${s.reason}` : ''}`}
+                          </div>
                         </div>
                         {s.alreadyImported && (
                           <span className="flex-shrink-0 text-xs font-semibold text-green-700">Imported</span>
@@ -1675,7 +1720,15 @@ function WixIntegrationManager({
 
               {!eventsListLoading && wixEvents && wixEvents.length > 0 && (
                 <>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={deselectAllEvents}
+                      disabled={noEventsSelected}
+                      className="text-xs font-semibold text-pink-600 hover:text-pink-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Deselect all
+                    </button>
                     <button
                       type="button"
                       onClick={selectAllEvents}
