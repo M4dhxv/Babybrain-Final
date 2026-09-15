@@ -157,7 +157,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [videoInput, setVideoInput] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -242,13 +241,6 @@ export default function SettingsPage() {
     const url = await uploadImage(file, 'logo');
     setUploadingLogo(false);
     if (url) setForm((f) => ({ ...f, logo_url: url }));
-  }
-
-  async function uploadCover(file: File) {
-    setUploadingCover(true);
-    const url = await uploadImage(file, 'cover');
-    setUploadingCover(false);
-    if (url) setForm((f) => ({ ...f, cover_image_url: url }));
   }
 
   const GALLERY_MAX = 9;
@@ -566,27 +558,11 @@ export default function SettingsPage() {
                 <div className="space-y-4 border-t border-gray-100 pt-4">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900">Photos &amp; videos</h4>
-                    <p className="text-xs text-gray-500">Your logo above is the display photo. These appear on your public profile.</p>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Cover photo</label>
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-20 w-36 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                        {form.cover_image_url
-                          ? <img src={form.cover_image_url} alt="" className="h-full w-full object-cover" />
-                          : <div className="grid h-full w-full place-items-center text-xs text-gray-400">None</div>}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50', uploadingCover && 'pointer-events-none opacity-60')}>
-                          <ImageUp className="h-3.5 w-3.5" /> {uploadingCover ? 'Uploading…' : form.cover_image_url ? 'Replace' : 'Upload'}
-                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); }} />
-                        </label>
-                        {form.cover_image_url && (
-                          <button type="button" onClick={() => setForm({ ...form, cover_image_url: '' })} className="text-left text-xs font-medium text-red-600 hover:underline">Remove</button>
-                        )}
-                      </div>
-                    </div>
+                    {/* No separate "cover photo" — your logo above already is the
+                        default photo shown wherever one's needed (e.g. a class
+                        with none of its own); catalogue photos follow it. One
+                        clear cover, not two competing fields. */}
+                    <p className="text-xs text-gray-500">Your logo above is the default cover photo. These appear on your public profile.</p>
                   </div>
 
                   <div>
