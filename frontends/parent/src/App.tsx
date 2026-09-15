@@ -1355,12 +1355,12 @@ function ActivityDetailPage() {
                 ))}
               </div>
               {images.length > 1 && (
-                <>
+                <div className="absolute right-3 top-3 flex gap-2">
                   <button
                     type="button"
                     onClick={() => setHeroAt((i) => (i - 1 + images.length) % images.length)}
                     aria-label="Previous photo"
-                    className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
                   >
                     <Icon name="chevron" className="h-4 w-4 rotate-180" />
                   </button>
@@ -1368,16 +1368,16 @@ function ActivityDetailPage() {
                     type="button"
                     onClick={() => setHeroAt((i) => (i + 1) % images.length)}
                     aria-label="Next photo"
-                    className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
                   >
                     <Icon name="chevron" className="h-4 w-4" />
                   </button>
-                </>
+                </div>
               )}
               <button
                 type="button"
                 onClick={() => setGalleryAt(heroAt)}
-                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
               >
                 <Icon name="open" className="h-3.5 w-3.5" />{" "}
                 {images.length > 1 ? `${heroAt + 1} / ${images.length}` : "View photo"}
