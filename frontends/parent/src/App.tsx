@@ -1142,9 +1142,19 @@ function ActivityDetailPage() {
         activity.provider_contact
       ).length || 1
     : 0;
+  // Advances through each photo once and stops on the last — doesn't loop
+  // back to the first, so it settles rather than running forever.
   useEffect(() => {
     if (heroImageCount <= 1 || heroPaused) return;
-    const t = setInterval(() => setHeroAt((i) => (i + 1) % heroImageCount), 1750);
+    const t: ReturnType<typeof setInterval> = setInterval(() => {
+      setHeroAt((i) => {
+        if (i >= heroImageCount - 1) {
+          clearInterval(t);
+          return i;
+        }
+        return i + 1;
+      });
+    }, 1750);
     return () => clearInterval(t);
   }, [heroImageCount, heroPaused]);
 
