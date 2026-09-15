@@ -943,6 +943,7 @@ export async function rescheduleWixClassBooking(
 }
 
 export interface WixConfirmedBooking {
+  id: string;
   start: string; // ISO timestamp
   end: string; // ISO timestamp
 }
@@ -960,6 +961,7 @@ export interface WixConfirmedBooking {
  *  filters on `bookable` directly, same as before. */
 export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials, serviceId: string): Promise<WixConfirmedBooking[]> {
   interface RawBooking {
+    id: string;
     status: string;
     startDate?: string;
     endDate?: string;
@@ -972,7 +974,7 @@ export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials
   });
   return (data.bookings ?? [])
     .filter((b) => b.status === 'CONFIRMED' && b.startDate && b.endDate)
-    .map((b) => ({ start: b.startDate!, end: b.endDate! }));
+    .map((b) => ({ id: b.id, start: b.startDate!, end: b.endDate! }));
 }
 
 export interface WixSessionBookingAttendee {

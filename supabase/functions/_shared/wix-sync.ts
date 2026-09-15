@@ -20,6 +20,7 @@ import {
   type WixLocation,
   type WixTimeSlot,
   type WixClassSession,
+  type WixConfirmedBooking,
 } from './wix-client.ts';
 
 /**
@@ -190,6 +191,52 @@ async function reconcileStaleWixSessions(
   }
 }
 
+/** See lib/wix/sync.ts's reconcileRescheduledWixAppointments — identical
+ *  logic (ported the same way everything else in this file is). A vendor
+ *  moving an already-booked APPOINTMENT's time on Wix has no stable
+ *  per-slot id to upsert against, so the ordinary key-based upsert below
+ *  inserts a brand-new row at the new time and reconcileStaleWixSessions is
+ *  deliberately guarded from deleting the old, still-booked one — the
+ *  booking silently kept pointing at a session row with the WRONG time
+ *  forever, and on_session_rescheduled (00126) never fired, so no email
+ *  went out. Matches on the one thing that IS stable across a Wix
+ *  reschedule — the booking's own id — and updates the row in place when
+ *  Wix's time has moved, a real UPDATE that fires the trigger. */
+async function reconcileRescheduledWixAppointments(
+  admin: SupabaseClient,
+  activityId: string,
+  confirmedBookings: WixConfirmedBooking[]
+): Promise<void> {
+  const wixTimeByBookingId = new Map(confirmedBookings.map((b) => [b.id, b]));
+  if (wixTimeByBookingId.size === 0) return;
+
+  const { data: rows } = await admin
+    .from('bookings')
+    .select('wix_booking_id, activity_sessions!inner(id, activity_id, starts_at, ends_at)')
+    .eq('activity_sessions.activity_id', activityId)
+    .not('wix_booking_id', 'is', null)
+    .in('status', ['pending', 'confirmed', 'waitlisted']);
+
+  for (const row of (rows ?? []) as any[]) {
+    const wixBookingId = row.wix_booking_id as string | null;
+    if (!wixBookingId) continue;
+    const wix = wixTimeByBookingId.get(wixBookingId);
+    if (!wix) continue;
+
+    const session = row.activity_sessions as { id: string; activity_id: string; starts_at: string; ends_at: string };
+    if (
+      new Date(wix.start).getTime() === new Date(session.starts_at).getTime() &&
+      new Date(wix.end).getTime() === new Date(session.ends_at).getTime()
+    ) continue;
+
+    const { error } = await admin
+      .from('activity_sessions')
+      .update({ starts_at: wix.start, ends_at: wix.end })
+      .eq('id', session.id);
+    if (error) console.error('Wix appointment reschedule reconcile failed', session.id, error);
+  }
+}
+
 interface WixSlotActivity {
   id: string;
   wix_service_id: string;
@@ -279,6 +326,9 @@ async function syncWixActivityAvailability(
     fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
     staffIdsPromise,
   ]);
+  // Fix up any already-booked session Wix has since moved, before anything
+  // below treats the new availability as the whole story.
+  await reconcileRescheduledWixAppointments(admin, activity.id, confirmedBookings);
   const slots = selectNonOverlappingSlots(rawSlots);
   const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
   // See lib/wix/client.ts's WixSlotKey doc comment: a vendor with more than

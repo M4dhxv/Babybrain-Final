@@ -29,6 +29,7 @@ import {
   type WixLocation,
   type WixClassSession,
   type WixTimeSlot,
+  type WixConfirmedBooking,
 } from './client';
 
 /**
@@ -701,6 +702,66 @@ async function reconcileStaleWixSessions(
   }
 }
 
+/** A vendor moving an already-booked APPOINTMENT's time on Wix has no stable
+ *  per-slot id to upsert against (unlike a CLASS session — see
+ *  syncWixActivityAvailability below): `wix_slot_key` is derived from the
+ *  slot's own start/end/location, so a reschedule changes the key. The
+ *  ordinary upsert then inserts a brand-new row at the new time, and
+ *  reconcileStaleWixSessions is deliberately guarded from deleting the old,
+ *  still-booked one (line ~699) — so the booking silently kept pointing at a
+ *  session row with the WRONG time forever, and `on_session_rescheduled`
+ *  (00126_session_change_notify_location.sql) never fired: no update ever
+ *  touched `starts_at` on the row the booking actually references, so no
+ *  email went out.
+ *
+ *  Fixes that by matching on the one thing that IS stable across a Wix
+ *  reschedule — the booking's own id — rather than on time: cross-checks
+ *  every locally-booked Wix appointment session against Wix's current
+ *  confirmed-booking record for that same `wix_booking_id`, and updates the
+ *  row in place when Wix's time has moved. That's a real `UPDATE ... SET
+ *  starts_at = ...` on the exact row the booking references, which both
+ *  corrects the booking's data and fires the trigger. Run before the
+ *  key-based upsert below so a subsequent read of "what's actually booked"
+ *  reflects the correction. */
+async function reconcileRescheduledWixAppointments(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  confirmedBookings: WixConfirmedBooking[]
+): Promise<void> {
+  const wixTimeByBookingId = new Map(confirmedBookings.map((b) => [b.id, b]));
+  if (wixTimeByBookingId.size === 0) return;
+
+  const { data: rows } = await admin
+    .from('bookings')
+    .select('wix_booking_id, activity_sessions!inner(id, activity_id, starts_at, ends_at)')
+    .eq('activity_sessions.activity_id', activityId)
+    .not('wix_booking_id', 'is', null)
+    .in('status', ['pending', 'confirmed', 'waitlisted']);
+
+  for (const row of rows ?? []) {
+    const wixBookingId = row.wix_booking_id as string | null;
+    if (!wixBookingId) continue;
+    const wix = wixTimeByBookingId.get(wixBookingId);
+    // Not currently a CONFIRMED booking on Wix (cancelled there, etc.) —
+    // out of scope for this reconciliation.
+    if (!wix) continue;
+
+    const session = row.activity_sessions as unknown as {
+      id: string; activity_id: string; starts_at: string; ends_at: string;
+    };
+    if (
+      new Date(wix.start).getTime() === new Date(session.starts_at).getTime() &&
+      new Date(wix.end).getTime() === new Date(session.ends_at).getTime()
+    ) continue;
+
+    const { error } = await admin
+      .from('activity_sessions')
+      .update({ starts_at: wix.start, ends_at: wix.end })
+      .eq('id', session.id);
+    if (error) console.error('Wix appointment reschedule reconcile failed', session.id, error);
+  }
+}
+
 export type WixAvailabilitySyncResult =
   | { kind: 'class'; sessions: WixClassSession[]; courseSpan: { start: string; end: string } | null }
   | { kind: 'appointment'; slots: WixTimeSlot[] };
@@ -806,6 +867,10 @@ export async function syncWixActivityAvailability(
     fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
     staffIdsPromise,
   ]);
+  // Fix up any already-booked session Wix has since moved, before anything
+  // below treats the new availability as the whole story — see the
+  // function's own doc comment for why this can't just be the upsert.
+  await reconcileRescheduledWixAppointments(admin, activity.id, confirmedBookings);
   // Wix offers a rolling start time every split-interval (a 45-minute
   // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,
   // 11:00-11:45, ...) — alternative starts for one opening, not distinct

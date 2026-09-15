@@ -372,12 +372,14 @@ export function courseAnchorSlotKey(scheduleId: string): string {
 /** See lib/wix/client.ts's WixConfirmedBooking/fetchWixConfirmedAppointmentBookings
  *  — identical logic. */
 export interface WixConfirmedBooking {
+  id: string;
   start: string;
   end: string;
 }
 
 export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials, serviceId: string): Promise<WixConfirmedBooking[]> {
   interface RawBooking {
+    id: string;
     status: string;
     startDate?: string;
     endDate?: string;
@@ -390,7 +392,7 @@ export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials
   });
   return (data.bookings ?? [])
     .filter((b) => b.status === 'CONFIRMED' && b.startDate && b.endDate)
-    .map((b) => ({ start: b.startDate!, end: b.endDate! }));
+    .map((b) => ({ id: b.id, start: b.startDate!, end: b.endDate! }));
 }
 
 export interface WixLocation {
