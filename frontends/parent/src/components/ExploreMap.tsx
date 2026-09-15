@@ -127,7 +127,7 @@ export function ExploreMap({
     // their own Leaflet panes.
     const tilePane = map.getPane("tilePane");
     if (tilePane) {
-      tilePane.style.filter = "saturate(500%) hue-rotate(-25deg)";
+      tilePane.style.filter = "saturate(500%) hue-rotate(-35deg)";
     }
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
