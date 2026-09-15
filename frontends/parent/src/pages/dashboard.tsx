@@ -646,7 +646,13 @@ function ChildClassRow({ b }: { b: BookingItem }) {
  *  (split upcoming vs. past) plus matched suggestions for that child. */
 function ChildClasses({ child, bookings, recs }: { child: Child; bookings: BookingItem[]; recs: ChildRecs[number]["recs"] }) {
   const now = Date.now();
-  const isUpcoming = (b: BookingItem) => !!b.startsAt && new Date(b.startsAt).getTime() >= now && b.status !== "cancelled";
+  // A course/camp runs over several days — it's still "upcoming" (or at
+  // least not yet over) until its own end date, not just its start date; a
+  // 3-day camp that began yesterday shouldn't disappear from here today.
+  const isUpcoming = (b: BookingItem) => {
+    const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
+    return !!cutoff && new Date(cutoff).getTime() >= now && b.status !== "cancelled";
+  };
   const upcoming = bookings.filter(isUpcoming);
   const past = bookings.filter((b) => !isUpcoming(b));
   const suggestions = recs.filter((r) => r.activity);
@@ -1619,11 +1625,16 @@ export function ProfilePage() {
   const recs =
     recsByChild.find((r) => r.child.id === journeyChild?.id)?.recs ?? recsByChild[0]?.recs ?? [];
   const parentName = profile?.full_name || "Your family";
-  // A class is "past" once its start time has gone by. Attendance decides
-  // which of the two past lists it lands in.
+  // A class is "past" once its start time has gone by — except a
+  // course/camp, which runs over several days and stays relevant (and
+  // visible here, not buried under Past) until its own end date. Attendance
+  // decides which of the two past lists a booking lands in.
   const now = Date.now();
-  const isPast = (b: BookingItem) =>
-    b.status !== "cancelled" && !!b.startsAt && new Date(b.startsAt).getTime() < now;
+  const isPast = (b: BookingItem) => {
+    if (b.status === "cancelled") return false;
+    const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
+    return !!cutoff && new Date(cutoff).getTime() < now;
+  };
   const childFiltered = childFilter
     ? bookings.filter((b) => b.childId === childFilter)
     : bookings;
