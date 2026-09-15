@@ -1124,6 +1124,9 @@ function ActivityDetailPage() {
    *  galleryAt (the full-screen lightbox's own position). */
   const [heroAt, setHeroAt] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
+  /** X position of a touch as it lands on the hero, for swipe — null between
+   *  touches (and whenever there's nothing to swipe between). */
+  const heroTouchStartX = useRef<number | null>(null);
   // A new activity's own photo set starts back at its first photo, whether
   // navigated to client-side (this component doesn't remount) or freshly
   // loaded.
@@ -1141,7 +1144,7 @@ function ActivityDetailPage() {
     : 0;
   useEffect(() => {
     if (heroImageCount <= 1 || heroPaused) return;
-    const t = setInterval(() => setHeroAt((i) => (i + 1) % heroImageCount), 4500);
+    const t = setInterval(() => setHeroAt((i) => (i + 1) % heroImageCount), 1750);
     return () => clearInterval(t);
   }, [heroImageCount, heroPaused]);
 
@@ -1335,6 +1338,22 @@ function ActivityDetailPage() {
               className="relative overflow-hidden rounded-[18px]"
               onMouseEnter={() => setHeroPaused(true)}
               onMouseLeave={() => setHeroPaused(false)}
+              onTouchStart={(e) => {
+                if (images.length <= 1) return;
+                heroTouchStartX.current = e.touches[0].clientX;
+                setHeroPaused(true);
+              }}
+              onTouchEnd={(e) => {
+                const startX = heroTouchStartX.current;
+                heroTouchStartX.current = null;
+                setHeroPaused(false);
+                if (startX == null || images.length <= 1) return;
+                // A real swipe, not a tap that barely drifted — 40px is
+                // comfortably past finger jitter on a phone.
+                const deltaX = e.changedTouches[0].clientX - startX;
+                if (deltaX <= -40) setHeroAt((i) => (i + 1) % images.length);
+                else if (deltaX >= 40) setHeroAt((i) => (i - 1 + images.length) % images.length);
+              }}
             >
               <div
                 className="flex h-[305px] transition-transform duration-500 ease-out"
