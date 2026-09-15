@@ -94,6 +94,14 @@ export function ExploreMap({
         'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
     }).addTo(map);
     esri("World_Light_Gray_Reference").addTo(map);
+    // Esri's greyscale base has no green basemap on offer without an API key
+    // (see above), so tint it toward the brand green with a CSS filter on the
+    // tile pane only — markers, popups and the zoom control live in their own
+    // Leaflet panes and are untouched.
+    const tilePane = map.getPane("tilePane");
+    if (tilePane) {
+      tilePane.style.filter = "sepia(55%) hue-rotate(70deg) saturate(220%) brightness(1.05)";
+    }
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     return () => {
