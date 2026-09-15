@@ -1383,20 +1383,6 @@ function ActivityDetailPage() {
                 {images.length > 1 ? `${heroAt + 1} / ${images.length}` : "View photo"}
               </button>
             </div>
-            {images.length > 1 && (
-              <div className="mt-3 flex gap-2">
-                {images.slice(1, 6).map((url, i) => (
-                  <button
-                    key={url}
-                    type="button"
-                    onClick={() => setGalleryAt(i + 1)}
-                    className="overflow-hidden rounded-[8px] border-2 border-white shadow-soft transition hover:border-baby-blue"
-                  >
-                    <img src={url} alt="" width={76} height={44} loading="lazy" decoding="async" className="h-11 w-[76px] object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </section>
 
