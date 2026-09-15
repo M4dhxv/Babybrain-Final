@@ -1142,18 +1142,15 @@ function ActivityDetailPage() {
         activity.provider_contact
       ).length || 1
     : 0;
-  // Advances through each photo once and stops on the last — doesn't loop
-  // back to the first, so it settles rather than running forever.
+  // Makes exactly one full lap through the photos, then stops back on the
+  // first rather than cycling forever.
   useEffect(() => {
     if (heroImageCount <= 1 || heroPaused) return;
-    const t: ReturnType<typeof setInterval> = setInterval(() => {
-      setHeroAt((i) => {
-        if (i >= heroImageCount - 1) {
-          clearInterval(t);
-          return i;
-        }
-        return i + 1;
-      });
+    let ticks = 0;
+    const t = setInterval(() => {
+      ticks += 1;
+      setHeroAt((i) => (i + 1) % heroImageCount);
+      if (ticks >= heroImageCount) clearInterval(t);
     }, 1750);
     return () => clearInterval(t);
   }, [heroImageCount, heroPaused]);
