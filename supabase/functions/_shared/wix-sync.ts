@@ -231,7 +231,11 @@ async function reconcileRescheduledWixAppointments(
 
     const { error } = await admin
       .from('activity_sessions')
-      .update({ starts_at: wix.start, ends_at: wix.end })
+      // wix_slot_key must move too — see lib/wix/sync.ts's identical comment.
+      // Leaving the old key meant the freed-up old time (now bookable again
+      // on Wix) got key-matched back onto this row by the ordinary upsert a
+      // few lines below, silently undoing this correction.
+      .update({ starts_at: wix.start, ends_at: wix.end, wix_slot_key: `wixbooking:${wixBookingId}` })
       .eq('id', session.id);
     if (error) console.error('Wix appointment reschedule reconcile failed', session.id, error);
   }

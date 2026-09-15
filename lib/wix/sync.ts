@@ -756,7 +756,18 @@ async function reconcileRescheduledWixAppointments(
 
     const { error } = await admin
       .from('activity_sessions')
-      .update({ starts_at: wix.start, ends_at: wix.end })
+      // wix_slot_key must move too, not just the times: the key this row
+      // still carries encodes its OLD (start, end, location) — and now that
+      // the booking has moved off that time, Wix reports it as bookable
+      // again, so the ordinary key-matched upsert a few lines below would
+      // immediately overwrite this correction right back to the old time
+      // (confirmed happening in practice before this line was added). A
+      // colon can't appear in encodeWixSlotKey's base64url output, so this
+      // prefix can never collide with a real slot key — same trick as
+      // courseAnchorSlotKey's `wixcourse:` — and it's stable across repeat
+      // reschedules of the same booking (next time, this key already reads
+      // `wixbooking:<id>`, so this only ever writes once per booking).
+      .update({ starts_at: wix.start, ends_at: wix.end, wix_slot_key: `wixbooking:${wixBookingId}` })
       .eq('id', session.id);
     if (error) console.error('Wix appointment reschedule reconcile failed', session.id, error);
   }
