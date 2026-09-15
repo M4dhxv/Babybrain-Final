@@ -66,15 +66,20 @@ export interface WixServiceSyncResult {
   revived: number;
 }
 
-/** A Wix service carries its own address via `service.locations` (its
- *  BUSINESS-type entry), but that nested object has no name — only
- *  id/type/address. Cross-referenced against a `fetchWixLocations()` lookup
- *  (the dedicated Locations query, which does have a name) to name it
- *  properly, find-or-creating the matching provider_locations row keyed on
+/** A Wix service carries its own address via `service.locations` — its
+ *  BUSINESS-type entry if it has one, else its CUSTOM-type entry (a one-off
+ *  address the vendor set for that specific service, e.g. a camp held
+ *  somewhere other than their registered business address). Either way that
+ *  nested object has no name — only id/type/address. BUSINESS ids are
+ *  cross-referenced against a `fetchWixLocations()` lookup (the dedicated
+ *  Locations query, which does have a name) to name it properly; CUSTOM ids
+ *  never appear in that lookup (Wix's Locations endpoint only returns
+ *  BUSINESS), so those fall back to the formatted address itself. Either way
+ *  we find-or-create the matching provider_locations row keyed on
  *  wix_location_id so multiple services at the same address share one row
- *  instead of a duplicate per service. Returns nulls when the service has no
- *  BUSINESS location (e.g. CUSTOMER-location appointment services) — that's
- *  not a failure, just nothing to link. */
+ *  instead of a duplicate per service. Returns nulls when the service has
+ *  neither (e.g. CUSTOMER-location appointment services) — that's not a
+ *  failure, just nothing to link. */
 async function resolveWixServiceLocation(
   admin: SupabaseClient<Database>,
   providerId: string,
@@ -82,23 +87,25 @@ async function resolveWixServiceLocation(
   wixLocationsById: Map<string, WixLocation>,
   cache: Map<string, string | null>
 ): Promise<{ locationId: string | null; address: string | null; postalCode: string | null }> {
-  const biz = service.locations?.find((l) => l.type === 'BUSINESS');
-  if (!biz) return { locationId: null, address: null, postalCode: null };
+  const loc =
+    service.locations?.find((l) => l.type === 'BUSINESS') ??
+    service.locations?.find((l) => l.type === 'CUSTOM');
+  if (!loc) return { locationId: null, address: null, postalCode: null };
 
-  const known = wixLocationsById.get(biz.id);
-  const address = known?.address ?? biz.calculatedAddress?.formattedAddress ?? null;
-  const postalCode = known?.postalCode ?? biz.calculatedAddress?.postalCode ?? null;
+  const known = wixLocationsById.get(loc.id);
+  const address = known?.address ?? loc.calculatedAddress?.formattedAddress ?? null;
+  const postalCode = known?.postalCode ?? loc.calculatedAddress?.postalCode ?? null;
 
-  if (cache.has(biz.id)) return { locationId: cache.get(biz.id)!, address, postalCode };
+  if (cache.has(loc.id)) return { locationId: cache.get(loc.id)!, address, postalCode };
 
   const { data: existing } = await admin
     .from('provider_locations')
     .select('id')
     .eq('provider_id', providerId)
-    .eq('wix_location_id', biz.id)
+    .eq('wix_location_id', loc.id)
     .maybeSingle();
   if (existing) {
-    cache.set(biz.id, existing.id);
+    cache.set(loc.id, existing.id);
     return { locationId: existing.id, address, postalCode };
   }
 
@@ -111,15 +118,15 @@ async function resolveWixServiceLocation(
     .from('provider_locations')
     .insert({
       provider_id: providerId,
-      name: known?.name ?? 'Wix location',
+      name: known?.name ?? address ?? 'Wix location',
       address,
       postal_code: postalCode,
-      wix_location_id: biz.id,
+      wix_location_id: loc.id,
       is_primary: (count ?? 0) === 0,
     })
     .select('id')
     .single();
-  cache.set(biz.id, created?.id ?? null);
+  cache.set(loc.id, created?.id ?? null);
   return { locationId: created?.id ?? null, address, postalCode };
 }
 
