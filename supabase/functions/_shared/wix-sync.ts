@@ -44,23 +44,25 @@ async function resolveWixServiceLocation(
   wixLocationsById: Map<string, WixLocation>,
   cache: Map<string, string | null>
 ): Promise<{ locationId: string | null; address: string | null; postalCode: string | null }> {
-  const biz = service.locations?.find((l) => l.type === 'BUSINESS');
-  if (!biz) return { locationId: null, address: null, postalCode: null };
+  const loc =
+    service.locations?.find((l) => l.type === 'BUSINESS') ??
+    service.locations?.find((l) => l.type === 'CUSTOM');
+  if (!loc) return { locationId: null, address: null, postalCode: null };
 
-  const known = wixLocationsById.get(biz.id);
-  const address = known?.address ?? biz.calculatedAddress?.formattedAddress ?? null;
-  const postalCode = known?.postalCode ?? biz.calculatedAddress?.postalCode ?? null;
+  const known = wixLocationsById.get(loc.id);
+  const address = known?.address ?? loc.calculatedAddress?.formattedAddress ?? null;
+  const postalCode = known?.postalCode ?? loc.calculatedAddress?.postalCode ?? null;
 
-  if (cache.has(biz.id)) return { locationId: cache.get(biz.id)!, address, postalCode };
+  if (cache.has(loc.id)) return { locationId: cache.get(loc.id)!, address, postalCode };
 
   const { data: existing } = await admin
     .from('provider_locations')
     .select('id')
     .eq('provider_id', providerId)
-    .eq('wix_location_id', biz.id)
+    .eq('wix_location_id', loc.id)
     .maybeSingle();
   if (existing) {
-    cache.set(biz.id, existing.id);
+    cache.set(loc.id, existing.id);
     return { locationId: existing.id, address, postalCode };
   }
 
@@ -73,15 +75,15 @@ async function resolveWixServiceLocation(
     .from('provider_locations')
     .insert({
       provider_id: providerId,
-      name: known?.name ?? 'Wix location',
+      name: known?.name ?? address ?? 'Wix location',
       address,
       postal_code: postalCode,
-      wix_location_id: biz.id,
+      wix_location_id: loc.id,
       is_primary: (count ?? 0) === 0,
     })
     .select('id')
     .single();
-  cache.set(biz.id, created?.id ?? null);
+  cache.set(loc.id, created?.id ?? null);
   return { locationId: created?.id ?? null, address, postalCode };
 }
 

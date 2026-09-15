@@ -40,23 +40,35 @@ export const sgDayRange = (start: string, end: string) =>
  *  the two show up as separate lines instead of a wall of near-identical
  *  "5:30 pm" cards. */
 export function courseStrands(sessions: { starts_at: string; ends_at: string | null }[]) {
-  const groups: Record<string, { weekday: string; time: string; dates: string[] }> = {};
+  const groups: Record<string, { weekday: string; time: string; multiDay: boolean; start: string; end: string | null; dates: string[] }> = {};
   for (const s of sessions) {
+    // A camp-style course occasionally comes back from Wix as one
+    // continuous occurrence spanning several calendar days rather than a
+    // daily recurrence (e.g. Thu 17 Sept 12am to Sun 20 Sept 12am as a
+    // single "session") — there's no real weekday+time-of-day pattern to
+    // group that by, and treating its literal midnight bounds as a time
+    // range reads as "Thursdays · 12:00am – 12:00am", which looks broken.
+    // Grouped separately and labelled by its date span instead.
+    const multiDay = !!s.ends_at && sgDay(s.starts_at) !== sgDay(s.ends_at);
     const weekday = new Date(s.starts_at).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", weekday: "long" });
     const time = s.ends_at ? `${sgTime(s.starts_at)} – ${sgTime(s.ends_at)}` : sgTime(s.starts_at);
-    const key = `${weekday}|${time}`;
-    (groups[key] ||= { weekday, time, dates: [] }).dates.push(s.starts_at);
+    const key = multiDay ? `multiday|${s.starts_at}|${s.ends_at}` : `${weekday}|${time}`;
+    (groups[key] ||= { weekday, time, multiDay, start: s.starts_at, end: s.ends_at, dates: [] }).dates.push(s.starts_at);
   }
   return Object.values(groups)
     .map((g) => {
       const sorted = g.dates.slice().sort();
-      return { weekday: g.weekday, time: g.time, first: sorted[0], last: sorted[sorted.length - 1], count: g.dates.length };
+      return { ...g, first: sorted[0], last: sorted[sorted.length - 1], count: g.dates.length };
     })
     .sort((a, b) => a.first.localeCompare(b.first))
-    .map((g) => ({
-      key: `${g.weekday}|${g.time}`,
-      label: `${g.weekday}s · ${g.time}`,
-      range: g.first === g.last ? sgDay(g.first) : `${sgDay(g.first)} – ${sgDay(g.last)}`,
-      count: g.count,
-    }));
+    .map((g) =>
+      g.multiDay
+        ? { key: `multiday|${g.start}`, label: `Runs ${sgDayRange(g.start, g.end!)}`, range: "", count: g.count }
+        : {
+            key: `${g.weekday}|${g.time}`,
+            label: `${g.weekday}s · ${g.time}`,
+            range: g.first === g.last ? sgDay(g.first) : `${sgDay(g.first)} – ${sgDay(g.last)}`,
+            count: g.count,
+          }
+    );
 }

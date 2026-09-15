@@ -1347,7 +1347,7 @@ function ActivityDetailPage() {
                     {courseStrands(sessions).map((st) => (
                       <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2">
                         <p className="text-sm font-black text-[#34406f]">{st.label}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-[#68718f]">{st.range} · {st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-[#68718f]">{st.range ? `${st.range} · ` : ""}{st.count} {st.count === 1 ? "session" : "sessions"}</p>
                       </div>
                     ))}
                   </div>
@@ -1537,7 +1537,7 @@ function ActivityDetailPage() {
                   <span className="text-right text-[#A7D8F8]">{next.capacity > 0 ? `${next.capacity} spots` : "Sold out"}</span>
                 </p>
               )}
-              {durationMins != null && (
+              {durationMins != null && activity.wix_service_type !== "COURSE" && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Duration</strong>
                   <span className="text-right">{formatDuration(durationMins)}</span>
