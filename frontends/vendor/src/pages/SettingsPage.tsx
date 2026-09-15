@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -912,6 +912,95 @@ type WixEventOption = {
   alreadyImported: boolean;
 };
 
+/** The "Import specific activities"/"Import specific events" pickers keep
+ *  their checkbox state in memory only, so a stray refresh (or a background
+ *  tab-switch reload — see the `touched` comment above) used to silently
+ *  wipe out whatever a vendor had ticked before they got to "Save". This
+ *  persists just the *delta* from the server baseline (added/removed ids),
+ *  never a raw snapshot of selectedIds, so it can always be re-validated
+ *  against a fresh fetch (see applyWixImportDraft) instead of blindly
+ *  replayed — a stale delta can only ever no-op, never resurrect an id that
+ *  doesn't exist any more or force one on/off a list it doesn't belong on. */
+type WixImportSelectionDelta = { added: string[]; removed: string[] };
+
+const WIX_IMPORT_DRAFT_PREFIX = 'bb:vendor:wix-import-draft';
+
+function wixImportDraftKey(providerId: string, kind: 'services' | 'events') {
+  return `${WIX_IMPORT_DRAFT_PREFIX}:${kind}:${providerId}`;
+}
+
+function computeWixImportDelta(selected: Set<string>, baseline: Set<string>): WixImportSelectionDelta {
+  return {
+    added: [...selected].filter((id) => !baseline.has(id)),
+    removed: [...baseline].filter((id) => !selected.has(id)),
+  };
+}
+
+function readWixImportDraft(providerId: string | undefined, kind: 'services' | 'events'): WixImportSelectionDelta | null {
+  if (!providerId) return null;
+  try {
+    const raw = localStorage.getItem(wixImportDraftKey(providerId, kind));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.added) || !Array.isArray(parsed.removed)) return null;
+    return {
+      added: parsed.added.filter((id: unknown): id is string => typeof id === 'string'),
+      removed: parsed.removed.filter((id: unknown): id is string => typeof id === 'string'),
+    };
+  } catch {
+    return null; // corrupt JSON / storage disabled (private browsing) — fall back to server truth, never throw
+  }
+}
+
+/** Best-effort only: a write that fails (storage full, disabled) just means
+ *  a refresh loses the draft same as before this feature existed — never a
+ *  reason to interrupt the vendor's click. An empty delta (selection back
+ *  in sync with baseline) clears the key instead of storing `{added:[],
+ *  removed:[]}`, so nothing lingers once there's genuinely nothing unsaved. */
+function writeWixImportDraft(providerId: string | undefined, kind: 'services' | 'events', delta: WixImportSelectionDelta) {
+  if (!providerId) return;
+  try {
+    if (delta.added.length === 0 && delta.removed.length === 0) {
+      localStorage.removeItem(wixImportDraftKey(providerId, kind));
+    } else {
+      localStorage.setItem(wixImportDraftKey(providerId, kind), JSON.stringify(delta));
+    }
+  } catch {
+    // best-effort — see comment above
+  }
+}
+
+function clearWixImportDraft(providerId: string | undefined, kind: 'services' | 'events') {
+  if (!providerId) return;
+  try {
+    localStorage.removeItem(wixImportDraftKey(providerId, kind));
+  } catch {
+    // ignore — nothing to clear if storage isn't available
+  }
+}
+
+/** Re-applies a persisted draft on top of a freshly-fetched baseline.
+ *  `selectableIds` is whatever the vendor could actually have ticked when
+ *  the draft was written (importable services, or every fetched event) —
+ *  an `added` id not in it any more (item stopped being importable, Wix
+ *  account changed) is dropped rather than resurrected. A `removed` id only
+ *  counts if it's still actually in the fresh baseline — otherwise it was
+ *  never real to begin with (already unlinked, no longer imported) and
+ *  applying it would be a no-op at best. Either way, this can only ever
+ *  reproduce a choice the vendor is already allowed to make right now,
+ *  never invent a new one. */
+function applyWixImportDraft(baseline: Set<string>, draft: WixImportSelectionDelta | null, selectableIds: Set<string>): Set<string> {
+  if (!draft) return baseline;
+  const next = new Set(baseline);
+  for (const id of draft.added) {
+    if (selectableIds.has(id)) next.add(id);
+  }
+  for (const id of draft.removed) {
+    if (baseline.has(id)) next.delete(id);
+  }
+  return next;
+}
+
 /** Small inline "copy to clipboard" control — swaps to a tick for ~1.5s. */
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -1194,8 +1283,15 @@ function WixIntegrationManager({
       setWixEvents(res.events);
       setEventsAppNotInstalled(res.eventsAppNotInstalled);
       const imported = new Set(res.events.filter((e) => e.alreadyImported).map((e) => e.id));
-      setSelectedEventIds(imported);
+      const selectableIds = new Set(res.events.map((e) => e.id));
+      const draft = readWixImportDraft(provider.id, 'events');
+      const restored = applyWixImportDraft(imported, draft, selectableIds);
+      setSelectedEventIds(restored);
       setBaselineEventIds(imported);
+      // Re-persist so a draft that just got partially invalidated above
+      // (stale ids dropped by applyWixImportDraft) doesn't keep re-offering
+      // them on the next reload.
+      writeWixImportDraft(provider.id, 'events', computeWixImportDelta(restored, imported));
     } catch (e) {
       setEventImportError(describeWixError(e, 'Could not load Wix events'));
     } finally {
@@ -1208,12 +1304,35 @@ function WixIntegrationManager({
     setSelectedEventIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      writeWixImportDraft(provider?.id, 'events', computeWixImportDelta(next, baselineEventIds));
       return next;
     });
   }
 
   const hasEventSelectionChanges =
     selectedEventIds.size !== baselineEventIds.size || [...selectedEventIds].some((id) => !baselineEventIds.has(id));
+
+  // Every fetched event is selectable (unlike services, there's no
+  // `importable` gate here) — "Select all" only ever adds, on purpose: a
+  // vendor who wants fewer listed still unchecks them one at a time, so
+  // there's no single click that can queue up a mass-unlink. Any unlink
+  // attempt on Save still goes through unlinkWixEventActivities, which
+  // refuses per-event to touch one with a real, non-cancelled booking on it
+  // (see saveEventImport's `protectedEvents` handling) — that's the actual
+  // fail-safe for bookings, not anything this button does.
+  const allEventIds = useMemo(() => new Set((wixEvents ?? []).map((e) => e.id)), [wixEvents]);
+  const allEventsSelected = allEventIds.size > 0 && [...allEventIds].every((id) => selectedEventIds.has(id));
+
+  function selectAllEvents() {
+    if (allEventIds.size === 0) return;
+    setEventImportNotice(null);
+    setSelectedEventIds((prev) => {
+      const next = new Set(prev);
+      for (const id of allEventIds) next.add(id);
+      writeWixImportDraft(provider?.id, 'events', computeWixImportDelta(next, baselineEventIds));
+      return next;
+    });
+  }
 
   async function saveEventImport() {
     if (!provider || !hasEventSelectionChanges) return;
@@ -1232,6 +1351,10 @@ function WixIntegrationManager({
         notice += ` ${blocked.map((p) => `"${p.title}"`).join(', ')} already ${n > 1 ? 'have' : 'has'} bookings, so ${n > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${n > 1 ? 'them' : 'it'}.`;
       }
       setEventImportNotice(notice);
+      // Committed to the server — the persisted draft has done its job, and
+      // leaving it behind would just re-offer already-saved changes as
+      // "unsaved" after the reload below.
+      clearWixImportDraft(provider.id, 'events');
       await loadWixEvents(); // re-checks anything that was protected, since it's still really linked
     } catch (e) {
       setEventImportError(describeWixError(e, 'Could not import the selected events'));
@@ -1263,8 +1386,16 @@ function WixIntegrationManager({
       const res = await apiGet<{ services: WixServiceOption[] }>(`/api/vendor/wix-services?providerId=${provider.id}`);
       setWixServices(res.services);
       const imported = new Set(res.services.filter((s) => s.alreadyImported).map((s) => s.id));
-      setSelectedIds(imported);
+      // "Added" only ever counts for something still importable (or already
+      // imported) right now — a non-importable service's checkbox is
+      // disabled, so it could never have ended up in a draft's `added` list
+      // honestly, but this guards the same invariant if that changes later.
+      const selectableIds = new Set(res.services.filter((s) => s.importable || s.alreadyImported).map((s) => s.id));
+      const draft = readWixImportDraft(provider.id, 'services');
+      const restored = applyWixImportDraft(imported, draft, selectableIds);
+      setSelectedIds(restored);
       setBaselineIds(imported);
+      writeWixImportDraft(provider.id, 'services', computeWixImportDelta(restored, imported));
     } catch (e) {
       setImportError(describeWixError(e, 'Could not load Wix services'));
     } finally {
@@ -1289,12 +1420,37 @@ function WixIntegrationManager({
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      writeWixImportDraft(provider?.id, 'services', computeWixImportDelta(next, baselineIds));
       return next;
     });
   }
 
   const hasSelectionChanges =
     selectedIds.size !== baselineIds.size || [...selectedIds].some((id) => !baselineIds.has(id));
+
+  // Only ever adds, and only among services Wix/BabyBrain will actually let
+  // through (importable, or already imported) — the same reasoning as
+  // selectAllEvents above: no single click here can queue up a mass-unlink,
+  // and any unlink a vendor does trigger by unchecking things individually
+  // still goes through wix-services-import's own unlinkWixServiceActivities,
+  // which refuses per-service to touch one with a real, non-cancelled
+  // booking (see saveImport's `protectedServices` handling).
+  const importableServiceIds = useMemo(
+    () => new Set((wixServices ?? []).filter((s) => s.importable).map((s) => s.id)),
+    [wixServices]
+  );
+  const allServicesSelected = importableServiceIds.size > 0 && [...importableServiceIds].every((id) => selectedIds.has(id));
+
+  function selectAllServices() {
+    if (importableServiceIds.size === 0) return;
+    setImportNotice(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of importableServiceIds) next.add(id);
+      writeWixImportDraft(provider?.id, 'services', computeWixImportDelta(next, baselineIds));
+      return next;
+    });
+  }
 
   async function saveImport() {
     if (!provider || !hasSelectionChanges) return;
@@ -1318,6 +1474,7 @@ function WixIntegrationManager({
         notice += ` ${res.protectedServices.map((p) => `"${p.title}"`).join(', ')} already ${n > 1 ? 'have' : 'has'} bookings, so ${n > 1 ? 'they stay' : 'it stays'} listed — contact support to remove ${n > 1 ? 'them' : 'it'}.`;
       }
       setImportNotice(notice);
+      clearWixImportDraft(provider.id, 'services');
       await loadServices(); // re-ticks anything that was protected, since it's still really linked
     } catch (e) {
       setImportError(describeWixError(e, 'Could not import the selected activities'));
@@ -1439,6 +1596,16 @@ function WixIntegrationManager({
 
               {!servicesLoading && wixServices && wixServices.length > 0 && (
                 <>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={selectAllServices}
+                      disabled={allServicesSelected}
+                      className="text-xs font-semibold text-pink-600 hover:text-pink-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Select all
+                    </button>
+                  </div>
                   <div className="space-y-2 max-h-72 overflow-y-auto">
                     {wixServices.map((s) => (
                       <label
@@ -1508,6 +1675,16 @@ function WixIntegrationManager({
 
               {!eventsListLoading && wixEvents && wixEvents.length > 0 && (
                 <>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={selectAllEvents}
+                      disabled={allEventsSelected}
+                      className="text-xs font-semibold text-pink-600 hover:text-pink-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Select all
+                    </button>
+                  </div>
                   <div className="space-y-2 max-h-72 overflow-y-auto">
                     {wixEvents.map((e) => (
                       <label
