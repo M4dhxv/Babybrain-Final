@@ -223,6 +223,16 @@ const C = {
 
 const supabase = createClient();
 
+/**
+ * Any tab's own fetch can outlive the page-load admin check (token expires
+ * mid-session, or ADMIN_EMAILS changes under a live tab). Without this, only
+ * the very first `/api/admin/metrics` call ever flips the shared `phase`, so
+ * a later 401/403 from some other tab just left the nav bar up with a stray
+ * inline error instead of the shared login/denied screen. AdminPage registers
+ * this on mount so every adminFetch call can report auth failures back up.
+ */
+let onAuthFailure: ((message: string) => void) | null = null;
+
 async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(path, {
@@ -233,13 +243,22 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+  if (!res.ok) {
+    const message = (await res.json().catch(() => ({})))?.error ?? res.statusText;
+    if (res.status === 401 || res.status === 403) onAuthFailure?.(message);
+    throw new Error(message);
+  }
   return res.json() as Promise<T>;
 }
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
   const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'flows'>('metrics');
+
+  useEffect(() => {
+    onAuthFailure = (message) => setPhase(/Not an admin/.test(message) ? 'denied' : 'login');
+    return () => { onAuthFailure = null; };
+  }, []);
 
   const check = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
