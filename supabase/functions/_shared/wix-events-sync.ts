@@ -226,6 +226,21 @@ export async function syncProviderWixEvents(
   const now = Date.now();
   const cutoff = now + DAYS_AHEAD * 24 * 60 * 60 * 1000;
 
+  // Prefetch every event's ticket definitions concurrently — see
+  // lib/wix/events-sync.ts's syncProviderWixEvents for the full reasoning
+  // (a per-event 20s-worst-case call run serially risked the sync itself
+  // timing out for an account with many events). Every DB write below stays
+  // serial, per-event, exactly as before — only these independent Wix reads
+  // move earlier.
+  const ticketDefsSettled = await Promise.allSettled(events.map((event) => fetchWixTicketDefinitions(creds, event.id)));
+  const ticketDefsByEventId = new Map<string, Awaited<ReturnType<typeof fetchWixTicketDefinitions>>>();
+  const ticketDefsErrorByEventId = new Map<string, unknown>();
+  events.forEach((event, i) => {
+    const settled = ticketDefsSettled[i];
+    if (settled.status === 'fulfilled') ticketDefsByEventId.set(event.id, settled.value);
+    else ticketDefsErrorByEventId.set(event.id, settled.reason);
+  });
+
   for (const event of events) {
     const { data: existing } = await admin
       .from('wix_events')
@@ -271,55 +286,66 @@ export async function syncProviderWixEvents(
       localEventId = inserted.id;
     }
 
-    try {
-      const defs = await fetchWixTicketDefinitions(creds, event.id);
-      for (const def of defs) {
-        const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
-
-        const { data: existingType } = await admin
-          .from('event_ticket_types')
-          .select('fee_rate_percent')
-          .eq('event_id', localEventId)
-          .eq('wix_ticket_definition_id', def.id)
-          .maybeSingle();
-        let feeRatePercent = existingType?.fee_rate_percent ?? null;
-        if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
-          try {
-            feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
-          } catch {
-            // best-effort — display falls back to the bare price this run, retried next sync
-          }
-        }
-
-        await admin
-          .from('event_ticket_types')
-          .upsert(
-            {
-              event_id: localEventId,
-              wix_ticket_definition_id: def.id,
-              name: def.name,
-              price_cents: priceCents,
-              currency: def.currency ?? 'SGD',
-              is_free: def.free,
-              capacity_total: def.initialLimit,
-              capacity_remaining: def.unsoldCount,
-              limit_per_checkout: def.limitPerCheckout,
-              sale_start_date: def.saleStartDate,
-              sale_end_date: def.saleEndDate,
-              sale_status: def.saleStatus,
-              hidden: def.hidden,
-              fee_type: def.feeType,
-              fee_rate_percent: feeRatePercent,
-            },
-            { onConflict: 'event_id,wix_ticket_definition_id' }
-          );
-      }
-    } catch (e) {
-      if (isMissingEventsApp(e)) {
+    const prefetchError = ticketDefsErrorByEventId.get(event.id);
+    if (prefetchError !== undefined) {
+      if (isMissingEventsApp(prefetchError)) {
         result.ticketPricingSkipped.push(event.title);
       } else {
-        throw e;
+        throw prefetchError;
       }
+    } else {
+      const defs = ticketDefsByEventId.get(event.id) ?? [];
+      // Safe to run a whole event's definitions concurrently (different
+      // rows, independent cache-check reads) — see the Vercel original.
+      await Promise.all(
+        defs.map(async (def) => {
+          const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+
+          const { data: existingType } = await admin
+            .from('event_ticket_types')
+            .select('fee_rate_percent')
+            .eq('event_id', localEventId)
+            .eq('wix_ticket_definition_id', def.id)
+            .maybeSingle();
+          let feeRatePercent = existingType?.fee_rate_percent ?? null;
+          if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
+            try {
+              feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
+            } catch {
+              // best-effort — display falls back to the bare price this run, retried next sync
+            }
+          }
+
+          await admin
+            .from('event_ticket_types')
+            .upsert(
+              {
+                event_id: localEventId,
+                wix_ticket_definition_id: def.id,
+                name: def.name,
+                price_cents: priceCents,
+                currency: def.currency ?? 'SGD',
+                is_free: def.free,
+                capacity_total: def.initialLimit,
+                capacity_remaining: def.unsoldCount,
+                limit_per_checkout: def.limitPerCheckout,
+                sale_start_date: def.saleStartDate,
+                sale_end_date: def.saleEndDate,
+                sale_status: def.saleStatus,
+                // Wix's own "no tickets left" flag — see lib/wix/events-sync.ts.
+                // Was missing from this Deno copy entirely (00107 never got
+                // ported here), so a ticket type synced only by the cron kept
+                // whatever sold_out value it was created with (or the column
+                // default) forever, regardless of what Wix actually reported.
+                sold_out: def.soldOut,
+                hidden: def.hidden,
+                fee_type: def.feeType,
+                fee_rate_percent: feeRatePercent,
+              },
+              { onConflict: 'event_id,wix_ticket_definition_id' }
+            );
+        })
+      );
     }
 
     if ((explicitIds && explicitIds.has(event.id)) || (!explicitIds && mirroredLocalIds.has(localEventId))) {
