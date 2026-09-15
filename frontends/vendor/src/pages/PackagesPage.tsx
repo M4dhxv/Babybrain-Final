@@ -175,6 +175,13 @@ export default function PackagesPage() {
     s === 'active' ? 'bg-green-300 text-green-800' : s === 'used' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
   );
 
+  // The DB status column only ever moves active -> used (credits hit 0); it
+  // never reflects expires_at, so a purchase can sit at "Active" here for
+  // weeks after the parent app has already stopped offering it. Compute the
+  // status parents actually experience instead of trusting the raw column.
+  const displayStatus = (p: Purchase) =>
+    p.status === 'active' && p.expires_at && new Date(p.expires_at) <= new Date() ? 'expired' : p.status;
+
   return (
     <div className="relative">
       {refreshing && <RefreshBar />}
@@ -351,7 +358,7 @@ export default function PackagesPage() {
                 <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
                 <div className="min-w-0 text-sm text-gray-700 break-words">{p.package_name}</div>
                 <div className="min-w-0 text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
-                <div><span className={statusBadge(p.status)}>{p.status}</span></div>
+                <div><span className={statusBadge(displayStatus(p))}>{displayStatus(p)}</span></div>
                 <div className="text-xs text-gray-500">{fmtDate(p.created_at)}{p.expires_at ? ` · expires ${fmtDate(p.expires_at)}` : ''}</div>
               </div>
             ))}
