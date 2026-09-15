@@ -1120,6 +1120,30 @@ function ActivityDetailPage() {
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
+  /** Which photo the inline hero carousel is showing — separate from
+   *  galleryAt (the full-screen lightbox's own position). */
+  const [heroAt, setHeroAt] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
+  // A new activity's own photo set starts back at its first photo, whether
+  // navigated to client-side (this component doesn't remount) or freshly
+  // loaded.
+  useEffect(() => {
+    setHeroAt(0);
+  }, [activity?.id]);
+  // Recomputed here (not reused from `images` below, which only exists
+  // after the !activity early return) purely to know how many photos are in
+  // play — this effect has to run before that return, like every hook.
+  const heroImageCount = activity
+    ? resolveActivityImages(
+        { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
+        activity.provider_contact
+      ).length || 1
+    : 0;
+  useEffect(() => {
+    if (heroImageCount <= 1 || heroPaused) return;
+    const t = setInterval(() => setHeroAt((i) => (i + 1) % heroImageCount), 4500);
+    return () => clearInterval(t);
+  }, [heroImageCount, heroPaused]);
 
   /* The browser resolves the hash before Vite has mounted, and reviews arrive
      asynchronously after that, so #reviews (the post-activity check-in email's
@@ -1307,15 +1331,56 @@ function ActivityDetailPage() {
             </div>
           </div>
           <div>
-            <div className="relative">
-              <img src={images[0]} alt={activity.title} width={860} height={305} decoding="async" fetchPriority="high" className="h-[305px] w-full rounded-[18px] object-cover" />
+            <div
+              className="relative overflow-hidden rounded-[18px]"
+              onMouseEnter={() => setHeroPaused(true)}
+              onMouseLeave={() => setHeroPaused(false)}
+            >
+              <div
+                className="flex h-[305px] transition-transform duration-500 ease-out"
+                style={{ transform: `translateX(-${(heroAt % images.length) * 100}%)` }}
+              >
+                {images.map((url, i) => (
+                  <img
+                    key={url}
+                    src={url}
+                    alt={i === 0 ? activity.title : ""}
+                    width={860}
+                    height={305}
+                    decoding="async"
+                    fetchPriority={i === 0 ? "high" : "low"}
+                    loading={i === 0 ? "eager" : "lazy"}
+                    className="h-[305px] w-full shrink-0 object-cover"
+                  />
+                ))}
+              </div>
+              {images.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setHeroAt((i) => (i - 1 + images.length) % images.length)}
+                    aria-label="Previous photo"
+                    className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                  >
+                    <Icon name="chevron" className="h-4 w-4 rotate-180" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHeroAt((i) => (i + 1) % images.length)}
+                    aria-label="Next photo"
+                    className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                  >
+                    <Icon name="chevron" className="h-4 w-4" />
+                  </button>
+                </>
+              )}
               <button
                 type="button"
-                onClick={() => setGalleryAt(0)}
+                onClick={() => setGalleryAt(heroAt)}
                 className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
               >
                 <Icon name="open" className="h-3.5 w-3.5" />{" "}
-                {images.length > 1 ? `View photos (${images.length})` : "View photo"}
+                {images.length > 1 ? `${heroAt + 1} / ${images.length}` : "View photo"}
               </button>
             </div>
             {images.length > 1 && (
