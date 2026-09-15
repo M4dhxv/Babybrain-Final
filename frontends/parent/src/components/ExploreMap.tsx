@@ -71,45 +71,63 @@ export function ExploreMap({
       scrollWheelZoom: false,
       attributionControl: true,
     });
-    // Esri's World Topo Map, not CARTO Positron. CARTO moved their basemaps
-    // behind an API key and now stamps "API KEY REQUIRED" across every
-    // unkeyed tile — while still answering HTTP 200 with a valid PNG, so
-    // nothing threw and no console error appeared; the watermark was simply
-    // baked into the image and shipped straight to users.
+    // Back to Esri's Light Gray Canvas — not CARTO Positron (moved behind an
+    // API key and now stamps "API KEY REQUIRED" across every unkeyed tile,
+    // still HTTP 200 with a valid PNG so nothing throws), and not World Topo
+    // Map either: Topo Map does carry real land/water colour, but it's a
+    // full topographic reference map — building outlines, every minor street,
+    // contour and admin-boundary line, dozens of overlapping street-name
+    // labels shrunk to fit. Fine full-screen, unusable crammed into a 395px
+    // widget: QA's "extra lines" and "text unclear when zoomed" were exactly
+    // this. Canvas is purpose-built for a small embedded map instead —
+    // decluttered road set and label placement at every zoom, so this also
+    // fixes the blur (Canvas is well-hinted at each native zoom; Topo Map's
+    // dense small text wasn't).
     //
-    // Topo Map (not the greyscale Light Gray Canvas this used to be) already
-    // renders land and water in distinct hues with roads and place labels
-    // baked in as one layer — a from-nothing "tint the map green" CSS filter
-    // on a *greyscale* source can only rotate every pixel's hue by the same
-    // amount regardless of what it originally was, so land and water (which
-    // only differed by lightness, not hue, on the grey source) ended up the
-    // same green-cyan smear with no distinction. maxNativeZoom stops at the
-    // deepest level the service actually has (18) while maxZoom lets the map
-    // keep zooming — Leaflet upscales the last real tile instead of going
-    // blank.
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-      {
-        maxNativeZoom: 18,
-        maxZoom: 19,
-        // Every data provider Esri requires is still credited; "Esri" simply
-        // isn't repeated twice. The map is only 395px tall, so on a phone the
-        // longer form wrapped onto a second line and ate a visible slice of it.
-        attribution:
-          'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-      }
-    ).addTo(map);
-    // Topo Map's default land/water colours are quite muted at the
-    // whole-island zoom this opens at, so a mild saturate+brightness boosts
-    // them toward the "very light green land / very light blue water" QA
-    // asked for — no hue-rotate, which would reassign colour rather than
-    // just lighten what's already there, and had erased the land/water
-    // distinction entirely on the old greyscale source (see above). Scoped
-    // to the tile pane only — markers, popups and the zoom control live in
-    // their own Leaflet panes and are untouched.
+    // The tradeoff: Canvas's land is perfectly neutral grey — R=G=B exactly,
+    // confirmed by sampling actual tile pixels — so there's no hue there for
+    // any filter to bring out, and a hue-rotate large enough to invent one
+    // (this app's first attempt) rotates every pixel by the same amount
+    // regardless of its source colour, landing land and water on the same
+    // green-cyan smear since they only differed by lightness to begin with.
+    // Water, though, does carry a genuine (very faint) blue cast in the
+    // source tile — see the saturate-only filter below, which amplifies only
+    // that real difference rather than inventing one. Land stays clean and
+    // near-white rather than green; that's the ceiling this tile source has.
+    //
+    // Split into base + labels because this style serves place names as a
+    // separate transparent overlay. maxNativeZoom stops at the deepest level
+    // the service actually has (18) while maxZoom lets the map keep zooming —
+    // Leaflet upscales the last real tile instead of going blank.
+    const esri = (service: string, opts: L.TileLayerOptions = {}) =>
+      L.tileLayer(
+        `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`,
+        { maxNativeZoom: 18, maxZoom: 19, ...opts }
+      );
+    esri("World_Light_Gray_Base", {
+      // Every data provider Esri requires is still credited; "Esri" simply
+      // isn't repeated twice. The map is only 395px tall, so on a phone the
+      // longer form wrapped onto a second line and ate a visible slice of it.
+      attribution:
+        'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    }).addTo(map);
+    esri("World_Light_Gray_Reference").addTo(map);
+    // saturate() amplifies whatever colour is already there rather than
+    // inventing any — neutral (0-saturation) land is mathematically
+    // untouched by any multiplier, while water's faint inherent tint (it
+    // actually leans indigo, not pure blue, before amplifying) becomes a
+    // visible pale blue. The small hue-rotate alongside only fine-tunes that
+    // now-amplified water colour off indigo and towards blue; on a still-
+    // neutral pixel a hue-rotate of any size is a no-op (rotating zero
+    // chroma yields zero chroma), so land stays exactly as neutral as
+    // saturate() left it — this is safe in a way the very first attempt's
+    // sepia()-then-hue-rotate wasn't, because sepia() is what manufactured a
+    // rotatable hue out of land's true neutral in the first place. Scoped to
+    // the tile pane only — markers, popups and the zoom control live in
+    // their own Leaflet panes.
     const tilePane = map.getPane("tilePane");
     if (tilePane) {
-      tilePane.style.filter = "saturate(130%) brightness(1.08)";
+      tilePane.style.filter = "saturate(500%) hue-rotate(-25deg)";
     }
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
