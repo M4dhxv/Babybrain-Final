@@ -38,11 +38,8 @@ export default function ResetPasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
+        <div className="mb-6">
           <BrandLogo className="h-8" />
-          <div>
-            <div className="text-lg font-bold text-[#0E6FAF]">BabyBrain</div>
-          </div>
         </div>
         <h1 className="mb-1 text-xl font-bold text-gray-900">Set a new password</h1>
         {done ? (
