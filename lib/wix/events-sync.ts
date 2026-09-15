@@ -381,6 +381,31 @@ export async function syncProviderWixEvents(
   const now = Date.now();
   const cutoff = now + DAYS_AHEAD * 24 * 60 * 60 * 1000;
 
+  // The two Wix-side calls below are what actually eat the clock: a
+  // ticket-definitions fetch per event, each with its own 20s timeout and a
+  // 429 retry (see wixFetch in client.ts). Fetching them one event at a time
+  // meant a vendor importing even a handful of events could walk straight
+  // into the route's 60s budget (see the maxDuration comment in
+  // wix-events-import/route.ts) purely on Wix latency — the client then
+  // shows a generic "network dropped" error even though nothing was
+  // actually wrong, the request just ran out of time before finishing.
+  // Prefetching them concurrently here (allSettled, so one event's failure
+  // doesn't stop the others) turns N sequential 20s-worst-case calls into
+  // roughly one. Every DB write below is untouched and still runs in the
+  // same serial, per-event order as before — this only moves independent
+  // Wix reads earlier; it must NOT be extended to the event loop itself,
+  // which does check-then-insert location dedup by address (see
+  // resolveEventLocation) that isn't safe to run concurrently across events
+  // sharing a venue.
+  const ticketDefsSettled = await Promise.allSettled(events.map((event) => fetchWixTicketDefinitions(creds, event.id)));
+  const ticketDefsByEventId = new Map<string, Awaited<ReturnType<typeof fetchWixTicketDefinitions>>>();
+  const ticketDefsErrorByEventId = new Map<string, unknown>();
+  events.forEach((event, i) => {
+    const settled = ticketDefsSettled[i];
+    if (settled.status === 'fulfilled') ticketDefsByEventId.set(event.id, settled.value);
+    else ticketDefsErrorByEventId.set(event.id, settled.reason);
+  });
+
   for (const event of events) {
     const { data: existing } = await admin
       .from('wix_events')
@@ -428,63 +453,73 @@ export async function syncProviderWixEvents(
       localEventId = inserted.id;
     }
 
-    try {
-      const defs = await fetchWixTicketDefinitions(creds, event.id);
-      for (const def of defs) {
-        const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
-
-        // The fee *rate* only ever comes from a live reservation, so it's
-        // discovered once (a throwaway hold, see fetchTicketFeeRatePercent)
-        // and cached rather than re-reserved on every sync.
-        const { data: existingType } = await admin
-          .from('event_ticket_types')
-          .select('fee_rate_percent')
-          .eq('event_id', localEventId)
-          .eq('wix_ticket_definition_id', def.id)
-          .maybeSingle();
-        let feeRatePercent = existingType?.fee_rate_percent ?? null;
-        if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
-          try {
-            feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
-          } catch {
-            // best-effort — display falls back to the bare price this run, retried next sync
-          }
-        }
-
-        await admin
-          .from('event_ticket_types')
-          .upsert(
-            {
-              event_id: localEventId,
-              wix_ticket_definition_id: def.id,
-              name: def.name,
-              price_cents: priceCents,
-              currency: def.currency ?? 'SGD',
-              is_free: def.free,
-              capacity_total: def.initialLimit,
-              capacity_remaining: def.unsoldCount,
-              limit_per_checkout: def.limitPerCheckout,
-              sale_start_date: def.saleStartDate,
-              sale_end_date: def.saleEndDate,
-              sale_status: def.saleStatus,
-              // Wix's own "no tickets left" flag — the parent booking UI reads
-              // this to show a disabled "Sold out" state (Wix Events have no
-              // BabyBrain waitlist, see 00107). Refreshed every sync, so a
-              // vendor raising the ticket limit on Wix clears it automatically.
-              sold_out: def.soldOut,
-              hidden: def.hidden,
-              fee_type: def.feeType,
-              fee_rate_percent: feeRatePercent,
-            },
-            { onConflict: 'event_id,wix_ticket_definition_id' }
-          );
-      }
-    } catch (e) {
-      if (isMissingEventsApp(e)) {
+    const prefetchError = ticketDefsErrorByEventId.get(event.id);
+    if (prefetchError !== undefined) {
+      if (isMissingEventsApp(prefetchError)) {
         result.ticketPricingSkipped.push(event.title);
       } else {
-        throw e;
+        throw prefetchError;
       }
+    } else {
+      const defs = ticketDefsByEventId.get(event.id) ?? [];
+      // Different ticket definitions upsert different rows (unique on
+      // event_id + wix_ticket_definition_id) and their cache-check reads are
+      // independent of one another, so — unlike the event loop itself —
+      // running a whole event's definitions concurrently is safe and is
+      // where the other slow Wix call lives: fetchTicketFeeRatePercent is a
+      // live reservation, one per definition without a cached rate yet
+      // (i.e. every definition on a first import).
+      await Promise.all(
+        defs.map(async (def) => {
+          const priceCents = def.priceValue != null ? Math.round(Number(def.priceValue) * 100) : 0;
+
+          // The fee *rate* only ever comes from a live reservation, so it's
+          // discovered once (a throwaway hold, see fetchTicketFeeRatePercent)
+          // and cached rather than re-reserved on every sync.
+          const { data: existingType } = await admin
+            .from('event_ticket_types')
+            .select('fee_rate_percent')
+            .eq('event_id', localEventId)
+            .eq('wix_ticket_definition_id', def.id)
+            .maybeSingle();
+          let feeRatePercent = existingType?.fee_rate_percent ?? null;
+          if (def.feeType === 'FEE_ADDED_AT_CHECKOUT' && !def.free && !def.soldOut && feeRatePercent == null) {
+            try {
+              feeRatePercent = await fetchTicketFeeRatePercent(creds, def.id);
+            } catch {
+              // best-effort — display falls back to the bare price this run, retried next sync
+            }
+          }
+
+          await admin
+            .from('event_ticket_types')
+            .upsert(
+              {
+                event_id: localEventId,
+                wix_ticket_definition_id: def.id,
+                name: def.name,
+                price_cents: priceCents,
+                currency: def.currency ?? 'SGD',
+                is_free: def.free,
+                capacity_total: def.initialLimit,
+                capacity_remaining: def.unsoldCount,
+                limit_per_checkout: def.limitPerCheckout,
+                sale_start_date: def.saleStartDate,
+                sale_end_date: def.saleEndDate,
+                sale_status: def.saleStatus,
+                // Wix's own "no tickets left" flag — the parent booking UI reads
+                // this to show a disabled "Sold out" state (Wix Events have no
+                // BabyBrain waitlist, see 00107). Refreshed every sync, so a
+                // vendor raising the ticket limit on Wix clears it automatically.
+                sold_out: def.soldOut,
+                hidden: def.hidden,
+                fee_type: def.feeType,
+                fee_rate_percent: feeRatePercent,
+              },
+              { onConflict: 'event_id,wix_ticket_definition_id' }
+            );
+        })
+      );
     }
 
     // Explicitly requested by the picker, or already imported and just
