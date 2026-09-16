@@ -764,19 +764,19 @@ function ExplorePage() {
                 { key: "type", label: "Type", icon: "target", active: categories_.length > 0 },
                 { key: "age", label: "Age", icon: "people", active: ages.length > 0 },
                 { key: "area", label: "Area", icon: "compass", active: regions.length > 0 },
-                { key: "sort", label: "Sort", icon: "chart", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
+                { key: "sort", label: "Sort", icon: "star", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
               ] as const
             ).map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setMobileSheet(t.key)}
-                className="flex flex-1 flex-col items-center justify-center gap-px py-0.5 text-[12px] font-bold"
+                className="flex flex-1 flex-col items-center justify-center gap-0 py-0.5 text-[12px] font-bold leading-none"
               >
                 <span className={t.active ? "grid h-[35px] w-[35px] place-items-center rounded-full bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] shadow-pink" : "grid h-[35px] w-[35px] place-items-center"}>
                   <Icon name={t.icon} className={t.active ? "h-5 w-5 text-white" : "h-6 w-6 text-[#4a5680]"} />
                 </span>
-                <span className={t.active ? "text-baby-cta" : "text-[#4a5680]"}>{t.label}</span>
+                <span className={`block leading-none ${t.active ? "text-baby-cta" : "text-[#4a5680]"}`}>{t.label}</span>
               </button>
             ))}
           </div>
