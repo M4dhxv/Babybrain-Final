@@ -2661,7 +2661,14 @@ export default function ActivitiesPage() {
                       {sessEditError && <p className="text-xs font-medium text-red-600">{sessEditError}</p>}
                       {s.booked > 0 && (
                         <p className="text-xs text-gray-500">
-                          {s.booked} family{s.booked > 1 ? ' families have' : ' has'} booked this session — moving it doesn't notify them automatically.
+                          {/* A date/time or venue move fires notify_session_rescheduled
+                              (migrations 00044/00126) — an in-app notification plus the
+                              session_rescheduled email (lib/emails/render.ts) — for every
+                              live booking on this session. Capacity/teacher/studio/price
+                              edits don't trigger it (the DB trigger only watches starts_at
+                              and location_id), so this line only promises what actually
+                              fires. */}
+                          {s.booked} family{s.booked > 1 ? ' families have' : ' has'} booked this session — moving it automatically notifies them.
                         </p>
                       )}
                       <div className="flex gap-2">
