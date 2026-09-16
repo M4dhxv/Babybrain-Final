@@ -275,7 +275,15 @@ export async function syncWixServicesToActivities(
         postal_code: postalCode,
         ...(price != null ? { price } : {}),
         ...(capacity != null ? { default_capacity: capacity } : {}),
-        ...(imageUrl ? { image_urls: [imageUrl] } : {}),
+        // image_source rides along with image_urls (same key, same "did Wix
+        // actually give a photo this sync" gate) so a service that gets its
+        // first Wix photo after being created photo-less also starts
+        // showing it, instead of staying stuck behind the provider's default
+        // forever. Never set back to 'profile' here — only new imports (see
+        // above) start there; an existing 'custom' activity keeps showing
+        // its own photo even if Wix briefly reports none (imageUrl null just
+        // omits both keys, same as always).
+        ...(imageUrl ? { image_urls: [imageUrl], image_source: 'custom' as const } : {}),
         ...(wixDescription ? { description: wixDescription } : {}),
         // Wix knows about this service again (this fetch found it), so any
         // earlier "gone missing" flag no longer applies.
@@ -288,6 +296,11 @@ export async function syncWixServicesToActivities(
       for (const field of existing.wix_locked_fields ?? []) {
         if (VENDOR_OVERRIDABLE_WIX_FIELDS.has(field)) {
           delete patch[field as keyof typeof patch];
+          // image_source has no lock of its own — it only ever rides along
+          // with image_urls (see above), so dropping a locked image_urls
+          // must drop the paired image_source too, or a vendor's own photo
+          // choice would still get silently flipped to 'custom' every sync.
+          if (field === 'image_urls') delete patch.image_source;
         }
       }
       // Wix's own price is mirrored either way, so an overridden activity can
@@ -314,11 +327,13 @@ export async function syncWixServicesToActivities(
     }
 
     const slug = `${slugify(service.name)}-${service.id.slice(0, 6)}`;
-    // Falls back to the old placeholder only here, on first import — a
-    // re-sync above always prefers a real Wix description once one exists.
-    const description =
-      wixDescription ||
-      'Imported from Wix. Finish this listing — category, age range and description — then publish it when ready.';
+    // No real Wix description on first import: leave it empty rather than
+    // the old "Imported from Wix. Finish this listing..." placeholder, which
+    // parents could see verbatim on an activity a vendor published without
+    // noticing it. Same policy as images (below) — an empty own value falls
+    // back to the provider's own description on the parent-facing detail
+    // page (App.tsx's InfoBlock), not a canned stand-in.
+    const description = wixDescription || '';
     const { data: inserted, error } = await admin
       .from('activities')
       .insert({
@@ -338,6 +353,15 @@ export async function syncWixServicesToActivities(
         wix_price: price,
         default_capacity: capacity,
         image_urls: imageUrl ? [imageUrl] : [],
+        // 'custom' when Wix actually gave a photo, so resolveActivityImages
+        // shows it instead of being silently outranked by the provider's own
+        // catalogue (the 'profile' default always wins over an activity's
+        // own image_urls, regardless of whether they're empty) — same
+        // "own value first, provider default only when there's nothing"
+        // policy this ticket asked for. 'profile' (never set on updates,
+        // see the patch above) is correct as the starting point when Wix has
+        // no photo yet, so a provider default shows until one exists.
+        image_source: imageUrl ? 'custom' : 'profile',
       })
       .select('id')
       .single();
