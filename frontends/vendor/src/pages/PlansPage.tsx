@@ -29,7 +29,7 @@ const plans = [
     commission: '12% commission on classes booked + Stripe fees',
     perks: [
       'Create bespoke class schedule, package, pricing structure',
-      'Custom integrations with existing platforms',
+      'Direct to user messaging and user to user messaging on booked activities',
       'Availability, booking, waitlist, re-schedule and cancellation management',
       'Online waiver & policy management',
       'Stripe payment integration',
@@ -51,7 +51,6 @@ const plans = [
     commission: '10% commission on classes booked + Stripe fees',
     perks: [
       'Everything in Pay as you grow',
-      'Direct to user messaging and user to user messaging on booked activities',
       'E-mails blasts with class availability twice a week',
       '1 bespoke marketing e-mail and 1 instagram post each month',
     ],
@@ -88,7 +87,7 @@ const features = [
   { name: 'Attendance tracking', grow: true, pro: true, premium: true },
   { name: 'Receive reviews', grow: true, pro: true, premium: true },
   { name: 'Onboarding and ongoing support', grow: true, pro: true, premium: true },
-  { name: 'Direct to user messaging and user to user messaging on booked activities', grow: false, pro: true, premium: true },
+  { name: 'Direct to user messaging and user to user messaging on booked activities', grow: true, pro: true, premium: true },
   { name: 'E-mails blasts with class availability twice a week', grow: false, pro: true, premium: true },
   { name: '1 bespoke marketing e-mail and 1 instagram post each month', grow: false, pro: true, premium: true },
   { name: 'Featured placement', grow: false, pro: false, premium: true },

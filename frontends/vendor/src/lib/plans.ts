@@ -29,7 +29,7 @@ export const PLAN_META: Record<string, PlanMeta> = {
     isPaid: false,
     perks: [
       'Create bespoke class schedule, package, pricing structure',
-      'Custom integrations with existing platforms',
+      'Direct to user messaging and user to user messaging on booked activities',
       'Availability, booking, waitlist, re-schedule and cancellation management',
       'Online waiver & policy management',
       'Stripe payment integration',
@@ -49,7 +49,6 @@ export const PLAN_META: Record<string, PlanMeta> = {
     isPaid: true,
     perks: [
       'Everything in Pay as you grow',
-      'Direct to user messaging and user to user messaging on booked activities',
       'E-mails blasts with class availability twice a week',
       '1 bespoke marketing e-mail and 1 instagram post each month',
     ],

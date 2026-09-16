@@ -39,9 +39,8 @@ const sidebarItems = [
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: Package, label: 'Packages', path: '/packages' },
   { icon: Gift, label: 'Make-up tokens', path: '/make-up-tokens' },
-  // Messaging is a Growth-and-above perk (see plans.ts PLAN_META) — locked
-  // on Pay As You Grow, same "visible but greyed" treatment as Insights.
-  { icon: MessageSquare, label: 'Messages', path: '/messages', paidOnly: true },
+  // Messaging is available on every tier, including Pay As You Grow.
+  { icon: MessageSquare, label: 'Messages', path: '/messages' },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Star, label: 'Reviews', path: '/reviews' },
   // Headline Premium feature ('pro'/'premium' in the DB), so it gets its own
@@ -61,9 +60,9 @@ export default function PortalLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const plan = planMeta(subscription?.plan);
-  /* Unread badge on the Messages tab (QA 04/09). Only connects a chat client
-     on a plan that actually has messaging. */
-  const unreadMessages = useUnreadMessages(plan.isPaid);
+  /* Unread badge on the Messages tab (QA 04/09). Messaging is available on
+     every tier, so the chat client always connects. */
+  const unreadMessages = useUnreadMessages(true);
   const renewLabel = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })
     : '';
@@ -157,17 +156,17 @@ export default function PortalLayout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           {sidebarItems.map((item) => {
             const isActive = location.pathname === item.path;
-            // Pro-only / paid-only tabs stay visible but greyed, so the
-            // feature is discoverable rather than hidden. The page itself
-            // explains the upgrade, so the tab is still clickable.
-            const locked = (item.proOnly && !isPro) || (item.paidOnly && !plan.isPaid);
+            // Pro-only tabs stay visible but greyed, so the feature is
+            // discoverable rather than hidden. The page itself explains the
+            // upgrade, so the tab is still clickable.
+            const locked = item.proOnly && !isPro;
             return (
               <button
                 key={item.label}
                 onClick={() => go(item.path)}
                 onMouseEnter={() => prefetchRoute(item.path)}
                 onFocus={() => prefetchRoute(item.path)}
-                title={locked ? (item.proOnly ? 'Insights is a Premium feature' : 'Messaging is available on Pro and above') : undefined}
+                title={locked ? 'Insights is a Premium feature' : undefined}
                 className={cn(
                   'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
