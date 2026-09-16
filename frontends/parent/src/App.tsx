@@ -771,10 +771,10 @@ function ExplorePage() {
                 key={t.key}
                 type="button"
                 onClick={() => setMobileSheet(t.key)}
-                className="flex flex-1 flex-col items-center gap-0.5 py-0.5 text-[10px] font-bold"
+                className="flex flex-1 flex-col items-center justify-center gap-px py-0.5 text-[12px] font-bold"
               >
-                <span className={t.active ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] shadow-pink" : "grid h-7 w-7 place-items-center"}>
-                  <Icon name={t.icon} className={t.active ? "h-4 w-4 text-white" : "h-5 w-5 text-[#4a5680]"} />
+                <span className={t.active ? "grid h-[35px] w-[35px] place-items-center rounded-full bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] shadow-pink" : "grid h-[35px] w-[35px] place-items-center"}>
+                  <Icon name={t.icon} className={t.active ? "h-5 w-5 text-white" : "h-6 w-6 text-[#4a5680]"} />
                 </span>
                 <span className={t.active ? "text-baby-cta" : "text-[#4a5680]"}>{t.label}</span>
               </button>
