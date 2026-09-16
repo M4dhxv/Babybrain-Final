@@ -10,7 +10,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
@@ -153,6 +153,20 @@ const payKind = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>): keyof typeo
 const payBadge = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_BADGE[payKind(r)];
 const payDetail = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_DETAIL[payKind(r)];
 
+/* A 401 from a chat route almost always means the browser's session has
+   quietly expired (long-lived tab, refresh token aged out), same as the Wix
+   integrations calls on Settings — "Not authenticated" on its own reads like
+   a permissions bug, so point the vendor at the fix instead. */
+const describeChatError = (e: unknown, fallback: string): string => {
+  if (e instanceof ApiError) {
+    if (e.status === 401) {
+      return 'Your session has expired. Please sign out and sign back in — if this keeps happening, contact support.';
+    }
+    return e.message || fallback;
+  }
+  return fallback;
+};
+
 export default function BookingsPage() {
   const { provider, role, session } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
@@ -194,7 +208,7 @@ export default function BookingsPage() {
       }
       navigate(`/messages?channel=${channelId}`);
     } catch (e) {
-      setMessageError(e instanceof Error ? e.message : 'Could not open the chat — please try again.');
+      setMessageError(describeChatError(e, 'Could not open the chat — please try again.'));
     } finally {
       setMessaging(false);
     }
@@ -217,7 +231,7 @@ export default function BookingsPage() {
       }
       navigate(`/messages?channel=${channelId}`);
     } catch (e) {
-      setMessageAllError(e instanceof Error ? e.message : 'Could not open the chat — please try again.');
+      setMessageAllError(describeChatError(e, 'Could not open the chat — please try again.'));
     } finally {
       setMessagingAll(false);
     }
