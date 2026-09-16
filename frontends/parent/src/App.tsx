@@ -758,7 +758,7 @@ function ExplorePage() {
         </div>
 
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-          <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F4EFF0] bg-white p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
+          <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F0E4D8] bg-baby-paper p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
             {(
               [
                 { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
