@@ -581,6 +581,15 @@ export default function BookingsPage() {
   const currentSessionIsWixClass = activityWixType[sessionActivity[sessionId]] === 'CLASS';
   const wixCap = currentSession?.capacity ?? null;
   const heldCount = useMemo(() => roster.filter((r) => isHeldBookingStatus(r.status)).length, [roster]);
+  // Who "Message parents" actually reaches: every held seat (pending too —
+  // a parent mid-payment still holds a seat, same set the capacity readout
+  // above uses), deduped to parents rather than bookings so a sibling pair
+  // under one account isn't counted twice. Deliberately NOT `booked`, which
+  // is scoped to the attendance roster and silently drops pending seats.
+  const messageableParentIds = useMemo(
+    () => new Set(roster.filter((r) => isHeldBookingStatus(r.status) && r.user_id).map((r) => r.user_id as string)),
+    [roster]
+  );
   const { booked: wixHeld, overflow: wixClassOverflow } = computeWixAwareCapacity({
     wixSlotKey: currentSession?.wix_slot_key,
     wixRemainingCapacity: currentSession?.wix_remaining_capacity,
@@ -1051,16 +1060,22 @@ export default function BookingsPage() {
               )}
             </div>
             <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              {/* Describes whichever list is actually shown above (booked on
+                  Bookings/Attendance, waitlisted on Waitlist) — this used to
+                  always read `booked.length`, so it kept saying "N bookings"
+                  even on the Waitlist tab. */}
               <span className="text-sm text-gray-500">
-                {booked.length} bookings
+                {listSource.length} {activeTab === 'Waitlist' ? 'on waitlist' : 'bookings'}
                 {wixClassOverflow > 0 && (
                   <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
                 )}
               </span>
-              {/* One shared chat with every parent booked into this slot, so the
-                  vendor can broadcast to (and hear back from) the whole
-                  session instead of messaging each parent one at a time. */}
-              {booked.some((b) => b.user_id) && (
+              {/* One shared chat with every parent holding a seat on this slot
+                  (pending included, same set the capacity readout uses — see
+                  messageableParentIds above), so the vendor can broadcast to
+                  the whole session instead of messaging each parent one at a
+                  time. */}
+              {messageableParentIds.size > 0 && (
                 <button
                   onClick={messageAllParents}
                   disabled={messagingAll}
