@@ -761,9 +761,9 @@ function ExplorePage() {
           <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F0E4D8] bg-baby-paper p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
             {(
               [
-                { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
-                { key: "age", label: "Age", icon: "user", active: ages.length > 0 },
-                { key: "area", label: "Area", icon: "pin", active: regions.length > 0 },
+                { key: "type", label: "Type", icon: "target", active: categories_.length > 0 },
+                { key: "age", label: "Age", icon: "people", active: ages.length > 0 },
+                { key: "area", label: "Area", icon: "compass", active: regions.length > 0 },
                 { key: "sort", label: "Sort", icon: "chart", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
               ] as const
             ).map((t) => (
