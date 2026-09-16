@@ -196,7 +196,8 @@ type IconName =
   | "close"
   | "chevron"
   | "chat"
-  | "compass";
+  | "compass"
+  | "funnel";
 
 const iconPaths: Record<IconName, string> = {
   heart:
@@ -269,6 +270,7 @@ const iconPaths: Record<IconName, string> = {
   chevron: "m9 5 7 7-7 7",
   chat: "M4.5 6.5h15v10h-8L7 20v-3.5H4.5v-10Z",
   compass: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm3.5 5-2 5.5-5.5 2 2-5.5 5.5-2Z",
+  funnel: "M3.5 4.5h17L14 12.5v6.5l-4 2v-8.5L3.5 4.5Z",
 };
 
 export function Icon({

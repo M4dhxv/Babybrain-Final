@@ -764,7 +764,7 @@ function ExplorePage() {
                 { key: "type", label: "Type", icon: "target", active: categories_.length > 0 },
                 { key: "age", label: "Age", icon: "people", active: ages.length > 0 },
                 { key: "area", label: "Area", icon: "compass", active: regions.length > 0 },
-                { key: "sort", label: "Sort", icon: "star", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
+                { key: "sort", label: "Sort", icon: "funnel", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
               ] as const
             ).map((t) => (
               <button
