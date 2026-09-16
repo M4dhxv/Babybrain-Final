@@ -75,7 +75,9 @@ export async function POST(request: Request) {
   const sessionId = rows[0].session_id;
   const { data: session } = await admin
     .from('activity_sessions')
-    .select('starts_at, activities(provider_id, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, wix_service_id)')
+    .select(
+      'starts_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, activities(provider_id, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, wix_service_id)'
+    )
     .eq('id', sessionId)
     .maybeSingle();
   const activity = session?.activities as {
@@ -85,13 +87,18 @@ export async function POST(request: Request) {
   if (!session || !activity) {
     return NextResponse.json({ error: 'Class not found' }, { status: 404 });
   }
-  if (!activity.allow_cancellation) {
+  // A session-level override (migration 00133) wins over the activity's
+  // default; null on the session means "inherit".
+  const allowCancellation = session.allow_cancellation ?? activity.allow_cancellation;
+  const cancellationCutoffHours = session.cancellation_cutoff_hours ?? activity.cancellation_cutoff_hours;
+  const cancellationRefundMode = session.cancellation_refund_mode ?? activity.cancellation_refund_mode;
+  if (!allowCancellation) {
     return NextResponse.json({ error: 'The provider does not allow cancellations for this class.' }, { status: 400 });
   }
-  const cutoffMs = new Date(session.starts_at).getTime() - activity.cancellation_cutoff_hours * 60 * 60 * 1000;
+  const cutoffMs = new Date(session.starts_at).getTime() - cancellationCutoffHours * 60 * 60 * 1000;
   if (cutoffMs < Date.now()) {
     return NextResponse.json(
-      { error: `The cancellation window for this class has closed (${activity.cancellation_cutoff_hours} hours before the session).` },
+      { error: `The cancellation window for this class has closed (${cancellationCutoffHours} hours before the session).` },
       { status: 400 }
     );
   }
@@ -110,7 +117,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const mode = activity.cancellation_refund_mode || 'refund';
+  const mode = cancellationRefundMode || 'refund';
   const { error } = await admin
     .from('bookings')
     .update({ status: 'cancelled', cancel_refund_mode: mode })

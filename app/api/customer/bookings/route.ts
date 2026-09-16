@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await admin
     .from('bookings')
     .select(
-      'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))'
+      'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))'
     )
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
@@ -128,15 +128,34 @@ export async function GET(request: Request) {
   }
 
   const bookings = rows.map((r) => {
+    // A session-level policy override (migration 00133) wins over the
+    // activity's default; null on the session means "inherit". Folded into
+    // the returned `activities` object so the frontend's existing
+    // act.allow_cancellation-style reads stay correct without change.
+    const sess = r.activity_sessions;
+    const act = sess?.activities;
+    const effectiveActivity =
+      act && sess
+        ? {
+            ...act,
+            allow_cancellation: sess.allow_cancellation ?? act.allow_cancellation,
+            allow_rescheduling: sess.allow_rescheduling ?? act.allow_rescheduling,
+            cancellation_cutoff_hours: sess.cancellation_cutoff_hours ?? act.cancellation_cutoff_hours,
+            reschedule_cutoff_hours: sess.reschedule_cutoff_hours ?? act.reschedule_cutoff_hours,
+            cancellation_refund_mode: sess.cancellation_refund_mode ?? act.cancellation_refund_mode,
+          }
+        : act;
+
     // The refund decision for this booking: what it was cancelled with, else
     // the class default, else the historical 'refund'. Drives both the
     // pre-cancel heads-up and the permanent line on a cancelled card.
     const refundMode: 'refund' | 'none' =
       (r.cancel_refund_mode as 'refund' | 'none' | null) ??
-      ((r.activity_sessions?.activities?.cancellation_refund_mode as 'refund' | 'none' | undefined) ??
+      ((effectiveActivity?.cancellation_refund_mode as 'refund' | 'none' | undefined) ??
         'refund');
     return {
       ...r,
+      activity_sessions: sess ? { ...sess, activities: effectiveActivity } : sess,
       // What paid for this booking — drives the cancel-confirm heads-up.
       paid_with: redeemedByToken.has(r.id)
         ? 'token'

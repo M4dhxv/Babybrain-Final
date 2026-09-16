@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   const { data: oldSession } = await admin
     .from('activity_sessions')
     .select(
-      'id, starts_at, activity_id, activities(id, provider_id, title, wix_service_id, wix_service_type, allow_rescheduling, reschedule_cutoff_hours)'
+      'id, starts_at, activity_id, allow_rescheduling, reschedule_cutoff_hours, activities(id, provider_id, title, wix_service_id, wix_service_type, allow_rescheduling, reschedule_cutoff_hours)'
     )
     .eq('id', booking.session_id)
     .maybeSingle();
@@ -94,13 +94,17 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (!activity.allow_rescheduling) {
+  // A session-level override (migration 00133) wins over the activity's
+  // default; null on the session means "inherit".
+  const allowRescheduling = oldSession.allow_rescheduling ?? activity.allow_rescheduling;
+  const rescheduleCutoffHours = oldSession.reschedule_cutoff_hours ?? activity.reschedule_cutoff_hours;
+  if (!allowRescheduling) {
     return NextResponse.json({ error: 'The provider does not allow rescheduling for this class.' }, { status: 400 });
   }
-  const oldCutoffMs = new Date(oldSession.starts_at).getTime() - activity.reschedule_cutoff_hours * 60 * 60 * 1000;
+  const oldCutoffMs = new Date(oldSession.starts_at).getTime() - rescheduleCutoffHours * 60 * 60 * 1000;
   if (oldCutoffMs < Date.now()) {
     return NextResponse.json(
-      { error: `The rescheduling window for this class has closed (${activity.reschedule_cutoff_hours} hours before the session).` },
+      { error: `The rescheduling window for this class has closed (${rescheduleCutoffHours} hours before the session).` },
       { status: 400 }
     );
   }

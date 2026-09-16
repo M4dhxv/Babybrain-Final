@@ -30,6 +30,7 @@ import {
   PlayCircle,
   FileText,
   ChevronDown,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -166,6 +167,110 @@ const emptyForm = {
   info_request_enabled: false, info_request_prompt: '',
   what_to_bring: '', confirmation_message: '',
 };
+
+/* Per-session booking-policy override (migration 00133) — surfaced in the
+   "Manage schedule" drawer as one "Booking policies" dropdown rather than
+   five more always-visible fields on an already-crowded form. 'inherit'
+   (the default) sends null for all five columns; 'custom' sends the values
+   below, mirroring the activity-level card. */
+type SessPolicy = {
+  mode: 'inherit' | 'custom';
+  allow_cancellation: boolean;
+  cancellation_cutoff_hours: string;
+  cancellation_refund_mode: 'refund' | 'none';
+  allow_rescheduling: boolean;
+  reschedule_cutoff_hours: string;
+};
+const inheritSessPolicy: SessPolicy = {
+  mode: 'inherit', allow_cancellation: true, cancellation_cutoff_hours: '24',
+  cancellation_refund_mode: 'refund', allow_rescheduling: true, reschedule_cutoff_hours: '24',
+};
+/** null for every column when inheriting the activity's own policy. */
+function sessPolicyPayload(p: SessPolicy) {
+  if (p.mode === 'inherit') {
+    return {
+      allow_cancellation: null, cancellation_cutoff_hours: null,
+      cancellation_refund_mode: null, allow_rescheduling: null, reschedule_cutoff_hours: null,
+    };
+  }
+  return {
+    allow_cancellation: p.allow_cancellation,
+    cancellation_cutoff_hours: Math.max(0, Number(p.cancellation_cutoff_hours) || 24),
+    cancellation_refund_mode: p.cancellation_refund_mode,
+    allow_rescheduling: p.allow_rescheduling,
+    reschedule_cutoff_hours: Math.max(0, Number(p.reschedule_cutoff_hours) || 24),
+  };
+}
+
+/** The "Booking policies" dropdown shared by the Add-sessions and per-session
+ *  edit forms in the Manage schedule drawer — a single SelectField, same
+ *  progressive-disclosure idea as that drawer's own "Repeat for" control,
+ *  instead of five more always-visible fields. */
+function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChange: (p: SessPolicy) => void }) {
+  const fieldCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
+  return (
+    <div className="space-y-3 rounded-xl bg-gray-50 p-3">
+      <div>
+        <label className="text-xs font-medium text-gray-600 mb-1 block">Booking policies</label>
+        <SelectField
+          className={fieldCls}
+          value={policy.mode}
+          onChange={(v) => onChange({ ...policy, mode: v as 'inherit' | 'custom' })}
+          aria-label="Booking policies"
+        >
+          <Opt value="inherit">Same as the activity</Opt>
+          <Opt value="custom">Custom for this session</Opt>
+        </SelectField>
+      </div>
+      {policy.mode === 'custom' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Allow cancellations</span>
+            <Switch checked={policy.allow_cancellation} onCheckedChange={(v) => onChange({ ...policy, allow_cancellation: v })} />
+          </div>
+          {policy.allow_cancellation && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Cancellation cut-off (hrs)</label>
+                <input
+                  type="number" min="0" className={fieldCls}
+                  value={policy.cancellation_cutoff_hours}
+                  onChange={(e) => onChange({ ...policy, cancellation_cutoff_hours: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">When cancelled</label>
+                <SelectField
+                  className={fieldCls}
+                  value={policy.cancellation_refund_mode}
+                  onChange={(v) => onChange({ ...policy, cancellation_refund_mode: v as 'refund' | 'none' })}
+                  aria-label="When a booking is cancelled"
+                >
+                  <Opt value="refund">Refund credit / token</Opt>
+                  <Opt value="none">No refund</Opt>
+                </SelectField>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Allow rescheduling</span>
+            <Switch checked={policy.allow_rescheduling} onCheckedChange={(v) => onChange({ ...policy, allow_rescheduling: v })} />
+          </div>
+          {policy.allow_rescheduling && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Rescheduling cut-off (hrs)</label>
+              <input
+                type="number" min="0" className={fieldCls}
+                value={policy.reschedule_cutoff_hours}
+                onChange={(e) => onChange({ ...policy, reschedule_cutoff_hours: e.target.value })}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ActivitiesPage() {
   const { provider, role, refreshProvider } = useAuth();
@@ -327,6 +432,13 @@ export default function ActivitiesPage() {
     /* QA 04/09: pause is per-session as well as per-activity (migration 00084),
        so a week the teacher is away can be closed without shutting the class. */
     bookings_paused: boolean;
+    // Per-session booking-policy override (migration 00133) — null = inherit
+    // the activity's own setting.
+    allow_cancellation: boolean | null;
+    cancellation_cutoff_hours: number | null;
+    cancellation_refund_mode: 'refund' | 'none' | null;
+    allow_rescheduling: boolean | null;
+    reschedule_cutoff_hours: number | null;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
@@ -354,6 +466,7 @@ export default function ActivitiesPage() {
     date: '', time: '', duration: '45', capacity: '',
     weekdays: [] as number[], weeks: '1', customDates: [] as string[],
     teacher: '', studio: '', location_id: '', price: '',
+    policy: inheritSessPolicy,
   });
   // The date sitting in the "extra dates" picker before it's added to the list.
   const [customDateDraft, setCustomDateDraft] = useState('');
@@ -370,7 +483,10 @@ export default function ActivitiesPage() {
      sessions, it only allows you to add teacher and studio details — it should
      allow you to edit all the details." Date, start time, duration and capacity
      are now editable too; changing any of them rewrites starts_at/ends_at. */
-  const [sessEditForm, setSessEditForm] = useState({ date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '', location_id: '', price: '' });
+  const [sessEditForm, setSessEditForm] = useState({
+    date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '', location_id: '', price: '',
+    policy: inheritSessPolicy,
+  });
   const [sessEditError, setSessEditError] = useState<string | null>(null);
   const [savingSessEdit, setSavingSessEdit] = useState(false);
 
@@ -475,6 +591,7 @@ export default function ActivitiesPage() {
       price: a.price != null ? String(a.price) : '',
       // Don't carry a half-built recurrence from a previous activity.
       date: '', weekdays: [], weeks: '1', customDates: [],
+      policy: inheritSessPolicy,
     }));
     setCustomDateDraft('');
     // This drawer's own copy tells a vendor "these sessions mirror live
@@ -500,7 +617,7 @@ export default function ActivitiesPage() {
   async function loadSessions(activityId: string) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours')
       .eq('activity_id', activityId)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
@@ -566,6 +683,7 @@ export default function ActivitiesPage() {
             : null,
         // A Wix Event's price is Wix's — never override it per session.
         price: scheduleIsWixEvent || sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
+        ...sessPolicyPayload(sessForm.policy),
       };
     });
     // A Wix-connected vendor's real-world time is already spoken for by
@@ -604,6 +722,7 @@ export default function ActivitiesPage() {
       date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity,
       weekdays: [], weeks: '1', customDates: [],
       teacher: sessForm.teacher, studio: sessForm.studio, location_id: sessForm.location_id, price: sessForm.price,
+      policy: sessForm.policy,
     });
     setCustomDateDraft('');
     await loadSessions(scheduleFor.id);
@@ -617,6 +736,13 @@ export default function ActivitiesPage() {
     // what the vendor typed in and what the list shows.
     const sgt = new Date(new Date(s.starts_at).toLocaleString('en-US', { timeZone: 'Asia/Singapore' }));
     const pad = (n: number) => String(n).padStart(2, '0');
+    // Custom only when the session actually carries an override; each field
+    // individually falls back to the activity's own current value so the
+    // "Custom" panel never shows a blank/wrong-looking number.
+    const hasOverride =
+      s.allow_cancellation != null || s.cancellation_cutoff_hours != null ||
+      s.cancellation_refund_mode != null || s.allow_rescheduling != null ||
+      s.reschedule_cutoff_hours != null;
     setSessEditForm({
       date: `${sgt.getFullYear()}-${pad(sgt.getMonth() + 1)}-${pad(sgt.getDate())}`,
       time: `${pad(sgt.getHours())}:${pad(sgt.getMinutes())}`,
@@ -626,12 +752,40 @@ export default function ActivitiesPage() {
       studio: s.studio ?? '',
       location_id: s.location_id ?? '',
       price: s.price != null ? String(s.price) : '',
+      policy: {
+        mode: hasOverride ? 'custom' : 'inherit',
+        allow_cancellation: s.allow_cancellation ?? scheduleFor?.allow_cancellation ?? true,
+        cancellation_cutoff_hours: String(s.cancellation_cutoff_hours ?? scheduleFor?.cancellation_cutoff_hours ?? 24),
+        cancellation_refund_mode: s.cancellation_refund_mode ?? scheduleFor?.cancellation_refund_mode ?? 'refund',
+        allow_rescheduling: s.allow_rescheduling ?? scheduleFor?.allow_rescheduling ?? true,
+        reschedule_cutoff_hours: String(s.reschedule_cutoff_hours ?? scheduleFor?.reschedule_cutoff_hours ?? 24),
+      },
     });
   }
 
   async function saveSessEdit(id: string) {
     if (!scheduleFor) return;
     setSessEditError(null);
+
+    // A Wix-synced session's own schedule (date/time/capacity/venue/etc) is
+    // Wix's — /api/wix/slots owns and reconciles it, so this path only ever
+    // touches the 5 booking-policy columns, which are BabyBrain-side only.
+    if (scheduleIsWix) {
+      setSavingSessEdit(true);
+      const { error } = await supabase
+        .from('activity_sessions')
+        .update(sessPolicyPayload(sessEditForm.policy))
+        .eq('id', id);
+      setSavingSessEdit(false);
+      if (error) {
+        setSessEditError(error.message);
+        return;
+      }
+      setEditingSessId(null);
+      await loadSessions(scheduleFor.id);
+      return;
+    }
+
     if (!sessEditForm.date || !sessEditForm.time) {
       setSessEditError('Pick a date and start time.');
       return;
@@ -669,6 +823,7 @@ export default function ActivitiesPage() {
           : null,
       // A Wix Event's price is Wix's — never override it per session.
       price: scheduleIsWixEvent || sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
+      ...sessPolicyPayload(sessEditForm.policy),
     }).eq('id', id);
     setSavingSessEdit(false);
     if (error) {
@@ -2428,6 +2583,9 @@ export default function ActivitiesPage() {
                     </p>
                   )}
                 </div>
+                <div className="col-span-2">
+                  <SessionPolicyEditor policy={sessForm.policy} onChange={(p) => setSessForm({ ...sessForm, policy: p })} />
+                </div>
               </div>
               {sessError && <p className="mt-2 text-xs font-medium text-red-600">{sessError}</p>}
               <Button onClick={addSessions} disabled={savingSess} className="mt-3 w-full gradient-primary text-white rounded-xl hover:opacity-90">
@@ -2445,6 +2603,11 @@ export default function ActivitiesPage() {
                 {sessions.map((s) => (
                   editingSessId === s.id ? (
                     <div key={s.id} className="rounded-lg border border-pink-300 bg-pink-50/30 px-3 py-2.5 space-y-2">
+                      {/* A Wix-synced session's date/time/capacity/venue/price is
+                          Wix's own — /api/wix/slots owns and reconciles it, so
+                          this edit row is booking-policy-only for one (opened via
+                          the dedicated policy button below, not Pencil). */}
+                      {!scheduleIsWix && (
                       <div className="grid grid-cols-2 gap-2">
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Date</span>
@@ -2493,6 +2656,8 @@ export default function ActivitiesPage() {
                           />
                         </label>
                       </div>
+                      )}
+                      <SessionPolicyEditor policy={sessEditForm.policy} onChange={(p) => setSessEditForm({ ...sessEditForm, policy: p })} />
                       {sessEditError && <p className="text-xs font-medium text-red-600">{sessEditError}</p>}
                       {s.booked > 0 && (
                         <p className="text-xs text-gray-500">
@@ -2549,6 +2714,15 @@ export default function ActivitiesPage() {
                         >
                           {s.bookings_paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
                         </button>
+                        {scheduleIsWix && (
+                          // Wix owns this session's own schedule, but the
+                          // cancel/reschedule cut-off enforced by BabyBrain is
+                          // ours — so, unlike the full edit below, this stays
+                          // available for a Wix-synced session too.
+                          <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Booking policies for this session">
+                            <ShieldCheck className="w-4 h-4" />
+                          </button>
+                        )}
                         {!scheduleIsWix && (
                           <>
                             <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
