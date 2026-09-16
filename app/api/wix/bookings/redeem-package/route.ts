@@ -1,8 +1,105 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { getProviderWixCredentials } from '@/lib/wix/client';
 import { checkWixBookingGates, isWixSessionPaused, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
+
+/**
+ * Last-resort recovery for when the real Wix booking succeeded but
+ * redeem_package_credit then failed (most commonly its weekday/time
+ * restriction check — the one validation that can't be done in this route's
+ * own pre-check, see the file-level doc above). Before this existed, that
+ * failure left a real Wix reservation with NO local `bookings` row at all:
+ * the class's remaining capacity dropped (Wix truth, read live), the vendor
+ * saw the booking on Wix's own calendar, but the parent's "My Bookings"
+ * never got a row to show, and support had to reconcile it by hand.
+ *
+ * This inserts the same rows the RPC would have, straight through the admin
+ * client (enforce_booking_insert_defaults steps aside for service_role, same
+ * as redeem-token's insert; handle_booking_insert's capacity/waitlist logic
+ * still runs normally). Deliberately permissive rather than re-validating —
+ * the Wix seat is already spent, so the only thing left to decide is whether
+ * BabyBrain's own bookkeeping can keep up, not whether the booking should
+ * exist. The credit decrement is best-effort and never blocks the booking
+ * from being saved.
+ */
+async function insertFallbackPackageBookings(
+  admin: SupabaseClient<Database>,
+  params: {
+    userId: string;
+    sessionId: string;
+    wixBookingId: string;
+    packagePurchaseId: string;
+    childId?: string | null;
+    policiesAccepted: string[];
+    medicalDisclosure?: string;
+    infoResponse?: string;
+    guestNames: string[];
+    count: number;
+    purchase: { credits_remaining: number; status: 'active' | 'used' | 'expired' };
+  }
+): Promise<{ ok: true; status: string; waitlistedCount: number } | { ok: false }> {
+  let childId: string | null = null;
+  if (params.childId) {
+    const { data: child } = await admin
+      .from('children')
+      .select('id')
+      .eq('id', params.childId)
+      .eq('parent_id', params.userId)
+      .maybeSingle();
+    childId = child?.id ?? null;
+  } else {
+    const { data: child } = await admin
+      .from('children')
+      .select('id')
+      .eq('parent_id', params.userId)
+      .order('created_at')
+      .limit(1)
+      .maybeSingle();
+    childId = child?.id ?? null;
+  }
+
+  const groupId = params.count > 1 ? crypto.randomUUID() : null;
+  const rows = Array.from({ length: params.count }, (_, i) => ({
+    user_id: params.userId,
+    session_id: params.sessionId,
+    child_id: i === 0 ? childId : null,
+    guest_name: i === 0 ? null : (params.guestNames[i - 1]?.trim() || 'Guest child'),
+    package_purchase_id: params.packagePurchaseId,
+    policies_accepted: params.policiesAccepted,
+    wix_booking_id: params.wixBookingId,
+    medical_disclosure: i === 0 ? params.medicalDisclosure?.trim() || null : null,
+    info_response: i === 0 ? params.infoResponse?.trim() || null : null,
+    booking_group_id: groupId,
+    status: 'confirmed' as const,
+    payment_status: 'none' as const,
+  }));
+
+  const { data: inserted, error } = await admin.from('bookings').insert(rows).select('status');
+  if (error || !inserted) {
+    console.error('Fallback package-credit booking insert also failed after a real Wix booking', params.wixBookingId, error);
+    return { ok: false };
+  }
+
+  const waitlistedCount = inserted.filter((r) => r.status === 'waitlisted').length;
+  const anyConfirmed = inserted.some((r) => r.status !== 'waitlisted');
+
+  const newCredits = params.purchase.credits_remaining - params.count;
+  const { error: creditError } = await admin
+    .from('package_purchases')
+    .update({ credits_remaining: newCredits, status: newCredits <= 0 ? 'used' : params.purchase.status })
+    .eq('id', params.packagePurchaseId)
+    .gte('credits_remaining', params.count);
+  if (creditError) {
+    // The booking is saved either way (top priority) — a credit that
+    // couldn't be decremented is a billing follow-up, not a lost booking.
+    console.error('Fallback booking saved but credit could not be decremented', params.packagePurchaseId, creditError);
+  }
+
+  return { ok: true, status: anyConfirmed ? 'confirmed' : 'waitlisted', waitlistedCount };
+}
 
 /**
  * Parent redeems a package credit for a Wix-sourced slot. redeem_package_credit
@@ -153,12 +250,31 @@ export async function POST(request: Request) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race
     // (or the weekday/time restriction) rather than the common case the
     // pre-check already covers. No cancel-in-Wix capability exists yet, so
-    // this needs a human, same as the free-booking route's equivalent gap.
-    console.error('Booked in Wix but redeem_package_credit failed', result.wixBookingId, error);
-    return NextResponse.json(
-      { error: 'Booked in Wix but could not redeem the credit — contact support' },
-      { status: 500 }
-    );
+    // rather than leaving a real Wix seat with no local trace, fall back to
+    // saving the booking directly (see insertFallbackPackageBookings) so it
+    // still shows up under the parent's bookings; only the rare double
+    // failure below still needs a human.
+    console.error('Booked in Wix but redeem_package_credit failed; falling back to a direct insert', result.wixBookingId, error);
+    const fallback = await insertFallbackPackageBookings(admin, {
+      userId: user.id,
+      sessionId: result.sessionId,
+      wixBookingId: result.wixBookingId,
+      packagePurchaseId: packagePurchaseId!,
+      childId: body.childId,
+      policiesAccepted: body.policiesAccepted ?? [],
+      medicalDisclosure: body.medicalDisclosure,
+      infoResponse: body.infoResponse,
+      guestNames: body.guestNames ?? [],
+      count,
+      purchase: { credits_remaining: purchase.credits_remaining, status: purchase.status },
+    });
+    if (!fallback.ok) {
+      return NextResponse.json(
+        { error: 'Booked in Wix but could not redeem the credit — contact support' },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ id: result.sessionId, status: fallback.status, waitlistedCount: fallback.waitlistedCount });
   }
 
   return NextResponse.json({
