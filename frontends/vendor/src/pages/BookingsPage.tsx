@@ -154,9 +154,7 @@ const payBadge = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_BADG
 const payDetail = (r: Pick<RosterRow, 'paid_via' | 'payment_status'>) => PAY_DETAIL[payKind(r)];
 
 export default function BookingsPage() {
-  const { provider, role, session, subscription } = useAuth();
-  const plan = subscription?.plan ?? 'free';
-  const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
+  const { provider, role, session } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
   // Read once, on mount, before the deep-link params below are consumed.
@@ -171,8 +169,10 @@ export default function BookingsPage() {
   const [tokenExpiryDate, setTokenExpiryDate] = useState<string>('');
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [messaging, setMessaging] = useState(false);
+  const [messagingAll, setMessagingAll] = useState(false);
 
   const [messageError, setMessageError] = useState<string | null>(null);
+  const [messageAllError, setMessageAllError] = useState<string | null>(null);
 
   /* QA 24/08: "clicked message parent when both vendor and parent on paid tier
      and nothing happened." The route's own 500 (Stream rejects addMembers for
@@ -197,6 +197,29 @@ export default function BookingsPage() {
       setMessageError(e instanceof Error ? e.message : 'Could not open the chat — please try again.');
     } finally {
       setMessaging(false);
+    }
+  }
+
+  /* "Message parents" — one shared channel with every parent booked into the
+     selected session, so the vendor can broadcast to (and hear back from)
+     the whole slot instead of messaging each parent one at a time. */
+  async function messageAllParents() {
+    if (!sessionId) return;
+    setMessageAllError(null);
+    setMessagingAll(true);
+    try {
+      const { channelId } = await apiPost<{ channelId: string }>('/api/vendor/chat/session', {
+        session_id: sessionId,
+      });
+      if (!channelId) {
+        setMessageAllError('Chat could not be opened just now — please try again.');
+        return;
+      }
+      navigate(`/messages?channel=${channelId}`);
+    } catch (e) {
+      setMessageAllError(e instanceof Error ? e.message : 'Could not open the chat — please try again.');
+    } finally {
+      setMessagingAll(false);
     }
   }
 
@@ -1013,12 +1036,29 @@ export default function BookingsPage() {
                 </div>
               )}
             </div>
-            <div className="mt-4 text-sm text-gray-500">
-              {booked.length} bookings
-              {wixClassOverflow > 0 && (
-                <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <span className="text-sm text-gray-500">
+                {booked.length} bookings
+                {wixClassOverflow > 0 && (
+                  <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
+                )}
+              </span>
+              {/* One shared chat with every parent booked into this slot, so the
+                  vendor can broadcast to (and hear back from) the whole
+                  session instead of messaging each parent one at a time. */}
+              {booked.some((b) => b.user_id) && (
+                <button
+                  onClick={messageAllParents}
+                  disabled={messagingAll}
+                  className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[#FA4D8D] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> {messagingAll ? 'Opening chat…' : 'Message parents'}
+                </button>
               )}
             </div>
+            {messageAllError && (
+              <p className="mt-2 text-xs font-medium text-red-600">{messageAllError}</p>
+            )}
           </div>
 
           {/* Bookings detail. Desktop: the right-hand column. Mobile: a bottom
@@ -1185,18 +1225,7 @@ export default function BookingsPage() {
                       </div>
                     )}
                   </div>
-                  {/* Messaging is a paid feature — the plans page lists "Direct
-                      to user messaging" from Growth up, but this button was
-                      live on Free. */}
-                  {!canMessage ? (
-                    <button
-                      onClick={() => navigate('/plans')}
-                      className="flex items-center gap-2 mt-6 text-sm text-gray-400 hover:text-[#FA4D8D]"
-                      title="Messaging parents is available on Pro and above"
-                    >
-                      <MessageSquare className="w-4 h-4" /> Message parent — upgrade to Pro
-                    </button>
-                  ) : sel.user_id ? (
+                  {sel.user_id ? (
                     <button
                       onClick={() => messageParent(sel.user_id!)}
                       disabled={messaging}

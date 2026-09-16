@@ -23,6 +23,9 @@ export const providerChannelId = (providerId: string, parentId: string) =>
 /** Group chat id for a class (activity). Deterministic + idempotent. */
 export const classChannelId = (activityId: string) => `class-${channelHash(activityId)}`;
 
+/** Group chat id for a single session/slot. Deterministic + idempotent. */
+export const sessionChannelId = (sessionId: string) => `session-${channelHash(sessionId)}`;
+
 /** Stream "team"/member id for a provider (so all staff share the channel). */
 export const providerTeamUserId = (providerId: string) => `provider-${providerId}`;
 
