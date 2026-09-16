@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { checkWixBookingGates, isWixSessionPaused, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
+import { checkWixBookingGates, isWixSessionPaused, getWixSessionBookingCutoff, createWixBookingAndSession, resolveWixContact } from '@/lib/wix/sync';
 
 /**
  * Parent redeems a make-up token for a Wix-sourced slot.
@@ -122,6 +122,10 @@ export async function POST(request: Request) {
 
   const contact = await resolveWixContact(admin, user.id);
 
+  // A session-level override (migration 00137) wins over the activity's
+  // default; null (no row yet, or no override on it) falls back.
+  const sessionCutoff = await getWixSessionBookingCutoff(admin, activity.id, wixSlotId!);
+
   const result = await createWixBookingAndSession(
     admin,
     creds,
@@ -129,7 +133,7 @@ export async function POST(request: Request) {
     wixSlotId,
     contact,
     1,
-    { cutoffMinutes: activity.booking_cutoff_minutes }
+    { cutoffMinutes: sessionCutoff ?? activity.booking_cutoff_minutes }
   );
   if (!result.ok) {
     await revertClaim();

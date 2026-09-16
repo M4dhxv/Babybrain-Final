@@ -321,6 +321,9 @@ export type Database = {
           cancellation_refund_mode: 'refund' | 'none' | null;
           allow_rescheduling: boolean | null;
           reschedule_cutoff_hours: number | null;
+          // Per-session override of activities.booking_cutoff_minutes
+          // (migration 00137) — null means "inherit the activity default".
+          booking_cutoff_minutes: number | null;
         };
         Insert: {
           id?: string;
@@ -341,6 +344,7 @@ export type Database = {
           cancellation_refund_mode?: 'refund' | 'none' | null;
           allow_rescheduling?: boolean | null;
           reschedule_cutoff_hours?: number | null;
+          booking_cutoff_minutes?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -360,6 +364,7 @@ export type Database = {
           cancellation_refund_mode?: 'refund' | 'none' | null;
           allow_rescheduling?: boolean | null;
           reschedule_cutoff_hours?: number | null;
+          booking_cutoff_minutes?: number | null;
         };
               Relationships: [
           {

@@ -153,7 +153,7 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
  *  rendering them. Keep this in step with ActivitySession if the table gains
  *  a column parents genuinely need. */
 const PARENT_SESSION_COLUMNS =
-  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours';
+  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes';
 
 export interface ActivityDetail {
   activity:
@@ -279,6 +279,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   cancellation_refund_mode: null,
                   allow_rescheduling: null,
                   reschedule_cutoff_hours: null,
+                  booking_cutoff_minutes: null,
                 }));
               })
               .catch(() => []),

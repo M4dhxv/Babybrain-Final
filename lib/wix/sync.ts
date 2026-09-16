@@ -1039,6 +1039,27 @@ export async function isWixSessionPaused(
   return !!data?.bookings_paused;
 }
 
+/**
+ * The per-session override of activities.booking_cutoff_minutes (migration
+ * 00137) for a Wix slot — same "no local row yet" story as
+ * isWixSessionPaused: a slot nobody has viewed/booked yet has nothing to
+ * override, so null (the caller falls back to the activity's own cutoff).
+ */
+export async function getWixSessionBookingCutoff(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  wixSlotId: string
+): Promise<number | null> {
+  const key = wixSlotId.replace(/^wix:/, '');
+  const { data } = await admin
+    .from('activity_sessions')
+    .select('booking_cutoff_minutes')
+    .eq('activity_id', activityId)
+    .eq('wix_slot_key', key)
+    .maybeSingle();
+  return data?.booking_cutoff_minutes ?? null;
+}
+
 export interface WixContact {
   firstName: string;
   lastName: string;

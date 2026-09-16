@@ -168,11 +168,11 @@ const emptyForm = {
   what_to_bring: '', confirmation_message: '',
 };
 
-/* Per-session booking-policy override (migration 00133) — surfaced in the
-   "Manage schedule" drawer as one "Booking policies" dropdown rather than
-   five more always-visible fields on an already-crowded form. 'inherit'
-   (the default) sends null for all five columns; 'custom' sends the values
-   below, mirroring the activity-level card. */
+/* Per-session booking-policy override (migrations 00133/00137) — surfaced in
+   the "Manage schedule" drawer as one "Booking policies" dropdown rather than
+   six more always-visible fields on an already-crowded form. 'inherit' (the
+   default) sends null for every column; 'custom' sends the values below,
+   mirroring the activity-level card. */
 type SessPolicy = {
   mode: 'inherit' | 'custom';
   allow_cancellation: boolean;
@@ -180,10 +180,12 @@ type SessPolicy = {
   cancellation_refund_mode: 'refund' | 'none';
   allow_rescheduling: boolean;
   reschedule_cutoff_hours: string;
+  booking_cutoff_minutes: string;
 };
 const inheritSessPolicy: SessPolicy = {
   mode: 'inherit', allow_cancellation: true, cancellation_cutoff_hours: '24',
   cancellation_refund_mode: 'refund', allow_rescheduling: true, reschedule_cutoff_hours: '24',
+  booking_cutoff_minutes: '15',
 };
 /** null for every column when inheriting the activity's own policy. */
 function sessPolicyPayload(p: SessPolicy) {
@@ -191,6 +193,7 @@ function sessPolicyPayload(p: SessPolicy) {
     return {
       allow_cancellation: null, cancellation_cutoff_hours: null,
       cancellation_refund_mode: null, allow_rescheduling: null, reschedule_cutoff_hours: null,
+      booking_cutoff_minutes: null,
     };
   }
   return {
@@ -199,6 +202,10 @@ function sessPolicyPayload(p: SessPolicy) {
     cancellation_refund_mode: p.cancellation_refund_mode,
     allow_rescheduling: p.allow_rescheduling,
     reschedule_cutoff_hours: Math.max(0, Number(p.reschedule_cutoff_hours) || 24),
+    booking_cutoff_minutes:
+      p.booking_cutoff_minutes === ''
+        ? 15
+        : Math.max(0, Math.min(20160, Number(p.booking_cutoff_minutes))),
   };
 }
 
@@ -266,6 +273,22 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
               />
             </div>
           )}
+          {/* Not gated by either switch above — same as the activity-level
+              card, a booking cut-off applies regardless of whether
+              cancelling/rescheduling are allowed. */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Booking cut-off (mins)</label>
+            <input
+              type="number" min="0" max="20160" className={fieldCls}
+              value={policy.booking_cutoff_minutes}
+              onChange={(e) => onChange({ ...policy, booking_cutoff_minutes: e.target.value })}
+            />
+            <p className="mt-1 text-[11px] text-gray-400">
+              {policy.booking_cutoff_minutes === '0'
+                ? 'Parents can book right up to the start time.'
+                : `Parents can't book within ${policy.booking_cutoff_minutes || '15'} minutes of the class starting.`}
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -432,13 +455,14 @@ export default function ActivitiesPage() {
     /* QA 04/09: pause is per-session as well as per-activity (migration 00084),
        so a week the teacher is away can be closed without shutting the class. */
     bookings_paused: boolean;
-    // Per-session booking-policy override (migration 00133) — null = inherit
-    // the activity's own setting.
+    // Per-session booking-policy override (migrations 00133/00137) — null =
+    // inherit the activity's own setting.
     allow_cancellation: boolean | null;
     cancellation_cutoff_hours: number | null;
     cancellation_refund_mode: 'refund' | 'none' | null;
     allow_rescheduling: boolean | null;
     reschedule_cutoff_hours: number | null;
+    booking_cutoff_minutes: number | null;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
@@ -617,7 +641,7 @@ export default function ActivitiesPage() {
   async function loadSessions(activityId: string) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
       .eq('activity_id', activityId)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
@@ -742,7 +766,7 @@ export default function ActivitiesPage() {
     const hasOverride =
       s.allow_cancellation != null || s.cancellation_cutoff_hours != null ||
       s.cancellation_refund_mode != null || s.allow_rescheduling != null ||
-      s.reschedule_cutoff_hours != null;
+      s.reschedule_cutoff_hours != null || s.booking_cutoff_minutes != null;
     setSessEditForm({
       date: `${sgt.getFullYear()}-${pad(sgt.getMonth() + 1)}-${pad(sgt.getDate())}`,
       time: `${pad(sgt.getHours())}:${pad(sgt.getMinutes())}`,
@@ -759,6 +783,7 @@ export default function ActivitiesPage() {
         cancellation_refund_mode: s.cancellation_refund_mode ?? scheduleFor?.cancellation_refund_mode ?? 'refund',
         allow_rescheduling: s.allow_rescheduling ?? scheduleFor?.allow_rescheduling ?? true,
         reschedule_cutoff_hours: String(s.reschedule_cutoff_hours ?? scheduleFor?.reschedule_cutoff_hours ?? 24),
+        booking_cutoff_minutes: String(s.booking_cutoff_minutes ?? scheduleFor?.booking_cutoff_minutes ?? 15),
       },
     });
   }

@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { checkWixBookingGates, isWixSessionPaused, reserveWixSlotForCheckout } from '@/lib/wix/sync';
+import { checkWixBookingGates, isWixSessionPaused, getWixSessionBookingCutoff, reserveWixSlotForCheckout } from '@/lib/wix/sync';
 
 /**
  * Parent pays for a Wix-linked class. Unlike the free path
@@ -88,13 +88,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
   }
 
+  // A session-level override (migration 00137) wins over the activity's
+  // default; null (no row yet, or no override on it) falls back.
+  const sessionCutoff = await getWixSessionBookingCutoff(admin, activity.id, wixSlotId!);
+
   const reserved = await reserveWixSlotForCheckout(
     admin,
     creds,
     { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
     wixSlotId,
     count,
-    { cutoffMinutes: activity.booking_cutoff_minutes }
+    { cutoffMinutes: sessionCutoff ?? activity.booking_cutoff_minutes }
   );
   if (!reserved.ok) {
     return NextResponse.json({ error: reserved.error }, { status: reserved.status });
