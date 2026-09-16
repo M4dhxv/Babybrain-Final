@@ -26,7 +26,7 @@ const tabs = ['Packs', 'Purchases'];
 type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
   activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
-  allowed_weekday: number | null; allowed_start_time: string | null;
+  allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null;
 };
 type Purchase = {
   purchase_id: string; package_name: string; buyer_name: string;
@@ -39,6 +39,7 @@ const emptyPack = {
   name: '', credits: '', price: '',
   expiryMode: 'none' as ExpiryMode, validity_days: '', expiry_date: '',
   activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '',
+  starts_date: '', starts_time: '',
 };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 /** A plain YYYY-MM-DD (no time component) formatted without a UTC round-trip,
@@ -46,6 +47,45 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day
 const fmtPlainDate = (isoDate: string) => {
   const [y, m, d] = isoDate.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+/** fmtDate plus a time, dropped when the instant is exactly midnight (a
+ *  start picked with no time, i.e. "start of day"). */
+const fmtDateTime = (iso: string) => {
+  const time = new Date(iso).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' });
+  return time === '12:00 am' ? fmtDate(iso) : `${fmtDate(iso)} ${time}`;
+};
+/** Reads a stored instant back out as Singapore wall-clock date/time, for
+ *  re-populating the edit form (same convention as ActivitiesPage's
+ *  startEditSess). */
+function sgtDateTimeParts(iso: string) {
+  const sgt = new Date(new Date(iso).toLocaleString('en-US', { timeZone: 'Asia/Singapore' }));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: `${sgt.getFullYear()}-${pad(sgt.getMonth() + 1)}-${pad(sgt.getDate())}`,
+    time: `${pad(sgt.getHours())}:${pad(sgt.getMinutes())}`,
+  };
+}
+
+/** A pack's own [start, end) window, or null when it isn't scheduled at all
+ *  (an ordinary always-on pack, which never conflicts with anything —
+ *  multiple such packs per activity is intended, see packages-multi-
+ *  per-activity-is-intended). Only packs that actually use the start-date
+ *  feature participate in conflict checking. expiry_date is a fixed
+ *  calendar date shared by every purchase (00132); validity_days is
+ *  per-purchase and so doesn't bound the pack itself. */
+function packWindow(p: { starts_at: string | null; expiry_date: string | null }): { start: number; end: number } | null {
+  if (!p.starts_at) return null;
+  return {
+    start: new Date(p.starts_at).getTime(),
+    end: p.expiry_date ? new Date(`${p.expiry_date}T23:59:59+08:00`).getTime() : Infinity,
+  };
+}
+const scopeSet = (ids: string[] | null) => (ids && ids.length ? new Set(ids) : null);
+/** null scope = "any of the provider's activities", which overlaps everything. */
+const scopesOverlap = (a: Set<string> | null, b: Set<string> | null) => {
+  if (!a || !b) return true;
+  for (const id of a) if (b.has(id)) return true;
+  return false;
 };
 
 export default function PackagesPage() {
@@ -64,7 +104,7 @@ export default function PackagesPage() {
     async () => {
       const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
         supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
-        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
+        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
         supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
       ]);
       return {
@@ -99,8 +139,28 @@ export default function PackagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newParam, canManage]);
 
+  /** Active/Upcoming/Expired reflects the schedule the parent app actually
+   *  enforces; Paused is the vendor's own on/off switch. Mirrors
+   *  displayStatus below, which does the same for purchases. */
+  const packStatus = (p: Pack): 'paused' | 'upcoming' | 'active' | 'expired' => {
+    if (!p.active) return 'paused';
+    const now = new Date();
+    if (p.starts_at && new Date(p.starts_at) > now) return 'upcoming';
+    if (p.expiry_date && new Date(`${p.expiry_date}T23:59:59+08:00`) <= now) return 'expired';
+    return 'active';
+  };
+  const packStatusBadge = (s: ReturnType<typeof packStatus>) => cn(
+    'text-xs font-medium px-2.5 py-1 rounded-full',
+    s === 'active' ? 'bg-green-300 text-green-800'
+      : s === 'upcoming' ? 'bg-purple-100 text-purple-700'
+      : s === 'expired' ? 'bg-red-100 text-red-600'
+      : 'bg-gray-100 text-gray-500'
+  );
+  const packStatusLabel = (s: ReturnType<typeof packStatus>) => s === 'paused' ? 'Paused' : s === 'upcoming' ? 'Upcoming' : s === 'expired' ? 'Expired' : 'Active';
+
   const packRestriction = (p: Pack) => {
     const parts: string[] = [];
+    if (p.starts_at) parts.push(`starts ${fmtDateTime(p.starts_at)}`);
     if (p.activity_ids && p.activity_ids.length > 0) {
       const names = p.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? 'one activity');
       parts.push(names.length <= 2 ? names.join(' & ') : `${names.length} activities`);
@@ -120,6 +180,7 @@ export default function PackagesPage() {
     setEditingPackId(p.id);
     setPackError(null);
     setPackNotice(null);
+    const starts = p.starts_at ? sgtDateTimeParts(p.starts_at) : null;
     setPackForm({
       name: p.name,
       credits: String(p.credits),
@@ -130,6 +191,8 @@ export default function PackagesPage() {
       activity_ids: p.activity_ids ?? [],
       allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
       allowed_start_time: p.allowed_start_time ?? '',
+      starts_date: starts?.date ?? '',
+      starts_time: starts?.time ?? '',
     });
     document.getElementById('pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -163,6 +226,10 @@ export default function PackagesPage() {
     if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
     if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
     if (packForm.expiryMode === 'date' && !packForm.expiry_date) return setPackError('Pick an expiry date.');
+    if (packForm.starts_time && !packForm.starts_date) return setPackError('Pick a start date too.');
+    if (packForm.starts_date && packForm.expiryMode === 'date' && packForm.expiry_date && packForm.expiry_date < packForm.starts_date) {
+      return setPackError('Expiry date is before the start date.');
+    }
 
     setSavingPack(true);
     const fields = {
@@ -174,6 +241,7 @@ export default function PackagesPage() {
       activity_ids: packForm.activity_ids.length ? packForm.activity_ids : null,
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
+      starts_at: packForm.starts_date ? new Date(`${packForm.starts_date}T${packForm.starts_time || '00:00'}:00+08:00`).toISOString() : null,
     };
     const { error } = editingPackId
       ? await supabase.from('packages').update(fields).eq('id', editingPackId)
@@ -198,6 +266,25 @@ export default function PackagesPage() {
   // status parents actually experience instead of trusting the raw column.
   const displayStatus = (p: Purchase) =>
     p.status === 'active' && p.expires_at && new Date(p.expires_at) <= new Date() ? 'expired' : p.status;
+
+  // Non-blocking heads-up when the pack being scheduled overlaps another
+  // scheduled pack on the same activity — multiple packages per activity
+  // stays allowed (see packWindow above), this just flags it.
+  const formWindow = packForm.starts_date
+    ? packWindow({
+        starts_at: new Date(`${packForm.starts_date}T${packForm.starts_time || '00:00'}:00+08:00`).toISOString(),
+        expiry_date: packForm.expiryMode === 'date' ? packForm.expiry_date || null : null,
+      })
+    : null;
+  const packConflicts = formWindow
+    ? packs.filter((p) => {
+        if (p.id === editingPackId) return false;
+        const w = packWindow(p);
+        if (!w) return false;
+        if (!scopesOverlap(scopeSet(packForm.activity_ids), scopeSet(p.activity_ids))) return false;
+        return formWindow!.start < w.end && w.start < formWindow!.end;
+      })
+    : [];
 
   return (
     <div className="relative">
@@ -242,19 +329,25 @@ export default function PackagesPage() {
                       <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
                       {packRestriction(p) && <div className="mt-0.5 text-xs text-purple-700">{packRestriction(p)}</div>}
                     </div>
-                    {canManage && (
-                      <div className="flex flex-shrink-0 items-center gap-2">
-                        <button onClick={() => togglePack(p)} className={cn('text-xs font-medium px-2.5 py-1 rounded-full', p.active ? 'bg-green-300 text-green-800' : 'bg-gray-100 text-gray-500')}>
-                          {p.active ? 'Active' : 'Inactive'}
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      {canManage ? (
+                        <button onClick={() => togglePack(p)} title={p.active ? 'Pause this pack' : 'Resume this pack'} className={packStatusBadge(packStatus(p))}>
+                          {packStatusLabel(packStatus(p))}
                         </button>
-                        <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => deletePack(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
+                      ) : (
+                        <span className={packStatusBadge(packStatus(p))}>{packStatusLabel(packStatus(p))}</span>
+                      )}
+                      {canManage && (
+                        <>
+                          <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button onClick={() => deletePack(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -275,6 +368,13 @@ export default function PackagesPage() {
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
                     <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
+                    <div className="flex w-full gap-2">
+                      <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack start date" className="w-32 flex-shrink-0" />
+                      <input type="time" value={packForm.starts_time} onChange={(e) => setPackForm({ ...packForm, starts_time: e.target.value })} className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" title="Start time (SGT); leave blank for start of day" />
+                    </div>
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Expiry</label>
@@ -312,6 +412,11 @@ export default function PackagesPage() {
                 {(packError || packNotice) && (
                   <p className={cn('mt-2 text-sm font-medium', packError ? 'text-red-600' : 'text-green-700')}>
                     {packError ?? packNotice}
+                  </p>
+                )}
+                {packConflicts.length > 0 && (
+                  <p className="mt-2 text-sm font-medium text-amber-700">
+                    Overlaps {packConflicts.map((c) => `"${c.name}" (${packRestriction(c) || 'no other restrictions'})`).join(', ')} for the same activity. That's allowed — parents with credits on more than one will get to pick which pack to spend — but check the dates are what you meant.
                   </p>
                 )}
                 <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">

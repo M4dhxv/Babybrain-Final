@@ -27,7 +27,7 @@ import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
 import { useActivities } from "./lib/useActivities";
 import { useAuth } from "./auth/AuthProvider";
-import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard } from "./lib/data";
+import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
 import { supabase } from "./lib/supabase";
 import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
@@ -1305,12 +1305,16 @@ function ActivityDetailPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null }>)
     ).then((rows) => {
-      setPacks(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id)));
+      setPacks(
+        rows
+          .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
+          .filter(isPackOnSale),
+      );
     });
   }, [activity?.provider_id, activity?.id]);
 

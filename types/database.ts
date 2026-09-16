@@ -314,6 +314,13 @@ export type Database = {
           // ordinary site-native sessions.
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
+          // Per-session overrides of the matching activities.* policy field
+          // (migration 00133) — null means "inherit the activity default".
+          allow_cancellation: boolean | null;
+          cancellation_cutoff_hours: number | null;
+          cancellation_refund_mode: 'refund' | 'none' | null;
+          allow_rescheduling: boolean | null;
+          reschedule_cutoff_hours: number | null;
         };
         Insert: {
           id?: string;
@@ -329,6 +336,11 @@ export type Database = {
           bookings_paused?: boolean;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
+          allow_cancellation?: boolean | null;
+          cancellation_cutoff_hours?: number | null;
+          cancellation_refund_mode?: 'refund' | 'none' | null;
+          allow_rescheduling?: boolean | null;
+          reschedule_cutoff_hours?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -343,6 +355,11 @@ export type Database = {
           teacher_name?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
+          allow_cancellation?: boolean | null;
+          cancellation_cutoff_hours?: number | null;
+          cancellation_refund_mode?: 'refund' | 'none' | null;
+          allow_rescheduling?: boolean | null;
+          reschedule_cutoff_hours?: number | null;
         };
               Relationships: [
           {
@@ -1187,6 +1204,7 @@ export type Database = {
           expiry_date: string | null;
           allowed_weekday: number | null;
           allowed_start_time: string | null;
+          starts_at: string | null;
         };
         Insert: {
           provider_id: string;
@@ -1195,8 +1213,9 @@ export type Database = {
           credits: number;
           price_cents: number;
           active?: boolean;
+          starts_at?: string | null;
         };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; starts_at?: string | null };
         Relationships: [];
       };
       package_purchases: {

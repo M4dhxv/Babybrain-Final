@@ -16,6 +16,17 @@ import {
   type JourneyStats,
 } from "./database.types";
 
+/** Whether a vendor's package (credit pack) is currently on sale — has
+ *  passed its scheduled `starts_at` (if any) and hasn't reached its fixed
+ *  `expiry_date` (if any). Mirrors the vendor portal's packStatus in
+ *  PackagesPage.tsx; both must be kept in step with each other. */
+export function isPackOnSale(p: { starts_at: string | null; expiry_date: string | null }) {
+  const now = new Date();
+  if (p.starts_at && new Date(p.starts_at) > now) return false;
+  if (p.expiry_date && new Date(`${p.expiry_date}T23:59:59+08:00`) <= now) return false;
+  return true;
+}
+
 /** The signed-in parent's plan. It can only be learned from the Stripe
  *  subscription route, which sits downstream of the whole auth cold-start — on
  *  a hard refresh that's 4-5s during which we'd otherwise assume `free` and
@@ -142,7 +153,7 @@ async function withRemainingCapacity<T extends { id: string; capacity: number | 
  *  rendering them. Keep this in step with ActivitySession if the table gains
  *  a column parents genuinely need. */
 const PARENT_SESSION_COLUMNS =
-  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at';
+  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours';
 
 export interface ActivityDetail {
   activity:
@@ -260,6 +271,14 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   wix_slot_key: null,
                   wix_remaining_capacity: null,
                   created_at: new Date().toISOString(),
+                  // Not yet materialized as a real activity_sessions row, so
+                  // there's nothing to override — inherits the activity's own
+                  // policy, same as every other unmaterialized Wix slot.
+                  allow_cancellation: null,
+                  cancellation_cutoff_hours: null,
+                  cancellation_refund_mode: null,
+                  allow_rescheduling: null,
+                  reschedule_cutoff_hours: null,
                 }));
               })
               .catch(() => []),

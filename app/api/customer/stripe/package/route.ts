@@ -36,10 +36,20 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: pkg } = await admin
     .from('packages')
-    .select('id, name, credits, price_cents, active, provider_id')
+    .select('id, name, credits, price_cents, active, provider_id, starts_at, expiry_date')
     .eq('id', packageId)
     .maybeSingle();
   if (!pkg || !pkg.active) {
+    return NextResponse.json({ error: 'Package not available' }, { status: 404 });
+  }
+  // Vendor-scheduled pack: not yet on sale, or past its fixed expiry date
+  // (00134/00132) — the browse UI already hides these, this is the
+  // checkout-can't-be-bypassed backstop.
+  const now = new Date();
+  if (pkg.starts_at && new Date(pkg.starts_at) > now) {
+    return NextResponse.json({ error: 'Package not available yet' }, { status: 404 });
+  }
+  if (pkg.expiry_date && new Date(`${pkg.expiry_date}T23:59:59+08:00`) <= now) {
     return NextResponse.json({ error: 'Package not available' }, { status: 404 });
   }
 

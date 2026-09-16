@@ -277,6 +277,11 @@ export type Database = {
           wix_slot_key: string | null;
           wix_remaining_capacity: number | null;
           created_at: string;
+          allow_cancellation: boolean | null;
+          cancellation_cutoff_hours: number | null;
+          cancellation_refund_mode: 'refund' | 'none' | null;
+          allow_rescheduling: boolean | null;
+          reschedule_cutoff_hours: number | null;
         };
         Insert: {
           id?: string;
@@ -292,6 +297,11 @@ export type Database = {
           studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
+          allow_cancellation?: boolean | null;
+          cancellation_cutoff_hours?: number | null;
+          cancellation_refund_mode?: 'refund' | 'none' | null;
+          allow_rescheduling?: boolean | null;
+          reschedule_cutoff_hours?: number | null;
         };
         Update: {
           starts_at?: string;
@@ -305,6 +315,11 @@ export type Database = {
           studio?: string | null;
           wix_slot_key?: string | null;
           wix_remaining_capacity?: number | null;
+          allow_cancellation?: boolean | null;
+          cancellation_cutoff_hours?: number | null;
+          cancellation_refund_mode?: 'refund' | 'none' | null;
+          allow_rescheduling?: boolean | null;
+          reschedule_cutoff_hours?: number | null;
         };
               Relationships: [
           {
@@ -835,9 +850,9 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; expiry_date: string | null; allowed_weekday: number | null; allowed_start_time: string | null };
-        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null };
+        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; expiry_date: string | null; allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null };
+        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null };
         Relationships: [];
       };
       package_purchases: {
