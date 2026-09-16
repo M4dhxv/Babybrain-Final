@@ -758,7 +758,7 @@ function ExplorePage() {
         </div>
 
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-          <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F4EFF0] bg-white p-1.5 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
+          <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F4EFF0] bg-white p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
             {(
               [
                 { key: "type", label: "Type", icon: "store", active: categories_.length > 0 },
@@ -771,10 +771,10 @@ function ExplorePage() {
                 key={t.key}
                 type="button"
                 onClick={() => setMobileSheet(t.key)}
-                className="flex flex-1 flex-col items-center gap-1 py-2 text-[10px] font-bold"
+                className="flex flex-1 flex-col items-center gap-0.5 py-0.5 text-[10px] font-bold"
               >
-                <span className={t.active ? "grid h-9 w-9 place-items-center rounded-full bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] shadow-pink" : "grid h-9 w-9 place-items-center"}>
-                  <Icon name={t.icon} className={t.active ? "h-5 w-5 text-white" : "h-6 w-6 text-[#4a5680]"} />
+                <span className={t.active ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] shadow-pink" : "grid h-7 w-7 place-items-center"}>
+                  <Icon name={t.icon} className={t.active ? "h-4 w-4 text-white" : "h-5 w-5 text-[#4a5680]"} />
                 </span>
                 <span className={t.active ? "text-baby-cta" : "text-[#4a5680]"}>{t.label}</span>
               </button>
