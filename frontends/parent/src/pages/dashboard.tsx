@@ -3599,6 +3599,10 @@ export function BookingPage() {
     }
     setBusy(true);
     let status: string | null = null;
+    // Seats from a multi-child party that didn't fit and stayed on the
+    // waitlist (00136) — shown on /booked alongside a non-'waitlisted'
+    // status instead of the whole party reading as waitlisted.
+    let wl = 0;
     if (isEvent) {
       // Wix Event ticket: a real reservation is made against Wix's own
       // inventory server-side (the authoritative availability check — there's
@@ -3721,8 +3725,9 @@ export function BookingPage() {
         return;
       }
       try {
-        const data = await apiPost<{ id: string; status: string }>("/api/wix/bookings", wixBody);
+        const data = await apiPost<{ id: string; status: string; waitlistedCount?: number }>("/api/wix/bookings", wixBody);
         status = data.status;
+        wl = data.waitlistedCount ?? 0;
       } catch (e) {
         setBusy(false);
         setErr(e instanceof Error ? e.message : "Could not create the booking");
@@ -3756,9 +3761,11 @@ export function BookingPage() {
         setErr(error ? cleanRpcErrorMessage(error) : "Could not create the booking");
         return;
       }
-      const { group_id: groupId, status: partyStatus } = data as { group_id: string | null; status: string };
+      const { group_id: groupId, status: partyStatus, waitlisted_count: partyWaitlisted } =
+        data as { group_id: string | null; status: string; waitlisted_count: number };
       // Paid class → hand off to Stripe Checkout; the route charges only the
-      // seats that fit and the webhook confirms just those. Free class stays
+      // seats that fit and the webhook confirms just those (and computes its
+      // own leftover-waitlist count for the success page). Free class stays
       // direct. 'waitlisted' means nothing fit — no payment, straight to the
       // waitlist confirmation.
       if (price != null && price > 0 && partyStatus !== "waitlisted") {
@@ -3779,6 +3786,7 @@ export function BookingPage() {
       }
       setBusy(false);
       status = partyStatus ?? "pending";
+      wl = partyWaitlisted ?? 0;
     }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
@@ -3791,6 +3799,7 @@ export function BookingPage() {
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
+      ...(status !== "waitlisted" && wl > 0 ? { wl: String(wl) } : {}),
     });
     // This path can have just redeemed a make-up token — don't leave the
     // Profile tab's cached token list showing it as still unredeemed.
@@ -3809,13 +3818,17 @@ export function BookingPage() {
     }
     setBusy(true);
     let status: string;
+    // Seats that didn't fit and landed on the waitlist while the rest of the
+    // party got in on this same credit purchase (00136) — every credit is
+    // still spent up front regardless, see redeem_package_credit.
+    let wl = 0;
     if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
       // redeem_package_credit expects a real session id, so this goes
       // through a route that creates the booking in Wix first (same as the
       // free-booking path) and only then redeems the credit.
       try {
-        const data = await apiPost<{ status: string }>("/api/wix/bookings/redeem-package", {
+        const data = await apiPost<{ status: string; waitlistedCount?: number }>("/api/wix/bookings/redeem-package", {
           activityId: activity?.id,
           wixSlotId: sessionId,
           packagePurchaseId: packageCredit.id,
@@ -3829,29 +3842,34 @@ export function BookingPage() {
           ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
         });
         status = data.status;
+        wl = data.waitlistedCount ?? 0;
       } catch (e) {
         setBusy(false);
         setErr(e instanceof Error ? e.message : "Could not redeem this credit");
         return;
       }
     } else {
-      const { data, error } = await supabase.rpc("redeem_package_credit", {
-        p_purchase_id: packageCredit.id,
-        p_session_id: sessionId,
-        // Was hard-coded to null server-side, which is why a class booked with
-        // a pack credit showed up as "Guest" on the vendor's roster.
-        p_child_id: bookChildId,
-        p_policies: acceptedPolicies,
-        p_quantity: count,
-        // Names for the extra seats (00084); blank -> "Guest child".
-        ...(count > 1
-          ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
-          : {}),
-        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
-        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
-      });
+      const { data, error } = await supabase
+        .rpc("redeem_package_credit", {
+          p_purchase_id: packageCredit.id,
+          p_session_id: sessionId,
+          // Was hard-coded to null server-side, which is why a class booked with
+          // a pack credit showed up as "Guest" on the vendor's roster.
+          p_child_id: bookChildId,
+          p_policies: acceptedPolicies,
+          p_quantity: count,
+          // Names for the extra seats (00084); blank -> "Guest child".
+          ...(count > 1
+            ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+            : {}),
+          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+        })
+        .single();
       if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error)); return; }
-      status = (data as string | null) ?? "confirmed";
+      const redeemed = data as { status: string; waitlisted_count: number } | null;
+      status = redeemed?.status ?? "confirmed";
+      wl = redeemed?.waitlisted_count ?? 0;
     }
     setBusy(false);
     const q = new URLSearchParams({
@@ -3865,6 +3883,7 @@ export function BookingPage() {
       // the address the parent is told to go to is the session's when it has one.
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
+      ...(status !== "waitlisted" && wl > 0 ? { wl: String(wl) } : {}),
     });
     // Just spent a package credit — don't leave the Profile tab's cached
     // packages list showing the pre-redemption remaining count.

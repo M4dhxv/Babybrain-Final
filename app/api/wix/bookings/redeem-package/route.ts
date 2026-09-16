@@ -136,17 +136,19 @@ export async function POST(request: Request) {
   // booking insert — one row per spot, all against the one real Wix booking
   // made for `count` participants. On the caller's own client so auth.uid()
   // resolves.
-  const { data: status, error } = await supabase.rpc('redeem_package_credit', {
-    p_purchase_id: packagePurchaseId,
-    p_session_id: result.sessionId,
-    p_child_id: body.childId ?? undefined,
-    p_policies: body.policiesAccepted ?? [],
-    p_wix_booking_id: result.wixBookingId,
-    p_quantity: count,
-    p_medical: body.medicalDisclosure?.trim() || undefined,
-    p_info: body.infoResponse?.trim() || undefined,
-    p_guest_names: count > 1 ? (body.guestNames ?? []).map((n) => n?.trim() ?? '') : undefined,
-  });
+  const { data: redeemed, error } = await supabase
+    .rpc('redeem_package_credit', {
+      p_purchase_id: packagePurchaseId,
+      p_session_id: result.sessionId,
+      p_child_id: body.childId ?? undefined,
+      p_policies: body.policiesAccepted ?? [],
+      p_wix_booking_id: result.wixBookingId,
+      p_quantity: count,
+      p_medical: body.medicalDisclosure?.trim() || undefined,
+      p_info: body.infoResponse?.trim() || undefined,
+      p_guest_names: count > 1 ? (body.guestNames ?? []).map((n) => n?.trim() ?? '') : undefined,
+    })
+    .single();
   if (error) {
     // Booked for real in Wix, but the credit didn't redeem — a genuine race
     // (or the weekday/time restriction) rather than the common case the
@@ -159,5 +161,11 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ id: result.sessionId, status: status ?? 'confirmed' });
+  return NextResponse.json({
+    id: result.sessionId,
+    status: redeemed?.status ?? 'confirmed',
+    // A CLASS slot can straddle capacity across `count` seats (00136) — the
+    // seats that fit are confirmed, this many are on the local waitlist.
+    waitlistedCount: redeemed?.waitlisted_count ?? 0,
+  });
 }

@@ -984,7 +984,7 @@ export type Database = {
           p_medical?: string | null; p_info?: string | null;
           p_guest_names?: string[];
         };
-        Returns: string;
+        Returns: { status: string; waitlisted_count: number }[];
       };
       book_party: {
         Args: {
@@ -992,7 +992,7 @@ export type Database = {
           p_guest_names?: string[]; p_policies?: string[];
           p_medical?: string | null; p_info?: string | null;
         };
-        Returns: { group_id: string; status: string }[];
+        Returns: { group_id: string; status: string; waitlisted_count: number }[];
       };
       cancel_booking: {
         Args: { p_booking_id: string };

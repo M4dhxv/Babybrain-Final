@@ -134,5 +134,11 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json(bookings[0]);
+  // A Wix CLASS slot keeps the local capacity/waitlist trigger (00107), so a
+  // party of `count` can straddle it same as book_party (00136) — reporting
+  // only bookings[0]'s status hid every other seat's outcome, including a
+  // waitlisted one when seat 1 itself got in.
+  const waitlistedCount = bookings.filter((b) => b.status === 'waitlisted').length;
+  const status = waitlistedCount < bookings.length ? 'confirmed' : 'waitlisted';
+  return NextResponse.json({ id: bookings[0].id, status, waitlistedCount });
 }
