@@ -1039,19 +1039,28 @@ export default function ActivitiesPage() {
     window.setTimeout(() => { setSyncNotice(null); setSyncError(null); }, 5000);
   }
 
-  // Activities removed from the Wix import picker stay around (unpublished)
-  // only until their last booked upcoming session is over — the unbooked
-  // future sessions were already deleted at removal time, so once
-  // sessionCounts hits 0 the only thing left for it is past history.
+  // Either kind of Wix removal (deliberately unchecked in the import picker,
+  // or vanished from the currently connected account) — neither can take new
+  // bookings, and both should read as "Removed" rather than Live/Draft.
+  const isRemoved = (a: Activity) => !!a.wix_removed_at || !!a.wix_missing_since;
+
+  // A deliberately-removed activity (wix_removed_at) stays around, still
+  // shown as "Removed", only until its last booked upcoming session is over
+  // — the unbooked future sessions were already deleted at removal time, so
+  // once sessionCounts hits 0 the only thing left for it is past history.
+  // Hidden from the default (unfiltered) view for that reason, but the
+  // "Removed" status filter below still reaches it — nothing that was ever
+  // imported disappears from the page without a trace (QA: a vendor counting
+  // "33 of 40 activities" with no way to find the other 7).
   const isFullyRemoved = (a: Activity) => !!a.wix_removed_at && (sessionCounts[a.id] ?? 0) === 0;
 
   const visible = useMemo(() => {
-    let list = activities
-      .filter((a) => !isFullyRemoved(a))
-      .filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
+    let list = activities;
+    if (fStatus !== 'Removed') list = list.filter((a) => !isFullyRemoved(a));
+    list = list.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()));
     if (fStatus) {
       list = list.filter((a) => {
-        const s = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+        const s = isRemoved(a) ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
         return s === fStatus;
       });
     }
@@ -1065,6 +1074,13 @@ export default function ActivitiesPage() {
     else if (sortBy === 'rating') list = [...list].sort((a, b) => Number(b.rating_avg) - Number(a.rating_avg));
     return list;
   }, [activities, sessionCounts, search, fStatus, fLocation, fActivity, fAge, sortBy]);
+
+  // The "of N" a vendor should read as their real activity count — everything
+  // ever imported minus the ones fully drained of even their own history
+  // (see isFullyRemoved). Without this, activities.length kept counting dead
+  // test imports forever and the footer never explained the gap.
+  const removedHiddenCount = useMemo(() => activities.filter((a) => isFullyRemoved(a)).length, [activities, sessionCounts]);
+  const visibleTotal = activities.length - removedHiddenCount;
   const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? '—';
 
   // Themed placeholder per category so rows without photos still look distinct.
@@ -1102,8 +1118,8 @@ export default function ActivitiesPage() {
   // Reads left to right as the life of an activity: live → still a draft →
   // actually on the calendar → the venues it all runs at.
   const stats = [
-    { icon: CalendarCheck, label: 'Active activities', value: String(activities.filter((a) => a.is_published && !a.archived_at).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
-    { icon: CalendarDays, label: 'Draft activities', value: String(activities.filter((a) => !a.is_published && !isFullyRemoved(a) && !a.wix_missing_since).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+    { icon: CalendarCheck, label: 'Active activities', value: String(activities.filter((a) => a.is_published && !a.archived_at && !isRemoved(a)).length), sub: 'Live and published', color: 'text-pink-600', bg: 'bg-pink-100' },
+    { icon: CalendarDays, label: 'Draft activities', value: String(activities.filter((a) => !a.is_published && !isRemoved(a)).length), sub: 'Not published yet', color: 'text-yellow-600', bg: 'bg-yellow-100' },
     // "Scheduled" = has at least one session still in the future, which is the
     // same count the Sessions column shows per row.
     { icon: CalendarClock, label: 'Activities scheduled', value: String(activities.filter((a) => !a.archived_at && !isFullyRemoved(a) && (sessionCounts[a.id] ?? 0) > 0).length), sub: 'With upcoming sessions', color: 'text-purple-600', bg: 'bg-purple-100' },
@@ -1651,7 +1667,7 @@ export default function ActivitiesPage() {
             <div className="px-5 py-10 text-center text-sm text-gray-400">No activities yet. Create your first one.</div>
           )}
           {visible.map((a) => {
-            const status = a.wix_missing_since ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
+            const status = isRemoved(a) ? 'Removed' : a.archived_at ? 'Archived' : a.is_published ? 'Live' : 'Draft';
             return (
               <div
                 key={a.id}
@@ -1691,7 +1707,13 @@ export default function ActivitiesPage() {
                       : status === 'Draft' ? 'bg-yellow-300 text-yellow-800'
                       : status === 'Removed' ? 'bg-red-100 text-red-700'
                       : 'bg-gray-100 text-gray-600'
-                  )} title={status === 'Removed' ? "Not found on the currently connected Wix account — reconnect the right account, or re-add this service, to restore it." : undefined}>
+                  )} title={
+                    a.wix_removed_at
+                      ? "Unchecked in the Wix import picker — re-check it under Settings > Integrate your Business to bring it back. Already-booked sessions still run."
+                      : a.wix_missing_since
+                        ? "Not found on the currently connected Wix account — reconnect the right account, or re-add this service, to restore it."
+                        : undefined
+                  }>
                     <div className={cn('w-1.5 h-1.5 rounded-full', status === 'Live' ? 'bg-green-500' : status === 'Draft' ? 'bg-yellow-500' : status === 'Removed' ? 'bg-red-500' : 'bg-gray-400')} />
                     {status}
                   </span>
@@ -1782,7 +1804,23 @@ export default function ActivitiesPage() {
           </div>
 
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200">
-            <span className="text-sm text-gray-500">Showing {visible.length} of {activities.length} activities</span>
+            <span className="text-sm text-gray-500">
+              Showing {visible.length} of {visibleTotal} activities
+              {removedHiddenCount > 0 && fStatus !== 'Removed' && (
+                // The rest aren't lost — they're de-listed imports with nothing
+                // left but past history (see isFullyRemoved above). One click
+                // switches the status filter to reveal them instead of leaving
+                // a vendor to wonder where the gap between this count and their
+                // Wix account went.
+                <button
+                  type="button"
+                  onClick={() => setFStatus('Removed')}
+                  className="ml-1 text-[#FA4D8D] hover:underline"
+                >
+                  · {removedHiddenCount} removed from Wix
+                </button>
+              )}
+            </span>
           </div>
           </>
           )}
