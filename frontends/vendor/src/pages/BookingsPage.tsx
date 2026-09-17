@@ -295,6 +295,15 @@ export default function BookingsPage() {
         : sessions.filter((s) => s.starts_at >= startTodayIso),
     [sessions, dateFilter, startTodayIso]
   );
+  // Where the session picker lands with no date filter — the "Clear" button
+  // below resets straight to this rather than to '', so it works even when
+  // dateFilter was already empty and only the session was hand-picked (in
+  // that case filteredSessions doesn't change, so the effect below — which
+  // only reruns off filteredSessions — would never notice a plain setSessionId('')).
+  const defaultSessionId = useMemo(
+    () => sessions.find((s) => s.starts_at >= startTodayIso)?.id ?? '',
+    [sessions, startTodayIso]
+  );
   // Switching (or clearing) the date filter can leave the current selection
   // out of view — jump to the first session that's still in it rather than
   // showing a roster for a session no longer in the visible list.
@@ -918,8 +927,15 @@ export default function BookingsPage() {
                 className="min-w-0 flex-1 font-medium sm:flex-none"
                 aria-label={`Filter sessions by date — past ${PAST_FILTER_DAYS} days available`}
               />
-              {dateFilter && (
-                <button onClick={() => setDateFilter('')} className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600">
+              {/* Resets both the date filter and a hand-picked session back to
+                  the default (today's soonest) in one click — not just the
+                  date, which used to leave whatever session was selected
+                  in place even once its date filter was cleared. */}
+              {(dateFilter || (sessionId && sessionId !== defaultSessionId)) && (
+                <button
+                  onClick={() => { setDateFilter(''); setSessionId(defaultSessionId); }}
+                  className="shrink-0 text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
                   Clear
                 </button>
               )}
