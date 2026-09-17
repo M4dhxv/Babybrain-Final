@@ -127,6 +127,11 @@ type RosterRow = {
   // How the booking was settled (migration 00085): a package credit, a
   // redeemed make-up token, a Stripe payment, a refund, or nothing.
   paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
+  // The real Wix reservation this local row was made against, if any
+  // (migration 00140) — lets the "confirmed on Wix, no local record" panel
+  // below tell an already-accounted-for Wix attendee from a genuinely
+  // orphaned one, instead of only checking when the local list is empty.
+  wix_booking_id: string | null;
 };
 
 // Roster badge + detail-card wording for each settlement type. Falls back to
@@ -533,9 +538,11 @@ export default function BookingsPage() {
 
   // A customer who booked directly on the vendor's Wix site (not through
   // BabyBrain) has no local `bookings` row — see wix-session-bookings/route.ts.
-  // Only worth asking Wix for when the local roster came back empty; a session
-  // with real local bookings already shows them accurately (including a
-  // COURSE, now that provider_session_roster resolves to its anchor row).
+  // Always fetched for a Wix-linked session (including a COURSE, now that
+  // provider_session_roster resolves to its anchor row) — correlated against
+  // the local roster's own wix_booking_id below, so this still finds a
+  // genuinely orphaned Wix attendee even when other, unrelated local
+  // bookings already exist for the same session.
   const [wixAttendees, setWixAttendees] = useState<WixNativeAttendee[]>([]);
   const [wixAttendeesLoading, setWixAttendeesLoading] = useState(false);
   useEffect(() => {
@@ -552,6 +559,16 @@ export default function BookingsPage() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, provider]);
+  // QA: a session with one real local booking but Wix reporting more
+  // attendees than that used to show nothing extra at all — the fallback
+  // panel below only ever checked whether the local list was *completely*
+  // empty, so it silently missed genuinely orphaned Wix bookings on any
+  // session that already had at least one local row. Filtering by
+  // wix_booking_id (00140) instead of by the local list's size fixes that.
+  const orphanedWixAttendees = useMemo(
+    () => wixAttendees.filter((a) => !roster.some((r) => r.wix_booking_id === a.id)),
+    [wixAttendees, roster]
+  );
 
   // Keep the refresh-restore stash current. It's read back only after a genuine
   // page reload (see BOOKINGS_FILTER_KEY); a route change clears it instead.
@@ -1048,15 +1065,15 @@ export default function BookingsPage() {
                   {activeTab === 'Waitlist' ? 'No one on the waitlist for this session.' : 'No bookings for this session.'}
                 </div>
               )}
-              {activeTab === 'Bookings' && visibleBookings.length === 0 && wixAttendeesLoading && (
+              {activeTab === 'Bookings' && wixAttendeesLoading && (
                 <div className="px-1 text-xs text-gray-400">Checking Wix for direct bookings…</div>
               )}
-              {activeTab === 'Bookings' && visibleBookings.length === 0 && wixAttendees.length > 0 && (
+              {activeTab === 'Bookings' && orphanedWixAttendees.length > 0 && (
                 <div className="space-y-2">
                   <div className="px-1 text-xs font-medium text-gray-500">
                     Confirmed on Wix, but with no local booking record here — either booked directly on Wix, or a BabyBrain booking that failed to save locally. Can't be edited or marked for attendance from this page.
                   </div>
-                  {wixAttendees.map((a) => (
+                  {orphanedWixAttendees.map((a) => (
                     <div key={a.id} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
                       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-indigo-200 text-sm font-bold text-indigo-800">
                         {initials(`${a.firstName} ${a.lastName}`.trim() || 'Wix Customer')}

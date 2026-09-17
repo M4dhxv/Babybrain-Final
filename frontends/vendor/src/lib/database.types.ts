@@ -954,6 +954,8 @@ export type Database = {
           waitlist_pay_invited: boolean;
           /** For a companion seat of a multi-child party (00084/00109), the name on the seat carrying the real child. */
           group_primary_name: string | null;
+          /** The real Wix reservation this row was made against, if any (00140). */
+          wix_booking_id: string | null;
         }[];
       };
       provider_trial_conversion: {

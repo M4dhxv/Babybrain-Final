@@ -721,8 +721,25 @@ async function reconcileStaleWixSessions(
     // fetched is the other signal a real seat is filled (a class booked
     // directly on Wix's own site, not just through BabyBrain).
     const bookedOnWix = s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
-    if (bookedSessionIds.has(s.id) || bookedOnWix) continue;
-    await admin.from('activity_sessions').delete().eq('id', s.id);
+    const hasLocalBooking = bookedSessionIds.has(s.id);
+    if (!hasLocalBooking && !bookedOnWix) {
+      await admin.from('activity_sessions').delete().eq('id', s.id);
+      continue;
+    }
+    // Kept for a real local booking, but Wix no longer offers this occurrence
+    // at all (the vendor dropped the day, changed the recurrence, etc.) — so
+    // wix_remaining_capacity is now a frozen snapshot from before that
+    // happened, not live truth, and nothing will ever refresh it again since
+    // future fetches simply won't see this slot to upsert. Left alone it
+    // permanently overstates "booked" on the vendor's capacity badge
+    // (computeWixAwareCapacity takes the max of this and the local held
+    // count) — a session with one real local booking kept reading e.g. "3/7
+    // on Wix" forever. Clearing it makes the badge fall back to the local
+    // held count, which is the only figure still honest once Wix itself has
+    // stopped tracking the slot.
+    if (hasLocalBooking && s.wix_remaining_capacity != null) {
+      await admin.from('activity_sessions').update({ wix_remaining_capacity: null }).eq('id', s.id);
+    }
   }
 }
 
