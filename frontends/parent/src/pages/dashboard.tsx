@@ -1088,6 +1088,45 @@ export function ProfilePage() {
      conversations now, so the badge is worth showing to them too — an unread
      message they can open is exactly what it is for. */
   const unreadMessages = useUnreadMessages(Boolean(session));
+  /* Same treatment for the Notifications tab. Unlike Messages, the data's
+     already sitting in `notifications` (loaded whenever `session` resolves,
+     see the cacheFetch above) — no separate live-count hook needed, just a
+     filter over what's already on screen. */
+  const unreadNotifications = notifications.filter((n) => !n.read_at).length;
+
+  // Marks every notification read once per visit to that tab — nothing did
+  // this before (the per-row dot just sat there forever), which is also why
+  // the badge above would otherwise never clear. Guarded by a ref rather than
+  // depending only on `tab` so it still fires if `notifications` finishes
+  // loading *after* the tab is already open (a direct link to
+  // /profile?tab=notifications lands before the fetch resolves), without
+  // re-firing on the state update the mark-as-read call itself causes.
+  const markedNotifTab = useRef(false);
+  useEffect(() => {
+    if (tab !== "notifications") {
+      markedNotifTab.current = false;
+      return;
+    }
+    if (!session || !notifsLoaded || markedNotifTab.current) return;
+    markedNotifTab.current = true;
+    if (!notifications.some((n) => !n.read_at)) return;
+    const uid = session.user.id;
+    const seenAt = new Date().toISOString();
+    supabase
+      .from("notifications")
+      .update({ read_at: seenAt })
+      .eq("user_id", uid)
+      .is("read_at", null)
+      .then(({ error }) => {
+        if (error) {
+          console.error("mark notifications read failed", error);
+          markedNotifTab.current = false;
+          return;
+        }
+        setNotifications((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: seenAt })));
+        cacheInvalidate(`profile:notifications:${uid}`);
+      });
+  }, [tab, session, notifsLoaded, notifications]);
 
   // Below lg the nav is a left-hand drawer, not a stacked block. Landing on the
   // profile (the Overview tab) auto-reveals it: it slides in, holds for 4s,
@@ -1798,6 +1837,9 @@ export function ProfilePage() {
                         so they know to check." */}
                     {key === "messages" && !locked && (
                       <UnreadBadge count={unreadMessages} className="ml-auto" />
+                    )}
+                    {key === "notifications" && !locked && (
+                      <UnreadBadge count={unreadNotifications} className="ml-auto" label="notification" />
                     )}
                     {locked && <Icon name="lock" className="ml-auto h-3.5 w-3.5 shrink-0" />}
                   </a>
