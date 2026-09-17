@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadMessages } from '@/lib/chat';
+import { useUnreadNotifications } from '@/lib/notifications';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta } from '@/lib/plans';
 import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
@@ -54,7 +55,7 @@ const sidebarItems = [
 export default function PortalLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { subscription, signOut } = useAuth();
+  const { provider, subscription, signOut } = useAuth();
   const isPro = subscription?.plan === 'pro' || subscription?.plan === 'premium';
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -63,6 +64,11 @@ export default function PortalLayout() {
   /* Unread badge on the Messages tab (QA 04/09). Messaging is available on
      every tier, so the chat client always connects. */
   const unreadMessages = useUnreadMessages(true);
+  /* Unread badge on the Notifications tab. Re-checks on every route change
+     (not just an interval) so leaving /notifications — where the page marks
+     the feed seen on mount — clears the bubble right away instead of waiting
+     out the poll. */
+  const unreadNotifications = useUnreadNotifications(provider?.id ?? null, location.pathname);
   const renewLabel = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })
     : '';
@@ -184,6 +190,9 @@ export default function PortalLayout() {
                     look. Shown collapsed too — that's when it matters most. */}
                 {item.path === '/messages' && !locked && (
                   <UnreadBadge count={unreadMessages} collapsed={isSidebarCollapsed} />
+                )}
+                {item.path === '/notifications' && !locked && (
+                  <UnreadBadge count={unreadNotifications} collapsed={isSidebarCollapsed} label="notification" />
                 )}
                 {locked && !isSidebarCollapsed && <Lock className="w-3.5 h-3.5 flex-shrink-0" />}
               </button>

@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
+import { markNotificationsSeen } from '@/lib/notifications';
+import { useEffect } from 'react';
 
 type Event = {
   kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
@@ -47,6 +49,12 @@ export default function NotificationsPage() {
     },
   );
   const events = data ?? [];
+
+  // Clears the sidebar's unread bubble — see lib/notifications.ts. Fires once
+  // per mount (i.e. once per visit to this tab), not on every re-render.
+  useEffect(() => {
+    if (provider) markNotificationsSeen(provider.id);
+  }, [provider]);
 
   return (
     <div className="relative">

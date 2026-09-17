@@ -988,6 +988,14 @@ export type Database = {
           detail: string | null;
         }[];
       };
+      provider_notification_unread_count: {
+        Args: { p_provider: string };
+        Returns: number;
+      };
+      mark_provider_notifications_seen: {
+        Args: { p_provider: string };
+        Returns: undefined;
+      };
       provider_package_purchases: {
         Args: { p_provider: string };
         Returns: {
