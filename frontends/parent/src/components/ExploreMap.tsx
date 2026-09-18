@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LiveActivity } from "../lib/useActivities";
@@ -59,11 +59,19 @@ export function ExploreMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const [showHint, setShowHint] = useState(false);
 
   // Create the map once.
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
-    const map = L.map(containerRef.current, {
+    const el = containerRef.current;
+    // On touch screens one finger belongs to the page (scrolling); the map only
+    // moves with two. Leaflet's pinch handler also pans by the fingers' midpoint,
+    // so disabling one-finger drag leaves two-finger pan + zoom intact, and its
+    // CSS drops to `touch-action: pan-x pan-y` so the browser scrolls the page.
+    const touchOnly = window.matchMedia("(pointer: coarse)").matches;
+    const map = L.map(el, {
+      dragging: !touchOnly,
       center: SG_CENTER,
       zoom: 11,
       minZoom: 10,
@@ -131,7 +139,40 @@ export function ExploreMap({
     }
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
+
+    // Show the hint when a single finger actually tries to drag the map (taps on
+    // pins and controls are left alone), and clear it as soon as a second lands.
+    let hideTimer: number | undefined;
+    let startX = 0;
+    let startY = 0;
+    let armed = false;
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        armed = false;
+        window.clearTimeout(hideTimer);
+        setShowHint(false);
+        return;
+      }
+      const t = e.target as HTMLElement;
+      armed = !t.closest(".leaflet-control, .leaflet-popup, .leaflet-marker-icon");
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!armed || e.touches.length !== 1) return;
+      if (Math.hypot(e.touches[0].clientX - startX, e.touches[0].clientY - startY) < 8) return;
+      setShowHint(true);
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => setShowHint(false), 1500);
+    };
+    if (touchOnly) {
+      el.addEventListener("touchstart", onStart, { passive: true });
+      el.addEventListener("touchmove", onMove, { passive: true });
+    }
     return () => {
+      window.clearTimeout(hideTimer);
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
@@ -266,5 +307,35 @@ export function ExploreMap({
     }
   }, [pinsKey]);
 
-  return <div ref={containerRef} className="h-[395px] w-full" style={{ zIndex: 0 }} />;
+  return (
+    <div className="relative h-[395px] w-full" style={{ zIndex: 0 }}>
+      <div ref={containerRef} className="h-full w-full" />
+      <div
+        aria-hidden={!showHint}
+        className={`pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center bg-white/55 transition-opacity duration-200 ${
+          showHint ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <div className="w-[170px] rounded-[14px] border border-[#FEE9D7] bg-white px-4 py-4 text-center text-[#44507b]">
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mx-auto text-[#FA4D8D]"
+          >
+            <circle cx="14" cy="26" r="5" fill="currentColor" stroke="none" />
+            <circle cx="26" cy="14" r="5" fill="currentColor" stroke="none" />
+            <path d="M31 9l5-5M30 4h6v6M9 31l-5 5M4 30v6h6" />
+          </svg>
+          <div className="mt-1 text-sm font-black">Use two fingers</div>
+          <div className="mt-0.5 text-xs font-semibold">One finger scrolls the page</div>
+        </div>
+      </div>
+    </div>
+  );
 }

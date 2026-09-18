@@ -856,7 +856,7 @@ export const ActivityCard = memo(function ActivityCard({
           <p className="flex items-center gap-1.5"><Icon name="pin" className="h-3.5 w-3.5 text-palette-blue" /> {placeLabel(activity)}</p>
           <p className="flex items-center gap-1.5">
             <Icon name="calendar" className="h-3.5 w-3.5 text-palette-blue" />{" "}
-            {activity.date ? <>{activity.date} · {activity.time}</> : "Schedule TBC"}
+            {activity.date ? (activity.time ? <>{activity.date} · {activity.time}</> : activity.date) : "Schedule TBC"}
           </p>
           {priceLabel(activity) && (
             <p className="font-black text-palette-blue">{priceLabel(activity)}</p>

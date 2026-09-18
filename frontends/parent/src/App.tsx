@@ -32,7 +32,7 @@ import { supabase } from "./lib/supabase";
 import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
-import { sgDateTime, sgDayRange, courseStrands } from "./lib/schedule";
+import { sgDateTime, sgDayRange, courseStrands, isMultiDay } from "./lib/schedule";
 import { resolveActivityImages, FALLBACK_LOGO_URL } from "./lib/activityMedia";
 import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
@@ -902,13 +902,23 @@ function ExplorePage() {
       if (!a.areas.some((x) => regions.includes(x))) return false;
     }
     if (debouncedPriceActive && a.price != null && a.price > debouncedMaxPrice) return false;
+    // A camp Wix sends as one continuous multi-day occurrence: it belongs to a
+    // day window whenever it overlaps it (and it has no time of day), rather
+    // than only when its first midnight falls inside — which dropped a camp
+    // that was already running from every date-filtered list.
+    const multiDayRun = !!(a.isCourse && a.runStartsAt && a.runEndsAt && isMultiDay(a.runStartsAt, a.runEndsAt));
     if (dateFrom || dateTo) {
-      if (!a.nextSessionAt) return false;
-      const t = new Date(a.nextSessionAt).getTime();
-      if (dateFrom && t < new Date(`${dateFrom}T00:00:00+08:00`).getTime()) return false;
-      if (dateTo && t >= new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000) return false;
+      const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
+      const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
+      if (multiDayRun) {
+        if (!(Date.parse(a.runEndsAt!) > from && Date.parse(a.runStartsAt!) < to)) return false;
+      } else {
+        if (!a.nextSessionAt) return false;
+        const t = new Date(a.nextSessionAt).getTime();
+        if (t < from || t >= to) return false;
+      }
     }
-    if (debouncedTimeActive) {
+    if (debouncedTimeActive && !multiDayRun) {
       const h = sgHour(a.nextSessionAt);
       if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
     }
@@ -1739,9 +1749,11 @@ function ActivityDetailPage() {
   }
 
   const next = sessions[0];
-  const durationMins = next
-    ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
-    : null;
+  // A session over a day is a whole camp run, not a class length.
+  const durationMins =
+    next && !isMultiDay(next.starts_at, next.ends_at)
+      ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
+      : null;
   // A course's run span — Wix's schedule bounds when known, else first/last
   // visible session (future-only, so it can understate a mid-run course).
   const courseRunRange =
@@ -1941,10 +1953,10 @@ function ActivityDetailPage() {
                     Runs {courseRunRange} · one booking covers every session
                   </p>
                   <div className="space-y-2">
-                    {courseStrands(sessions).map((st) => (
+                    {courseStrands(sessions, courseSpan?.start).map((st) => (
                       <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2">
                         <p className="text-sm font-black text-[#34406f]">{st.label}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-[#68718f]">{st.range ? `${st.range} · ` : ""}{st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-[#68718f]">{st.range ? `${st.range} · ` : ""}{st.note}</p>
                       </div>
                     ))}
                   </div>
@@ -2124,8 +2136,10 @@ function ActivityDetailPage() {
               )}
               {next && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="shrink-0">Next available class</strong>
-                  <span className="text-right">{sgDateTime(next.starts_at)}</span>
+                  <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next available class"}</strong>
+                  <span className="text-right">
+                    {activity.wix_service_type === "COURSE" && courseRunRange ? courseRunRange : sgDateTime(next.starts_at)}
+                  </span>
                 </p>
               )}
               {next?.capacity != null && (

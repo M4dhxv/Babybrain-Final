@@ -89,11 +89,13 @@ export default async function ActivityDetailPage({
   const meta = catMeta(category?.slug);
   const isSuggested = (suggestedRes.data ?? []).length > 0;
   const nextSession = (sessions ?? [])[0];
-  const durationMins = nextSession
+  // Over a day is a whole camp run Wix sent as one occurrence, not a class length.
+  const sessionMins = nextSession
     ? Math.round(
         (new Date(nextSession.ends_at).getTime() - new Date(nextSession.starts_at).getTime()) / 60000
       )
     : null;
+  const durationMins = sessionMins != null && sessionMins <= 24 * 60 ? sessionMins : null;
   const images = resolveActivityImages(
     { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
     provider

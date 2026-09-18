@@ -1482,9 +1482,9 @@ export function ProfilePage() {
            parent with twenty favourites would otherwise pull thousands of rows
            to render twenty dates. */
         .select(
-          "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
+          "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
-        .gte("activities.activity_sessions.starts_at", new Date().toISOString())
+        .gte("activities.activity_sessions.ends_at", new Date().toISOString())
         .limit(100)
         .then(({ data }) => data ?? [])
     ).then((data) => {
@@ -3451,7 +3451,7 @@ export function BookingPage() {
   // The course's distinct weekly strands (Wed vs Thu, each its own time) and
   // the course-wide spots-left figure — a course is booked as one unit, not
   // a chosen date/time.
-  const strands = isCourse ? courseStrands(sessions) : [];
+  const strands = isCourse ? courseStrands(sessions, courseStart) : [];
   const courseSpots = isCourse ? sessions[0]?.capacity ?? null : null;
   // Wix Events / Wix COURSEs have no BabyBrain waitlist (00107). "Sold out" =
   // an event whose every ticket type is gone, or a course with no dates left
@@ -4112,7 +4112,7 @@ export function BookingPage() {
                             {strands.map((st) => (
                               <div key={st.key} className="rounded-[10px] border border-[#EBE3E5] bg-white px-3 py-2.5">
                                 <p className="text-sm font-black text-[#34406f]">{st.label}</p>
-                                <p className="mt-0.5 text-xs font-semibold text-[#697390]">{st.range} · {st.count} {st.count === 1 ? "session" : "sessions"}</p>
+                                <p className="mt-0.5 text-xs font-semibold text-[#697390]">{st.range ? `${st.range} · ` : ""}{st.note}</p>
                               </div>
                             ))}
                           </div>

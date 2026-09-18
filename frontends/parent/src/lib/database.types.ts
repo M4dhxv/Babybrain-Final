@@ -1178,9 +1178,12 @@ export const REGION_LABELS: Record<SgRegion, string> = {
 export const regionLabel = (r: string | null | undefined) =>
   (r && REGION_LABELS[r as SgRegion]) || '';
 
-/** "45 min" / "1h 30m" from a duration in minutes. */
+/** "45 min" / "1h 30m" from a duration in minutes. Over a day is blank: that is
+ *  a multi-day camp Wix sent as one continuous occurrence, and "72h" is not how
+ *  long anyone attends. The search RPC already nulls it; this covers cards built
+ *  from raw session rows. */
 export function formatDuration(mins: number | null | undefined): string {
-  if (!mins || mins <= 0) return '';
+  if (!mins || mins <= 0 || mins > 24 * 60) return '';
   if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

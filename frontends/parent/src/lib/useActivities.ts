@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from "./queryCache";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
+import { isMultiDay, sgShortRange } from "./schedule";
 
 /** One physical venue a listing runs at. Multi-venue businesses (Kindermusik,
  *  Lucy Sparkles, My Gym…) keep several, and every one gets a map pin. */
@@ -27,6 +28,13 @@ export type LiveActivity = Activity & {
   providerName?: string;
   price?: number | null;
   nextSessionAt?: string | null;
+  /** A Wix COURSE is enrolled as one booking for the whole run, so it can still
+   *  be joined once it has begun. `runStartsAt`/`runEndsAt` are the occurrence a
+   *  parent can still join — in progress or upcoming — which `nextSessionAt`
+   *  (sessions not yet started) can't express. Null for anything else. */
+  isCourse?: boolean;
+  runStartsAt?: string | null;
+  runEndsAt?: string | null;
   ageMinMonths: number;
   ageMaxMonths: number;
   region?: SgRegion | null;
@@ -67,7 +75,7 @@ export interface ActivityQuery {
 }
 
 /** A `search_activities` row. */
-type SearchRow = {
+export type SearchRow = {
   id: string;
   slug: string;
   title: string;
@@ -93,7 +101,27 @@ type SearchRow = {
   provider_logo_url: string | null;
   provider_cover_image_url: string | null;
   provider_gallery_urls: string[] | null;
+  // Added in 00144 — optional so the app still works if it deploys first.
+  is_course?: boolean | null;
+  run_starts_at?: string | null;
+  run_ends_at?: string | null;
 };
+
+/** The card's date and time. A multi-day course run (a camp Wix sends as one
+ *  continuous occurrence) has no time of day, so it reads as its date range —
+ *  "17 – 20 Sept" — rather than the start time of its first midnight. A course
+ *  that has already begun has no *upcoming* session, which used to leave the
+ *  card saying "Schedule TBC" while places were open; it falls back to the
+ *  occurrence still running. Everything else is the next session, as before. */
+export function cardWhen(r: SearchRow): { date: string; time: string } {
+  if (r.is_course && r.run_starts_at && r.run_ends_at) {
+    if (isMultiDay(r.run_starts_at, r.run_ends_at)) {
+      return { date: sgShortRange(r.run_starts_at, r.run_ends_at), time: "" };
+    }
+    if (!r.next_session_at) return { date: sgDate(r.run_starts_at), time: sgTime(r.run_starts_at) };
+  }
+  return { date: sgDate(r.next_session_at), time: sgTime(r.next_session_at) };
+}
 
 /** Everything on the card comes straight off the search row; only `venues` and
  *  `areas` need the follow-up venue lookups, so they're passed in — empty on
@@ -118,8 +146,7 @@ function toLiveActivity(
       ) ?? FALLBACK_LOGO_URL,
     age: formatAgeRange(r.age_min_months, r.age_max_months),
     venue: r.address ? r.address.split(",").map((s) => s.trim()).pop() ?? "" : "",
-    date: sgDate(r.next_session_at),
-    time: sgTime(r.next_session_at),
+    ...cardWhen(r),
     // Empty when there are no reviews yet, so the card drops the rating
     // line entirely instead of showing a bare "New".
     rating: r.rating_count > 0 ? `${Number(r.rating_avg).toFixed(1)} (${r.rating_count})` : "",
@@ -130,6 +157,9 @@ function toLiveActivity(
     providerName: r.provider_name ?? undefined,
     price: r.price ?? null,
     nextSessionAt: r.next_session_at ?? null,
+    isCourse: r.is_course ?? false,
+    runStartsAt: r.is_course ? r.run_starts_at ?? null : null,
+    runEndsAt: r.is_course ? r.run_ends_at ?? null : null,
     ageMinMonths: r.age_min_months,
     ageMaxMonths: r.age_max_months,
     region: r.region,

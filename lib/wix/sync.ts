@@ -876,6 +876,23 @@ export async function syncWixActivityAvailability(
       } catch (e) {
         console.error('Wix course span lookup failed', e);
       }
+
+      // The local whole-run anchor row is written once, at the first booking
+      // (ensureLocalWixSession returns an existing row untouched), so it froze
+      // at whatever the run was then. A vendor who moves the course in Wix
+      // afterwards left every booking on it showing — and every reminder and
+      // cut-off keyed off — the old dates. Wix's own bounds are the source of
+      // truth, so bring the anchor back in step whenever they differ. Never
+      // throws: a failed refresh must not break availability.
+      if (courseSpan && new Date(courseSpan.start) < new Date(courseSpan.end)) {
+        const { error: anchorError } = await admin
+          .from('activity_sessions')
+          .update({ starts_at: courseSpan.start, ends_at: courseSpan.end })
+          .eq('activity_id', activity.id)
+          .like('wix_slot_key', 'wixcourse:%')
+          .or(`starts_at.neq.${courseSpan.start},ends_at.neq.${courseSpan.end}`);
+        if (anchorError) console.error('Wix course anchor refresh failed', anchorError);
+      }
     }
 
     if (sessions.length > 0) {

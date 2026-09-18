@@ -7,6 +7,7 @@ import { useFavoritesStore } from "./favorites";
 import { cacheGet, cacheSet, cacheInvalidate } from "./queryCache";
 import { goTo } from "./nav";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
+import { isMultiDay, sgShortRange } from "./schedule";
 import {
   formatAgeRange,
   type Activity as ActivityRow,
@@ -525,7 +526,7 @@ export function useRecommendations(children: Child[]) {
         // this join `toCard` had nothing to print and the card rendered an
         // empty category pill where Explore shows a real one.
         .select(
-          "id, child_id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at))"
+          "id, child_id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         // Only the upcoming sessions ride along. Without this a Wix-linked
         // course carries every past slot it has ever run — hundreds of rows
@@ -534,7 +535,7 @@ export function useRecommendations(children: Child[]) {
         // in App.tsx. A rec whose activity has no upcoming session still
         // comes back (embedded filters don't drop the parent row); its card
         // falls back to "Schedule TBC", exactly as before.
-        .gte("activities.activity_sessions.starts_at", new Date().toISOString())
+        .gte("activities.activity_sessions.ends_at", new Date().toISOString())
         .in("child_id", children.map((c) => c.id))
         .order("child_id", { ascending: true })
         .order("score", { ascending: false });
@@ -642,12 +643,13 @@ export function toCard(
       // doesn't just keeps today's "own image or placeholder" behaviour.
       logo_url?: string | null; cover_image_url?: string | null; gallery_urls?: string[] | null;
     } | null;
-    activity_sessions?: { starts_at: string; ends_at: string | null }[] | null;
+    activity_sessions?: { starts_at: string; ends_at: string | null; wix_slot_key?: string | null }[] | null;
   }
 ) {
   // `search_activities` derives this server-side; here it comes off whichever
-  // session has both ends, matching the RPC's definition.
-  const timed = (a.activity_sessions ?? []).find((s) => s.starts_at && s.ends_at);
+  // session has both ends, matching the RPC's definition — minus anything over
+  // a day, which is a whole camp run rather than a class length.
+  const timed = (a.activity_sessions ?? []).find((s) => s.starts_at && s.ends_at && !isMultiDay(s.starts_at, s.ends_at));
   const durationMins = timed
     ? Math.round((new Date(timed.ends_at as string).getTime() - new Date(timed.starts_at).getTime()) / 60000)
     : null;
@@ -667,6 +669,27 @@ export function toCard(
     .filter((sn) => sn.starts_at && new Date(sn.starts_at).getTime() >= now)
     .sort((x, y) => x.starts_at.localeCompare(y.starts_at))[0];
 
+  /* A Wix COURSE is one booking for the whole run and can be joined once it has
+     begun, so a run still in progress is what to show — not "Schedule TBC". The
+     whole-run bookkeeping row ('wixcourse:…') is not an occurrence and would win
+     by starting earliest, so it is left out. Mirrors search_activities (00144). */
+  const run =
+    a.wix_service_type === "COURSE"
+      ? (a.activity_sessions ?? [])
+          .filter(
+            (sn) =>
+              !(sn.wix_slot_key ?? "").startsWith("wixcourse:") &&
+              new Date(sn.ends_at ?? sn.starts_at).getTime() > now
+          )
+          .sort((x, y) => x.starts_at.localeCompare(y.starts_at))[0]
+      : undefined;
+  const multiDayRun = !!run && isMultiDay(run.starts_at, run.ends_at);
+  const when = multiDayRun
+    ? { date: sgShortRange(run!.starts_at, run!.ends_at as string), time: "" }
+    : !nextSession && run
+      ? { date: sgCardDate(run.starts_at), time: sgCardTime(run.starts_at) }
+      : { date: sgCardDate(nextSession?.starts_at ?? null), time: sgCardTime(nextSession?.starts_at ?? null) };
+
   return {
     id: a.id,
     slug: a.slug,
@@ -684,8 +707,8 @@ export function toCard(
       .split(",")
       .map((s) => s.trim())
       .pop() ?? "",
-    date: sgCardDate(nextSession?.starts_at ?? null),
-    time: sgCardTime(nextSession?.starts_at ?? null),
+    date: when.date,
+    time: when.time,
     // Empty when there are no reviews, so the card drops the rating line
     // rather than printing a bare "New" beside nothing else.
     rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "",
