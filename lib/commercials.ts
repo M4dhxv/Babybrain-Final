@@ -25,7 +25,11 @@ export interface Terms {
 export const DEFAULT_TERMS: Terms = {
   commissionRate: 0.15,
   commissionFlatCents: 0,
-  feePayer: 'platform',
+  // 00053_vendor_covers_stripe_fee.sql moved every real vendor (and the
+  // column default) to 'vendor' — this fallback only fires for a provider
+  // with no subscriptions row yet, and had been left on the old 'platform'
+  // default, so that one edge case could still silently absorb the fee.
+  feePayer: 'vendor',
   commissionOnPackages: true,
 };
 
