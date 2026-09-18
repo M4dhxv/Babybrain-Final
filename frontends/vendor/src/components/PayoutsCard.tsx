@@ -335,17 +335,8 @@ export default function PayoutsCard() {
 
       {state === 'not_connected' && (
         <p className="mb-4 text-xs text-gray-600">
-          Connect a Stripe account to take paid bookings. Parents pay at checkout, BabyBrain’s commission comes off
-          automatically, and the rest is paid into your bank account.
-        </p>
-      )}
-
-      {/* Until payouts are on, paid bookings still work — the money is just
-          collected by BabyBrain and settled to the vendor separately. Saying
-          so avoids the impression that paid classes are broken. */}
-      {state !== 'active' && (
-        <p className="mb-4 text-xs text-gray-600">
-          Paid bookings still work in the meantime — BabyBrain collects them and settles with you directly.
+          Connect a Stripe account to take paid bookings. Parents pay at checkout. Stripe’s fees and BabyBrain’s
+          commission comes off automatically, and the rest is paid into your bank account.
         </p>
       )}
 
