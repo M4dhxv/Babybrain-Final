@@ -505,7 +505,7 @@ export default function OnboardingPage() {
                 <span className="text-[32px] font-black text-baby-lilac">{billing === "monthly" ? "15" : "165"}</span>
                 <span className="font-bold text-[#68718f]"> {billing === "monthly" ? "/mo" : "/yr"}</span>
               </p>
-              <p className="text-sm font-black text-baby-pink">Cancel any time</p>
+              <p className="text-sm font-black text-baby-pink">Cancel with 14 days' notice</p>
               <ul className="mt-3 space-y-1.5 text-sm font-semibold text-[#44507b]">
                 {PLUS_PLAN_ITEMS.map((item) => (
                   <li key={item} className="flex gap-2">
@@ -547,7 +547,7 @@ export default function OnboardingPage() {
                 first charge happens on sign-up. Fixed to say what actually
                 happens. */}
             {selectedPlan === "plus"
-              ? `You'll be charged today and Plus auto-renews ${billing === "monthly" ? "monthly at SGD 15" : "yearly at SGD 165"} until you cancel. By continuing you agree to our `
+              ? `${billing === "monthly" ? "This is a monthly subscription, charged today and renewing automatically each month." : "This is an annual subscription, charged today for 12 months at the price of 11. It renews automatically each year. Cancellations are not refunded pro rata."} Cancel at least 14 days before your renewal date. If you cancel with less than 14 days' notice you will be charged for the coming period. You keep access until the end of the period you have paid for. By continuing you agree to our `
               : "By continuing you agree to our "}
             <a href="/terms" target="_blank" rel="noreferrer" className="text-palette-blue underline">Terms &amp; Conditions</a>.
           </p>

@@ -171,7 +171,12 @@ export default function PricingPage() {
                     : "Upgrade to Plus"}
             </Button>
             <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
-              Charged today and auto-renews {billing === "monthly" ? "monthly" : "yearly"}. Cancel any time from your profile.
+              {/* Word-for-word what Stripe Checkout shows (lib/subscription-terms.ts),
+                  so the two screens never disagree. */}
+              {billing === "monthly"
+                ? "This is a monthly subscription, charged today and renewing automatically each month."
+                : "This is an annual subscription, charged today for 12 months at the price of 11. It renews automatically each year. Cancellations are not refunded pro rata."}
+              {" "}Cancel at least 14 days before your renewal date. If you cancel with less than 14 days' notice you will be charged for the coming period. You keep access until the end of the period you have paid for.
               {" "}By subscribing you agree to our{" "}
               <a href="/terms" className="text-palette-blue underline">Terms &amp; Conditions</a>.
             </p>
