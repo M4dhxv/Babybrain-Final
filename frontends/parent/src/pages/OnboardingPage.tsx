@@ -418,11 +418,13 @@ export default function OnboardingPage() {
             className="mt-0.5 h-4 w-4 accent-baby-pink"
           />
           <span>
-            I hereby acknowledge that you have read our{" "}
+            I hereby acknowledge that I have read the{" "}
             <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
-            {", Terms of Use and "}
+            {", "}
+            <a href="/terms#tou" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Use</a>
+            {" and "}
             <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
-            {" and confirm that you are in agreement with and legally bound by such terms, as modified from time to time."}
+            {" and confirm that I am in agreement with and legally bound by such terms, as modified from time to time."}
           </span>
         </label>
 
