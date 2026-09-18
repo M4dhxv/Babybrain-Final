@@ -30,8 +30,30 @@ export const sgTime = (iso: string) =>
 /** "Wed, 9 Sept – Thu, 29 Oct", collapsing to a single date when both ends
  *  land on the same day (a one-session course, or a course down to its last
  *  session). */
-export const sgDayRange = (start: string, end: string) =>
-  sgDay(start) === sgDay(end) ? sgDay(start) : `${sgDay(start)} – ${sgDay(end)}`;
+export const sgDayRange = (start: string, end: string) => {
+  const last = lastDayIso(start, end);
+  return sgDay(start) === sgDay(last) ? sgDay(start) : `${sgDay(start)} – ${sgDay(last)}`;
+};
+
+/* Singapore has no daylight saving (fixed UTC+8), so local midnight is simply a
+   multiple of 24 hours once shifted by 8. */
+const isSgMidnight = (iso: string) => (new Date(iso).getTime() + 8 * 3600_000) % 86_400_000 === 0;
+
+/** Wix marks a whole-day occurrence `allDay` and, per its Calendar docs, ends it
+ *  at 00:00 on the day AFTER the last day it covers ("exclusive"). We only get
+ *  timestamps, so the tell is an occurrence that starts and ends on a local
+ *  midnight. A camp from Thu 17 to Sun 20 00:00 is three days — Thu, Fri, Sat —
+ *  and the 20th is the moment it ends, not a day anyone attends. */
+export const isAllDay = (start: string, end: string | null | undefined) =>
+  !!end && isSgMidnight(start) && isSgMidnight(end) && new Date(end).getTime() > new Date(start).getTime();
+
+/** The last calendar day an occurrence actually covers. An end that falls exactly
+ *  on midnight belongs to the day before it — so a range prints "17 – 19 Sept"
+ *  rather than reading as four days beside a duration of "3 days". */
+const lastDayIso = (start: string, end: string) =>
+  isSgMidnight(end) && new Date(end).getTime() > new Date(start).getTime()
+    ? new Date(new Date(end).getTime() - 1).toISOString()
+    : end;
 
 const sgDayNum = (iso: string) =>
   new Date(iso).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", day: "numeric" });
@@ -43,18 +65,19 @@ const sgMonthKey = (iso: string) =>
 /** Compact "17 – 20 Sept" / "30 Sept – 2 Oct" for a card, where the full
  *  "Thu, 17 Sept – Sun, 20 Sept" would widen the whole column. A single day
  *  collapses to "17 Sept". */
-export const sgShortRange = (start: string, end: string) => {
+export const sgShortRange = (start: string, endRaw: string) => {
+  const end = lastDayIso(start, endRaw);
   if (sgDayMonth(start) === sgDayMonth(end)) return sgDayMonth(start);
   return sgMonthKey(start) === sgMonthKey(end)
     ? `${sgDayNum(start)} – ${sgDayMonth(end)}`
     : `${sgDayMonth(start)} – ${sgDayMonth(end)}`;
 };
 
-/** One occurrence longer than a day is a whole camp/run that Wix returned as a
- *  single continuous session (midnight to midnight across several days), not a
- *  class with a length — so it has no meaningful "duration" and no time of day. */
+/** A whole-day occurrence: longer than a day, or an all-day one. It is a camp/run
+ *  Wix returned as a single continuous session (midnight to midnight), not a
+ *  class with a length — so it has no time of day and reads as dates and days. */
 export const isMultiDay = (start: string, end: string | null | undefined) =>
-  !!end && new Date(end).getTime() - new Date(start).getTime() > 24 * 60 * 60 * 1000;
+  !!end && (new Date(end).getTime() - new Date(start).getTime() > 24 * 60 * 60 * 1000 || isAllDay(start, end));
 
 /** A Wix COURSE runs on more than one weekly slot — e.g. Wednesdays
  *  5:30–6:30 pm and Thursdays 5:30–7:00 pm — and one enrolment covers all
@@ -79,7 +102,8 @@ export function courseStrands(
     // group that by, and treating its literal midnight bounds as a time
     // range reads as "Thursdays · 12:00am – 12:00am", which looks broken.
     // Grouped separately and labelled by its date span instead.
-    const multiDay = !!s.ends_at && sgDay(s.starts_at) !== sgDay(s.ends_at);
+    const multiDay =
+      !!s.ends_at && (sgDay(s.starts_at) !== sgDay(lastDayIso(s.starts_at, s.ends_at)) || isAllDay(s.starts_at, s.ends_at));
     const weekday = new Date(s.starts_at).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", weekday: "long" });
     const time = s.ends_at ? `${sgTime(s.starts_at)} – ${sgTime(s.ends_at)}` : sgTime(s.starts_at);
     const key = multiDay ? `multiday|${s.starts_at}|${s.ends_at}` : `${weekday}|${time}`;
@@ -102,7 +126,7 @@ export function courseStrands(
           label: `Runs ${sgDayRange(g.start, g.end!)}`,
           range: "",
           count: g.count,
-          note: running ? `In progress · ends ${sgDay(g.end!)}` : `Starts ${sgDay(g.start)}`,
+          note: running ? `In progress · ends ${sgDay(lastDayIso(g.start, g.end!))}` : `Starts ${sgDay(g.start)}`,
         };
       }
       // The list is future-only, so once the course has begun this is what is
