@@ -19,7 +19,7 @@ import type { ProviderLocation } from '@/lib/database.types';
 export default function LocationsManager({
   provider, canManage, openOnMount, onOpened, onChanged,
 }: {
-  provider: { id: string } | null; canManage: boolean;
+  provider: { id: string; wix_site_id?: string | null } | null; canManage: boolean;
   openOnMount?: boolean; onOpened?: () => void;
   /** Fired after a venue is added/edited/removed so a parent page can refresh
    *  its own copy of the locations list (e.g. the create-activity venue
