@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageShell, Button } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
+import { ResendConfirmation } from "../components/ResendConfirmation";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam } from "../lib/nav";
 import { PASSWORD_RULES, passwordError } from "../lib/validation";
@@ -11,6 +12,8 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Supabase's wording for "signed up but never clicked the link".
+  const unconfirmed = !!error && /not confirmed/i.test(error);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -30,7 +33,12 @@ export function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
-          {error && <p className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-baby-cta">{error}</p>}
+          {error && (
+            <div className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-baby-cta">
+              {unconfirmed ? "Please confirm your email first — we sent you a link when you signed up." : error}
+              {unconfirmed && <ResendConfirmation email={email} />}
+            </div>
+          )}
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>

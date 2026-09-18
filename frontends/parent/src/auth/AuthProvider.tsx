@@ -21,6 +21,8 @@ interface AuthState {
     fullName: string,
     onboarding?: SignupOnboarding
   ) => Promise<{ error?: string; emailExists?: boolean }>;
+  /** Re-send the sign-up confirmation email (same link, same branded template). */
+  resendConfirmation: (email: string) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -260,6 +262,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // only way to tell the signup didn't actually happen.
       if (data.user && data.user.identities?.length === 0) return { emailExists: true };
       return {};
+    },
+    resendConfirmation: async (email) => {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile` },
+      });
+      return error ? { error: error.message } : {};
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {

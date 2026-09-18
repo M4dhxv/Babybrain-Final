@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageShell, Button, Icon, DateInput } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
+import { ResendConfirmation } from "../components/ResendConfirmation";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { goTo } from "../lib/nav";
@@ -305,7 +306,17 @@ export default function OnboardingPage() {
         <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
           <h1 className="text-2xl font-black">Check your email</h1>
           <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
-          <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam folder.</p>
+          <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam or promotions folder — it can take a couple of minutes.</p>
+          <ResendConfirmation email={email} startCoolingDown />
+          <p className="mt-3 text-sm font-semibold text-[#5a6690]">
+            Wrong address?{" "}
+            <button type="button" onClick={() => setConfirmSent(false)} className="font-black text-baby-pink underline">
+              Go back and fix it
+            </button>
+          </p>
+          <p className="mt-2 text-sm font-semibold text-[#5a6690]">
+            Still nothing? Email <a href="mailto:hello@babybrain.sg" className="font-black text-baby-pink underline">hello@babybrain.sg</a> and we'll activate your account.
+          </p>
           <Button href="/login" className="mt-5">Go to log in</Button>
         </main>
       </PageShell>
