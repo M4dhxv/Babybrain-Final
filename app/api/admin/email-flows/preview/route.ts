@@ -39,6 +39,8 @@ function sampleData(type: string): EmailData {
       return { ...activity, url: '/profile?tab=bookings' };
     case 'provider_booking_received':
       return { ...activity, spaces_left: '4' };
+    case 'provider_activity_full':
+      return { ...activity };
     case 'auth_email_change':
       return { action_url: 'https://babybrain.sg/auth/callback', new_email: 'newemail@example.com' };
     case 'auth_confirm_signup':

@@ -7,6 +7,8 @@ import { SUPPORT_USER_ID } from '@/lib/stream';
  * GetStream webhook (configure URL in the Stream Dashboard after deploy).
  * On message.new from support → in-app notification for the parent
  * (which in turn fans out to email via the notifications DB trigger).
+ * On message.new in a parent↔provider channel → notification for whichever
+ * side didn't send it, typed per recipient (parent vs. vendor staff).
  */
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -56,14 +58,23 @@ export async function POST(request: Request) {
       .map((m) => m.user_id ?? m.user?.id)
       .filter((id): id is string => Boolean(id) && id !== senderId);
     if (recipients.length > 0) {
+      // A channel member is either the parent or one of the provider's active
+      // staff — look that up so each side gets its own notification type
+      // (and email template/link) instead of every recipient being labelled
+      // 'provider_message' regardless of which side they're actually on.
+      const { data: staffRows } = await admin
+        .from('provider_members')
+        .select('user_id')
+        .in('user_id', recipients)
+        .eq('status', 'active');
+      const staffIds = new Set((staffRows ?? []).map((r) => r.user_id as string));
+
       await admin.from('notifications').insert(
-        recipients.map((uid) => ({
-          user_id: uid,
-          type: 'provider_message',
-          title: 'New message',
-          body: text,
-          data: { url: '/messages', channel_id: event.channel_id },
-        }))
+        recipients.map((uid) =>
+          staffIds.has(uid)
+            ? { user_id: uid, type: 'provider_message_response', title: 'New message', body: text, data: { url: '/vendor', channel_id: event.channel_id } }
+            : { user_id: uid, type: 'provider_message', title: 'New message', body: text, data: { url: '/messages', channel_id: event.channel_id } }
+        )
       );
     }
   }

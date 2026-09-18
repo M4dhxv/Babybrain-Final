@@ -39,6 +39,7 @@ export const KLAVIYO_METRICS: Record<string, string> = {
   review_request: 'Review Requested',
   support_message: 'Support Reply Sent',
   message_response: 'Support Reply Sent',
+  provider_message_response: 'Provider Message Response',
   provider_booking_received: 'Provider Booking Received',
   provider_activity_full: 'Provider Activity Full',
   provider_add_activities: 'Provider Nudge Add Activities',
