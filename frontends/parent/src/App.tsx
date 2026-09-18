@@ -1561,18 +1561,21 @@ const HeroCarousel = memo(function HeroCarousel({
   const count = images.length;
   // `images` is a fresh array every parent render; key effects on content.
   const imagesKey = images.join("|");
+  // Auto-advances survive hover/touch pauses, so the one lap is a total
+  // across the visit, not restarted each time the pointer leaves.
+  const ticks = useRef(0);
   useEffect(() => {
     setAt(0);
+    ticks.current = 0;
   }, [resetKey]);
   // Makes exactly one full lap through the photos, then stops back on the
   // first rather than cycling forever.
   useEffect(() => {
-    if (count <= 1 || paused) return;
-    let ticks = 0;
+    if (count <= 1 || paused || ticks.current >= count) return;
     const t = setInterval(() => {
-      ticks += 1;
+      ticks.current += 1;
       setAt((i) => (i + 1) % count);
-      if (ticks >= count) clearInterval(t);
+      if (ticks.current >= count) clearInterval(t);
     }, 3000);
     return () => clearInterval(t);
   }, [count, paused]);
