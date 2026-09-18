@@ -3,8 +3,14 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
-  Pencil, Trash2, XCircle, Download,
+  Pencil, Trash2, XCircle, Download, ListFilter,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -369,6 +375,9 @@ export default function BookingsPage() {
     if (pulledDown > DISMISS_PX) setMobileDetail(false);
   };
   const [search, setSearch] = useState('');
+  // Bookings tab only: cancelled bookings stay out of the default view (they
+  // no longer hold a seat) but the vendor can still look them up.
+  const [statusFilter, setStatusFilter] = useState<'active' | 'cancelled' | 'all'>('active');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
   // Which waivers/consents a booking actually accepted — fetched per booking
@@ -599,7 +608,12 @@ export default function BookingsPage() {
      tab, all the bookings are still showing on the left — should just show the
      waitlist." The left-hand list now follows the tab. Attendance is still
      taken against the confirmed roster, so it keeps the booked list. */
-  const listSource = activeTab === 'Waitlist' ? waitlisted : booked;
+  const cancelled = useMemo(() => roster.filter((r) => r.status === 'cancelled'), [roster]);
+  const listSource =
+    activeTab === 'Waitlist' ? waitlisted
+    : activeTab === 'Bookings' && statusFilter === 'cancelled' ? cancelled
+    : activeTab === 'Bookings' && statusFilter === 'all' ? [...booked, ...cancelled]
+    : booked;
   const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
@@ -1087,10 +1101,43 @@ export default function BookingsPage() {
           {/* Booking list — always on screen. On mobile the detail opens as a
               sheet over it (see mobileDetail); on lg it's the left column. */}
           <div className="w-full flex-shrink-0 lg:w-80">
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" />
+            <div className="mb-4 flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" />
+              </div>
+              {activeTab === 'Bookings' && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      aria-label="Filter bookings"
+                      className={cn(
+                        'relative flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-xl border bg-white text-gray-600 hover:bg-gray-50',
+                        statusFilter === 'active' ? 'border-gray-200' : 'border-[#FA4D8D] text-[#FA4D8D]'
+                      )}
+                    >
+                      <ListFilter className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg">
+                    {([
+                      ['active', 'Active bookings'],
+                      ['cancelled', 'Cancelled only'],
+                      ['all', 'Active + cancelled'],
+                    ] as const).map(([value, label]) => (
+                      <DropdownMenuItem
+                        key={value}
+                        onSelect={() => { setStatusFilter(value); setSelected(0); }}
+                        className="justify-between px-3 py-2 text-sm text-gray-700"
+                      >
+                        {label}
+                        {statusFilter === value && <Check className="h-3.5 w-3.5 text-[#FA4D8D]" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
             <div className="space-y-2">
               {visibleBookings.map((b, idx) => (
@@ -1114,14 +1161,22 @@ export default function BookingsPage() {
                       {b.skill_level && <span className="inline-block px-1.5 py-0.5 text-xs rounded bg-orange-300 text-orange-800 capitalize">{b.skill_level}</span>}
                     </div>
                   </div>
-                  <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', payBadge(b).cls)}>
-                    {payBadge(b).label}
-                  </span>
+                  {b.status === 'cancelled' ? (
+                    <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">Cancelled</span>
+                  ) : (
+                    <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', payBadge(b).cls)}>
+                      {payBadge(b).label}
+                    </span>
+                  )}
                 </div>
               ))}
               {!loading && visibleBookings.length === 0 && (
                 <div className="text-sm text-gray-400 px-1">
-                  {activeTab === 'Waitlist' ? 'No one on the waitlist for this session.' : 'No bookings for this session.'}
+                  {activeTab === 'Waitlist'
+                    ? 'No one on the waitlist for this session.'
+                    : activeTab === 'Bookings' && statusFilter === 'cancelled'
+                    ? 'No cancelled bookings for this session.'
+                    : 'No bookings for this session.'}
                 </div>
               )}
               {activeTab === 'Bookings' && wixAttendeesLoading && (
@@ -1157,7 +1212,10 @@ export default function BookingsPage() {
                   always read `booked.length`, so it kept saying "N bookings"
                   even on the Waitlist tab. */}
               <span className="text-sm text-gray-500">
-                {listSource.length} {activeTab === 'Waitlist' ? 'on waitlist' : 'bookings'}
+                {listSource.length}{' '}
+                {activeTab === 'Waitlist' ? 'on waitlist'
+                  : activeTab === 'Bookings' && statusFilter === 'cancelled' ? 'cancelled'
+                  : 'bookings'}
                 {wixClassOverflow > 0 && (
                   <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
                 )}
