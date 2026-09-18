@@ -16,6 +16,14 @@ function adminEmails(): string[] {
 export async function requireAdmin(
   request: Request
 ): Promise<{ ok: true; user: User } | { ok: false; status: number; error: string }> {
+  // Production and Preview share one Supabase database (see lib/stripe-config.ts's
+  // doc comment) — there is no sandboxed copy for a test/preview deployment to
+  // mutate. So rather than "admin changes don't show up on test", the real
+  // requirement is admin actions can only be taken from the live deployment at
+  // all, so nobody mistakes a preview URL for a safe place to click admin buttons.
+  if (process.env.VERCEL_ENV === 'preview') {
+    return { ok: false, status: 403, error: 'Admin actions are disabled on preview deployments — use the live site.' };
+  }
   const { user } = await getAuthedContext(request);
   if (!user) return { ok: false, status: 401, error: 'Not authenticated' };
   if (!user.email || !adminEmails().includes(user.email.toLowerCase())) {
