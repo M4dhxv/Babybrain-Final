@@ -15,6 +15,7 @@ import {
   SectionTitle,
 } from "./components/ui";
 import {
+  memo,
   Suspense,
   useEffect,
   useMemo,
@@ -1539,6 +1540,128 @@ function PhotoLightbox({
   );
 }
 
+/** Inline hero carousel. Owns its own position/timer state so a slide change
+ *  re-renders only this, not the whole activity page. All slides are decoded
+ *  up front (not lazy) so a swipe or auto-advance never waits on a network
+ *  fetch or decode mid-transition. */
+const HeroCarousel = memo(function HeroCarousel({
+  images,
+  title,
+  resetKey,
+  onOpen,
+}: {
+  images: string[];
+  title: string;
+  resetKey: string | undefined;
+  onOpen: (index: number) => void;
+}) {
+  const [at, setAt] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const count = images.length;
+  // `images` is a fresh array every parent render; key effects on content.
+  const imagesKey = images.join("|");
+  useEffect(() => {
+    setAt(0);
+  }, [resetKey]);
+  // Makes exactly one full lap through the photos, then stops back on the
+  // first rather than cycling forever.
+  useEffect(() => {
+    if (count <= 1 || paused) return;
+    let ticks = 0;
+    const t = setInterval(() => {
+      ticks += 1;
+      setAt((i) => (i + 1) % count);
+      if (ticks >= count) clearInterval(t);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [count, paused]);
+  // Warm the decode cache for every slide so none paints late.
+  useEffect(() => {
+    if (count <= 1) return;
+    images.forEach((url) => {
+      const img = new Image();
+      img.src = url;
+      img.decode?.().catch(() => {});
+    });
+  }, [imagesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const step = (d: number) => setAt((i) => (i + d + count) % count);
+  return (
+    <div
+      className="relative overflow-hidden rounded-[18px]"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={(e) => {
+        if (count <= 1) return;
+        touchStartX.current = e.touches[0].clientX;
+        setPaused(true);
+      }}
+      onTouchEnd={(e) => {
+        const startX = touchStartX.current;
+        touchStartX.current = null;
+        setPaused(false);
+        if (startX == null || count <= 1) return;
+        // A real swipe, not a tap that barely drifted — 40px is
+        // comfortably past finger jitter on a phone.
+        const deltaX = e.changedTouches[0].clientX - startX;
+        if (deltaX <= -40) step(1);
+        else if (deltaX >= 40) step(-1);
+      }}
+    >
+      <div
+        className="flex h-[305px] transition-transform duration-500 ease-out will-change-transform"
+        style={{ transform: `translate3d(-${(at % count) * 100}%, 0, 0)` }}
+      >
+        {images.map((url, i) => (
+          <img
+            key={url}
+            src={url}
+            alt={i === 0 ? title : ""}
+            width={860}
+            height={305}
+            decoding="async"
+            fetchPriority={i === 0 ? "high" : "auto"}
+            loading="eager"
+            className={
+              url === FALLBACK_LOGO_URL
+                ? "h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12"
+                : "h-[305px] w-full shrink-0 object-cover"
+            }
+          />
+        ))}
+      </div>
+      {count > 1 && (
+        <div className="absolute right-3 top-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label="Previous photo"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+          >
+            <Icon name="chevron" className="h-4 w-4 rotate-180" />
+          </button>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            aria-label="Next photo"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+          >
+            <Icon name="chevron" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => onOpen(at)}
+        className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
+      >
+        <Icon name="open" className="h-3.5 w-3.5" />{" "}
+        {count > 1 ? `${at + 1} / ${count}` : "View photo"}
+      </button>
+    </div>
+  );
+}, (a, b) => a.images.join("|") === b.images.join("|") && a.title === b.title && a.resetKey === b.resetKey && a.onOpen === b.onOpen);
+
 /** A chat CTA that greys out — with the reason on hover — when messaging isn't
  *  available: either the parent is on Free, or the provider isn't integrated
  *  with BabyBrain so there's nothing to open. */
@@ -1629,40 +1752,6 @@ function ActivityDetailPage() {
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
-  /** Which photo the inline hero carousel is showing — separate from
-   *  galleryAt (the full-screen lightbox's own position). */
-  const [heroAt, setHeroAt] = useState(0);
-  const [heroPaused, setHeroPaused] = useState(false);
-  /** X position of a touch as it lands on the hero, for swipe — null between
-   *  touches (and whenever there's nothing to swipe between). */
-  const heroTouchStartX = useRef<number | null>(null);
-  // A new activity's own photo set starts back at its first photo, whether
-  // navigated to client-side (this component doesn't remount) or freshly
-  // loaded.
-  useEffect(() => {
-    setHeroAt(0);
-  }, [activity?.id]);
-  // Recomputed here (not reused from `images` below, which only exists
-  // after the !activity early return) purely to know how many photos are in
-  // play — this effect has to run before that return, like every hook.
-  const heroImageCount = activity
-    ? resolveActivityImages(
-        { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
-        activity.provider_contact
-      ).length || 1
-    : 0;
-  // Makes exactly one full lap through the photos, then stops back on the
-  // first rather than cycling forever.
-  useEffect(() => {
-    if (heroImageCount <= 1 || heroPaused) return;
-    let ticks = 0;
-    const t = setInterval(() => {
-      ticks += 1;
-      setHeroAt((i) => (i + 1) % heroImageCount);
-      if (ticks >= heroImageCount) clearInterval(t);
-    }, 1750);
-    return () => clearInterval(t);
-  }, [heroImageCount, heroPaused]);
 
   /* The browser resolves the hash before Vite has mounted, and reviews arrive
      asynchronously after that, so #reviews (the post-activity check-in email's
@@ -1858,78 +1947,7 @@ function ActivityDetailPage() {
             </div>
           </div>
           <div>
-            <div
-              className="relative overflow-hidden rounded-[18px]"
-              onMouseEnter={() => setHeroPaused(true)}
-              onMouseLeave={() => setHeroPaused(false)}
-              onTouchStart={(e) => {
-                if (images.length <= 1) return;
-                heroTouchStartX.current = e.touches[0].clientX;
-                setHeroPaused(true);
-              }}
-              onTouchEnd={(e) => {
-                const startX = heroTouchStartX.current;
-                heroTouchStartX.current = null;
-                setHeroPaused(false);
-                if (startX == null || images.length <= 1) return;
-                // A real swipe, not a tap that barely drifted — 40px is
-                // comfortably past finger jitter on a phone.
-                const deltaX = e.changedTouches[0].clientX - startX;
-                if (deltaX <= -40) setHeroAt((i) => (i + 1) % images.length);
-                else if (deltaX >= 40) setHeroAt((i) => (i - 1 + images.length) % images.length);
-              }}
-            >
-              <div
-                className="flex h-[305px] transition-transform duration-500 ease-out"
-                style={{ transform: `translateX(-${(heroAt % images.length) * 100}%)` }}
-              >
-                {images.map((url, i) => (
-                  <img
-                    key={url}
-                    src={url}
-                    alt={i === 0 ? activity.title : ""}
-                    width={860}
-                    height={305}
-                    decoding="async"
-                    fetchPriority={i === 0 ? "high" : "low"}
-                    loading={i === 0 ? "eager" : "lazy"}
-                    className={
-                      url === FALLBACK_LOGO_URL
-                        ? "h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12"
-                        : "h-[305px] w-full shrink-0 object-cover"
-                    }
-                  />
-                ))}
-              </div>
-              {images.length > 1 && (
-                <div className="absolute right-3 top-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setHeroAt((i) => (i - 1 + images.length) % images.length)}
-                    aria-label="Previous photo"
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
-                  >
-                    <Icon name="chevron" className="h-4 w-4 rotate-180" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHeroAt((i) => (i + 1) % images.length)}
-                    aria-label="Next photo"
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
-                  >
-                    <Icon name="chevron" className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setGalleryAt(heroAt)}
-                className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
-              >
-                <Icon name="open" className="h-3.5 w-3.5" />{" "}
-                {images.length > 1 ? `${heroAt + 1} / ${images.length}` : "View photo"}
-              </button>
-            </div>
+            <HeroCarousel images={images} title={activity.title} resetKey={activity.id} onOpen={setGalleryAt} />
           </div>
         </section>
 

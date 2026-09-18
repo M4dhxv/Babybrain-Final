@@ -7,6 +7,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { resizeImage } from '@/lib/resizeImage';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { geocodePostal } from '@/lib/geocode';
 import { useAuth } from '@/auth/AuthProvider';
@@ -225,9 +226,10 @@ export default function SettingsPage() {
   }, [provider]);
 
   /** Uploads one image and returns its public URL, or null after reporting why. */
-  async function uploadImage(file: File, kind: string): Promise<string | null> {
+  async function uploadImage(original: File, kind: string): Promise<string | null> {
     if (!provider) return null;
     setProfileError(null);
+    const file = await resizeImage(original);
     const path = `${provider.id}/${kind}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
     if (error) { setProfileError(`Upload failed: ${error.message}`); return null; }

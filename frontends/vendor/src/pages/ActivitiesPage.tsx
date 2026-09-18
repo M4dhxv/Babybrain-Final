@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { resizeImage } from '@/lib/resizeImage';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
@@ -1173,8 +1174,9 @@ export default function ActivitiesPage() {
 
   const ACTIVITY_IMAGES_MAX = 10;
 
-  async function uploadOneImage(file: File): Promise<string | null> {
+  async function uploadOneImage(original: File): Promise<string | null> {
     if (!provider) return null;
+    const file = await resizeImage(original);
     const path = `${provider.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
     if (error) { setFormError(`Image upload failed: ${error.message}`); return null; }
