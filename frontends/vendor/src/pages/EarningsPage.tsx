@@ -177,9 +177,9 @@ export default function EarningsPage() {
         {/* Not on Connect yet: Stripe has nothing to show, so prompt the setup
             rather than render empty payout tables. */}
         {data && !data.payouts_enabled && (
-          <div className="rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+          <div className="rounded-xl bg-yellow-50 border border-yellow-300 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-4 h-4 text-yellow-700 flex-shrink-0" />
               <div className="flex-1 text-sm text-yellow-900">
                 <p className="font-medium">Payouts aren't switched on yet.</p>
               </div>
