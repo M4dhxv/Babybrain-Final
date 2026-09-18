@@ -564,16 +564,16 @@ function ChipFilter({
    Type, age and area used to be the same row of outlined pills. These give
    each its own shape, and show how many activities an option would return. */
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  music: "🎵",
-  "sensory-play": "🎨",
-  movement: "🤸",
-  swimming: "🏊",
-  "early-learning": "🧠",
-  "parent-baby": "🧘",
-  playspaces: "🎠",
-  "community-events": "🎉",
-  "holiday-camps": "⛺",
+const CATEGORY_ICON: Record<string, string> = {
+  music: "catMusic",
+  "sensory-play": "catArt",
+  movement: "catSport",
+  swimming: "catSwim",
+  "early-learning": "catLearn",
+  "parent-baby": "catBaby",
+  playspaces: "catPlay",
+  "community-events": "catEvent",
+  "holiday-camps": "catCamp",
 };
 
 const optionOn = "border-baby-pink bg-[#FED7E4] text-baby-cta";
@@ -600,10 +600,10 @@ function TypeTiles({
             aria-pressed={on}
             onClick={() => onChange(on ? selected.filter((k) => k !== o.key) : [...selected, o.key])}
             className={`flex min-h-[92px] flex-col items-center justify-center gap-1 rounded-[12px] border px-1.5 py-2 text-center text-[11px] font-bold leading-tight ${
-              on ? optionOn : optionOff
+              on ? "border-baby-pink bg-[#FEF1F6] text-baby-cta" : optionOff
             } ${!on && n === 0 ? "opacity-40" : ""}`}
           >
-            <span className="text-[24px] leading-none" aria-hidden="true">{CATEGORY_EMOJI[o.key] ?? "✨"}</span>
+            <Icon name={CATEGORY_ICON[o.key] ?? "spark"} className={`h-6 w-6 ${on ? "text-baby-pink" : "text-[#8A90A2]"}`} strokeWidth={1.7} />
             <span>{o.label}</span>
             {n != null && <span className="text-[10px] font-semibold text-[#8A90A2]">{n}</span>}
           </button>
