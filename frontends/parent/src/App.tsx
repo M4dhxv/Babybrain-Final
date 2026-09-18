@@ -560,6 +560,260 @@ function ChipFilter({
   );
 }
 
+/* ---- Mobile filter sheets (Explore) ---------------------------------------
+   Type, age and area used to be the same row of outlined pills. These give
+   each its own shape, and show how many activities an option would return. */
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  music: "🎵",
+  "sensory-play": "🎨",
+  movement: "🤸",
+  swimming: "🏊",
+  "early-learning": "🧠",
+  "parent-baby": "🧘",
+  playspaces: "🎠",
+  "community-events": "🎉",
+  "holiday-camps": "⛺",
+};
+
+const optionOn = "border-baby-pink bg-[#FED7E4] text-baby-cta";
+const optionOff = "border-[#DCD2D5] bg-white text-[#111A4C]";
+
+/** Multi-select tiles, one per activity type. No selection means "all". */
+function TypeTiles({
+  options, selected, counts, onChange,
+}: {
+  options: { key: string; label: string }[];
+  selected: string[];
+  counts: Record<string, number> | undefined;
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {options.map((o) => {
+        const on = selected.includes(o.key);
+        const n = counts ? counts[o.key] ?? 0 : undefined;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? selected.filter((k) => k !== o.key) : [...selected, o.key])}
+            className={`flex min-h-[92px] flex-col items-center justify-center gap-1 rounded-[12px] border px-1.5 py-2 text-center text-[11px] font-bold leading-tight ${
+              on ? optionOn : optionOff
+            } ${!on && n === 0 ? "opacity-40" : ""}`}
+          >
+            <span className="text-[24px] leading-none" aria-hidden="true">{CATEGORY_EMOJI[o.key] ?? "✨"}</span>
+            <span>{o.label}</span>
+            {n != null && <span className="text-[10px] font-semibold text-[#8A90A2]">{n}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** What each area covers, taken from the postal sectors sg_region() maps to it
+ *  (migration 00032) so the hints can't promise somewhere it doesn't. */
+const AREA_HINTS: Record<string, string> = {
+  central: "Raffles Place, Queenstown, Novena",
+  east: "Geylang, Tampines, Pasir Ris, Changi",
+  "north-east": "Hougang, Bishan, Ang Mo Kio, Punggol",
+  north: "Woodlands, Yishun, Kranji",
+  west: "Clementi, Jurong, Bukit Timah",
+  sentosa: "Sentosa Island",
+};
+
+function AreaCards({
+  options, selected, counts, onChange,
+}: {
+  options: { key: string; label: string }[];
+  selected: string[];
+  counts: Record<string, number> | undefined;
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {options.map((o) => {
+        const on = selected.includes(o.key);
+        const n = counts ? counts[o.key] ?? 0 : undefined;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? selected.filter((k) => k !== o.key) : [...selected, o.key])}
+            className={`rounded-[12px] border p-3 text-left ${on ? optionOn : optionOff} ${!on && n === 0 ? "opacity-40" : ""}`}
+          >
+            <span className="flex items-baseline justify-between gap-2 text-[13px] font-black">
+              {o.label}
+              {n != null && <span className="text-[12px] font-bold text-baby-pink">{n}</span>}
+            </span>
+            <span className="mt-0.5 block text-[11px] font-semibold leading-snug text-[#8A90A2]">{AREA_HINTS[o.key]}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* The age bands are five fixed steps (AGE_BANDS), so the track has six stops —
+   the lower edge of each band plus the top — and a selection is a contiguous
+   run of bands. Anything already picked that isn't contiguous (the desktop
+   chips allow it) is shown as the span that covers it. */
+const AGE_STOP_LABELS = ["0", "6m", "12m", "18m", "3y", "3y+"];
+const AGE_FROM = ["0 months", "6 months", "12 months", "18 months", "3 years"];
+const AGE_TO = ["", "6 months", "12 months", "18 months", "3 years"];
+const AGE_SHORTCUTS: [string, number, number][] = [
+  ["Newborn", 0, 1],
+  ["Baby", 1, 3],
+  ["Toddler", 3, 4],
+  ["Over 3", 4, 5],
+];
+
+function ageRangeText(lo: number, hi: number) {
+  if (lo === 0 && hi === 5) return "All ages";
+  if (lo === 0) return `Up to ${AGE_TO[hi]}`;
+  if (hi === 5) return `${AGE_FROM[lo]} and over`;
+  return `${AGE_FROM[lo]} – ${AGE_TO[hi]}`;
+}
+
+function AgeTrack({ ages, onChange }: { ages: string[]; onChange: (next: string[]) => void }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef<"lo" | "hi" | null>(null);
+  const idx = ages.map((k) => AGE_BANDS.findIndex((b) => b.key === k)).filter((i) => i >= 0);
+  const lo = idx.length ? Math.min(...idx) : 0;
+  const hi = idx.length ? Math.max(...idx) + 1 : 5;
+  const last = AGE_BANDS.length; // 5
+
+  const commit = (nlo: number, nhi: number) =>
+    onChange(nlo === 0 && nhi === last ? [] : AGE_BANDS.slice(nlo, nhi).map((b) => b.key));
+  const stopAt = (clientX: number) => {
+    const r = trackRef.current!.getBoundingClientRect();
+    return Math.round(Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * last);
+  };
+  const move = (thumb: "lo" | "hi", stop: number) => {
+    if (thumb === "lo") commit(Math.min(stop, hi - 1), hi);
+    else commit(lo, Math.max(stop, lo + 1));
+  };
+  const key = (thumb: "lo" | "hi") => (e: React.KeyboardEvent) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    move(thumb, Math.min(last, Math.max(0, (thumb === "lo" ? lo : hi) + step)));
+  };
+  const pct = (i: number) => `${(i / last) * 100}%`;
+
+  return (
+    <div>
+      <div className="mb-5 text-center">
+        <div className="text-[11px] font-bold text-[#8A90A2]">Showing activities for</div>
+        <div className="text-[17px] font-black text-[#111A4C]">{ageRangeText(lo, hi)}</div>
+      </div>
+
+      <div className="px-3">
+        <div
+          ref={trackRef}
+          className="relative h-10 touch-none select-none"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const s = stopAt(e.clientX);
+            dragging.current = s <= lo ? "lo" : s >= hi ? "hi" : Math.abs(s - lo) <= Math.abs(s - hi) ? "lo" : "hi";
+            move(dragging.current, s);
+          }}
+          onPointerMove={(e) => { if (dragging.current) move(dragging.current, stopAt(e.clientX)); }}
+          onPointerUp={() => { dragging.current = null; }}
+          onPointerCancel={() => { dragging.current = null; }}
+        >
+          <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[#EBE3E5]" />
+          <div className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-baby-pink" style={{ left: pct(lo), width: `${((hi - lo) / last) * 100}%` }} />
+          {AGE_STOP_LABELS.map((_, i) => (
+            <span
+              key={i}
+              className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ${i >= lo && i <= hi ? "bg-white" : "bg-[#D9D0D4]"}`}
+              style={{ left: pct(i) }}
+            />
+          ))}
+          {(["lo", "hi"] as const).map((t) => (
+            <span
+              key={t}
+              role="slider"
+              tabIndex={0}
+              aria-label={t === "lo" ? "Youngest age" : "Oldest age"}
+              aria-valuemin={0}
+              aria-valuemax={last}
+              aria-valuenow={t === "lo" ? lo : hi}
+              aria-valuetext={t === "lo" ? AGE_FROM[lo] : hi === last ? "and over" : AGE_TO[hi]}
+              onKeyDown={key(t)}
+              className="absolute top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-baby-pink bg-white shadow-card outline-none focus-visible:ring-2 focus-visible:ring-baby-pink/40"
+              style={{ left: pct(t === "lo" ? lo : hi) }}
+            />
+          ))}
+        </div>
+        <div className="relative mt-1 h-4 text-[10px] font-bold text-[#8A90A2]">
+          {AGE_STOP_LABELS.map((l, i) => (
+            <span key={i} className="absolute -translate-x-1/2" style={{ left: pct(i) }}>{l}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {AGE_SHORTCUTS.map(([label, a, b]) => {
+          const on = lo === a && hi === b && idx.length > 0;
+          return (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={on}
+              onClick={() => (on ? onChange([]) : commit(a, b))}
+              className={`rounded-full border px-3.5 py-2 text-xs font-bold ${on ? optionOn : optionOff}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Time of day as named parts of the day over the existing hour range. Picking
+   several stretches the range across them (Morning + Evening is the whole
+   day), which is all a single from–to range can express. */
+const TIME_BUCKETS = [
+  { key: "morning", label: "Morning", min: 0, max: 11 },
+  { key: "midday", label: "Midday", min: 12, max: 13 },
+  { key: "afternoon", label: "Afternoon", min: 14, max: 16 },
+  { key: "evening", label: "Evening", min: 17, max: 23 },
+];
+
+function toggleTimeBucket(i: number, range: [number, number], active: boolean): [number, number] {
+  const covered = active
+    ? TIME_BUCKETS.map((b, k) => (range[0] <= b.min && range[1] >= b.max ? k : -1)).filter((k) => k >= 0)
+    : [];
+  const next = covered.includes(i) ? covered.filter((k) => k !== i) : [...covered, i];
+  if (!next.length) return [0, 23];
+  return [TIME_BUCKETS[Math.min(...next)].min, TIME_BUCKETS[Math.max(...next)].max];
+}
+
+const sgDateKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+const shiftDateKey = (key: string, days: number) => {
+  const d = new Date(`${key}T00:00:00+08:00`);
+  d.setDate(d.getDate() + days);
+  return sgDateKey(d);
+};
+/** [from, to] for each quick date pick, in Singapore calendar days. */
+function datePresets(): { key: string; label: string; from: string; to: string }[] {
+  const today = sgDateKey(new Date());
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sun … 6 = Sat
+  const sat = dow === 0 ? today : shiftDateKey(today, 6 - dow);
+  return [
+    { key: "today", label: "Today", from: today, to: today },
+    { key: "weekend", label: "This weekend", from: dow === 0 ? today : sat, to: dow === 0 ? today : shiftDateKey(sat, 1) },
+    { key: "week", label: "Next 7 days", from: today, to: shiftDateKey(today, 6) },
+  ];
+}
+
 function ExplorePage() {
   // "Top rated" and "Most popular" read the same to parents, so popularity now
   // covers both; the other two sorts are the ones QA asked for.
@@ -581,6 +835,10 @@ function ExplorePage() {
   const [regions, setRegions] = useState<string[]>([]);
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
   const [dateFrom, setDateFrom] = useState("");
+  // Upper bound for the "Today / This weekend / Next 7 days" quick picks.
+  // Empty means open-ended, which is all the desktop "Date from" box ever sets.
+  const [dateTo, setDateTo] = useState("");
+  const [pickingDate, setPickingDate] = useState(false);
   const [timeRange, setTimeRange] = useState<[number, number]>([0, 23]);
   const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
   const [showMore, setShowMore] = useState(false);
@@ -611,7 +869,7 @@ function ExplorePage() {
   const timeActive = minH > 0 || maxH < 23;
   const anyFilter =
     categories_.length > 0 || ages.length > 0 || regions.length > 0 ||
-    !!dateFrom || priceActive || timeActive;
+    !!dateFrom || !!dateTo || priceActive || timeActive;
 
   // The price/time sliders fire onChange continuously while dragging — the
   // label above each ("Up to $X" / a time range) tracks that live, but what
@@ -627,33 +885,66 @@ function ExplorePage() {
   // Recomputed only when something a filter actually reads changes — this
   // used to re-run (and re-render every visible card below it) on every
   // render, including every tick of the price/time sliders while dragging.
-  const filtered = useMemo(() => {
+  /* One predicate for both the result list and the per-option counts on the
+     mobile sheets. `skip` leaves one facet out, so an option's count answers
+     "how many would I get if I picked this" given every OTHER filter. */
+  const matchesFilters = (a: (typeof activities)[number], skip?: "type" | "age" | "area") => {
     const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
-    return activities.filter((a) => {
-      if (categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
-      // A class matches an age band when its own range overlaps that band.
-      if (selectedBands.length &&
-          !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
-      if (regions.length) {
-        /* `areas` is where this class actually runs (see useActivities). It used
-           to be "the listing's region OR any venue the provider owns anywhere",
-           which put a Katong class in front of a parent filtering on Sentosa
-           purely because the provider also had a Sentosa branch — QA 17/08. */
-        if (!a.areas.some((x) => regions.includes(x))) return false;
-      }
-      if (debouncedPriceActive && a.price != null && a.price > debouncedMaxPrice) return false;
-      if (dateFrom) {
-        if (!a.nextSessionAt) return false;
-        if (new Date(a.nextSessionAt) < new Date(`${dateFrom}T00:00:00+08:00`)) return false;
-      }
-      if (debouncedTimeActive) {
-        const h = sgHour(a.nextSessionAt);
-        if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
-      }
-      return true;
-    });
+    if (skip !== "type" && categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
+    // A class matches an age band when its own range overlaps that band.
+    if (skip !== "age" && selectedBands.length &&
+        !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
+    if (skip !== "area" && regions.length) {
+      /* `areas` is where this class actually runs (see useActivities). It used
+         to be "the listing's region OR any venue the provider owns anywhere",
+         which put a Katong class in front of a parent filtering on Sentosa
+         purely because the provider also had a Sentosa branch — QA 17/08. */
+      if (!a.areas.some((x) => regions.includes(x))) return false;
+    }
+    if (debouncedPriceActive && a.price != null && a.price > debouncedMaxPrice) return false;
+    if (dateFrom || dateTo) {
+      if (!a.nextSessionAt) return false;
+      const t = new Date(a.nextSessionAt).getTime();
+      if (dateFrom && t < new Date(`${dateFrom}T00:00:00+08:00`).getTime()) return false;
+      if (dateTo && t >= new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000) return false;
+    }
+    if (debouncedTimeActive) {
+      const h = sgHour(a.nextSessionAt);
+      if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
+    }
+    return true;
+  };
+
+  const filtered = useMemo(
+    () => activities.filter((a) => matchesFilters(a)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, debouncedTimeActive, debouncedMinH, debouncedMaxH]);
+    [activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, dateTo, debouncedTimeActive, debouncedMinH, debouncedMaxH]
+  );
+
+  // Only worked out while a mobile sheet is open — the desktop layout has no
+  // counts, and this walks every activity once per facet.
+  const facetCounts = useMemo(() => {
+    if (!mobileSheet) return null;
+    const type: Record<string, number> = {};
+    const age: Record<string, number> = {};
+    const area: Record<string, number> = {};
+    for (const a of activities) {
+      if (matchesFilters(a, "type")) {
+        const s = catSlugOf(a, cats);
+        type[s] = (type[s] ?? 0) + 1;
+      }
+      if (matchesFilters(a, "age")) {
+        for (const b of AGE_BANDS) {
+          if (a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min) age[b.key] = (age[b.key] ?? 0) + 1;
+        }
+      }
+      if (matchesFilters(a, "area")) {
+        for (const r of a.areas) area[r] = (area[r] ?? 0) + 1;
+      }
+    }
+    return { type, age, area };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileSheet, activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, dateTo, debouncedTimeActive, debouncedMinH, debouncedMaxH]);
 
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
@@ -691,7 +982,7 @@ function ExplorePage() {
 
   function resetFilters() {
     setCategories([]); setAges([]); setRegions([]);
-    setDateFrom(""); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
+    setDateFrom(""); setDateTo(""); setPickingDate(false); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
   }
 
   useEffect(() => {
@@ -701,7 +992,7 @@ function ExplorePage() {
   // Any change to the filters, sort or search starts the list back at page one.
   useEffect(() => {
     setVisibleCount(PAGE);
-  }, [categories_, ages, regions, dateFrom, timeRange, maxPrice, sort, query]);
+  }, [categories_, ages, regions, dateFrom, dateTo, timeRange, maxPrice, sort, query]);
 
   // Sorting by distance needs a location; ask only when it's chosen. If the
   // browser won't give one (denied, or no geolocation at all), fall back to the
@@ -764,7 +1055,7 @@ function ExplorePage() {
                 { key: "type", label: "Type", icon: "target", active: categories_.length > 0 },
                 { key: "age", label: "Age", icon: "people", active: ages.length > 0 },
                 { key: "area", label: "Area", icon: "compass", active: regions.length > 0 },
-                { key: "sort", label: "More", icon: "funnel", active: sort !== "popular" || priceActive || timeActive || !!dateFrom },
+                { key: "sort", label: "More", icon: "funnel", active: sort !== "popular" || priceActive || timeActive || !!dateFrom || !!dateTo },
               ] as const
             ).map((t) => (
               <button
@@ -786,34 +1077,73 @@ function ExplorePage() {
           <div className="fixed inset-0 z-40 sm:hidden">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileSheet(null)} />
             <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-y-auto rounded-t-[20px] bg-white p-4 shadow-card" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-black">
                   {mobileSheet === "type" ? "Type of activity" : mobileSheet === "age" ? "Age" : mobileSheet === "area" ? "Area" : "Sort & more filters"}
                 </h3>
-                <button type="button" onClick={() => setMobileSheet(null)} aria-label="Close">
-                  <Icon name="close" className="h-5 w-5 text-[#4a5680]" />
-                </button>
+                <div className="flex items-center gap-4">
+                  {(mobileSheet === "type" ? categories_.length > 0
+                    : mobileSheet === "age" ? ages.length > 0
+                    : mobileSheet === "area" ? regions.length > 0
+                    : sort !== "popular" || !!dateFrom || !!dateTo || priceActive || timeActive) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mobileSheet === "type") setCategories([]);
+                        else if (mobileSheet === "age") setAges([]);
+                        else if (mobileSheet === "area") setRegions([]);
+                        else {
+                          setSort("popular");
+                          setDateFrom(""); setDateTo(""); setPickingDate(false);
+                          setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
+                        }
+                      }}
+                      className="text-xs font-bold text-baby-pink hover:underline"
+                    >
+                      {mobileSheet === "sort" ? "Reset" : "Clear"}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setMobileSheet(null)} aria-label="Close">
+                    <Icon name="close" className="h-5 w-5 text-[#4a5680]" />
+                  </button>
+                </div>
               </div>
 
               {mobileSheet === "type" && (
-                <ChipFilter label="" allLabel="All types of activity" options={cats.map((c) => ({ key: c.slug, label: c.name }))} selected={categories_} onChange={setCategories} />
+                <TypeTiles
+                  options={cats.map((c) => ({ key: c.slug, label: c.name }))}
+                  selected={categories_}
+                  counts={facetCounts?.type}
+                  onChange={setCategories}
+                />
               )}
-              {mobileSheet === "age" && (
-                <ChipFilter label="" allLabel="All ages" options={AGE_BANDS.map((b) => ({ key: b.key, label: b.label }))} selected={ages} onChange={setAges} />
-              )}
+              {mobileSheet === "age" && <AgeTrack ages={ages} onChange={setAges} />}
               {mobileSheet === "area" && (
-                <ChipFilter label="" allLabel="All areas" options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))} selected={regions} onChange={setRegions} />
+                <AreaCards
+                  options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))}
+                  selected={regions}
+                  counts={facetCounts?.area}
+                  onChange={setRegions}
+                />
               )}
               {mobileSheet === "sort" && (
-                <div className="space-y-4">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs font-bold text-[#68718f]">Sort by</span>
-                    <SelectField value={sort} onChange={(v) => setSort(v as typeof sort)} aria-label="Sort by" className="h-10 w-full px-3 text-[13px] font-bold">
-                      <Opt value="popular">Most popular</Opt>
-                      <Opt value="distance">Nearest</Opt>
-                      <Opt value="soonest">Starting soonest</Opt>
-                    </SelectField>
-                  </label>
+                <div className="space-y-5">
+                  <div>
+                    <p className="mb-2 text-xs font-bold text-[#68718f]">Sort by</p>
+                    <div className="flex flex-wrap gap-2">
+                      {([["popular", "Most popular"], ["distance", "Nearest"], ["soonest", "Starting soonest"]] as const).map(([v, l]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          aria-pressed={sort === v}
+                          onClick={() => setSort(v)}
+                          className={`rounded-full border px-3.5 py-2 text-xs font-bold ${sort === v ? optionOn : optionOff}`}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {sort === "distance" && !here && (
                     <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
                       <span>Allow location access to sort by how near activities are to you, or</span>
@@ -833,26 +1163,84 @@ function ExplorePage() {
                       </SelectField>
                     </p>
                   )}
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs font-bold text-[#68718f]">Date from</span>
-                    <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
-                    <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Time</span><span className="text-baby-pink">{timeActive ? `${timeLabel(minH)}–${timeLabel(maxH)}` : "Any"}</span></span>
-                    <div className="mt-1 flex items-center gap-2">
-                      <input type="range" min={0} max={23} value={minH} onChange={(e) => setTimeRange([Math.min(Number(e.target.value), maxH), maxH])} className="h-2 w-full accent-baby-pink" />
-                      <input type="range" min={0} max={23} value={maxH} onChange={(e) => setTimeRange([minH, Math.max(Number(e.target.value), minH)])} className="h-2 w-full accent-baby-pink" />
+                  <div>
+                    <p className="mb-2 text-xs font-bold text-[#68718f]">When</p>
+                    <div className="flex flex-wrap gap-2">
+                      {datePresets().map((p) => {
+                        const on = dateFrom === p.from && dateTo === p.to;
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => {
+                              setPickingDate(false);
+                              if (on) { setDateFrom(""); setDateTo(""); }
+                              else { setDateFrom(p.from); setDateTo(p.to); }
+                            }}
+                            className={`rounded-full border px-3.5 py-2 text-xs font-bold ${on ? optionOn : optionOff}`}
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                      {(() => {
+                        const custom = (!!dateFrom || !!dateTo) && !datePresets().some((p) => dateFrom === p.from && dateTo === p.to);
+                        const on = pickingDate || custom;
+                        return (
+                          <button
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => {
+                              if (on) { setPickingDate(false); setDateFrom(""); setDateTo(""); }
+                              else { setDateFrom(""); setDateTo(""); setPickingDate(true); }
+                            }}
+                            className={`rounded-full border px-3.5 py-2 text-xs font-bold ${on ? optionOn : optionOff}`}
+                          >
+                            Pick a date
+                          </button>
+                        );
+                      })()}
                     </div>
+                    {(pickingDate || ((!!dateFrom || !!dateTo) && !datePresets().some((p) => dateFrom === p.from && dateTo === p.to))) && (
+                      <label className="mt-2 flex flex-col gap-1">
+                        <span className="text-xs font-bold text-[#68718f]">From this date onwards</span>
+                        <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(""); }} className={`${selectClass} w-full`} />
+                      </label>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-bold text-[#68718f]">Time of day</p>
+                    <div className="flex flex-wrap gap-2">
+                      {TIME_BUCKETS.map((b, i) => {
+                        const on = timeActive && minH <= b.min && maxH >= b.max;
+                        return (
+                          <button
+                            key={b.key}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => setTimeRange(toggleTimeBucket(i, timeRange, timeActive))}
+                            className={`rounded-full border px-3.5 py-2 text-xs font-bold ${on ? optionOn : optionOff}`}
+                          >
+                            {b.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-semibold text-[#8A90A2]">
+                      Morning is before 12pm, midday 12–2pm, afternoon 2–5pm, evening after 5pm.
+                    </p>
+                  </div>
+
+                  <label className="block">
+                    <span className="flex justify-between text-xs font-bold text-[#68718f]">
+                      <span>Price</span>
+                      <span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any price"}</span>
+                    </span>
+                    <input type="range" min={0} max={PRICE_MAX} step={10} value={maxPrice} onChange={(e) => setMaxPrice(Number(e.target.value))} className="mt-2 h-2 w-full accent-baby-pink" />
+                    <span className="mt-1 flex justify-between text-[10px] font-bold text-[#8A90A2]"><span>$0</span><span>${PRICE_MAX}+</span></span>
                   </label>
-                  {anyFilter && (
-                    <button type="button" onClick={resetFilters} className="text-xs font-bold text-baby-pink hover:underline">
-                      Reset filters
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -937,7 +1325,7 @@ function ExplorePage() {
             <div className="grid gap-3 border-t border-[#F4EFF0] pt-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-bold text-[#68718f]">Date from</span>
-                <DateInput value={dateFrom} onChange={setDateFrom} className={`${selectClass} w-full`} />
+                <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(""); }} className={`${selectClass} w-full`} />
               </label>
               <label className="flex flex-col justify-center gap-1">
                 <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>
