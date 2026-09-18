@@ -69,7 +69,8 @@ const FLOWS: FlowMeta[] = [
   { type: 'provider_upgrade_free_to_growth', category: 'Provider', label: 'Upgrade nudge: Free → Growth', description: 'Reminds a Free vendor what Growth unlocks.', wired: false, trigger: 'Not wired to anything yet.' },
   { type: 'provider_upgrade_growth_to_pro', category: 'Provider', label: 'Upgrade nudge: Growth → Pro', description: 'Reminds a Growth vendor what Pro unlocks.', wired: false, trigger: 'Not wired to anything yet.' },
   { type: 'provider_upgrade_pro_to_premium', category: 'Provider', label: 'Upgrade nudge: Pro → Premium', description: 'Reminds a Pro vendor what Premium unlocks.', wired: false, trigger: 'Not wired to anything yet.' },
-  { type: 'provider_booking_received', category: 'Provider', label: 'New booking received', description: 'Tells a vendor they just got a booking.', wired: false, trigger: 'Not wired — parents get "Booking confirmed" but vendors get no equivalent email today.' },
+  { type: 'provider_booking_received', category: 'Provider', label: 'New booking received', description: 'Tells a vendor they just got a booking.', wired: true, trigger: 'DB trigger on bookings, transition into \'confirmed\' — fans out to every active provider_members row (migration 00141).' },
+  { type: 'provider_activity_full', category: 'Provider', label: 'Add more capacity to your activity', description: 'Nudges a vendor to extend capacity once a session is fully booked.', wired: true, trigger: 'Same DB trigger as provider_booking_received, fired once when a confirmed booking fills the session\'s capacity (migration 00141).' },
   { type: 'provider_add_activities', category: 'Provider', label: 'Add more to your schedule', description: 'Nudges a vendor whose schedule is thin.', wired: false, trigger: 'Not wired to anything yet.' },
 ];
 

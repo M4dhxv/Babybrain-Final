@@ -479,12 +479,23 @@ const T: Record<string, Template> = {
       p('We’d love to know if there is something else you would like to see. Drop us an email and we’ll let you know if we are already working on it or can add it to our to-do list!') +
       sign),
 
+  // `spaces_left` is absent for a session with no capacity cap (unlimited) —
+  // omit the line entirely rather than misreport it as "0 available spaces".
   provider_booking_received: (d, ctx) =>
-    wrap(ctx, 'You’ve had a booking 👶🧠',
+    wrap(ctx, 'You’ve received a booking 👶🧠',
       p(greet(ctx.recipientName)) +
       p('You have received a booking for the following activity:') +
-      details(d) +
-      p(`You have ${bold(str(d, 'spaces_left') ?? '0')} available spaces left for this activity.`) +
+      details(d, false) +
+      (str(d, 'spaces_left') !== undefined
+        ? p(`You have ${bold(str(d, 'spaces_left')!)} available spaces left for this activity.`)
+        : '') +
+      sign),
+
+  provider_activity_full: (d, ctx) =>
+    wrap(ctx, 'Could you extend your capacity? 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Great news - ${bold(str(d, 'activity_name') ?? 'your activity')} is fully booked! Would you like to ${link(ctx, str(d, 'url') ?? '/vendor', 'extend the capacity')}?`) +
+      p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
       sign),
 
   provider_add_activities: (d, ctx) =>
