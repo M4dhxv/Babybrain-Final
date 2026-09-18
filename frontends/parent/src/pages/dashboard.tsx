@@ -2324,7 +2324,7 @@ export function ProfilePage() {
 
               {getParam("billing") === "success" && (
                 <div className="mb-4 rounded-[12px] border border-green-300 bg-green-50 px-4 py-3 text-sm font-bold text-palette-green">
-                  🎉 Welcome to Plus! Your subscription is active — your first month is free.
+                  🎉 Welcome to Plus! Your subscription is active.
                 </div>
               )}
 
