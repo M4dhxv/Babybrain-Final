@@ -139,8 +139,8 @@ export function HeroDashboardPreview() {
           <div>
             <div className="text-[13px] font-bold text-gray-900">Schedule</div>
             <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
-              <span className="sm:hidden">Live Wix availability</span>
-              <span className="hidden sm:inline">Site bookings & live Wix availability</span>
+              <span className="sm:hidden">Live availability</span>
+              <span className="hidden sm:inline">Site bookings & live availability</span>
             </div>
           </div>
           <RefreshCw className="h-3 w-3 text-gray-300" />

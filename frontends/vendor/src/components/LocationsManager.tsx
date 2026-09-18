@@ -205,9 +205,11 @@ export default function LocationsManager({
         </div>
         {canManage && !showForm && (
           <div className="flex items-center gap-2">
-            <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
-              <RefreshCw className={cn('w-3.5 h-3.5', wixLoading && 'animate-spin')} /> Fetch from Wix
-            </button>
+            {provider?.wix_site_id && (
+              <button onClick={openWixPicker} className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
+                <RefreshCw className={cn('w-3.5 h-3.5', wixLoading && 'animate-spin')} /> Fetch from Wix
+              </button>
+            )}
             <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-[#FA4D8D] rounded-lg text-xs font-medium hover:bg-pink-100">
               <Plus className="w-3.5 h-3.5" /> Add location
             </button>

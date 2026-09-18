@@ -254,7 +254,7 @@ export default function SchedulePage() {
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Every upcoming session — site bookings and live Wix availability, together.
+            Every upcoming session{provider?.wix_site_id ? ' — site bookings and live Wix availability, together' : ', all in one place'}.
             {wixLinkedIds.length > 0 && wixSyncedAt && (
               <> Wix last synced {wixSyncedAt.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' })}.</>
             )}
