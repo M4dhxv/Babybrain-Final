@@ -1005,8 +1005,10 @@ export const SUPPORT_EMAIL = "hello@babybrain.sg";
 export const SUPPORT_PHONE = "+65 8996 6716"; // support line (call + WhatsApp)
 export const phoneDigits = (p: string) => p.replace(/[^\d]/g, "");
 
-export function Footer() {
+export function Footer({ clearDock = false }: { clearDock?: boolean } = {}) {
   const { session } = useAuth();
+  /** Which mobile accordion section is open (desktop always shows all). */
+  const [openSection, setOpenSection] = useState<string | null>(null);
   /* "How It Works" points at the signed-out home page, which a signed-in
      parent never sees — their home is the dashboard — so the link would drop
      them somewhere unrecognisable. Hidden once they're logged in. */
@@ -1019,9 +1021,14 @@ export function Footer() {
     ["Sign Up", "/onboarding"],
   ];
   return (
-    <footer className="border-t border-[#F4EFF0] bg-white/70 py-6">
-      <div className="mx-auto grid max-w-[1120px] grid-cols-2 gap-8 px-6 md:grid-cols-[1.8fr_1fr_1fr_1fr]">
-        <div>
+    <footer
+      className={`border-t border-[#F4EFF0] bg-white/70 pt-6 ${clearDock ? "sm:pb-6" : "pb-6"}`}
+      // The Explore page floats its Type/Age/Area/More bar over the bottom of
+      // the viewport on phones; keep the last line scrollable clear of it.
+      style={clearDock ? { paddingBottom: "calc(6.5rem + env(safe-area-inset-bottom))" } : undefined}
+    >
+      <div className="mx-auto grid max-w-[1120px] grid-cols-1 gap-x-8 px-6 md:grid-cols-[1.8fr_1fr_1fr_1fr] md:gap-y-8">
+        <div className="mb-2 md:mb-0">
           <Brand />
           <p className="mt-3 max-w-[230px] text-sm font-semibold leading-5 text-[#59658d]">
             Helping parents discover and book activities for their children.
@@ -1060,9 +1067,19 @@ export function Footer() {
             ["Log in", "/vendor/#/login"],
           ]],
         ] as [string, [string, string | null, string?][]][]).map(([title, links]) => (
-          <div key={title} className="text-sm">
-            <h3 className="mb-3 font-black">{title}</h3>
-            <div className="space-y-1.5 font-semibold text-[#59658d]">
+          <div key={title} className="border-t border-[#F4EFF0] text-sm md:border-0">
+            <h3 className="font-black md:mb-3">
+              <button
+                type="button"
+                aria-expanded={openSection === title}
+                onClick={() => setOpenSection((s) => (s === title ? null : title))}
+                className="flex w-full items-center justify-between py-3.5 text-left md:pointer-events-none md:cursor-default md:py-0"
+              >
+                {title}
+                <Icon name="chevron" className={`h-4 w-4 text-[#59658d] transition-transform md:hidden ${openSection === title ? "rotate-90" : ""}`} />
+              </button>
+            </h3>
+            <div className={`space-y-2 pb-3 font-semibold text-[#59658d] md:block md:space-y-1.5 md:pb-0 ${openSection === title ? "block" : "hidden"}`}>
               {links.map(([label, href, icon]) => {
                 const external = !!href && /^https?:\/\//.test(href);
                 return href ? (

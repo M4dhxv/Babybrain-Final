@@ -1417,7 +1417,7 @@ function ExplorePage() {
           </section>
         </div>
       </main>
-      <Footer />
+      <Footer clearDock />
     </PageShell>
   );
 }
