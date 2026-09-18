@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import { EarningsSkeleton } from '@/components/Skeletons';
 
 interface LedgerRow {
   id: string;
@@ -193,6 +194,7 @@ export default function EarningsPage() {
           </div>
         )}
 
+        {loading && !data ? <EarningsSkeleton /> : <>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           <StatCard
             icon={Wallet}
@@ -378,6 +380,7 @@ export default function EarningsPage() {
             </div>
           )}
         </div>
+        </>}
       </div>
     </div>
   );

@@ -127,6 +127,35 @@ export function DashboardSkeleton() {
   );
 }
 
+/** Earnings: the three stat cards (Paid out / On the way / Lifetime) plus the
+ *  "Every paid sale" ledger table, at their real sizes. */
+export function EarningsSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100" />
+              <Bar className="h-3 w-16" />
+            </div>
+            <Bar className="h-6 w-2/5 bg-gray-200" />
+            <Bar className="mt-2 h-3 w-3/5" />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
+        <Bar className="h-4 w-2/5 bg-gray-200" />
+        <Bar className="mt-2 h-3 w-3/5" />
+        <div className="mt-4">
+          <TableRowsSkeleton cols={6} count={5} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Schedule week view: seven day columns, a few with session blocks. Matches
  *  the `sm:grid-cols-7` / `min-h-[240px]` layout of the real grid. */
 export function ScheduleWeekSkeleton() {
