@@ -1754,7 +1754,7 @@ export function ProfilePage() {
           switching tabs shows the content straight away instead of burying it
           under the promo blocks. On desktop both sidebar cards stack on the
           left with the content beside them. */}
-      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 py-5 pl-[72px] pr-4 sm:pr-6 lg:grid lg:pl-6 lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
+      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
         {/* Tap-away scrim: covers the ~50% of the page the open drawer leaves
             visible, and closes the drawer when tapped. Mobile only. */}
         {menuOpen && (
@@ -1765,36 +1765,10 @@ export function ProfilePage() {
             className="fixed inset-0 z-40 bg-black/30 lg:hidden"
           />
         )}
-        {/* Icon rail: a slim full-height bar under the site header. It holds the
-            parent's avatar and every menu icon; the page is padded to clear it.
-            It fades out while the labelled drawer is open. Mobile only. */}
-        <nav
-          aria-label="Quick navigation"
-          className={`fixed bottom-0 left-0 top-[74px] z-40 flex w-[60px] flex-col items-center rounded-r-[24px] border-r border-[#F4E3EA] bg-white pt-3 shadow-[2px_0_14px_rgba(17,26,76,0.08)] transition-opacity duration-200 lg:hidden ${
-            menuOpen ? "pointer-events-none opacity-0" : "opacity-100"
-          }`}
-        >
-          <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-10 w-10 shrink-0" />
-          <div className="mt-3 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {PROFILE_TABS.map(([key, item, icon]) => (
-              <a
-                key={key}
-                href={`/profile?tab=${key}`}
-                aria-label={item}
-                aria-current={tab === key ? "page" : undefined}
-                tabIndex={menuOpen ? -1 : 0}
-                className={`relative grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${tab === key ? "bg-[#FED7E4] text-baby-cta" : "text-[#4a5685] active:bg-[#F4EFF0]"}`}
-              >
-                <Icon name={icon} className="h-[22px] w-[22px]" strokeWidth={1.7} />
-                {((key === "messages" && unreadMessages > 0) || (key === "notifications" && unreadNotifications > 0)) && (
-                  <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#C90044]" />
-                )}
-              </a>
-            ))}
-          </div>
-        </nav>
-        {/* Edge toggle: a soft pink half-circle that rides the rail's edge (›)
-            and the drawer's edge (‹). Hold > 1s to drag it up or down. */}
+        {/* Edge toggle: just two short pink bars on the left edge that fold into
+            an arrow (‹) on the drawer's edge when it's open. No box, so the page
+            keeps its full width. A dot on it flags unread messages or
+            notifications. Hold > 1s to drag it up or down. Mobile only. */}
         <button
           type="button"
           aria-label={
@@ -1812,15 +1786,28 @@ export function ProfilePage() {
           onContextMenu={(e) => e.preventDefault()}
           style={{
             top: handleY == null ? "50%" : `${clampHandleY(handleY)}px`,
-            transform: `translateY(-50%)${handleAdjusting ? " scale(1.1)" : ""}`,
+            transform: `translateY(-50%)${handleAdjusting ? " scale(1.15)" : ""}`,
           }}
           // touch-none is unconditional: it has to be set before the gesture
           // starts, or the browser has already claimed the touch as a scroll.
-          className={`fixed z-50 -ml-px grid h-14 w-8 touch-none select-none place-items-center rounded-r-full bg-[#FED7E4] text-baby-cta shadow-[3px_2px_10px_rgba(17,26,76,0.12)] ease-out lg:hidden ${
-            handleAdjusting ? "ring-2 ring-[#FA4D8D]/50 transition-transform" : "transition-[left] duration-300"
-          } ${menuOpen ? "left-[62%]" : "left-[60px]"}`}
+          className={`fixed z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] ease-out lg:hidden ${
+            handleAdjusting ? "transition-transform" : "transition-[left] duration-300"
+          } ${menuOpen ? "left-[calc(62%-44px)]" : "left-0"}`}
         >
-          <Icon name="chevron" strokeWidth={3} className={`h-5 w-5 ${menuOpen ? "rotate-180" : ""}`} />
+          <span className="relative -ml-2 block [filter:drop-shadow(0_0_3px_#fff)_drop-shadow(0_0_1px_#fff)]">
+            {menuOpen ? (
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" />
+              </svg>
+            ) : (
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" aria-hidden="true">
+                <path d="M4 8h16M4 16h11" />
+              </svg>
+            )}
+            {!menuOpen && (unreadMessages > 0 || unreadNotifications > 0) && (
+              <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#C90044]" />
+            )}
+          </span>
         </button>
         <aside
           className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:static lg:z-auto lg:w-auto lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
