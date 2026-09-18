@@ -206,13 +206,19 @@ const MAX_AGE_MONTHS = 132;
 
 export async function updateProviderWithCatalogue(
   id: string,
-  input: { provider?: ProviderPatch; locations?: LocationPatch[]; activities?: ActivityPatch[] }
+  input: {
+    provider?: ProviderPatch; locations?: LocationPatch[]; activities?: ActivityPatch[];
+    /** See the same field on {@link NewProvider} — required to flip a
+     *  BabyBrain-checkout class from unpublished to published while this
+     *  vendor's payouts aren't enabled. */
+    overridePayoutGate?: boolean;
+  }
 ): Promise<UpdateResult> {
   const db = createAdminClient();
   const warnings: string[] = [];
 
   const { data: before } = await db
-    .from('providers').select('id, address, postal_code, business_name').eq('id', id).maybeSingle();
+    .from('providers').select('id, address, postal_code, business_name, payouts_enabled').eq('id', id).maybeSingle();
   if (!before) throw new Error('That vendor no longer exists.');
 
   let regeocoded = false;
@@ -326,6 +332,18 @@ export async function updateProviderWithCatalogue(
     const { data: cats } = await db.from('activity_categories').select('id, slug');
     const catId = Object.fromEntries((cats ?? []).map((c) => [c.slug, c.id]));
 
+    // Current state of every class being touched, so the gate below can tell
+    // an actual unpublished->published flip from a resave of an already-live
+    // class (which is always allowed regardless of payout status).
+    const patchIds = acts.filter((a) => !a._delete).map((a) => a.id);
+    type CurrentActivity = { id: string; title: string; is_published: boolean; external_booking_url: string | null };
+    const currentRows: CurrentActivity[] = patchIds.length
+      ? ((await db.from('activities')
+          .select('id, title, is_published, external_booking_url')
+          .in('id', patchIds)).data as unknown as CurrentActivity[] | null) ?? []
+      : [];
+    const currentById = new Map(currentRows.map((r) => [r.id, r]));
+
     for (const a of acts) {
       if (a._delete) {
         const { error } = await db.from('activities').delete().eq('id', a.id).eq('provider_id', id);
@@ -333,6 +351,18 @@ export async function updateProviderWithCatalogue(
         activitiesChanged += 1;
         continue;
       }
+      const cur = currentById.get(a.id);
+      const willPublish = a.is_published ?? cur?.is_published ?? false;
+      const wasPublished = cur?.is_published ?? false;
+      const resolvedExternalUrl = a.external_booking_url !== undefined ? a.external_booking_url : cur?.external_booking_url;
+      if (willPublish && !wasPublished && !resolvedExternalUrl?.trim() && !before.payouts_enabled && !input.overridePayoutGate) {
+        throw new Error(
+          `"${a.title ?? cur?.title ?? 'This class'}" would publish straight into BabyBrain checkout, but this ` +
+          `vendor has no Stripe payouts set up. Add an external booking link, leave it unpublished, or tick ` +
+          `"Publish anyway" to have BabyBrain settle it manually until they connect Stripe.`
+        );
+      }
+
       const row: Record<string, unknown> = {};
       if (a.title !== undefined) row.title = a.title.slice(0, 120);
       // `''` not null — clearing a class description in the editor would

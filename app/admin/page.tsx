@@ -641,6 +641,10 @@ function AddVendorView() {
 
   const [locations, setLocations] = useState<DraftLocation[]>([]);
   const [activities, setActivities] = useState<DraftActivity[]>([]);
+  // A new vendor never has payouts set up yet — publishing a class that
+  // checks out through BabyBrain (no external booking link) needs this
+  // ticked, or the create call is rejected. See admin-create-provider.ts.
+  const [overridePayoutGate, setOverridePayoutGate] = useState(false);
 
   // directory list: search + which vendor is open in the editor
   const [search, setSearch] = useState('');
@@ -669,6 +673,7 @@ function AddVendorView() {
     setDescription(''); setWebsite(''); setBookingUrl(''); setEmail(''); setPhone('');
     setWhatsapp(''); setAddress(''); setPostal(''); setLocations([]); setActivities([]);
     setLogoUrl(''); setCoverUrl(''); setUen(''); setInstagram(''); setFacebook(''); setTiktok('');
+    setOverridePayoutGate(false);
   }
 
   async function submit(e: React.FormEvent) {
@@ -715,6 +720,7 @@ function AddVendorView() {
                 studio: s.studio,
               })),
           })),
+        overridePayoutGate,
       };
       const r = await adminFetch<CreatedVendor>('/api/admin/providers', {
         method: 'POST', body: JSON.stringify(payload),
@@ -1012,6 +1018,12 @@ function AddVendorView() {
 
         {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
 
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.muted }}>
+          <input type="checkbox" checked={overridePayoutGate}
+            onChange={(e) => setOverridePayoutGate(e.target.checked)} />
+          Publish anyway — this vendor has no Stripe payouts set up, BabyBrain will settle any paid bookings manually
+        </label>
+
         {done && (
           <div style={{ ...card(), marginTop: 12, borderColor: C.green }}>
             <div style={{ color: C.green, fontWeight: 800 }}>
@@ -1120,6 +1132,9 @@ function EditVendorModal({
   // the array, but a saved one has to be sent back with _delete.
   const [dropSess, setDropSess] = useState<{ actId: string; sessId: string }[]>([]);
   const [newLocs, setNewLocs] = useState<DraftLocation[]>([]);
+  // Needed to flip a BabyBrain-checkout class from Hidden to Published while
+  // this vendor's payouts aren't enabled. See admin-update-provider.ts.
+  const [overridePayoutGate, setOverridePayoutGate] = useState(false);
 
   useEffect(() => {
     adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
@@ -1190,6 +1205,7 @@ function EditVendorModal({
             ],
             _delete: dropAct.includes(a.id),
           })),
+          overridePayoutGate,
         }),
       });
       setNote([
@@ -1510,6 +1526,12 @@ function EditVendorModal({
                 {note.slice(1).map((w, i) => <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>)}
               </div>
             )}
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.muted }}>
+              <input type="checkbox" checked={overridePayoutGate}
+                onChange={(e) => setOverridePayoutGate(e.target.checked)} />
+              Publish anyway — for any class with no Stripe payouts set up, BabyBrain will settle it manually
+            </label>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
               <button type="button" onClick={save} disabled={busy}

@@ -1414,6 +1414,13 @@ export default function ActivitiesPage() {
     if (a.wix_missing_since) return;
     setShowMenu(null);
     const is_published = !a.is_published;
+    // Going live requires a working payout destination — otherwise a paid
+    // booking's money has nowhere of the vendor's own to land. Unpublishing
+    // is always allowed regardless of payout status.
+    if (is_published && !provider?.payouts_enabled) {
+      setSyncError('Set up payouts before publishing — go to Billing to connect Stripe.');
+      return;
+    }
     setActivities((prev) => prev.map((x) => (x.id === a.id ? { ...x, is_published, archived_at: null } : x)));
     const { error } = await supabase.from('activities').update({ is_published, archived_at: null }).eq('id', a.id);
     if (error) load();
@@ -1778,8 +1785,14 @@ export default function ActivitiesPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => togglePublish(a)}
-                            disabled={!!a.wix_missing_since}
-                            title={a.wix_missing_since ? 'Locked until this service is found again on a connected Wix account' : undefined}
+                            disabled={!!a.wix_missing_since || (!a.is_published && !provider?.payouts_enabled)}
+                            title={
+                              a.wix_missing_since
+                                ? 'Locked until this service is found again on a connected Wix account'
+                                : !a.is_published && !provider?.payouts_enabled
+                                ? 'Set up payouts under Billing before publishing'
+                                : undefined
+                            }
                             className="gap-2 px-3 py-2 text-sm text-gray-700"
                           >
                             <CalendarCheck className="w-3.5 h-3.5" />

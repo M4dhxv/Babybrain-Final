@@ -76,6 +76,12 @@ export type NewProvider = {
   social?: { instagram?: string | null; facebook?: string | null; tiktok?: string | null };
   locations?: NewLocation[];
   activities?: NewActivity[];
+  /** Admin acknowledges BabyBrain will settle this vendor's paid bookings
+   *  manually (no Stripe transfer) until payouts are connected — required to
+   *  publish a BabyBrain-checkout class here, since a brand-new provider
+   *  never has payouts_enabled yet. Not needed for a class that links out via
+   *  external_booking_url — no BabyBrain charge is ever taken for those. */
+  overridePayoutGate?: boolean;
 };
 
 /**
@@ -173,6 +179,25 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
   const activities = (input.activities ?? []).filter((a) => a.title?.trim());
   for (const a of activities) {
     if (!catId[a.category_slug]) throw new Error(`Unknown category "${a.category_slug}".`);
+  }
+
+  // Gate: a brand-new provider has no Stripe account yet, so it can never
+  // have payouts_enabled at create time. A class that publishes straight into
+  // BabyBrain's own checkout (no external_booking_url, and the vendor has no
+  // website/booking_url fallback either) needs an explicit override —
+  // otherwise a paid booking would have nowhere of the vendor's own to land.
+  if (!input.overridePayoutGate) {
+    const bookingUrlFallback = input.booking_url?.trim() || input.website?.trim() || null;
+    const needsGate = activities.find(
+      (a) => (a.is_published ?? true) && !(a.external_booking_url?.trim() || bookingUrlFallback)
+    );
+    if (needsGate) {
+      throw new Error(
+        `"${needsGate.title}" would publish straight into BabyBrain checkout, but this vendor has no Stripe ` +
+        `payouts set up yet. Add an external booking link, leave it unpublished, or tick "Publish anyway" to ` +
+        `have BabyBrain settle it manually until they connect Stripe.`
+      );
+    }
   }
 
   const providerCoords = await geocode([input.postal_code, input.address, business_name]);
