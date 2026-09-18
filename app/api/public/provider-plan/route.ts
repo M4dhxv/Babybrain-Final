@@ -1,36 +1,26 @@
 import { NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
  * Public: whether a provider's current plan includes parent messaging.
- * Messaging is a Growth-and-above perk (see PLAN_META in the vendor app's
- * lib/plans.ts) — a Pay As You Grow vendor shouldn't be reachable via chat
- * on either side, so the parent app's "Chat with provider" / class group
- * chat buttons check this before opening.
  *
- * `subscriptions` RLS scopes reads to the provider's own members, so a
- * parent's browser can't read the row directly — this goes through the
- * service role and exposes only the derived boolean, never the row itself.
+ * Messaging is available on every tier, including Pay As You Grow (see
+ * PLAN_META in the vendor app's lib/plans.ts and the "Messaging is available
+ * on every tier" comment in frontends/vendor/src/layouts/PortalLayout.tsx) —
+ * it used to be a Growth-and-above perk, and this endpoint still enforced
+ * that old rule after messaging was opened up to every plan, which is why a
+ * Pay As You Grow vendor's "Chat with provider" button stayed disabled on
+ * the parent app even after the vendor had it enabled.
+ *
+ * Kept as an endpoint (rather than inlined as `true` on the parent side) so
+ * a future per-provider messaging toggle has one place to land.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const providerId = searchParams.get('providerId');
   if (!providerId) return NextResponse.json({ error: 'providerId required' }, { status: 400 });
 
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from('subscriptions')
-    .select('plan')
-    .eq('provider_id', providerId)
-    .maybeSingle();
-  // Legacy rows can still carry 'premium' from before the Plans page's
-  // pro/premium rename — treat it the same as 'pro' (see vendor lib/plans.ts).
-  const plan = data?.plan ?? 'free';
-  const canMessage = plan === 'growth' || plan === 'pro' || plan === 'premium';
-  // Public, and a provider's plan tier changes rarely — let Vercel's edge
-  // absorb repeat/concurrent lookups instead of hitting Supabase every time.
   return NextResponse.json(
-    { canMessage },
+    { canMessage: true },
     { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
   );
 }
