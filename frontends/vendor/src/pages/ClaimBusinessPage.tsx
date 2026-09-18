@@ -60,6 +60,7 @@ const REGION_LABELS: Record<string, string> = {
 
 const TERMS_URL = `${window.location.origin}${import.meta.env.BASE_URL}#/terms`;
 const PRIVACY_URL = `${TERMS_URL}#privacy`;
+const TOU_URL = `${TERMS_URL}#tou`;
 
 export default function ClaimBusinessPage() {
   const navigate = useNavigate();
@@ -599,19 +600,19 @@ export default function ClaimBusinessPage() {
                             className="mt-0.5"
                           />
                           <label htmlFor="claim-terms" className="cursor-pointer text-sm text-gray-700">
-                            You hereby acknowledge that you have read our{' '}
+                            I hereby acknowledge that I have read the{' '}
                             <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
-                              Terms &amp; Conditions
+                              Terms of Service
                             </a>
                             ,{' '}
-                            <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
+                            <a href={TOU_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
                               Terms of Use
                             </a>{' '}
                             and{' '}
                             <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-[#FA4D8D] underline">
                               Privacy Policy
                             </a>{' '}
-                            and confirm that you are in agreement with and legally bound by such terms, as
+                            and confirm that I am in agreement with and legally bound by such terms, as
                             modified from time to time.
                           </label>
                         </div>

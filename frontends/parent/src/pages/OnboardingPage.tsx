@@ -107,9 +107,9 @@ export default function OnboardingPage() {
   const [budgets, setBudgets] = useState<string[]>([]);
   const [kids, setKids] = useState<ChildDraft[]>([newChildDraft()]);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  /* QA 04/09: marketing consent at account creation. Optional and unticked by
-     default — it is a permission, not a condition of signing up, so it never
-     blocks the form (unlike the Terms checkbox above). */
+  /* Marketing consent at account creation (QA 04/09). Unticked by default, but
+     now required to sign up — it blocks the form like the Terms checkbox above.
+     That reverses the original "optional, never blocks" design. */
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +152,7 @@ export default function OnboardingPage() {
       if (k.interests.length === 0) return `Pick at least one interest for ${k.name.trim() || who.toLowerCase()}.`;
     }
     if (!acceptedTerms) return "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
+    if (!marketingConsent) return "Please agree to receive marketing communications from BabyBrain to continue.";
     return null;
   }
 
