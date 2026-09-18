@@ -2,7 +2,23 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
+import { getStreamServerClient } from '@/lib/stream';
 import { klaviyoEnabled, metricFor, trackEvent, upsertProfile } from '@/lib/klaviyo';
+
+/** Chat reply emails wait this long and are dropped if the message was read. */
+const CHAT_TYPES = new Set(['provider_message', 'provider_message_response']);
+const CHAT_EMAIL_DELAY_MS = 8 * 60 * 60 * 1000;
+
+async function chatMessageRead(channelId: unknown, userId: string, sentAt: Date): Promise<boolean> {
+  if (typeof channelId !== 'string') return false;
+  try {
+    const state = await getStreamServerClient().channel('messaging', channelId).query({ state: true, messages: { limit: 0 } });
+    const read = state.read?.find((r) => r.user.id === userId);
+    return !!read && new Date(read.last_read) >= sentAt;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Called by the on_notification_created pg_net trigger for every new
@@ -24,11 +40,26 @@ export async function POST(request: Request) {
 
   const { data: notification } = await admin
     .from('notifications')
-    .select('id, user_id, type, title, body, data, email_status')
+    .select('id, user_id, type, title, body, data, email_status, created_at')
     .eq('id', notificationId)
     .single();
   if (!notification || notification.email_status !== 'pending') {
     return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // Chat replies: hold the email until the message has sat unread for 8h.
+  // Left 'pending' while waiting; the hourly send_pending_chat_emails() cron
+  // re-posts them here once they're old enough.
+  if (CHAT_TYPES.has(notification.type)) {
+    const sentAt = new Date(notification.created_at);
+    if (Date.now() - sentAt.getTime() < CHAT_EMAIL_DELAY_MS) {
+      return NextResponse.json({ ok: true, deferred: true });
+    }
+    const chatData = (notification.data ?? {}) as EmailData;
+    if (await chatMessageRead(chatData.channel_id, notification.user_id, sentAt)) {
+      await admin.from('notifications').update({ email_status: 'skipped' }).eq('id', notificationId);
+      return NextResponse.json({ ok: true, skipped: true });
+    }
   }
 
   // Resolve the recipient. Parents live in parent_profiles; providers (and any
