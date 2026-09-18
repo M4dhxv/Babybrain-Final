@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
-  Pencil, Trash2, XCircle,
+  Pencil, Trash2, XCircle, Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -267,6 +267,10 @@ export default function BookingsPage() {
   // activity id -> wix_service_type, so the roster can tell whether the
   // selected session's activity is a Wix Event / COURSE (no Waitlist tab).
   const [activityWixType, setActivityWixType] = useState<Record<string, string | null>>({});
+  // Whether the session's activity mandates a medical disclosure question on
+  // booking (provider-level toggle, migration 00117) — gates whether the CSV
+  // export even offers a medical notes column.
+  const [activityRequiresMedical, setActivityRequiresMedical] = useState<Record<string, boolean>>({});
   const [sessionId, setSessionId] = useState<string>('');
   // No Waitlist tab for the currently-selected session when its activity is a
   // Wix Event / COURSE (00107). `bookingsTabs` stays the full list for
@@ -421,10 +425,11 @@ export default function BookingsPage() {
     (async () => {
       const { data: acts } = await supabase
         .from('activities')
-        .select('id, title, wix_service_type')
+        .select('id, title, wix_service_type, requires_medical_disclosure')
         .eq('provider_id', provider.id);
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
       setActivityWixType(Object.fromEntries((acts ?? []).map((a) => [a.id, a.wix_service_type])));
+      setActivityRequiresMedical(Object.fromEntries((acts ?? []).map((a) => [a.id, !!a.requires_medical_disclosure])));
       const ids = [...map.keys()];
       if (!ids.length) { setSessions([]); setLoading(false); return; }
       // Capped per activity, not globally — a single high-frequency
@@ -598,6 +603,60 @@ export default function BookingsPage() {
   const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
+
+  /* Export CSV — client spec: name / present / medical notes / skill level.
+     Medical notes only ever appears if the activity actually asks parents for
+     it (activities.requires_medical_disclosure); otherwise there's nothing to
+     toggle and the button exports straight away. */
+  const currentSessionRequiresMedical = !!activityRequiresMedical[sessionActivity[sessionId] ?? ''];
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [rememberExportChoice, setRememberExportChoice] = useState(false);
+  const csvCell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const csvSafeSegment = (v: string) => v.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'session';
+  // Scoped per activity, not global — a vendor running several
+  // medical-flagged activities may want notes on one and not another.
+  const medicalPrefKey = (activityId: string) => `bb_export_medical_pref_${activityId}`;
+
+  function downloadRosterCsv(includeMedical: boolean) {
+    if (!currentSession) return;
+    const activityId = sessionActivity[sessionId];
+    if (rememberExportChoice && activityId) {
+      try { localStorage.setItem(medicalPrefKey(activityId), includeMedical ? 'include' : 'exclude'); }
+      catch { /* private mode / quota — remembering the choice is best-effort */ }
+    }
+    const headers = ['Name', 'Present', ...(includeMedical ? ['Medical notes'] : []), 'Skill level'];
+    const rows = booked.map((r) => {
+      const att = attDraft[r.booking_id] ?? r.attendance_status;
+      const present = att === 'present' ? 'Yes' : att === 'absent' ? 'No' : 'Not marked';
+      const skill = r.skill_level ? r.skill_level[0].toUpperCase() + r.skill_level.slice(1) : '';
+      return [r.child_name, present, ...(includeMedical ? [r.medical_disclosure ?? ''] : []), skill];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const dateKey = sgDateKey(currentSession.starts_at);
+    const time = new Date(currentSession.starts_at)
+      .toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false })
+      .replace(':', '');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${csvSafeSegment(currentSession.title)}-${dateKey}-${time}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportDialogOpen(false);
+  }
+
+  function startExport() {
+    if (!currentSessionRequiresMedical) { downloadRosterCsv(false); return; }
+    const activityId = sessionActivity[sessionId];
+    let remembered: string | null = null;
+    try { remembered = activityId ? localStorage.getItem(medicalPrefKey(activityId)) : null; }
+    catch { /* private mode — fall through to asking */ }
+    if (remembered === 'include') { downloadRosterCsv(true); return; }
+    if (remembered === 'exclude') { downloadRosterCsv(false); return; }
+    setRememberExportChoice(false);
+    setExportDialogOpen(true);
+  }
   // The capacity readout (unlike `booked` above) has to count every held
   // seat, including 'pending' — see lib/wixCapacity.ts, which this and
   // Dashboard/Schedule all now share. The Wix side is shown as "held/n on
@@ -1554,6 +1613,13 @@ export default function BookingsPage() {
                   <X className="w-4 h-4 text-red-600" /><span className="text-sm font-medium text-red-700">Absent {absentCount}</span>
                 </div>
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
+                <button
+                  onClick={startExport}
+                  disabled={booked.length === 0}
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" /> Export CSV
+                </button>
               </div>
               {/* Absent families get a make-up token from this roster, so the
                   expiry has to be settable here too. */}
@@ -1618,6 +1684,45 @@ export default function BookingsPage() {
           )}
         </div>
       </div>
+
+      {/* Only shown when this activity mandates medical disclosure — otherwise
+          there's nothing to toggle and startExport() skips straight to the
+          download. */}
+      {exportDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-lg">
+            <h3 className="text-sm font-semibold text-gray-900">Include medical notes?</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              This activity asks parents for medical disclosures. Include them as a column in the exported CSV?
+            </p>
+            <label className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+              <Checkbox
+                className="data-[state=checked]:bg-[#FA4D8D]"
+                checked={rememberExportChoice}
+                onCheckedChange={(v) => setRememberExportChoice(!!v)}
+              />
+              Remember my choice for this activity
+            </label>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button onClick={() => downloadRosterCsv(true)} className="w-full gradient-primary text-white rounded-xl hover:opacity-90">
+                Include medical notes
+              </Button>
+              <button
+                onClick={() => downloadRosterCsv(false)}
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Export without medical notes
+              </button>
+              <button
+                onClick={() => setExportDialogOpen(false)}
+                className="w-full text-xs font-medium text-gray-400 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
