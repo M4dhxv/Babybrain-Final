@@ -390,11 +390,7 @@ export default function ActivitiesPage() {
   }
 
   const [locations, setLocations] = useState<{ id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]>([]);
-  /* Active team members, for the session "Teacher" dropdown. `name` is what
-     gets written into activity_sessions.teacher_name (still a plain text
-     column) — so every place that just shows the name keeps working, and a
-     session taught by someone no longer on the team keeps their name. */
-  const [teamMembers, setTeamMembers] = useState<{ name: string }[]>([]);
+
   const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [bookingTotals, setBookingTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -891,29 +887,15 @@ export default function ActivitiesPage() {
   async function load() {
     if (!provider) return;
     setLoading(true);
-    const [{ data: acts }, { data: cats }, { data: locs }, { data: members }, { data: memberProfiles }] = await Promise.all([
+    const [{ data: acts }, { data: cats }, { data: locs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
       supabase.from('provider_locations').select('id, name, address, postal_code, latitude, longitude').eq('provider_id', provider.id).order('is_primary', { ascending: false }),
-      supabase.from('provider_members').select('user_id, invited_email').eq('provider_id', provider.id).eq('status', 'active'),
-      supabase.from('provider_member_profiles').select('user_id, full_name').eq('provider_id', provider.id),
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
     setLocations((locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]);
 
-    /* Merge the members list with their profile names (no FK between the two
-       tables, so it's two reads joined here). Falls back to the invited
-       email, de-dupes, and sorts for a stable dropdown. */
-    const nameByUser = new Map((memberProfiles ?? []).map((p) => [p.user_id, p.full_name]));
-    const memberNames = [
-      ...new Set(
-        (members ?? [])
-          .map((m) => (nameByUser.get(m.user_id) || m.invited_email || '').trim())
-          .filter(Boolean)
-      ),
-    ].sort((a, b) => a.localeCompare(b));
-    setTeamMembers(memberNames.map((name) => ({ name })));
 
     // Upcoming session counts + total booking counts per activity.
     const ids = (acts ?? []).map((a) => a.id);
@@ -1431,21 +1413,6 @@ export default function ActivitiesPage() {
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
   // Mobile: full-width so the filter selects stack the same size; inline from sm up.
   const filterSelCls = 'w-full max-w-xs px-3 py-2 text-gray-700 sm:w-auto sm:max-w-none';
-
-  /* Options for a session "Teacher" <SelectField>: N/A, then one per active
-     team member. `current` keeps a value that isn't a current member
-     (an external teacher, or someone since removed) selectable rather than
-     silently dropping it. */
-  const teacherOptions = (current: string) => {
-    const known = new Set(teamMembers.map((m) => m.name));
-    return [
-      <Opt key="__na" value="">N/A</Opt>,
-      ...teamMembers.map((m) => <Opt key={m.name} value={m.name}>{m.name}</Opt>),
-      ...(current && !known.has(current)
-        ? [<Opt key="__ext" value={current}>{current} (not on team)</Opt>]
-        : []),
-    ];
-  };
 
   return (
     <div className="relative">
@@ -2512,9 +2479,7 @@ export default function ActivitiesPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>
-                  <SelectField className={inputCls} value={sessForm.teacher} onChange={(v) => setSessForm({ ...sessForm, teacher: v })} aria-label="Session teacher">
-                    {teacherOptions(sessForm.teacher)}
-                  </SelectField>
+                  <input placeholder="e.g. Ms Tan" className={inputCls} value={sessForm.teacher} onChange={(e) => setSessForm({ ...sessForm, teacher: e.target.value })} aria-label="Session teacher" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Studio / room (leave blank if N/A)</label>
@@ -2703,9 +2668,7 @@ export default function ActivitiesPage() {
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Teacher</span>
-                          <SelectField className={inputCls} value={sessEditForm.teacher} onChange={(v) => setSessEditForm({ ...sessEditForm, teacher: v })} aria-label="Session teacher">
-                            {teacherOptions(sessEditForm.teacher)}
-                          </SelectField>
+                          <input placeholder="e.g. Ms Tan" className={inputCls} value={sessEditForm.teacher} onChange={(e) => setSessEditForm({ ...sessEditForm, teacher: e.target.value })} aria-label="Session teacher" />
                         </label>
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
                         <label className="block">
