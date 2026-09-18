@@ -234,14 +234,14 @@ const T: Record<string, Template> = {
       p('We hope your family enjoys it!') +
       sign),
 
-  // Fired only when a VENDOR cancels a class and a make-up token gets
-  // issued as compensation (public.compensate_cancelled_booking, gated on
-  // cancelled_by is not null) — distinct from the generic booking_cancelled
-  // notification, which fires for any cancellation including a parent's own.
+  // Fired when a VENDOR cancels a booking (public.notify_booking_cancelled,
+  // gated on cancelled_by is not null) — the only cancellation that emails the
+  // parent; their own cancel keeps an in-app notice but sends no email. Names
+  // the child (child_name) when the seat had one.
   class_cancelled: (d, ctx) =>
     wrap(ctx, 'Unfortunately your class has been cancelled 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your class')} has been cancelled. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
+      p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your class')} has been cancelled${str(d, 'child_name') ? ` for ${bold(str(d, 'child_name') as string)}` : ''}. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
