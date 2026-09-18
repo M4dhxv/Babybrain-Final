@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getStripe, LIVE_STATUSES, periodEndIso } from '@/lib/stripe';
+import { getStripe, LIVE_STATUSES } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
-import { dbStatus } from '@/lib/plans';
 import { stripeConfig } from '@/lib/stripe-config';
 import { renewalTerms } from '@/lib/subscription-terms';
 
@@ -95,12 +94,13 @@ export async function POST(request: Request) {
 
   // Ensure a row exists carrying the customer id (so the billing portal works
   // even before the first webhook lands). Keeps plan/status at their defaults.
+  // `billing_interval` is deliberately NOT written here: a parent who already
+  // has Plus and asks for the other interval only changes it once they confirm
+  // on Stripe (the webhook records it), so writing the request now would leave
+  // this saying "annual" while Stripe still bills monthly if they back out.
   await admin
     .from('customer_subscriptions')
-    .upsert(
-      { user_id: user.id, stripe_customer_id: customerId, billing_interval: billing },
-      { onConflict: 'user_id' }
-    );
+    .upsert({ user_id: user.id, stripe_customer_id: customerId }, { onConflict: 'user_id' });
 
   // What does Stripe think this parent already has? Asked of Stripe rather
   // than of `customer_subscriptions.plan`, which is only written once the
@@ -129,31 +129,65 @@ export async function POST(request: Request) {
 
     // Same Plus tier, different billing interval (or a legacy inline price
     // from before the Product catalog existed). Move it on the subscription
-    // they already have: a 409 here was a dead end, because the parent
-    // billing portal runs on Stripe's default configuration where
-    // `subscription_update` is disabled, so monthly ⇄ annual was impossible
-    // from either side.
-    const item = current.items.data[0];
-    const updated = await stripe.subscriptions.update(current.id, {
-      items: [{ id: item.id, price: priceId }],
-      proration_behavior: 'create_prorations',
-      metadata: { ...current.metadata, user_id: user.id, billing },
-    });
+    // they already have — but via Stripe's own confirmation screen, never by
+    // calling the Subscriptions API from here. That call changed what the
+    // parent pays on a single click, with no screen saying the new price
+    // renews until cancelled (QA 09/09: "when changing subscription plan,
+    // you should always have to go via stripe where it notifies that payment
+    // is recurring... sometimes it just updates by clicking CTA"), and the
+    // caller got `{ switched: true }` with no `url`, which the pages read as
+    // a failed checkout. The vendor route was fixed the same way; this one
+    // was missed.
+    //
+    // `subscription_update_confirm` needs the parent portal configuration
+    // (Plus monthly ⇄ annual, from `npm run stripe:portal`) — Stripe's default
+    // one has `subscription_update` disabled. If it isn't set up we refuse
+    // rather than fall back to a silent update. Nothing is written to
+    // `customer_subscriptions` here: the webhook does that once Stripe
+    // reports the change, reading the interval off the new price.
+    const parentConfigurationId = (await stripeConfig(admin, ['stripe_parent_portal_configuration_id']))
+      .stripe_parent_portal_configuration_id;
+    if (!parentConfigurationId) {
+      return NextResponse.json(
+        { error: "Switching your billing period isn't available right now. Please contact support." },
+        { status: 500 }
+      );
+    }
 
-    await admin
-      .from('customer_subscriptions')
-      .update({
-        plan: 'plus',
-        billing_interval: billing,
-        stripe_subscription_id: updated.id,
-        status: dbStatus(updated.status) as never,
-        current_period_end: periodEndIso(updated),
-        cancel_at_period_end: updated.cancel_at_period_end,
-      })
-      .eq('user_id', user.id);
-
-    return NextResponse.json({ switched: true, billing, duplicates: live.length - 1 });
+    const origin = appOrigin(request);
+    try {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        configuration: parentConfigurationId,
+        flow_data: {
+          type: 'subscription_update_confirm',
+          subscription_update_confirm: {
+            subscription: current.id,
+            items: [{ id: current.items.data[0].id, price: priceId, quantity: 1 }],
+          },
+          after_completion: {
+            type: 'redirect',
+            redirect: { return_url: `${origin}/profile?tab=settings&billing=switched` },
+          },
+        },
+      });
+      return NextResponse.json({ url: portal.url });
+    } catch (e) {
+      // The configuration only lists the current Plus prices, so a
+      // subscription still on an older inline price (from before the Product
+      // catalog) is one Stripe won't let the portal switch. A readable message
+      // beats a bare 500 — support can move that one by hand.
+      console.error('[customer subscription] portal switch failed', (e as Error).message);
+      return NextResponse.json(
+        { error: "We couldn't open the plan change screen for your subscription. Please contact support." },
+        { status: 400 }
+      );
+    }
   }
+
+  // A brand-new subscription: record the interval being bought, as the ensure-
+  // row write above used to.
+  await admin.from('customer_subscriptions').update({ billing_interval: billing }).eq('user_id', user.id);
 
   const origin = appOrigin(request);
   const session = await stripe.checkout.sessions.create({

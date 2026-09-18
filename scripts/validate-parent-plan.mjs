@@ -168,28 +168,34 @@ try {
   check('…and no second subscription is created', (await liveSubs(customerId)).length === 1,
     `${(await liveSubs(customerId)).length} live`);
 
-  // --- 4. Monthly → annual switches in place, no second subscription ---
+  // --- 4. Monthly → annual goes via Stripe's own confirmation screen ---
+  // Never a silent update (QA 09/09): nothing about the subscription changes
+  // until the parent confirms on Stripe, which says the new price renews
+  // until cancelled. The route just hands back a billing-portal link.
   const toAnnual = await subscribe('annual');
-  check('Switching to annual switches in place (no checkout redirect)',
-    toAnnual.body?.switched === true && !toAnnual.body?.url, JSON.stringify(toAnnual.body));
+  check('Switching to annual sends the parent to Stripe, not a silent update',
+    String(toAnnual.body?.url ?? '').startsWith('https://billing.stripe.com/') && !toAnnual.body?.switched,
+    JSON.stringify(toAnnual.body));
   check('Still exactly one live subscription', (await liveSubs(customerId)).length === 1,
     `${(await liveSubs(customerId)).length} live`);
+  const afterAsk = (await liveSubs(customerId))[0];
+  check('Asking to switch does not change what they pay yet',
+    afterAsk.items.data[0]?.price?.id === MONTHLY, afterAsk.items.data[0]?.price?.id);
+  check('…nor the interval the database records (webhook writes it once confirmed)',
+    (await row())?.billing_interval !== 'annual', (await row())?.billing_interval);
 
-  const afterAnnual = (await liveSubs(customerId))[0];
-  check('It is now billing the annual Plus price', afterAnnual.items.data[0]?.price?.id === ANNUAL,
-    afterAnnual.items.data[0]?.price?.id);
-  check('Its metadata moved to annual too', afterAnnual.metadata?.billing === 'annual', afterAnnual.metadata?.billing);
-  const annualRow = await row();
-  check('Database billing_interval says annual', annualRow?.billing_interval === 'annual', annualRow?.billing_interval);
-  check('…and the plan is still Plus', annualRow?.plan === 'plus', annualRow?.plan);
-
-  // --- 5. …and back again ---
-  const toMonthly = await subscribe('monthly');
-  check('Switching back to monthly switches in place', toMonthly.body?.switched === true, JSON.stringify(toMonthly.body));
-  check('It is back on the monthly Plus price',
-    (await liveSubs(customerId))[0].items.data[0]?.price?.id === MONTHLY,
-    (await liveSubs(customerId))[0].items.data[0]?.price?.id);
-  check('Database billing_interval says monthly', (await row())?.billing_interval === 'monthly', (await row())?.billing_interval);
+  // --- 5. Once confirmed on Stripe, the other direction works the same way ---
+  // Stand in for the confirmation click by moving the price the way Stripe's
+  // own screen would, then put it back so the later steps see monthly.
+  const itemId = monthlySub.items.data[0].id;
+  await stripe.subscriptions.update(monthlySub.id, { items: [{ id: itemId, price: ANNUAL }], proration_behavior: 'none' });
+  const backToMonthly = await subscribe('monthly');
+  check('From annual, switching back to monthly is also via Stripe',
+    String(backToMonthly.body?.url ?? '').startsWith('https://billing.stripe.com/') && !backToMonthly.body?.switched,
+    JSON.stringify(backToMonthly.body));
+  const sameAnnual = await subscribe('annual');
+  check('…and asking for the interval they now hold is refused', sameAnnual.r.status === 409, `HTTP ${sameAnnual.r.status}`);
+  await stripe.subscriptions.update(monthlySub.id, { items: [{ id: itemId, price: MONTHLY }], proration_behavior: 'none' });
 
   // --- 6. The webhook's last-one-standing rule, parent side ---
   // Trialing, like the one above: Stripe refuses to create a subscription
