@@ -1178,12 +1178,19 @@ export const REGION_LABELS: Record<SgRegion, string> = {
 export const regionLabel = (r: string | null | undefined) =>
   (r && REGION_LABELS[r as SgRegion]) || '';
 
-/** "45 min" / "1h 30m" from a duration in minutes. Over a day is blank: that is
- *  a multi-day camp Wix sent as one continuous occurrence, and "72h" is not how
- *  long anyone attends. The search RPC already nulls it; this covers cards built
- *  from raw session rows. */
+/** "45 min" / "1h 30m" from a duration in minutes. A whole number of days — a
+ *  camp Wix sends as one midnight-to-midnight occurrence — reads as "3 days"
+ *  rather than "72h", which is not how anyone thinks of it. Any other length
+ *  over a day (40 hours, say) is blank: it is a span, and reading it as hours
+ *  or as days would both mislead. */
 export function formatDuration(mins: number | null | undefined): string {
-  if (!mins || mins <= 0 || mins > 24 * 60) return '';
+  if (!mins || mins <= 0) return '';
+  const DAY = 24 * 60;
+  if (mins >= DAY) {
+    if (mins % DAY !== 0) return '';
+    const d = mins / DAY;
+    return `${d} ${d === 1 ? 'day' : 'days'}`;
+  }
   if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

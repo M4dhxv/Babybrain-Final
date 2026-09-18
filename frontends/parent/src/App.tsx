@@ -1749,11 +1749,13 @@ function ActivityDetailPage() {
   }
 
   const next = sessions[0];
-  // A session over a day is a whole camp run, not a class length.
-  const durationMins =
-    next && !isMultiDay(next.starts_at, next.ends_at)
-      ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
-      : null;
+  const nextMins = next
+    ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
+    : null;
+  // "Each session runs about N minutes" only makes sense for a single class; a
+  // multi-day camp is one continuous occurrence and reads as days in the sidebar.
+  const durationMins = next && !isMultiDay(next.starts_at, next.ends_at) ? nextMins : null;
+  const multiDayNext = !!next && isMultiDay(next.starts_at, next.ends_at);
   // A course's run span — Wix's schedule bounds when known, else first/last
   // visible session (future-only, so it can understate a mid-run course).
   const courseRunRange =
@@ -2148,10 +2150,12 @@ function ActivityDetailPage() {
                   <span className="text-right text-[#A7D8F8]">{next.capacity > 0 ? `${next.capacity} spots` : "Sold out"}</span>
                 </p>
               )}
-              {durationMins != null && activity.wix_service_type !== "COURSE" && (
+              {/* A weekly course's sessions have no single "duration" worth showing, but a
+                  multi-day camp's length in days is exactly what a parent wants. */}
+              {nextMins != null && (activity.wix_service_type !== "COURSE" || multiDayNext) && formatDuration(nextMins) && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Duration</strong>
-                  <span className="text-right">{formatDuration(durationMins)}</span>
+                  <span className="text-right">{formatDuration(nextMins)}</span>
                 </p>
               )}
             </div>

@@ -647,9 +647,12 @@ export function toCard(
   }
 ) {
   // `search_activities` derives this server-side; here it comes off whichever
-  // session has both ends, matching the RPC's definition — minus anything over
-  // a day, which is a whole camp run rather than a class length.
-  const timed = (a.activity_sessions ?? []).find((s) => s.starts_at && s.ends_at && !isMultiDay(s.starts_at, s.ends_at));
+  // session has both ends, matching the RPC's definition — minus the whole-run
+  // bookkeeping row ('wixcourse:…'), whose span is the entire course.
+  // formatDuration decides how a long one reads ("3 days") or hides it.
+  const timed = (a.activity_sessions ?? []).find(
+    (s) => s.starts_at && s.ends_at && !(s.wix_slot_key ?? "").startsWith("wixcourse:")
+  );
   const durationMins = timed
     ? Math.round((new Date(timed.ends_at as string).getTime() - new Date(timed.starts_at).getTime()) / 60000)
     : null;
