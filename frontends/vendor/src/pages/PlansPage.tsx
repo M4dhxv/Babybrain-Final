@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Star, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -98,7 +98,7 @@ const features = [
 
 export default function PlansPage() {
   const navigate = useNavigate();
-  const { session, provider, subscription, refreshProvider, signOut } = useAuth();
+  const { session, provider, subscription, signOut } = useAuth();
   // Legacy DB rows can carry the old 'premium' value for what the UI now
   // calls the top tier ('pro' planKey), and the free tier's planKey is `null`
   // rather than 'free' — normalize both sides before comparing. Only treat a
@@ -109,17 +109,6 @@ export default function PlansPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<{ plan: string; message: string } | null>(null);
-  const [switched, setSwitched] = useState<string | null>(null);
-  // "Done — you're on X now." used to render forever once set — nothing ever
-  // cleared it, so it sat under the button until the vendor navigated away.
-  // It's a one-time confirmation, not a status: auto-dismiss it after a
-  // while, and cancel any pending dismiss if another switch starts first so
-  // a fast second switch can't have its own confirmation cut short by the
-  // first one's leftover timer.
-  const switchedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (switchedTimeoutRef.current) clearTimeout(switchedTimeoutRef.current);
-  }, []);
   const [optedOut, setOptedOut] = useState(false);
   const [optOutOpen, setOptOutOpen] = useState(false);
   const [optOutName, setOptOutName] = useState('');
@@ -187,36 +176,27 @@ export default function PlansPage() {
 
     // "Pay as you grow" (planKey null) is commission-only — no Stripe price to
     // move to. For a vendor not paying for anything there's nothing to change
-    // here, so Billing (turn on payouts) is the right place. For a paid vendor
-    // it's a real downgrade, handled in place exactly like a paid tier switch:
-    // the API cancels the subscription, we refetch — no Stripe redirect.
+    // here, so Billing (turn on payouts) is the right place.
     const target: 'growth' | 'pro' | 'free' = planKey ?? 'free';
     if (target === 'free' && !isPaid) { navigate('/billing'); return; }
 
-    // A real tier change moves money, so say what will happen before doing it.
-    const confirmMsg =
-      target === 'free'
-        ? `Move to ${PLAN_META.free.label}? Your paid features end now, Stripe credits the unused part of this billing period to your account, and bookings move to ${PLAN_META.free.commission} with no monthly fee.`
-        : target === 'growth'
-          ? `Move down to the ${tierName('growth')} plan? Stripe will credit the unused part of your current plan against your next invoice.`
-          : `Move up to the ${tierName('pro')} plan? Stripe will charge the difference for the rest of this billing period.`;
-    if (isPaid && !window.confirm(confirmMsg)) return;
-
+    // Every plan change — upgrade, downgrade, or cancelling to free — now
+    // always returns a Stripe-hosted URL: the API never moves an existing
+    // subscription itself, it deep-links into the Billing Portal's own
+    // confirmation screen for that specific change (subscription_update_confirm
+    // or subscription_cancel), which is where the recurring-payment /
+    // proration terms actually get shown and have to be accepted. QA 09/09:
+    // "when changing subscription plan, you should always have to go via
+    // stripe... sometimes it just updates by clicking CTA" — this used to
+    // update the subscription in place behind a plain `window.confirm()`.
     setCheckoutError(null);
-    setSwitched(null);
-    if (switchedTimeoutRef.current) clearTimeout(switchedTimeoutRef.current);
     setCheckoutBusy(target);
     try {
-      const { url, switched: didSwitch } = await apiPost<{ url?: string; switched?: boolean }>(
+      const { url } = await apiPost<{ url?: string }>(
         '/api/vendor/stripe/subscription',
         { provider_id: provider.id, plan: target }
       );
-      if (didSwitch) {
-        // Changed on the subscription they already have — no Stripe redirect.
-        await refreshProvider();
-        setSwitched(target);
-        switchedTimeoutRef.current = setTimeout(() => setSwitched(null), 40000);
-      } else if (url) {
+      if (url) {
         window.location.href = url;
       } else {
         setCheckoutError({ plan: target, message: 'Could not start checkout — please try again.' });
@@ -413,16 +393,6 @@ export default function PlansPage() {
                 </Button>
                 {checkoutError?.plan === (plan.planKey ?? 'free') && (
                   <p className="mt-2 text-xs font-medium text-red-400">{checkoutError.message}</p>
-                )}
-                {/* Tied to isCurrentPlan rather than the raw clicked key, so it can
-                    only ever land on the card that's actually current — the plan
-                    just switched to is normally the same card, but this way a
-                    switch that's already stale (subscription re-fetched to
-                    something else) can't leave the confirmation on the wrong box. */}
-                {switched !== null && isCurrentPlan(plan.planKey) && (
-                  <p className="mt-2 text-xs font-medium text-green-700">
-                    Done — you're on {plan.name.charAt(0) + plan.name.slice(1).toLowerCase()} now.
-                  </p>
                 )}
               </div>
             );

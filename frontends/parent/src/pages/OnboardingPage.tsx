@@ -169,7 +169,7 @@ export default function OnboardingPage() {
   }
 
   /** Step 2. Create the account (once), then either drop the parent into their
-   *  matches on Free, or hand off to Stripe Checkout for the Plus trial. */
+   *  matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
   async function submit(plan: "free" | "plus") {
     setBusy(true);
     setError(null);
@@ -271,7 +271,7 @@ export default function OnboardingPage() {
     }
 
     if (plan === "plus") {
-      // Hand off to Stripe Checkout for the Plus trial (same call PricingPage
+      // Hand off to Stripe Checkout to start Plus (same call PricingPage
       // uses). On any failure the parent stays signed up on Free — surface it
       // rather than dead-ending the sign-up.
       try {
@@ -464,7 +464,7 @@ export default function OnboardingPage() {
             ← Back
           </button>
           <h1 className="mt-2 text-[26px] font-black">Choose your <span className="text-baby-pink">plan</span></h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">Start free, or unlock everything with Plus — your first month is on us. Change or cancel any time from your profile.</p>
+          <p className="mt-1 text-sm font-semibold text-[#44507b]">Start free, or unlock everything with Plus. Change or cancel any time from your profile.</p>
 
           <div className="mx-auto mt-4 grid h-11 max-w-[340px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 text-sm font-black">
             <button
@@ -499,10 +499,10 @@ export default function OnboardingPage() {
               <h2 className="mt-3 text-xl font-black">Plus</h2>
               <p className="mt-1">
                 <span className="text-sm font-black text-[#68718f]">SGD </span>
-                <span className="text-[32px] font-black text-baby-lilac">{billing === "monthly" ? "9" : "99"}</span>
+                <span className="text-[32px] font-black text-baby-lilac">{billing === "monthly" ? "15" : "165"}</span>
                 <span className="font-bold text-[#68718f]"> {billing === "monthly" ? "/mo" : "/yr"}</span>
               </p>
-              <p className="text-sm font-black text-baby-pink">Get your first month free!</p>
+              <p className="text-sm font-black text-baby-pink">Cancel any time</p>
               <ul className="mt-3 space-y-1.5 text-sm font-semibold text-[#44507b]">
                 {PLUS_PLAN_ITEMS.map((item) => (
                   <li key={item} className="flex gap-2">
@@ -538,8 +538,13 @@ export default function OnboardingPage() {
           </div>
 
           <p className="mt-4 text-center text-xs font-semibold text-[#6D748A]">
+            {/* QA 06/09 (vendor ticket, same root cause on the parent side):
+                this used to promise "You won't be charged today... after the
+                free month" — false since 9fd57da removed the free period, the
+                first charge happens on sign-up. Fixed to say what actually
+                happens. */}
             {selectedPlan === "plus"
-              ? `You won't be charged today. After the free month, Plus auto-renews ${billing === "monthly" ? "monthly at SGD 9" : "yearly at SGD 99"} until you cancel. By continuing you agree to our `
+              ? `You'll be charged today and Plus auto-renews ${billing === "monthly" ? "monthly at SGD 15" : "yearly at SGD 165"} until you cancel. By continuing you agree to our `
               : "By continuing you agree to our "}
             <a href="/terms" target="_blank" rel="noreferrer" className="text-palette-blue underline">Terms &amp; Conditions</a>.
           </p>
@@ -560,7 +565,7 @@ export default function OnboardingPage() {
           {busy
             ? "Setting up…"
             : selectedPlan === "plus"
-              ? "Start my free month of Plus →"
+              ? "Start Plus →"
               : "Create my account →"}
         </Button>
 

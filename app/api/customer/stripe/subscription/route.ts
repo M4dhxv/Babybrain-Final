@@ -12,8 +12,9 @@ import { renewalTerms } from '@/lib/subscription-terms';
  *   GET  → the caller's current plan state (free/plus + status/renewal).
  *   POST → a Stripe Checkout URL to start Plus. Body: { billing?: 'monthly' | 'annual' }
  *
- * Pricing (SGD, from the Plans deck): Plus is 9/mo or 99/yr, first month free
- * (30-day trial). Prices are real Stripe Price objects (stripe_plus_price_id /
+ * Pricing (SGD, from the Plans deck): Plus is 15/mo or 165/yr (raised from
+ * 9/99, QA 06/09). No free period — the first period is charged on sign-up,
+ * see 9fd57da. Prices are real Stripe Price objects (stripe_plus_price_id /
  * _annual in app_config) rather than inline price_data, so they show up in
  * the Stripe Dashboard's own Product catalog and can be managed from there.
  * GST is billed separately once Stripe Tax is configured.

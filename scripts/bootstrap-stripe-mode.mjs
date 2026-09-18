@@ -57,7 +57,15 @@ const CURRENCY = 'sgd';
 // follow the page — a Premium subscriber reads as "Premium" on their invoice —
 // so do NOT "tidy" these to match the plan keys.
 const CATALOG = [
-  { plan: 'plus', product: 'Plus', monthly: 900, annual: 9900 },
+  // Raised from 900/9900 (SGD 9/99) to 1500/16500 (SGD 15/165) — QA 06/09:
+  // "increase the cost of the parents paid subscription... to 15 SDG per
+  // month or 165 a year." Existing Plus subscribers keep whichever Price
+  // object their subscription already references — Stripe never changes a
+  // live subscription's price out from under it — so this only takes effect
+  // for checkouts started after the new Price is created (idempotent match is
+  // on exact unit_amount, so the old 900/9900 prices are left alone, not
+  // edited in place).
+  { plan: 'plus', product: 'Plus', monthly: 1500, annual: 16500 },
   { plan: 'growth', product: 'Pro', monthly: 9900, annual: 108900 },
   { plan: 'pro', product: 'Premium', monthly: 19900, annual: 218900 },
 ];

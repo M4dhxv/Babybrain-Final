@@ -55,7 +55,12 @@ export default function PricingPage() {
   // sign-up plan step so the two can't drift the way they used to.
   const freeItems = FREE_PLAN_ITEMS;
   const plusItems = PLUS_PLAN_ITEMS;
-  const plusPrice = billing === "monthly" ? "9" : "99";
+  // QA 06/09: "increase the cost of the parents paid subscription... to 15
+  // SDG per month or 165 a year" (raised from 9/99). The actual Stripe Price
+  // this checkout uses comes from app_config (stripe_plus_price_id /
+  // _annual, see scripts/bootstrap-stripe-mode.mjs) — keep this display in
+  // step with whatever that catalog currently prices Plus at.
+  const plusPrice = billing === "monthly" ? "15" : "165";
   const plusPeriod = billing === "monthly" ? "/mo" : "/yr";
 
   return (
@@ -134,7 +139,11 @@ export default function PricingPage() {
               <span className="text-[44px] font-black text-baby-lilac">{plusPrice}</span>
               <span className="font-bold text-[#68718f]"> {plusPeriod}</span>
             </p>
-            <p className="mt-1 text-center text-sm font-black text-baby-pink">Get your first month free!</p>
+            {/* Used to say "Get your first month free!" here — there is no
+                free period any more (see the checkout route's doc comment /
+                commit 9fd57da), and the disclosure below already covers
+                renewal + cancellation, so this line is just removed rather
+                than replaced. */}
             <div className="my-5 border-t border-[#F4EFF0]" />
             <div className="space-y-3">
               {plusItems.map((item) => (
@@ -162,7 +171,7 @@ export default function PricingPage() {
                     : "Upgrade to Plus"}
             </Button>
             <p className="mt-3 text-center text-xs font-semibold text-[#6D748A]">
-              Auto-renews {billing === "monthly" ? "monthly" : "yearly"} after the free month. Cancel any time from your profile.
+              Charged today and auto-renews {billing === "monthly" ? "monthly" : "yearly"}. Cancel any time from your profile.
               {" "}By subscribing you agree to our{" "}
               <a href="/terms" className="text-palette-blue underline">Terms &amp; Conditions</a>.
             </p>

@@ -5,17 +5,18 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { vendorPageUrl } from '@/lib/cors';
 import { stripeConfig } from '@/lib/stripe-config';
-import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
+import { PAID_PLANS, planLabel, type PaidPlan } from '@/lib/plans';
 
 /**
  * Start, move between, or cancel a paid subscription — Growth or Pro — for a
  * provider. `plan: 'free'` downgrades to the commission-only "Pay as you
  * grow" tier, i.e. cancels. Owner-only.
  *
- * Returns one of:
- *   { url }                          → send the browser to Stripe Checkout (first-time)
- *   { switched: true, plan }         → the existing subscription was moved in place
- *   { switched: true, plan: 'free' } → the existing subscription(s) were canceled
+ * Returns `{ url }` in every case — first-time subscribe, a tier switch, or a
+ * downgrade-to-free cancellation all send the browser to a Stripe-hosted
+ * screen. Nothing here mutates a subscription the vendor already has: only
+ * Stripe's own confirmation flow does that, and only the webhook writes the
+ * result to `subscriptions` once Stripe reports it.
  *
  * QA 23/08: "If you are already on the Pro plan, you shouldn't be able to get
  * to stripe payment to upgrade to the plan you are already on." The row
@@ -28,18 +29,24 @@ import { PAID_PLANS, dbStatus, planLabel, type PaidPlan } from '@/lib/plans';
  *
  * So this route now:
  *  - refuses a checkout for the plan the vendor already holds (409);
- *  - moves an existing live subscription between tiers *in place*, with
- *    proration, rather than stacking a second one;
+ *  - for an existing live subscription, deep-links into the Billing Portal's
+ *    `subscription_update_confirm` (tier switch) or `subscription_cancel`
+ *    (downgrade to free) flow for that specific subscription, rather than
+ *    calling the Subscriptions API ourselves. QA 09/09: "when changing
+ *    subscription plan, you should always have to go via stripe where it
+ *    notifies that payment is recurring... sometimes it just updates by
+ *    clicking CTA" — that "sometimes" was every switch, since the old code
+ *    called `stripe.subscriptions.update()` directly behind a
+ *    `window.confirm()` and never showed Stripe's own screen at all;
  *  - only grants the free trial to a genuinely first-time subscriber. It used
  *    to be applied unconditionally, so every repeat checkout and every
  *    upgrade restarted a 30-day free trial — which is why all nine of those
  *    subscriptions were still `trialing` and none had ever been charged.
+ *    (Superseded below: there is no free trial left at all, see 9fd57da.)
  *
- * Pre-existing duplicates are NOT cleaned up by a paid-tier switch —
- * cancelling someone's subscription is not a side effect a plan click should
- * have there. Use `npm run stripe:dedupe` for that. A `plan: 'free'`
- * downgrade is the one exception: it means "I want to pay for nothing", so it
- * cancels every live subscription the customer has, not just the newest.
+ * Pre-existing duplicates are NOT reachable from either flow, which only
+ * targets the one subscription that actually holds the vendor's plan slot
+ * (the oldest live one). Use `npm run stripe:dedupe` for those.
  */
 
 /** Stripe statuses that mean "this subscription still occupies the vendor's plan slot". */
@@ -66,46 +73,52 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const stripe = getStripe();
 
-  // Downgrade to "Pay as you grow": end the paid subscription now, the same
-  // way a paid tier switch moves in place — no Stripe Checkout, no redirect.
-  // Unlike a tier switch there's no price to move to, so this cancels
-  // instead of updating; `prorate: true` credits the unused part of the
-  // current period to the customer's balance, mirroring the "Stripe credits
-  // the unused part against your next invoice" wording a growth/pro downgrade
-  // already gives.
+  // Downgrade to "Pay as you grow": end the paid subscription. A
+  // cancellation is money stopping rather than moving, but it's still a
+  // change the vendor has to confirm on Stripe's own screen, not ours — see
+  // the file doc comment. `subscription_cancel` deep-links straight into the
+  // portal's cancellation flow (with the reason-collection screen already
+  // configured, see scripts/setup-stripe-portal.mjs) for the subscription
+  // that actually holds the plan slot; the DB row is left alone here and
+  // updated only once the webhook confirms the cancellation actually happened
+  // — a vendor who opens the flow and backs out must not be recorded as free.
   if (plan === 'free') {
     const { data: sub } = await admin
       .from('subscriptions')
       .select('stripe_customer_id')
       .eq('provider_id', providerId)
       .maybeSingle();
-
-    let canceled = 0;
-    if (sub?.stripe_customer_id) {
-      const existing = await stripe.subscriptions.list({
-        customer: sub.stripe_customer_id,
-        status: 'all',
-        limit: 100,
-      });
-      // Cancel every live subscription, not just the newest — a vendor could
-      // otherwise still hold a duplicate after "downgrading".
-      const live = existing.data.filter((s) => LIVE_STATUSES.includes(s.status));
-      for (const s of live) {
-        await stripe.subscriptions.cancel(s.id, { prorate: true });
-        canceled++;
-      }
+    if (!sub?.stripe_customer_id) {
+      return NextResponse.json({ error: 'No billing account yet' }, { status: 400 });
     }
 
-    // The webhook (customer.subscription.deleted) will also write this row,
-    // but only once Stripe's event arrives — set it here too so the vendor
-    // sees the switch immediately on refetch instead of waiting on webhook
-    // latency.
-    await admin
-      .from('subscriptions')
-      .update({ plan: 'free', status: 'canceled' as never, cancel_at_period_end: false })
-      .eq('provider_id', providerId);
+    const existing = await stripe.subscriptions.list({
+      customer: sub.stripe_customer_id,
+      status: 'all',
+      limit: 100,
+    });
+    const live = existing.data
+      .filter((s) => LIVE_STATUSES.includes(s.status))
+      .sort((a, b) => a.created - b.created);
+    if (live.length === 0) {
+      return NextResponse.json({ error: 'Nothing to cancel — already on Pay as you grow.' }, { status: 409 });
+    }
 
-    return NextResponse.json({ switched: true, plan: 'free', canceled });
+    const configurationId = (await stripeConfig(admin, ['stripe_portal_configuration_id']))
+      .stripe_portal_configuration_id;
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: sub.stripe_customer_id,
+      ...(configurationId ? { configuration: configurationId } : {}),
+      flow_data: {
+        type: 'subscription_cancel',
+        subscription_cancel: { subscription: live[0].id },
+        after_completion: {
+          type: 'redirect',
+          redirect: { return_url: vendorPageUrl(request, '/billing', 'status=cancel_returned') },
+        },
+      },
+    });
+    return NextResponse.json({ url: portal.url });
   }
 
   // Resolve the plan's price (monthly/annual) from app_config, preferring the
@@ -173,34 +186,32 @@ export async function POST(request: Request) {
       );
     }
 
-    // Move the tier on the subscription they already have. Proration means an
-    // upgrade is charged the difference now and a downgrade credits it back,
-    // instead of running two subscriptions side by side.
-    const item = current.items.data[0];
-    const updated = await stripe.subscriptions.update(current.id, {
-      items: [{ id: item.id, price: priceId }],
-      proration_behavior: 'create_prorations',
-      // The webhook reads `plan` off the subscription's own metadata, so it
-      // has to move with the price — otherwise a switch is recorded as the
-      // old tier.
-      metadata: { ...current.metadata, provider_id: providerId, plan },
+    // Move the tier on the subscription they already have — but via Stripe's
+    // own confirmation screen, not by calling the Subscriptions API directly.
+    // Proration means an upgrade is charged the difference now and a
+    // downgrade credits it back; `subscription_update_confirm` states that on
+    // Stripe's page and requires the vendor to actually confirm it there.
+    // The portal configuration already lists Growth and Pro as switchable
+    // products (scripts/setup-stripe-portal.mjs); nothing here writes to
+    // `subscriptions` — the webhook does that once Stripe reports the change.
+    const configurationId = (await stripeConfig(admin, ['stripe_portal_configuration_id']))
+      .stripe_portal_configuration_id;
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      ...(configurationId ? { configuration: configurationId } : {}),
+      flow_data: {
+        type: 'subscription_update_confirm',
+        subscription_update_confirm: {
+          subscription: current.id,
+          items: [{ id: current.items.data[0].id, price: priceId, quantity: 1 }],
+        },
+        after_completion: {
+          type: 'redirect',
+          redirect: { return_url: vendorPageUrl(request, '/billing', 'status=success') },
+        },
+      },
     });
-
-    await admin
-      .from('subscriptions')
-      .update({
-        plan,
-        stripe_subscription_id: updated.id,
-        status: dbStatus(updated.status) as never,
-        cancel_at_period_end: updated.cancel_at_period_end,
-      })
-      .eq('provider_id', providerId);
-
-    return NextResponse.json({
-      switched: true,
-      plan,
-      duplicates: live.length - 1,
-    });
+    return NextResponse.json({ url: portal.url });
   }
 
   const session = await stripe.checkout.sessions.create({

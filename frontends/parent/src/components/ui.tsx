@@ -60,7 +60,7 @@ export function PlusFeatureDialog({
         </span>
         <h2 className="mt-4 text-lg font-black">{title}</h2>
         <p className="mt-2 text-sm font-semibold leading-6 text-[#59658d]">{copy}</p>
-        <p className="mt-3 text-sm font-black text-palette-blue">Upgrade for just SGD 9 per month.</p>
+        <p className="mt-3 text-sm font-black text-palette-blue">Upgrade for just SGD 15 per month.</p>
         <div className="mt-5 flex flex-col gap-2">
           <Button href="/pricing" className="w-full justify-center">Upgrade to Plus</Button>
           <Button type="button" variant="outline" className="w-full justify-center" onClick={onClose}>

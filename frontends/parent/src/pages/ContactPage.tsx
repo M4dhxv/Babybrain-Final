@@ -31,7 +31,7 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
   {
     group: "Cost & payment",
     items: [
-      ["Does BabyBrain cost anything to use?", "BabyBrain is free to browse and book — you just pay the price of the activity. Your family profile, reviews and personalised suggestions are all free too. If you'd like extras like pass tracking, saved providers, calendar export and messaging, our Plus plan is SGD 9/month or SGD 99/year on top of activity prices."],
+      ["Does BabyBrain cost anything to use?", "BabyBrain is free to browse and book — you just pay the price of the activity. Your family profile, reviews and personalised suggestions are all free too. If you'd like extras like pass tracking, saved providers, calendar export and messaging, our Plus plan is SGD 15/month or SGD 165/year on top of activity prices."],
       ["How do I pay?", "PayNow, Apple Pay, Google Pay or card — whatever's easiest for you."],
       ["Is my payment secure?", "Payments are handled by Stripe, a global provider trusted by millions of businesses. Your card details are never stored by BabyBrain."],
     ],
@@ -42,7 +42,7 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
       ["Can I manage passes I've already bought?", "Yes — with Plus, your packages and make-up tokens across every provider live in one place on your profile, so you never lose track of what you've paid for. Just click through to use them. On the free plan, these are sent to you by email to use from there."],
       ["How do make-up classes work?", "Make-up tokens follow each provider's own rules. With Plus, they're gathered on your profile and you click through to book one. On the free plan, they come to you by email and you book from the link there."],
       ["What if I have more than one child?", "Add as many children as you like on the free plan — your family profile holds all of them, and you'll see suggestions based on each child's age and your preferences, with every booking in one place."],
-      ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book, keep your family profile and get suggestions. Plus (SGD 9/month or SGD 99/year) adds twice-weekly curated activity emails, all your packages and make-up tokens for every vendor in one place, saved favourite providers, exporting and sharing your booked activities in calendar view, messaging integrated providers and other parents booked on the same activity, and priority support."],
+      ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book, keep your family profile and get suggestions. Plus (SGD 15/month or SGD 165/year) adds twice-weekly curated activity emails, all your packages and make-up tokens for every vendor in one place, saved favourite providers, exporting and sharing your booked activities in calendar view, messaging integrated providers and other parents booked on the same activity, and priority support."],
       ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
       ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
     ],
