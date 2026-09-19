@@ -8,6 +8,7 @@ import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { MultiSelectField } from '@/components/ui/multi-select-field';
+import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
 
 /**
@@ -419,7 +420,7 @@ export default function PackagesPage() {
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
                     <div className="flex w-full gap-2">
                       <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack start date" className="w-32 flex-shrink-0" />
-                      <input type="time" value={packForm.starts_time} onChange={(e) => setPackForm({ ...packForm, starts_time: e.target.value })} className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" title="Start time (SGT); leave blank for start of day" />
+                      <TimePicker value={packForm.starts_time} onChange={(v) => setPackForm({ ...packForm, starts_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Start time (SGT); leave blank for start of day" aria-label="Start time" />
                     </div>
                   </div>
                   <div className="w-full sm:w-auto">
@@ -486,7 +487,7 @@ export default function PackagesPage() {
                         <Opt value="">Any day</Opt>
                         {WEEKDAY_NAMES.map((d, i) => <Opt key={d} value={String(i)}>{d}</Opt>)}
                       </SelectField>
-                      <input type="time" value={packForm.allowed_start_time} onChange={(e) => setPackForm({ ...packForm, allowed_start_time: e.target.value })} className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm sm:flex-none" title="Session start time (SGT); leave blank for any time" />
+                      <TimePicker value={packForm.allowed_start_time} onChange={(v) => setPackForm({ ...packForm, allowed_start_time: v })} className="h-9 flex-1 sm:w-28 sm:flex-none" clearable placeholder="Any time" title="Session start time (SGT); leave blank for any time" aria-label="Session start time" />
                     </div>
                   </div>
                 </div>

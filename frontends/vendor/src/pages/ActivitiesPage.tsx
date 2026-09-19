@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { MultiSelectField } from '@/components/ui/multi-select-field';
+import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
 import { PoliciesManager } from '@/components/PoliciesManager';
@@ -2507,7 +2508,7 @@ export default function ActivitiesPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Start time</label>
-                  <input type="time" className={inputCls} value={sessForm.time} onChange={(e) => setSessForm({ ...sessForm, time: e.target.value })} />
+                  <TimePicker className={cn(inputCls, 'w-full')} value={sessForm.time} onChange={(v) => setSessForm({ ...sessForm, time: v })} aria-label="Start time" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Duration (mins)</label>
@@ -2697,7 +2698,7 @@ export default function ActivitiesPage() {
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Start time (SGT)</span>
-                          <input type="time" className={inputCls} value={sessEditForm.time} onChange={(e) => setSessEditForm({ ...sessEditForm, time: e.target.value })} />
+                          <TimePicker className={cn(inputCls, 'w-full')} value={sessEditForm.time} onChange={(v) => setSessEditForm({ ...sessEditForm, time: v })} aria-label="Start time" />
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Duration (mins)</span>
