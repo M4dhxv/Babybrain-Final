@@ -241,6 +241,18 @@ export default function SchedulePage() {
   );
   const monthDays = useMemo(() => eachDayOfInterval({ start: rangeStart, end: rangeEnd }), [rangeStart, rangeEnd]);
 
+  // Sessions that start together are shown as one time slot with the sessions
+  // listed under it (parallel classes), instead of unrelated-looking cards.
+  const groupByStart = <T extends { starts_at: string }>(list: T[]) => {
+    const groups: { key: string; items: T[] }[] = [];
+    for (const item of list) {
+      const last = groups[groups.length - 1];
+      if (last && last.key === item.starts_at) last.items.push(item);
+      else groups.push({ key: item.starts_at, items: [item] });
+    }
+    return groups;
+  };
+
   const sessionsFor = (d: Date) => filtered.filter((s) => isSameDay(new Date(s.starts_at), d));
 
   // Cold load: either the reference data or the sessions are still in flight
@@ -397,13 +409,32 @@ export default function SchedulePage() {
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {daySessions.map((s) => (
-                      <SessionCard
-                        key={s.id}
-                        s={s}
-                        onClick={() => navigate(`/bookings?session=${s.id}`)}
-                      />
-                    ))}
+                    {groupByStart(daySessions).map((g) =>
+                      g.items.length === 1 ? (
+                        <SessionCard
+                          key={g.items[0].id}
+                          s={g.items[0]}
+                          onClick={() => navigate(`/bookings?session=${g.items[0].id}`)}
+                        />
+                      ) : (
+                        <div key={g.key} className="space-y-1.5">
+                          <div className="text-xs font-semibold text-gray-900">
+                            {sgTime(g.items[0].starts_at)}
+                            {g.items.every((x) => x.ends_at === g.items[0].ends_at) && ` – ${sgTime(g.items[0].ends_at)}`}
+                          </div>
+                          <div className="ml-0.5 space-y-2 border-l-2 border-purple-100 pl-2">
+                            {g.items.map((x) => (
+                              <SessionCard
+                                key={x.id}
+                                s={x}
+                                hideTime
+                                onClick={() => navigate(`/bookings?session=${x.id}`)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    )}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
                   </div>
                 </div>
@@ -457,20 +488,49 @@ export default function SchedulePage() {
                       {format(d, 'd')}
                     </span>
                     <div className="mt-1.5 space-y-1">
-                      {visible.map((s) => (
-                        <div
-                          key={s.id}
-                          className={cn(
-                            'truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
-                            s.bookingsPaused
-                              ? 'bg-amber-100 text-amber-800'
-                              : s.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
-                          )}
-                          title={s.bookingsPaused ? 'Bookings paused for this session' : undefined}
-                        >
-                          {sgTime(s.starts_at)} {s.title}
-                        </div>
-                      ))}
+                      {groupByStart(visible).map((g) =>
+                        g.items.length === 1 ? (
+                          <div
+                            key={g.items[0].id}
+                            className={cn(
+                              'truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
+                              g.items[0].bookingsPaused
+                                ? 'bg-amber-100 text-amber-800'
+                                : g.items[0].fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
+                            )}
+                            title={g.items[0].bookingsPaused ? 'Bookings paused for this session' : undefined}
+                          >
+                            {sgTime(g.items[0].starts_at)} {g.items[0].title}
+                          </div>
+                        ) : (
+                          <div key={g.key} className="space-y-0.5">
+                            <div className="px-0.5 text-[11px] font-semibold text-gray-700">{sgTime(g.items[0].starts_at)}</div>
+                            <div className="flex flex-wrap gap-1">
+                              {g.items.map((x) => (
+                                <span
+                                  key={x.id}
+                                  title={x.title}
+                                  className={cn(
+                                    'inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
+                                    x.bookingsPaused
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : x.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
+                                  )}
+                                >
+                                  <i
+                                    aria-hidden
+                                    className={cn(
+                                      'h-1.5 w-1.5 shrink-0 rounded-full',
+                                      x.bookingsPaused ? 'bg-amber-500' : x.fromWix ? 'bg-purple-500' : 'bg-pink-500'
+                                    )}
+                                  />
+                                  <span className="truncate">{x.title}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      )}
                       {overflow > 0 && <div className="px-1.5 text-[11px] text-gray-400">+{overflow} more</div>}
                     </div>
                   </button>
@@ -493,8 +553,8 @@ export default function SchedulePage() {
 }
 
 function SessionCard({
-  s, onClick,
-}: { s: EnrichedSession; onClick: () => void }) {
+  s, onClick, hideTime = false,
+}: { s: EnrichedSession; onClick: () => void; hideTime?: boolean }) {
   const full = s.capacity != null && s.booked >= s.capacity;
   const wixOverflow = s.wixClassOverflow;
   return (
@@ -509,7 +569,9 @@ function SessionCard({
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>
+          {hideTime
+            ? <div className="min-w-0 truncate text-xs font-semibold text-gray-900">{s.title}</div>
+            : <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>}
           <div className="flex shrink-0 items-center gap-1">
             {s.bookingsPaused && (
               <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Paused</span>
@@ -522,7 +584,7 @@ function SessionCard({
             )}
           </div>
         </div>
-        <div className="truncate text-xs text-gray-700">{s.title}</div>
+        {!hideTime && <div className="truncate text-xs text-gray-700">{s.title}</div>}
       {s.locationName && (
         <div className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500">
           <MapPin className="h-3 w-3 flex-shrink-0" /> <span className="truncate">{s.locationName}</span>
