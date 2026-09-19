@@ -321,21 +321,25 @@ function ChildSelect({
   value,
   onChange,
   label = "Showing",
+  className,
 }: {
   kids: { id: string; name: string }[];
   value: string | null;
   onChange: (id: string | null) => void;
   label?: string;
+  /** Replaces the default `mb-4` — pass it when the selector shares a row with
+   *  another control, which then owns the spacing. */
+  className?: string;
 }) {
   if (kids.length < 2) return null;
   return (
-    <label className="mb-4 flex items-center gap-2 text-sm font-bold text-[#4a5685]">
+    <label className={`flex items-center gap-2 text-sm font-bold text-[#4a5685] ${className ?? "mb-4"}`}>
       {label}
       <SelectField
         value={value ?? "all"}
         onChange={(v) => onChange(v === "all" ? null : v)}
         aria-label={label}
-        className="h-10 px-3 text-sm font-bold text-[#4a5685]"
+        className={`h-10 px-3 text-sm font-bold text-[#4a5685]${className ? " min-w-0 flex-1" : ""}`}
       >
         <Opt value="all">All children (split out)</Opt>
         {kids.map((k) => (
@@ -346,7 +350,8 @@ function ChildSelect({
   );
 }
 
-type BookingSort = "soonest" | "latest";
+type BookingSort = "latest" | "soonest";
+const DEFAULT_BOOKING_SORT: BookingSort = "latest";
 const BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
   waitlisted: "Waitlisted",
@@ -354,11 +359,49 @@ const BOOKING_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-/** Sort and status filter for the Bookings tab. One button opens a small panel
- *  under it; the button carries a count of what's been changed from the
- *  default so it's obvious a list is narrowed. Only offers the statuses the
+/** How many of the two Bookings controls differ from their defaults — shown as
+ *  a count on the Filter button so a narrowed list is never a surprise. */
+const bookingFilterCount = (sort: BookingSort, status: string) =>
+  (sort !== DEFAULT_BOOKING_SORT ? 1 : 0) + (status !== "all" ? 1 : 0);
+
+/** The Filter button that sits beside the child selector. Icon-only on phones
+ *  so the selector keeps its room; the panel it toggles is BookingsFilterPanel,
+ *  rendered on its own row underneath. */
+function BookingsFilterButton({
+  open,
+  onToggle,
+  active,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  active: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-label="Filter and sort bookings"
+      className={`relative flex h-10 shrink-0 items-center gap-2 rounded-[10px] border bg-white px-3 text-sm font-bold text-[#4a5685] ${open ? "border-[#FA4D8D]" : "border-[#EBE3E5]"}`}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+        <circle cx="16" cy="7" r="2" />
+        <circle cx="8" cy="17" r="2" />
+      </svg>
+      <span className="hidden sm:inline">Filter</span>
+      {active > 0 && (
+        <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[#FA4D8D] px-1 text-xs font-black text-white sm:static">
+          {active}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Sort and status panel for the Bookings tab. Only offers the statuses the
  *  parent actually has, with how many of each. */
-function BookingsFilter({
+function BookingsFilterPanel({
   sort,
   onSort,
   status,
@@ -373,55 +416,34 @@ function BookingsFilter({
   counts: Record<string, number>;
   total: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const active = (sort !== "soonest" ? 1 : 0) + (status !== "all" ? 1 : 0);
+  const active = bookingFilterCount(sort, status);
   const statuses = Object.keys(BOOKING_STATUS_LABEL).filter((s) => counts[s]);
   const chip = (on: boolean) =>
     `h-9 rounded-full border px-3.5 text-sm font-bold ${on ? "border-[#FA4D8D] bg-[#FED7E4] text-baby-cta" : "border-[#EBE3E5] bg-white text-[#4a5685]"}`;
   return (
-    <div className="mb-4">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex h-10 items-center gap-2 rounded-[10px] border border-[#EBE3E5] bg-white px-3 text-sm font-bold text-[#4a5685]"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
-          <circle cx="16" cy="7" r="2" />
-          <circle cx="8" cy="17" r="2" />
-        </svg>
-        Filter
-        {active > 0 && (
-          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#FA4D8D] px-1 text-xs font-black text-white">{active}</span>
-        )}
-      </button>
-      {open && (
-        <div className="mt-2 rounded-[14px] border border-[#EBE3E5] bg-white p-4">
-          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by date</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={chip(sort === "soonest")} onClick={() => onSort("soonest")}>Earliest first</button>
-            <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
-          </div>
-          <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Status</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={chip(status === "all")} onClick={() => onStatus("all")}>All ({total})</button>
-            {statuses.map((s) => (
-              <button key={s} type="button" className={chip(status === s)} onClick={() => onStatus(s)}>
-                {BOOKING_STATUS_LABEL[s]} ({counts[s]})
-              </button>
-            ))}
-          </div>
-          {active > 0 && (
-            <button
-              type="button"
-              onClick={() => { onSort("soonest"); onStatus("all"); }}
-              className="mt-4 text-sm font-black text-baby-cta"
-            >
-              Reset
-            </button>
-          )}
-        </div>
+    <div className="mb-4 rounded-[14px] border border-[#EBE3E5] bg-white p-4">
+      <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by date</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
+        <button type="button" className={chip(sort === "soonest")} onClick={() => onSort("soonest")}>Earliest first</button>
+      </div>
+      <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Status</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={chip(status === "all")} onClick={() => onStatus("all")}>All ({total})</button>
+        {statuses.map((s) => (
+          <button key={s} type="button" className={chip(status === s)} onClick={() => onStatus(s)}>
+            {BOOKING_STATUS_LABEL[s]} ({counts[s]})
+          </button>
+        ))}
+      </div>
+      {active > 0 && (
+        <button
+          type="button"
+          onClick={() => { onSort(DEFAULT_BOOKING_SORT); onStatus("all"); }}
+          className="mt-4 text-sm font-black text-baby-cta"
+        >
+          Reset
+        </button>
       )}
     </div>
   );
@@ -1122,7 +1144,8 @@ export function ProfilePage() {
   // One per-child selection, shared by every tab that can honour it. null =
   // "All children", which splits the lists out by child rather than merging.
   const [childFilter, setChildFilter] = useState<string | null>(null);
-  const [bookingSort, setBookingSort] = useState<BookingSort>("soonest");
+  const [bookingSort, setBookingSort] = useState<BookingSort>(DEFAULT_BOOKING_SORT);
+  const [bookingFilterOpen, setBookingFilterOpen] = useState(false);
   const [bookingStatus, setBookingStatus] = useState("all");
   // The child the journey panel and Overview suggestions describe: whoever the
   // selector names, else whichever card was last clicked, else the first.
@@ -2147,21 +2170,26 @@ export function ProfilePage() {
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
-              <div className="flex flex-wrap items-start gap-x-4">
-                <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              <div className="mb-4 flex items-center gap-2">
+                <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} className="min-w-0 flex-1" />
                 {bookingsLoaded && upcomingBookings.length > 1 && (
-                  <div className="min-w-0 max-w-full">
-                    <BookingsFilter
-                      sort={bookingSort}
-                      onSort={setBookingSort}
-                      status={bookingStatus}
-                      onStatus={setBookingStatus}
-                      counts={bookingStatusCounts}
-                      total={upcomingBookings.length}
-                    />
-                  </div>
+                  <BookingsFilterButton
+                    open={bookingFilterOpen}
+                    onToggle={() => setBookingFilterOpen((v) => !v)}
+                    active={bookingFilterCount(bookingSort, bookingStatus)}
+                  />
                 )}
               </div>
+              {bookingsLoaded && upcomingBookings.length > 1 && bookingFilterOpen && (
+                <BookingsFilterPanel
+                  sort={bookingSort}
+                  onSort={setBookingSort}
+                  status={bookingStatus}
+                  onStatus={setBookingStatus}
+                  counts={bookingStatusCounts}
+                  total={upcomingBookings.length}
+                />
+              )}
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
               ) : splitByChild ? (
