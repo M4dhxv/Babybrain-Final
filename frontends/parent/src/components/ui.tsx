@@ -22,7 +22,8 @@ function wixThumbUrl(url: string, w: number, h: number): string {
   const extMatch = /\.([a-zA-Z0-9]+)$/.exec(url.split("?")[0].split("#")[0]);
   const ext = extMatch?.[1].toLowerCase() === "jpeg" ? "jpg" : extMatch?.[1].toLowerCase();
   const safeExt = ext && ["jpg", "png", "webp", "gif"].includes(ext) ? ext : "jpg";
-  return `${url}/v1/fill/w_${w},h_${h}/file.${safeExt}`;
+  // `fit`, not `fill`: cards show the whole image, so Wix must not crop it server-side.
+  return `${url}/v1/fit/w_${w},h_${h}/file.${safeExt}`;
 }
 
 /** "That's a Plus feature" prompt.
@@ -819,7 +820,7 @@ export const ActivityCard = memo(function ActivityCard({
           className={
             activity.image === FALLBACK_LOGO_URL
               ? "h-full w-full bg-[#F3EDF0] object-contain p-4"
-              : "h-full w-full object-cover"
+              : "h-full w-full bg-[#F3EDF0] object-contain"
           }
         />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
@@ -916,7 +917,7 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
           className={
             activity.image === FALLBACK_LOGO_URL
               ? "h-44 w-full bg-[#F3EDF0] object-contain p-6 sm:h-full sm:min-h-[100px]"
-              : "h-44 w-full object-cover sm:h-full sm:min-h-[100px]"
+              : "h-44 w-full bg-[#F3EDF0] object-contain sm:h-full sm:min-h-[100px]"
           }
         />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
+import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 
 /**
@@ -123,7 +124,6 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
-  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
 
   const load = refetch;
 
@@ -251,7 +251,6 @@ export default function PackagesPage() {
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
     setEditingPackId(null);
     setPackForm(emptyPack);
-    setActivityPickerOpen(false);
     load();
   }
 
@@ -449,7 +448,7 @@ export default function PackagesPage() {
                   </button>
                   {editingPackId && (
                     <button
-                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); setActivityPickerOpen(false); }}
+                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
                       className="h-9 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 sm:w-auto"
                     >
                       Cancel
@@ -467,55 +466,18 @@ export default function PackagesPage() {
                   </p>
                 )}
                 <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                  <div className="relative w-full sm:w-auto">
+                  <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to activities (optional)</label>
-                    <button
-                      type="button"
-                      onClick={() => setActivityPickerOpen((v) => !v)}
-                      className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm sm:w-56"
+                    <MultiSelectField
+                      values={packForm.activity_ids}
+                      onChange={(v) => setPackForm({ ...packForm, activity_ids: v })}
+                      allLabel="Any of my activities"
+                      aria-label="Restrict to activities"
+                      className="h-9 w-full sm:w-56"
+                      panelWidth={256}
                     >
-                      <span className="truncate text-left">
-                        {packForm.activity_ids.length === 0
-                          ? 'Any of my activities'
-                          : packForm.activity_ids.length <= 2
-                            ? packForm.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? '').join(' & ')
-                            : `${packForm.activity_ids.length} activities selected`}
-                      </span>
-                      <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                    </button>
-                    {activityPickerOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
-                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg sm:w-64">
-                          <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              checked={packForm.activity_ids.length === 0}
-                              onChange={() => setPackForm({ ...packForm, activity_ids: [] })}
-                            />
-                            Any of my activities
-                          </label>
-                          <div className="my-1 border-t border-gray-100" />
-                          {activities.map((a) => (
-                            <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                              <input
-                                type="checkbox"
-                                checked={packForm.activity_ids.includes(a.id)}
-                                onChange={(e) =>
-                                  setPackForm({
-                                    ...packForm,
-                                    activity_ids: e.target.checked
-                                      ? [...packForm.activity_ids, a.id]
-                                      : packForm.activity_ids.filter((id) => id !== a.id),
-                                  })
-                                }
-                              />
-                              <span className="truncate">{a.title}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                      {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
+                    </MultiSelectField>
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>

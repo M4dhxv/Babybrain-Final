@@ -1388,7 +1388,7 @@ function ExplorePage() {
                 <div className="mb-3 flex items-center justify-between">
                   {loading
                     ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
-                    : <p className="text-sm font-black">{`${shown.length} activities found`}</p>}
+                    : <p className="text-sm font-black">{`${shown.length} ${shown.length === 1 ? "activity" : "activities"} found`}</p>}
                 </div>
                 {loading ? (
                   <ActivityRowListSkeleton count={6} />
@@ -1630,7 +1630,7 @@ const HeroCarousel = memo(function HeroCarousel({
             className={
               url === FALLBACK_LOGO_URL
                 ? "h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12"
-                : "h-[305px] w-full shrink-0 object-cover"
+                : "h-[305px] w-full shrink-0 object-cover object-[center_15%]"
             }
           />
         ))}

@@ -29,12 +29,12 @@ import {
   PauseCircle,
   PlayCircle,
   FileText,
-  ChevronDown,
   ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
 import { PoliciesManager } from '@/components/PoliciesManager';
@@ -353,7 +353,6 @@ export default function ActivitiesPage() {
   const [mdDraftIds, setMdDraftIds] = useState<string[]>(mdIdsSaved);
   const [mdSaving, setMdSaving] = useState(false);
   const [mdMsg, setMdMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [mdPickerOpen, setMdPickerOpen] = useState(false);
   // Re-seed the draft whenever the stored rule changes (first load, or after a
   // save round-trips through refreshProvider).
   useEffect(() => {
@@ -1239,15 +1238,7 @@ export default function ActivitiesPage() {
    *  see providerPhotoPool: the logo first, then the catalogue. */
   const profileImages = providerPhotoPool();
 
-  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const selectedCategoryIds = [form.category_id, form.secondary_category_id].filter(Boolean);
-  // First tick is the primary category, the second the optional secondary;
-  // unticking the primary promotes the secondary so there's always a primary.
-  function toggleCategory(id: string) {
-    const cur = [form.category_id, form.secondary_category_id].filter(Boolean);
-    const next = cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < 2 ? [...cur, id] : cur;
-    setForm({ ...form, category_id: next[0] ?? '', secondary_category_id: next[1] ?? '' });
-  }
 
   async function saveActivity() {
     if (!provider) return;
@@ -1623,8 +1614,6 @@ export default function ActivitiesPage() {
                 ids={mdDraftIds}
                 setMode={setMdDraftMode}
                 setIds={setMdDraftIds}
-                pickerOpen={mdPickerOpen}
-                setPickerOpen={setMdPickerOpen}
                 dirty={mdDirty}
                 saving={mdSaving}
                 msg={mdMsg}
@@ -1933,44 +1922,17 @@ export default function ActivitiesPage() {
                 Categories <span className="text-[#FA4D8D]">*</span>
                 <span className="ml-1 font-normal text-gray-500">(choose up to 2)</span>
               </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setCategoryPickerOpen((v) => !v)}
-                  aria-label="Categories"
-                  aria-expanded={categoryPickerOpen}
-                  className={cn(inputCls, 'flex min-h-[40px] flex-wrap items-center gap-1.5 text-left')}
-                >
-                  {selectedCategoryIds.length === 0 && <span className="text-gray-400">Select categories</span>}
-                  {selectedCategoryIds.map((id) => (
-                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-[#FEEBF2] px-2.5 py-0.5 text-xs font-medium text-[#C90044]">
-                      {categoryName(Number(id))}
-                    </span>
-                  ))}
-                  <ChevronDown className="ml-auto h-4 w-4 flex-shrink-0 text-gray-400" />
-                </button>
-                {categoryPickerOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setCategoryPickerOpen(false)} />
-                    <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                      {categories.map((c) => {
-                        const id = String(c.id);
-                        const checked = selectedCategoryIds.includes(id);
-                        const atLimit = !checked && selectedCategoryIds.length >= 2;
-                        return (
-                          <label
-                            key={c.id}
-                            className={cn('flex items-center gap-2 px-3 py-2 text-sm', atLimit ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer hover:bg-gray-50')}
-                          >
-                            <input type="checkbox" checked={checked} disabled={atLimit} onChange={() => toggleCategory(id)} />
-                            {c.name}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
+              <MultiSelectField
+                values={selectedCategoryIds}
+                onChange={(v) => setForm({ ...form, category_id: v[0] ?? '', secondary_category_id: v[1] ?? '' })}
+                max={2}
+                chips
+                placeholder="Select categories"
+                aria-label="Categories"
+                className={cn(inputCls, 'min-h-[40px] w-full')}
+              >
+                {categories.map((c) => <Opt key={c.id} value={String(c.id)}>{c.name}</Opt>)}
+              </MultiSelectField>
               <p className="mt-1.5 text-xs text-gray-500">
                 {selectedCategoryIds.length >= 2 ? 'Two selected. Untick one to swap.' : 'Pick at least one; a second is optional.'}
               </p>
@@ -2892,7 +2854,7 @@ export default function ActivitiesPage() {
  * "all" rule.
  */
 function MedicalDisclosureCard({
-  canManage, activities, mode, ids, setMode, setIds, pickerOpen, setPickerOpen,
+  canManage, activities, mode, ids, setMode, setIds,
   dirty, saving, msg, onSave,
 }: {
   canManage: boolean;
@@ -2901,8 +2863,6 @@ function MedicalDisclosureCard({
   ids: string[];
   setMode: (m: 'off' | 'all' | 'some') => void;
   setIds: (ids: string[]) => void;
-  pickerOpen: boolean;
-  setPickerOpen: (v: boolean) => void;
   dirty: boolean;
   saving: boolean;
   msg: { ok: boolean; text: string } | null;
@@ -2911,12 +2871,6 @@ function MedicalDisclosureCard({
   const named = activities
     .filter((a) => a.title)
     .sort((a, b) => a.title.localeCompare(b.title));
-  const summary =
-    ids.length === 0
-      ? 'Select activities'
-      : ids.length <= 2
-        ? ids.map((id) => named.find((a) => a.id === id)?.title ?? 'one activity').join(' & ')
-        : `${ids.length} activities selected`;
 
   return (
     <div className="rounded-xl border border-gray-200 p-5">
@@ -2966,40 +2920,18 @@ function MedicalDisclosureCard({
           </div>
 
           {mode === 'some' && (
-            <div className="relative max-w-md">
-              <button
-                type="button"
+            <div className="max-w-md">
+              <MultiSelectField
+                values={ids}
+                onChange={setIds}
                 disabled={!canManage}
-                onClick={() => setPickerOpen(!pickerOpen)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm disabled:opacity-60"
+                placeholder="Select activities"
+                emptyMessage="No activities yet."
                 aria-label="Activities that need a health declaration"
+                className="w-full"
               >
-                <span className="truncate text-gray-700">{summary}</span>
-                <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
-              </button>
-              {pickerOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
-                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                    {named.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-gray-400">No activities yet.</p>
-                    )}
-                    {named.map((a) => (
-                      <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-[#FA4D8D]"
-                          checked={ids.includes(a.id)}
-                          onChange={(e) =>
-                            setIds(e.target.checked ? [...ids, a.id] : ids.filter((x) => x !== a.id))
-                          }
-                        />
-                        <span className="truncate">{a.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
+                {named.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
+              </MultiSelectField>
               {ids.length === 0 && (
                 <p className="mt-1 text-[11px] text-amber-600">Pick at least one activity, or switch to “All activities”.</p>
               )}

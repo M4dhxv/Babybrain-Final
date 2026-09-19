@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, FileText, ImageUp, Pencil, Plus } from 'lucide-react';
+import { FileText, ImageUp, Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Opt } from '@/components/ui/select-field';
+import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { ProviderPolicy } from '@/lib/database.types';
@@ -34,7 +36,6 @@ export function PoliciesManager({
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [activityPickerOpen, setActivityPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -86,7 +87,6 @@ export function PoliciesManager({
     setForm(emptyForm);
     setShowForm(false);
     setEditingId(null);
-    setActivityPickerOpen(false);
     load();
   }
 
@@ -94,7 +94,6 @@ export function PoliciesManager({
     setEditingId(p.id);
     setShowForm(true);
     setError(null);
-    setActivityPickerOpen(false);
     setForm({
       title: p.title,
       body: p.body ?? '',
@@ -124,7 +123,7 @@ export function PoliciesManager({
           </div>
         </div>
         {canManage && !showForm && (
-          <Button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); setActivityPickerOpen(false); }} className="gradient-primary text-white rounded-xl hover:opacity-90">
+          <Button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); }} className="gradient-primary text-white rounded-xl hover:opacity-90">
             <Plus className="w-4 h-4 mr-1" /> Add
           </Button>
         )}
@@ -204,58 +203,15 @@ export function PoliciesManager({
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Applies to</label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setActivityPickerOpen((v) => !v)}
-                  className={cn(inputCls, 'flex items-center justify-between gap-2 text-left')}
-                  aria-label="Applies to"
-                >
-                  <span className="truncate">
-                    {form.activity_ids.length === 0
-                      ? 'All of my activities'
-                      : form.activity_ids.length <= 2
-                        ? form.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? '').join(' & ')
-                        : `${form.activity_ids.length} activities selected`}
-                  </span>
-                  <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                </button>
-                {activityPickerOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setActivityPickerOpen(false)} />
-                    <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                      <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-[#FA4D8D]"
-                          checked={form.activity_ids.length === 0}
-                          onChange={() => setForm({ ...form, activity_ids: [] })}
-                        />
-                        All of my activities
-                      </label>
-                      {activities.length > 0 && <div className="my-1 border-t border-gray-100" />}
-                      {activities.map((a) => (
-                        <label key={a.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-[#FA4D8D]"
-                            checked={form.activity_ids.includes(a.id)}
-                            onChange={(e) =>
-                              setForm({
-                                ...form,
-                                activity_ids: e.target.checked
-                                  ? [...form.activity_ids, a.id]
-                                  : form.activity_ids.filter((id) => id !== a.id),
-                              })
-                            }
-                          />
-                          <span className="truncate">{a.title}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              <MultiSelectField
+                values={form.activity_ids}
+                onChange={(v) => setForm({ ...form, activity_ids: v })}
+                allLabel="All of my activities"
+                aria-label="Applies to"
+                className={cn(inputCls, 'w-full')}
+              >
+                {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
+              </MultiSelectField>
               <p className="mt-1 text-[11px] text-gray-400">Leave as “All of my activities”, or tick the specific classes this applies to.</p>
             </div>
             <div>
@@ -285,7 +241,7 @@ export function PoliciesManager({
             <Button onClick={save} disabled={saving || !form.title.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add'}
             </Button>
-            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setError(null); setActivityPickerOpen(false); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
           </div>
         </div>
       )}
