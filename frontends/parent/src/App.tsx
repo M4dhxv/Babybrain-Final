@@ -34,6 +34,7 @@ import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay } from "./lib/schedule";
+import { SessionSchedule } from "./components/SessionSchedule";
 import { resolveActivityImages, FALLBACK_LOGO_URL } from "./lib/activityMedia";
 import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
@@ -2003,12 +2004,11 @@ function ActivityDetailPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {sessions.map((s) => (
-                    <span key={s.id} className="rounded-[10px] border border-[#EBE3E5] px-3 py-2 text-sm font-bold">{sgDateTime(s.starts_at)}</span>
-                  ))}
-                  {sessions.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>}
-                </div>
+                sessions.length > 0 ? (
+                  <SessionSchedule sessions={sessions} />
+                ) : (
+                  <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
+                )
               )}
               {durationMins && activity.wix_service_type !== "COURSE" && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
             </section>
