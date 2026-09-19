@@ -255,6 +255,53 @@ export default function PackagesPage() {
     load();
   }
 
+  // Inline expiry editor for a single purchase — same control as the make-up
+  // tokens page, for when a parent asks for more time and the vendor agrees.
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [expiryMode, setExpiryMode] = useState<string>('none');
+  const [expiryDate, setExpiryDate] = useState<string>('');
+  const [savingExpiry, setSavingExpiry] = useState(false);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
+
+  function startEditExpiry(p: Purchase) {
+    setEditingPurchaseId(p.purchase_id);
+    setExpiryError(null);
+    if (p.expires_at) {
+      setExpiryMode('custom');
+      setExpiryDate(new Date(p.expires_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' }));
+    } else {
+      setExpiryMode('none');
+      setExpiryDate('');
+    }
+  }
+
+  async function saveExpiry(p: Purchase) {
+    setExpiryError(null);
+    let expiresAt: string | null = null;
+    if (expiryMode === 'custom') {
+      const d = new Date(`${expiryDate}T23:59:59+08:00`);
+      if (!expiryDate || Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) {
+        setExpiryError('Pick an expiry date in the future.');
+        return;
+      }
+      expiresAt = d.toISOString();
+    } else if (expiryMode !== 'none') {
+      expiresAt = new Date(Date.now() + Number(expiryMode) * 864e5).toISOString();
+    }
+    setSavingExpiry(true);
+    const { error } = await supabase.rpc('provider_set_purchase_expiry', {
+      p_purchase: p.purchase_id,
+      p_expires_at: expiresAt,
+    });
+    setSavingExpiry(false);
+    if (error) {
+      setExpiryError(error.message);
+      return;
+    }
+    setEditingPurchaseId(null);
+    refetch();
+  }
+
   const statusBadge = (s: string) => cn(
     'inline-block px-2 py-0.5 text-xs rounded-full capitalize',
     s === 'active' ? 'bg-green-300 text-green-800' : s === 'used' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600'
@@ -493,12 +540,67 @@ export default function PackagesPage() {
               <div>Buyer</div><div>Pack</div><div>Credits</div><div>Status</div><div>Purchased / Expires</div>
             </div>
             {purchases.map((p) => (
-              <div key={p.purchase_id} className={cn(PURCHASE_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
-                <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
-                <div className="min-w-0 text-sm text-gray-700 break-words">{p.package_name}</div>
-                <div className="min-w-0 text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
-                <div><span className={statusBadge(displayStatus(p))}>{displayStatus(p)}</span></div>
-                <div className="text-xs text-gray-500">{fmtDate(p.created_at)}{p.expires_at ? ` · expires ${fmtDate(p.expires_at)}` : ''}</div>
+              <div key={p.purchase_id}>
+                <div className={cn(PURCHASE_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
+                  <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
+                  <div className="min-w-0 text-sm text-gray-700 break-words">{p.package_name}</div>
+                  <div className="min-w-0 text-sm text-gray-700">{p.credits_remaining}/{p.credits_total}</div>
+                  <div><span className={statusBadge(displayStatus(p))}>{displayStatus(p)}</span></div>
+                  <div className="text-xs text-gray-500">
+                    <div>{fmtDate(p.created_at)}</div>
+                    <button
+                      onClick={() => (editingPurchaseId === p.purchase_id ? setEditingPurchaseId(null) : startEditExpiry(p))}
+                      className="inline-flex items-center gap-1 text-left text-[#FA4D8D] hover:underline"
+                      title="Edit expiry"
+                    >
+                      {p.expires_at ? `Expires ${fmtDate(p.expires_at)}` : 'Set expiry'}
+                      <Pencil className="h-3 w-3 flex-shrink-0" />
+                    </button>
+                  </div>
+                </div>
+                {editingPurchaseId === p.purchase_id && (
+                  <div className="border-t border-gray-100 bg-gray-50 px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-gray-500">Expires</span>
+                      <SelectField
+                        value={expiryMode}
+                        onChange={setExpiryMode}
+                        aria-label="Expires"
+                        className="px-2 py-1 text-xs text-gray-700"
+                      >
+                        <Opt value="30">in 30 days</Opt>
+                        <Opt value="60">in 60 days</Opt>
+                        <Opt value="90">in 90 days</Opt>
+                        <Opt value="180">in 6 months</Opt>
+                        <Opt value="365">in 12 months</Opt>
+                        <Opt value="custom">on a set date…</Opt>
+                        <Opt value="none">never</Opt>
+                      </SelectField>
+                      {expiryMode === 'custom' && (
+                        <DatePicker
+                          value={expiryDate}
+                          onChange={setExpiryDate}
+                          aria-label="Purchase expiry date"
+                          className="px-2 py-1 text-xs text-gray-700"
+                        />
+                      )}
+                      <button
+                        onClick={() => saveExpiry(p)}
+                        disabled={savingExpiry}
+                        className="rounded-lg bg-[#FA4D8D] px-3 py-1 text-xs font-medium text-white hover:bg-[#e23f7c] disabled:opacity-60"
+                      >
+                        {savingExpiry ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setEditingPurchaseId(null)}
+                        className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                      {expiryError && <span className="text-xs font-medium text-red-600">{expiryError}</span>}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             {purchases.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400">No one has bought a pack yet.</div>}
