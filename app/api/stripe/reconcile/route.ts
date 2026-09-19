@@ -132,6 +132,7 @@ export async function POST(request: Request) {
         userId: user.id,
         packageId: pkg.id,
         providerId: pkg.provider_id,
+        purchaseId: purchase.id,
         credits: pkg.credits,
       });
     }

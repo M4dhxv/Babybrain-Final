@@ -9,18 +9,37 @@ import type { Database } from '@/types/database';
  * right after a package_purchases row is created — mirrors the idempotency
  * pattern of autoBookPackageSession (lib/stripe-package-auto-book.ts).
  *
+ * The credit count is read back from the purchase AFTER any auto-booking, not
+ * taken from the package: buying from a class's booking page books that class
+ * and spends one credit, so a 5-class pack is 4 left by the time this runs.
+ * Announcing the package total told parents they had a credit they'd already
+ * used.
+ *
  * Never throws: a notification failure must not undo a purchase the parent
  * has already paid for.
  */
 export async function notifyPackagePurchased(
   admin: SupabaseClient<Database>,
-  params: { userId: string; packageId: string; providerId: string; credits: number }
+  params: { userId: string; packageId: string; providerId: string; purchaseId: string; credits: number }
 ): Promise<void> {
   try {
-    const [{ data: pkg }, { data: provider }] = await Promise.all([
+    const [{ data: pkg }, { data: provider }, { data: purchase }, { data: bookedRows }] = await Promise.all([
       admin.from('packages').select('name, activity_ids').eq('id', params.packageId).maybeSingle(),
       admin.from('providers').select('business_name').eq('id', params.providerId).maybeSingle(),
+      admin.from('package_purchases').select('credits_remaining').eq('id', params.purchaseId).maybeSingle(),
+      // The class the purchase auto-booked, if any (autoBookPackageSession).
+      admin
+        .from('bookings')
+        .select('activity_sessions(activities(title))')
+        .eq('package_purchase_id', params.purchaseId)
+        .limit(1),
     ]);
+
+    // What's actually left, not what the pack started with. Falls back to the
+    // package total only if the purchase row can't be read back.
+    const creditsLeft = purchase?.credits_remaining ?? params.credits;
+    const bookedSession = bookedRows?.[0]?.activity_sessions as unknown as { activities: { title: string } | null } | null;
+    const bookedActivity = bookedRows?.length ? (bookedSession?.activities?.title ?? 'a class') : null;
 
     // A pack tied to exactly one class can deep-link straight to booking it
     // (same rule PackageCard.bookHref uses); a pack spanning several classes,
@@ -41,11 +60,16 @@ export async function notifyPackagePurchased(
       user_id: params.userId,
       type: 'package_purchased',
       title: 'Your package is ready to use',
-      body: `Your ${params.credits}-credit package with ${provider?.business_name ?? 'your provider'} is ready — book your first class.`,
+      body: bookedActivity
+        ? `Your package with ${provider?.business_name ?? 'your provider'} is ready — you're booked onto ${bookedActivity}, with ${creditsLeft} ${creditsLeft === 1 ? 'credit' : 'credits'} left.`
+        : `Your ${creditsLeft}-credit package with ${provider?.business_name ?? 'your provider'} is ready — book your first class.`,
       data: {
         package_name: pkg?.name ?? null,
         provider_name: provider?.business_name ?? null,
-        credits: params.credits,
+        // Credits LEFT after any auto-booking; `credits_total` is the pack size.
+        credits: creditsLeft,
+        credits_total: params.credits,
+        booked_activity: bookedActivity,
         url,
       },
     });

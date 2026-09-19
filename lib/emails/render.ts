@@ -252,8 +252,14 @@ const T: Record<string, Template> = {
   package_purchased: (d, ctx) =>
     wrap(ctx, 'Your package is ready to use 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready — you have ${bold(str(d, 'credits') ?? 'your')} class credits to use.`) +
-      p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your first class')} whenever you’re ready.`) +
+      // `credits` is what's LEFT: a pack bought from a class's booking page
+      // books that class and spends one, so the email must not claim the full
+      // pack (lib/notify-package-purchased.ts).
+      (str(d, 'booked_activity')
+        ? p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready, and we’ve booked you onto ${bold(str(d, 'booked_activity') as string)}, which used one credit. ${Number(d.credits) > 0 ? `You have ${bold(str(d, 'credits') ?? '0')} class ${Number(d.credits) === 1 ? 'credit' : 'credits'} left to use.` : 'That was your only credit.'}`) +
+          (Number(d.credits) > 0 ? p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your next class')} whenever you’re ready.`) : '')
+        : p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready — you have ${bold(str(d, 'credits') ?? 'your')} class credits to use.`) +
+          p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your first class')} whenever you’re ready.`)) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -264,7 +270,12 @@ const T: Record<string, Template> = {
   make_up_token_issued: (d, ctx) =>
     wrap(ctx, 'Your make-up token is ready 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a class')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`) +
+      // `manual` is set by notify_manual_make_up_token() (migration 00150): the
+      // provider issued it by hand, so it may carry an expiry and isn't
+      // necessarily a replacement for a cancelled booking.
+      (d.manual
+        ? p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has issued you a make-up token${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name') as string)}` : ''}. ${str(d, 'expires_on') ? `Use it before ${bold(str(d, 'expires_on') as string)}.` : 'It doesn’t expire.'}`)
+        : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a class')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
       p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
