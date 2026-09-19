@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { staffLabel } from '@/lib/staff-label';
 import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -190,7 +191,7 @@ export async function POST(request: Request) {
           activity?.address ||
           '',
         // Who's taking it and where in the building (QA 24/08).
-        staff: [sess?.teacher_name, sess?.studio].filter(Boolean).join(' · '),
+        staff: staffLabel(sess?.teacher_name, sess?.studio),
         // Seats from this party still queued after this payment (00104).
         ...(stillWaitlisted > 0 ? { wl: String(stillWaitlisted) } : {}),
       }).toString() +

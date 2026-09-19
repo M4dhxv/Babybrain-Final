@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { staffLabel } from "../lib/staffLabel";
 import {
   Suspense,
   useEffect,
@@ -1447,7 +1448,7 @@ export function ProfilePage() {
               endsAt: s?.ends_at ?? null,
               venue: s?.provider_locations?.address || s?.provider_locations?.name || act?.address || "",
               // QA 24/08: "they should be able to see under bookings".
-              staff: [s?.teacher_name, s?.studio].filter(Boolean).join(" · "),
+              staff: staffLabel(s?.teacher_name, s?.studio),
               activityId: s?.activity_id ?? null,
               childId: r.child_id ?? null,
               packagePurchaseId: r.package_purchase_id ?? null,
@@ -3821,7 +3822,7 @@ export function BookingPage() {
      anywhere on the parent side — it should show on the class option, booking
      confirmation screen and they should be able to see under bookings."
      Per-session, so it only reads once a slot is chosen. */
-  const displayStaff = [selected?.teacher_name, selected?.studio].filter(Boolean).join(" · ") || null;
+  const displayStaff = staffLabel(selected?.teacher_name, selected?.studio) || null;
   const price = isEvent
     ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
     : sessionPrice != null ? sessionPrice
