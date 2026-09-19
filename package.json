@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "build:vendor": "npm --prefix frontends/vendor install --include=dev --ignore-scripts && npm --prefix frontends/vendor run build",
-    "build:parent": "npm --prefix frontends/parent install --include=dev --ignore-scripts && npm --prefix frontends/parent run build",
+    "build:vendor": "npm --prefix frontends/vendor install --include=dev --ignore-scripts && node scripts/sync-frontend-supabase-env.mjs frontends/vendor && npm --prefix frontends/vendor run build",
+    "build:parent": "npm --prefix frontends/parent install --include=dev --ignore-scripts && node scripts/sync-frontend-supabase-env.mjs frontends/parent && npm --prefix frontends/parent run build",
     "build": "npm run build:parent && npm run build:vendor && next build",
     "start": "next start",
     "seed": "node scripts/seed.mjs",
