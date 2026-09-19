@@ -1,7 +1,7 @@
 name: Scheduled release
 on:
   schedule:
-    - cron: '30 3 20 9 *'   # 09:00 IST on 20 September only
+      - cron: '42 20 19 9 *'   # 02:12 IST on 20 Sept = 20:42 UTC on 19 Sept   # 09:00 IST on 20 September only
   workflow_dispatch:
 permissions:
   contents: write
