@@ -493,6 +493,8 @@ export default function ActivitiesPage() {
   const [customDateDraft, setCustomDateDraft] = useState('');
   const [savingSess, setSavingSess] = useState(false);
   const [sessError, setSessError] = useState<string | null>(null);
+  // Heads-up only: sessions were saved, but overlap something on the Wix calendar.
+  const [sessNotice, setSessNotice] = useState<string | null>(null);
   // Every date the current recurrence settings would create a session on —
   // drives the count shown under the form and the rows addSessions() inserts.
   const plannedSessionDates = useMemo(() => plannedDates(sessForm), [sessForm]);
@@ -602,6 +604,7 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setScheduleFor(a);
     setSessError(null);
+    setSessNotice(null);
     // Pre-fill from the activity's default capacity so a vendor adding
     // sessions doesn't have to retype the same number every time.
     setSessForm((f) => ({
@@ -685,6 +688,7 @@ export default function ActivitiesPage() {
     }
     setSavingSess(true);
     setSessError(null);
+    setSessNotice(null);
     const durationMins = Math.max(15, Number(sessForm.duration) || 45);
     // Each date is a Singapore calendar day (plannedDates keeps it TZ-safe);
     // the start time is pinned to +08:00 so a vendor travelling abroad still
@@ -715,29 +719,25 @@ export default function ActivitiesPage() {
         ...sessPolicyPayload(sessForm.policy),
       };
     });
-    // A Wix-connected vendor's real-world time is already spoken for by
-    // anything on their Wix calendar — check every proposed slot (the
-    // weekly-repeat loop can produce several) against everything Wix has
-    // them committed to before saving any of them.
+    // Overlapping something on the Wix calendar is allowed (parallel classes,
+    // rooms and staff differ) — but the vendor gets a heads-up after saving.
+    // A failed lookup never blocks saving either.
+    let clashNotice: string | null = null;
     if (provider?.wix_site_id) {
       try {
         const { ranges } = await apiGet<{ ranges: { start: string; end: string }[] }>(`/api/wix/busy?providerId=${provider.id}`);
-        for (const row of rows) {
+        const clashing = rows.filter((row) => {
           const start = new Date(row.starts_at);
           const end = new Date(row.ends_at);
-          const clash = ranges.find((r) => rangesOverlap(start, end, new Date(r.start), new Date(r.end)));
-          if (clash) {
-            setSavingSess(false);
-            setSessError(
-              `That clashes with something already on your Wix calendar (${fmtDateTime(clash.start)}–${new Date(clash.end).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' })}). Pick a different time, or update it in Wix first.`
-            );
-            return;
-          }
+          return ranges.some((r) => rangesOverlap(start, end, new Date(r.start), new Date(r.end)));
+        });
+        if (clashing.length) {
+          const when = clashing.slice(0, 3).map((r) => fmtDateTime(r.starts_at)).join('; ');
+          const more = clashing.length > 3 ? ` and ${clashing.length - 3} more` : '';
+          clashNotice = `Added — just a heads-up: ${clashing.length === 1 ? 'this session runs' : `${clashing.length} sessions run`} at the same time as something already on your Wix calendar (${when}${more}). That's fine if you have the space and staff for both.`;
         }
       } catch {
-        setSavingSess(false);
-        setSessError("Couldn't check your Wix calendar for clashes — try again in a moment.");
-        return;
+        // Clash check is advisory only.
       }
     }
 
@@ -747,6 +747,7 @@ export default function ActivitiesPage() {
       setSessError(error.message);
       return;
     }
+    setSessNotice(clashNotice);
     setSessForm({
       date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity,
       weekdays: [], weeks: '1', customDates: [],
@@ -2640,6 +2641,7 @@ export default function ActivitiesPage() {
                 </div>
               </div>
               {sessError && <p className="mt-2 text-xs font-medium text-red-600">{sessError}</p>}
+              {sessNotice && !sessError && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">{sessNotice}</p>}
               <Button onClick={addSessions} disabled={savingSess} className="mt-3 w-full gradient-primary text-white rounded-xl hover:opacity-90">
                 {savingSess ? 'Adding…' : 'Add to schedule'}
               </Button>
