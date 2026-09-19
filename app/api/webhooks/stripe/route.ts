@@ -10,6 +10,7 @@ import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
 import { dbStatus, planFromMetadata, type PaidPlan } from '@/lib/plans';
 import { sendPaymentAlert } from '@/lib/payment-alert';
+import { welcomeIfSignedUpPaid } from '@/lib/signup-plan';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
@@ -178,10 +179,9 @@ export async function POST(request: Request) {
         const rowActive = active || Boolean(survivor);
         const interval = intervalOf(row);
 
-        // Read the plan as it stood before this write, so a renewal or a
-        // billing-portal price switch (both land here as `updated`) doesn't
-        // re-send the "welcome to Plus" email to someone already on Plus —
-        // it should fire once, on the free→plus transition only.
+        // Read the plan as it stood before this write: the downgrade email
+        // below fires only when a Plus parent's subscription actually ends,
+        // and the welcome only on the free→plus transition.
         const { data: existingSub } = await admin
           .from('customer_subscriptions')
           .select('plan')
@@ -208,14 +208,14 @@ export async function POST(request: Request) {
           { onConflict: 'user_id' }
         );
 
+        // A later upgrade sends no welcome. Only a parent who SIGNED UP on
+        // Plus (intent kept on the account) is welcomed, once payment lands.
         if (!wasPlus && newPlan === 'plus') {
-          await admin.from('notifications').insert({
-            user_id: customerUserId,
-            type: 'parent_welcome_paid',
-            title: 'Welcome to BabyBrain Plus!',
-            body: 'Complete your profile to start getting suggested activities based on your preferences.',
-            data: { url: '/explore' },
-          });
+          try {
+            await welcomeIfSignedUpPaid(admin, customerUserId);
+          } catch (e) {
+            console.error('welcomeIfSignedUpPaid failed', e);
+          }
         }
 
         // Only a genuine cancellation ends the subscription outright
@@ -492,6 +492,7 @@ export async function POST(request: Request) {
               userId: session.metadata.user_id,
               packageId: pkg.id,
               providerId: pkg.provider_id,
+              purchaseId: purchase.id,
               credits: pkg.credits,
             });
           }
@@ -508,16 +509,6 @@ export async function POST(request: Request) {
         const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
         const checkoutUserId = session.metadata.user_id;
 
-        // This usually lands before customer.subscription.created, so the
-        // free→plus transition (and the one-time "welcome to Plus" email) is
-        // caught here, not there — see the matching guard in the
-        // customer.subscription.* handler above.
-        const { data: existingSub } = await admin
-          .from('customer_subscriptions')
-          .select('plan')
-          .eq('user_id', checkoutUserId)
-          .maybeSingle();
-        const wasPlus = existingSub?.plan === 'plus';
         const newPlan = active ? 'plus' : 'free';
 
         await admin.from('customer_subscriptions').upsert(
@@ -532,14 +523,15 @@ export async function POST(request: Request) {
           { onConflict: 'user_id' }
         );
 
-        if (!wasPlus && newPlan === 'plus') {
-          await admin.from('notifications').insert({
-            user_id: checkoutUserId,
-            type: 'parent_welcome_paid',
-            title: 'Welcome to BabyBrain Plus!',
-            body: 'Complete your profile to start getting suggested activities based on your preferences.',
-            data: { url: '/explore' },
-          });
+        // A parent who signed up on Plus is welcomed once payment lands (a
+        // later upgrade carries no intent, so this is a no-op for them). A
+        // failure here must not fail the webhook — Stripe would retry it.
+        if (newPlan === 'plus') {
+          try {
+            await welcomeIfSignedUpPaid(admin, checkoutUserId);
+          } catch (e) {
+            console.error('welcomeIfSignedUpPaid failed', e);
+          }
         }
       }
 

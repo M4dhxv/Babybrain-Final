@@ -19,7 +19,12 @@ interface AuthState {
     email: string,
     password: string,
     fullName: string,
-    onboarding?: SignupOnboarding
+    onboarding?: SignupOnboarding,
+    /** The plan the parent picked on the sign-up form. Kept on the account so a
+     *  Plus choice survives the email-confirmation round trip (see
+     *  PendingPlusGate) — without it, confirming by email silently left the
+     *  parent on Free with no payment taken. */
+    intent?: SignupPlanIntent
   ) => Promise<{ error?: string; emailExists?: boolean }>;
   /** Re-send the sign-up confirmation email (same link, same branded template). */
   resendConfirmation: (email: string) => Promise<{ error?: string }>;
@@ -27,6 +32,12 @@ interface AuthState {
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+}
+
+/** A paid plan chosen at sign-up, stored as auth metadata until payment lands. */
+export interface SignupPlanIntent {
+  plan: "plus";
+  billing: "monthly" | "annual";
 }
 
 /** Everything the sign-up form collects beyond the credentials.
@@ -244,12 +255,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return error ? { error: error.message } : {};
     },
-    signUp: async (email, password, fullName, onboarding) => {
+    signUp: async (email, password, fullName, onboarding, intent) => {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name: fullName, ...(onboarding ? { onboarding } : {}) },
+          data: {
+            full_name: fullName,
+            ...(onboarding ? { onboarding } : {}),
+            ...(intent ? { intended_plan: intent.plan, intended_billing: intent.billing } : {}),
+          },
           // Send the confirmation link through our own callback so a
           // confirmed parent lands on their profile, not back on sign-up.
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile`,

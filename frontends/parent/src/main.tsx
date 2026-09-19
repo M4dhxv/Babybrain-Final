@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { FavoritesProvider } from "./lib/favorites";
+import { PendingPlusGate } from "./components/PendingPlusGate";
 import { initPostHog } from "./lib/posthog";
 import { installLinkInterception } from "./lib/nav";
 import {
@@ -63,6 +64,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <AuthProvider>
         <FavoritesProvider>
           <App />
+          <PendingPlusGate />
         </FavoritesProvider>
       </AuthProvider>
     </RouteErrorBoundary>
