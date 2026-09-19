@@ -3470,7 +3470,12 @@ export function BookingPage() {
   // the course-wide spots-left figure — a course is booked as one unit, not
   // a chosen date/time.
   const strands = isCourse ? courseStrands(sessions, courseStart) : [];
-  const courseSpots = isCourse ? sessions[0]?.capacity ?? null : null;
+  // /api/wix/slots reports Wix's remainingCapacity as each occurrence's
+  // capacity; a course is one enrolment for the whole run, so the tightest
+  // occurrence is what limits the party.
+  const courseSpots = isCourse
+    ? sessions.reduce<number | null>((m, x) => (x.capacity == null ? m : m == null ? x.capacity : Math.min(m, x.capacity)), null)
+    : null;
   // Wix Events / Wix COURSEs have no BabyBrain waitlist (00107). "Sold out" =
   // an event whose every ticket type is gone, or a course with no dates left
   // (/api/wix/slots only returns occurrences that still have room). Blocks
@@ -3627,6 +3632,10 @@ export function BookingPage() {
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
     ? Math.min(selectedTicketType.limit_per_checkout, 20)
     : 6;
+  const maxChildren = isEvent ? ticketQuantityCap : isCourse && courseSpots != null ? Math.max(1, Math.min(6, courseSpots)) : 6;
+  // Spots can drop while the page is open (the slots list refreshes) — never
+  // leave the party larger than what's left.
+  useEffect(() => { setCount((c) => Math.min(c, maxChildren)); }, [maxChildren]);
 
   async function pay() {
     setErr(null);
@@ -4236,7 +4245,7 @@ export function BookingPage() {
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
-                        <button type="button" onClick={() => setCount((c) => Math.min(isEvent ? ticketQuantityCap : 6, c + 1))} className="h-12 w-12">+</button>
+                        <button type="button" onClick={() => setCount((c) => Math.min(maxChildren, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
                     {!isEvent && !isCourse && count > 1 && (

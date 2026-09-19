@@ -381,6 +381,22 @@ export async function syncWixServicesToActivities(
     });
   }
 
+  // The no-waitlist rule for COURSE / EVENT (00107) keys off
+  // activities.wix_service_type. The loop above stamps it on every linked
+  // service it sees, so a linked activity still untyped here is one the
+  // guard would silently miss — surface it instead of letting a course fall
+  // back to the local waitlist unnoticed.
+  const { data: untyped } = await admin
+    .from('activities')
+    .select('title')
+    .eq('provider_id', providerId)
+    .not('wix_service_id', 'is', null)
+    .is('wix_service_type', null);
+  for (const row of untyped ?? []) {
+    result.skipped.push({ name: row.title, reason: 'Linked to Wix but has no service type — waitlist rules may not apply' });
+    console.warn('Wix-linked activity without wix_service_type', providerId, row.title);
+  }
+
   // Every touched APPOINTMENT/CLASS/COURSE gets its near-term availability
   // pulled and materialized into activity_sessions right here — this used to
   // be the one thing "Sync services" (and the 15-min scheduled sync) never
