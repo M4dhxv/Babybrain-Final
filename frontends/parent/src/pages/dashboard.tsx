@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   Suspense,
   useEffect,
@@ -2555,15 +2556,48 @@ export function ProfilePage() {
   );
 }
 
-/** Settings → Delete account. Typing DELETE is the confirmation; the route
- *  cancels any live Plus subscription before removing the account. */
+/** What a parent has to type to unlock the delete button — exact, so a stray
+ *  tap or autofill can't confirm it. */
+const DELETE_PHRASE = "DELETE ACCOUNT";
+
+/** Settings → Delete account. The button opens a warning pop-up: the parent
+ *  has to read that it's permanent (packages and make-up tokens lost, not
+ *  refunded) and type DELETE ACCOUNT before "Permanently delete" switches on.
+ *  The route cancels any live Plus subscription before removing the account.
+ *  Tapping outside the pop-up does not dismiss it, so a stray tap can't wave
+ *  the warning away; "Keep my account" and Escape do. */
 function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const close = () => {
+    setOpen(false);
+    setConfirm("");
+    setError(null);
+  };
+
+  // While the pop-up is up: focus the field, freeze the page behind it, and
+  // let Escape back out (never mid-delete).
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, busy]);
 
   async function remove() {
+    if (confirm !== DELETE_PHRASE) return;
     setBusy(true);
     setError(null);
     try {
@@ -2576,55 +2610,92 @@ function DeleteAccountPanel({ isPlus }: { isPlus: boolean }) {
     }
   }
 
+  const ready = confirm === DELETE_PHRASE && !busy;
+
   return (
     <div className="mt-4 rounded-[14px] border border-[#FED7E4] bg-white p-6 shadow-card">
       <h2 className="font-black text-[#FFC1D6]">Delete your account</h2>
       <p className="mt-1 text-sm font-semibold text-[#59658d]">
         This removes your profile, your children's details, preferences and saved activities.
+        {" "}Any unused packages and make-up tokens will be lost and not refunded.
         {isPlus ? " Your Plus subscription is cancelled at the same time, so you won't be charged again." : ""}
         {" "}It can't be undone.
       </p>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#FFC1D6] hover:bg-[#FFF5F8]"
+      >
+        Delete account
+      </button>
 
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="mt-4 rounded-[11px] border border-[#FED7E4] px-5 py-2.5 text-sm font-extrabold text-[#FFC1D6] hover:bg-[#FFF5F8]"
-        >
-          Delete account
-        </button>
-      ) : (
-        <div className="mt-4 rounded-[12px] bg-[#FFF5F8] p-4">
-          {/* The input is `block` so it sits under the instruction rather than
-              running on beside it, and lines up with the buttons below. */}
-          <label htmlFor="delete-confirm" className="block text-sm font-black text-[#FFC1D6]">
-            Type DELETE to confirm
-          </label>
-          <input
-            id="delete-confirm"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            className="mt-2 block h-11 w-full max-w-[220px] rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold"
-            placeholder="DELETE"
-          />
-          {error && <p className="mt-3 text-sm font-bold text-[#FFC1D6]">{error}</p>}
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={confirm !== "DELETE" || busy}
-              onClick={remove}
-              className={`rounded-[11px] px-5 py-2.5 text-sm font-extrabold text-white ${
-                confirm === "DELETE" && !busy ? "bg-[#FFC1D6] hover:brightness-105" : "cursor-not-allowed bg-[#FFC1D6]"
-              }`}
+      {open &&
+        createPortal(
+          <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/45 p-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-title"
+              aria-describedby="delete-copy"
+              className="w-full max-w-[420px] rounded-[18px] bg-white p-6 shadow-card"
             >
-              {busy ? "Deleting…" : "Permanently delete"}
-            </button>
-            <Button type="button" variant="outline" onClick={() => { setOpen(false); setConfirm(""); setError(null); }}>
-              Keep my account
-            </Button>
-          </div>
-        </div>
-      )}
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-[#FEEBF2]" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C90044" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 9v4M12 17h.01" />
+                  <path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+                </svg>
+              </span>
+              <h2 id="delete-title" className="mt-3 text-xl font-black">Delete your account?</h2>
+              <p id="delete-copy" className="mt-2 text-sm font-semibold leading-6 text-[#44507b]">
+                This removes your profile, your children's details, preferences and saved activities. Any unused packages and make-up tokens will be lost and not refunded. It can't be undone.
+              </p>
+              {isPlus && (
+                <p className="mt-3 rounded-[10px] bg-[#FFF5F8] px-3 py-2.5 text-[13px] font-semibold leading-5 text-[#59658d]">
+                  Your Plus subscription is cancelled at the same time, so you won't be charged again.
+                </p>
+              )}
+              <label htmlFor="delete-confirm" className="mt-4 block text-sm font-black text-[#34406f]">
+                Type <span className="text-baby-cta">{DELETE_PHRASE}</span> to confirm
+              </label>
+              <input
+                id="delete-confirm"
+                ref={inputRef}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && ready) void remove();
+                }}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                className="mt-2 block h-12 w-full rounded-[10px] border-[1.5px] border-[#F4A6C0] px-3 text-[15px] font-semibold tracking-wide focus:border-[#FA4D8D] focus:outline-none"
+                placeholder={DELETE_PHRASE}
+              />
+              {error && <p className="mt-3 text-sm font-bold text-baby-cta">{error}</p>}
+              <div className="mt-5 grid gap-2">
+                <button
+                  type="button"
+                  disabled={!ready}
+                  onClick={remove}
+                  className={`h-12 rounded-[11px] text-[15px] font-extrabold text-white ${
+                    ready ? "bg-[#C90044] hover:brightness-110" : "cursor-not-allowed bg-[#E0A9BB]"
+                  }`}
+                >
+                  {busy ? "Deleting…" : "Permanently delete"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={close}
+                  className="h-12 rounded-[11px] border border-[#EBE3E5] bg-white text-[15px] font-extrabold text-[#34406f]"
+                >
+                  Keep my account
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
