@@ -86,6 +86,11 @@ interface State {
 
 export class RouteErrorBoundary extends Component<Props, State> {
   state: State = { error: null, reloading: false };
+  /** A render fault gets one silent remount before the panel shows. Many are
+   *  transient — the first render ran against a half-loaded state and a fresh
+   *  mount, now with the data in hand, is fine — so the parent never sees the
+   *  panel for those. A fault that repeats still lands on the panel. */
+  private retried = false;
 
   static getDerivedStateFromError(error: Error): State {
     return { error, reloading: false };
@@ -106,6 +111,10 @@ export class RouteErrorBoundary extends Component<Props, State> {
       return;
     }
     console.error("Route error boundary caught:", error);
+    if (!this.retried) {
+      this.retried = true;
+      this.setState({ error: null, reloading: false });
+    }
   }
 
   render() {

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && npm run lint:hooks && vite build",
     "lint": "eslint .",
+    "lint:hooks": "eslint -c eslint.hooks.config.js src",
     "preview": "vite preview"
   },
   "dependencies": {

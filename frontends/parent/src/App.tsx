@@ -1012,7 +1012,7 @@ function ExplorePage() {
   useEffect(() => {
     if (sort !== "distance" || here) return;
     let cancelled = false;
-    const useProfile = async () => {
+    const locateFromProfile = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user || cancelled) return;
       const { data: p } = await supabase
@@ -1026,7 +1026,7 @@ function ExplorePage() {
       }
     };
     if (!navigator.geolocation) {
-      void useProfile();
+      void locateFromProfile();
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -1035,7 +1035,7 @@ function ExplorePage() {
         setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setHerePickedArea(null);
       },
-      () => void useProfile(),
+      () => void locateFromProfile(),
       { timeout: 8000 }
     );
     return () => {
@@ -1825,6 +1825,22 @@ function ActivityDetailPage() {
     }
   }
 
+  // Hooks stay above the loading / not-found early returns below. This one
+  // sat after them once, so the first render (loading) ran one hook fewer than
+  // the loaded render and React threw "Rendered more hooks", blanking the page.
+  useEffect(() => {
+    if (!session || !activity?.id) { setHasBooking(false); return; }
+    let live = true;
+    supabase
+      .from("bookings")
+      .select("id, activity_sessions!inner(activity_id)")
+      .eq("activity_sessions.activity_id", activity.id)
+      .in("status", ["pending", "confirmed", "completed"])
+      .limit(1)
+      .then(({ data }) => { if (live) setHasBooking((data ?? []).length > 0); });
+    return () => { live = false; };
+  }, [session, activity?.id]);
+
   if (loading) {
     return (
       <PageShell active="/explore">
@@ -1898,18 +1914,6 @@ function ActivityDetailPage() {
       : session && !isPlus
         ? "Messaging providers and other parents is a BabyBrain Plus feature."
         : null;
-  useEffect(() => {
-    if (!session || !activity?.id) { setHasBooking(false); return; }
-    let live = true;
-    supabase
-      .from("bookings")
-      .select("id, activity_sessions!inner(activity_id)")
-      .eq("activity_sessions.activity_id", activity.id)
-      .in("status", ["pending", "confirmed", "completed"])
-      .limit(1)
-      .then(({ data }) => { if (live) setHasBooking((data ?? []).length > 0); });
-    return () => { live = false; };
-  }, [session, activity?.id]);
   const groupChatBlockedReason =
     chatBlockedReason ?? (session && !hasBooking
       ? "The class group chat unlocks once you've booked this class. You can still chat with the provider directly."
