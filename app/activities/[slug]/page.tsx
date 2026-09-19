@@ -29,7 +29,7 @@ export default async function ActivityDetailPage({
 
   const { data: activity } = await supabase
     .from('activities')
-    .select('*, activity_categories(name, slug), providers(description, logo_url, cover_image_url, gallery_urls)')
+    .select('*, activity_categories!activities_category_id_fkey(name, slug), providers(description, logo_url, cover_image_url, gallery_urls)')
     .eq('slug', slug)
     .single();
   if (!activity) notFound();

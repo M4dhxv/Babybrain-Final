@@ -706,6 +706,7 @@ export default function BookingsPage() {
     wixServiceType: currentSessionIsWixClass ? 'CLASS' : null,
     localHeldCount: heldCount,
   });
+  const spacesLeft = wixCap != null ? Math.max(0, wixCap - wixHeld) : null;
   const wixClassOnWix = currentSessionIsWixClass && wixCap != null ? Math.min(wixHeld, wixCap) : 0;
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
@@ -1226,6 +1227,20 @@ export default function BookingsPage() {
                 {activeTab === 'Waitlist' ? 'on waitlist'
                   : activeTab === 'Bookings' && statusFilter === 'cancelled' ? 'cancelled'
                   : 'bookings'}
+                {spacesLeft != null && (
+                  <>
+                    <span className="text-gray-300"> · </span>
+                    <span className={cn(
+                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      spacesLeft === 0 ? 'bg-red-100 text-red-600'
+                        : spacesLeft <= 3 ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                    )}>
+                      {spacesLeft === 0 ? 'Full' : `${spacesLeft} ${spacesLeft === 1 ? 'space' : 'spaces'} left`}
+                    </span>
+                    <span className="text-gray-400"> of {wixCap}</span>
+                  </>
+                )}
                 {wixClassOverflow > 0 && (
                   <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
                 )}

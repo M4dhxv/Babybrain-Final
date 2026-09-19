@@ -160,6 +160,7 @@ export interface ActivityDetail {
   activity:
     | (ActivityRow & {
         category_name: string | null;
+        category_name_2?: string | null;
         provider_contact: ProviderContact | null;
         // Messaging is a Growth-and-above perk — a Pay As You Grow provider
         // isn't reachable via chat, so the buttons grey out instead.
@@ -214,7 +215,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       // rendered a listing page with none of the contact buttons.
       const { data: act } = await supabase
         .from("activities")
-        .select("*, activity_categories(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
+        .select("*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
         .eq("slug", slug)
         .eq("is_published", true)
         .maybeSingle();
@@ -356,6 +357,8 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           ...act,
           category_name:
             (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
+          category_name_2:
+            (act.category_2 as unknown as { name: string } | null)?.name ?? null,
           provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
           provider_can_message: providerCanMessage,
         },
@@ -468,7 +471,7 @@ export interface ChildRecommendations {
     id: string;
     score: number;
     reasons: string[];
-    activity: (ActivityRow & { category_name?: string }) | null;
+    activity: (ActivityRow & { category_name?: string; category_name_2?: string }) | null;
   }[];
 }
 
@@ -526,7 +529,7 @@ export function useRecommendations(children: Child[]) {
         // this join `toCard` had nothing to print and the card rendered an
         // empty category pill where Explore shows a real one.
         .select(
-          "id, child_id, score, reasons, activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
+          "id, child_id, score, reasons, activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         // Only the upcoming sessions ride along. Without this a Wix-linked
         // course carries every past slot it has ever run — hundreds of rows
@@ -552,6 +555,7 @@ export function useRecommendations(children: Child[]) {
           const act = (r.activities as unknown as
             | (ActivityRow & {
                 activity_categories?: { name: string } | null;
+                category_2?: { name: string } | null;
                 providers?: { business_name?: string | null; address?: string | null } | null;
               })
             | null) ?? null;
@@ -560,7 +564,7 @@ export function useRecommendations(children: Child[]) {
             score: r.score,
             reasons: r.reasons,
             activity: act
-              ? { ...act, category_name: act.activity_categories?.name ?? undefined }
+              ? { ...act, category_name: act.activity_categories?.name ?? undefined, category_name_2: act.category_2?.name ?? undefined }
               : null,
           };
         }),
@@ -635,6 +639,7 @@ const sgCardTime = (iso: string | null) =>
 export function toCard(
   a: ActivityRow & {
     category_name?: string;
+    category_name_2?: string;
     provider_name?: string | null;
     providers?: {
       business_name?: string | null; address?: string | null;
@@ -698,6 +703,7 @@ export function toCard(
     slug: a.slug,
     title: a.title,
     category: a.category_name ?? "",
+    category2: a.category_name_2 || undefined,
     image:
       resolveActivityImage(
         { image_urls: a.image_urls, image_source: a.image_source, cover_image_url: a.cover_image_url },

@@ -174,6 +174,7 @@ export type Database = {
           title: string;
           description: string;
           category_id: number;
+          secondary_category_id: number | null;
           tags: string[];
           provider_name: string;
           age_min_months: number;
@@ -237,6 +238,7 @@ export type Database = {
           title: string;
           description?: string;
           category_id: number;
+          secondary_category_id?: number | null;
           tags?: string[];
           provider_name?: string;
           age_min_months?: number;

@@ -892,7 +892,7 @@ function ExplorePage() {
      "how many would I get if I picked this" given every OTHER filter. */
   const matchesFilters = (a: (typeof activities)[number], skip?: "type" | "age" | "area") => {
     const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
-    if (skip !== "type" && categories_.length && !categories_.includes(catSlugOf(a, cats))) return false;
+    if (skip !== "type" && categories_.length && !catSlugsOf(a, cats).some((s) => categories_.includes(s))) return false;
     // A class matches an age band when its own range overlaps that band.
     if (skip !== "age" && selectedBands.length &&
         !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
@@ -942,8 +942,7 @@ function ExplorePage() {
     const area: Record<string, number> = {};
     for (const a of activities) {
       if (matchesFilters(a, "type")) {
-        const s = catSlugOf(a, cats);
-        type[s] = (type[s] ?? 0) + 1;
+        for (const s of catSlugsOf(a, cats)) type[s] = (type[s] ?? 0) + 1;
       }
       if (matchesFilters(a, "age")) {
         for (const b of AGE_BANDS) {
@@ -1425,8 +1424,10 @@ function ExplorePage() {
 
 /** Category slug for an activity — the RPC gives us the display name, so map
  *  it back through the category list the filter chips were built from. */
-function catSlugOf(a: { category: string }, cats: { slug: string; name: string }[]) {
-  return cats.find((c) => c.name === a.category)?.slug ?? "";
+function catSlugsOf(a: { category: string; category2?: string }, cats: { slug: string; name: string }[]) {
+  return [a.category, a.category2]
+    .map((n) => cats.find((c) => c.name === n)?.slug)
+    .filter((s): s is string => !!s);
 }
 
 /** The areas ordered by how near their centre is to `from`'s — `from` itself
@@ -1965,7 +1966,11 @@ function ActivityDetailPage() {
                   </p>
                 )}
               {activity.category_name && (
-                <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {activity.category_name}</span>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => (
+                    <span key={n} className="inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-baby-cta"><Icon name="music" className="h-4 w-4" /> {n}</span>
+                  ))}
+                </div>
               )}
               {activity.rating_count > 0 && (
                 <div className="mt-5 flex gap-5 font-bold"><span className="flex items-center gap-1"><Icon name="star" className="h-4 w-4 text-[#FFD77A]" /> {Number(activity.rating_avg).toFixed(1)} ({activity.rating_count})</span></div>

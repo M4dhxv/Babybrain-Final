@@ -16,6 +16,9 @@ import { createWixBookingAndSession, cancelWixLinkedBooking } from '@/lib/wix/sy
  */
 export const maxDuration = 60;
 
+const AT_CAPACITY_MESSAGE =
+  'This activity is at capacity. If you wish to add a booking, please increase the capacity.';
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     provider_id?: string; session_id?: string; name?: string; contact?: string; paid?: boolean;
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: session } = await admin
     .from('activity_sessions')
-    .select('id, activity_id, wix_slot_key')
+    .select('id, activity_id, wix_slot_key, capacity')
     .eq('id', body.session_id)
     .maybeSingle();
   const { data: activity } = session
@@ -42,6 +45,20 @@ export async function POST(request: Request) {
     : { data: null };
   if (!session || !activity || activity.provider_id !== body.provider_id) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  }
+
+  // A full session can't take a manual booking (the insert would be turned into
+  // a waitlist row the vendor never asked for, and surfaced a raw RLS error).
+  // Wix-linked sessions are checked by Wix itself below.
+  if (!session.wix_slot_key && session.capacity != null) {
+    const { count } = await admin
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', session.id)
+      .in('status', ['pending', 'confirmed', 'completed']);
+    if ((count ?? 0) >= session.capacity) {
+      return NextResponse.json({ error: AT_CAPACITY_MESSAGE }, { status: 409 });
+    }
   }
 
   const contact = body.contact?.trim() || null;
@@ -87,7 +104,7 @@ export async function POST(request: Request) {
     );
     if (!result.ok) {
       const msg = result.status === 409 && /no longer available|Not enough/i.test(result.error)
-        ? 'Wix shows this session as full — increase its capacity on Wix first.'
+        ? AT_CAPACITY_MESSAGE
         : result.error;
       return NextResponse.json({ error: msg }, { status: result.status });
     }

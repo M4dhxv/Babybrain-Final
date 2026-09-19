@@ -1,6 +1,8 @@
 export type Activity = {
   title: string;
   category: string;
+  /** Optional second category (an activity can carry up to two). */
+  category2?: string;
   image: string;
   age: string;
   venue: string;

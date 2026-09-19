@@ -822,9 +822,10 @@ export const ActivityCard = memo(function ActivityCard({
               : "h-full w-full object-cover"
           }
         />
-        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">
-          {activity.category}
-        </span>
+        <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
+          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">{activity.category}</span>
+          {activity.category2 && <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">{activity.category2}</span>}
+        </div>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
@@ -918,9 +919,10 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               : "h-44 w-full object-cover sm:h-full sm:min-h-[100px]"
           }
         />
-        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">
-          {activity.category}
-        </span>
+        <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
+          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">{activity.category}</span>
+          {activity.category2 && <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">{activity.category2}</span>}
+        </div>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (

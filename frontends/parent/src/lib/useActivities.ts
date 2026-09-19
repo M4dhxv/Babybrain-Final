@@ -80,6 +80,9 @@ export type SearchRow = {
   slug: string;
   title: string;
   category_name: string;
+  // Added in 00153 — optional so the app still works if it deploys first.
+  category_2_name?: string | null;
+  category_2_slug?: string | null;
   image_urls: string[] | null;
   age_min_months: number;
   age_max_months: number;
@@ -136,6 +139,7 @@ function toLiveActivity(
     slug: r.slug,
     title: r.title,
     category: r.category_name,
+    category2: r.category_2_name ?? undefined,
     // Falls back to the provider's own cover/logo/gallery when this listing
     // has no photos of its own (or is explicitly set to borrow theirs) —
     // see activityMedia.ts. Only the static crop is a true last resort.

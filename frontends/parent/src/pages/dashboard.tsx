@@ -1596,7 +1596,7 @@ export function ProfilePage() {
            parent with twenty favourites would otherwise pull thousands of rows
            to render twenty dates. */
         .select(
-          "activities(*, activity_categories(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
+          "activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         .gte("activities.activity_sessions.ends_at", new Date().toISOString())
         .limit(100)
@@ -1606,9 +1606,9 @@ export function ProfilePage() {
         data
           .map((f) => {
             const a = f.activities as unknown as
-              | (Parameters<typeof toCard>[0] & { activity_categories?: { name: string } })
+              | (Parameters<typeof toCard>[0] & { activity_categories?: { name: string }; category_2?: { name: string } })
               | null;
-            return a ? toCard({ ...a, category_name: a.activity_categories?.name }) : null;
+            return a ? toCard({ ...a, category_name: a.activity_categories?.name, category_name_2: a.category_2?.name }) : null;
           })
           .filter((x): x is ReturnType<typeof toCard> => Boolean(x))
       );
@@ -4320,7 +4320,7 @@ export function BookingPage() {
                   <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
                     {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                     {displayStaff && <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayStaff}</p>}
-                    {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {activity.category_name}</p>}
+                    {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {[activity.category_name, activity.category_name_2].filter(Boolean).join(" · ")}</p>}
                     <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
                   </div>
                 </div>
@@ -4641,7 +4641,7 @@ export function BookingPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={img} alt="" width={112} height={96} loading="lazy" decoding="async" className="h-24 w-28 rounded-[10px] object-cover" />
-                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <span className="mt-2 inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{activity.category_name}</span>}</div>
+                <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <div className="mt-2 flex flex-wrap gap-1.5">{[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => <span key={n} className="inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{n}</span>)}</div>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>

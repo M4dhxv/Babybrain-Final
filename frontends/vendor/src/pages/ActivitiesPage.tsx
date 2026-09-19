@@ -150,7 +150,7 @@ const plannedDates = (f: {
 const MAX_SESSIONS_PER_ADD = 100;
 
 const emptyForm = {
-  title: '', category_id: '', vendor_category: '' as VendorCategory | '',
+  title: '', category_id: '', secondary_category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
   location_id: '', default_capacity: '',
   // Images (00130): 'profile' (default) borrows the provider's own
@@ -829,7 +829,7 @@ export default function ActivitiesPage() {
     }
     const booked = sessions.find((s) => s.id === id)?.booked ?? 0;
     if (Number(sessEditForm.capacity) < booked) {
-      setSessEditError(`This session already has ${booked} booking${booked > 1 ? 's' : ''} — capacity can't be lower than that.`);
+      setSessEditError(`${booked} ${booked > 1 ? 'seats are' : 'seat is'} already booked, so capacity can't go below ${booked}. Families on the waitlist don't count.`);
       return;
     }
     const durationMins = Math.max(15, Number(sessEditForm.duration) || 45);
@@ -887,10 +887,17 @@ export default function ActivitiesPage() {
     if (!scheduleFor) return;
     const total = s.booked + s.waitlisted;
     const warn = total > 0
-      ? `This session has ${total} booking${total > 1 ? 's' : ''}${s.waitlisted ? ` (${s.waitlisted} on the waitlist)` : ''}. Deleting it removes those bookings too. Continue?`
+      ? `This session has ${total} booking${total > 1 ? 's' : ''}${s.waitlisted ? ` (${s.waitlisted} on the waitlist)` : ''}. Cancelling it cancels those bookings, emails and notifies the parents, and issues their credit or make-up token. Continue?`
       : 'Remove this session?';
     if (!window.confirm(warn)) return;
-    await supabase.from('activity_sessions').delete().eq('id', s.id);
+    // A session with bookings can't be deleted (bookings reference it), so it
+    // is cancelled instead: parents' bookings are cancelled, emailed and
+    // notified in the database (00154). An empty one is simply deleted.
+    const { error } = total > 0
+      ? await supabase.rpc('vendor_cancel_session', { p_session_id: s.id })
+      : await supabase.from('activity_sessions').delete().eq('id', s.id);
+    if (error) { setSessError(error.message); return; }
+    setSessError(null);
     await loadSessions(scheduleFor.id);
     load();
   }
@@ -1146,6 +1153,7 @@ export default function ActivitiesPage() {
     setForm({
       title: a.title,
       category_id: String(a.category_id ?? ''),
+      secondary_category_id: a.secondary_category_id != null ? String(a.secondary_category_id) : '',
       vendor_category: (a.vendor_category ?? '') as VendorCategory | '',
       description: a.description ?? '',
       age_min_months: String(a.age_min_months ?? ''),
@@ -1231,9 +1239,19 @@ export default function ActivitiesPage() {
    *  see providerPhotoPool: the logo first, then the catalogue. */
   const profileImages = providerPhotoPool();
 
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const selectedCategoryIds = [form.category_id, form.secondary_category_id].filter(Boolean);
+  // First tick is the primary category, the second the optional secondary;
+  // unticking the primary promotes the secondary so there's always a primary.
+  function toggleCategory(id: string) {
+    const cur = [form.category_id, form.secondary_category_id].filter(Boolean);
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < 2 ? [...cur, id] : cur;
+    setForm({ ...form, category_id: next[0] ?? '', secondary_category_id: next[1] ?? '' });
+  }
+
   async function saveActivity() {
     if (!provider) return;
-    if (!form.title || !form.category_id) { setFormError('Name and category are required.'); return; }
+    if (!form.title || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
     // Capacity comes from Wix for a linked activity (and is null for an
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
@@ -1252,6 +1270,7 @@ export default function ActivitiesPage() {
       title: form.title,
       description: form.description,
       category_id: Number(form.category_id),
+      secondary_category_id: form.secondary_category_id ? Number(form.secondary_category_id) : null,
       vendor_category: (form.vendor_category || provider.vendor_category) as VendorCategory | undefined,
       age_min_months: Math.max(0, form.age_min_months ? Number(form.age_min_months) : 0),
       // BabyBrain lists activities for children up to 11, so an unstated upper
@@ -1666,7 +1685,10 @@ export default function ActivitiesPage() {
                     <div className="text-xs text-gray-500 break-words">{a.vendor_category ?? ''}</div>
                   </div>
                 </div>
-                <div className="min-w-0 text-sm text-gray-700 break-words">{categoryName(a.category_id)}</div>
+                <div className="flex min-w-0 flex-col items-start gap-1 text-sm text-gray-700">
+                  <span className="break-words">{categoryName(a.category_id)}</span>
+                  {a.secondary_category_id != null && <span className="break-words">{categoryName(a.secondary_category_id)}</span>}
+                </div>
                 {/* QA: the table was missing location, so a multi-venue vendor
                     couldn't tell which of their sites a class runs at. */}
                 <div className="min-w-0 text-sm text-gray-700 break-words">
@@ -1907,11 +1929,51 @@ export default function ActivitiesPage() {
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Category <span className="text-[#FA4D8D]">*</span></label>
-              <SelectField className={inputCls} value={form.category_id} onChange={(v) => setForm({ ...form, category_id: v })} placeholder="Select category" aria-label="Category">
-                <Opt value="">Select category</Opt>
-                {categories.map((c) => <Opt key={c.id} value={String(c.id)}>{c.name}</Opt>)}
-              </SelectField>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">
+                Categories <span className="text-[#FA4D8D]">*</span>
+                <span className="ml-1 font-normal text-gray-500">(choose up to 2)</span>
+              </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCategoryPickerOpen((v) => !v)}
+                  aria-label="Categories"
+                  aria-expanded={categoryPickerOpen}
+                  className={cn(inputCls, 'flex min-h-[40px] flex-wrap items-center gap-1.5 text-left')}
+                >
+                  {selectedCategoryIds.length === 0 && <span className="text-gray-400">Select categories</span>}
+                  {selectedCategoryIds.map((id) => (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-[#FEEBF2] px-2.5 py-0.5 text-xs font-medium text-[#C90044]">
+                      {categoryName(Number(id))}
+                    </span>
+                  ))}
+                  <ChevronDown className="ml-auto h-4 w-4 flex-shrink-0 text-gray-400" />
+                </button>
+                {categoryPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setCategoryPickerOpen(false)} />
+                    <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      {categories.map((c) => {
+                        const id = String(c.id);
+                        const checked = selectedCategoryIds.includes(id);
+                        const atLimit = !checked && selectedCategoryIds.length >= 2;
+                        return (
+                          <label
+                            key={c.id}
+                            className={cn('flex items-center gap-2 px-3 py-2 text-sm', atLimit ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer hover:bg-gray-50')}
+                          >
+                            <input type="checkbox" checked={checked} disabled={atLimit} onChange={() => toggleCategory(id)} />
+                            {c.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="mt-1.5 text-xs text-gray-500">
+                {selectedCategoryIds.length >= 2 ? 'Two selected. Untick one to swap.' : 'Pick at least one; a second is optional.'}
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Description</label>
@@ -2331,9 +2393,13 @@ export default function ActivitiesPage() {
                             <Store className="h-4 w-4" /> {provider.business_name}
                           </p>
                         )}
-                        <span className="mt-4 inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-[#FA4D8D]">
-                          <Music className="h-4 w-4" /> {categoryName(previewFor.category_id)}
-                        </span>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {[previewFor.category_id, previewFor.secondary_category_id].filter((id): id is number => id != null).map((id) => (
+                            <span key={id} className="inline-flex w-fit items-center gap-1 rounded-[9px] bg-[#FEEBF2] px-4 py-1.5 font-bold text-[#FA4D8D]">
+                              <Music className="h-4 w-4" /> {categoryName(id)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div className="relative">
@@ -2678,6 +2744,15 @@ export default function ActivitiesPage() {
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Capacity</span>
                           <input type="number" min="1" className={inputCls} value={sessEditForm.capacity} onChange={(e) => setSessEditForm({ ...sessEditForm, capacity: e.target.value })} />
+                          {(() => {
+                            const cur = sessions.find((x) => x.id === s.id);
+                            if (!cur || cur.waitlisted === 0) return null;
+                            return (
+                              <span className="mt-1 block text-xs text-gray-500">
+                                {cur.booked} booked, {cur.waitlisted} on the waitlist. Each extra space you add invites the next family in line to book.
+                              </span>
+                            );
+                          })()}
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Teacher</span>
@@ -2720,7 +2795,7 @@ export default function ActivitiesPage() {
                               edits don't trigger it (the DB trigger only watches starts_at
                               and location_id), so this line only promises what actually
                               fires. */}
-                          {s.booked} family{s.booked > 1 ? ' families have' : ' has'} booked this session — moving it automatically notifies them.
+                          {s.booked} {s.booked > 1 ? 'have' : 'has'} booked this session — moving it automatically notifies them.
                         </p>
                       )}
                       <div className="flex gap-2">
@@ -2787,7 +2862,7 @@ export default function ActivitiesPage() {
                             <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove session">
+                            <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title={s.booked + s.waitlisted > 0 ? 'Cancel session' : 'Remove session'}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </>
