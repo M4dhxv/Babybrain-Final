@@ -1,11 +1,12 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import NoBusinessGate from './NoBusinessGate';
+import OnboardingGate from '@/components/OnboardingGate';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 
 /** Gate the vendor portal: must be signed in AND a member of a business. */
 export default function RequireAuth() {
-  const { session, provider, providerResolved, providerError, loading, refreshProvider } = useAuth();
+  const { session, provider, role, providerResolved, providerError, loading, refreshProvider } = useAuth();
   if (loading) {
     return (
       <div data-bb-loading className="flex h-screen items-center justify-center">
@@ -54,5 +55,13 @@ export default function RequireAuth() {
   // who wandered in (both apps share one session on this origin), so offer a
   // clear fork instead of silently dropping them into the claim form.
   if (!provider) return <NoBusinessGate />;
+
+  // Only the owner can act on either step (accept terms for the business,
+  // connect its Stripe account) — a staff/manager sign-in passes straight
+  // through even if the owner hasn't finished onboarding yet.
+  if (role === 'owner' && (!provider.vendor_terms_accepted_at || !provider.payouts_enabled)) {
+    return <OnboardingGate />;
+  }
+
   return <Outlet />;
 }
