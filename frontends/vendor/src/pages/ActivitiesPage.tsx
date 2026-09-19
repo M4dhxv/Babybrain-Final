@@ -446,7 +446,7 @@ export default function ActivitiesPage() {
 
   // Schedule manager (sessions = the bookable dates/times of an activity)
   type Sess = {
-    id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number;
+    id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number; waitlisted: number;
     location_id: string | null; price: number | null;
     teacher_name: string | null; studio: string | null;
     /* QA 04/09: pause is per-session as well as per-activity (migration 00084),
@@ -647,18 +647,22 @@ export default function ActivitiesPage() {
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
     const rows = sess ?? [];
-    // Booked count per session so deleting a session with bookings warns first.
+    // Seats held per session (what capacity can't drop below) and the
+    // waitlist, counted apart — a waitlisted row holds no seat, so it must not
+    // count toward the capacity floor or the "booked" figure.
     const counts: Record<string, number> = {};
+    const waiting: Record<string, number> = {};
     if (rows.length) {
       const { data: bks } = await supabase
         .from('bookings')
         .select('session_id, status')
         .in('session_id', rows.map((s) => s.id));
       (bks ?? []).forEach((b) => {
-        if (b.status !== 'cancelled') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
+        if (b.status === 'waitlisted') waiting[b.session_id] = (waiting[b.session_id] ?? 0) + 1;
+        else if (b.status !== 'cancelled') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
       });
     }
-    setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0 })));
+    setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0, waitlisted: waiting[s.id] ?? 0 })));
   }
 
   async function addSessions() {
@@ -880,8 +884,9 @@ export default function ActivitiesPage() {
 
   async function removeSession(s: Sess) {
     if (!scheduleFor) return;
-    const warn = s.booked > 0
-      ? `This session has ${s.booked} booking${s.booked > 1 ? 's' : ''}. Deleting it removes those bookings too. Continue?`
+    const total = s.booked + s.waitlisted;
+    const warn = total > 0
+      ? `This session has ${total} booking${total > 1 ? 's' : ''}${s.waitlisted ? ` (${s.waitlisted} on the waitlist)` : ''}. Deleting it removes those bookings too. Continue?`
       : 'Remove this session?';
     if (!window.confirm(warn)) return;
     await supabase.from('activity_sessions').delete().eq('id', s.id);
@@ -2735,7 +2740,7 @@ export default function ActivitiesPage() {
                         <div className="text-xs text-gray-500">
                           {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
                           {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
-                          {' · '}{s.booked} booked
+                          {' · '}{s.booked} booked{s.waitlisted > 0 ? ` · ${s.waitlisted} waitlisted` : ''}
                           {/* Only called out when it differs from the activity,
                               so the ordinary case stays quiet. */}
                           {s.location_id && s.location_id !== scheduleFor?.location_id && (
