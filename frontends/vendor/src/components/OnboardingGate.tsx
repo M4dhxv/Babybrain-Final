@@ -22,9 +22,10 @@ function connectSkippedKey(providerId: string) {
  *
  * Terms is blocking — the "Agree & continue" button is disabled until both
  * boxes are checked, same bar as Claim Your Business. Stripe Connect is a
- * prompt, not a lock: payouts aren't required to take paid bookings (BabyBrain
- * settles those directly until an account connects), so a "Skip for now" lets
- * an owner in immediately and the choice is remembered per browser — every
+ * prompt, not a lock: publishing a paid activity without payouts connected
+ * is its own separate admin-side gate (lib/admin-update-provider.ts), so this
+ * screen doesn't need to be one too. "Skip for now" lets an owner into the
+ * portal immediately, and the choice is remembered per browser — every
  * subsequent full load is still an implicit re-prompt for as long as
  * `payouts_enabled` stays false, but pressing Skip won't nag again this session.
  */
@@ -177,8 +178,8 @@ export default function OnboardingGate() {
         <div className="space-y-2 mb-6 text-sm text-gray-600">
           <p className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
-            Parents pay at checkout — BabyBrain's commission comes off automatically, the rest lands in your
-            bank account.
+            Parents pay at checkout. Stripe's fees and BabyBrain's commission come off automatically, and the
+            rest is paid into your bank account.
           </p>
           <p className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
@@ -201,9 +202,6 @@ export default function OnboardingGate() {
         >
           I'll do this later
         </button>
-        <p className="mt-4 text-xs text-gray-500">
-          Paid bookings still work in the meantime — BabyBrain collects them and settles with you directly.
-        </p>
       </>
     );
   }
