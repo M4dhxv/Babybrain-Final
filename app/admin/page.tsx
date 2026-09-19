@@ -253,7 +253,7 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
-  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'flows'>('metrics');
+  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows'>('metrics');
 
   useEffect(() => {
     onAuthFailure = (message) => setPhase(/Not an admin/.test(message) ? 'denied' : 'login');
@@ -281,12 +281,12 @@ export default function AdminPage() {
         <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
         {phase === 'ok' && (
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'commercials', 'flows'] as const).map((t) => (
+            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'commercials', 'payments', 'flows'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
                 {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages'
                   : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Vendors'
                   : t === 'vendors' ? 'Vendor data'
-                  : t === 'commercials' ? 'Commercials' : 'Email flows'}
+                  : t === 'commercials' ? 'Commercials' : t === 'payments' ? 'Payments' : 'Email flows'}
               </button>
             ))}
             <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }} style={tabBtn(false)}>
@@ -313,6 +313,7 @@ export default function AdminPage() {
         {phase === 'ok' && tab === 'addVendor' && <AddVendorView />}
         {phase === 'ok' && tab === 'vendors' && <VendorsView />}
         {phase === 'ok' && tab === 'commercials' && <CommercialsView />}
+        {phase === 'ok' && tab === 'payments' && <PaymentsView />}
         {phase === 'ok' && tab === 'flows' && <FlowsView />}
       </main>
     </div>
@@ -1946,6 +1947,167 @@ function CommercialsView() {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+interface PaymentTxn {
+  id: string;
+  provider_id: string;
+  business_name: string;
+  source: 'booking' | 'package';
+  gross_cents: number;
+  commission_cents: number;
+  stripe_fee_cents: number | null;
+  net_cents: number;
+  fee_payer: 'platform' | 'vendor';
+  routed_to_connect: boolean;
+  status: string;
+  stripe_payment_intent: string | null;
+  currency: string;
+  created_at: string;
+}
+interface PlatformPayout {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  arrival_date: string;
+  created: string;
+  method: string;
+}
+interface PaymentsData {
+  transactions: PaymentTxn[];
+  totals: { gross: number; commission: number; stripeFee: number; net: number; platformOwed: number; count: number };
+  platformPayouts: PlatformPayout[] | null;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'Pending',
+  in_transit: 'In transit',
+  paid_out: 'Paid out',
+  platform_owed: 'We owe vendor',
+  refunded: 'Refunded',
+};
+
+function PaymentsView() {
+  const [data, setData] = useState<PaymentsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setData(await adminFetch<PaymentsData>('/api/admin/payments?limit=100'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load payments.');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const sgdDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' });
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={card()}>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Payments</div>
+        <p style={{ color: C.muted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+          Every sale&apos;s split, and separately what Stripe has actually paid into BabyBrain&apos;s bank
+          account. Those are different things — a sale can be collected today and not reach the bank for
+          weeks, on Stripe&apos;s own monthly payout schedule.
+        </p>
+      </div>
+
+      {error && <div style={{ ...card(), borderColor: C.pink, color: C.pink }}>{error}</div>}
+
+      {!data ? (
+        <p style={{ color: C.muted }}>Loading…</p>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+            {[
+              ['Gross collected', data.totals.gross, C.text],
+              ['BabyBrain commission', data.totals.commission, C.green],
+              ["Stripe's real fees", data.totals.stripeFee, C.muted],
+              ['Vendor net', data.totals.net, C.text],
+              ['Still owed to vendors', data.totals.platformOwed, C.pink],
+            ].map(([label, cents, color]) => (
+              <div key={label as string} style={card()}>
+                <div style={{ color: C.muted, fontSize: 12 }}>{label}</div>
+                <div style={{ fontWeight: 900, fontSize: 18, color: color as string }}>{sgd(cents as number)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...card(), padding: 0, overflowX: 'auto' }}>
+            <div style={{ fontWeight: 800, padding: '12px 16px' }}>Recent transactions ({data.totals.count} all-time)</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: C.muted, textAlign: 'left' }}>
+                  <th style={th()}>When</th>
+                  <th style={th()}>Provider</th>
+                  <th style={th()}>Source</th>
+                  <th style={{ ...th(), textAlign: 'right' }}>Gross</th>
+                  <th style={{ ...th(), textAlign: 'right' }}>Commission</th>
+                  <th style={{ ...th(), textAlign: 'right' }}>Stripe fee</th>
+                  <th style={{ ...th(), textAlign: 'right' }}>Vendor net</th>
+                  <th style={th()}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.transactions.map((t) => (
+                  <tr key={t.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={td()}>{sgdDate(t.created_at)}</td>
+                    <td style={td()}>{t.business_name}</td>
+                    <td style={{ ...td(), textTransform: 'capitalize' }}>{t.source}</td>
+                    <td style={{ ...td(), textAlign: 'right' }}>{sgd(t.gross_cents)}</td>
+                    <td style={{ ...td(), textAlign: 'right', color: C.green }}>{sgd(t.commission_cents)}</td>
+                    <td style={{ ...td(), textAlign: 'right', color: C.muted }}>
+                      {t.stripe_fee_cents == null ? '—' : sgd(t.stripe_fee_cents)}
+                    </td>
+                    <td style={{ ...td(), textAlign: 'right' }}>{sgd(t.net_cents)}</td>
+                    <td style={td()}>
+                      <span style={{ color: t.status === 'platform_owed' ? C.pink : t.status === 'paid_out' ? C.green : C.muted }}>
+                        {STATUS_LABEL[t.status] ?? t.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {data.transactions.length === 0 && (
+                  <tr><td style={td()} colSpan={8}>No payments yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ ...card(), padding: 0, overflowX: 'auto' }}>
+            <div style={{ fontWeight: 800, padding: '12px 16px' }}>Sent to BabyBrain&apos;s bank account</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: C.muted, textAlign: 'left' }}>
+                  <th style={th()}>Arrival date</th>
+                  <th style={{ ...th(), textAlign: 'right' }}>Amount</th>
+                  <th style={th()}>Status</th>
+                  <th style={th()}>Method</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.platformPayouts?.map((p) => (
+                  <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={td()}>{sgdDate(p.arrival_date)}</td>
+                    <td style={{ ...td(), textAlign: 'right' }}>{sgd(p.amount_cents)}</td>
+                    <td style={{ ...td(), textTransform: 'capitalize' }}>{p.status}</td>
+                    <td style={{ ...td(), textTransform: 'capitalize' }}>{p.method}</td>
+                  </tr>
+                ))}
+                {(!data.platformPayouts || data.platformPayouts.length === 0) && (
+                  <tr><td style={td()} colSpan={4}>No payouts to BabyBrain&apos;s bank account yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
