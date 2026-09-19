@@ -929,6 +929,14 @@ export type Database = {
         Args: { p_booking_id: string };
         Returns: undefined;
       };
+      vendor_cancel_session: {
+        Args: { p_session_id: string };
+        Returns: number;
+      };
+      provider_set_purchase_expiry: {
+        Args: { p_purchase: string; p_expires_at: string | null };
+        Returns: undefined;
+      };
       provider_session_roster: {
         Args: { p_session_id: string };
         Returns: {
