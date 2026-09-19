@@ -16,7 +16,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiGet, apiPost, ApiError } from '@/lib/api';
+import { apiGet, apiPost, apiDelete, ApiError } from '@/lib/api';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
@@ -396,12 +396,20 @@ export default function BookingsPage() {
     if (!sessionId || !manualForm.name.trim()) { setManualError('A name is required.'); return; }
     setSavingManual(true);
     setManualError(null);
-    const { error } = await supabase.from('bookings').insert({
-      session_id: sessionId,
-      guest_name: manualForm.name.trim(),
-      guest_contact: manualForm.contact.trim() || null,
-      payment_status: manualForm.paid ? 'paid' : 'none',
-    });
+    // Server-side so a Wix-linked class is booked on Wix too (its seat count
+    // and the parent's "spots left" both come from Wix).
+    let error: { message: string } | null = null;
+    try {
+      await apiPost('/api/vendor/bookings/manual', {
+        provider_id: provider?.id,
+        session_id: sessionId,
+        name: manualForm.name.trim(),
+        contact: manualForm.contact.trim() || null,
+        paid: manualForm.paid,
+      });
+    } catch (e) {
+      error = { message: e instanceof Error ? e.message : 'Could not add the booking.' };
+    }
     setSavingManual(false);
     if (error) { setManualError(error.message); return; }
     setManualForm({ name: '', contact: '', paid: false });
@@ -785,15 +793,15 @@ export default function BookingsPage() {
   async function deleteManualBooking(row: RosterRow) {
     if (!window.confirm(`Delete the manual entry for ${row.child_name}? It's removed from the roster for good.`)) return;
     setRowBusy(true);
-    const { error, count } = await supabase
-      .from('bookings')
-      .delete({ count: 'exact' })
-      .eq('id', row.booking_id);
+    let error: { message: string } | null = null;
+    try {
+      // Server-side so the seat is also freed on Wix for a Wix-linked class.
+      await apiDelete(`/api/vendor/bookings/manual?provider_id=${encodeURIComponent(provider?.id ?? '')}&booking_id=${encodeURIComponent(row.booking_id)}`);
+    } catch (e) {
+      error = { message: e instanceof Error ? e.message : 'Could not delete the booking.' };
+    }
     setRowBusy(false);
     if (error) { setRowError(error.message); return; }
-    // RLS returns success with zero rows when the policy doesn't match, so a
-    // silent no-op has to be reported rather than looking like it worked.
-    if (!count) { setRowError('That entry could not be deleted — only manually-added bookings can be.'); return; }
     setRowError(null);
     setSelected(0);
     setMobileDetail(false);
