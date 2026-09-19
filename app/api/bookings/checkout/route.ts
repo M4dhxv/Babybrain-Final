@@ -48,7 +48,18 @@ export async function POST(request: Request) {
   // now — the pending seats. The waitlisted overflow is claimed later through
   // the "Pay now" flow (00100), which re-enters here with only those rows and
   // no pending seat among them, so it falls through to `unpaid`.
-  const unpaid = seats.filter((s) => s.payment_status !== 'paid');
+  // A cancelled seat is never payable — e.g. an old "Pay now" link for a class
+  // the vendor cancelled (a Wix cancellation cancels waitlisted seats too).
+  // Without this it fell through to `unpaid` and sent the parent to Stripe.
+  if (seats.every((s) => (s as { status?: string }).status === 'cancelled')) {
+    return NextResponse.json({ error: 'This booking has been cancelled' }, { status: 409 });
+  }
+  const unpaid = seats.filter(
+    (s) => s.payment_status !== 'paid' && (s as { status?: string }).status !== 'cancelled'
+  );
+  if (unpaid.length === 0) {
+    return NextResponse.json({ error: 'Nothing left to pay for on this booking' }, { status: 409 });
+  }
   const pending = unpaid.filter((s) => (s as { status?: string }).status === 'pending');
   const chargeSeats = pending.length > 0 ? pending : unpaid;
 
