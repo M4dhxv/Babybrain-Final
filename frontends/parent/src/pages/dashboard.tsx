@@ -346,6 +346,87 @@ function ChildSelect({
   );
 }
 
+type BookingSort = "soonest" | "latest";
+const BOOKING_STATUS_LABEL: Record<string, string> = {
+  confirmed: "Confirmed",
+  waitlisted: "Waitlisted",
+  pending: "Pending",
+  cancelled: "Cancelled",
+};
+
+/** Sort and status filter for the Bookings tab. One button opens a small panel
+ *  under it; the button carries a count of what's been changed from the
+ *  default so it's obvious a list is narrowed. Only offers the statuses the
+ *  parent actually has, with how many of each. */
+function BookingsFilter({
+  sort,
+  onSort,
+  status,
+  onStatus,
+  counts,
+  total,
+}: {
+  sort: BookingSort;
+  onSort: (s: BookingSort) => void;
+  status: string;
+  onStatus: (s: string) => void;
+  counts: Record<string, number>;
+  total: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = (sort !== "soonest" ? 1 : 0) + (status !== "all" ? 1 : 0);
+  const statuses = Object.keys(BOOKING_STATUS_LABEL).filter((s) => counts[s]);
+  const chip = (on: boolean) =>
+    `h-9 rounded-full border px-3.5 text-sm font-bold ${on ? "border-[#FA4D8D] bg-[#FED7E4] text-baby-cta" : "border-[#EBE3E5] bg-white text-[#4a5685]"}`;
+  return (
+    <div className="mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex h-10 items-center gap-2 rounded-[10px] border border-[#EBE3E5] bg-white px-3 text-sm font-bold text-[#4a5685]"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+          <circle cx="16" cy="7" r="2" />
+          <circle cx="8" cy="17" r="2" />
+        </svg>
+        Filter
+        {active > 0 && (
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#FA4D8D] px-1 text-xs font-black text-white">{active}</span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-[14px] border border-[#EBE3E5] bg-white p-4">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by date</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={chip(sort === "soonest")} onClick={() => onSort("soonest")}>Earliest first</button>
+            <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
+          </div>
+          <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Status</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={chip(status === "all")} onClick={() => onStatus("all")}>All ({total})</button>
+            {statuses.map((s) => (
+              <button key={s} type="button" className={chip(status === s)} onClick={() => onStatus(s)}>
+                {BOOKING_STATUS_LABEL[s]} ({counts[s]})
+              </button>
+            ))}
+          </div>
+          {active > 0 && (
+            <button
+              type="button"
+              onClick={() => { onSort("soonest"); onStatus("all"); }}
+              className="mt-4 text-sm font-black text-baby-cta"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Split a list into one group per child, in the order the children appear.
  *  Anything with no child on it lands in a trailing "Not assigned" group. */
 function groupByChild<T extends { childId?: string | null; child_id?: string | null }>(
@@ -1041,6 +1122,8 @@ export function ProfilePage() {
   // One per-child selection, shared by every tab that can honour it. null =
   // "All children", which splits the lists out by child rather than merging.
   const [childFilter, setChildFilter] = useState<string | null>(null);
+  const [bookingSort, setBookingSort] = useState<BookingSort>("soonest");
+  const [bookingStatus, setBookingStatus] = useState("all");
   // The child the journey panel and Overview suggestions describe: whoever the
   // selector names, else whichever card was last clicked, else the first.
   const journeyChild =
@@ -1686,6 +1769,18 @@ export function ProfilePage() {
     : bookings;
   const upcomingBookings = childFiltered.filter((b) => !isPast(b));
   const pastBookings = childFiltered.filter(isPast);
+  // Bookings tab: status filter, then date sort. A booking with no start time
+  // sorts last either way; the sort is stable so same-time bookings keep order.
+  const bookingStatusCounts: Record<string, number> = {};
+  for (const b of upcomingBookings) bookingStatusCounts[b.status] = (bookingStatusCounts[b.status] ?? 0) + 1;
+  const shownUpcoming = upcomingBookings
+    .filter((b) => bookingStatus === "all" || b.status === bookingStatus || b.places.some((p) => p.status === bookingStatus))
+    .sort((a, b) => {
+      if (!a.startsAt || !b.startsAt) return a.startsAt ? -1 : b.startsAt ? 1 : 0;
+      const d = new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+      return bookingSort === "soonest" ? d : -d;
+    });
+  const bookingsNarrowed = bookingStatus !== "all";
   // "All children" with more than one child means split out, not merged.
   const splitByChild = childFilter === null && children.length > 1;
   // Overview: picking a child narrows the tab to them; "All children" keeps
@@ -2052,23 +2147,37 @@ export function ProfilePage() {
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
-              <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+              <div className="flex flex-wrap items-start gap-x-4">
+                <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
+                {bookingsLoaded && upcomingBookings.length > 1 && (
+                  <div className="min-w-0 max-w-full">
+                    <BookingsFilter
+                      sort={bookingSort}
+                      onSort={setBookingSort}
+                      status={bookingStatus}
+                      onStatus={setBookingStatus}
+                      counts={bookingStatusCounts}
+                      total={upcomingBookings.length}
+                    />
+                  </div>
+                )}
+              </div>
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
               ) : splitByChild ? (
                 <div className="space-y-8">
-                  {groupByChild(upcomingBookings, children).map((g) => (
+                  {groupByChild(shownUpcoming, children).map((g) => (
                     <section key={g.key}>
                       <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
                       <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} isPlus={isPlus} />
                     </section>
                   ))}
-                  {upcomingBookings.length === 0 && (
-                    <BookingList items={[]} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
+                  {shownUpcoming.length === 0 && (
+                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming classes yet."} onChanged={loadBookings} isPlus={isPlus} />
                   )}
                 </div>
               ) : (
-                <BookingList items={upcomingBookings} emptyCopy="You haven't booked any upcoming classes yet." onChanged={loadBookings} isPlus={isPlus} />
+                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming classes yet."} onChanged={loadBookings} isPlus={isPlus} />
               )}
             </div>
           )}
