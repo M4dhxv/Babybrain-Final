@@ -463,6 +463,8 @@ export default function BookingsPage() {
             .from('activity_sessions')
             .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key')
             .eq('activity_id', id)
+            // Cancelled (e.g. dropped on Wix) sessions are gone from the vendor's list.
+            .neq('status', 'cancelled')
             .gte('starts_at', dayStartIso)
             .order('starts_at', { ascending: true })
             .limit(perActivityCap),

@@ -133,6 +133,7 @@ export default function DashboardPage() {
         .from('activity_sessions')
         .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
         .in('activity_id', ids)
+        .neq('status', 'cancelled')
         .gte('starts_at', nowIso)
         .lte('starts_at', in90dIso)
         .order('starts_at')

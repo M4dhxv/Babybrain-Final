@@ -11,6 +11,7 @@ If a vendor already manages their class/appointment schedule in **Wix Bookings**
 - The vendor keeps managing their availability **in Wix**, the same way they do now.
 - BabyBrain reads that availability **live** every time a parent looks at the listing — there's no separate copy of the schedule sitting in BabyBrain that could go stale or double-book.
 - When a parent books on BabyBrain, BabyBrain creates the booking **in Wix** on the vendor's behalf, then keeps its own record too. The vendor sees the parent's booking in their Wix calendar just like any other booking.
+- **If the vendor cancels a class occurrence in Wix**, BabyBrain follows within about 15 minutes: the class is removed from the vendor's activities and from the parent listing's dates, every booking on it (including waitlisted seats) is cancelled, and each parent gets the usual "class cancelled" email and in-app notification, plus their package credit or make-up token per the class's cancellation policy. BabyBrain only acts once Wix itself confirms that specific session is cancelled or gone (never just because it is missing from a list), and only for future class sessions. If the vendor reinstates it in Wix, the class reappears; the parents' cancelled bookings stay cancelled and they can rebook.
 - Both **1:1 appointments** (e.g. a private class with a specific instructor) and **group classes** (with real seat capacity) are supported — BabyBrain reads which type a service is and handles the two differently, since Wix itself treats them as separate systems.
 
 ## What changes for the vendor

@@ -1423,6 +1423,14 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      cancel_wix_session: {
+        Args: { p_session_id: string };
+        Returns: number;
+      };
+      my_booking_activities: {
+        Args: { p_booking_ids: string[] };
+        Returns: { booking_id: string; slug: string; title: string }[];
+      };
       redeem_package_credit: {
         Args: { p_purchase_id: string; p_session_id: string; p_child_id?: string | null; p_policies?: string[]; p_wix_booking_id?: string | null; p_quantity?: number; p_medical?: string | null; p_info?: string | null; p_guest_names?: string[] };
         Returns: { status: string; waitlisted_count: number }[];

@@ -492,6 +492,7 @@ export default function SaveListingPage() {
         .from('activity_sessions')
         .select('starts_at, ends_at')
         .eq('activity_id', lead.id)
+        .neq('status', 'cancelled')
         .gte('starts_at', new Date().toISOString())
         .order('starts_at')
         .limit(1);

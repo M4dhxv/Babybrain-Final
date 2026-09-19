@@ -4,10 +4,13 @@ import {
   fetchWixResources,
   fetchWixLocations,
   fetchWixAvailability,
-  fetchWixClassSessions,
+  fetchWixClassSessionList,
+  fetchWixSessionLiveness,
   fetchWixCourseSpan,
   fetchWixConfirmedAppointmentBookings,
   encodeWixSlotKey,
+  decodeWixSlotKey,
+  type WixSlotKey,
   wixServicePrice,
   wixServiceCapacity,
   wixServiceImageUrl,
@@ -156,6 +159,61 @@ async function importWixSessionStaff(
   return updated;
 }
 
+/** Everything {@link cancelWixDroppedSession} needs to prove Wix really dropped
+ *  a session. `listComplete` is whether the calendar read that produced the
+ *  "current keys" saw every page (see fetchWixClassSessionList): absence from a
+ *  truncated list proves nothing. */
+interface WixDroppedSessionContext {
+  creds: WixCredentials;
+  listComplete: boolean;
+}
+
+/** A vendor cancelling a class occurrence on Wix leaves no marker in the list
+ *  we sync — the session just stops being returned. Until now that was treated
+ *  as "keep it if anyone booked", so the booking, the parent's calendar date
+ *  and the vendor's schedule all carried on as if the class still ran.
+ *
+ *  This is where such a session is finally cancelled, and it is deliberately
+ *  conservative because the consequence is emails to real parents. It acts only
+ *  when ALL of these hold:
+ *    1. the calendar read was complete (never infer a cancellation from a
+ *       truncated list),
+ *    2. the occurrence is still in the future (a class that already happened
+ *       and later fell out of the window is history, not a cancellation),
+ *    3. it is a class-occurrence key (not an appointment slot, not a course
+ *       anchor), and
+ *    4. Wix, asked about that exact session, says it is cancelled or gone —
+ *       not merely "absent from a list". An inconclusive answer (timeout, 5xx,
+ *       odd status) does nothing; the next sync simply tries again.
+ *  The cancel itself is one database function (cancel_wix_session, migration
+ *  00146) so the bookings, notifications, emails and make-up credit all go
+ *  through the same triggers a vendor's own portal cancellation uses. */
+async function cancelWixDroppedSession(
+  admin: SupabaseClient,
+  session: { id: string; wix_slot_key: string; starts_at: string },
+  ctx: WixDroppedSessionContext
+): Promise<void> {
+  if (!ctx.listComplete) return;
+  if (new Date(session.starts_at).getTime() <= Date.now()) return;
+  let key: WixSlotKey;
+  try {
+    key = decodeWixSlotKey(session.wix_slot_key);
+  } catch {
+    return;
+  }
+  if (key.kind !== 'class') return;
+
+  const liveness = await fetchWixSessionLiveness(ctx.creds, key.sessionId);
+  if (liveness !== 'cancelled') return;
+
+  const { data, error } = await admin.rpc('cancel_wix_session', { p_session_id: session.id });
+  if (error) {
+    console.error('Wix dropped-session cancel failed', session.id, error);
+    return;
+  }
+  console.log(`Wix cancelled session ${session.id} (${session.starts_at}) — cancelled ${data ?? 0} booking(s)`);
+}
+
 /** See lib/wix/sync.ts's reconcileStaleWixSessions (moved there from
  *  app/api/wix/slots/route.ts) — identical logic. */
 async function reconcileStaleWixSessions(
@@ -163,17 +221,28 @@ async function reconcileStaleWixSessions(
   activityId: string,
   currentKeys: Set<string>,
   windowStart: Date,
-  windowEnd: Date
+  windowEnd: Date,
+  // Class/course occurrences only: how to prove Wix cancelled a kept session
+  // (see cancelWixDroppedSession). Omitted for appointments, whose slots come
+  // and go with availability and are never "cancelled" by a vendor this way.
+  dropped?: WixDroppedSessionContext
 ): Promise<void> {
   const { data: existing } = await admin
     .from('activity_sessions')
-    .select('id, wix_slot_key, wix_remaining_capacity, capacity')
+    .select('id, wix_slot_key, wix_remaining_capacity, capacity, starts_at')
     .eq('activity_id', activityId)
     .not('wix_slot_key', 'is', null)
+    // A COURSE enrolment's anchor row (wix_slot_key 'wixcourse:<scheduleId>')
+    // isn't one of the per-occurrence slots this fetch enumerates — it spans
+    // the whole run and is managed at booking time — so it must never be
+    // treated as a stale occurrence and swept.
     .not('wix_slot_key', 'like', 'wixcourse:%')
+    // Already cancelled by an earlier pass: settled, and its (cancelled)
+    // bookings still reference it so it can never be deleted anyway.
+    .neq('status', 'cancelled')
     .gte('starts_at', windowStart.toISOString())
     .lt('starts_at', windowEnd.toISOString());
-  const stale = (existing ?? []).filter((s: any) => !currentKeys.has(s.wix_slot_key));
+  const stale = (existing ?? []).filter((s: any) => !currentKeys.has(s.wix_slot_key!));
   if (stale.length === 0) return;
 
   const { data: bookings } = await admin
@@ -185,9 +254,33 @@ async function reconcileStaleWixSessions(
   );
 
   for (const s of stale) {
+    // Wix's own remaining-capacity snapshot from the last time this slot was
+    // fetched is the other signal a real seat is filled (a class booked
+    // directly on Wix's own site, not just through BabyBrain).
     const bookedOnWix = s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
-    if (bookedSessionIds.has(s.id) || bookedOnWix) continue;
-    await admin.from('activity_sessions').delete().eq('id', s.id);
+    const hasLocalBooking = bookedSessionIds.has(s.id);
+    if (!hasLocalBooking && !bookedOnWix) {
+      await admin.from('activity_sessions').delete().eq('id', s.id);
+      continue;
+    }
+    // Kept for a real local booking, but Wix no longer offers this occurrence
+    // at all (the vendor dropped the day, changed the recurrence, cancelled it,
+    // etc.) — so wix_remaining_capacity is now a frozen snapshot from before
+    // that happened, not live truth, and nothing will ever refresh it again
+    // since future fetches simply won't see this slot to upsert. Left alone it
+    // permanently overstates "booked" on the vendor's capacity badge
+    // (computeWixAwareCapacity takes the max of this and the local held
+    // count). Clearing it makes the badge fall back to the local held count,
+    // the only figure still honest once Wix itself has stopped tracking it.
+    if (hasLocalBooking && s.wix_remaining_capacity != null) {
+      await admin.from('activity_sessions').update({ wix_remaining_capacity: null }).eq('id', s.id);
+    }
+    // Kept rather than deleted — but if Wix confirms the vendor cancelled it,
+    // cancel it here too: the parents' bookings, their emails, and the
+    // session's visibility all follow from that.
+    if (dropped) {
+      await cancelWixDroppedSession(admin, s as { id: string; wix_slot_key: string; starts_at: string }, dropped);
+    }
   }
 }
 
@@ -279,10 +372,11 @@ async function syncWixActivityAvailability(
     .catch(() => null);
 
   if (isClass) {
-    const [sessions, knownStaffIds] = await Promise.all([
-      fetchWixClassSessions(creds, activity.wix_service_id, days),
+    const [sessionList, knownStaffIds] = await Promise.all([
+      fetchWixClassSessionList(creds, activity.wix_service_id, days),
       staffIdsPromise,
     ]);
+    const sessions = sessionList.sessions;
     const staffBySlotKey = new Map(
       sessions.map((s) => [
         encodeWixSlotKey({ kind: 'class', sessionId: s.id }),
@@ -309,6 +403,10 @@ async function syncWixActivityAvailability(
           capacity: s.capacity,
           wix_remaining_capacity: s.remainingCapacity,
           wix_slot_key: encodeWixSlotKey({ kind: 'class', sessionId: s.id }),
+          // Wix lists it as CONFIRMED, so it is running: brings back a session
+          // an earlier pass cancelled if the vendor reinstated it. (Bookings
+          // cancelled meanwhile stay cancelled; parents simply rebook.)
+          status: 'scheduled' as const,
         })),
         { onConflict: 'activity_id,wix_slot_key' }
       );
@@ -320,7 +418,8 @@ async function syncWixActivityAvailability(
       activity.id,
       new Set(sessions.map((s) => encodeWixSlotKey({ kind: 'class', sessionId: s.id }))),
       windowStart,
-      windowEnd
+      windowEnd,
+      { creds, listComplete: sessionList.complete }
     );
     return { kind: 'class', sessions, courseSpan };
   }

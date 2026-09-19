@@ -1601,13 +1601,12 @@ export function ProfilePage() {
       const originIds = [...new Set(rows.map((r) => r.origin_booking_id).filter((x): x is string => !!x))];
       const originByBooking = new Map<string, { slug: string | null; title: string | null }>();
       if (originIds.length) {
-        const { data: bks } = await supabase
-          .from("bookings")
-          .select("id, activity_sessions(activities(slug, title))")
-          .in("id", originIds);
-        for (const b of (bks ?? []) as unknown as Array<{ id: string; activity_sessions: { activities: { slug: string; title: string } | null } | null }>) {
-          const act = b.activity_sessions?.activities;
-          if (act) originByBooking.set(b.id, { slug: act.slug ?? null, title: act.title ?? null });
+        // Via an RPC rather than a direct join: a session the vendor cancelled
+        // is hidden from parents by RLS, and it is exactly the class a
+        // make-up token issued for that cancellation came from.
+        const { data: bks } = await supabase.rpc("my_booking_activities", { p_booking_ids: originIds });
+        for (const b of (bks ?? []) as Array<{ booking_id: string; slug: string | null; title: string | null }>) {
+          originByBooking.set(b.booking_id, { slug: b.slug ?? null, title: b.title ?? null });
         }
       }
       setTokens(

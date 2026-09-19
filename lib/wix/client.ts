@@ -592,16 +592,33 @@ export interface WixClassSession {
   staff: WixStaffMember[];
 }
 
-/** Every occurrence for a CLASS/COURSE service over the next `days` days,
- *  full or not — callers that only want bookable ones must filter on
- *  `.remainingCapacity > 0` themselves. Unlike appointments, availability
- *  here isn't scoped by serviceId server-side — the query returns sessions
- *  for every service, each carrying `scheduleOwnerId` (= the service id),
- *  so we filter client-side. */
-export async function fetchWixClassSessions(creds: WixCredentials, serviceId: string, days = 7): Promise<WixClassSession[]> {
+export interface WixClassSessionList {
+  sessions: WixClassSession[];
+  /** True only when Wix reported no further page after the last one we read.
+   *  A caller may treat a session's ABSENCE from `sessions` as meaningful only
+   *  when this is true — a truncated read makes every unread session look
+   *  missing. */
+  complete: boolean;
+}
+
+/** Upper bound on pages read per call (100 sessions each): a runaway cursor
+ *  must not loop forever, and hitting it is reported as `complete: false`. */
+const WIX_SESSION_MAX_PAGES = 20;
+
+/** Every CONFIRMED occurrence for a CLASS/COURSE service over the next `days`
+ *  days, plus whether Wix's whole calendar was read.
+ *
+ *  The query is account-wide (each session carries `scheduleOwnerId` = the
+ *  service id, filtered client-side below), so a busy account can span several
+ *  pages. It used to send `paging: { limit: 100 }`, which this endpoint ignores
+ *  (confirmed live: limit 5 still returned all 11) — so only Wix's default
+ *  first page was ever read, and anything past it looked like it had vanished.
+ *  `cursorPaging` is the mechanism the endpoint actually honours. */
+export async function fetchWixClassSessionList(creds: WixCredentials, serviceId: string, days = 7): Promise<WixClassSessionList> {
   const now = new Date();
   const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  const iso = (d: Date) => d.toISOString();
+  const fromDate = now.toISOString();
+  const toDate = to.toISOString();
 
   interface RawSession {
     id: string;
@@ -621,12 +638,25 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
     // is the *service's* name ("Kathak Classes"), not a staff member's.
     affectedSchedules?: { scheduleOwnerId?: string; scheduleOwnerName?: string }[];
   }
-  const data = await wixFetch<{ sessions?: RawSession[] }>(creds, '/bookings/v2/calendar/sessions/query', {
-    query: { paging: { limit: 100 } },
-    fromDate: iso(now),
-    toDate: iso(to),
-  });
-  return (data.sessions ?? [])
+  const raw: RawSession[] = [];
+  let cursor: string | undefined;
+  let complete = false;
+  for (let page = 0; page < WIX_SESSION_MAX_PAGES; page++) {
+    const data = await wixFetch<{
+      sessions?: RawSession[];
+      pagingMetadata?: { hasNext?: boolean; cursors?: { next?: string } };
+    }>(creds, '/bookings/v2/calendar/sessions/query', {
+      query: { cursorPaging: cursor ? { limit: 100, cursor } : { limit: 100 } },
+      fromDate,
+      toDate,
+    });
+    raw.push(...(data.sessions ?? []));
+    const next = data.pagingMetadata?.cursors?.next;
+    if (!data.pagingMetadata?.hasNext) { complete = true; break; }
+    if (!next) break; // Wix says more exist but gave no way to reach them
+    cursor = next;
+  }
+  const sessions = raw
     .filter((s) => s.scheduleOwnerId === serviceId && s.status === 'CONFIRMED')
     .map((s) => ({
       id: s.id,
@@ -642,6 +672,49 @@ export async function fetchWixClassSessions(creds: WixCredentials, serviceId: st
           !!a.scheduleOwnerId && !!a.scheduleOwnerName)
         .map((a) => ({ id: a.scheduleOwnerId, name: a.scheduleOwnerName })),
     }));
+  return { sessions, complete };
+}
+
+/** Every occurrence for a CLASS/COURSE service over the next `days` days,
+ *  full or not — callers that only want bookable ones must filter on
+ *  `.remainingCapacity > 0` themselves. */
+export async function fetchWixClassSessions(creds: WixCredentials, serviceId: string, days = 7): Promise<WixClassSession[]> {
+  return (await fetchWixClassSessionList(creds, serviceId, days)).sessions;
+}
+
+export type WixSessionLiveness = 'active' | 'cancelled' | 'unknown';
+
+/** Asks Wix directly about ONE calendar session, by id — the definitive answer
+ *  to "did the vendor cancel this?", which a session merely being absent from
+ *  a list is not (a truncated page, a transient error and a real cancellation
+ *  all look identical there).
+ *
+ *   - 'cancelled': Wix has no such session (404) or reports it CANCELLED.
+ *   - 'active':    Wix reports it CONFIRMED.
+ *   - 'unknown':   anything else — a timeout, a 5xx, a 4xx that isn't a plain
+ *                  "not found", an unfamiliar status. The caller must treat it
+ *                  as "don't act", never as cancelled. */
+export async function fetchWixSessionLiveness(creds: WixCredentials, sessionId: string): Promise<WixSessionLiveness> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 20_000);
+  try {
+    const res = await fetch(`${WIX_API_BASE}/bookings/v2/calendar/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      headers: wixHeaders(creds),
+      signal: abort.signal,
+    });
+    if (res.status === 404) return 'cancelled';
+    if (!res.ok) return 'unknown';
+    const body = (await res.json().catch(() => null)) as { session?: { status?: string } } | null;
+    const status = body?.session?.status;
+    if (status === 'CONFIRMED') return 'active';
+    if (status === 'CANCELLED' || status === 'CANCELED') return 'cancelled';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Stable id for a slot/session, used both as `activity_sessions.wix_slot_key`

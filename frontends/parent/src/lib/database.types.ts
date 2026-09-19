@@ -975,6 +975,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      my_booking_activities: {
+        Args: { p_booking_ids: string[] };
+        Returns: { booking_id: string; slug: string | null; title: string | null }[];
+      };
       redeem_make_up_token: {
         Args: { p_token_id: string; p_session_id: string; p_policies?: string[]; p_medical?: string | null; p_info?: string | null };
         Returns: string;

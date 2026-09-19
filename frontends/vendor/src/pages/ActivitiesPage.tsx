@@ -537,6 +537,7 @@ export default function ActivitiesPage() {
         .from('activity_sessions')
         .select('starts_at, ends_at')
         .eq('activity_id', previewFor.id)
+        .neq('status', 'cancelled')
         .gte('starts_at', new Date().toISOString())
         .order('starts_at')
         .limit(1)
@@ -640,6 +641,9 @@ export default function ActivitiesPage() {
       .from('activity_sessions')
       .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
       .eq('activity_id', activityId)
+      // A class the vendor cancelled on Wix is marked cancelled by the sync
+      // (cancel_wix_session); it is gone, so it doesn't belong in the schedule.
+      .neq('status', 'cancelled')
       .gte('starts_at', new Date().toISOString())
       .order('starts_at');
     const rows = sess ?? [];
@@ -902,7 +906,7 @@ export default function ActivitiesPage() {
     const ids = (acts ?? []).map((a) => a.id);
     if (ids.length) {
       const [{ data: sess }, { data: allSess }] = await Promise.all([
-        supabase.from('activity_sessions').select('activity_id').in('activity_id', ids).gte('starts_at', new Date().toISOString()),
+        supabase.from('activity_sessions').select('activity_id').in('activity_id', ids).neq('status', 'cancelled').gte('starts_at', new Date().toISOString()),
         supabase.from('activity_sessions').select('id, activity_id').in('activity_id', ids),
       ]);
       const counts: Record<string, number> = {};
