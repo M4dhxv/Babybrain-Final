@@ -1749,6 +1749,8 @@ function ActivityDetailPage() {
   const { isPlus } = usePlan();
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
+  /** Whether this parent holds a live booking on the activity — unlocks the class group chat. */
+  const [hasBooking, setHasBooking] = useState(false);
   /** Shown when a free-plan parent taps "Save to favourites". */
   const [favUpgrade, setFavUpgrade] = useState(false);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
@@ -1895,6 +1897,22 @@ function ActivityDetailPage() {
       : session && !isPlus
         ? "Messaging providers and other parents is a BabyBrain Plus feature."
         : null;
+  useEffect(() => {
+    if (!session || !activity?.id) { setHasBooking(false); return; }
+    let live = true;
+    supabase
+      .from("bookings")
+      .select("id, activity_sessions!inner(activity_id)")
+      .eq("activity_sessions.activity_id", activity.id)
+      .in("status", ["pending", "confirmed", "completed"])
+      .limit(1)
+      .then(({ data }) => { if (live) setHasBooking((data ?? []).length > 0); });
+    return () => { live = false; };
+  }, [session, activity?.id]);
+  const groupChatBlockedReason =
+    chatBlockedReason ?? (session && !hasBooking
+      ? "The class group chat unlocks once you've booked this class. You can still chat with the provider directly."
+      : null);
   const requireLogin = (open: () => void) => () => {
     if (!session) goTo("/login");
     else open();
@@ -2120,7 +2138,7 @@ function ActivityDetailPage() {
             <ChatButton
               icon="people"
               label="Class group chat"
-              disabledReason={chatBlockedReason}
+              disabledReason={groupChatBlockedReason}
               onOpen={requireLogin(() => setGroupChat(true))}
             />
             <Button

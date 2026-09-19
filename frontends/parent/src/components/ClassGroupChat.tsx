@@ -14,9 +14,9 @@ import { getChatClient } from "../lib/chat";
 import { apiPost } from "../lib/api";
 
 /**
- * Modal group chat for a class. Every parent booked into the activity plus the
- * provider's staff share one channel, so parents can coordinate and the vendor
- * is present to answer. Opened from the "Class group chat" button on the
+ * Modal group chat for a class slot. The server picks the slot the parent is
+ * booked on (creating the group if the vendor hasn't); parents of that slot plus
+ * the provider's staff share it. Opened from the "Class group chat" button on the
  * activity detail page. Requires a live booking — the API returns 403 otherwise.
  */
 export function ClassGroupChat({
@@ -68,7 +68,7 @@ export function ClassGroupChat({
         <div className="flex items-center justify-between border-b border-[#F4EFF0] px-5 py-3">
           <div>
             <p className="text-sm font-bold text-baby-ink">{activityTitle} — class group</p>
-            <p className="text-xs text-[#59658d]">Parents booked in this class + the provider</p>
+            <p className="text-xs text-[#59658d]">Parents booked into your slot + the provider</p>
           </div>
           <button
             onClick={onClose}
