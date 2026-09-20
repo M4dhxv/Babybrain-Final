@@ -35,7 +35,7 @@ if (!SBP) throw new Error('SBP (Supabase management token) is required');
 if (!RESEND) throw new Error('RESEND_API_KEY is required');
 
 const PINK = '#FA5D93';
-const IG = 'https://www.instagram.com/babybrain.sg';
+const IG = 'https://www.instagram.com/babybrainsg';
 
 /* Mirrors layout() in lib/emails/render.ts: white ground, Fredoka-ish stack at
    18px/#767676, centred logo, left-aligned copy, footer with the wordmark,

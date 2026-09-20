@@ -12,7 +12,7 @@
  * reply-to hello@babybrain.sg (set by the sender, not here).
  */
 
-const IG_URL = process.env.EMAIL_INSTAGRAM_URL ?? 'https://www.instagram.com/babybrain.sg';
+const IG_URL = process.env.EMAIL_INSTAGRAM_URL ?? 'https://www.instagram.com/babybrainsg';
 const PINK = '#FA5D93';
 
 export type EmailData = Record<string, unknown>;
