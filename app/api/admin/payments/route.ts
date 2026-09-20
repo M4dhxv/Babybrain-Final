@@ -20,7 +20,11 @@ export async function GET(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(Number(searchParams.get('limit') ?? 50), 200);
+  // Not reachable through the shipped UI today (always sends limit=100), but
+  // a non-numeric or negative value used to pass straight into .limit() with
+  // nothing to catch it.
+  const requested = Number(searchParams.get('limit') ?? 50);
+  const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 200) : 50;
 
   const admin = createAdminClient();
   const stripe = getStripe();
@@ -35,8 +39,16 @@ export async function GET(request: Request) {
     admin
       .from('provider_earnings')
       .select('gross_cents, commission_cents, stripe_fee_cents, net_cents, status'),
-    // What Stripe has actually sent to BabyBrain's own bank account.
-    stripe.payouts.list({ limit: 20 }).catch(() => null),
+    // What Stripe has actually sent to BabyBrain's own bank account. Errors
+    // are captured, not swallowed — a bad key or Stripe outage used to come
+    // back as `null` here, which the frontend rendered identically to a
+    // genuinely empty payout list ("No payouts yet"), masking a broken
+    // integration as a normal zero-state on the one dashboard meant to give
+    // financial oversight.
+    stripe.payouts.list({ limit: 20 }).then(
+      (r) => ({ ok: true as const, data: r.data }),
+      (e) => ({ ok: false as const, message: e instanceof Error ? e.message : 'Could not reach Stripe' })
+    ),
   ]);
 
   if (earningsRes.error) {
@@ -80,16 +92,18 @@ export async function GET(request: Request) {
     { gross: 0, commission: 0, stripeFee: 0, net: 0, platformOwed: 0, count: 0 }
   );
 
-  const platformPayouts =
-    payoutsRes?.data.map((p) => ({
-      id: p.id,
-      amount_cents: p.amount,
-      currency: p.currency,
-      status: p.status,
-      arrival_date: new Date(p.arrival_date * 1000).toISOString(),
-      created: new Date(p.created * 1000).toISOString(),
-      method: p.method,
-    })) ?? null;
+  const platformPayouts = payoutsRes.ok
+    ? payoutsRes.data.map((p) => ({
+        id: p.id,
+        amount_cents: p.amount,
+        currency: p.currency,
+        status: p.status,
+        arrival_date: new Date(p.arrival_date * 1000).toISOString(),
+        created: new Date(p.created * 1000).toISOString(),
+        method: p.method,
+      }))
+    : null;
+  const platformPayoutsError = payoutsRes.ok ? null : payoutsRes.message;
 
-  return NextResponse.json({ transactions, totals, platformPayouts });
+  return NextResponse.json({ transactions, totals, platformPayouts, platformPayoutsError });
 }

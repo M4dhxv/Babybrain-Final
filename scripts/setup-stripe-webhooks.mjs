@@ -39,6 +39,9 @@ const url =
 const ACCOUNT_EVENTS = [
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
+  // Releases a booking held pending on a delayed-notification method (PayNow)
+  // that never actually settles — see the payment_status gate in the route.
+  'checkout.session.async_payment_failed',
   // Frees the pending event-ticket order when a checkout is abandoned.
   'checkout.session.expired',
   'customer.subscription.created',

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { withWixSyncLock } from './sync-lock';
 import {
   fetchTicketFeeRatePercent,
   fetchWixEvents,
@@ -336,7 +337,23 @@ export async function unlinkWixEventActivities(
   return { removed, protectedEvents };
 }
 
+/** Serializes with any other sync for this provider — see lib/wix/sync-lock.ts.
+ *  Two overlapping runs (15-min cron vs. a manual "Sync events" click) used
+ *  to race provider_locations dedup with no guard, since no unique
+ *  constraint on address text lets two concurrent runs each create their own
+ *  row for the same new address. */
 export async function syncProviderWixEvents(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  creds: WixCredentials,
+  options?: { onlyEventIds?: string[] }
+): Promise<WixEventsSyncResult> {
+  return withWixSyncLock(admin, providerId, 'events', () =>
+    syncProviderWixEventsImpl(admin, providerId, creds, options)
+  );
+}
+
+async function syncProviderWixEventsImpl(
   admin: SupabaseClient<Database>,
   providerId: string,
   creds: WixCredentials,

@@ -5,6 +5,7 @@ import { identifyUser, resetUser } from '@/lib/posthog';
 import type { Provider, ProviderRole, SubscriptionPlan } from '@/lib/database.types';
 import { getCachedSubscription, setCachedSubscription, clearCachedSubscription } from '@/lib/providerCache';
 import { cacheInvalidate } from '@/lib/queryCache';
+import { disconnectChat } from '@/lib/chat';
 
 export interface Subscription {
   plan: SubscriptionPlan;
@@ -290,6 +291,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut: async () => {
       clearCachedSubscription();
       cacheInvalidate();
+      // getChatClient() caches one StreamChat connection per browser tab and
+      // never tore it down — a vendor who signs out and a different vendor
+      // who signs into a different business in the same tab (a real
+      // workflow; the portal has no business switcher) silently inherited
+      // the first vendor's chat identity: their unread badge, their channel
+      // list, and any message the second vendor sent went out under the
+      // first vendor's Stream user. Disconnecting here forces the next
+      // getChatClient() call to open a fresh connection for whoever signs in
+      // next.
+      await disconnectChat();
       await supabase.auth.signOut();
     },
     refreshProvider: async () => {

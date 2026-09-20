@@ -3444,6 +3444,7 @@ function PackageOption({
           type="button"
           variant="pink"
           size="sm"
+          disabled={action.busy}
           className={action.busy ? "shrink-0 opacity-60" : "shrink-0"}
           onClick={() => {
             onSelect();
@@ -4678,7 +4679,7 @@ export function BookingPage() {
                 : "This course is currently full — check back soon, or use “Enquire Now” on the class page."}
             </div>
           ) : (
-            <Button type="button" size="lg" onClick={checkout} className={busy || !sessionId ? "opacity-60" : ""}>
+            <Button type="button" size="lg" onClick={checkout} disabled={busy || !sessionId} className={busy || !sessionId ? "opacity-60" : ""}>
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}

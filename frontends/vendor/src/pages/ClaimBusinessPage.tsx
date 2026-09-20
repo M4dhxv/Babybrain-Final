@@ -737,8 +737,14 @@ export default function ClaimBusinessPage() {
             }}
             disabled={
               !(
+                // Only claimComplete (set from res.claimed in verify()) means
+                // ownership has actually been handed over. The old
+                // `(session && emailVerified)` clause let the button through
+                // to /save-listing whenever email verification passed and a
+                // session existed — true for a signed-in claimer before
+                // verify() has actually finished (e.g. if phone verification
+                // is also required), for a business never actually claimed.
                 claimComplete ||
-                (session && emailVerified) ||
                 (needsPassword && password.length >= 8 && password === password2 && agreedTerms && agreedMarketing) ||
                 (needsSignIn && password.length > 0)
               ) || busy

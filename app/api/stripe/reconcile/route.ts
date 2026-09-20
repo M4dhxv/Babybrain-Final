@@ -45,7 +45,13 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ error: 'Checkout session not found' }, { status: 404 });
   }
-  if (session.payment_status !== 'paid' && session.status !== 'complete') {
+  // `session.status` becomes 'complete' the instant a delayed-notification
+  // method (PayNow) is submitted, independent of whether `payment_status`
+  // ever becomes 'paid' — the old `&&` here let a parent redirected straight
+  // back from an unpaid PayNow submission through to full fulfillment before
+  // the money had actually settled. Same fix as the webhook's gate: require
+  // payment_status itself, nothing else.
+  if (session.payment_status !== 'paid') {
     return NextResponse.json({ applied: false, reason: 'not_paid' });
   }
 

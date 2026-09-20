@@ -3,17 +3,30 @@
  * Idempotent: activities upsert on slug; sessions are only created for
  * activities that have no future sessions yet.
  *
- * Run: npm run seed
+ *   node scripts/seed.mjs            # dry run — prints what would happen
+ *   node scripts/seed.mjs --live     # writes for real
+ *   npm run seed -- --live
+ *
+ * This is the one data-writing script in scripts/ that used to have no
+ * dry-run guard at all, unlike every sibling here (seed-demo-sessions,
+ * import-vendors, dedupe-*, bootstrap-stripe-mode, setup-stripe-*). There is
+ * only ONE hosted database — production, every preview deployment, and every
+ * developer's machine all point at it (see lib/stripe-config.ts) — so
+ * `npm run seed` run out of habit against a real .env.local used to publish
+ * 9 fabricated activities straight to real parents with zero confirmation.
  */
 import { createClient } from '@supabase/supabase-js';
 
 process.loadEnvFile('.env.local');
+const LIVE = process.argv.includes('--live');
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { auth: { persistSession: false } }
 );
+
+console.log(LIVE ? `Seeding against ${process.env.NEXT_PUBLIC_SUPABASE_URL} (--live)\n` : 'Dry run — pass --live to write.\n');
 
 const img = (id) => `https://images.unsplash.com/${id}?q=80&w=900&auto=format&fit=crop`;
 
@@ -52,7 +65,14 @@ if (catError) throw catError;
 const catId = Object.fromEntries(categories.map((c) => [c.slug, c.id]));
 
 let sessionsCreated = 0;
+let activitiesTouched = 0;
 for (const [slug, title, cat, tags, ageMin, ageMax, price, address, postal, lat, lng, image, days, hour, description, provider] of ACTIVITIES) {
+  if (!LIVE) {
+    console.log(`→ would upsert "${title}" (${slug}), published, and top up its future sessions`);
+    activitiesTouched++;
+    continue;
+  }
+
   const { data: activity, error } = await admin
     .from('activities')
     .upsert(
@@ -78,6 +98,7 @@ for (const [slug, title, cat, tags, ageMin, ageMax, price, address, postal, lat,
     .select('id')
     .single();
   if (error) throw error;
+  activitiesTouched++;
 
   const { count } = await admin
     .from('activity_sessions')
@@ -111,4 +132,8 @@ for (const [slug, title, cat, tags, ageMin, ageMax, price, address, postal, lat,
   console.log(`✓ ${title}`);
 }
 
-console.log(`\nSeeded ${ACTIVITIES.length} activities, ${sessionsCreated} new sessions.`);
+console.log(
+  LIVE
+    ? `\nSeeded ${activitiesTouched} activities, ${sessionsCreated} new sessions.`
+    : `\n${activitiesTouched} activities would be touched. Re-run with --live to write.`
+);

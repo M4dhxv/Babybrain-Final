@@ -347,19 +347,78 @@ export async function POST(request: Request) {
       break;
     }
 
+    case 'checkout.session.async_payment_failed': {
+      // The other half of the payment_status gate above: a delayed-payment
+      // method (PayNow) that never actually settles. Nothing was fulfilled at
+      // `completed` time for this session (the gate above skipped it), so
+      // there's no ledger entry or granted credit to undo — only the
+      // native-booking row(s), which were created `pending`/`none` *before*
+      // checkout even started (they hold the seat while payment is in
+      // flight) and otherwise stay stuck that way forever. Release them the
+      // same way any other cancellation does, so the seat frees and any
+      // waitlist promotion triggers normally. Package/Wix/Boost paths don't
+      // need cleanup here: nothing was created for them pre-payment.
+      const failed = event.data.object as Stripe.Checkout.Session;
+      if (failed.metadata?.kind === 'booking') {
+        const groupId = failed.metadata.booking_group_id ?? null;
+        const seatIds = (failed.metadata.seat_ids ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const bookingId = failed.metadata.booking_id;
+        const patch = { status: 'cancelled' as const, cancel_reason: 'Payment was not completed' };
+        if (seatIds.length > 0) {
+          await admin.from('bookings').update(patch).in('id', seatIds).eq('payment_status', 'none');
+        } else if (groupId) {
+          await admin.from('bookings').update(patch).eq('booking_group_id', groupId).eq('payment_status', 'none');
+        } else if (bookingId) {
+          await admin.from('bookings').update(patch).eq('id', bookingId).eq('payment_status', 'none');
+        }
+      }
+      break;
+    }
+
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object as Stripe.Checkout.Session;
       const kind = session.metadata?.kind;
 
+      // Delayed-notification methods (PayNow first among ONE_OFF_PAYMENT_METHODS
+      // — "it's how most Singapore parents pay") fire `checkout.session.completed`
+      // the instant the form is submitted, while `payment_status` is still
+      // 'unpaid' — the money hasn't actually cleared. Every branch below
+      // (booking confirm, package credits, Boost, Wix finalizers) used to run
+      // unconditionally here, so a parent who then let the PayNow QR expire
+      // ended up with a permanently confirmed, paid, seat-holding booking (or
+      // free credits/Boost days) that was never actually paid for — and there
+      // was no handler at all for the real failure event to undo it. Card
+      // payments are unaffected: their `completed` event already carries
+      // `payment_status: 'paid'`, so this gate is a no-op for them; the async
+      // success case re-enters this same handler once payment_status is
+      // genuinely 'paid'.
+      if (session.payment_status !== 'paid') break;
+
       if (kind === 'boost' && session.metadata?.activity_id) {
         const days = Number(session.metadata.days ?? 14);
-        await admin
-          .from('activities')
-          .update({
-            boosted_until: new Date(Date.now() + days * 864e5).toISOString(),
-          })
-          .eq('id', session.metadata.activity_id);
+        const paymentIntent = (session.payment_intent as string) ?? null;
+        // Idempotent on stripe_payment_intent: Stripe redelivering this event
+        // for the same successful purchase (a documented behavior — retries,
+        // or both `completed` and `async_payment_succeeded` firing) used to
+        // recompute `now() + days` from scratch on every delivery, granting
+        // free extra Boost days each time. `insert` here either succeeds
+        // once (first delivery — proceed to extend) or hits the unique
+        // index and no-ops (a redelivery — skip, already applied).
+        const { error: dupeError } = await admin
+          .from('boost_purchases')
+          .insert({ activity_id: session.metadata.activity_id, days, stripe_payment_intent: paymentIntent });
+        if (!dupeError) {
+          await admin
+            .from('activities')
+            .update({
+              boosted_until: new Date(Date.now() + days * 864e5).toISOString(),
+            })
+            .eq('id', session.metadata.activity_id);
+        }
       }
 
       if (kind === 'booking' && session.metadata?.booking_id) {

@@ -1161,6 +1161,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      boost_purchases: {
+        Row: {
+          id: string;
+          activity_id: string;
+          days: number;
+          stripe_payment_intent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          activity_id: string;
+          days: number;
+          stripe_payment_intent?: string | null;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      wix_sync_locks: {
+        Row: {
+          provider_id: string;
+          locked_at: string;
+          locked_by: string | null;
+        };
+        Insert: {
+          provider_id: string;
+          locked_at?: string;
+          locked_by?: string | null;
+        };
+        Update: {
+          locked_at?: string;
+          locked_by?: string | null;
+        };
+        Relationships: [];
+      };
       customer_subscriptions: {
         Row: {
           user_id: string;

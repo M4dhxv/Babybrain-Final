@@ -377,11 +377,29 @@ export function wixLocalToUtcIso(naiveLocal: string, timeZone: string): string {
   return new Date(assumedUtc.getTime() - offsetMs).toISOString();
 }
 
+/** Every active service on the vendor's Wix Bookings account.
+ *
+ * This single page used to be capped at 50 with no loop. Its result feeds
+ * `syncWixServicesToActivities`'s orphan detection, which force-unpublishes
+ * any already-linked activity whose wix_service_id isn't in the fetched set
+ * — so a vendor with 51+ services had every service past the first page
+ * silently unpublished on every sync, despite being fully live on Wix. Same
+ * offset-paging shape as fetchWixEvents. */
 export async function fetchWixServices(creds: WixCredentials): Promise<WixService[]> {
-  const data = await wixFetch<{ services?: WixService[] }>(creds, '/bookings/v2/services/query', {
-    query: { paging: { limit: 50 } },
-  });
-  return data.services ?? [];
+  const PAGE_SIZE = 50;
+  // 10 pages of headroom, matching fetchWixEvents' own safety cap.
+  const MAX_SERVICES = PAGE_SIZE * 10;
+
+  const services: WixService[] = [];
+  for (let offset = 0; offset < MAX_SERVICES; offset += PAGE_SIZE) {
+    const data = await wixFetch<{ services?: WixService[] }>(creds, '/bookings/v2/services/query', {
+      query: { paging: { limit: PAGE_SIZE, offset } },
+    });
+    const page = data.services ?? [];
+    services.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return services;
 }
 
 /** A COURSE service's whole-run bounds (first session start, last session
@@ -405,11 +423,25 @@ export async function fetchWixCourseSpan(
   };
 }
 
+/** Every staff/resource on the vendor's Wix Bookings account. Same
+ * unpaginated-single-call gap as fetchWixServices had — lower impact here
+ * since a missing resource only falls back to bookableResources[0] rather
+ * than unpublishing anything, but a vendor with many staff could still have
+ * services resolve to the wrong bookable resource. */
 export async function fetchWixResources(creds: WixCredentials): Promise<WixResource[]> {
-  const data = await wixFetch<{ resources?: WixResource[] }>(creds, '/bookings/v2/resources/query', {
-    query: {},
-  });
-  return data.resources ?? [];
+  const PAGE_SIZE = 50;
+  const MAX_RESOURCES = PAGE_SIZE * 10;
+
+  const resources: WixResource[] = [];
+  for (let offset = 0; offset < MAX_RESOURCES; offset += PAGE_SIZE) {
+    const data = await wixFetch<{ resources?: WixResource[] }>(creds, '/bookings/v2/resources/query', {
+      query: { paging: { limit: PAGE_SIZE, offset } },
+    });
+    const page = data.resources ?? [];
+    resources.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return resources;
 }
 
 /** Every time slot for an APPOINTMENT service over the next `days` days,

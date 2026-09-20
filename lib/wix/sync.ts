@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { withWixSyncLock } from './sync-lock';
 import {
   fetchWixServices,
   fetchWixResources,
@@ -157,7 +158,21 @@ function slugify(s: string): string {
  *  family sent to the wrong address), not just commercial ones. */
 const VENDOR_OVERRIDABLE_WIX_FIELDS = new Set(['price', 'title', 'description', 'image_urls']);
 
+/** Serializes with any other sync for this provider — see sync-lock.ts. Two
+ *  overlapping runs (15-min cron vs. a manual "Sync services" click) used to
+ *  race provider_locations dedup with no guard. */
 export async function syncWixServicesToActivities(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  creds: WixCredentials,
+  options?: { onlyServiceIds?: string[] }
+): Promise<WixServiceSyncResult> {
+  return withWixSyncLock(admin, providerId, 'services', () =>
+    syncWixServicesToActivitiesImpl(admin, providerId, creds, options)
+  );
+}
+
+async function syncWixServicesToActivitiesImpl(
   admin: SupabaseClient<Database>,
   providerId: string,
   creds: WixCredentials,

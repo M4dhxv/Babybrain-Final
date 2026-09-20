@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 // ---- types mirrored from the /api/admin/* routes ----
@@ -183,6 +183,10 @@ type EditLocation = {
 type EditSession = {
   id: string; starts_at: string; ends_at: string; capacity: number | null;
   teacher_name: string | null; studio: string | null;
+  // Captured once from the pristine starts_at/ends_at when this row loads —
+  // see the save-payload builder below for why this can't be recomputed from
+  // current form state.
+  duration_mins: number;
 };
 type EditActivity = {
   id: string; title: string; slug: string; category_slug: string | null; category_name: string | null;
@@ -420,28 +424,48 @@ function MessagesView() {
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  // Tracks whichever channel is current *right now*, synchronously — `active`
+  // state is a snapshot from whenever the closure that reads it was created,
+  // so an in-flight fetch/send that reads `active` instead of this ref would
+  // apply its result to a channel the admin has since clicked away from.
+  const activeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     adminFetch<{ channels: Channel[] }>('/api/admin/channels').then((r) => setChannels(r.channels)).catch(() => setChannels([]));
   }, []);
 
   const openChannel = useCallback(async (ch: Channel) => {
+    activeIdRef.current = ch.id;
     setActive(ch); setMessages([]); setLoadingMsgs(true);
     try {
       const r = await adminFetch<{ messages: Message[] }>(`/api/admin/messages?channelId=${encodeURIComponent(ch.id)}`);
+      // The admin may have clicked a different channel while this was in
+      // flight — a slower fetch for the channel clicked *first* landing
+      // after a faster one for the channel clicked *second* used to show
+      // the wrong thread under the current header.
+      if (activeIdRef.current !== ch.id) return;
       setMessages(r.messages);
-    } finally { setLoadingMsgs(false); }
+    } finally {
+      if (activeIdRef.current === ch.id) setLoadingMsgs(false);
+    }
   }, []);
 
   async function send() {
     if (!active || !reply.trim()) return;
+    const channelId = active.id;
     setSending(true);
     try {
       const r = await adminFetch<{ message: Message }>('/api/admin/messages', {
-        method: 'POST', body: JSON.stringify({ channelId: active.id, text: reply.trim() }),
+        method: 'POST', body: JSON.stringify({ channelId, text: reply.trim() }),
       });
-      setMessages((prev) => [...prev, r.message]);
-      setReply('');
+      // Same guard as openChannel: don't let a reply sent to channel A land
+      // in whichever channel happens to be open when the response arrives —
+      // append it only if the admin is still looking at the channel it was
+      // actually sent to.
+      if (activeIdRef.current === channelId) {
+        setMessages((prev) => [...prev, r.message]);
+        setReply('');
+      }
     } finally { setSending(false); }
   }
 
@@ -947,7 +971,12 @@ function AddVendorView() {
                 <div>
                   <label style={label('')}>Price (SGD)</label>
                   <input value={a.price} inputMode="decimal" style={input()} placeholder="blank = on enquiry"
-                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, price: e.target.value.replace(/[^\d.]/g, '') } : x))} />
+                    // Strip anything but digits/dot, then collapse any dot
+                    // after the first one — "12.3.4" used to pass straight
+                    // through, becoming NaN at submit, which JSON.stringify
+                    // silently turns into null: the vendor saved fine but
+                    // its price silently became "on enquiry" with no error.
+                    onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, price: e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') } : x))} />
                 </div>
                 <div>
                   <label style={label('')}>Visible to parents</label>
@@ -1139,7 +1168,25 @@ function EditVendorModal({
 
   useEffect(() => {
     adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
-      .then(setD)
+      .then((p) =>
+        setD({
+          ...p,
+          activities: p.activities.map((a) => ({
+            ...a,
+            sessions: a.sessions.map((s) => ({
+              ...s,
+              // Fixed at load time from the session's real, pristine
+              // starts_at/ends_at. The form only lets the admin edit
+              // starts_at (there's no end-time/duration field), so this must
+              // survive that edit unchanged rather than being rederived from
+              // it later — see the save-payload builder below.
+              duration_mins: Math.max(5, Math.round(
+                (new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000
+              )),
+            })),
+          })),
+        })
+      )
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [id]);
 
@@ -1192,11 +1239,15 @@ function EditVendorModal({
                 .map((s) => ({
                   ...(s.id ? { id: s.id } : {}),
                   starts_at: s.starts_at,
-                  // The form edits a start time; keep whatever length the
-                  // session already had rather than silently resetting it.
-                  duration_mins: s.id && s.ends_at
-                    ? Math.max(5, Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000))
-                    : 60,
+                  // The form only ever edits starts_at (no end-time/duration
+                  // field exists), so this has to be the value fixed at load
+                  // time from the session's real, pristine starts_at/ends_at
+                  // — recomputing from CURRENT starts_at against the still-
+                  // pristine ends_at (the old code here) silently corrupted
+                  // the length of any rescheduled session: moving a 60-min
+                  // class's start later shrank it toward the clamp floor,
+                  // moving it earlier ballooned it.
+                  duration_mins: s.duration_mins,
                   capacity: s.capacity,
                   teacher_name: s.teacher_name,
                   studio: s.studio,
@@ -1445,7 +1496,7 @@ function EditVendorModal({
                       <label style={lbl}>Price (SGD)</label>
                       <input value={a.price == null ? '' : String(a.price)} inputMode="decimal" style={input()} disabled={gone}
                         placeholder="on enquiry"
-                        onChange={(e) => { const v = e.target.value.replace(/[^\d.]/g, '');
+                        onChange={(e) => { const v = e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
                           set('activities', d.activities.map((x) => x.id === a.id ? { ...x, price: v === '' ? null : Number(v) } : x)); }} />
                     </div>
                     <div>
@@ -1493,7 +1544,7 @@ function EditVendorModal({
                       </span>
                       <button type="button" disabled={gone} style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
                         onClick={() => set('activities', d.activities.map((x) => x.id === a.id
-                          ? { ...x, sessions: [...x.sessions, { id: '', starts_at: '', ends_at: '', capacity: null, teacher_name: '', studio: '' }] } : x))}>
+                          ? { ...x, sessions: [...x.sessions, { id: '', starts_at: '', ends_at: '', duration_mins: 60, capacity: null, teacher_name: '', studio: '' }] } : x))}>
                         + Session
                       </button>
                     </div>
@@ -1818,13 +1869,18 @@ function CommercialsView() {
     setNote(null);
     setError(null);
     try {
-      await adminFetch('/api/admin/commercials', {
+      const r = await adminFetch<{ ok: true; applied: Partial<VendorTerms> }>('/api/admin/commercials', {
         method: 'PATCH',
         body: JSON.stringify({ provider_id: providerId, ...patch }),
       });
-      // Optimistic: the PATCH echoes what it applied, so just merge locally
-      // rather than refetching the whole table on every keystroke-commit.
-      setRows((prev) => prev?.map((r) => (r.provider_id === providerId ? { ...r, ...patch } : r)) ?? prev);
+      // Optimistic: merge what the backend actually applied (r.applied), not
+      // just the patch this call sent — editing commission_rate or
+      // commission_flat_cents also silently sets custom_terms=true
+      // server-side (locking the vendor out of future plan-driven resets),
+      // which r.applied includes and the sent `patch` doesn't. Merging only
+      // `patch` left the "· bespoke" badge not showing until the next reload
+      // even though the backend had already locked the terms.
+      setRows((prev) => prev?.map((row) => (row.provider_id === providerId ? { ...row, ...r.applied } : row)) ?? prev);
       setNote('Saved. Applies to future sales — past earnings keep their original terms.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');
@@ -1895,7 +1951,12 @@ function CommercialsView() {
                     <input
                       style={{ ...input(), width: 78, padding: '6px 8px' }}
                       type="number" min={0} max={50} step={0.5}
-                      defaultValue={(r.commission_rate * 100).toString()}
+                      // Rounding at the same 0.1-point precision `onBlur`
+                      // below actually saves at (rather than a bare `* 100`)
+                      // avoids reprinting float noise for any rate that
+                      // isn't a "nice" binary fraction — 0.07 * 100 is
+                      // 7.000000000000001 in JS, not 7.
+                      defaultValue={(Math.round(r.commission_rate * 1000) / 10).toString()}
                       onBlur={(e) => {
                         const pct = Number(e.target.value);
                         const rate = Math.round(pct * 10) / 1000;
@@ -1981,6 +2042,7 @@ interface PaymentsData {
   transactions: PaymentTxn[];
   totals: { gross: number; commission: number; stripeFee: number; net: number; platformOwed: number; count: number };
   platformPayouts: PlatformPayout[] | null;
+  platformPayoutsError: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -2083,29 +2145,36 @@ function PaymentsView() {
 
           <div style={{ ...card(), padding: 0, overflowX: 'auto' }}>
             <div style={{ fontWeight: 800, padding: '12px 16px' }}>Sent to BabyBrain&apos;s bank account</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ color: C.muted, textAlign: 'left' }}>
-                  <th style={th()}>Arrival date</th>
-                  <th style={{ ...th(), textAlign: 'right' }}>Amount</th>
-                  <th style={th()}>Status</th>
-                  <th style={th()}>Method</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.platformPayouts?.map((p) => (
-                  <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                    <td style={td()}>{sgdDate(p.arrival_date)}</td>
-                    <td style={{ ...td(), textAlign: 'right' }}>{sgd(p.amount_cents)}</td>
-                    <td style={{ ...td(), textTransform: 'capitalize' }}>{p.status}</td>
-                    <td style={{ ...td(), textTransform: 'capitalize' }}>{p.method}</td>
+            {data.platformPayoutsError ? (
+              <div style={{ padding: '0 16px 16px', color: C.pink, fontSize: 13 }}>
+                Couldn&apos;t reach Stripe to check this — {data.platformPayoutsError}. This is not the same as
+                &ldquo;no payouts yet&rdquo;; try reloading.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ color: C.muted, textAlign: 'left' }}>
+                    <th style={th()}>Arrival date</th>
+                    <th style={{ ...th(), textAlign: 'right' }}>Amount</th>
+                    <th style={th()}>Status</th>
+                    <th style={th()}>Method</th>
                   </tr>
-                ))}
-                {(!data.platformPayouts || data.platformPayouts.length === 0) && (
-                  <tr><td style={td()} colSpan={4}>No payouts to BabyBrain&apos;s bank account yet.</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.platformPayouts?.map((p) => (
+                    <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                      <td style={td()}>{sgdDate(p.arrival_date)}</td>
+                      <td style={{ ...td(), textAlign: 'right' }}>{sgd(p.amount_cents)}</td>
+                      <td style={{ ...td(), textTransform: 'capitalize' }}>{p.status}</td>
+                      <td style={{ ...td(), textTransform: 'capitalize' }}>{p.method}</td>
+                    </tr>
+                  ))}
+                  {(!data.platformPayouts || data.platformPayouts.length === 0) && (
+                    <tr><td style={td()} colSpan={4}>No payouts to BabyBrain&apos;s bank account yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       )}

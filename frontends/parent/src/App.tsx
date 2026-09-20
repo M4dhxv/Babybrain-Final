@@ -2032,7 +2032,7 @@ function ActivityDetailPage() {
                         <h3 className="font-black">{p.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
                       </div>
-                      <Button type="button" variant="pink" size="sm" onClick={() => buyPack(p.id)} className={buyingPack === p.id ? "opacity-60" : ""}>
+                      <Button type="button" variant="pink" size="sm" onClick={() => buyPack(p.id)} disabled={buyingPack === p.id} className={buyingPack === p.id ? "opacity-60" : ""}>
                         {buyingPack === p.id ? "…" : "Buy pack"}
                       </Button>
                     </div>
