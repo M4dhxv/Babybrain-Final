@@ -28,6 +28,10 @@ export type LiveActivity = Activity & {
   providerName?: string;
   price?: number | null;
   nextSessionAt?: string | null;
+  /** Start time of every upcoming session, so the date and time-of-day filters can match an
+   *  activity on ANY of its sessions, not just the next one. Undefined until the second load
+   *  phase lands; the filters then fall back to `nextSessionAt`. */
+  sessionStarts?: string[];
   /** A Wix COURSE is enrolled as one booking for the whole run, so it can still
    *  be joined once it has begun. `runStartsAt`/`runEndsAt` are the occurrence a
    *  parent can still join — in progress or upcoming — which `nextSessionAt`
@@ -110,6 +114,12 @@ export type SearchRow = {
   run_ends_at?: string | null;
 };
 
+/** The card's date and time for one specific session start (used when a filter picked
+ *  a session other than the next one). */
+export function whenAt(iso: string): { date: string; time: string } {
+  return { date: sgDate(iso), time: sgTime(iso) };
+}
+
 /** The card's date and time. A multi-day course run (a camp Wix sends as one
  *  continuous occurrence) has no time of day, so it reads as its date range —
  *  "17 – 20 Sept" — rather than the start time of its first midnight. A course
@@ -132,7 +142,8 @@ export function cardWhen(r: SearchRow): { date: string; time: string } {
 function toLiveActivity(
   r: SearchRow,
   venues: ActivityVenue[],
-  areas: SgRegion[]
+  areas: SgRegion[],
+  sessionStarts?: string[]
 ): LiveActivity {
   return {
     id: r.id,
@@ -161,6 +172,7 @@ function toLiveActivity(
     providerName: r.provider_name ?? undefined,
     price: r.price ?? null,
     nextSessionAt: r.next_session_at ?? null,
+    sessionStarts,
     isCourse: r.is_course ?? false,
     runStartsAt: r.is_course ? r.run_starts_at ?? null : null,
     runEndsAt: r.is_course ? r.run_ends_at ?? null : null,
@@ -183,6 +195,32 @@ function fallbackRow(r: SearchRow): LiveActivity {
       : [];
   const areas = r.region ? [r.region] : [];
   return toLiveActivity(r, venues, areas);
+}
+
+const SESSION_PAGE = 1000; // the API returns at most this many rows per request
+const SESSION_MAX_PAGES = 15;
+
+/** Every upcoming, non-cancelled session for these activities. A single request
+ *  is capped server-side (max_rows), which would silently drop the later slots of
+ *  busy schedules, so this pages through until a short page comes back. */
+async function fetchUpcomingSessions(activityIds: string[]) {
+  const nowIso = new Date().toISOString();
+  const rows: Array<{ activity_id: string; location_id: string | null; starts_at: string }> = [];
+  for (let page = 0; page < SESSION_MAX_PAGES; page++) {
+    const { data } = await supabase
+      .from("activity_sessions")
+      .select("activity_id, location_id, starts_at")
+      .in("activity_id", activityIds)
+      .neq("status", "cancelled")
+      .gte("starts_at", nowIso)
+      .order("starts_at")
+      .order("id")
+      .range(page * SESSION_PAGE, (page + 1) * SESSION_PAGE - 1);
+    const got = (data ?? []) as unknown as typeof rows;
+    rows.push(...got);
+    if (got.length < SESSION_PAGE) break;
+  }
+  return { data: rows };
 }
 
 /** How long a cached result is served without refetching. Explore's set
@@ -256,6 +294,7 @@ export function useActivities(params: ActivityQuery = {}) {
         ...new Set(rows.map((r) => r.provider_id).filter((x): x is string => !!x)),
       ];
       const locationIdsByActivity = new Map<string, Set<string>>();
+      const startsByActivity = new Map<string, string[]>();
       const addLocation = (activityId: string, locationId: string | null) => {
         if (!locationId) return;
         const set = locationIdsByActivity.get(activityId) ?? new Set<string>();
@@ -265,18 +304,17 @@ export function useActivities(params: ActivityQuery = {}) {
       if (activityIds.length) {
         const [ownVenues, sessionVenues] = await Promise.all([
           supabase.from("activities").select("id, location_id").in("id", activityIds),
-          supabase
-            .from("activity_sessions")
-            .select("activity_id, location_id")
-            .in("activity_id", activityIds)
-            .not("location_id", "is", null)
-            .gte("starts_at", new Date().toISOString()),
+          // Also feeds sessionStarts (every upcoming start time) for the time / date filters.
+          fetchUpcomingSessions(activityIds),
         ]);
         for (const a of (ownVenues.data ?? []) as unknown as Array<{ id: string; location_id: string | null }>) {
           addLocation(a.id, a.location_id);
         }
-        for (const sv of (sessionVenues.data ?? []) as unknown as Array<{ activity_id: string; location_id: string | null }>) {
+        for (const sv of (sessionVenues.data ?? []) as unknown as Array<{ activity_id: string; location_id: string | null; starts_at: string }>) {
           addLocation(sv.activity_id, sv.location_id);
+          const list = startsByActivity.get(sv.activity_id) ?? [];
+          list.push(sv.starts_at);
+          startsByActivity.set(sv.activity_id, list);
         }
       }
 
@@ -340,7 +378,7 @@ export function useActivities(params: ActivityQuery = {}) {
             )
           ),
         ];
-        return toLiveActivity(r, venues, areas);
+        return toLiveActivity(r, venues, areas, startsByActivity.get(r.id));
       });
 
       cacheSet(key, mapped);

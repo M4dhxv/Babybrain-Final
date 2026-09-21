@@ -1950,7 +1950,7 @@ function CommercialsView() {
                   <td style={td()}>
                     <input
                       style={{ ...input(), width: 78, padding: '6px 8px' }}
-                      type="number" min={0} max={50} step={0.5}
+                      type="text" inputMode="decimal" autoComplete="off"
                       // Rounding at the same 0.1-point precision `onBlur`
                       // below actually saves at (rather than a bare `* 100`)
                       // avoids reprinting float noise for any rate that
@@ -1960,7 +1960,8 @@ function CommercialsView() {
                       onBlur={(e) => {
                         const pct = Number(e.target.value);
                         const rate = Math.round(pct * 10) / 1000;
-                        if (Number.isFinite(rate) && rate !== r.commission_rate) {
+                        // A text box no longer enforces the 0-50 range, so do it here.
+                        if (Number.isFinite(rate) && pct >= 0 && pct <= 50 && rate !== r.commission_rate) {
                           void save(r.provider_id, { commission_rate: rate });
                         }
                       }}
@@ -1969,11 +1970,11 @@ function CommercialsView() {
                   <td style={td()}>
                     <input
                       style={{ ...input(), width: 78, padding: '6px 8px' }}
-                      type="number" min={0} step={50}
+                      type="text" inputMode="numeric" autoComplete="off"
                       defaultValue={r.commission_flat_cents}
                       onBlur={(e) => {
                         const cents = Math.round(Number(e.target.value));
-                        if (Number.isFinite(cents) && cents !== r.commission_flat_cents) {
+                        if (Number.isFinite(cents) && cents >= 0 && cents !== r.commission_flat_cents) {
                           void save(r.provider_id, { commission_flat_cents: cents });
                         }
                       }}

@@ -26,7 +26,7 @@ import {
 import { lazyRoute } from "./lib/lazyRoute";
 import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
-import { useActivities } from "./lib/useActivities";
+import { useActivities, whenAt } from "./lib/useActivities";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
 import { supabase } from "./lib/supabase";
@@ -909,26 +909,49 @@ function ExplorePage() {
     // than only when its first midnight falls inside — which dropped a camp
     // that was already running from every date-filtered list.
     const multiDayRun = !!(a.isCourse && a.runStartsAt && a.runEndsAt && isMultiDay(a.runStartsAt, a.runEndsAt));
-    if (dateFrom || dateTo) {
-      const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
-      const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
-      if (multiDayRun) {
-        if (!(Date.parse(a.runEndsAt!) > from && Date.parse(a.runStartsAt!) < to)) return false;
-      } else {
-        if (!a.nextSessionAt) return false;
-        const t = new Date(a.nextSessionAt).getTime();
-        if (t < from || t >= to) return false;
-      }
-    }
-    if (debouncedTimeActive && !multiDayRun) {
-      const h = sgHour(a.nextSessionAt);
-      if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
+    const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
+    if ((dateFrom || dateTo) && multiDayRun) {
+      if (!(Date.parse(a.runEndsAt!) > from && Date.parse(a.runStartsAt!) < to)) return false;
+    } else if ((dateFrom || dateTo || debouncedTimeActive) && !multiDayRun) {
+      // Match on ANY upcoming session, and the same session must satisfy the date and the
+      // time of day together. Judging only the next session hid an activity whose
+      // afternoon class was not its soonest one.
+      if (!matchingStart(a)) return false;
     }
     return true;
   };
 
+  /** The soonest upcoming session that satisfies the date and time-of-day filters together. */
+  function matchingStart(a: (typeof activities)[number]): string | null {
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
+    const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
+    const starts = a.sessionStarts?.length ? a.sessionStarts : a.nextSessionAt ? [a.nextSessionAt] : [];
+    return (
+      starts.find((iso) => {
+        const t = new Date(iso).getTime();
+        if ((dateFrom || dateTo) && (t < from || t >= to)) return false;
+        if (debouncedTimeActive) {
+          const h = sgHour(iso);
+          if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
+        }
+        return true;
+      }) ?? null
+    );
+  }
+
   const filtered = useMemo(
-    () => activities.filter((a) => matchesFilters(a)),
+    () =>
+      activities
+        .filter((a) => matchesFilters(a))
+        // One card per activity however many sessions match; with a date or time filter on,
+        // it shows the soonest MATCHING session rather than the next one overall.
+        .map((a) => {
+          if (!(dateFrom || dateTo || debouncedTimeActive)) return a;
+          const multiDay = !!(a.isCourse && a.runStartsAt && a.runEndsAt && isMultiDay(a.runStartsAt, a.runEndsAt));
+          const hit = multiDay ? null : matchingStart(a);
+          return hit && hit !== a.nextSessionAt ? { ...a, ...whenAt(hit) } : a;
+        }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, dateTo, debouncedTimeActive, debouncedMinH, debouncedMaxH]
   );

@@ -12,6 +12,15 @@ export default [
     languageOptions: { parser: tseslint.parser },
     plugins: { 'react-hooks': reactHooks, '@typescript-eslint': tseslint.plugin },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    rules: { 'react-hooks/rules-of-hooks': 'error' },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      // A native <input type="number"> changes value on wheel, spinner taps and arrow keys
+      // (a tap on a tablet can hit the spinner), silently altering data that gets saved.
+      // Use <NumberInput> from components/ui/number-input instead.
+      'no-restricted-syntax': ['error', {
+        selector: "JSXAttribute[name.name='type'][value.value='number']",
+        message: 'Use <NumberInput> (components/ui/number-input), not a native type="number" input.',
+      }],
+    },
   },
 ]
