@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   CalendarPlus,
@@ -200,15 +200,23 @@ function sessPolicyPayload(p: SessPolicy) {
   }
   return {
     allow_cancellation: p.allow_cancellation,
-    cancellation_cutoff_hours: Math.max(0, Number(p.cancellation_cutoff_hours) || 24),
+    cancellation_cutoff_hours: hoursOrDefault(p.cancellation_cutoff_hours),
     cancellation_refund_mode: p.cancellation_refund_mode,
     allow_rescheduling: p.allow_rescheduling,
-    reschedule_cutoff_hours: Math.max(0, Number(p.reschedule_cutoff_hours) || 24),
+    reschedule_cutoff_hours: hoursOrDefault(p.reschedule_cutoff_hours),
     booking_cutoff_minutes:
       p.booking_cutoff_minutes === ''
         ? 15
         : Math.max(0, Math.min(20160, Number(p.booking_cutoff_minutes))),
   };
+}
+
+/** Blank -> the 24h default; an explicit 0 ("no cut-off") must stay 0, which
+    `Number(x) || 24` used to silently turn into 24. */
+function hoursOrDefault(v: string | number | null | undefined): number {
+  if (v === '' || v == null) return 24;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, n) : 24;
 }
 
 /** The "Booking policies" dropdown shared by the Add-sessions and per-session
@@ -463,6 +471,10 @@ export default function ActivitiesPage() {
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<Sess[]>([]);
+  // True from the moment the schedule drawer opens until its sessions have
+  // actually loaded — otherwise the empty initial list reads as "no sessions".
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const scheduleOpenSeq = useRef(0);
   // Same story as the edit drawer's price field: a Wix Event's price comes
   // from its ticket types and is re-synced every run, so the per-session
   // price boxes in here are read-only for one.
@@ -602,6 +614,10 @@ export default function ActivitiesPage() {
 
   async function openSchedule(a: Activity) {
     setShowMenu(null);
+    const seq = ++scheduleOpenSeq.current;
+    // Drop the previous activity's rows so nothing stale shows while loading.
+    setSessions([]);
+    setSessionsLoading(true);
     setScheduleFor(a);
     setSessError(null);
     setSessNotice(null);
@@ -636,7 +652,11 @@ export default function ActivitiesPage() {
         // best-effort — loadSessions below still shows the last saved copy
       }
     }
-    await loadSessions(a.id);
+    try {
+      await loadSessions(a.id);
+    } finally {
+      if (seq === scheduleOpenSeq.current) setSessionsLoading(false);
+    }
   }
 
   async function loadSessions(activityId: string) {
@@ -686,10 +706,14 @@ export default function ActivitiesPage() {
       setSessError(`That works out to ${dates.length} sessions in one go — trim the days or weeks, or add them in a couple of batches.`);
       return;
     }
+    if (!Number.isFinite(Number(sessForm.duration)) || Number(sessForm.duration) < 15) {
+      setSessError('Duration must be at least 15 minutes.');
+      return;
+    }
     setSavingSess(true);
     setSessError(null);
     setSessNotice(null);
-    const durationMins = Math.max(15, Number(sessForm.duration) || 45);
+    const durationMins = Number(sessForm.duration);
     // Each date is a Singapore calendar day (plannedDates keeps it TZ-safe);
     // the start time is pinned to +08:00 so a vendor travelling abroad still
     // schedules in the platform's timezone.
@@ -832,7 +856,11 @@ export default function ActivitiesPage() {
       setSessEditError(`${booked} ${booked > 1 ? 'seats are' : 'seat is'} already booked, so capacity can't go below ${booked}. Families on the waitlist don't count.`);
       return;
     }
-    const durationMins = Math.max(15, Number(sessEditForm.duration) || 45);
+    if (!Number.isFinite(Number(sessEditForm.duration)) || Number(sessEditForm.duration) < 15) {
+      setSessEditError('Duration must be at least 15 minutes.');
+      return;
+    }
+    const durationMins = Number(sessEditForm.duration);
     // Same SGT pinning as addSessions().
     const starts = new Date(`${sessEditForm.date}T${sessEditForm.time}:00+08:00`);
     if (Number.isNaN(starts.getTime())) {
@@ -1311,8 +1339,8 @@ export default function ActivitiesPage() {
       // Only bites while cancellations are allowed; a locked (Wix Event/Course)
       // activity is non-cancellable, so the mode is moot — keep the default.
       cancellation_refund_mode: cancellationLocked ? 'refund' : form.cancellation_refund_mode,
-      cancellation_cutoff_hours: Math.max(0, Number(form.cancellation_cutoff_hours) || 24),
-      reschedule_cutoff_hours: Math.max(0, Number(form.reschedule_cutoff_hours) || 24),
+      cancellation_cutoff_hours: hoursOrDefault(form.cancellation_cutoff_hours),
+      reschedule_cutoff_hours: hoursOrDefault(form.reschedule_cutoff_hours),
       // 0 is meaningful here ("right up to the start time"), so an empty box
       // falls back to 15 rather than being coerced to 0 by `|| 15`.
       booking_cutoff_minutes: form.booking_cutoff_minutes === ''
@@ -1339,9 +1367,12 @@ export default function ActivitiesPage() {
     // parent app keeps showing the old spots left for classes already on the
     // schedule. A session already at that number (or below its own booking
     // count) is left alone; nothing is ever dropped below what's booked.
-    // Per-session exceptions are redone from Manage schedule. Best-effort, so
+    // Only sessions still sitting at the OLD default follow it — a session
+    // whose capacity was set individually under Manage schedule differs from
+    // the old default and is never overwritten. Best-effort, so
     // a hiccup here never blocks the save that already went through.
     const newCap = Number(form.default_capacity);
+    const oldCap = editingActivity?.default_capacity != null ? Number(editingActivity.default_capacity) : null;
     let cascadeError: string | null = null;
     if (editingId && !isWixLinked && Number.isFinite(newCap) && newCap >= 1) {
       try {
@@ -1352,7 +1383,7 @@ export default function ActivitiesPage() {
           .eq('activity_id', editingId)
           .gte('starts_at', nowIso)
           .neq('status', 'cancelled');
-        const rows = future ?? [];
+        const rows = (future ?? []).filter((s) => oldCap == null || s.capacity === oldCap);
         if (rows.length) {
           const { data: bks } = await supabase
             .from('bookings')
@@ -1951,6 +1982,7 @@ export default function ActivitiesPage() {
                     <input
                       type="number"
                       min="0"
+                      step="any"
                       placeholder="e.g. 45"
                       className={inputCls}
                       value={form.price}
@@ -2019,6 +2051,7 @@ export default function ActivitiesPage() {
               <input
                 type="number"
                 min="0"
+                step="any"
                 placeholder="e.g. 45"
                 className={inputCls}
                 value={form.price}
@@ -2029,7 +2062,7 @@ export default function ActivitiesPage() {
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
               <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
-              <p className="mt-1 text-xs text-gray-500">Applies to upcoming sessions and pre-fills new ones. Override a single session under Manage schedule.</p>
+              <p className="mt-1 text-xs text-gray-500">Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule.</p>
             </div>
               </>
             )}
@@ -2512,7 +2545,7 @@ export default function ActivitiesPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Duration (mins)</label>
-                  <input type="number" min="15" step="15" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
+                  <input type="number" min="15" step="1" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity *</label>
@@ -2541,6 +2574,7 @@ export default function ActivitiesPage() {
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     placeholder={
                       scheduleIsWixEvent
                         ? 'Set by Wix ticket types'
@@ -2678,8 +2712,14 @@ export default function ActivitiesPage() {
             )}
 
             <div>
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions ({sessions.length})</h4>
-              {sessions.length === 0 && (
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions{sessionsLoading ? '' : ` (${sessions.length})`}</h4>
+              {sessionsLoading && (
+                <div className="space-y-2" role="status" aria-label="Loading sessions">
+                  <div className="h-16 animate-pulse rounded-lg bg-gray-100" />
+                  <p className="text-xs text-gray-400">Loading sessions…</p>
+                </div>
+              )}
+              {!sessionsLoading && sessions.length === 0 && (
                 <p className="text-sm text-gray-400">No upcoming sessions — parents can't book this activity until you add some.</p>
               )}
               <div className="space-y-2">
@@ -2702,7 +2742,7 @@ export default function ActivitiesPage() {
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Duration (mins)</span>
-                          <input type="number" min="15" step="5" className={inputCls} value={sessEditForm.duration} onChange={(e) => setSessEditForm({ ...sessEditForm, duration: e.target.value })} />
+                          <input type="number" min="15" step="1" className={inputCls} value={sessEditForm.duration} onChange={(e) => setSessEditForm({ ...sessEditForm, duration: e.target.value })} />
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Capacity</span>
@@ -2734,6 +2774,7 @@ export default function ActivitiesPage() {
                           <input
                             type="number"
                             min="0"
+                            step="any"
                             placeholder={
                               scheduleIsWixEvent
                                 ? 'Set by Wix ticket types'

@@ -28,6 +28,18 @@ window.addEventListener('vite:preloadError', (e) => {
   if (reloadForChunkError()) e.preventDefault()
 })
 
+// A focused <input type="number"> changes value on mouse-wheel / trackpad scroll,
+// so a vendor scrolling the page after clicking a field silently edits it
+// (33 -> 36). Blur the field on wheel so the page scrolls instead.
+document.addEventListener(
+  'wheel',
+  (e) => {
+    const el = document.activeElement
+    if (el instanceof HTMLInputElement && el.type === 'number' && e.target === el) el.blur()
+  },
+  { passive: true },
+)
+
 // Signals the boot-splash watchdog in index.html. `__BB_BOOT_JS__` means the
 // entry bundle executed (so a stale/failed asset is ruled out and it stops
 // reloading); `__BB_BOOTED__` below means React actually rendered.

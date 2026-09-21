@@ -414,7 +414,7 @@ export default function PackagesPage() {
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
-                    <input type="number" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                    <input type="number" min="0" step="any" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
