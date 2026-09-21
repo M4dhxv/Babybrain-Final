@@ -1956,7 +1956,7 @@ function ActivityDetailPage() {
           `order` puts it right after About: hero, About, rail, then the
           sessions/packages/reviews block. */}
       <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
-        <section className="order-1 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
+        <section className="order-1 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
             <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
             <div className="flex flex-1 flex-col justify-center">
@@ -1993,12 +1993,12 @@ function ActivityDetailPage() {
           <InfoBlock title="About" items={[activity.description?.trim() || activity.provider_contact?.description?.trim() || ""]} />
         </section>
 
-        <div className="order-4 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-3">
+        <div className="order-4 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-3">
           {/* Per the mockup: Upcoming sessions and Packages sit side by side,
               then Reviews. With no packs to show, sessions takes the full
               width rather than leaving a half-empty row. */}
-          <div className="grid gap-5 md:grid-cols-2">
-            <section className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 || activity.wix_service_type === "COURSE" ? " md:col-span-2" : ""}`}>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <section className={`min-w-0 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 || activity.wix_service_type === "COURSE" ? " md:col-span-2" : ""}`}>
               <h2 className="mb-3 text-xl font-black">{activity.wix_service_type === "COURSE" ? "Course schedule" : "Upcoming sessions"}</h2>
               {activity.wix_service_type === "COURSE" && sessions.length > 0 ? (
                 <>

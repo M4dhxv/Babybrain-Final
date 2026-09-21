@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NumberInput } from '@/components/ui/number-input';
 import { LoadingRows } from '@/components/Skeletons';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -191,6 +192,14 @@ const inheritSessPolicy: SessPolicy = {
   booking_cutoff_minutes: '15',
 };
 /** null for every column when inheriting the activity's own policy. */
+/** Booking cut-off is capped at 14 days; over that used to be clamped silently on save. */
+const MAX_BOOKING_CUTOFF_MINS = 20160;
+function cutoffTooLong(v: string): string | null {
+  return v !== '' && Number(v) > MAX_BOOKING_CUTOFF_MINS
+    ? `Booking cut-off can be at most ${MAX_BOOKING_CUTOFF_MINS} minutes (14 days).`
+    : null;
+}
+
 function sessPolicyPayload(p: SessPolicy) {
   if (p.mode === 'inherit') {
     return {
@@ -250,8 +259,8 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Cancellation cut-off (hrs)</label>
-                <input
-                  type="number" min="0" className={fieldCls}
+                <NumberInput
+                  min="0" className={fieldCls}
                   value={policy.cancellation_cutoff_hours}
                   onChange={(e) => onChange({ ...policy, cancellation_cutoff_hours: e.target.value })}
                 />
@@ -277,8 +286,8 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
           {policy.allow_rescheduling && (
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Rescheduling cut-off (hrs)</label>
-              <input
-                type="number" min="0" className={fieldCls}
+              <NumberInput
+                min="0" className={fieldCls}
                 value={policy.reschedule_cutoff_hours}
                 onChange={(e) => onChange({ ...policy, reschedule_cutoff_hours: e.target.value })}
               />
@@ -289,8 +298,8 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
               cancelling/rescheduling are allowed. */}
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Booking cut-off (mins)</label>
-            <input
-              type="number" min="0" max="20160" className={fieldCls}
+            <NumberInput
+              min="0" max="20160" className={fieldCls}
               value={policy.booking_cutoff_minutes}
               onChange={(e) => onChange({ ...policy, booking_cutoff_minutes: e.target.value })}
             />
@@ -711,6 +720,8 @@ export default function ActivitiesPage() {
       setSessError('Duration must be at least 15 minutes.');
       return;
     }
+    const cutoffErrNew = sessForm.policy.mode === 'inherit' ? null : cutoffTooLong(sessForm.policy.booking_cutoff_minutes);
+    if (cutoffErrNew) { setSessError(cutoffErrNew); return; }
     setSavingSess(true);
     setSessError(null);
     setSessNotice(null);
@@ -861,6 +872,8 @@ export default function ActivitiesPage() {
       setSessEditError('Duration must be at least 15 minutes.');
       return;
     }
+    const cutoffErrEdit = sessEditForm.policy.mode === 'inherit' ? null : cutoffTooLong(sessEditForm.policy.booking_cutoff_minutes);
+    if (cutoffErrEdit) { setSessEditError(cutoffErrEdit); return; }
     const durationMins = Number(sessEditForm.duration);
     // Same SGT pinning as addSessions().
     const starts = new Date(`${sessEditForm.date}T${sessEditForm.time}:00+08:00`);
@@ -1281,6 +1294,14 @@ export default function ActivitiesPage() {
       setFormError('Set a capacity for this activity.');
       return;
     }
+    // Say so instead of quietly clamping an out-of-range age or cut-off on save.
+    if (form.age_max_months && Number(form.age_max_months) > 132) { setFormError('Maximum age can be at most 132 months (11 years).'); return; }
+    if (form.age_min_months && form.age_max_months && Number(form.age_min_months) > Number(form.age_max_months)) {
+      setFormError("Minimum age can't be higher than the maximum age.");
+      return;
+    }
+    const cutoffErr = cutoffTooLong(form.booking_cutoff_minutes);
+    if (cutoffErr) { setFormError(cutoffErr); return; }
     setSaving(true);
     setFormError(null);
     // The activity's address/postal_code/lat/lng are denormalized from its
@@ -1980,8 +2001,8 @@ export default function ActivitiesPage() {
                 <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
                 {priceOverridden ? (
                   <>
-                    <input
-                      type="number"
+                    <NumberInput
+                      
                       min="0"
                       step="any"
                       placeholder="e.g. 45"
@@ -2003,8 +2024,8 @@ export default function ActivitiesPage() {
                   </>
                 ) : (
                   <>
-                    <input
-                      type="number"
+                    <NumberInput
+                      
                       className={cn(inputCls, 'bg-gray-50 text-gray-500 cursor-not-allowed')}
                       value={wixPrice ?? ''}
                       disabled
@@ -2023,9 +2044,9 @@ export default function ActivitiesPage() {
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Age range (months)</label>
               <div className="flex items-center gap-3">
-                <input type="number" min="0" placeholder="Min" className={inputCls} value={form.age_min_months} onChange={(e) => setForm({ ...form, age_min_months: e.target.value })} />
+                <NumberInput min="0" placeholder="Min" className={inputCls} value={form.age_min_months} onChange={(e) => setForm({ ...form, age_min_months: e.target.value })} />
                 <span className="text-gray-400">—</span>
-                <input type="number" min="0" placeholder="Max" className={inputCls} value={form.age_max_months} onChange={(e) => setForm({ ...form, age_max_months: e.target.value })} />
+                <NumberInput min="0" placeholder="Max" className={inputCls} value={form.age_max_months} onChange={(e) => setForm({ ...form, age_max_months: e.target.value })} />
               </div>
             </div>
             {!isWixLinked && (
@@ -2049,8 +2070,8 @@ export default function ActivitiesPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
-              <input
-                type="number"
+              <NumberInput
+                
                 min="0"
                 step="any"
                 placeholder="e.g. 45"
@@ -2062,7 +2083,7 @@ export default function ActivitiesPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
-              <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
+              <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
               <p className="mt-1 text-xs text-gray-500">Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule.</p>
             </div>
               </>
@@ -2204,7 +2225,7 @@ export default function ActivitiesPage() {
                     <div className="space-y-3">
                       <div>
                         <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
-                        <input type="number" min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
+                        <NumberInput min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-gray-600 mb-1 block">When a booking is cancelled</label>
@@ -2245,7 +2266,7 @@ export default function ActivitiesPage() {
               {form.allow_rescheduling && (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Rescheduling cut-off (hours before session)</label>
-                  <input type="number" min="0" className={inputCls} value={form.reschedule_cutoff_hours} onChange={(e) => setForm({ ...form, reschedule_cutoff_hours: e.target.value })} />
+                  <NumberInput min="0" className={inputCls} value={form.reschedule_cutoff_hours} onChange={(e) => setForm({ ...form, reschedule_cutoff_hours: e.target.value })} />
                 </div>
               )}
 
@@ -2256,8 +2277,8 @@ export default function ActivitiesPage() {
                   of what the parent app does. */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">Booking cut-off (minutes before session)</label>
-                <input
-                  type="number"
+                <NumberInput
+                  
                   min="0"
                   max="20160"
                   className={inputCls}
@@ -2546,11 +2567,11 @@ export default function ActivitiesPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Duration (mins)</label>
-                  <input type="number" min="15" step="1" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
+                  <NumberInput min="15" step="1" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity *</label>
-                  <input type="number" min="1" required placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
+                  <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>
@@ -2572,8 +2593,8 @@ export default function ActivitiesPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Price (SGD)</label>
-                  <input
-                    type="number"
+                  <NumberInput
+                    
                     min="0"
                     step="any"
                     placeholder={
@@ -2740,11 +2761,11 @@ export default function ActivitiesPage() {
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Duration (mins)</span>
-                          <input type="number" min="15" step="1" className={inputCls} value={sessEditForm.duration} onChange={(e) => setSessEditForm({ ...sessEditForm, duration: e.target.value })} />
+                          <NumberInput min="15" step="1" className={inputCls} value={sessEditForm.duration} onChange={(e) => setSessEditForm({ ...sessEditForm, duration: e.target.value })} />
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Capacity</span>
-                          <input type="number" min="1" className={inputCls} value={sessEditForm.capacity} onChange={(e) => setSessEditForm({ ...sessEditForm, capacity: e.target.value })} />
+                          <NumberInput min="1" className={inputCls} value={sessEditForm.capacity} onChange={(e) => setSessEditForm({ ...sessEditForm, capacity: e.target.value })} />
                           {(() => {
                             const cur = sessions.find((x) => x.id === s.id);
                             if (!cur || cur.waitlisted === 0) return null;
@@ -2769,8 +2790,8 @@ export default function ActivitiesPage() {
                         </label>
                         <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Price (SGD)</span>
-                          <input
-                            type="number"
+                          <NumberInput
+                            
                             min="0"
                             step="any"
                             placeholder={

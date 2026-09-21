@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { NumberInput } from '@/components/ui/number-input';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -226,6 +227,7 @@ export default function PackagesPage() {
     if (!packForm.name.trim()) return setPackError('Give the pack a name.');
     if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
     if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
+    if (packForm.expiryMode === 'days' && (!packForm.validity_days || Number(packForm.validity_days) < 1)) return setPackError('Enter how many days the pack stays valid, or choose another expiry.');
     if (packForm.expiryMode === 'date' && !packForm.expiry_date) return setPackError('Pick an expiry date.');
     if (packForm.starts_time && !packForm.starts_date) return setPackError('Pick a start date too.');
     if (packForm.starts_date && packForm.expiryMode === 'date' && packForm.expiry_date && packForm.expiry_date < packForm.starts_date) {
@@ -410,11 +412,11 @@ export default function PackagesPage() {
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Classes</label>
-                    <input type="number" value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-24" />
+                    <NumberInput value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-24" />
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
-                    <input type="number" min="0" step="any" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                    <NumberInput min="0" step="any" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
@@ -437,7 +439,7 @@ export default function PackagesPage() {
                         <Opt value="date">Fixed date</Opt>
                       </SelectField>
                       {packForm.expiryMode === 'days' && (
-                        <input type="number" min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="90" className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" />
+                        <NumberInput min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="90" className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" />
                       )}
                       {packForm.expiryMode === 'date' && (
                         <DatePicker value={packForm.expiry_date} onChange={(v) => setPackForm({ ...packForm, expiry_date: v })} aria-label="Pack expiry date" className="w-36 flex-shrink-0" />
