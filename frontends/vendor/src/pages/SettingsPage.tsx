@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LoadingRows } from '@/components/Skeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone, Crop } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { resizeImage } from '@/lib/resizeImage';
+import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { geocodePostal } from '@/lib/geocode';
 import { useAuth } from '@/auth/AuthProvider';
@@ -161,6 +162,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  // Position in the catalogue of the photo open in the crop dialog (the logo is never cropped).
+  const [cropIdx, setCropIdx] = useState<number | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
@@ -246,6 +249,13 @@ export default function SettingsPage() {
   }
 
   const GALLERY_MAX = 9;
+
+  /** Swaps a catalogue photo for its cropped version, in the same position. */
+  async function replaceGalleryImage(index: number, file: File) {
+    const url = await uploadImage(file, 'photo');
+    if (!url) throw new Error('upload failed');
+    setForm((f) => ({ ...f, gallery_urls: f.gallery_urls.map((u, j) => (j === index ? url : u)) }));
+  }
 
   async function uploadGallery(files: FileList) {
     const room = GALLERY_MAX - form.gallery_urls.length;
@@ -549,6 +559,12 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
+                    <ImageCropDialog
+                      url={cropIdx != null ? form.gallery_urls[cropIdx] ?? null : null}
+                      open={cropIdx != null}
+                      onClose={() => setCropIdx(null)}
+                      onCropped={(file) => (cropIdx != null ? replaceGalleryImage(cropIdx, file) : undefined)}
+                    />
                     <label className="text-xs text-gray-500 mb-1 block">Catalogue photos ({form.gallery_urls.length}/{GALLERY_MAX})</label>
                     <p className="mb-2 text-xs text-gray-500">
                       Shown for any class that doesn't have its own photos (see Activities → edit → Images).
@@ -558,6 +574,15 @@ export default function SettingsPage() {
                         {form.gallery_urls.map((url, i) => (
                           <div key={`${url}-${i}`} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-100">
                             <img src={url} alt="" className="h-full w-full object-cover" />
+                            <button
+                              type="button"
+                              aria-label="Crop photo"
+                              title="Crop to the activity page frame"
+                              onClick={() => setCropIdx(i)}
+                              className="absolute bottom-1 left-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                            >
+                              <Crop className="h-3 w-3" />
+                            </button>
                             <button
                               type="button"
                               aria-label="Remove photo"

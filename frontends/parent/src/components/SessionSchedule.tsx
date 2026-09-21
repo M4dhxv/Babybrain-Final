@@ -75,6 +75,9 @@ export function SessionSchedule({
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const [wide, setWide] = useState(false);
+  // Wide layout: whether the "more options" panel is open, and which month tab is showing.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [monthTab, setMonthTab] = useState(0);
   // The chip row scrolls sideways; these drive the edge arrows.
   const [strip, setStrip] = useState<HTMLDivElement | null>(null);
   const [edge, setEdge] = useState({ left: false, right: false });
@@ -135,6 +138,23 @@ export function SessionSchedule({
   }
 
   const shown = showAll ? days : days.slice(0, VISIBLE_DAYS);
+  // Every upcoming session in order, for the wide "next available" layout.
+  const flat = days.flatMap((day) =>
+    day.slots.map((slot) => ({ ...slot, day, shared: day.slots.filter((x) => x.time === slot.time).length > 1 }))
+  );
+  const first = flat[0];
+  const flatLabel = (f: (typeof flat)[number]) =>
+    `${weekdayShort(f.day.iso)} ${dayMonth(f.day.iso)} · ${f.time}${f.shared && f.who ? ` · ${f.who}` : ""}`;
+  const monthGroups: { key: string; name: string; days: Day[] }[] = [];
+  for (const d of days) {
+    const key = monthKey(d.iso);
+    const g = monthGroups.find((x) => x.key === key);
+    if (g) g.days.push(d);
+    else monthGroups.push({ key, name: monthLong(d.iso), days: [d] });
+  }
+  const monthIdx = Math.min(monthTab, monthGroups.length - 1);
+  const monthGroup = monthGroups[monthIdx];
+  const expandDay = monthGroup.days.find((d) => d.key === selectedDayKey) ?? monthGroup.days[0];
   const selectedDay = days.find((d) => d.key === selectedDayKey) ?? days[0];
   const shownSlots = showAllTimes ? selectedDay.slots : selectedDay.slots.slice(0, VISIBLE_TIMES);
   // Only label a slot with who/where when its time isn't unique that day.
@@ -144,7 +164,7 @@ export function SessionSchedule({
 
   const timesPanel = (
     <section
-      className={wide ? "flex flex-col justify-center border-l border-[#EBE3E5] pl-5" : "rounded-[14px] border border-[#EBE3E5] bg-white p-3.5 shadow-card sm:p-4"}
+      className="rounded-[14px] border border-[#EBE3E5] bg-white p-3.5 shadow-card sm:p-4"
       aria-label={`Sessions on ${weekdayLong(selectedDay.iso)} ${dayMonth(selectedDay.iso)}`}
     >
       <div>
@@ -162,7 +182,7 @@ export function SessionSchedule({
             )}
           </div>
         </div>
-        <div className={`grid gap-2 ${wide ? (selectedDay.slots.length === 1 ? "grid-cols-[minmax(0,180px)]" : "grid-cols-3") : "grid-cols-2"}`}>
+        <div className="grid grid-cols-2 gap-2">
           {shownSlots.map((slot) => {
             const active = selectedId === slot.id;
             const shared = (timeCount.get(slot.time) ?? 0) > 1;
@@ -215,37 +235,126 @@ export function SessionSchedule({
       </div>
 
       {wide ? (
-        <div className="grid min-h-[250px] grid-cols-[210px_1fr] gap-5">
-          {/* Dates grouped under month headings; scrolls on its own for a long run. */}
-          <ul className="max-h-[340px] space-y-0.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
-            {days.map((d, i) => {
-              const active = selectedDay.key === d.key;
-              const newMonth = i === 0 || monthKey(days[i - 1].iso) !== monthKey(d.iso);
-              return (
-                <li key={d.key}>
-                  {newMonth && (
-                    <p className="sticky top-0 z-[1] bg-white px-1 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-[#68718f]">{monthLong(d.iso)}</p>
-                  )}
+        <div>
+          {/* Row 1: the soonest session, one tap. */}
+          <button
+            type="button"
+            aria-pressed={selectedId === first.id}
+            onClick={() => onSelect?.(first.id)}
+            className={`flex w-full items-center justify-between gap-3 rounded-[14px] border-2 border-baby-cta px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
+              selectedId === first.id ? "bg-baby-cta text-white" : "bg-palette-pinkTint text-baby-ink hover:brightness-95"
+            }`}
+          >
+            <span>
+              <span className={`block text-xs font-bold ${selectedId === first.id ? "text-white/90" : "text-[#68718f]"}`}>Next available</span>
+              <span className="block text-[18px] font-black">{flatLabel(first)}</span>
+            </span>
+            <span className="text-[13px] font-black">{selectedId === first.id ? "Selected" : "Select this time"}</span>
+          </button>
+
+          {/* Row 2: the next few, plus a way into everything else. */}
+          {flat.length > 1 && (
+            <div className="mt-2.5 flex flex-wrap items-stretch gap-2">
+              {flat.slice(1, 4).map((f) => {
+                const active = selectedId === f.id;
+                return (
                   <button
+                    key={f.id}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => pickDay(d.key)}
-                    className={`flex w-full items-center gap-2.5 rounded-[11px] px-2 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta ${
-                      active ? "bg-baby-cta text-white" : "text-[#34406f] hover:bg-palette-pinkTint"
+                    onClick={() => onSelect?.(f.id)}
+                    className={`rounded-[11px] border px-3 py-2 text-left leading-tight transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
+                      active ? "border-baby-cta bg-baby-cta text-white" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
                     }`}
                   >
-                    <span className="w-9 text-center leading-tight">
-                      <span className="block text-[18px] font-black tabular-nums">{dayNum(d.iso)}</span>
-                      <span className={`block text-[11px] font-bold ${active ? "text-white/80" : "text-[#68718f]"}`}>{weekdayShort(d.iso)}</span>
-                    </span>
-                    <span className="text-[13px] font-black">{weekdayLong(d.iso)}</span>
-                    <span className={`ml-auto text-xs font-semibold ${active ? "text-white/80" : "text-[#68718f]"}`}>{d.slots.length} {d.slots.length === 1 ? "time" : "times"}</span>
+                    <span className="block text-[13px] font-black">{weekdayShort(f.day.iso)} {dayMonth(f.day.iso)}</span>
+                    <span className={`block text-xs font-semibold ${active ? "text-white/90" : "text-[#68718f]"}`}>{f.time}{f.shared && f.who ? ` · ${f.who}` : ""}</span>
                   </button>
-                </li>
-              );
-            })}
-          </ul>
-          {timesPanel}
+                );
+              })}
+              {flat.length > 4 && (
+                <button
+                  type="button"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className="flex items-center rounded-[11px] border border-dashed border-baby-cta px-3 py-2 text-[13px] font-black text-baby-cta transition hover:bg-palette-pinkTint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta"
+                >
+                  {moreOpen ? "Fewer options ▴" : `+${flat.length - 4} more ▾`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Everything else: month tabs, date chips, then that date's times. */}
+          {moreOpen && flat.length > 4 && (
+            <div className="mt-3 border-t border-[#EBE3E5] pt-3">
+              {monthGroups.length > 1 && (
+                <div className="mb-2.5 flex flex-wrap gap-1.5">
+                  {monthGroups.map((g, i) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      aria-pressed={i === monthIdx}
+                      onClick={() => setMonthTab(i)}
+                      className={`rounded-full border px-3 py-1 text-xs font-black transition ${
+                        i === monthIdx ? "border-baby-cta bg-baby-cta text-white" : "border-[#DCD2D5] bg-white text-[#34406f] hover:border-baby-pink"
+                      }`}
+                    >
+                      {g.name} · {g.days.length}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {days.length > 1 && (
+                <div className={`flex flex-wrap gap-2 ${monthGroup.days.length > 18 ? "max-h-[210px] overflow-y-auto pr-1" : ""}`}>
+                  {monthGroup.days.map((d) => (
+                    <button
+                      key={d.key}
+                      type="button"
+                      aria-pressed={expandDay.key === d.key}
+                      onClick={() => pickDay(d.key)}
+                      className={`grid h-[68px] w-[64px] place-items-center rounded-[12px] text-center leading-tight transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta ${
+                        expandDay.key === d.key ? "bg-baby-cta text-white" : "bg-palette-pinkTint text-[#34406f] hover:brightness-95"
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold">{weekdayShort(d.iso)}</span>
+                      <span className="text-[19px] font-black tabular-nums">{dayNum(d.iso)}</span>
+                      <span className="text-[10px] font-bold">{monthShort(d.iso)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {expandDay.slots.map((slot) => {
+                  const active = selectedId === slot.id;
+                  const shared = expandDay.slots.filter((x) => x.time === slot.time).length > 1;
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => onSelect?.(slot.id)}
+                      className={`rounded-[10px] border px-3.5 py-2 text-[14px] font-black tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
+                        active ? "border-baby-cta bg-baby-cta text-white" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
+                      }`}
+                    >
+                      {slot.time}
+                      {shared && <span className={`block text-[11px] font-bold ${active ? "text-white/90" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {flat.some((f) => f.id === selectedId) && (
+            <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
+              <span>Click on Book a class to proceed with this time.</span>
+              <button type="button" onClick={() => onSelect?.(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
+                Clear
+              </button>
+            </p>
+          )}
         </div>
       ) : (
         <>
