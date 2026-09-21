@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LoadingRows } from '@/components/Skeletons';
 import { MapPin, Pencil, Plus, RefreshCw, Save, Store, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -27,6 +28,7 @@ export default function LocationsManager({
   onChanged?: () => void;
 }) {
   const [locations, setLocations] = useState<ProviderLocation[]>([]);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', postal_code: '' });
   const [saving, setSaving] = useState(false);
@@ -113,6 +115,7 @@ export default function LocationsManager({
       .eq('provider_id', provider.id)
       .order('is_primary', { ascending: false });
     setLocations(data ?? []);
+    setLocationsLoaded(true);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
 
@@ -319,7 +322,8 @@ export default function LocationsManager({
           </div>
           )
         ))}
-        {locations.length === 0 && !showForm && <div className="text-sm text-gray-400">No locations added yet.</div>}
+        {!locationsLoaded && <LoadingRows label="Loading locations…" />}
+        {locationsLoaded && locations.length === 0 && !showForm && <div className="text-sm text-gray-400">No locations added yet.</div>}
       </div>
 
       {canManage && showForm && (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LoadingRows } from '@/components/Skeletons';
 import { FileText, ImageUp, Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Opt } from '@/components/ui/select-field';
@@ -29,6 +30,7 @@ export function PoliciesManager({
   provider: { id: string } | null; canManage: boolean;
 }) {
   const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
+  const [policiesLoaded, setPoliciesLoaded] = useState(false);
   const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,6 +52,7 @@ export function PoliciesManager({
       supabase.from('activities').select('id, title').eq('provider_id', provider.id).order('title'),
     ]);
     setPolicies((rows ?? []) as ProviderPolicy[]);
+    setPoliciesLoaded(true);
     setActivities((acts ?? []) as { id: string; title: string }[]);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [provider]);
@@ -129,7 +132,8 @@ export function PoliciesManager({
         )}
       </div>
 
-      {policies.length === 0 && !showForm && (
+      {!policiesLoaded && <LoadingRows label="Loading policies…" />}
+      {policiesLoaded && policies.length === 0 && !showForm && (
         <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
           Nothing added yet. Add a waiver, photo consent, health declaration or house rules and every parent must
           tick it before they can book.

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LoadingRows } from '@/components/Skeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -151,6 +152,7 @@ export default function SettingsPage() {
   }, [searchParams]);
 
   const [team, setTeam] = useState<Member[]>([]);
+  const [teamLoaded, setTeamLoaded] = useState(false);
   const [profiles, setProfiles] = useState<Record<string, MemberProfileLite>>({});
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -207,7 +209,7 @@ export default function SettingsPage() {
       gallery_urls: provider.gallery_urls ?? [],
     });
     supabase.from('provider_members').select('id, user_id, role, invited_email, status').eq('provider_id', provider.id)
-      .then(({ data }) => setTeam((data as Member[]) ?? []));
+      .then(({ data }) => { setTeam((data as Member[]) ?? []); setTeamLoaded(true); });
     refreshProfiles();
 
     /* Deep link from "Save your listing" and its pencils (`/settings?edit=1`):
@@ -671,7 +673,8 @@ export default function SettingsPage() {
                   </div>
                 );
               })}
-              {team.length === 0 && <div className="text-sm text-gray-400">No team members yet.</div>}
+              {!teamLoaded && <LoadingRows label="Loading team…" />}
+              {teamLoaded && team.length === 0 && <div className="text-sm text-gray-400">No team members yet.</div>}
             </div>
             {isOwner ? (
               <div className="border-t border-gray-100 pt-4">

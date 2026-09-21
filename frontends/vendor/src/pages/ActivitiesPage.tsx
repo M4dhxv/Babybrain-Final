@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LoadingRows } from '@/components/Skeletons';
 import { useSearchParams } from 'react-router-dom';
 import {
   CalendarPlus,
@@ -2714,10 +2715,7 @@ export default function ActivitiesPage() {
             <div>
               <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions{sessionsLoading ? '' : ` (${sessions.length})`}</h4>
               {sessionsLoading && (
-                <div className="space-y-2" role="status" aria-label="Loading sessions">
-                  <div className="h-16 animate-pulse rounded-lg bg-gray-100" />
-                  <p className="text-xs text-gray-400">Loading sessions…</p>
-                </div>
+                <LoadingRows label="Loading sessions…" />
               )}
               {!sessionsLoading && sessions.length === 0 && (
                 <p className="text-sm text-gray-400">No upcoming sessions — parents can't book this activity until you add some.</p>

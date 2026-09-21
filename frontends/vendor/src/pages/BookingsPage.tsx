@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LoadingRows } from '@/components/Skeletons';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
@@ -329,6 +330,9 @@ export default function BookingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredSessions]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
+  // Which session's roster `roster` holds. Until it matches the selected session
+  // the roster is stale/empty, so "no bookings" messages must not show.
+  const [rosterSessionId, setRosterSessionId] = useState('');
   const [selected, setSelected] = useState(0);
   /* Mobile only: the roster list and the detail card are stacked, so with 5+
      families picking a name meant scrolling the whole list to reach the
@@ -540,6 +544,7 @@ export default function BookingsPage() {
     const { data } = await supabase.rpc('provider_session_roster', { p_session_id: id });
     const rows = (data as RosterRow[]) ?? [];
     setRoster(rows);
+    setRosterSessionId(id);
     setSelected(0);
     setAttDraft({});
     // Make-up tokens already issued against these bookings (issued/redeemed).
@@ -612,6 +617,7 @@ export default function BookingsPage() {
   // absent, the visible list of names), not a capacity count: a 'pending'
   // booking (payment still in flight) has nothing to take attendance against
   // yet, even though it already holds a real seat (see wixHeld below).
+  const rosterLoading = !!sessionId && rosterSessionId !== sessionId;
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
   /* QA 04/09: "Under bookings, when there is a waitlist and you click on that
@@ -1181,7 +1187,8 @@ export default function BookingsPage() {
                   )}
                 </div>
               ))}
-              {!loading && visibleBookings.length === 0 && (
+              {!loading && rosterLoading && <LoadingRows label="Loading bookings…" count={2} />}
+              {!loading && !rosterLoading && visibleBookings.length === 0 && (
                 <div className="text-sm text-gray-400 px-1">
                   {activeTab === 'Waitlist'
                     ? 'No one on the waitlist for this session.'
@@ -1666,7 +1673,8 @@ export default function BookingsPage() {
                     )}
                   </div>
                 ))}
-                {waitlisted.length === 0 && <div className="text-sm text-gray-400">No one on the waitlist.</div>}
+                {rosterLoading && <LoadingRows label="Loading waitlist…" />}
+                {!rosterLoading && waitlisted.length === 0 && <div className="text-sm text-gray-400">No one on the waitlist.</div>}
               </div>
               <div className="flex items-start gap-2 mt-5 p-3 bg-blue-50 rounded-xl">
                 <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
@@ -1751,7 +1759,8 @@ export default function BookingsPage() {
                     </div>
                   );
                 })}
-                {booked.length === 0 && <div className="px-4 py-6 text-center text-sm text-gray-400">No confirmed attendees.</div>}
+                {rosterLoading && <div className="p-3"><LoadingRows label="Loading attendees…" /></div>}
+                {!rosterLoading && booked.length === 0 && <div className="px-4 py-6 text-center text-sm text-gray-400">No confirmed attendees.</div>}
               </div>
               {canManage && (
                 <Button onClick={saveRoster} disabled={rosterSaving} className="w-full gradient-primary text-white rounded-xl hover:opacity-90 gap-2">

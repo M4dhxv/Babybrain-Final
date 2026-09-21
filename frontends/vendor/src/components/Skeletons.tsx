@@ -185,3 +185,34 @@ export function ScheduleWeekSkeleton() {
     </div>
   );
 }
+
+/** A pink spinner + label above compact skeleton rows, for a drawer or panel
+ *  whose list is still loading. Stops an empty list reading as "none yet". */
+export function LoadingRows({ label = 'Loading…', count = 1 }: { label?: string; count?: number }) {
+  return (
+    <div role="status" aria-live="polite">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span
+          aria-hidden="true"
+          className="h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-[#FA4D8D]"
+        />
+        <span className="text-sm text-gray-500">{label}</span>
+      </div>
+      <div className="space-y-2" aria-hidden="true">
+        {Array.from({ length: count }).map((_, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <div className="flex-1 space-y-2">
+              <Bar className="h-3.5 w-3/5" />
+              <Bar className="h-2.5 w-4/5" />
+              <Bar className="h-2.5 w-1/3" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-5 w-5 animate-pulse rounded-full bg-gray-100" />
+              <div className="h-5 w-5 animate-pulse rounded-full bg-gray-100" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
