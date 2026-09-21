@@ -5,6 +5,7 @@ import {
   Banknote,
   ChevronRight,
   Clock,
+  Percent,
   RefreshCw,
   Wallet,
 } from 'lucide-react';
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { EarningsSkeleton } from '@/components/Skeletons';
+import { planMeta } from '@/lib/plans';
 
 interface LedgerRow {
   id: string;
@@ -49,12 +51,15 @@ interface EarningsResponse {
     lifetime_gross_cents: number;
     lifetime_net_cents: number;
     lifetime_commission_cents: number;
+    commission_collected_cents: number;
+    commission_to_collect_cents: number;
     lifetime_stripe_fee_cents: number;
     paid_out_cents: number;
     awaiting_payout_cents: number;
     owed_by_babybrain_cents: number;
     sales_count: number;
   };
+  terms?: { plan: string; commission_rate: number | null; commission_flat_cents: number; custom_terms: boolean };
   balance: { currency: string; available: number; pending: number } | null;
   payouts: Payout[];
   ledger: LedgerRow[];
@@ -62,6 +67,24 @@ interface EarningsResponse {
 
 const money = (cents: number, currency = 'sgd') =>
   new Intl.NumberFormat('en-SG', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
+
+/** "12%" / "7.5%" — no trailing zeros. */
+const pct = (rate: number) => `${Number((rate * 100).toFixed(1))}%`;
+
+/** The commission card's hint. Wording follows how the commission is taken: "collected" when
+ *  Stripe takes it automatically, "to be collected" when BabyBrain collects the sale itself
+ *  (no Stripe on the vendor's side) and settles up manually. */
+function commissionHint(data: EarningsResponse, currency: string): string {
+  const t = data.terms;
+  const s = data.summary;
+  const plan = t?.custom_terms ? 'Custom rate' : `${planMeta(t?.plan).short} plan`;
+  const flat = t && t.commission_flat_cents > 0 ? ` + ${money(t.commission_flat_cents, currency)} per booking` : '';
+  const parts: string[] = [];
+  if (s.commission_collected_cents > 0) parts.push(`${money(s.commission_collected_cents, currency)} collected`);
+  if (s.commission_to_collect_cents > 0) parts.push(`${money(s.commission_to_collect_cents, currency)} to be collected`);
+  if (parts.length === 0) parts.push(data.payouts_enabled ? 'Nothing collected yet' : 'Nothing to be collected yet');
+  return `${plan}${flat} · ${parts.join(' · ')}`;
+}
 
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' });
@@ -195,7 +218,7 @@ export default function EarningsPage() {
         )}
 
         {loading && !data ? <EarningsSkeleton /> : <>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             icon={Wallet}
             accent="bg-green-100 text-green-700"
@@ -216,6 +239,13 @@ export default function EarningsPage() {
             label="Lifetime earnings"
             value={s ? money(s.lifetime_net_cents, currency) : '—'}
             hint={s ? `${s.sales_count} paid sale${s.sales_count === 1 ? '' : 's'}` : undefined}
+          />
+          <StatCard
+            icon={Percent}
+            accent="bg-amber-100 text-amber-700"
+            label="BabyBrain commission"
+            value={data?.terms?.commission_rate != null ? pct(data.terms.commission_rate) : '—'}
+            hint={data ? commissionHint(data, currency) : undefined}
           />
         </div>
 

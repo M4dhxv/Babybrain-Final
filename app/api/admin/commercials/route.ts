@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { testProviderIds } from '@/lib/admin-test-data';
 import type { Database, FeePayer, SubscriptionPlan } from '@/types/database';
 
 /**
@@ -51,6 +53,7 @@ export async function GET(request: Request) {
         .in('id', providerIds)
     : { data: [] };
   const byId = new Map((providers ?? []).map((p) => [p.id, p]));
+  const testIds = await testProviderIds(admin as unknown as SupabaseClient);
 
   // Lifetime totals per vendor, so the founder can see what a rate is worth
   // before changing it.
@@ -78,6 +81,7 @@ export async function GET(request: Request) {
         plan: s.plan as SubscriptionPlan,
         connected: Boolean(provider?.stripe_account_id),
         payouts_enabled: Boolean(provider?.payouts_enabled),
+        is_test: testIds.has(s.provider_id),
         commission_rate: Number(s.commission_rate),
         commission_flat_cents: s.commission_flat_cents,
         fee_payer: s.fee_payer as FeePayer,
@@ -109,6 +113,19 @@ export async function PATCH(request: Request) {
   // Patch-style: only what was sent is written, so one field can be changed
   // without resetting the rest of the deal.
   const patch: Database['public']['Tables']['subscriptions']['Update'] = {};
+  const admin = createAdminClient();
+
+  // Mark / unmark a vendor as a test or demo account (kept out of admin Metrics and Payments).
+  if (body.is_test !== undefined) {
+    const { error } = await (admin as unknown as SupabaseClient)
+      .from('providers')
+      .update({ is_test: Boolean(body.is_test) })
+      .eq('id', providerId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (Object.keys(body).every((k) => k === 'provider_id' || k === 'is_test')) {
+      return NextResponse.json({ ok: true, applied: { is_test: Boolean(body.is_test) } });
+    }
+  }
   if (body.commission_rate !== undefined) patch.commission_rate = Number(body.commission_rate);
   if (body.commission_flat_cents !== undefined) patch.commission_flat_cents = Number(body.commission_flat_cents);
   if (body.fee_payer !== undefined) patch.fee_payer = body.fee_payer as FeePayer;
@@ -124,7 +141,6 @@ export async function PATCH(request: Request) {
     patch.custom_terms = true;
   }
 
-  const admin = createAdminClient();
   const { error } = await admin
     .from('subscriptions')
     .update(patch)

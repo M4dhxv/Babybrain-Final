@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getStripe } from '@/lib/stripe';
+import { fetchAll, testProviderIds } from '@/lib/admin-test-data';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Founder-facing payments overview: every sale's split (gross / commission /
@@ -29,16 +31,24 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const stripe = getStripe();
 
-  const [earningsRes, allRes, payoutsRes] = await Promise.all([
-    admin
-      .from('provider_earnings')
-      .select('id, provider_id, source, gross_cents, commission_cents, stripe_fee_cents, net_cents, fee_payer, routed_to_connect, status, stripe_payment_intent, currency, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit),
-    // Summary totals over everything, not just the page being shown.
-    admin
-      .from('provider_earnings')
-      .select('gross_cents, commission_cents, stripe_fee_cents, net_cents, status'),
+  // Live sales only by default: demo/QA vendors (providers.is_test) and Stripe test-mode
+  // payments (livemode = false) are left out. ?include_test=1 shows everything.
+  const includeTest = searchParams.get('include_test') === '1';
+  const db = admin as unknown as SupabaseClient;
+  const testProviders = includeTest ? new Set<string>() : await testProviderIds(db);
+
+  const cols = 'id, provider_id, source, gross_cents, commission_cents, stripe_fee_cents, net_cents, fee_payer, routed_to_connect, status, stripe_payment_intent, currency, created_at';
+  // `livemode` arrives with migration 00161; read without it until then.
+  const readEarnings = async () => {
+    const withMode = await fetchAll<Record<string, unknown>>((f, t) =>
+      db.from('provider_earnings').select(`${cols}, livemode`).order('created_at', { ascending: false }).range(f, t));
+    if (withMode.length) return withMode;
+    return fetchAll<Record<string, unknown>>((f, t) =>
+      db.from('provider_earnings').select(cols).order('created_at', { ascending: false }).range(f, t));
+  };
+
+  const [rawEarnings, payoutsRes] = await Promise.all([
+    readEarnings(),
     // What Stripe has actually sent to BabyBrain's own bank account. Errors
     // are captured, not swallowed — a bad key or Stripe outage used to come
     // back as `null` here, which the frontend rendered identically to a
@@ -51,9 +61,16 @@ export async function GET(request: Request) {
     ),
   ]);
 
-  if (earningsRes.error) {
-    return NextResponse.json({ error: earningsRes.error.message }, { status: 400 });
-  }
+  const isLive = (r: Record<string, unknown>) =>
+    !testProviders.has(String(r.provider_id)) && (includeTest || r.livemode !== false);
+  const live = rawEarnings.filter(isLive) as unknown as Array<{
+    id: string; provider_id: string; source: string; gross_cents: number; commission_cents: number;
+    stripe_fee_cents: number | null; net_cents: number; fee_payer: string; routed_to_connect: boolean;
+    status: string; stripe_payment_intent: string | null; currency: string; created_at: string;
+  }>;
+  const excludedSales = rawEarnings.length - live.length;
+  const earningsRes = { data: live.slice(0, limit), error: null as { message: string } | null };
+  const allRes = { data: live };
 
   const providerIds = [...new Set((earningsRes.data ?? []).map((r) => r.provider_id))];
   const { data: providerRows } = providerIds.length
@@ -105,5 +122,5 @@ export async function GET(request: Request) {
     : null;
   const platformPayoutsError = payoutsRes.ok ? null : payoutsRes.message;
 
-  return NextResponse.json({ transactions, totals, platformPayouts, platformPayoutsError });
+  return NextResponse.json({ transactions, totals, platformPayouts, platformPayoutsError, includeTest, excludedSales });
 }

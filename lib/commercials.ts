@@ -146,6 +146,8 @@ interface ChargeFacts {
   stripeFeeCents: number | null;
   transferId: string | null;
   currency: string | null;
+  /** False for a Stripe test-mode payment (the test site). Null when unknown. */
+  livemode: boolean | null;
 }
 
 async function chargeFacts(paymentIntentId: string): Promise<ChargeFacts> {
@@ -155,13 +157,14 @@ async function chargeFacts(paymentIntentId: string): Promise<ChargeFacts> {
     stripeFeeCents: null,
     transferId: null,
     currency: null,
+    livemode: null,
   };
   try {
     const intent = await getStripe().paymentIntents.retrieve(paymentIntentId, {
       expand: ['latest_charge.balance_transaction'],
     });
     const charge = intent.latest_charge as Stripe.Charge | null;
-    if (!charge) return empty;
+    if (!charge) return { ...empty, livemode: intent.livemode };
     const txn = charge.balance_transaction as Stripe.BalanceTransaction | string | null;
     return {
       grossCents: charge.amount ?? null,
@@ -169,6 +172,7 @@ async function chargeFacts(paymentIntentId: string): Promise<ChargeFacts> {
       stripeFeeCents: txn && typeof txn !== 'string' ? txn.fee : null,
       transferId: typeof charge.transfer === 'string' ? charge.transfer : charge.transfer?.id ?? null,
       currency: charge.currency ?? null,
+      livemode: intent.livemode,
     };
   } catch {
     return empty;
@@ -209,7 +213,7 @@ export async function recordSale(
 
     const facts = input.paymentIntentId
       ? await chargeFacts(input.paymentIntentId)
-      : ({ grossCents: null, applicationFeeCents: null, stripeFeeCents: null, transferId: null, currency: null } as ChargeFacts);
+      : ({ grossCents: null, applicationFeeCents: null, stripeFeeCents: null, transferId: null, currency: null, livemode: null } as ChargeFacts);
 
     const terms = await getTerms(admin, input.providerId);
     const gross = facts.grossCents ?? input.grossCents;
@@ -248,7 +252,10 @@ export async function recordSale(
       stripe_payment_intent: input.paymentIntentId,
       stripe_transfer_id: facts.transferId,
       status: routedToConnect ? 'pending' : 'platform_owed',
-    });
+      // Only written for test-mode payments: live rows rely on the column default (true),
+      // so recording a live sale never depends on migration 00161 having been applied.
+      ...(facts.livemode === false ? { livemode: false } : {}),
+    } as Database['public']['Tables']['provider_earnings']['Insert']);
   } catch {
     // Swallowed on purpose — see the doc comment.
   }

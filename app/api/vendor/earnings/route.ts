@@ -51,8 +51,16 @@ export async function GET(request: Request) {
   // "still owed" doesn't quietly drop older unpaid sales.
   const { data: allRows } = await admin
     .from('provider_earnings')
-    .select('net_cents, gross_cents, commission_cents, stripe_fee_cents, status')
+    .select('net_cents, gross_cents, commission_cents, stripe_fee_cents, status, routed_to_connect')
     .eq('provider_id', providerId);
+
+  // The vendor's current terms, for the commission card: their plan and the rate
+  // that applies to new sales (the standard plan rate unless an admin set bespoke terms).
+  const { data: sub } = await admin
+    .from('subscriptions')
+    .select('plan, commission_rate, commission_flat_cents, custom_terms')
+    .eq('provider_id', providerId)
+    .maybeSingle();
 
   const sum = (
     pick: (r: NonNullable<typeof allRows>[number]) => number | null,
@@ -63,6 +71,10 @@ export async function GET(request: Request) {
     lifetime_gross_cents: sum((r) => r.gross_cents),
     lifetime_net_cents: sum((r) => r.net_cents, (r) => r.status !== 'refunded'),
     lifetime_commission_cents: sum((r) => r.commission_cents, (r) => r.status !== 'refunded'),
+    // Commission Stripe took automatically (the sale went to the vendor's own account)...
+    commission_collected_cents: sum((r) => r.commission_cents, (r) => r.status !== 'refunded' && r.routed_to_connect),
+    // ...versus commission on sales BabyBrain collected itself, still to be settled.
+    commission_to_collect_cents: sum((r) => r.commission_cents, (r) => r.status !== 'refunded' && !r.routed_to_connect),
     lifetime_stripe_fee_cents: sum((r) => r.stripe_fee_cents, (r) => r.status !== 'refunded'),
     paid_out_cents: sum((r) => r.net_cents, (r) => r.status === 'paid_out'),
     // Money sitting in the vendor's own Stripe balance, on its way to them.
@@ -184,6 +196,12 @@ export async function GET(request: Request) {
     connected: Boolean(provider?.stripe_account_id),
     payouts_enabled: Boolean(provider?.payouts_enabled),
     summary,
+    terms: {
+      plan: sub?.plan ?? 'free',
+      commission_rate: sub?.commission_rate != null ? Number(sub.commission_rate) : null,
+      commission_flat_cents: sub?.commission_flat_cents ?? 0,
+      custom_terms: Boolean(sub?.custom_terms),
+    },
     balance,
     payouts,
     ledger: labelled,

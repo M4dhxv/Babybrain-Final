@@ -12,6 +12,23 @@ type Metrics = {
   bookings: { today: number; last7: number };
   signups: { today: number; last7: number };
   daily: { date: string; bookings: number; signups: number }[];
+  includeTest: boolean;
+  excluded: { vendors: number; parents: number; bookings: number; sales: number };
+  revenue: {
+    sales: number; gross: number; commission: number; vendorNet: number; stripeFees: number;
+    commissionCollected: number; commissionToCollect: number; refunded: number;
+    last7: { sales: number; gross: number; commission: number };
+    last30: { sales: number; gross: number; commission: number };
+  };
+  growth: { newParents7: number; newParents30: number; newVendors30: number; parentsWhoBooked: number; activatedVendors: number };
+  health: {
+    bookings30: number; cancelled30: number; cancellationRate: number | null;
+    waitlisted: number; upcomingFillRate: number | null; upcomingSessions: number;
+  };
+  subscriptions: {
+    plusActive: number; plusPastDue: number; plusCanceled: number;
+    vendorPro: number; vendorPremium: number; vendorPastDue: number; vendorCanceled: number;
+  };
 };
 type Channel = {
   id: string; kind: string; name: string; members: string[]; memberCount: number;
@@ -37,7 +54,7 @@ type EmailFlow = {
 };
 type VendorTerms = {
   provider_id: string; business_name: string; plan: string;
-  connected: boolean; payouts_enabled: boolean;
+  connected: boolean; payouts_enabled: boolean; is_test?: boolean;
   commission_rate: number; commission_flat_cents: number;
   fee_payer: 'platform' | 'vendor'; commission_on_packages: boolean; custom_terms: boolean;
   lifetime_gross_cents: number; lifetime_commission_cents: number;
@@ -355,44 +372,114 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
+/** Shows what the live-data filter left out, with the switch to bring it back. */
+function TestDataBar({ includeTest, setIncludeTest, excluded }: {
+  includeTest: boolean; setIncludeTest: (v: boolean) => void; excluded: string;
+}) {
+  return (
+    <div style={{ ...card(), display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
+      <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+        {includeTest
+          ? <><strong style={{ color: C.pink }}>Including test data</strong> — demo vendors, test-mode payments and test parents are counted.</>
+          : <><strong style={{ color: C.green }}>Live data only</strong> — demo vendors, Stripe test-mode payments and test parents are left out{excluded ? ` (${excluded})` : ''}.</>}
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+        <input type="checkbox" checked={includeTest} onChange={(e) => setIncludeTest(e.target.checked)} />
+        Include test data
+      </label>
+    </div>
+  );
+}
+
+const pctText = (v: number | null) => (v == null ? '—' : `${Math.round(v * 1000) / 10}%`);
+
 function MetricsView() {
   const [m, setM] = useState<Metrics | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [includeTest, setIncludeTest] = useState(false);
   useEffect(() => {
-    adminFetch<Metrics>('/api/admin/metrics').then(setM).catch((e) => setErr(String(e.message ?? e)));
-  }, []);
+    let stale = false;
+    setErr(null);
+    adminFetch<Metrics>(`/api/admin/metrics${includeTest ? '?include_test=1' : ''}`)
+      .then((r) => { if (!stale) setM(r); })
+      .catch((e) => { if (!stale) setErr(String(e.message ?? e)); });
+    return () => { stale = true; };
+  }, [includeTest]);
 
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
   if (!m) return <p style={{ color: C.muted }}>Loading metrics…</p>;
 
-  const cards: [string, number | string, string][] = [
-    ['Parents', m.totals.parents, C.blue],
-    ['Vendors (total)', m.totals.providers, C.blue],
-    ['Vendors (active)', m.totals.activeProviders, C.green],
-    ['Bookings today', m.bookings.today, C.pink],
-    ['Bookings (7d)', m.bookings.last7, C.pink],
-    ['Bookings (all)', m.totals.bookings, C.muted],
-    ['Plus subscribers', m.totals.plusSubscribers, C.green],
-    ['Growth vendors', m.totals.growthSubscribers, C.green],
-    ['Signups today', m.signups.today, C.blue],
-    ['Signups (7d)', m.signups.last7, C.blue],
-    ['Activities', m.totals.activities, C.muted],
-    ['Reviews', m.totals.reviews, C.muted],
-  ];
-  const maxDaily = Math.max(1, ...m.daily.map((d) => Math.max(d.bookings, d.signups)));
-
-  return (
+  type Row = [string, number | string, string, string?];
+  const section = (title: string, rows: Row[]) => (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-        {cards.map(([label, value, color]) => (
+      <div style={{ fontWeight: 800, fontSize: 14, margin: '22px 0 10px' }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+        {rows.map(([label, value, color, sub]) => (
           <div key={label} style={card()}>
             <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
-            <div style={{ fontSize: 30, fontWeight: 900, color, marginTop: 6 }}>{value}</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color, marginTop: 6 }}>{value}</div>
+            {sub && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>}
           </div>
         ))}
       </div>
+    </div>
+  );
 
-      <div style={{ ...card(), marginTop: 20, padding: 20 }}>
+  const r = m.revenue;
+  const maxDaily = Math.max(1, ...m.daily.map((d) => Math.max(d.bookings, d.signups)));
+  const ex = m.excluded;
+  const excludedText = [
+    ex.vendors ? `${ex.vendors} vendor${ex.vendors === 1 ? '' : 's'}` : '',
+    ex.parents ? `${ex.parents} parent${ex.parents === 1 ? '' : 's'}` : '',
+    ex.bookings ? `${ex.bookings} booking${ex.bookings === 1 ? '' : 's'}` : '',
+    ex.sales ? `${ex.sales} sale${ex.sales === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(', ');
+
+  return (
+    <div>
+      <TestDataBar includeTest={includeTest} setIncludeTest={setIncludeTest} excluded={excludedText} />
+
+      {section('Revenue and commission', [
+        ['Gross sales', sgd(r.gross), C.text, `${r.sales} paid sale${r.sales === 1 ? '' : 's'}`],
+        ['BabyBrain commission', sgd(r.commission), C.green, 'Before Stripe fees'],
+        ['Commission collected', sgd(r.commissionCollected), C.green, 'Taken automatically by Stripe'],
+        ['Commission to collect', sgd(r.commissionToCollect), C.pink, 'On sales we settle manually'],
+        ["Stripe's fees", sgd(r.stripeFees), C.muted],
+        ['Vendor net', sgd(r.vendorNet), C.text],
+        ['Last 7 days', sgd(r.last7.gross), C.blue, `${r.last7.sales} sales · ${sgd(r.last7.commission)} commission`],
+        ['Last 30 days', sgd(r.last30.gross), C.blue, `${r.last30.sales} sales · ${sgd(r.last30.commission)} commission`],
+      ])}
+
+      {section('Growth', [
+        ['Parents', m.totals.parents, C.blue],
+        ['New parents (7d)', m.growth.newParents7, C.blue],
+        ['New parents (30d)', m.growth.newParents30, C.blue],
+        ['Parents who booked', m.growth.parentsWhoBooked, C.pink, m.totals.parents ? `${pctText(m.growth.parentsWhoBooked / m.totals.parents)} of parents` : undefined],
+        ['Vendors (active)', m.totals.activeProviders, C.green, `${m.totals.providers} in total`],
+        ['New vendors (30d)', m.growth.newVendors30, C.blue],
+        ['Activated vendors', m.growth.activatedVendors, C.green, 'Live class and a booking'],
+      ])}
+
+      {section('Booking health', [
+        ['Bookings today', m.bookings.today, C.pink],
+        ['Bookings (7d)', m.bookings.last7, C.pink],
+        ['Bookings (30d)', m.health.bookings30, C.pink],
+        ['Bookings (all)', m.totals.bookings, C.muted],
+        ['Cancellation rate (30d)', pctText(m.health.cancellationRate), C.text, `${m.health.cancelled30} cancelled`],
+        ['Upcoming fill rate', pctText(m.health.upcomingFillRate), C.green, `${m.health.upcomingSessions} sessions with a capacity`],
+        ['On waitlists', m.health.waitlisted, C.muted],
+        ['Activities', m.totals.activities, C.muted],
+        ['Reviews', m.totals.reviews, C.muted],
+      ])}
+
+      {section('Subscriptions', [
+        ['Plus subscribers', m.subscriptions.plusActive, C.green, `${m.subscriptions.plusPastDue} past due · ${m.subscriptions.plusCanceled} cancelled`],
+        ['Vendors on Pro', m.subscriptions.vendorPro, C.green],
+        ['Vendors on Premium', m.subscriptions.vendorPremium, C.green],
+        ['Vendor plans at risk', m.subscriptions.vendorPastDue, C.pink, `${m.subscriptions.vendorCanceled} cancelled`],
+      ])}
+
+      <div style={{ ...card(), marginTop: 22, padding: 20 }}>
         <div style={{ fontWeight: 800, marginBottom: 4 }}>Last 14 days</div>
         <div style={{ display: 'flex', gap: 16, color: C.muted, fontSize: 12, marginBottom: 14 }}>
           <span><span style={{ color: C.pink }}>■</span> Bookings</span>
@@ -1931,6 +2018,7 @@ function CommercialsView() {
                 <th style={th()}>Flat fee</th>
                 <th style={th()}>Stripe fee</th>
                 <th style={th()}>Packs</th>
+                <th style={th()}>Test account</th>
                 <th style={{ ...th(), textAlign: 'right' }}>Sold</th>
                 <th style={{ ...th(), textAlign: 'right' }}>We kept</th>
               </tr>
@@ -1940,7 +2028,10 @@ function CommercialsView() {
                 <tr key={r.provider_id} style={{ borderTop: `1px solid ${C.border}`,
                   opacity: saving === r.provider_id ? 0.5 : 1 }}>
                   <td style={td()}>
-                    <div style={{ fontWeight: 700 }}>{r.business_name}</div>
+                    <div style={{ fontWeight: 700 }}>
+                      {r.business_name}
+                      {r.is_test && <span style={{ color: C.muted, fontWeight: 600 }}> · test</span>}
+                    </div>
                     <div style={{ color: C.muted, fontSize: 11 }}>
                       {r.payouts_enabled ? 'Payouts on' : r.connected ? 'Connect pending' : 'Not connected'}
                       {r.custom_terms && <span style={{ color: C.pink }}> · bespoke</span>}
@@ -1997,6 +2088,14 @@ function CommercialsView() {
                       onChange={(e) => void save(r.provider_id, { commission_on_packages: e.target.checked })}
                     />
                   </td>
+                  <td style={td()}>
+                    <input
+                      type="checkbox"
+                      title="Demo / QA vendor: left out of admin Metrics and Payments"
+                      checked={Boolean(r.is_test)}
+                      onChange={(e) => void save(r.provider_id, { is_test: e.target.checked })}
+                    />
+                  </td>
                   <td style={{ ...td(), textAlign: 'right' }}>
                     {sgd(r.lifetime_gross_cents)}
                     <div style={{ color: C.muted, fontSize: 11 }}>{r.sales_count} sales</div>
@@ -2044,6 +2143,8 @@ interface PaymentsData {
   totals: { gross: number; commission: number; stripeFee: number; net: number; platformOwed: number; count: number };
   platformPayouts: PlatformPayout[] | null;
   platformPayoutsError: string | null;
+  includeTest?: boolean;
+  excludedSales?: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -2057,15 +2158,16 @@ const STATUS_LABEL: Record<string, string> = {
 function PaymentsView() {
   const [data, setData] = useState<PaymentsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [includeTest, setIncludeTest] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setData(await adminFetch<PaymentsData>('/api/admin/payments?limit=100'));
+      setData(await adminFetch<PaymentsData>(`/api/admin/payments?limit=100${includeTest ? '&include_test=1' : ''}`));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load payments.');
     }
-  }, []);
+  }, [includeTest]);
   useEffect(() => { void load(); }, [load]);
 
   const sgdDate = (iso: string) =>
@@ -2081,6 +2183,12 @@ function PaymentsView() {
           weeks, on Stripe&apos;s own monthly payout schedule.
         </p>
       </div>
+
+      <TestDataBar
+        includeTest={includeTest}
+        setIncludeTest={setIncludeTest}
+        excluded={data?.excludedSales ? `${data.excludedSales} sale${data.excludedSales === 1 ? '' : 's'}` : ''}
+      />
 
       {error && <div style={{ ...card(), borderColor: C.pink, color: C.pink }}>{error}</div>}
 
