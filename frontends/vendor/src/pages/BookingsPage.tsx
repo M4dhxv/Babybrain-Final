@@ -1696,7 +1696,7 @@ export default function BookingsPage() {
                   </p>
                 </div>
               )}
-              <div className="flex items-center gap-4 mb-5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg">
                   <Check className="w-4 h-4 text-green-600" /><span className="text-sm font-medium text-green-700">Present {presentCount}</span>
                 </div>
@@ -1704,19 +1704,21 @@ export default function BookingsPage() {
                   <X className="w-4 h-4 text-red-600" /><span className="text-sm font-medium text-red-700">Absent {absentCount}</span>
                 </div>
                 <span className="ml-auto text-sm text-gray-700"><strong>{booked.length}</strong> booked</span>
-                <button
-                  onClick={startExport}
-                  disabled={booked.length === 0}
-                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <Download className="h-3.5 w-3.5" /> Export CSV
-                </button>
               </div>
               {/* Absent families get a make-up token from this roster, so the
                   expiry has to be settable here too. */}
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 {canManage && expiryPicker}
-                {tokenError && <p className="text-xs font-medium text-red-600">{tokenError}</p>}
+                <div className="ml-auto shrink-0">
+                  <button
+                    onClick={startExport}
+                    disabled={booked.length === 0}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export CSV
+                  </button>
+                </div>
+                {tokenError && <p className="basis-full text-xs font-medium text-red-600">{tokenError}</p>}
               </div>
               <div className="border border-gray-200 rounded-xl overflow-x-auto mb-5">
                 <div className={cn(ROSTER_COLS, 'px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-500')}>

@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
+import { Icon } from "./ui";
 import { isMultiDay, sgDateTime, sgTime } from "../lib/schedule";
 
-type Session = { id: string; starts_at: string; ends_at?: string | null };
+type Session = { id: string; starts_at: string; ends_at?: string | null; teacher_name?: string | null; studio?: string | null };
 
 // Enough for a typical short run to show at once; a long-running class folds
 // the rest behind one line so the page doesn't turn into a wall of dates.
 const VISIBLE_DAYS = 6;
+// A busy day folds its times behind one button so the grid stays short.
+const VISIBLE_TIMES = 8;
 
 const SG = "Asia/Singapore";
 const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: SG });
@@ -24,7 +27,8 @@ const minutesOfDay = (iso: string) => {
   return Number(h) * 60 + Number(m);
 };
 
-type Day = { key: string; iso: string; times: string[] };
+type Slot = { id: string; time: string; who: string };
+type Day = { key: string; iso: string; slots: Slot[] };
 
 function groupByDay(sessions: Session[]): Day[] {
   const sorted = [...sessions].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -34,21 +38,35 @@ function groupByDay(sessions: Session[]): Day[] {
     const key = dayKey(s.starts_at);
     let d = byKey.get(key);
     if (!d) {
-      d = { key, iso: s.starts_at, times: [] };
+      d = { key, iso: s.starts_at, slots: [] };
       byKey.set(key, d);
       days.push(d);
     }
-    const t = sgTime(s.starts_at);
-    if (!d.times.includes(t)) d.times.push(t);
+    // One slot per session — two sessions at the same time (two teachers or
+    // venues) stay two options instead of collapsing into one button.
+    d.slots.push({ id: s.id, time: sgTime(s.starts_at), who: [s.teacher_name, s.studio].filter(Boolean).join(" · ") });
   }
   return days;
 }
 
-/** The "Upcoming sessions" body for a class, appointment or event: a one-line
- *  summary of the pattern, then one date tile per day with that day's times.
- *  Display only — nothing here is a control except the fold-out. */
-export function SessionSchedule({ sessions }: { sessions: Session[] }) {
+/** The "Upcoming sessions" body for a class, appointment or event. It keeps
+ * the date choices compact, then gives the selected date's times enough room
+ * to stay easy to scan and tap — even for a day with many available slots. */
+export function SessionSchedule({
+  sessions,
+  durationMins,
+  selectedId,
+  onSelect,
+}: {
+  sessions: Session[];
+  durationMins?: number | null;
+  /** The session the parent tapped, held by the page so the Book button can carry it to checkout. */
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+}) {
   const [showAll, setShowAll] = useState(false);
+  const [showAllTimes, setShowAllTimes] = useState(false);
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const { days, summary } = useMemo(() => {
     const days = groupByDay(sessions);
     const weekdays = [...new Set(days.map((d) => weekdayIdx(d.iso)))].sort((a, b) => a - b);
@@ -86,28 +104,97 @@ export function SessionSchedule({ sessions }: { sessions: Session[] }) {
   }
 
   const shown = showAll ? days : days.slice(0, VISIBLE_DAYS);
+  const selectedDay = days.find((d) => d.key === selectedDayKey) ?? days[0];
+  const shownSlots = showAllTimes ? selectedDay.slots : selectedDay.slots.slice(0, VISIBLE_TIMES);
+  // Only label a slot with who/where when its time isn't unique that day.
+  const timeCount = new Map<string, number>();
+  selectedDay.slots.forEach((s) => timeCount.set(s.time, (timeCount.get(s.time) ?? 0) + 1));
+  const picked = selectedDay.slots.some((s) => s.id === selectedId);
+
   return (
     <div>
-      <div className="mb-3 rounded-[12px] bg-[#FFF5F8] px-3 py-2.5 leading-snug">
+      <div className="mb-3 rounded-[12px] bg-palette-pinkTint px-3 py-2.5 leading-snug">
         <p className="text-sm font-black text-[#34406f]">{summary.headline}</p>
         <p className="text-xs font-semibold text-[#68718f]">{summary.detail}</p>
       </div>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1.5">
+      <div className="-mx-1 mb-3 overflow-x-auto px-1 pb-1 [scrollbar-width:thin]">
+        <ul className="flex min-w-max gap-2">
         {shown.map((d) => (
-          <li key={d.key} className="overflow-hidden rounded-[12px] border border-[#F0E3E8] text-center">
-            <div className="bg-[#FED7E4] py-1.5 leading-tight text-baby-cta">
-              <p className="text-[11px] font-black">{weekdayShort(d.iso)}</p>
-              <p className="text-[19px] font-black">{dayNum(d.iso)}</p>
-              <p className="text-[11px] font-bold">{monthShort(d.iso)}</p>
-            </div>
-            <div className="py-1.5 text-xs font-bold leading-relaxed tabular-nums text-[#34406f]">
-              {d.times.map((t) => (
-                <p key={t}>{t}</p>
-              ))}
-            </div>
+          <li key={d.key}>
+            <button
+              type="button"
+              aria-pressed={selectedDay.key === d.key}
+              onClick={() => {
+                setSelectedDayKey(d.key);
+                setShowAllTimes(false);
+              }}
+              className={`grid h-[84px] w-[74px] place-items-center rounded-[14px] border text-center leading-tight transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
+                selectedDay.key === d.key
+                  ? "border-baby-pink bg-baby-pink text-baby-ink shadow-card"
+                  : "border-[#EBE3E5] bg-[#F4F0FA] text-[#34406f] hover:border-baby-pink"
+              }`}
+            >
+              <span className="text-[11px] font-black">{weekdayShort(d.iso)}</span>
+              <span className="text-[25px] font-black tabular-nums">{dayNum(d.iso)}</span>
+              <span className="text-[11px] font-bold">{monthShort(d.iso)}</span>
+            </button>
           </li>
         ))}
-      </ul>
+        </ul>
+      </div>
+
+      <section className="rounded-[14px] border border-[#EBE3E5] bg-white p-3.5 shadow-card sm:p-4" aria-label={`Sessions on ${weekdayLong(selectedDay.iso)} ${dayMonth(selectedDay.iso)}`}>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h3 className="text-[18px] font-black text-baby-ink">{weekdayShort(selectedDay.iso)} {dayMonth(selectedDay.iso)}</h3>
+            <p className="text-xs font-semibold text-[#68718f]">{selectedDay.slots.length} {selectedDay.slots.length === 1 ? "session" : "sessions"} available</p>
+          </div>
+          <span className="rounded-full bg-palette-pinkSoft px-2.5 py-1 text-[11px] font-black text-baby-cta">Choose a time</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {shownSlots.map((slot) => {
+            const active = selectedId === slot.id;
+            const shared = (timeCount.get(slot.time) ?? 0) > 1;
+            return (
+              <button
+                key={slot.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onSelect?.(slot.id)}
+                className={`min-h-12 rounded-[11px] border px-2 py-2 text-[15px] font-black tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
+                  active
+                    ? "border-baby-cta bg-baby-cta text-white shadow-pink"
+                    : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
+                }`}
+              >
+                {slot.time}
+                {shared && <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-white/90" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {selectedDay.slots.length > VISIBLE_TIMES && (
+          <button
+            type="button"
+            onClick={() => setShowAllTimes((v) => !v)}
+            className="mt-3 w-full py-1.5 text-sm font-black text-baby-cta"
+          >
+            {showAllTimes ? "Show fewer times" : `Show ${selectedDay.slots.length - VISIBLE_TIMES} more times`}
+          </button>
+        )}
+        {picked && (
+          <p role="status" className="mt-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
+            Click on Book a class to proceed with this time.
+          </p>
+        )}
+      </section>
+
+      {durationMins && (
+        <p className="mt-3 flex items-center gap-2 rounded-[12px] bg-palette-pinkTint px-3 py-2.5 text-sm font-bold text-[#68718f]">
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-palette-pinkSoft text-baby-cta"><Icon name="clock" className="h-4 w-4" /></span>
+          {durationMins} min per session
+        </p>
+      )}
       {days.length > VISIBLE_DAYS && (
         <button
           type="button"

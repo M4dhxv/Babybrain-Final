@@ -1759,6 +1759,8 @@ function ActivityDetailPage() {
   const [buyingPack, setBuyingPack] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
+  /** The session tapped in the schedule; carried to the booking page as ?session=. */
+  const [pickedSessionId, setPickedSessionId] = useState<string | null>(null);
 
   /* The browser resolves the hash before Vite has mounted, and reviews arrive
      asynchronously after that, so #reviews (the post-activity check-in email's
@@ -2014,12 +2016,11 @@ function ActivityDetailPage() {
                 </>
               ) : (
                 sessions.length > 0 ? (
-                  <SessionSchedule sessions={sessions} />
+                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} />
                 ) : (
                   <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
                 )
               )}
-              {durationMins && activity.wix_service_type !== "COURSE" && <p className="mt-3 text-sm font-semibold text-[#68718f]">Each session runs about {durationMins} minutes.</p>}
             </section>
 
             {packs.length > 0 && activity.wix_service_type !== "COURSE" && (
@@ -2096,7 +2097,7 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> {activity.wix_service_type === "EVENT" ? "Sold out" : "Currently full"}
               </button>
             ) : (
-              <Button href={`/book?slug=${activity.slug}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              <Button href={`/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
                 a listing that books on the provider's own site has no chat to
