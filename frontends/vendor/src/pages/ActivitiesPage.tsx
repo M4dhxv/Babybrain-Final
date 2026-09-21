@@ -16,6 +16,7 @@ import {
   CalendarCheck,
   Trash2,
   Clock,
+  Crop,
   ImageUp,
   Pause,
   Play,
@@ -50,6 +51,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { resizeImage } from '@/lib/resizeImage';
+import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
@@ -1233,6 +1235,8 @@ export default function ActivitiesPage() {
   }
 
   const ACTIVITY_IMAGES_MAX = 10;
+  // The photo currently open in the crop dialog.
+  const [cropUrl, setCropUrl] = useState<string | null>(null);
 
   async function uploadOneImage(original: File): Promise<string | null> {
     if (!provider) return null;
@@ -1267,6 +1271,17 @@ export default function ActivitiesPage() {
         cover_image_url: f.cover_image_url || urls[0],
       }));
     }
+  }
+
+  /** Swaps a photo for its cropped version, keeping its place in the list and its cover status. */
+  async function replaceActivityImage(oldUrl: string, file: File) {
+    const url = await uploadOneImage(file);
+    if (!url) throw new Error('upload failed');
+    setForm((f) => ({
+      ...f,
+      image_urls: f.image_urls.map((u) => (u === oldUrl ? url : u)),
+      cover_image_url: f.cover_image_url === oldUrl ? url : f.cover_image_url,
+    }));
   }
 
   function removeActivityImage(url: string) {
@@ -1492,6 +1507,12 @@ export default function ActivitiesPage() {
 
   return (
     <div className="relative">
+      <ImageCropDialog
+        url={cropUrl}
+        open={cropUrl != null}
+        onClose={() => setCropUrl(null)}
+        onCropped={(file) => (cropUrl ? replaceActivityImage(cropUrl, file) : undefined)}
+      />
       {/* Top Bar */}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
@@ -2161,6 +2182,15 @@ export default function ActivitiesPage() {
                           {(form.cover_image_url || form.image_urls[0]) === url && (
                             <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded-full bg-[#FA4D8D] px-1 py-0.5 text-[9px] font-bold leading-none text-white">Cover</span>
                           )}
+                          <button
+                            type="button"
+                            aria-label="Crop photo"
+                            title="Crop to the activity page frame"
+                            onClick={() => setCropUrl(url)}
+                            className="absolute bottom-0.5 left-0.5 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                          >
+                            <Crop className="h-3 w-3" />
+                          </button>
                           <button
                             type="button"
                             aria-label="Remove photo"

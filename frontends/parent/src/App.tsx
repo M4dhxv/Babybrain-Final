@@ -1569,6 +1569,39 @@ function PhotoLightbox({
  *  re-renders only this, not the whole activity page. All slides are decoded
  *  up front (not lazy) so a swipe or auto-advance never waits on a network
  *  fetch or decode mid-transition. */
+/** One hero slide. A landscape photo fills the frame (anchored near the top so faces stay in);
+ *  anything that isn't — a logo, a square or portrait picture, a very wide banner — is shown whole
+ *  on a soft blurred copy of itself, so a vendor's logo is never cut off. */
+function HeroSlide({ url, alt, priority }: { url: string; alt: string; priority: boolean }) {
+  const [ratio, setRatio] = useState<number | null>(null);
+  const measure = (el: HTMLImageElement | null) => {
+    if (el && el.naturalWidth && el.naturalHeight) setRatio(el.naturalWidth / el.naturalHeight);
+  };
+  if (url === FALLBACK_LOGO_URL) {
+    return <img src={url} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
+  }
+  const whole = ratio != null && (ratio < 1.4 || ratio > 3.6);
+  return (
+    <div className="relative h-[305px] w-full shrink-0 overflow-hidden bg-[#F3EDF0]">
+      {whole && (
+        <img src={url} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl" />
+      )}
+      <img
+        ref={(el) => { if (el?.complete) measure(el); }}
+        src={url}
+        alt={alt}
+        width={860}
+        height={305}
+        decoding="async"
+        fetchPriority={priority ? "high" : "auto"}
+        loading="eager"
+        onLoad={(e) => measure(e.currentTarget)}
+        className={`relative h-full w-full ${whole ? "object-contain" : "object-cover object-[center_15%]"}`}
+      />
+    </div>
+  );
+}
+
 const HeroCarousel = memo(function HeroCarousel({
   images,
   title,
@@ -1641,21 +1674,7 @@ const HeroCarousel = memo(function HeroCarousel({
         style={{ transform: `translate3d(-${(at % count) * 100}%, 0, 0)` }}
       >
         {images.map((url, i) => (
-          <img
-            key={url}
-            src={url}
-            alt={i === 0 ? title : ""}
-            width={860}
-            height={305}
-            decoding="async"
-            fetchPriority={i === 0 ? "high" : "auto"}
-            loading="eager"
-            className={
-              url === FALLBACK_LOGO_URL
-                ? "h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12"
-                : "h-[305px] w-full shrink-0 object-cover object-[center_15%]"
-            }
-          />
+          <HeroSlide key={url} url={url} alt={i === 0 ? title : ""} priority={i === 0} />
         ))}
       </div>
       {count > 1 && (

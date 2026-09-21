@@ -71,19 +71,35 @@ const money = (cents: number, currency = 'sgd') =>
 /** "12%" / "7.5%" — no trailing zeros. */
 const pct = (rate: number) => `${Number((rate * 100).toFixed(1))}%`;
 
-/** The commission card's hint. Wording follows how the commission is taken: "collected" when
- *  Stripe takes it automatically, "to be collected" when BabyBrain collects the sale itself
- *  (no Stripe on the vendor's side) and settles up manually. */
+/** The commission card: the big number is the commission taken so far, and the hint gives the
+ *  plan and rate. Wording follows how it is taken: "collected" when Stripe takes it
+ *  automatically, "to be collected" when BabyBrain collects the sale itself (no Stripe on the
+ *  vendor's side) and settles up manually. */
+function commissionAmount(data: EarningsResponse, currency: string): string {
+  const s = data.summary;
+  return money(s.commission_collected_cents + s.commission_to_collect_cents, currency);
+}
+
 function commissionHint(data: EarningsResponse, currency: string): string {
   const t = data.terms;
   const s = data.summary;
-  const plan = t?.custom_terms ? 'Custom rate' : `${planMeta(t?.plan).short} plan`;
+  const short = planMeta(t?.plan).short;
+  const plan = t?.custom_terms ? 'Custom rate' : /plan$/i.test(short) ? short : `${short} plan`;
+  const rate = t?.commission_rate != null ? ` · ${pct(t.commission_rate)}` : '';
   const flat = t && t.commission_flat_cents > 0 ? ` + ${money(t.commission_flat_cents, currency)} per booking` : '';
-  const parts: string[] = [];
-  if (s.commission_collected_cents > 0) parts.push(`${money(s.commission_collected_cents, currency)} collected`);
-  if (s.commission_to_collect_cents > 0) parts.push(`${money(s.commission_to_collect_cents, currency)} to be collected`);
-  if (parts.length === 0) parts.push(data.payouts_enabled ? 'Nothing collected yet' : 'Nothing to be collected yet');
-  return `${plan}${flat} · ${parts.join(' · ')}`;
+  const collected = s.commission_collected_cents;
+  const toCollect = s.commission_to_collect_cents;
+  let status: string;
+  if (collected > 0 && toCollect > 0) {
+    status = `${money(collected, currency)} collected · ${money(toCollect, currency)} to be collected`;
+  } else if (collected > 0) {
+    status = 'collected';
+  } else if (toCollect > 0) {
+    status = 'to be collected';
+  } else {
+    status = data.payouts_enabled ? 'Nothing collected yet' : 'Nothing to be collected yet';
+  }
+  return `${plan}${rate}${flat} · ${status}`;
 }
 
 const sgDate = (iso: string) =>
@@ -244,7 +260,7 @@ export default function EarningsPage() {
             icon={Percent}
             accent="bg-amber-100 text-amber-700"
             label="BabyBrain commission"
-            value={data?.terms?.commission_rate != null ? pct(data.terms.commission_rate) : '—'}
+            value={data ? commissionAmount(data, currency) : '—'}
             hint={data ? commissionHint(data, currency) : undefined}
           />
         </div>
