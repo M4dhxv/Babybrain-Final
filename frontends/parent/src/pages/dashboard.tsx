@@ -23,7 +23,9 @@ import {
   PlusFeatureDialog,
   ConfirmDialog,
   SectionTitle,
+  wixThumbUrl,
 } from "../components/ui";
+import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { SelectField, Opt } from "../components/SelectField";
 import { EnquiryChat } from "../components/EnquiryChat";
 import { UnreadBadge } from "../components/UnreadBadge";
@@ -4297,7 +4299,9 @@ export function BookingPage() {
     );
   }
 
-  const img = activity.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/detail-hero.png`;
+  // The same photo the activity page leads with (own photos, else the vendor's profile picture and
+  // catalogue), not a stock crop or just the first upload.
+  const img = resolveActivityImage(activity, activity.provider_contact) ?? FALLBACK_LOGO_URL;
   const ageText = formatAgeRange(activity.age_min_months, activity.age_max_months);
 
   return (
@@ -4315,7 +4319,7 @@ export function BookingPage() {
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
               <div className="grid gap-5 md:grid-cols-[245px_1fr]">
-                <img src={img} alt={activity.title} width={245} height={208} decoding="async" className="h-52 w-full rounded-[12px] object-cover" />
+                <img src={wixThumbUrl(img, 490, 416)} alt={activity.title} width={245} height={208} decoding="async" className={`h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain${img === FALLBACK_LOGO_URL ? " p-6" : ""}`} />
                 <div>
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
@@ -4642,7 +4646,7 @@ export function BookingPage() {
             <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
-                <img src={img} alt="" width={112} height={96} loading="lazy" decoding="async" className="h-24 w-28 rounded-[10px] object-cover" />
+                <img src={wixThumbUrl(img, 224, 192)} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${img === FALLBACK_LOGO_URL ? " p-3" : ""}`} />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <div className="mt-2 flex flex-wrap gap-1.5">{[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => <span key={n} className="inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{n}</span>)}</div>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">

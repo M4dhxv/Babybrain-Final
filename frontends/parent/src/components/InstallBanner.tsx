@@ -61,19 +61,20 @@ export function InstallBanner({ pathname }: { pathname: string }) {
     <div
       role="dialog"
       aria-label="Install BabyBrain"
-      className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-md rounded-[20px] border border-[#EBE3E5] bg-white p-4 pr-11 shadow-soft"
+      className="fixed inset-x-3 z-40 mx-auto max-w-md rounded-[20px] border border-[#EBE3E5] bg-white p-4 shadow-soft"
+      style={{ bottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
     >
       {/* Thick cross, no box. */}
       <button
         type="button"
         onClick={close}
         aria-label="Close"
-        className="absolute right-3 top-3 p-1 text-[#59658d] hover:text-baby-ink"
+        className="absolute right-2.5 top-2.5 p-1.5 text-[#59658d] hover:text-baby-ink"
       >
         <Icon name="close" className="h-5 w-5" strokeWidth={3.2} />
       </button>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pr-9">
         <img src="/app/assets/brand/icon-192.png" alt="" width={44} height={44} className="h-11 w-11 shrink-0 rounded-[12px]" />
         <h2 className="text-[17px] font-black leading-tight text-baby-ink">Upgrade your experience ✨</h2>
       </div>

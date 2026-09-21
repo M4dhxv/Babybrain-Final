@@ -18,7 +18,7 @@ import { requestInstall, useInstallState } from "../lib/install";
  *  few hundred px wide, but an unresized Wix photo is routinely 1500px+, so
  *  every card view was downloading many times the bytes it displays. A
  *  non-Wix URL (a placeholder, Supabase Storage) is returned unchanged. */
-function wixThumbUrl(url: string, w: number, h: number): string {
+export function wixThumbUrl(url: string, w: number, h: number): string {
   if (!/^https:\/\/static\.wixstatic\.com\/media\//.test(url)) return url;
   const extMatch = /\.([a-zA-Z0-9]+)$/.exec(url.split("?")[0].split("#")[0]);
   const ext = extMatch?.[1].toLowerCase() === "jpeg" ? "jpg" : extMatch?.[1].toLowerCase();
@@ -468,7 +468,7 @@ export function Header({ active = "/" }: HeaderProps) {
   // bright pink (theme-color #FA4D8D) and meets this as a hard block — no
   // gradient bleed. In a browser tab there's no pink chrome above it.
   return (
-    <header className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper">
+    <header className="sticky top-0 z-30 border-b border-[#F4EFF0] bg-baby-paper [transform:translateZ(0)]">
       <div className="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
         <Brand />
         <nav className="hidden items-center gap-5 text-[13px] font-bold text-baby-ink lg:flex lg:gap-7">

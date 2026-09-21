@@ -4,6 +4,8 @@ import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { getParam } from "../lib/nav";
 import { downloadBookingIcs } from "../lib/ics";
+import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
+import { wixThumbUrl } from "../components/ui";
 
 export default function BookedPage() {
   const title = getParam("title") || "your class";
@@ -29,6 +31,9 @@ export default function BookedPage() {
   const [detail, setDetail] = useState<{
     description: string | null;
     image_urls: string[] | null;
+    image_source: string | null;
+    cover_image_url: string | null;
+    providers: { logo_url: string | null; cover_image_url: string | null; gallery_urls: string[] | null } | null;
     what_to_bring: string | null;
     confirmation_message: string | null;
   } | null>(null);
@@ -37,10 +42,10 @@ export default function BookedPage() {
     let cancelled = false;
     supabase
       .from("activities")
-      .select("description, image_urls, what_to_bring, confirmation_message")
+      .select("description, image_urls, image_source, cover_image_url, what_to_bring, confirmation_message, providers(logo_url, cover_image_url, gallery_urls)")
       .eq("slug", slug)
       .maybeSingle()
-      .then(({ data }) => { if (!cancelled) setDetail(data ?? null); });
+      .then(({ data }) => { if (!cancelled) setDetail((data as unknown as typeof detail) ?? null); });
     return () => { cancelled = true; };
   }, [slug]);
 
@@ -69,11 +74,17 @@ export default function BookedPage() {
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Class details</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
-                <img
-                  src={detail?.image_urls?.[0] || `${import.meta.env.BASE_URL}assets/crops/tiny-tunes.png`}
-                  alt=""
-                  className="h-52 w-full rounded-[12px] object-cover"
-                />
+                {/* The photo the activity page leads with. Until it has loaded, a neutral block: the old
+                    fixed stock image flashed here first and read as the wrong class. */}
+                {detail || !slug ? (
+                  <img
+                    src={wixThumbUrl(detail ? (resolveActivityImage(detail, detail.providers) ?? FALLBACK_LOGO_URL) : FALLBACK_LOGO_URL, 490, 416)}
+                    alt=""
+                    className="h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain"
+                  />
+                ) : (
+                  <div className="h-52 w-full rounded-[12px] bg-[#F3EDF0]" />
+                )}
                 <div>
                   <h3 className="text-xl font-black">{title}</h3>
                   {when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}

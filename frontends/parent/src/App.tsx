@@ -1083,7 +1083,7 @@ function ExplorePage() {
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-30 px-3 sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+        <div className="fixed inset-x-0 bottom-0 z-30 px-3 [transform:translateZ(0)] sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F0E4D8] bg-baby-paper p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
             {(
               [

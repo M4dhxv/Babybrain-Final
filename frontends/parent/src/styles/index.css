@@ -5,10 +5,14 @@
 @layer base {
   html {
     background: #fffcf8;
+    /* No rubber-band / pull-to-refresh bounce: on a phone it drags the sticky header and the
+       fixed filter bar up and down with the page. */
+    overscroll-behavior-y: none;
   }
 
   body {
     margin: 0;
+    overscroll-behavior-y: none;
     min-width: 320px;
     background: #fffcf8;
     color: #111a4c;
