@@ -533,8 +533,8 @@ export function Header({ active = "/" }: HeaderProps) {
           aria-expanded={menuOpen}
           className="-mr-1 grid h-11 w-11 place-items-center text-baby-ink transition-colors hover:text-baby-cta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta lg:hidden"
         >
-          {/* No box: just bold bars, which turn into an equally bold cross when open. */}
-          <Icon name={menuOpen ? "close" : "menu"} className="h-7 w-7" strokeWidth={2.8} />
+          {/* No box: just the bars, which turn into a cross of the same weight when open. */}
+          <Icon name={menuOpen ? "close" : "menu"} className="h-6 w-6" strokeWidth={2} />
         </button>
       </div>
 
