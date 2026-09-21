@@ -11,6 +11,7 @@ import { formatDuration, regionLabel } from "../lib/database.types";
 import { goTo, useLocation } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
 import { FALLBACK_LOGO_URL } from "../lib/activityMedia";
+import { requestInstall, useInstallState } from "../lib/install";
 
 /** Requests a resized rendition from Wix's own CDN (documented `/v1/fill/`
  *  URL transform) instead of the full original upload — a card renders at a
@@ -449,6 +450,8 @@ export function Header({ active = "/" }: HeaderProps) {
   const { session, profile, signOut } = useAuth();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const install = useInstallState();
+  const installMenu = { show: !install.installed && (install.native || install.ios) };
   // Close the mobile dropdown after a navigation — client-side nav keeps the
   // Header mounted, so tapping a link no longer clears it on its own.
   useEffect(() => {
@@ -528,9 +531,10 @@ export function Header({ active = "/" }: HeaderProps) {
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
-          className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#EBE3E5] bg-white text-baby-ink lg:hidden"
+          className="-mr-1 grid h-11 w-11 place-items-center text-baby-ink transition-colors hover:text-baby-cta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta lg:hidden"
         >
-          <Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />
+          {/* No box: just bold bars, which turn into an equally bold cross when open. */}
+          <Icon name={menuOpen ? "close" : "menu"} className="h-7 w-7" strokeWidth={2.8} />
         </button>
       </div>
 
@@ -549,6 +553,15 @@ export function Header({ active = "/" }: HeaderProps) {
               </a>
             ))}
           </div>
+          {installMenu.show && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); void requestInstall(); }}
+              className="mt-2 flex w-full items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[15px] font-bold text-baby-cta hover:bg-white"
+            >
+              <Icon name="spark" className="h-5 w-5" /> Install app
+            </button>
+          )}
           <div className="mt-3 border-t border-[#EBE3E5] pt-3">
             {!session ? (
               <div className="flex flex-col gap-2">
@@ -808,7 +821,7 @@ export const ActivityCard = memo(function ActivityCard({
 }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
+    <article className="relative flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
         <img
           src={wixThumbUrl(activity.image, 640, 174)}
@@ -837,7 +850,7 @@ export const ActivityCard = memo(function ActivityCard({
         </div>
         <SaveHeart
           activityId={activity.id}
-          className="absolute right-3 top-3 h-8 w-8"
+          className="absolute right-3 top-3 z-10 h-8 w-8"
           onToggled={onFavoriteToggled && activity.id ? (saved) => onFavoriteToggled(activity.id as string, saved) : undefined}
         />
       </div>
@@ -889,7 +902,9 @@ export const ActivityCard = memo(function ActivityCard({
           </div>
         ) : (
           <div className="mt-auto flex items-center justify-between border-t border-[#F4EFF0] pt-3">
-            <a href={href} className="text-sm font-extrabold text-palette-blue">
+            {/* The ::after stretches this link over the whole card, so tapping anywhere opens the
+                activity; the save heart sits above it (z-10) and keeps its own tap. */}
+            <a href={href} className="text-sm font-extrabold text-palette-blue after:absolute after:inset-0 after:content-['']">
               View details
             </a>
             <a href={href} aria-label="Open activity" className="text-palette-blue">

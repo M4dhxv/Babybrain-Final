@@ -529,7 +529,7 @@ export function useRecommendations(children: Child[]) {
         // this join `toCard` had nothing to print and the card rendered an
         // empty category pill where Explore shows a real one.
         .select(
-          "id, child_id, score, reasons, activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
+          "id, child_id, score, reasons, activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address, logo_url, cover_image_url, gallery_urls), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         // Only the upcoming sessions ride along. Without this a Wix-linked
         // course carries every past slot it has ever run — hundreds of rows
@@ -556,7 +556,7 @@ export function useRecommendations(children: Child[]) {
             | (ActivityRow & {
                 activity_categories?: { name: string } | null;
                 category_2?: { name: string } | null;
-                providers?: { business_name?: string | null; address?: string | null } | null;
+                providers?: { business_name?: string | null; address?: string | null; logo_url?: string | null; cover_image_url?: string | null; gallery_urls?: string[] | null } | null;
               })
             | null) ?? null;
           return {

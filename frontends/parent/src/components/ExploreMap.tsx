@@ -163,7 +163,7 @@ export function ExploreMap({
       if (Math.hypot(e.touches[0].clientX - startX, e.touches[0].clientY - startY) < 8) return;
       setShowHint(true);
       window.clearTimeout(hideTimer);
-      hideTimer = window.setTimeout(() => setShowHint(false), 1500);
+      hideTimer = window.setTimeout(() => setShowHint(false), 600);
     };
     if (touchOnly) {
       el.addEventListener("touchstart", onStart, { passive: true });

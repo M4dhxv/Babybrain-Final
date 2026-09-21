@@ -27,6 +27,7 @@ import { lazyRoute } from "./lib/lazyRoute";
 import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
 import { useActivities, whenAt } from "./lib/useActivities";
+import { InstallBanner } from "./components/InstallBanner";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
 import { supabase } from "./lib/supabase";
@@ -1507,6 +1508,7 @@ function PhotoLightbox({
   onClose: () => void;
   onIndex: (i: number) => void;
 }) {
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -1525,7 +1527,23 @@ function PhotoLightbox({
           <Icon name="close" className="h-6 w-6" />
         </button>
       </div>
-      <div className="flex flex-1 items-center justify-center gap-4" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex flex-1 touch-pan-y items-center justify-center gap-4"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          swipeStart.current = images.length > 1 && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+        }}
+        onTouchEnd={(e) => {
+          const s = swipeStart.current;
+          swipeStart.current = null;
+          if (!s) return;
+          const dx = e.changedTouches[0].clientX - s.x;
+          const dy = e.changedTouches[0].clientY - s.y;
+          // A deliberate sideways swipe, not a tap or a vertical scroll.
+          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+          onIndex(dx < 0 ? (index + 1) % images.length : (index - 1 + images.length) % images.length);
+        }}
+      >
         {images.length > 1 && (
           <button
             type="button"
@@ -2418,9 +2436,12 @@ function App() {
   // which is what QA saw clicking Profile. Keyed by route so navigating
   // away clears a caught error.
   return (
-    <RouteErrorBoundary key={pathname}>
-      <Suspense fallback={bootLoader}>{page}</Suspense>
-    </RouteErrorBoundary>
+    <>
+      <RouteErrorBoundary key={pathname}>
+        <Suspense fallback={bootLoader}>{page}</Suspense>
+      </RouteErrorBoundary>
+      <InstallBanner pathname={pathname} />
+    </>
   );
 }
 

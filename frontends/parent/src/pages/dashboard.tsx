@@ -1597,7 +1597,7 @@ export function ProfilePage() {
            parent with twenty favourites would otherwise pull thousands of rows
            to render twenty dates. */
         .select(
-          "activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address), activity_sessions(starts_at, ends_at, wix_slot_key))"
+          "activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address, logo_url, cover_image_url, gallery_urls), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         .gte("activities.activity_sessions.ends_at", new Date().toISOString())
         .limit(100)
