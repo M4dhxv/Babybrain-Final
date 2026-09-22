@@ -1,6 +1,6 @@
 {
-  "name": "BabyBrain Vendor Portal",
-  "short_name": "BabyBrain",
+  "name": "BabyBrain Vendor",
+  "short_name": "BabyBrain Vendor",
   "description": "Manage your BabyBrain listing, schedule, bookings and messages.",
   "id": "/vendor/",
   "start_url": "/vendor/",
