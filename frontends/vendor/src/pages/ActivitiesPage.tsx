@@ -665,13 +665,18 @@ export default function ActivitiesPage() {
       }
     }
     try {
-      await loadSessions(a.id);
+      await loadSessions(a.id, seq);
     } finally {
       if (seq === scheduleOpenSeq.current) setSessionsLoading(false);
     }
   }
 
-  async function loadSessions(activityId: string) {
+  // `seq` pins this call to the drawer that was open when it was kicked off
+  // (scheduleOpenSeq at call time) — if the vendor has since closed that
+  // drawer or opened a different activity's before this round-trip lands, the
+  // response is dropped instead of overwriting the now-current drawer's
+  // sessions (and their capacity/duration numbers) with another activity's.
+  async function loadSessions(activityId: string, seq: number = scheduleOpenSeq.current) {
     const { data: sess } = await supabase
       .from('activity_sessions')
       .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
@@ -697,6 +702,7 @@ export default function ActivitiesPage() {
         else if (b.status !== 'cancelled') counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
       });
     }
+    if (seq !== scheduleOpenSeq.current) return;
     setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0, waitlisted: waiting[s.id] ?? 0 })));
   }
 

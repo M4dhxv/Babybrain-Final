@@ -55,7 +55,14 @@ export async function disconnectChat(): Promise<void> {
  *  websocket event that should move it (a message.new that never carries
  *  total_unread_count, an event type we don't handle, a dropped/reconnecting
  *  connection) gets missed — see the polling comment below. */
-const RESYNC_MS = 20_000;
+const RESYNC_MS = 10_000;
+/** A mark-read on the server isn't always visible to a getUnreadCount() call
+ *  fired the instant it happens — QA: the dot occasionally reappeared for a
+ *  few seconds on a fresh page after reading, because our own resync landed
+ *  before Stream's own read-state had actually committed. One quick follow-up
+ *  a couple of seconds later closes that gap without waiting a full
+ *  RESYNC_MS tick. */
+const RESYNC_FOLLOWUP_MS = 2_500;
 
 export function useUnreadMessages(enabled: boolean): number {
   const [unread, setUnread] = useState(0);
@@ -70,6 +77,7 @@ export function useUnreadMessages(enabled: boolean): number {
     getChatClient()
       .then((client) => {
         if (cancelled) return;
+        let followUp: ReturnType<typeof setTimeout> | undefined;
         const resync = () =>
           client
             .getUnreadCount()
@@ -77,6 +85,14 @@ export function useUnreadMessages(enabled: boolean): number {
               if (!cancelled) setUnread(res.total_unread_count);
             })
             .catch(() => {});
+        // Fires resync() now and once more shortly after, to cover a
+        // mark-read whose server-side write hasn't landed yet when the first
+        // call goes out — see RESYNC_FOLLOWUP_MS.
+        const resyncSoon = () => {
+          resync();
+          clearTimeout(followUp);
+          followUp = setTimeout(resync, RESYNC_FOLLOWUP_MS);
+        };
         // Same story as the event below: custom fields on the connected user
         // are loosely typed, so read the total defensively. This only exists
         // for an instant first paint on an already-connected client (the
@@ -85,11 +101,11 @@ export function useUnreadMessages(enabled: boolean): number {
         // the actual bug: reading a message cleared the dot on that page (the
         // event handler below caught it), but navigating to a fresh page
         // re-seeded from this same stale field and the dot came back until a
-        // hard reload forced a brand new connectUser(). resync() right after
-        // corrects it immediately instead of waiting for the next poll tick.
+        // hard reload forced a brand new connectUser(). resyncSoon() right
+        // after corrects it immediately instead of waiting for the next poll.
         const seed = (client.user as { total_unread_count?: unknown } | undefined)?.total_unread_count;
         setUnread(typeof seed === "number" ? seed : 0);
-        resync();
+        resyncSoon();
         // Belt-and-braces on top of the event handler below: a websocket
         // reconnect (mobile app backgrounded, network blip) can resume with
         // events missed in between, which would otherwise leave the badge
@@ -99,7 +115,7 @@ export function useUnreadMessages(enabled: boolean): number {
         // a message sent while the recipient's installed app was open).
         const interval = setInterval(resync, RESYNC_MS);
         const onVisible = () => {
-          if (document.visibilityState === "visible") resync();
+          if (document.visibilityState === "visible") resyncSoon();
         };
         document.addEventListener("visibilitychange", onVisible);
         // One handler for every event that can move the total.
@@ -134,6 +150,7 @@ export function useUnreadMessages(enabled: boolean): number {
         detach = () => {
           sub.unsubscribe();
           clearInterval(interval);
+          clearTimeout(followUp);
           document.removeEventListener("visibilitychange", onVisible);
         };
       })
