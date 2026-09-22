@@ -21,16 +21,36 @@
  * The management token comes from supabase.com/dashboard/account/tokens and is
  * never stored here. Re-running is safe and idempotent.
  *
+ * For a non-production project (e.g. the test one), also pass --urls to set its
+ * Site URL and Redirect URLs. Password-reset and confirm links only work when
+ * the requesting site is on that list; a fresh project defaults to localhost.
+ * With SBP and RESEND_API_KEY in a gitignored env file:
+ *
+ *   ENV_FILE=.env.test.local SUPA_REF=imlfhepnucytyajxpoum \
+ *   SITE_URL=https://babybrain-test.vercel.app \
+ *   node scripts/brand-supabase-auth-emails.mjs --urls [--live]
+ *
  * Deliberately does NOT enable the send-email auth hook: that would route auth
  * mail through our own Vercel endpoint, so a missing RESEND_API_KEY there would
  * break sign-up and password reset outright. SMTP keeps auth mail working even
  * if the app is down.
  */
+// Optional: read SBP / RESEND_API_KEY from a gitignored env file. Real env
+// vars still win over the file.
+if (process.env.ENV_FILE) process.loadEnvFile(process.env.ENV_FILE);
 const SBP = process.env.SBP;
 const RESEND = process.env.RESEND_API_KEY;
-const REF = process.env.SUPA_REF || 'laftgypwwfevzggxknii';
-const SITE = process.env.SITE_URL || 'https://babybrain-final.vercel.app';
+const PROD_REF = 'laftgypwwfevzggxknii';
+const PROD_SITE = 'https://babybrain-final.vercel.app';
+const REF = process.env.SUPA_REF || PROD_REF;
+const SITE = process.env.SITE_URL || PROD_SITE;
 const LIVE = process.argv.includes('--live');
+// --urls also sets Site URL + Redirect URLs. Without it they are left alone, so
+// re-running against production never changes where auth links point.
+const URLS = process.argv.includes('--urls');
+if (URLS && REF === PROD_REF && SITE.replace(/\/$/, '') !== PROD_SITE) {
+  throw new Error(`Refusing --urls: production must keep Site URL ${PROD_SITE}`);
+}
 if (!SBP) throw new Error('SBP (Supabase management token) is required');
 if (!RESEND) throw new Error('RESEND_API_KEY is required');
 
@@ -141,6 +161,15 @@ const payload = {
   smtp_sender_name: 'BabyBrain',
   smtp_admin_email: 'hello@updates.babybrain.sg',
 };
+// ---- 1b. where auth links may point (only with --urls) ----
+// Reset / magic-link / confirm links only work when the requesting site is the
+// Site URL or matches the allow-list; otherwise Supabase falls back to Site URL,
+// which is localhost:3000 on a fresh project.
+if (URLS) {
+  const base = SITE.replace(/\/$/, '');
+  payload.site_url = base;
+  payload.uri_allow_list = [base, `${base}/**`].join(',');
+}
 // ---- 2. branded templates + subjects ----
 for (const [k, v] of Object.entries(T)) {
   payload[`mailer_subjects_${k}`] = v.subject;
@@ -150,6 +179,7 @@ for (const [k, v] of Object.entries(T)) {
 (async () => {
   console.log(`project ${REF}`);
   console.log(`sender   BabyBrain <hello@updates.babybrain.sg> via smtp.resend.com:587`);
+  if (URLS) console.log(`urls     site_url ${payload.site_url}  allow-list ${payload.uri_allow_list}`);
   console.log(`branding ${Object.keys(T).length} templates:`);
   for (const [k, v] of Object.entries(T)) {
     console.log(`   ${k.padEnd(32)} "${v.subject}"  (${v.html.length} chars)`);
@@ -170,6 +200,10 @@ for (const [k, v] of Object.entries(T)) {
   console.log('  smtp_host        =', body.smtp_host);
   console.log('  smtp_sender_name =', body.smtp_sender_name);
   console.log('  smtp_admin_email =', body.smtp_admin_email);
+  if (URLS) {
+    console.log('  site_url         =', body.site_url);
+    console.log('  uri_allow_list   =', body.uri_allow_list);
+  }
   const custom = body.mailer_templates_custom_contents || {};
   const on = Object.entries(custom).filter(([, v]) => v).map(([k]) => k.replace('MAILER_TEMPLATES_', '').replace('_CONTENT', '').toLowerCase());
   console.log('  custom templates =', on.join(', ') || '(none)');
