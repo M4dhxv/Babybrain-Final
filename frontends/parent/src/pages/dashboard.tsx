@@ -1240,6 +1240,35 @@ export function ProfilePage() {
       });
   }, [tab, session, notifsLoaded, notifications]);
 
+  // Unlike Messages (which gets a live websocket event from Stream — see
+  // useUnreadMessages), a new notification row has no push to this page at
+  // all; the fetch above only runs once per session mount. Poll quietly, and
+  // resync immediately when the tab/app comes back to the foreground, so the
+  // nav badge and edge-handle dot pick up a notification created while this
+  // was already open without needing a refresh.
+  useEffect(() => {
+    if (!session) return;
+    const uid = session.user.id;
+    const reload = () =>
+      cacheFetch(`profile:notifications:${uid}`, 0, () =>
+        supabase
+          .from("notifications")
+          .select("id, title, body, read_at, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100)
+          .then(({ data }) => data ?? [])
+      ).then((data) => setNotifications(data as unknown as NotifItem[]));
+    const interval = setInterval(reload, 20_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session]);
+
   // Below lg the nav is a left-hand drawer, not a stacked block. Landing on the
   // profile (the Overview tab) auto-reveals it: it slides in, holds for 4s,
   // then rolls back. On the other tabs it stays closed until the edge handle
@@ -1872,7 +1901,7 @@ export function ProfilePage() {
   }
 
   return (
-    <PageShell active="/profile">
+    <PageShell active="/profile" unreadMessages={unreadMessages} unreadNotifications={unreadNotifications}>
       {/* On mobile the order is nav → tab content → referral/contact, so
           switching tabs shows the content straight away instead of burying it
           under the promo blocks. On desktop both sidebar cards stack on the
@@ -1928,7 +1957,7 @@ export function ProfilePage() {
               </svg>
             )}
             {!menuOpen && (unreadMessages > 0 || unreadNotifications > 0) && (
-              <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#C90044]" />
+              <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-baby-cta" />
             )}
           </span>
         </button>

@@ -412,6 +412,12 @@ export function BrandStacked({ className = "h-24" }: { className?: string }) {
 type HeaderProps = {
   active?: string;
   auth?: "public" | "user";
+  /** A page that already computes these itself (currently just the profile
+   *  dashboard, for its own nav badges) passes them down instead of Header
+   *  polling its own separate copy — otherwise that one page ends up
+   *  double-polling both Stream and Supabase for the same numbers. */
+  unreadMessages?: number;
+  unreadNotifications?: number;
 };
 
 /** Header search — jumps to Explore with the term applied. A plain form so
@@ -448,7 +454,11 @@ function SearchBox({ className = "", autoFocus = false }: { className?: string; 
   );
 }
 
-export function Header({ active = "/" }: HeaderProps) {
+export function Header({
+  active = "/",
+  unreadMessages: unreadMessagesProp,
+  unreadNotifications: unreadNotificationsProp,
+}: HeaderProps) {
   const { session, profile, signOut } = useAuth();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -456,9 +466,13 @@ export function Header({ active = "/" }: HeaderProps) {
   const installMenu = { show: !install.installed && (install.native || install.ios) };
   // Same unread signal the dashboard's own mobile drawer shows a dot for —
   // surfaced here too since this Header (not that drawer) is what every other
-  // page's hamburger renders.
-  const unreadMessages = useUnreadMessages(Boolean(session));
-  const unreadNotifications = useUnreadNotifications(session?.user.id);
+  // page's hamburger renders. Only poll for these ourselves when the caller
+  // hasn't already handed us a live count (see HeaderProps above).
+  const hasOwnCounts = unreadMessagesProp === undefined && unreadNotificationsProp === undefined;
+  const liveUnreadMessages = useUnreadMessages(hasOwnCounts && Boolean(session));
+  const liveUnreadNotifications = useUnreadNotifications(hasOwnCounts ? session?.user.id : undefined);
+  const unreadMessages = unreadMessagesProp ?? liveUnreadMessages;
+  const unreadNotifications = unreadNotificationsProp ?? liveUnreadNotifications;
   const hasUnread = unreadMessages > 0 || unreadNotifications > 0;
   // Close the mobile dropdown after a navigation — client-side nav keeps the
   // Header mounted, so tapping a link no longer clears it on its own.
@@ -546,14 +560,25 @@ export function Header({ active = "/" }: HeaderProps) {
           {/* No box: just the bars, which turn into a cross of the same weight when open. */}
           <Icon name={menuOpen ? "close" : "menu"} className="h-6 w-6" strokeWidth={2} />
           {!menuOpen && hasUnread && (
-            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-baby-paper bg-[#C90044]" />
+            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-baby-paper bg-baby-cta" />
           )}
         </button>
       </div>
 
-      {/* Mobile dropdown menu */}
-      {menuOpen && (
-        <nav className="border-t border-[#F4EFF0] bg-baby-paper px-4 py-3 lg:hidden">
+      {/* Mobile dropdown menu. Always mounted (never conditionally rendered)
+          and positioned absolute so it overlays the page below the header
+          instead of pushing it down — that's what lets it animate closed as
+          well as open; a conditional {menuOpen && …} mount can only animate
+          in. transform + opacity only (macOS/Windows menu-bar style: a short
+          fade with a small downward slide) — both are compositor-only, so
+          this never touches layout or repaints the rest of the page. */}
+      <nav
+        aria-hidden={!menuOpen}
+        inert={!menuOpen}
+        className={`absolute inset-x-0 top-full border-t border-[#F4EFF0] bg-baby-paper px-4 py-3 shadow-soft transition-[opacity,transform] duration-150 ease-out lg:hidden ${
+          menuOpen ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1.5 opacity-0"
+        }`}
+      >
           <SearchBox className="mb-3" />
           <div className="flex flex-col gap-1 text-[15px] font-bold text-baby-ink">
             {navItems.map((route) => (
@@ -589,7 +614,7 @@ export function Header({ active = "/" }: HeaderProps) {
               <div className="flex flex-col gap-1 text-[15px] font-bold" onFocusCapture={warmDashboard}>
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
-                  {hasUnread && <span className="h-2 w-2 rounded-full bg-[#C90044]" />}
+                  {hasUnread && <span className="h-2 w-2 rounded-full bg-baby-cta" />}
                 </a>
                 <a href="/profile?tab=favorites" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
@@ -601,7 +626,6 @@ export function Header({ active = "/" }: HeaderProps) {
             )}
           </div>
         </nav>
-      )}
     </header>
   );
 }
@@ -740,14 +764,19 @@ export function PageShell({
   children,
   active = "/",
   auth = "user",
+  unreadMessages,
+  unreadNotifications,
 }: {
   children: React.ReactNode;
   active?: string;
   auth?: "public" | "user";
+  /** Forwarded straight to Header — see HeaderProps. */
+  unreadMessages?: number;
+  unreadNotifications?: number;
 }) {
   return (
     <div className="min-h-screen bg-baby-paper text-baby-ink">
-      <Header active={active} auth={auth} />
+      <Header active={active} auth={auth} unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
       {children}
     </div>
   );

@@ -51,6 +51,12 @@ export async function disconnectChat(): Promise<void> {
  * or not on Plus) — connecting a chat client for them would be a wasted
  * round trip.
  */
+/** How often to resync the total from the server as a safety net, in case a
+ *  websocket event that should move it (a message.new that never carries
+ *  total_unread_count, an event type we don't handle, a dropped/reconnecting
+ *  connection) gets missed — see the polling comment below. */
+const RESYNC_MS = 20_000;
+
 export function useUnreadMessages(enabled: boolean): number {
   const [unread, setUnread] = useState(0);
 
@@ -68,6 +74,25 @@ export function useUnreadMessages(enabled: boolean): number {
         // are loosely typed, so read the total defensively.
         const seed = (client.user as { total_unread_count?: unknown } | undefined)?.total_unread_count;
         setUnread(typeof seed === "number" ? seed : 0);
+        const resync = () =>
+          client
+            .getUnreadCount()
+            .then((res) => {
+              if (!cancelled) setUnread(res.total_unread_count);
+            })
+            .catch(() => {});
+        // Belt-and-braces on top of the event handler below: a websocket
+        // reconnect (mobile app backgrounded, network blip) can resume with
+        // events missed in between, which would otherwise leave the badge
+        // stuck until something else happened to move it. Poll quietly, and
+        // resync immediately when the tab/app comes back to the foreground —
+        // the case this was actually reported for (QA: dot never appeared for
+        // a message sent while the recipient's installed app was open).
+        const interval = setInterval(resync, RESYNC_MS);
+        const onVisible = () => {
+          if (document.visibilityState === "visible") resync();
+        };
+        document.addEventListener("visibilitychange", onVisible);
         // One handler for every event that can move the total.
         const sub = client.on((e) => {
           // Stream's event type is a wide union; the running total rides on
@@ -97,7 +122,11 @@ export function useUnreadMessages(enabled: boolean): number {
               .catch(() => {});
           }
         });
-        detach = () => sub.unsubscribe();
+        detach = () => {
+          sub.unsubscribe();
+          clearInterval(interval);
+          document.removeEventListener("visibilitychange", onVisible);
+        };
       })
       .catch(() => {
         // Chat being unavailable must never break the page it decorates.
