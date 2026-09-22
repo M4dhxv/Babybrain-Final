@@ -39,6 +39,22 @@ const LABELS: Record<VendorPlan, string> = {
 export const planLabel = (plan: string): string => LABELS[plan as VendorPlan] ?? plan;
 
 /**
+ * The recurring subscription price for each plan, in cents — the admin
+ * Commercial terms table's "Recurring fee" column reads this directly. Kept
+ * in step with the vendor frontend's own richer PLAN_META
+ * (frontends/vendor/src/lib/plans.ts), which bakes the same numbers into its
+ * display strings for the vendor-facing Plans page.
+ */
+const MONTHLY_PRICE_CENTS: Record<VendorPlan, number> = {
+  free: 0,
+  growth: 9900,
+  pro: 19900,
+  premium: 19900,
+};
+
+export const planMonthlyFeeCents = (plan: string): number => MONTHLY_PRICE_CENTS[plan as VendorPlan] ?? 0;
+
+/**
  * Which tier a Stripe subscription represents, resolved from its metadata.
  *
  * Defaults to Growth rather than throwing: a subscription created before

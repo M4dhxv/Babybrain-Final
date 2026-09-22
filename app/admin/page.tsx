@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { planMonthlyFeeCents } from '@/lib/plans';
 
 // ---- types mirrored from the /api/admin/* routes ----
 type Metrics = {
@@ -2015,7 +2016,7 @@ function CommercialsView() {
                 <th style={th()}>Business</th>
                 <th style={th()}>Plan</th>
                 <th style={th()}>Commission %</th>
-                <th style={th()}>Flat fee</th>
+                <th style={th()}>Recurring fee</th>
                 <th style={th()}>Stripe fee</th>
                 <th style={th()}>Packs</th>
                 <th style={th()}>Test account</th>
@@ -2058,19 +2059,12 @@ function CommercialsView() {
                       }}
                     />
                   </td>
-                  <td style={td()}>
-                    <input
-                      style={{ ...input(), width: 78, padding: '6px 8px' }}
-                      type="text" inputMode="numeric" autoComplete="off"
-                      defaultValue={r.commission_flat_cents}
-                      onBlur={(e) => {
-                        const cents = Math.round(Number(e.target.value));
-                        if (Number.isFinite(cents) && cents >= 0 && cents !== r.commission_flat_cents) {
-                          void save(r.provider_id, { commission_flat_cents: cents });
-                        }
-                      }}
-                    />
-                  </td>
+                  {/* The vendor's subscription price for their plan — not
+                      commission_flat_cents (a separate, still-real per-booking
+                      surcharge used in the actual commission split math, just
+                      with no admin UI of its own right now). Read-only: it
+                      follows the Plan column, not something to edit per row. */}
+                  <td style={td()}>{sgd(planMonthlyFeeCents(r.plan))} / mo</td>
                   <td style={td()}>
                     <select
                       style={{ ...input(), width: 118, padding: '6px 8px' }}

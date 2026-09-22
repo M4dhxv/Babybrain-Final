@@ -797,15 +797,6 @@ function priceLabel(activity: Activity): string | null {
   return `From $${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
 }
 
-/** Badge marking listings bookable on BabyBrain (these also sort first). */
-export function InstantBookBadge({ className = "" }: { className?: string }) {
-  return (
-    <span className={`flex items-center gap-1 rounded-full bg-[#F1FBEF] px-2.5 py-1 text-[11px] font-bold text-[#A8E59A] shadow-soft ${className}`}>
-      <Icon name="spark" className="h-3 w-3" /> Instant book
-    </span>
-  );
-}
-
 // Explore can mount 50+ of these at once, growing with every "Show more" —
 // memoized so a parent re-render (e.g. the sort dropdown, an unrelated
 // favourite toggling elsewhere) doesn't re-render every card whose own props
@@ -836,12 +827,7 @@ export const ActivityCard = memo(function ActivityCard({
               : "h-full w-full bg-[#F3EDF0] object-contain"
           }
         />
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
-          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">{activity.category}</span>
-          {activity.category2 && <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue shadow-soft">{activity.category2}</span>}
-        </div>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
-          {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
             <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#FFD77A] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
@@ -891,6 +877,14 @@ export const ActivityCard = memo(function ActivityCard({
             </p>
           )}
         </div>
+        {/* Category tag(s) as one more attribute alongside age/venue/date,
+            rather than floating over the image — the pill(s) used to sit
+            top-left on the thumbnail, which crowded a 108px-tall image on
+            narrow cards and could overlap a portrait photo or logo. */}
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category}</span>
+          {activity.category2 && <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category2}</span>}
+        </div>
         {compact ? (
           <div className="mt-auto flex gap-2 pt-3">
             <Button href={href} size="sm" className="flex-1 rounded-[8px] px-3 py-2 text-xs">
@@ -935,12 +929,7 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               : "h-44 w-full bg-[#F3EDF0] object-contain sm:h-full sm:min-h-[100px]"
           }
         />
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
-          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">{activity.category}</span>
-          {activity.category2 && <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-palette-blue">{activity.category2}</span>}
-        </div>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
-          {activity.instantBook && <InstantBookBadge />}
           {activity.boosted && (
             <span className="flex items-center gap-1 rounded-full bg-[#FEF2D7] px-2.5 py-1 text-[11px] font-bold text-[#FFD77A] shadow-soft">
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
@@ -972,6 +961,15 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               : " "}
           </span>
           <span className="truncate font-black text-palette-blue">{priceLabel(activity) ?? ""}</span>
+        </div>
+        {/* Category tag(s) as one more attribute alongside age/venue/date,
+            rather than floating over the image (see ActivityCard above for
+            why: crowds a narrow thumbnail, can overlap a portrait photo or
+            logo, and reads better as a legible pill in the text column on a
+            small screen than a tiny overlay). */}
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category}</span>
+          {activity.category2 && <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category2}</span>}
         </div>
         {activity.rating && (
           <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold text-[#52608b]">

@@ -5,7 +5,7 @@ import {
   Banknote,
   ChevronRight,
   Clock,
-  Percent,
+  HandCoins,
   RefreshCw,
   Wallet,
 } from 'lucide-react';
@@ -71,36 +71,18 @@ const money = (cents: number, currency = 'sgd') =>
 /** "12%" / "7.5%" — no trailing zeros. */
 const pct = (rate: number) => `${Number((rate * 100).toFixed(1))}%`;
 
-/** The commission card: the big number is the commission taken so far, and the hint gives the
- *  plan and rate. Wording follows how it is taken: "collected" when Stripe takes it
- *  automatically, "to be collected" when BabyBrain collects the sale itself (no Stripe on the
- *  vendor's side) and settles up manually. */
-function commissionAmount(data: EarningsResponse, currency: string): string {
-  const s = data.summary;
-  return money(s.commission_collected_cents + s.commission_to_collect_cents, currency);
+/** The fees card: the big number is what BabyBrain actually charges this
+ *  vendor — their plan's subscription fee plus their commission rate — not
+ *  a running total of commission taken, which read as "how much have they
+ *  taken from me" rather than "what's the deal". */
+function feesAmount(data: EarningsResponse): string {
+  const t = data.terms;
+  const price = planMeta(t?.plan).price.replace('SGD ', '$').replace(' / month', '/mo');
+  const rate = t?.commission_rate != null ? ` + ${pct(t.commission_rate)}` : '';
+  return `${price}${rate}`;
 }
 
-function commissionHint(data: EarningsResponse, currency: string): string {
-  const t = data.terms;
-  const s = data.summary;
-  const short = planMeta(t?.plan).short;
-  const plan = t?.custom_terms ? 'Custom rate' : /plan$/i.test(short) ? short : `${short} plan`;
-  const rate = t?.commission_rate != null ? ` · ${pct(t.commission_rate)}` : '';
-  const flat = t && t.commission_flat_cents > 0 ? ` + ${money(t.commission_flat_cents, currency)} per booking` : '';
-  const collected = s.commission_collected_cents;
-  const toCollect = s.commission_to_collect_cents;
-  let status: string;
-  if (collected > 0 && toCollect > 0) {
-    status = `${money(collected, currency)} collected · ${money(toCollect, currency)} to be collected`;
-  } else if (collected > 0) {
-    status = 'collected';
-  } else if (toCollect > 0) {
-    status = 'to be collected';
-  } else {
-    status = data.payouts_enabled ? 'Nothing collected yet' : 'Nothing to be collected yet';
-  }
-  return `${plan}${rate}${flat} · ${status}`;
-}
+const FEES_HINT = 'Subscription fees + fees/booking';
 
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' });
@@ -257,11 +239,11 @@ export default function EarningsPage() {
             hint={s ? `${s.sales_count} paid sale${s.sales_count === 1 ? '' : 's'}` : undefined}
           />
           <StatCard
-            icon={Percent}
+            icon={HandCoins}
             accent="bg-amber-100 text-amber-700"
-            label="BabyBrain commission"
-            value={data ? commissionAmount(data, currency) : '—'}
-            hint={data ? commissionHint(data, currency) : undefined}
+            label="BabyBrain fees"
+            value={data ? feesAmount(data) : '—'}
+            hint={data ? FEES_HINT : undefined}
           />
         </div>
 

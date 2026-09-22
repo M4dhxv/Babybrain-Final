@@ -4306,6 +4306,14 @@ export function BookingPage() {
             : total != null && total > 0
               ? `Pay $${total.toFixed(2)}`
               : "Confirm booking";
+  // What the summary sidebar and the "Total amount" block actually show —
+  // must track payLabel's own amount, not always the single-class price.
+  // Buying a pack used to bypass this page entirely (a separate "Buy pack"
+  // button, own immediate purchase), so nothing here ever needed to reflect
+  // a pack's price; now that it goes through this same CTA, showing the
+  // single-class total while the button says "Buy pack — $500" read as a
+  // straight contradiction (QA).
+  const displayTotal = redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : total;
 
   if (loading) {
     return (
@@ -4701,13 +4709,13 @@ export function BookingPage() {
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
-              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{redeemToken ? "$0.00" : total != null ? `$${total.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
             </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{redeemToken ? "$0.00" : total != null ? `$${total.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
             {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
           </div>
           {redeemToken && (
@@ -4735,7 +4743,7 @@ export function BookingPage() {
           )}
           {/* One grid item so the section's gap-5 sits above this block, not
               between the two lines — they hug each other instead. */}
-          {(nonCancellable || nonRefundableOnCancel || (total != null && total > 0 && !redeemToken)) && (
+          {(nonCancellable || nonRefundableOnCancel || (displayTotal != null && displayTotal > 0)) && (
             <div className="space-y-0.5 text-center md:col-span-2">
               {nonCancellable && (
                 <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>
@@ -4743,7 +4751,7 @@ export function BookingPage() {
               {nonRefundableOnCancel && (
                 <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>
               )}
-              {total != null && total > 0 && !redeemToken && (
+              {displayTotal != null && displayTotal > 0 && (
                 <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>
               )}
             </div>
