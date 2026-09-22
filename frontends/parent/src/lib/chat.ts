@@ -70,10 +70,6 @@ export function useUnreadMessages(enabled: boolean): number {
     getChatClient()
       .then((client) => {
         if (cancelled) return;
-        // Same story as the event below: custom fields on the connected user
-        // are loosely typed, so read the total defensively.
-        const seed = (client.user as { total_unread_count?: unknown } | undefined)?.total_unread_count;
-        setUnread(typeof seed === "number" ? seed : 0);
         const resync = () =>
           client
             .getUnreadCount()
@@ -81,6 +77,19 @@ export function useUnreadMessages(enabled: boolean): number {
               if (!cancelled) setUnread(res.total_unread_count);
             })
             .catch(() => {});
+        // Same story as the event below: custom fields on the connected user
+        // are loosely typed, so read the total defensively. This only exists
+        // for an instant first paint on an already-connected client (the
+        // getChatClient() promise was already resolved elsewhere) — it's NOT
+        // kept in sync by Stream after mark-read/mark-unread calls, which was
+        // the actual bug: reading a message cleared the dot on that page (the
+        // event handler below caught it), but navigating to a fresh page
+        // re-seeded from this same stale field and the dot came back until a
+        // hard reload forced a brand new connectUser(). resync() right after
+        // corrects it immediately instead of waiting for the next poll tick.
+        const seed = (client.user as { total_unread_count?: unknown } | undefined)?.total_unread_count;
+        setUnread(typeof seed === "number" ? seed : 0);
+        resync();
         // Belt-and-braces on top of the event handler below: a websocket
         // reconnect (mobile app backgrounded, network blip) can resume with
         // events missed in between, which would otherwise leave the badge
