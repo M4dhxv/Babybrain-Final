@@ -29,6 +29,8 @@ import { categories } from "./data/content";
 import { useActivities, whenAt } from "./lib/useActivities";
 import { InstallBanner } from "./components/InstallBanner";
 import { PullToRefresh } from "./components/PullToRefresh";
+import { OfflinePage } from "./pages/OfflinePage";
+import { useOnline } from "./lib/useOnline";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
 import { supabase } from "./lib/supabase";
@@ -2467,6 +2469,7 @@ function hasStoredSession(): boolean {
 }
 
 function App() {
+  const online = useOnline();
   const { session, loading } = useAuth();
   // Re-render on client-side navigation (pushState via goTo, or back/forward).
   // The pages below read the URL during render, so they pick up the new route
@@ -2538,6 +2541,13 @@ function App() {
   // React and leaves a blank screen with no way back but a manual reload,
   // which is what QA saw clicking Profile. Keyed by route so navigating
   // away clears a caught error.
+  //
+  // Offline takes over the whole screen ahead of everything else — a route
+  // that's mid-fetch would otherwise sit on a spinner forever with no
+  // explanation, and neither pull-to-refresh nor the install banner mean
+  // anything without a network.
+  if (!online) return <OfflinePage />;
+
   return (
     <>
       <RouteErrorBoundary key={pathname}>

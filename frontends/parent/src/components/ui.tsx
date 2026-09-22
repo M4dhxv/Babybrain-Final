@@ -880,8 +880,16 @@ export const ActivityCard = memo(function ActivityCard({
         {/* Category tag(s) as one more attribute alongside age/venue/date,
             rather than floating over the image — the pill(s) used to sit
             top-left on the thumbnail, which crowded a 108px-tall image on
-            narrow cards and could overlap a portrait photo or logo. */}
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+            narrow cards and could overlap a portrait photo or logo.
+            mb-3 (not just mt-auto on the footer below) because mt-auto only
+            eats *leftover* flex space — when a card's own content already
+            fills the column with none to spare (e.g. it's the tallest card
+            in its grid row), mt-auto resolves to 0 and the footer's
+            border-top lands flush against these chips with no gap, cutting
+            through them (QA). This margin is unconditional, so there's
+            always a minimum gap regardless of how much leftover space
+            mt-auto has to work with. */}
+        <div className="mb-3 mt-1.5 flex flex-wrap gap-1.5">
           <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category}</span>
           {activity.category2 && <span className="rounded-full bg-palette-blueTint px-2.5 py-1 text-[10.5px] font-bold text-palette-blueInk">{activity.category2}</span>}
         </div>

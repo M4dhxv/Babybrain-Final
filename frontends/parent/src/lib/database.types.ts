@@ -975,6 +975,20 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      upcoming_activity_sessions: {
+        Args: { p_activity_id: string; p_limit?: number };
+        Returns: {
+          id: string; activity_id: string; starts_at: string; ends_at: string;
+          capacity: number | null; location_id: string | null; price: number | null;
+          status: 'scheduled' | 'cancelled'; bookings_paused: boolean;
+          teacher_name: string | null; studio: string | null;
+          wix_slot_key: string | null; wix_remaining_capacity: number | null;
+          created_at: string; allow_cancellation: boolean | null;
+          cancellation_cutoff_hours: number | null; cancellation_refund_mode: 'refund' | 'none' | null;
+          allow_rescheduling: boolean | null; reschedule_cutoff_hours: number | null;
+          booking_cutoff_minutes: number | null;
+        }[];
+      };
       my_booking_activities: {
         Args: { p_booking_ids: string[] };
         Returns: { booking_id: string; slug: string | null; title: string | null }[];

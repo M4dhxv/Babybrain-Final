@@ -124,37 +124,29 @@ export interface ProviderContact {
 }
 
 /**
- * A locally-recorded session's `capacity` is the class's total capacity, not
- * what's left — "10 spots" stayed 10 even once 3 families had booked it.
- * Subtracts each session's confirmed/completed booking count (fetched via
- * the public booked-counts route, since "select own bookings" RLS blocks a
- * parent from counting other families' bookings directly) to get what's
- * actually still open. Wix-sourced slots already carry Wix's own remaining
- * count and are left alone — pass only locally-recorded sessions in.
+ * A locally-recorded session's upcoming rows, with `capacity` already turned
+ * from the class's total into what's actually still open — "10 spots" used
+ * to stay 10 even once 3 families had booked it.
+ *
+ * One `rpc` call, not the select-then-separately-fetch-booked-counts this
+ * used to be (see git history / migration 00163's own comment): the second
+ * leg only ever started once the first had returned, so it was pure added
+ * latency on every single activity page view — found investigating a report
+ * of native activity pages taking 10+ seconds even with no concurrent
+ * traffic. `upcoming_activity_sessions` (migration 00163) does the same
+ * eligibility filtering (no `wix_slot_key`, not paused, future, capped,
+ * ordered) and the same booked-count subtraction
+ * (`pending`/`confirmed`/`completed`, matching what
+ * `/api/public/booked-counts` and `handle_booking_insert()` both count) in
+ * one round trip.
  */
-async function withRemainingCapacity<T extends { id: string; capacity: number | null }>(
-  sessions: T[]
-): Promise<T[]> {
-  const ids = sessions.filter((s) => s.capacity != null).map((s) => s.id);
-  if (ids.length === 0) return sessions;
-  const { counts } = await apiGet<{ counts: Record<string, number> }>(
-    `/api/public/booked-counts?sessionIds=${ids.join(",")}`
-  ).catch(() => ({ counts: {} as Record<string, number> }));
-  return sessions.map((s) =>
-    s.capacity == null ? s : { ...s, capacity: Math.max(0, s.capacity - (counts[s.id] ?? 0)) }
-  );
+async function fetchUpcomingSessions(activityId: string, limit = 8): Promise<ActivitySession[]> {
+  const { data } = await supabase.rpc("upcoming_activity_sessions", {
+    p_activity_id: activityId,
+    p_limit: limit,
+  });
+  return data ?? [];
 }
-
-/** Exactly the `activity_sessions` columns a parent is meant to see, and
- *  exactly the ones {@link ActivitySession} declares — so a narrowed select
- *  still satisfies the type. Named rather than `select("*")` on purpose:
- *  the table also carries `teacher_name` and `studio`, which are the vendor's
- *  own scheduling notes (00042) and have no business reaching a parent's
- *  browser. `*` shipped them on every listing view without anything ever
- *  rendering them. Keep this in step with ActivitySession if the table gains
- *  a column parents genuinely need. */
-const PARENT_SESSION_COLUMNS =
-  'id, activity_id, starts_at, ends_at, capacity, location_id, price, status, bookings_paused, teacher_name, studio, wix_slot_key, wix_remaining_capacity, created_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes';
 
 export interface ActivityDetail {
   activity:
@@ -189,6 +181,16 @@ const EMPTY_DETAIL: ActivityDetail = {
   loading: true,
 };
 
+// A cache hit within this window skips the network entirely, same pattern as
+// useActivities' FRESH_MS — this page's whole waterfall (activities join,
+// then sessions + reviews + provider-plan) has no server/CDN cache layer of
+// its own, so every mount used to re-run it regardless of how recently the
+// same activity was already fetched. Short enough that "session capacity and
+// reviews are worth re-fetching every time" (the concern the comment below
+// is about) still holds for anything but back-to-back views seconds apart —
+// e.g. bouncing from the listing to Explore and back.
+const DETAIL_FRESH_MS = 20_000;
+
 export function useActivityDetail(slug: string | null): ActivityDetail {
   const detailKey = slug ? "detail:" + slug : null;
   const seed = detailKey ? cacheGet<ActivityDetail>(detailKey) : undefined;
@@ -206,8 +208,12 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     // time). Only fall back to the skeleton when there's nothing cached — e.g.
     // a client-side hop straight from one listing to another.
     const cached = cacheGet<ActivityDetail>(detailKey);
-    if (cached) setState({ ...cached.data, loading: false });
-    else setState((s) => ({ ...s, loading: true }));
+    if (cached) {
+      setState({ ...cached.data, loading: false });
+      if (cached.age < DETAIL_FRESH_MS) return; // fresh enough — no network at all
+    } else {
+      setState((s) => ({ ...s, loading: true }));
+    }
     let cancelled = false;
     (async () => {
       // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
@@ -285,37 +291,16 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                 }));
               })
               .catch(() => []),
-            supabase
-              .from("activity_sessions")
-              .select(PARENT_SESSION_COLUMNS)
-              .eq("activity_id", act.id)
-              .is("wix_slot_key", null)
-              // A session the vendor has paused isn't taking bookings
-              // (migration 00084) — leave it out of the picker rather than
-              // letting a parent choose it and be refused at the last step.
-              .eq("bookings_paused", false)
-              .gte("starts_at", new Date().toISOString())
-              .order("starts_at")
-              .limit(8)
-              .then((r) => r.data ?? [])
-              .then(withRemainingCapacity),
+            // Filters (no wix_slot_key, not paused, future, capped, ordered)
+            // and the booked-count subtraction both happen server-side now —
+            // see fetchUpcomingSessions above.
+            fetchUpcomingSessions(act.id),
           ]).then(([wixSlots, independentSlots]) =>
             [...wixSlots, ...independentSlots].sort(
               (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
             )
           )
-        : Promise.resolve(
-            supabase
-              .from("activity_sessions")
-              .select(PARENT_SESSION_COLUMNS)
-              .eq("activity_id", act.id)
-              .eq("bookings_paused", false) // see above
-              .gte("starts_at", new Date().toISOString())
-              .order("starts_at")
-              .limit(8)
-              .then((r) => r.data ?? [])
-              .then(withRemainingCapacity)
-          );
+        : fetchUpcomingSessions(act.id);
 
       // Wix Event: does any bookable ticket remain? A type counts as sold out
       // when Wix says so (sold_out) or its unsold count has hit zero. Every
