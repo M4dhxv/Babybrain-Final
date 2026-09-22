@@ -75,6 +75,20 @@ function orderWithCover(images: string[], cover: string | null | undefined): str
   return [cover, ...images.filter((u) => u !== cover)];
 }
 
+/**
+ * The vendor's own profile picture — a logo or wordmark uploaded in whatever
+ * shape they have it, so it must never be cropped, in *any* surface it's
+ * shown. Exported so every "is this image a logo?" check compares the same
+ * thing, rather than each surface guessing from aspect ratio: a landscape
+ * logo and a landscape photo look identical that way, which is exactly how a
+ * wordmark like "Physio Down Under" ended up cropped in the activity page's
+ * hero carousel — its ratio just happened to fall inside the "looks like a
+ * photo" range the carousel used to decide whether to crop.
+ */
+export function providerLogoUrl(provider: ProviderMediaInput | null | undefined): string | null {
+  return provider?.logo_url || null;
+}
+
 /** The single image a card needs — same resolution as the gallery, first entry. */
 export function resolveActivityImage(
   activity: ActivityMediaInput,

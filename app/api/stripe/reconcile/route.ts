@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
@@ -84,65 +84,31 @@ export async function POST(request: Request) {
   }
 
   if (kind === 'package' && session.metadata?.package_id) {
-    const paymentIntent = (session.payment_intent as string) ?? null;
-    // The webhook may already have created this row — match on the payment
-    // intent so we never double-credit.
-    if (paymentIntent) {
-      const { data: already } = await admin
-        .from('package_purchases')
-        .select('id')
-        .eq('stripe_payment_intent', paymentIntent)
-        .maybeSingle();
-      if (already) return NextResponse.json({ applied: false, reason: 'already_credited' });
-    }
-    const { data: pkg } = await admin
-      .from('packages')
-      .select('id, provider_id, credits, price_cents')
-      .eq('id', session.metadata.package_id)
-      .maybeSingle();
-    if (!pkg) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
+    // purchase_package_and_book (00162) grants credits and, when a session
+    // was chosen, books that many seats and spends that many credits, all in
+    // one DB transaction, deduped by stripe_payment_intent inside the
+    // function itself — safe to call even if the webhook already ran.
+    const result = await purchasePackageAndBook(admin, session);
+    if (!result || !result.package) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
+    if (result.alreadyCredited) return NextResponse.json({ applied: false, reason: 'already_credited' });
 
-    const { data: purchase } = await admin
-      .from('package_purchases')
-      .insert({
-        user_id: user.id,
-        package_id: pkg.id,
-        provider_id: pkg.provider_id,
-        credits_total: pkg.credits,
-        credits_remaining: pkg.credits,
-        stripe_payment_intent: paymentIntent,
-      })
-      .select('id')
-      .single();
-    if (purchase && session.metadata?.activity_session_id) {
-      await autoBookPackageSession(admin, {
-        purchaseId: purchase.id,
-        packageId: pkg.id,
-        providerId: pkg.provider_id,
-        userId: user.id,
-        activitySessionId: session.metadata.activity_session_id,
-        childId: session.metadata.child_id ?? null,
-      });
-    }
-    if (purchase) {
-      await recordSale(admin, {
-        providerId: pkg.provider_id,
-        source: 'package',
-        packagePurchaseId: purchase.id,
-        grossCents: pkg.price_cents,
-        paymentIntentId: paymentIntent,
-      });
-      // Free-tier parents can't see Packages on /profile — this email is
-      // their only way to know they've got credits and how to use them.
-      await notifyPackagePurchased(admin, {
-        userId: user.id,
-        packageId: pkg.id,
-        providerId: pkg.provider_id,
-        purchaseId: purchase.id,
-        credits: pkg.credits,
-      });
-    }
-    return NextResponse.json({ applied: true, kind, credits: pkg.credits });
+    await recordSale(admin, {
+      providerId: result.package.provider_id,
+      source: 'package',
+      packagePurchaseId: result.purchaseId,
+      grossCents: result.package.price_cents,
+      paymentIntentId: (session.payment_intent as string) ?? null,
+    });
+    // Free-tier parents can't see Packages on /profile — this email is
+    // their only way to know they've got credits and how to use them.
+    await notifyPackagePurchased(admin, {
+      userId: user.id,
+      packageId: result.package.id,
+      providerId: result.package.provider_id,
+      purchaseId: result.purchaseId,
+      credits: result.package.credits,
+    });
+    return NextResponse.json({ applied: true, kind, credits: result.package.credits });
   }
 
   if (kind === 'wix_booking' && session.metadata?.booking_ids) {

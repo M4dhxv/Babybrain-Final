@@ -3416,7 +3416,7 @@ function PackageOption({
   price: string;
   badge?: string;
   /** Shown on the right for packs you can buy outright. */
-  action?: { label: string; onClick: () => void; busy?: boolean };
+  action?: { label: string; onClick: () => void };
 }) {
   return (
     <div
@@ -3446,14 +3446,10 @@ function PackageOption({
           type="button"
           variant="pink"
           size="sm"
-          disabled={action.busy}
-          className={action.busy ? "shrink-0 opacity-60" : "shrink-0"}
-          onClick={() => {
-            onSelect();
-            action.onClick();
-          }}
+          className="shrink-0"
+          onClick={action.onClick}
         >
-          {action.busy ? "…" : action.label}
+          {selected ? "Selected" : action.label}
         </Button>
       )}
     </div>
@@ -3469,6 +3465,11 @@ export function BookingPage() {
      resolved the date/time defaults below hold off, so the parent lands on the
      session the email was about rather than whichever one happens to be first. */
   const wantSessionId = getParam("session");
+  // The Activity page's own "Select" pack button (App.tsx) carries the pack
+  // here as ?pack=<id> rather than buying it directly — this page is the
+  // only place a pack purchase can actually go through, since it's the only
+  // place a slot + Provider terms can be gathered first.
+  const wantPackId = getParam("pack");
   const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
@@ -3567,13 +3568,17 @@ export function BookingPage() {
         .eq("active", true)
         .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null }>)
     ).then((rows) => {
-      setPacks(
-        rows
-          .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
-          .filter(isPackOnSale),
-      );
+      const applicable = rows
+        .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
+        .filter(isPackOnSale);
+      setPacks(applicable);
+      // Arrived here with a pack already picked on the Activity page —
+      // preselect it the same way the party still needs its own date/time.
+      if (wantPackId && applicable.some((p) => p.id === wantPackId)) {
+        setPayWith(`pack:${wantPackId}`);
+      }
     });
-  }, [activity?.provider_id, activity?.id]);
+  }, [activity?.provider_id, activity?.id, wantPackId]);
 
   // What this parent has already booked on this activity's sessions, so the
   // form can warn before putting the same child on the same class twice.
@@ -4175,6 +4180,10 @@ export function BookingPage() {
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
     if (!auth) { goTo("/login"); return; }
+    // Reachable only via checkout() now (the row's own button just selects
+    // the pack), which already requires sessionId via the CTA's disabled
+    // state — this guard is defense in case that call path ever changes.
+    if (!sessionId) { setErr("Please choose a date and time first."); return; }
     // Buying a pack books the selected class too, so the same paperwork applies.
     const consent = consentProblem();
     if (consent) { setErr(consent); return; }
@@ -4182,16 +4191,32 @@ export function BookingPage() {
       setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
       return;
     }
+    const pack = packs.find((p) => p.id === packageId);
+    // 1 child = 1 credit = 1 spot — the pack must cover the whole party, or
+    // buying it would leave some children unbooked with no way to tell
+    // which. Same shape as payWithPackage()'s existing check.
+    if (pack && pack.credits < count) {
+      setErr(`This pack only has ${pack.credits} credit${pack.credits === 1 ? "" : "s"} — not enough for ${count} children. Reduce the number of children or pick a pack with more credits.`);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      // Passing the selected session/child means the webhook books this
-      // class with the pack's first credit, not just grants it — QA: "buy a
-      // package, that class should also then be booked".
+      // Passing the selected session/child/party means the webhook books
+      // this class (for the whole party, spending one credit per seat) with
+      // the pack's own credits, not just grants them — QA: "buy a package,
+      // that class should also then be booked".
       const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", {
         package_id: packageId,
-        ...(sessionId ? { activity_session_id: sessionId } : {}),
+        activity_session_id: sessionId,
         ...(bookChildId ? { child_id: bookChildId } : {}),
+        quantity: count,
+        ...(count > 1
+          ? { guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+          : {}),
+        policies_accepted: acceptedPolicies,
+        ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { info_response: infoResponse.trim() } : {}),
       });
       if (url) window.location.href = url;
       else setErr("Could not start checkout — please try again.");
@@ -4486,78 +4511,18 @@ export function BookingPage() {
                         unused credit from a pack, or buying a pack now. Not
                         applicable to a Wix Event ticket — payment is always a
                         single purchase (see the isEvent branch in pay()). */}
-                    {!redeemToken && !isEvent && !isCourse && (
-                      <section>
-                        <h3 className="mb-2 text-xl font-black">4. Select package</h3>
-                        <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
-                        <div className="space-y-3">
-                          <PackageOption
-                            selected={payWith === "single"}
-                            onSelect={() => setPayWith("single")}
-                            title="Single class"
-                            price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
-                          />
-                          {packageCredit && matchingCredits.length === 1 && (
-                            <PackageOption
-                              selected={payWith === "credit"}
-                              onSelect={() => setPayWith("credit")}
-                              title={
-                                count > 1
-                                  ? `Use ${count} package credits — ${packageCredit.remaining} left`
-                                  : `Use a package credit — ${packageCredit.remaining} left`
-                              }
-                              price="No charge"
-                            />
-                          )}
-                          {/* 2+ purchases apply to this session (e.g. a broad
-                              "any class" pack and an activity-restricted one)
-                              — let the parent choose which to spend instead
-                              of always silently taking the oldest. */}
-                          {matchingCredits.length > 1 && matchingCredits.map((p) => (
-                            <PackageOption
-                              key={p.id}
-                              selected={payWith === "credit" && packageCredit?.id === p.id}
-                              onSelect={() => { setSelectedCreditId(p.id); setPayWith("credit"); }}
-                              title={
-                                count > 1
-                                  ? `${p.name} — use ${count} credits (${p.remaining} left)`
-                                  : `${p.name} — use a credit (${p.remaining} left)`
-                              }
-                              price="No charge"
-                            />
-                          ))}
-                          {packs.map((p) => (
-                            <PackageOption
-                              key={p.id}
-                              selected={payWith === `pack:${p.id}`}
-                              onSelect={() => setPayWith(`pack:${p.id}`)}
-                              title={p.name}
-                              price={`$${(p.price_cents / 100).toFixed(0)}`}
-                              badge={price != null && p.credits > 0 && p.price_cents / 100 / p.credits < price ? "Best value" : undefined}
-                              action={{ label: "Buy pack", onClick: () => buyPack(p.id), busy: busy && payWith === `pack:${p.id}` }}
-                            />
-                          ))}
-                        </div>
-                        {restrictedCredit && !packageCredit && (
-                          <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
-                            You have package credits with this provider, but they can't be used for this{" "}
-                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "class" : "session slot"} — check your package's designated class or weekly slot.
-                          </p>
-                        )}
-                      </section>
-                    )}
-
                     {/* The provider's own paperwork. Each vendor writes their
                         own consents, waivers and disclosures, so this section
                         only appears when they have some. */}
                     {(policies.length > 0 || needsMedical) && (
                       <section>
                         {/* Step number tracks how many steps came before:
-                            class = date, time, children (+ package unless a
-                            make-up token skips it); a course is one "Course
-                            schedule" step + children, with no package step,
-                            so its Provider terms is always step 3. */}
-                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${(isCourse ? 3 : redeemToken ? 4 : 5)}. `}Provider terms</h3>
+                            class = date, time, children; a course is one
+                            "Course schedule" step + children, with no package
+                            step, so its Provider terms is always step 3. The
+                            package step (when present) comes after terms, not
+                            before — see "5. Select package" below. */}
+                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${isCourse ? 3 : 4}. `}Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
@@ -4636,6 +4601,87 @@ export function BookingPage() {
                             </div>
                           )}
                         </div>
+                      </section>
+                    )}
+
+                    {/* Step 5: how to pay for the class — a single drop-in, an
+                        unused credit from a pack, or buying a pack now. Not
+                        applicable to a Wix Event ticket — payment is always a
+                        single purchase (see the isEvent branch in pay()).
+                        Comes after Provider terms: buying (or using) a pack
+                        books a real seat, so the same slot + terms gating the
+                        main CTA already enforces for a single-class booking
+                        must apply here too — see checkout()/buyPack(). */}
+                    {!redeemToken && !isEvent && !isCourse && (
+                      <section>
+                        <h3 className="mb-2 text-xl font-black">5. Select package</h3>
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
+                        <div className="space-y-3">
+                          <PackageOption
+                            selected={payWith === "single"}
+                            onSelect={() => setPayWith("single")}
+                            title="Single class"
+                            price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
+                          />
+                          {packageCredit && matchingCredits.length === 1 && (
+                            <PackageOption
+                              selected={payWith === "credit"}
+                              onSelect={() => setPayWith("credit")}
+                              title={
+                                count > 1
+                                  ? `Use ${count} package credits — ${packageCredit.remaining} left`
+                                  : `Use a package credit — ${packageCredit.remaining} left`
+                              }
+                              price="No charge"
+                            />
+                          )}
+                          {/* 2+ purchases apply to this session (e.g. a broad
+                              "any class" pack and an activity-restricted one)
+                              — let the parent choose which to spend instead
+                              of always silently taking the oldest. */}
+                          {matchingCredits.length > 1 && matchingCredits.map((p) => (
+                            <PackageOption
+                              key={p.id}
+                              selected={payWith === "credit" && packageCredit?.id === p.id}
+                              onSelect={() => { setSelectedCreditId(p.id); setPayWith("credit"); }}
+                              title={
+                                count > 1
+                                  ? `${p.name} — use ${count} credits (${p.remaining} left)`
+                                  : `${p.name} — use a credit (${p.remaining} left)`
+                              }
+                              price="No charge"
+                            />
+                          ))}
+                          {/* Picking a pack only selects it — the row's own
+                              button now just mirrors that ("Select" /
+                              "Selected"), it no longer buys anything by
+                              itself (that used to bypass the main CTA's slot
+                              + Provider terms gating entirely). The actual
+                              purchase happens from the bottom "Buy pack — $X"
+                              CTA via checkout() -> buyPack(), same gated path
+                              as every other payWith option. Selecting a pack
+                              always replaces whatever payWith held before, so
+                              only one pack can ever be the thing about to be
+                              bought — it does not limit how many *separate*
+                              packages a parent may already own. */}
+                          {packs.map((p) => (
+                            <PackageOption
+                              key={p.id}
+                              selected={payWith === `pack:${p.id}`}
+                              onSelect={() => setPayWith(`pack:${p.id}`)}
+                              title={p.name}
+                              price={`$${(p.price_cents / 100).toFixed(0)}`}
+                              badge={price != null && p.credits > 0 && p.price_cents / 100 / p.credits < price ? "Best value" : undefined}
+                              action={{ label: "Select", onClick: () => setPayWith(`pack:${p.id}`) }}
+                            />
+                          ))}
+                        </div>
+                        {restrictedCredit && !packageCredit && (
+                          <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
+                            You have package credits with this provider, but they can't be used for this{" "}
+                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "class" : "session slot"} — check your package's designated class or weekly slot.
+                          </p>
+                        )}
                       </section>
                     )}
                   </>

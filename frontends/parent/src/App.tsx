@@ -36,7 +36,7 @@ import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay } from "./lib/schedule";
 import { SessionSchedule } from "./components/SessionSchedule";
-import { resolveActivityImages, FALLBACK_LOGO_URL } from "./lib/activityMedia";
+import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "./lib/activityMedia";
 import { formatChildAge, formatDuration } from "./lib/database.types";
 import { EnquiryChat } from "./components/EnquiryChat";
 import { ClassGroupChat } from "./components/ClassGroupChat";
@@ -1587,18 +1587,88 @@ function PhotoLightbox({
  *  re-renders only this, not the whole activity page. All slides are decoded
  *  up front (not lazy) so a swipe or auto-advance never waits on a network
  *  fetch or decode mid-transition. */
+/**
+ * Landscape-logo detection by *content*, not provenance. A vendor's logo can
+ * end up anywhere — the dedicated profile-picture field, or (as found in
+ * QA: "Physio Down Under" got cropped in the hero) re-uploaded as one of the
+ * activity's own custom photos, byte-identical to their logo_url but under a
+ * different filename — so comparing URLs (providerLogoUrl) alone can't catch
+ * every case. A logo/wordmark is reliably a mark over a large area of one
+ * flat, uniform background color; a real photo essentially never is one
+ * dominant color across more than half its area. Sampling a downscaled copy
+ * of the image and measuring how much of it sits within a small color
+ * distance of its single most common color (not the four corners' average —
+ * tried that first, and it broke as soon as the mark's art reached one
+ * corner, e.g. this exact logo) gives a cheap, general "is this a graphic,
+ * not a photo" signal that works for any vendor without needing to know
+ * where the image came from. Threshold picked empirically against this
+ * provider's own logo/photo pairs: logos landed at 0.63–0.84, real photos at
+ * 0.04–0.27 (portrait photos never reach here — the aspect-ratio check below
+ * already catches those).
+ */
+function looksLikeGraphic(el: HTMLImageElement): boolean {
+  try {
+    const size = 48;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(el, 0, 0, size, size);
+    const { data } = ctx.getImageData(0, 0, size, size);
+    // Quantize to 16 levels per channel so near-identical pixels (compression
+    // noise, anti-aliasing) count as the same color, then find the mode.
+    const counts = new Map<string, number>();
+    for (let p = 0; p < size * size; p++) {
+      const i = p * 4;
+      const key = `${data[i] >> 4},${data[i + 1] >> 4},${data[i + 2] >> 4}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let modeKey = "";
+    let modeCount = 0;
+    for (const [key, count] of counts) {
+      if (count > modeCount) {
+        modeKey = key;
+        modeCount = count;
+      }
+    }
+    const [mr, mg, mb] = modeKey.split(",").map((n) => Number(n) * 16 + 8);
+    let close = 0;
+    for (let p = 0; p < size * size; p++) {
+      const i = p * 4;
+      const dr = data[i] - mr;
+      const dg = data[i + 1] - mg;
+      const db = data[i + 2] - mb;
+      if (dr * dr + dg * dg + db * db < 30 * 30 * 3) close++;
+    }
+    return close / (size * size) > 0.5;
+  } catch {
+    // A canvas tainted by a cross-origin image with no CORS headers throws
+    // on getImageData — fall back to the aspect-ratio heuristic below rather
+    // than guessing. The <img> itself still renders fine either way;
+    // `crossOrigin` only affects whether its pixels are readable.
+    return false;
+  }
+}
+
 /** One hero slide. A landscape photo fills the frame (anchored near the top so faces stay in);
  *  anything that isn't — a logo, a square or portrait picture, a very wide banner — is shown whole
- *  on a soft blurred copy of itself, so a vendor's logo is never cut off. */
-function HeroSlide({ url, alt, priority }: { url: string; alt: string; priority: boolean }) {
+ *  on a soft blurred copy of itself, so a vendor's logo is never cut off. `forceWhole` additionally
+ *  covers a *landscape* logo (see providerLogoUrl in activityMedia.ts and looksLikeGraphic above,
+ *  which between them catch a landscape logo whether or not it's the provider's own logo_url —
+ *  aspect ratio alone can't tell a landscape logo from a landscape photo). */
+function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: string; priority: boolean; forceWhole?: boolean }) {
   const [ratio, setRatio] = useState<number | null>(null);
+  const [isGraphic, setIsGraphic] = useState(false);
   const measure = (el: HTMLImageElement | null) => {
-    if (el && el.naturalWidth && el.naturalHeight) setRatio(el.naturalWidth / el.naturalHeight);
+    if (!el || !el.naturalWidth || !el.naturalHeight) return;
+    setRatio(el.naturalWidth / el.naturalHeight);
+    setIsGraphic(looksLikeGraphic(el));
   };
   if (url === FALLBACK_LOGO_URL) {
     return <img src={url} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
   }
-  const whole = ratio != null && (ratio < 1.4 || ratio > 3.6);
+  const whole = forceWhole || isGraphic || (ratio != null && (ratio < 1.4 || ratio > 3.6));
   return (
     <div className="relative h-[305px] w-full shrink-0 overflow-hidden bg-[#F3EDF0]">
       {whole && (
@@ -1606,6 +1676,14 @@ function HeroSlide({ url, alt, priority }: { url: string; alt: string; priority:
       )}
       <img
         ref={(el) => { if (el?.complete) measure(el); }}
+        // Must precede `src` (React sets DOM props in this order for a new
+        // element): crossOrigin only takes effect for the request it's set
+        // before, so setting it after src would start a non-CORS fetch and
+        // permanently taint the canvas looksLikeGraphic reads pixels from —
+        // harmless when the host doesn't send CORS headers either way, since
+        // the image still displays regardless; only pixel access is
+        // affected, which that function already falls back around.
+        crossOrigin="anonymous"
         src={url}
         alt={alt}
         width={860}
@@ -1622,11 +1700,14 @@ function HeroSlide({ url, alt, priority }: { url: string; alt: string; priority:
 
 const HeroCarousel = memo(function HeroCarousel({
   images,
+  logoUrl,
   title,
   resetKey,
   onOpen,
 }: {
   images: string[];
+  /** The vendor's own logo_url, if it's one of `images` — never cropped, whatever its shape. */
+  logoUrl?: string | null;
   title: string;
   resetKey: string | undefined;
   onOpen: (index: number) => void;
@@ -1692,7 +1773,7 @@ const HeroCarousel = memo(function HeroCarousel({
         style={{ transform: `translate3d(-${(at % count) * 100}%, 0, 0)` }}
       >
         {images.map((url, i) => (
-          <HeroSlide key={url} url={url} alt={i === 0 ? title : ""} priority={i === 0} />
+          <HeroSlide key={url} url={url} alt={i === 0 ? title : ""} priority={i === 0} forceWhole={url === logoUrl} />
         ))}
       </div>
       {count > 1 && (
@@ -1725,7 +1806,7 @@ const HeroCarousel = memo(function HeroCarousel({
       </button>
     </div>
   );
-}, (a, b) => a.images.join("|") === b.images.join("|") && a.title === b.title && a.resetKey === b.resetKey && a.onOpen === b.onOpen);
+}, (a, b) => a.images.join("|") === b.images.join("|") && a.logoUrl === b.logoUrl && a.title === b.title && a.resetKey === b.resetKey && a.onOpen === b.onOpen);
 
 /** A chat CTA that greys out — with the reason on hover — when messaging isn't
  *  available: either the parent is on Free, or the provider isn't integrated
@@ -1816,7 +1897,8 @@ function ActivityDetailPage() {
   /** Shown when a free-plan parent taps "Save to favourites". */
   const [favUpgrade, setFavUpgrade] = useState(false);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
-  const [buyingPack, setBuyingPack] = useState<string | null>(null);
+  /** The pack tapped here; carried to the booking page as ?pack=, same idea as pickedSessionId below. */
+  const [pickedPackId, setPickedPackId] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
   /** The session tapped in the schedule; carried to the booking page as ?session=. */
@@ -1873,20 +1955,6 @@ function ActivityDetailPage() {
       );
     });
   }, [activity?.provider_id, activity?.id]);
-
-  async function buyPack(packageId: string) {
-    if (!session) {
-      goTo("/login");
-      return;
-    }
-    setBuyingPack(packageId);
-    try {
-      const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/package", { package_id: packageId });
-      if (url) window.location.href = url;
-    } finally {
-      setBuyingPack(null);
-    }
-  }
 
   // Hooks stay above the loading / not-found early returns below. This one
   // sat after them once, so the first render (loading) ran one hook fewer than
@@ -1959,6 +2027,11 @@ function ActivityDetailPage() {
     activity.provider_contact
   );
   const images = providerImages.length ? providerImages : [FALLBACK_LOGO_URL];
+  // Whichever of the images above is the vendor's own logo (if any made the
+  // cut) — never cropped in the hero, no matter its shape. See
+  // providerLogoUrl in activityMedia.ts for why this is a URL comparison
+  // rather than an aspect-ratio guess.
+  const logoUrl = providerLogoUrl(activity.provider_contact);
   // Wix Events and Wix COURSEs have no BabyBrain waitlist (00107): a sold-out
   // event / a course with no dates left shows a disabled "Sold out" CTA
   // instead of sending the parent into a booking flow that can't complete.
@@ -2040,7 +2113,7 @@ function ActivityDetailPage() {
             </div>
           </div>
           <div>
-            <HeroCarousel images={images} title={activity.title} resetKey={activity.id} onOpen={setGalleryAt} />
+            <HeroCarousel images={images} logoUrl={logoUrl} title={activity.title} resetKey={activity.id} onOpen={setGalleryAt} />
           </div>
         </section>
 
@@ -2087,18 +2160,43 @@ function ActivityDetailPage() {
               <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
                 <h2 className="mb-3 text-xl font-black">Packages</h2>
                 <div className="grid gap-3">
-                  {packs.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] p-4">
-                      <div>
-                        <h3 className="font-black">{p.name}</h3>
-                        <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
+                  {packs.map((p) => {
+                    const selected = pickedPackId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex items-center justify-between gap-3 rounded-[12px] border p-4 ${selected ? "border-baby-cta bg-palette-pinkTint" : "border-[#EBE3E5]"}`}
+                      >
+                        <div>
+                          <h3 className="font-black">{p.name}</h3>
+                          <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
+                        </div>
+                        {/* Picking a pack here no longer buys it — that used
+                            to skip choosing a class/time and the provider's
+                            terms entirely. It's carried to the booking page
+                            (?pack=, same idea as pickedSessionId) where the
+                            purchase actually goes through once a slot's
+                            picked and terms are accepted. */}
+                        <Button
+                          type="button"
+                          variant="pink"
+                          size="sm"
+                          onClick={() => setPickedPackId((cur) => (cur === p.id ? null : p.id))}
+                        >
+                          {selected ? "Selected" : "Select"}
+                        </Button>
                       </div>
-                      <Button type="button" variant="pink" size="sm" onClick={() => buyPack(p.id)} disabled={buyingPack === p.id} className={buyingPack === p.id ? "opacity-60" : ""}>
-                        {buyingPack === p.id ? "…" : "Buy pack"}
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+                {pickedPackId && (
+                  <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
+                    <span>Click on Book a class to proceed with this purchase.</span>
+                    <button type="button" onClick={() => setPickedPackId(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
+                      Clear
+                    </button>
+                  </p>
+                )}
               </section>
             )}
           </div>
@@ -2157,7 +2255,11 @@ function ActivityDetailPage() {
                 <Icon name="calendar" className="h-4 w-4" /> {activity.wix_service_type === "EVENT" ? "Sold out" : "Currently full"}
               </button>
             ) : (
-              <Button href={`/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}`} variant="pink" className="mt-4 w-full"><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              <Button
+                href={`/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}${pickedPackId ? `&pack=${encodeURIComponent(pickedPackId)}` : ""}`}
+                variant="pink"
+                className="mt-4 w-full"
+              ><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
                 a listing that books on the provider's own site has no chat to

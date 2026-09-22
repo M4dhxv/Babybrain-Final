@@ -1468,6 +1468,21 @@ export type Database = {
         Args: { p_purchase_id: string; p_session_id: string; p_child_id?: string | null; p_policies?: string[]; p_wix_booking_id?: string | null; p_quantity?: number; p_medical?: string | null; p_info?: string | null; p_guest_names?: string[] };
         Returns: { status: string; waitlisted_count: number }[];
       };
+      purchase_package_and_book: {
+        Args: {
+          p_user_id: string;
+          p_package_id: string;
+          p_stripe_payment_intent: string | null;
+          p_activity_session_id?: string | null;
+          p_child_id?: string | null;
+          p_quantity?: number;
+          p_policies?: string[];
+          p_medical?: string | null;
+          p_info?: string | null;
+          p_guest_names?: string[];
+        };
+        Returns: { purchase_id: string; status: string; waitlisted_count: number; already_credited: boolean }[];
+      };
       provider_overview: {
         Args: { p_provider: string };
         Returns: {

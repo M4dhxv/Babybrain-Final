@@ -10,6 +10,6 @@
 ## Parent app images
 
 Vendor images (logos and photos) come in any shape, so never crop a vendor's logo.
-- Activity page hero (`HeroCarousel` in `frontends/parent/src/App.tsx`): `object-cover` anchored near the top (`object-[center_15%]`) so faces stay in.
+- Activity page hero (`HeroCarousel` in `frontends/parent/src/App.tsx`): `object-cover` anchored near the top (`object-[center_15%]`) so faces stay in, **except** the vendor's own `provider.logo_url` — that one is never cropped regardless of aspect ratio, because a landscape logo/wordmark and a landscape photo are indistinguishable from aspect ratio alone. Identify it by comparing the URL (see `providerLogoUrl` in `frontends/parent/src/lib/activityMedia.ts`), never by guessing from shape.
 - Explore and other activity cards (`frontends/parent/src/components/ui.tsx`): `object-contain` on a plain tint, no crop. Wix thumbnails must use `/v1/fit/`, not `/v1/fill/`.
-- Any new activity image surface should follow the same two rules.
+- Any new activity image surface should follow the same rules: crop-safe surfaces (`object-contain`) never need special-casing the logo; any surface that crops (`object-cover`) must exempt `provider.logo_url` by URL comparison, the same way the hero does.

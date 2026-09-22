@@ -7,28 +7,48 @@ import { computeSplit, getTerms } from '@/lib/commercials';
 
 /**
  * Parent buys a class package (multi-session pack). One-off Stripe Checkout;
- * the webhook (kind='package') creates the package_purchases row with credits.
- * Body: { package_id: string, activity_session_id?: string, child_id?: string }
+ * the webhook (kind='package') creates the package_purchases row with
+ * credits, and — when a session was chosen — atomically books it too (see
+ * purchase_package_and_book, migration 00162).
+ * Body: { package_id: string, activity_session_id?: string, child_id?: string,
+ *   quantity?: number, guest_names?: string[], policies_accepted?: string[],
+ *   medical_disclosure?: string, info_response?: string }
  *
- * activity_session_id/child_id are only present when checkout was started
- * from a specific class's booking page — QA: buying the pack there should
- * also book that class, not just grant credits. Not validated here beyond
- * shape; autoBookPackageSession re-checks the pack actually applies to that
- * session before booking anything.
+ * activity_session_id/child_id/quantity/etc. are only present when checkout
+ * was started from a specific class's booking page — QA: buying the pack
+ * there should also book that class (for the whole party, not just one
+ * seat), not just grant credits. The booking-page UI now requires a chosen
+ * slot before it will call this at all; quantity is still capped and
+ * cross-checked against the pack's own credit total here as a second line of
+ * defense against a stale or bypassed client.
  */
 export async function POST(request: Request) {
   const {
     package_id: packageId,
     activity_session_id: activitySessionId,
     child_id: childId,
+    quantity: rawQuantity,
+    guest_names: guestNames,
+    policies_accepted: policiesAccepted,
+    medical_disclosure: medicalDisclosure,
+    info_response: infoResponse,
   } = (await request.json().catch(() => ({}))) as {
     package_id?: string;
     activity_session_id?: string;
     child_id?: string;
+    quantity?: number;
+    guest_names?: string[];
+    policies_accepted?: string[];
+    medical_disclosure?: string;
+    info_response?: string;
   };
   if (!packageId) {
     return NextResponse.json({ error: 'package_id required' }, { status: 400 });
   }
+  // Only meaningful alongside a session to book; capped well above any real
+  // party size so a bad value can't blow up the booking loop or Stripe
+  // metadata size.
+  const quantity = Math.min(Math.max(1, Math.trunc(Number(rawQuantity) || 1)), 20);
 
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -51,6 +71,16 @@ export async function POST(request: Request) {
   }
   if (pkg.expiry_date && new Date(`${pkg.expiry_date}T23:59:59+08:00`) <= now) {
     return NextResponse.json({ error: 'Package not available' }, { status: 404 });
+  }
+  // A pack that can't cover the whole party shouldn't be paid for at all —
+  // the booking-page UI already blocks this before calling here, this is the
+  // checkout-can't-be-bypassed backstop (same idea as the on-sale checks
+  // above).
+  if (activitySessionId && quantity > pkg.credits) {
+    return NextResponse.json(
+      { error: `This pack only has ${pkg.credits} credit${pkg.credits === 1 ? '' : 's'} — not enough for ${quantity} children.` },
+      { status: 400 }
+    );
   }
 
   const origin = appOrigin(request);
@@ -96,8 +126,23 @@ export async function POST(request: Request) {
       kind: 'package',
       user_id: user.id,
       package_id: pkg.id,
-      ...(activitySessionId ? { activity_session_id: activitySessionId } : {}),
-      ...(childId ? { child_id: childId } : {}),
+      // The rest only matter alongside a session to book — no point
+      // shipping booking paperwork for a pack bought with no class attached.
+      ...(activitySessionId
+        ? {
+            activity_session_id: activitySessionId,
+            quantity: String(quantity),
+            ...(childId ? { child_id: childId } : {}),
+            ...(guestNames && guestNames.length
+              ? { guest_names: JSON.stringify(guestNames.slice(0, 19).map((n) => String(n).slice(0, 80))) }
+              : {}),
+            ...(policiesAccepted && policiesAccepted.length
+              ? { policies_accepted: JSON.stringify(policiesAccepted.slice(0, 50)) }
+              : {}),
+            ...(medicalDisclosure?.trim() ? { medical_disclosure: medicalDisclosure.trim().slice(0, 450) } : {}),
+            ...(infoResponse?.trim() ? { info_response: infoResponse.trim().slice(0, 450) } : {}),
+          }
+        : {}),
     },
     // session_id lets the app credit the pack on return even if the Stripe
     // webhook is delayed or misconfigured (see /api/stripe/reconcile).

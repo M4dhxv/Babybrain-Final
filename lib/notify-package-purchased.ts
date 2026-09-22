@@ -6,14 +6,15 @@ import type { Database } from '@/types/database';
  * PlusLock in frontends/parent/src/pages/dashboard.tsx), so this
  * confirmation email is their only way to know what they bought and how to
  * use it. Called from both the Stripe webhook and /api/stripe/reconcile,
- * right after a package_purchases row is created — mirrors the idempotency
- * pattern of autoBookPackageSession (lib/stripe-package-auto-book.ts).
+ * right after purchase_package_and_book (lib/stripe-package-purchase.ts,
+ * migration 00162) grants the purchase — only when that call reports a fresh
+ * grant, never on a deduped redelivery.
  *
  * The credit count is read back from the purchase AFTER any auto-booking, not
  * taken from the package: buying from a class's booking page books that class
- * and spends one credit, so a 5-class pack is 4 left by the time this runs.
- * Announcing the package total told parents they had a credit they'd already
- * used.
+ * (spending one credit per seat), so a 5-class pack can already be short a
+ * few credits by the time this runs. Announcing the package total told
+ * parents they had credits they'd already used.
  *
  * Never throws: a notification failure must not undo a purchase the parent
  * has already paid for.

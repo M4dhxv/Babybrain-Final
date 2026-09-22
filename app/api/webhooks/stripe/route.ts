@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { getStripe, LIVE_STATUSES, periodEndIso, intervalOf } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { autoBookPackageSession } from '@/lib/stripe-package-auto-book';
+import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { stripeConfigKeyFor } from '@/lib/stripe-config';
@@ -488,73 +488,33 @@ export async function POST(request: Request) {
       }
 
       if (kind === 'package' && session.metadata?.package_id && session.metadata?.user_id) {
-        // Idempotency. Stripe retries a webhook whenever the endpoint is slow
-        // or errors, and /api/stripe/reconcile processes the same checkout on
-        // the parent's return — that fallback exists because this webhook has
-        // a history of not landing. Without this guard, the second delivery
-        // granted a whole extra pack and auto-booked the class a second time
-        // (found in QA: replaying one event produced two purchases and two
-        // bookings). Reconcile already guards this way; the webhook didn't.
-        const paymentIntent = (session.payment_intent as string) ?? null;
-        const { data: already } = paymentIntent
-          ? await admin
-              .from('package_purchases')
-              .select('id')
-              .eq('stripe_payment_intent', paymentIntent)
-              .maybeSingle()
-          : { data: null };
-
-        const { data: pkg } = already
-          ? { data: null }
-          : await admin
-              .from('packages')
-              .select('id, provider_id, credits, price_cents')
-              .eq('id', session.metadata.package_id)
-              .maybeSingle();
-        if (pkg) {
-          const { data: purchase } = await admin
-            .from('package_purchases')
-            .insert({
-              user_id: session.metadata.user_id,
-              package_id: pkg.id,
-              provider_id: pkg.provider_id,
-              credits_total: pkg.credits,
-              credits_remaining: pkg.credits,
-              stripe_payment_intent: (session.payment_intent as string) ?? null,
-            })
-            .select('id')
-            .single();
-          // QA: buying a pack from a class's booking page should book that
-          // class, not just grant credits. Only present when checkout was
-          // started from there — see app/api/customer/stripe/package.
-          if (purchase && session.metadata?.activity_session_id) {
-            await autoBookPackageSession(admin, {
-              purchaseId: purchase.id,
-              packageId: pkg.id,
-              providerId: pkg.provider_id,
-              userId: session.metadata.user_id,
-              activitySessionId: session.metadata.activity_session_id,
-              childId: session.metadata.child_id ?? null,
-            });
-          }
-          if (purchase) {
-            await recordSale(admin, {
-              providerId: pkg.provider_id,
-              source: 'package',
-              packagePurchaseId: purchase.id,
-              grossCents: pkg.price_cents,
-              paymentIntentId: paymentIntent,
-            });
-            // Free-tier parents can't see Packages on /profile — this email
-            // is their only way to know they've got credits and how to use them.
-            await notifyPackagePurchased(admin, {
-              userId: session.metadata.user_id,
-              packageId: pkg.id,
-              providerId: pkg.provider_id,
-              purchaseId: purchase.id,
-              credits: pkg.credits,
-            });
-          }
+        // purchase_package_and_book (00162) grants credits and, when a
+        // session was chosen, books that many seats and spends that many
+        // credits — all in one DB transaction, deduped by stripe_payment_intent
+        // inside the function itself. Stripe retries a webhook whenever the
+        // endpoint is slow or errors, and /api/stripe/reconcile processes the
+        // same checkout on the parent's return (that fallback exists because
+        // this webhook has a history of not landing) — alreadyCredited tells
+        // us which delivery actually did the work, so recordSale/notify only
+        // fire once per real purchase.
+        const result = await purchasePackageAndBook(admin, session);
+        if (result && !result.alreadyCredited && result.package) {
+          await recordSale(admin, {
+            providerId: result.package.provider_id,
+            source: 'package',
+            packagePurchaseId: result.purchaseId,
+            grossCents: result.package.price_cents,
+            paymentIntentId: (session.payment_intent as string) ?? null,
+          });
+          // Free-tier parents can't see Packages on /profile — this email
+          // is their only way to know they've got credits and how to use them.
+          await notifyPackagePurchased(admin, {
+            userId: session.metadata.user_id,
+            packageId: result.package.id,
+            providerId: result.package.provider_id,
+            purchaseId: result.purchaseId,
+            credits: result.package.credits,
+          });
         }
       }
 
