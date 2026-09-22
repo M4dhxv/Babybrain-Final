@@ -1235,6 +1235,8 @@ export function ProfilePage() {
         }
         setNotifications((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: seenAt })));
         cacheInvalidate(`profile:notifications:${uid}`);
+        // Header's unread dot reads a separate cache entry (lib/notifications.ts) — drop it too.
+        cacheInvalidate(`profile:unreadNotifications:${uid}`);
       });
   }, [tab, session, notifsLoaded, notifications]);
 
@@ -2360,7 +2362,11 @@ export function ProfilePage() {
               ) : (
                 <div className="grid gap-4 md:grid-cols-3">
                   {visibleFavs.map((activity) => (
-                    <div key={activity.id}>
+                    // self-start: without it, grid's default row-stretch sizes this wrapper
+                    // to fit ActivityCard *and* FavChildAssign together, then ActivityCard's
+                    // own h-full expands to fill that whole stretched box — pushing
+                    // FavChildAssign to overflow past the wrapper, under the next row's card.
+                    <div key={activity.id} className="self-start">
                       <ActivityCard
                         activity={activity}
                         onFavoriteToggled={(id, saved) => {

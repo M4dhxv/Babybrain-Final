@@ -12,6 +12,8 @@ import { goTo, useLocation } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
 import { FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { requestInstall, useInstallState } from "../lib/install";
+import { useUnreadMessages } from "../lib/chat";
+import { useUnreadNotifications } from "../lib/notifications";
 
 /** Requests a resized rendition from Wix's own CDN (documented `/v1/fill/`
  *  URL transform) instead of the full original upload — a card renders at a
@@ -452,6 +454,12 @@ export function Header({ active = "/" }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const install = useInstallState();
   const installMenu = { show: !install.installed && (install.native || install.ios) };
+  // Same unread signal the dashboard's own mobile drawer shows a dot for —
+  // surfaced here too since this Header (not that drawer) is what every other
+  // page's hamburger renders.
+  const unreadMessages = useUnreadMessages(Boolean(session));
+  const unreadNotifications = useUnreadNotifications(session?.user.id);
+  const hasUnread = unreadMessages > 0 || unreadNotifications > 0;
   // Close the mobile dropdown after a navigation — client-side nav keeps the
   // Header mounted, so tapping a link no longer clears it on its own.
   useEffect(() => {
@@ -525,16 +533,21 @@ export function Header({ active = "/" }: HeaderProps) {
           </div>
         )}
 
-        {/* Mobile hamburger */}
+        {/* Mobile hamburger. The unread dot only shows on the bars — once the
+            menu opens (and turns into a close cross) it moves to sit next to
+            the profile name below, which is what it's actually pointing at. */}
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
-          className="-mr-1 grid h-11 w-11 place-items-center text-baby-ink transition-colors hover:text-baby-cta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta lg:hidden"
+          className="relative -mr-1 grid h-11 w-11 place-items-center text-baby-ink transition-colors hover:text-baby-cta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta lg:hidden"
         >
           {/* No box: just the bars, which turn into a cross of the same weight when open. */}
           <Icon name={menuOpen ? "close" : "menu"} className="h-6 w-6" strokeWidth={2} />
+          {!menuOpen && hasUnread && (
+            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-baby-paper bg-[#C90044]" />
+          )}
         </button>
       </div>
 
@@ -576,6 +589,7 @@ export function Header({ active = "/" }: HeaderProps) {
               <div className="flex flex-col gap-1 text-[15px] font-bold" onFocusCapture={warmDashboard}>
                 <a href="/profile" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="user" className="h-5 w-5 text-baby-pink" /> {profile?.full_name?.split(" ")[0] || "My account"}
+                  {hasUnread && <span className="h-2 w-2 rounded-full bg-[#C90044]" />}
                 </a>
                 <a href="/profile?tab=favorites" className="flex items-center gap-2 rounded-[10px] px-3 py-2.5 hover:bg-white">
                   <Icon name="heart" className="h-5 w-5 text-baby-pink" /> Saved
