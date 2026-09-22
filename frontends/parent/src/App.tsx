@@ -33,7 +33,7 @@ import { OfflinePage } from "./pages/OfflinePage";
 import { useOnline } from "./lib/useOnline";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
-import { supabase } from "./lib/supabase";
+import { supabase, AUTH_STORAGE_KEY } from "./lib/supabase";
 import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
 import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
@@ -1899,7 +1899,7 @@ function ActivityDetailPage() {
   const [hasBooking, setHasBooking] = useState(false);
   /** Shown when a free-plan parent taps "Save to favourites". */
   const [favUpgrade, setFavUpgrade] = useState(false);
-  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean }[]>([]);
   /** The pack tapped here; carried to the booking page as ?pack=, same idea as pickedSessionId below. */
   const [pickedPackId, setPickedPackId] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
@@ -1946,10 +1946,10 @@ function ActivityDetailPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date, best_value")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null; best_value: boolean }>)
     ).then((rows) => {
       setPacks(
         rows
@@ -2180,14 +2180,29 @@ function ActivityDetailPage() {
                             (?pack=, same idea as pickedSessionId) where the
                             purchase actually goes through once a slot's
                             picked and terms are accepted. */}
-                        <Button
-                          type="button"
-                          variant="pink"
-                          size="sm"
-                          onClick={() => setPickedPackId((cur) => (cur === p.id ? null : p.id))}
-                        >
-                          {selected ? "Selected" : "Select"}
-                        </Button>
+                        {selected ? (
+                          // Once picked, this isn't a call to action any more
+                          // — the row's own pink border/tint already says
+                          // "this one's chosen" — so the button steps back
+                          // instead of staying the same loud pink CTA as
+                          // "Select" (QA: the two read as identical at a
+                          // glance). Same footprint as the button below, so
+                          // nothing shifts when it flips between states.
+                          <span
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[11px] border border-baby-cta bg-white px-4 py-2.5 text-[13px] font-extrabold text-baby-cta"
+                          >
+                            <Icon name="check" className="h-3.5 w-3.5" strokeWidth={3} /> Selected
+                          </span>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="pink"
+                            size="sm"
+                            onClick={() => setPickedPackId(p.id)}
+                          >
+                            Select
+                          </Button>
+                        )}
                       </div>
                     );
                   })}
@@ -2455,13 +2470,13 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
 
 /** Best-effort synchronous check for a stored Supabase session, so the root
  *  route can tell a returning parent (wait on a loader) from a genuine visitor
- *  (show the marketing page straight away) before auth has resolved. */
+ *  (show the marketing page straight away) before auth has resolved.
+ *  Checks this app's own storage key only — see the comment on
+ *  AUTH_STORAGE_KEY in lib/supabase.ts for why a broader `sb-*-auth-token`
+ *  scan used to also pick up a vendor-only session on the same origin. */
 function hasStoredSession(): boolean {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && /^sb-.*-auth-token$/.test(key)) return true;
-    }
+    return localStorage.getItem(AUTH_STORAGE_KEY) != null;
   } catch {
     /* storage blocked — assume no session */
   }

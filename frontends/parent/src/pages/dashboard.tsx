@@ -3442,15 +3442,29 @@ function PackageOption({
         <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
       </div>
       {action && (
-        <Button
-          type="button"
-          variant="pink"
-          size="sm"
-          className="shrink-0"
-          onClick={action.onClick}
-        >
-          {selected ? "Selected" : action.label}
-        </Button>
+        selected ? (
+          // Once picked, this isn't really a call to action any more — the
+          // row's own blue border/tint already says "this one's chosen", so
+          // the button steps back to match instead of staying the same loud
+          // pink CTA as "Select" (QA: the two read as identical at a glance).
+          // Same footprint as the button below (border, size="sm" padding),
+          // so nothing shifts when it flips from one state to the other.
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[11px] border border-palette-blue bg-white px-4 py-2.5 text-[13px] font-extrabold text-palette-blueInk"
+          >
+            <Icon name="check" className="h-3.5 w-3.5" strokeWidth={3} /> Selected
+          </span>
+        ) : (
+          <Button
+            type="button"
+            variant="pink"
+            size="sm"
+            className="shrink-0"
+            onClick={action.onClick}
+          >
+            {action.label}
+          </Button>
+        )
       )}
     </div>
   );
@@ -3490,7 +3504,7 @@ export function BookingPage() {
   // broad "any class" pack alongside an activity-restricted one), the parent
   // picks which to spend from; null defers to the oldest eligible one.
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
-  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number }[]>([]);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>("single");
   // The provider's own consents / waivers / disclosures for this class, and
@@ -3563,10 +3577,10 @@ export function BookingPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date, best_value")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null; best_value: boolean }>)
     ).then((rows) => {
       const applicable = rows
         .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
@@ -3836,6 +3850,26 @@ export function BookingPage() {
     : sessionPrice != null ? sessionPrice
     : activity?.price != null ? Number(activity.price) : null;
   const total = price != null ? price * count : null;
+  /* "Best value" used to mean "cheaper per class than paying single-class
+     price" — which tags *every* pack that clears that (usually low) bar, not
+     the actual best one. A 5-session pack at $50/class and a 10-session pack
+     at $45/class both read as "Best value" even though the 10-session is
+     strictly better (QA). Only the pack(s) at the lowest per-class price
+     among what's actually on offer get the auto badge now; ties (as in the
+     screenshot — two packs at the same $50/class) still both show it,
+     honestly, rather than picking one arbitrarily.
+     A vendor can also pick this themselves per pack (packages.best_value,
+     migration 00164) — e.g. to promote a mid-tier pack the maths wouldn't
+     otherwise pick. Any manual pick for this provider wins outright and the
+     auto-computed one steps aside entirely, so a vendor who marks one pack
+     doesn't also see the "cheapest" one highlighted for a reason they never
+     asked for. A provider who's never touched the new checkbox keeps
+     today's auto behaviour unchanged. */
+  const anyManualBestValue = packs.some((p) => p.best_value);
+  const bestPackPerClassPrice =
+    !anyManualBestValue && packs.length > 0
+      ? Math.min(...packs.filter((p) => p.credits > 0).map((p) => p.price_cents / 100 / p.credits))
+      : null;
   /* Sessions can carry their own venue and price (migration 00074), so the
      venue/price on this page can shift as the parent picks a different date
      or time. Flag it up front, but only for classes that actually have that
@@ -4679,7 +4713,19 @@ export function BookingPage() {
                               onSelect={() => setPayWith(`pack:${p.id}`)}
                               title={p.name}
                               price={`$${(p.price_cents / 100).toFixed(0)}`}
-                              badge={price != null && p.credits > 0 && p.price_cents / 100 / p.credits < price ? "Best value" : undefined}
+                              badge={
+                                anyManualBestValue
+                                  ? p.best_value
+                                    ? "Best value"
+                                    : undefined
+                                  : price != null &&
+                                      p.credits > 0 &&
+                                      p.price_cents / 100 / p.credits < price &&
+                                      bestPackPerClassPrice != null &&
+                                      Math.abs(p.price_cents / 100 / p.credits - bestPackPerClassPrice) < 0.005
+                                    ? "Best value"
+                                    : undefined
+                              }
                               action={{ label: "Select", onClick: () => setPayWith(`pack:${p.id}`) }}
                             />
                           ))}

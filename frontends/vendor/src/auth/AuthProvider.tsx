@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, AUTH_STORAGE_KEY } from '@/lib/supabase';
 import { identifyUser, resetUser } from '@/lib/posthog';
 import type { Provider, ProviderRole, SubscriptionPlan } from '@/lib/database.types';
 import { getCachedSubscription, setCachedSubscription, clearCachedSubscription } from '@/lib/providerCache';
@@ -58,22 +58,24 @@ function withTimeout(p: Promise<boolean>, ms: number, controller: AbortControlle
  * effect still calls `getSession()` right after to validate/refresh. Only a
  * token that isn't already expired is trusted; a malformed or blocked store
  * returns null, i.e. the old behaviour.
+ *
+ * Reads only this app's own key (AUTH_STORAGE_KEY) — see the matching
+ * comment in lib/supabase.ts: the parent app shares this same Supabase
+ * project and, in production, the same origin, so scanning broadly for
+ * anything shaped like `sb-*-auth-token` used to also pick up a parent-only
+ * session here.
  */
 function readStoredSession(): Session | null {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !/^sb-.*-auth-token$/.test(key)) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const s = (parsed.access_token ? parsed : parsed.currentSession) as
-        | (Session & { expires_at?: number })
-        | undefined;
-      if (!s || !s.access_token || !s.user?.id) return null;
-      if (typeof s.expires_at === 'number' && s.expires_at * 1000 <= Date.now()) return null;
-      return s;
-    }
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const s = (parsed.access_token ? parsed : parsed.currentSession) as
+      | (Session & { expires_at?: number })
+      | undefined;
+    if (!s || !s.access_token || !s.user?.id) return null;
+    if (typeof s.expires_at === 'number' && s.expires_at * 1000 <= Date.now()) return null;
+    return s;
   } catch {
     /* storage blocked or JSON malformed — fall back to the async path */
   }

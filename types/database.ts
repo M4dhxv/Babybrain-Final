@@ -1243,6 +1243,7 @@ export type Database = {
           allowed_weekday: number | null;
           allowed_start_time: string | null;
           starts_at: string | null;
+          best_value: boolean;
         };
         Insert: {
           provider_id: string;
@@ -1252,8 +1253,9 @@ export type Database = {
           price_cents: number;
           active?: boolean;
           starts_at?: string | null;
+          best_value?: boolean;
         };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; starts_at?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; starts_at?: string | null; best_value?: boolean };
         Relationships: [];
       };
       package_purchases: {

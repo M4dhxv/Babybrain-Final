@@ -30,6 +30,7 @@ type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
   activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
   allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null;
+  best_value: boolean;
 };
 type Purchase = {
   purchase_id: string; package_name: string; buyer_name: string;
@@ -42,7 +43,7 @@ const emptyPack = {
   name: '', credits: '', price: '',
   expiryMode: 'none' as ExpiryMode, validity_days: '', expiry_date: '',
   activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '',
-  starts_date: '', starts_time: '',
+  starts_date: '', starts_time: '', best_value: false,
 };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 /** A plain YYYY-MM-DD (no time component) formatted without a UTC round-trip,
@@ -107,7 +108,7 @@ export default function PackagesPage() {
     async () => {
       const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
         supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
-        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
+        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at, best_value').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
         supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
       ]);
       return {
@@ -195,6 +196,7 @@ export default function PackagesPage() {
       allowed_start_time: p.allowed_start_time ?? '',
       starts_date: starts?.date ?? '',
       starts_time: starts?.time ?? '',
+      best_value: p.best_value,
     });
     document.getElementById('pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -245,6 +247,7 @@ export default function PackagesPage() {
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
       starts_at: packForm.starts_date ? new Date(`${packForm.starts_date}T${packForm.starts_time || '00:00'}:00+08:00`).toISOString() : null,
+      best_value: packForm.best_value,
     };
     const { error } = editingPackId
       ? await supabase.from('packages').update(fields).eq('id', editingPackId)
@@ -376,6 +379,9 @@ export default function PackagesPage() {
                     <div className="min-w-0">
                       <span className="font-medium text-gray-900">{p.name}</span>
                       <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
+                      {p.best_value && (
+                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Best value</span>
+                      )}
                       {packRestriction(p) && <div className="mt-0.5 text-xs text-purple-700">{packRestriction(p)}</div>}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
@@ -417,6 +423,18 @@ export default function PackagesPage() {
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
                     <NumberInput min="0" step="any" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                  </div>
+                  <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end sm:pb-2">
+                    <input
+                      id="pack-best-value"
+                      type="checkbox"
+                      checked={packForm.best_value}
+                      onChange={(e) => setPackForm({ ...packForm, best_value: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 text-[#FA4D8D] focus:ring-[#FA4D8D]"
+                    />
+                    <label htmlFor="pack-best-value" className="text-sm font-medium text-gray-700">
+                      Mark as "Best value"
+                    </label>
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
@@ -494,6 +512,7 @@ export default function PackagesPage() {
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-class pack limited to the Monday 4:00 pm class.</p>
+                <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per class.</p>
               </>
             )}
           </div>

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { supabase, AUTH_STORAGE_KEY } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
 import { clearPlanCache } from "../lib/planCache";
 import { goTo, appUrl } from "../lib/nav";
@@ -85,6 +85,13 @@ function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
  * can do a token-refresh round trip — settles. `getSession()` still runs right
  * after to validate/refresh; this is only the optimistic starting point.
  *
+ * Reads only this app's own key (AUTH_STORAGE_KEY) — not just anything
+ * matching Supabase's default `sb-*-auth-token` shape. The vendor portal
+ * shares this same Supabase project and, in production, the same origin; a
+ * vendor account also always has a parent_profiles row, so scanning broadly
+ * used to mean a vendor who'd only ever logged into /vendor/ could open /app/
+ * in the same browser and be read as an already-signed-in parent.
+ *
  * Only a token that isn't already expired is trusted: an expired one needs a
  * real refresh before it's usable, so that case falls through to the normal
  * async flow. A malformed or blocked store returns null — no regression, just
@@ -92,20 +99,16 @@ function withTimeout(p: Promise<boolean>, ms: number): Promise<boolean> {
  */
 function readStoredSession(): Session | null {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !/^sb-.*-auth-token$/.test(key)) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      // supabase-js v2 stores the session object directly; some setups wrap it.
-      const s = (parsed.access_token ? parsed : parsed.currentSession) as
-        | (Session & { expires_at?: number })
-        | undefined;
-      if (!s || !s.access_token || !s.user?.id) return null;
-      if (typeof s.expires_at === "number" && s.expires_at * 1000 <= Date.now()) return null;
-      return s;
-    }
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // supabase-js v2 stores the session object directly; some setups wrap it.
+    const s = (parsed.access_token ? parsed : parsed.currentSession) as
+      | (Session & { expires_at?: number })
+      | undefined;
+    if (!s || !s.access_token || !s.user?.id) return null;
+    if (typeof s.expires_at === "number" && s.expires_at * 1000 <= Date.now()) return null;
+    return s;
   } catch {
     /* storage blocked or JSON malformed — fall back to the async path */
   }
