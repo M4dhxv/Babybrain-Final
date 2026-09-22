@@ -28,6 +28,7 @@ import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
 import { useActivities, whenAt } from "./lib/useActivities";
 import { InstallBanner } from "./components/InstallBanner";
+import { PullToRefresh } from "./components/PullToRefresh";
 import { useAuth } from "./auth/AuthProvider";
 import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, isPackOnSale } from "./lib/data";
 import { supabase } from "./lib/supabase";
@@ -2542,6 +2543,7 @@ function App() {
       <RouteErrorBoundary key={pathname}>
         <Suspense fallback={bootLoader}>{page}</Suspense>
       </RouteErrorBoundary>
+      <PullToRefresh />
       <InstallBanner pathname={pathname} />
     </>
   );

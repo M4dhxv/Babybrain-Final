@@ -5,8 +5,9 @@
 @layer base {
   html {
     background: #fffcf8;
-    /* No rubber-band / pull-to-refresh bounce: on a phone it drags the sticky header and the
-       fixed filter bar up and down with the page. */
+    /* No rubber-band / native pull-to-refresh bounce: on a phone it drags the sticky header and
+       the fixed filter bar up and down with the page. PullToRefresh.tsx stands in for the native
+       gesture this switches off, so slide-to-refresh still works without the drag. */
     overscroll-behavior-y: none;
   }
 

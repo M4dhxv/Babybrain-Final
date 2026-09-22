@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { planMonthlyFeeCents } from '@/lib/plans';
+import { planLabel, planMonthlyFeeCents } from '@/lib/plans';
 
 // ---- types mirrored from the /api/admin/* routes ----
 type Metrics = {
@@ -2038,7 +2038,13 @@ function CommercialsView() {
                       {r.custom_terms && <span style={{ color: C.pink }}> · bespoke</span>}
                     </div>
                   </td>
-                  <td style={{ ...td(), textTransform: 'capitalize' }}>{r.plan}</td>
+                  {/* r.plan is the raw DB key ('growth'/'pro'/'free'/'premium'), which predates a
+                      vendor-facing rename and no longer matches what vendors/customers actually
+                      see: 'growth' shows as "Pro" and 'pro' shows as "Premium" everywhere else
+                      (planLabel, lib/plans.ts) — this table was printing the DB key itself
+                      capitalized, so an admin reading "Growth" here was looking at the same plan
+                      a vendor's own portal calls "Pro". */}
+                  <td style={td()}>{planLabel(r.plan)}</td>
                   <td style={td()}>
                     <input
                       style={{ ...input(), width: 78, padding: '6px 8px' }}

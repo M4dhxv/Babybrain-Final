@@ -18,6 +18,15 @@ const QUIET_ROUTES = new Set(["/login", "/forgot-password", "/reset-password", "
 /** Any full-screen overlay (the email sign-up popup, the photo viewer) is up. */
 const overlayOpen = () => !!document.querySelector("div.fixed.inset-0");
 
+// "Install the app" only makes sense as a phone gesture — a desktop browser
+// already has its own install affordance (the icon in Chrome/Edge's address
+// bar) when `beforeinstallprompt` fires, so this banner used to also pop up
+// over desktop Chrome/Edge sessions promoting something the browser was
+// already offering. `pointer: coarse` is touch-primary (phones/tablets), the
+// same check ExploreMap.tsx uses to tell a touchscreen from a mouse.
+const isMobileBrowser = () =>
+  typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+
 /**
  * Invites parents to install the site as an app.
  *
@@ -36,7 +45,8 @@ export function InstallBanner({ pathname }: { pathname: string }) {
   useEffect(() => { if (pathname === "/activity") countActivityView(); }, [pathname]);
 
   const installable = !state.installed && (state.native || state.ios);
-  const eligible = installable && !QUIET_ROUTES.has(pathname) && (state.forced || (hasEngaged() && !isSnoozed()));
+  const eligible =
+    installable && !QUIET_ROUTES.has(pathname) && isMobileBrowser() && (state.forced || (hasEngaged() && !isSnoozed()));
 
   useEffect(() => {
     if (!eligible) { setOpen(false); return; }
