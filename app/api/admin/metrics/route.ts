@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchAll, isTestEmail, testProviderIds } from '@/lib/admin-test-data';
+import { fetchAll, isTestEmail, testProviderIds, vendorAccountIds } from '@/lib/admin-test-data';
 
 /**
  * Founder KPI snapshot, sourced straight from the Supabase database.
@@ -22,7 +22,9 @@ export async function GET(request: Request) {
   const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
   const DAY = 864e5;
 
-  const testProviders = includeTest ? new Set<string>() : await testProviderIds(admin);
+  const [testProviders, vendorAccounts] = includeTest
+    ? [new Set<string>(), new Set<string>()]
+    : await Promise.all([testProviderIds(admin), vendorAccountIds(admin)]);
 
   const [providers, parents, activities, sessions, bookings, reviews, earnings, vendorSubs, plusSubs] =
     await Promise.all([
@@ -54,7 +56,9 @@ export async function GET(request: Request) {
 
   // ---- what counts as live -------------------------------------------------
   const liveProvider = (id: string) => !testProviders.has(id);
-  const testParents = new Set(includeTest ? [] : parents.filter((p) => isTestEmail(p.email)).map((p) => p.id));
+  const testParents = new Set(
+    includeTest ? [] : parents.filter((p) => isTestEmail(p.email) || vendorAccounts.has(p.id)).map((p) => p.id)
+  );
   const liveParent = (id: string) => !testParents.has(id);
 
   const liveProviders = providers.filter((p) => liveProvider(p.id));

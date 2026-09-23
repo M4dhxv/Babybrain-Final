@@ -73,6 +73,7 @@ export async function POST(request: Request) {
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email: normalized,
       email_confirm: true,
+      user_metadata: { account_kind: 'vendor' },
     });
     // Lost a race with a concurrent signup/invite — fall back to linking the
     // now-existing user rather than failing the invite.

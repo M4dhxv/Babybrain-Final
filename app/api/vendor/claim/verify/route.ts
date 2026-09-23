@@ -135,7 +135,7 @@ export async function POST(request: Request) {
       email,
       password,
       email_confirm: true, // the emailed code already proved they hold this address
-      user_metadata: { claimed_provider_id: claim.provider_id },
+      user_metadata: { claimed_provider_id: claim.provider_id, account_kind: 'vendor' },
     });
 
     // The email already has a login. Never touch its password — mark the code

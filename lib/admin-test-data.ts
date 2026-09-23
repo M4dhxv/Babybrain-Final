@@ -9,7 +9,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  *
  *   - a vendor flagged `providers.is_test` — and everything it owns;
  *   - an earnings row with `livemode = false` (a Stripe test-mode payment);
- *   - a parent whose email looks like a test address (see isTestEmail).
+ *   - a parent whose email looks like a test address (see isTestEmail);
+ *   - a parent_profiles row that actually belongs to a vendor user (see
+ *     vendorAccountIds) — handle_new_user() used to stamp one out for every
+ *     auth user regardless of which app created it, so business-claim and
+ *     staff-invite logins got a parent row too (fixed going forward by
+ *     migration 00165; this covers the ones already in the database).
  *
  * Both columns come from migration 00161. Until it is applied the reads below
  * fail quietly and nothing is treated as test, so the admin pages keep working.
@@ -42,4 +47,14 @@ export async function testProviderIds(admin: SupabaseClient): Promise<Set<string
   const { data, error } = await admin.from('providers').select('id').eq('is_test', true);
   if (error) return new Set();
   return new Set((data ?? []).map((r: { id: string }) => r.id));
+}
+
+/** Ids of parent_profiles rows that are actually vendor users (they hold an
+ *  active provider_members seat), so they don't get double-counted as
+ *  families in the admin Metrics. */
+export async function vendorAccountIds(admin: SupabaseClient): Promise<Set<string>> {
+  const rows = await fetchAll<{ user_id: string }>((f, t) =>
+    admin.from('provider_members').select('user_id').eq('status', 'active').range(f, t)
+  );
+  return new Set(rows.map((r) => r.user_id));
 }

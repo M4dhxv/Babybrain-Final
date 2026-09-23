@@ -3530,6 +3530,12 @@ export function BookingPage() {
   const [childId, setChildId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const errRef = useRef<HTMLDivElement | null>(null);
+  // Whatever's missing (slot, terms, ...) is easy to miss if the parent has
+  // scrolled away from the Pay button — bring the message to them instead.
+  useEffect(() => {
+    if (err) errRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [err]);
   type CreditPurchase = {
     id: string; name: string; remaining: number; expires_at: string | null;
     activity_ids: string[] | null; allowed_weekday: number | null; allowed_start_time: string | null;
@@ -3984,7 +3990,8 @@ export function BookingPage() {
           status = data.status;
         } catch (e) {
           setBusy(false);
-          setErr(e instanceof Error ? e.message : "Could not reserve this ticket");
+          console.error(e);
+          setErr("Could not reserve this ticket — please try again.");
           return;
         }
         setBusy(false);
@@ -3997,7 +4004,8 @@ export function BookingPage() {
           }
         } catch (e) {
           setBusy(false);
-          setErr(e instanceof Error ? e.message : "Could not start payment");
+          console.error(e);
+          setErr("Could not start payment — please try again.");
           return;
         }
         setBusy(false);
@@ -4021,7 +4029,8 @@ export function BookingPage() {
           status = data.status;
         } catch (e) {
           setBusy(false);
-          setErr(e instanceof Error ? e.message : "Could not redeem this make-up token");
+          console.error(e);
+          setErr("Could not redeem this make-up token — please try again.");
           return;
         }
         setBusy(false);
@@ -4073,7 +4082,8 @@ export function BookingPage() {
           }
         } catch (e) {
           setBusy(false);
-          setErr(e instanceof Error ? e.message : "Could not start payment");
+          console.error(e);
+          setErr("Could not start payment — please try again.");
           return;
         }
         setBusy(false);
@@ -4085,7 +4095,8 @@ export function BookingPage() {
         wl = data.waitlistedCount ?? 0;
       } catch (e) {
         setBusy(false);
-        setErr(e instanceof Error ? e.message : "Could not create the booking");
+        console.error(e);
+        setErr("Could not create the booking — please try again.");
         return;
       }
       setBusy(false);
@@ -4135,7 +4146,8 @@ export function BookingPage() {
           }
         } catch (e) {
           setBusy(false);
-          setErr(e instanceof Error ? e.message : "Could not start payment");
+          console.error(e);
+          setErr("Could not start payment — please try again.");
           return;
         }
       }
@@ -4200,7 +4212,8 @@ export function BookingPage() {
         wl = data.waitlistedCount ?? 0;
       } catch (e) {
         setBusy(false);
-        setErr(e instanceof Error ? e.message : "Could not redeem this credit");
+        console.error(e);
+        setErr("Could not redeem this credit — please try again.");
         return;
       }
     } else {
@@ -4290,7 +4303,8 @@ export function BookingPage() {
       if (url) window.location.href = url;
       else setErr("Could not start checkout — please try again.");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not start checkout");
+      console.error(e);
+      setErr("Could not start checkout — please try again.");
     } finally {
       setBusy(false);
     }
@@ -4316,6 +4330,11 @@ export function BookingPage() {
     return null;
   }
 
+  // Greys the Pay button out as a hint that something's still missing —
+  // it stays tappable in that state (see the button below) so a tap
+  // explains exactly what, rather than silently doing nothing.
+  const bookingIncomplete = !sessionId || consentProblem() != null;
+
   /** True when this child already holds a live booking on the chosen session. */
   const alreadyBooked =
     !!sessionId && existingBookings.has(`${sessionId}:${bookChildId ?? ""}`);
@@ -4323,6 +4342,12 @@ export function BookingPage() {
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
     setErr(null);
+    // The button is always clickable (see its comment above) so this is the
+    // first thing a Pay tap with nothing chosen yet actually hits.
+    if (!sessionId) {
+      setErr(isEvent || isCourse ? "This isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
+      return;
+    }
     const consent = consentProblem();
     if (consent) {
       setErr(consent);
@@ -4797,7 +4822,12 @@ export function BookingPage() {
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
             <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
-            {err && <p className="mt-3 text-sm font-bold text-baby-pink">{err}</p>}
+            {err && (
+              <div ref={errRef} role="alert" className="mt-3 flex items-start gap-2 rounded-[10px] bg-[#FEEBF2] px-3.5 py-2.5 text-sm font-bold text-baby-cta">
+                <Icon name="bell" className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{err}</span>
+              </div>
+            )}
           </div>
           {redeemToken && (
             <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
@@ -4818,7 +4848,13 @@ export function BookingPage() {
                 : "This course is currently full — check back soon, or use “Enquire Now” on the class page."}
             </div>
           ) : (
-            <Button type="button" size="lg" onClick={checkout} disabled={busy || !sessionId} className={busy || !sessionId ? "opacity-60" : ""}>
+            // Greyed out (not `disabled`) while a slot or required terms are
+            // still missing — a real `disabled` button swallows the tap
+            // silently, which is exactly the "nothing happens when I hit Pay"
+            // bug this guards against. It stays tappable in that dimmed state
+            // so checkout() can surface a friendly message via the alert
+            // above explaining what's left, instead of just sitting there.
+            <Button type="button" size="lg" onClick={checkout} disabled={busy} className={busy || bookingIncomplete ? "opacity-60" : ""}>
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}
