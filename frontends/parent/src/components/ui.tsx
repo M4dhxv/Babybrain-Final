@@ -290,11 +290,11 @@ const iconPaths: Record<IconName, string> = {
     "M9 18V5l12-2v13M3 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0M15 16a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
   catArt:
     "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8zM13.5 6.5h.01M17.5 10.5h.01M6.5 12.5h.01M8.5 7.5h.01",
-  // Was a dumbbell — reads as an adult gym icon, not a kids' class. A medal
-  // (Lucide "award") fits "Gym, Dance & Other Sports" as a win/achievement
-  // instead of gym equipment.
+  // Was a dumbbell (adult gym), then briefly a medal — Aman asked for a
+  // running kid instead: round head, a reaching arm, both legs bent
+  // mid-stride, all one continuous figure.
   catSport:
-    "M18 8A6 6 0 1 1 6 8A6 6 0 1 1 18 8ZM15.477 12.89 17 22l-5-3-5 3 1.523-9.11",
+    "M15.8 5A1.8 1.8 0 1 1 12.2 5A1.8 1.8 0 1 1 15.8 5ZM13 7L17 8.5M13 7L9.5 12.5L7.5 16L6.5 19.5M9.5 12.5L13.5 13L12 18.5",
   catSwim:
     "M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1",
   catLearn:
