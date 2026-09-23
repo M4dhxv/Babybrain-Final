@@ -529,19 +529,40 @@ export default function BookingsPage() {
       // stays true for the rest of the tab's life, not just the reload that
       // triggered it) can otherwise hide a deep-linked slot outside that one
       // day, and then the "current selection out of view" effect below snaps
-      // away from it entirely. A ?session= deep-link always wins: drop the
-      // filter so the clicked slot's day, today, and the calendar all stay
-      // reachable.
-      if (preselect) setDateFilter('');
+      // away from it entirely. A ?session= deep-link always wins — but an
+      // empty filter only shows today onward, so a deep-link to a PAST slot
+      // (clicked from the calendar's history) would itself fall outside that
+      // default view the instant it's selected. That used to make the
+      // "current selection out of view" effect immediately override the
+      // just-clicked session with an unrelated upcoming one — and since the
+      // two competing setSessionId calls fired in close succession, the
+      // roster fetch below could end up racing itself between the two ids,
+      // sometimes leaving it stuck on "Loading bookings…" forever. Pin the
+      // filter to the deep-linked session's own day when it's in the past,
+      // so it stays visible in filteredSessions; a today-or-later one still
+      // gets the plain "today onward" view as before.
+      if (preselect) {
+        const picked = opts.find((o) => o.id === preselect);
+        setDateFilter(picked && picked.starts_at < dayStartIso ? sgDateKey(picked.starts_at) : '');
+      }
       if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
+  // Guards loadRoster against two overlapping calls resolving out of order
+  // (e.g. a session-selection race elsewhere setting sessionId twice in
+  // quick succession) — without this, a stale response for an id the
+  // vendor has since navigated away from could win and set rosterSessionId
+  // to it, leaving rosterLoading (sessionId !== rosterSessionId) stuck true
+  // forever since nothing would trigger another load for that id again.
+  const latestRosterRequestRef = useRef('');
   async function loadRoster(id: string) {
     if (!id) return;
+    latestRosterRequestRef.current = id;
     const { data } = await supabase.rpc('provider_session_roster', { p_session_id: id });
+    if (latestRosterRequestRef.current !== id) return; // superseded by a newer request
     const rows = (data as RosterRow[]) ?? [];
     setRoster(rows);
     setRosterSessionId(id);
@@ -553,6 +574,7 @@ export default function BookingsPage() {
         .from('make_up_tokens')
         .select('origin_booking_id, status')
         .in('origin_booking_id', rows.map((r) => r.booking_id));
+      if (latestRosterRequestRef.current !== id) return;
       const map: Record<string, string> = {};
       (toks ?? []).forEach((t) => { if (t.origin_booking_id) map[t.origin_booking_id] = t.status; });
       setTokenStatus(map);
