@@ -73,6 +73,17 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 bootWin.__BB_BOOTED__ = true;
 
+// Caches the app shell so a repeat launch — especially the installed Android
+// app, which shows its own native splash while this loads — can skip the
+// network round-trip and get to our own boot splash sooner. Registered after
+// mount, not before: it must never sit between the browser and the very
+// first load of this page. See public/sw.js for the caching strategy.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
+  });
+}
+
 // If the app has been up for a few seconds without a route boundary catching
 // anything, the current build is fine — hand the stale-chunk reload budget
 // back so a genuinely new failure later gets its own reloads. A reload loop
