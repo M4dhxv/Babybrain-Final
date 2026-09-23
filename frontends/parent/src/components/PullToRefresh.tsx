@@ -74,25 +74,36 @@ export function PullToRefresh() {
   if (pull <= 0 && !refreshing) return null;
 
   const offset = (refreshing ? 40 : pull) - 40;
+  // Circle is r=9, so its full circumference is 2π×9 ≈ 56.5 — the arc's
+  // stroke-dasharray fills that proportionally to how far through the pull
+  // the parent is, same one-ui-style "the ring draws itself in" feel.
+  const progress = Math.min(pull / THRESHOLD, 1);
   return (
     <div
       aria-hidden="true"
       className="pointer-events-none fixed inset-x-0 top-2 z-50 flex justify-center transition-transform duration-150 ease-out"
       style={{ transform: `translateY(${offset}px)` }}
     >
-      <div className="grid h-9 w-9 place-items-center rounded-full bg-white shadow-soft">
-        <svg
-          viewBox="0 0 24 24"
-          className={`h-5 w-5 text-baby-cta ${refreshing ? "animate-spin" : ""}`}
-          style={refreshing ? undefined : { transform: `rotate(${Math.min(pull / THRESHOLD, 1) * 180}deg)` }}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M3 12a9 9 0 0 1 9-9c2.4 0 4.6 1 6.2 2.6M21 12a9 9 0 0 1-9 9c-2.4 0-4.6-1-6.2-2.6" />
-          <path d="M21 3v6h-6M3 21v-6h6" />
+      <div
+        className="grid h-[52px] w-[52px] place-items-center rounded-full bg-white"
+        style={{ boxShadow: "0 6px 16px rgba(17,26,76,0.16), 0 2px 4px rgba(17,26,76,0.08)" }}
+      >
+        <svg viewBox="0 0 24 24" className="h-[26px] w-[26px]" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="#EDF6FD" strokeWidth="3" />
+          {refreshing ? (
+            <path d="M12 3a9 9 0 0 1 9 9" stroke="#4597F7" strokeWidth="3" strokeLinecap="round" className="origin-center animate-spin" />
+          ) : (
+            <circle
+              cx="12"
+              cy="12"
+              r="9"
+              stroke="#4597F7"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={`${progress * 56.5} 56.5`}
+              className="origin-center -rotate-90"
+            />
+          )}
         </svg>
       </div>
     </div>
