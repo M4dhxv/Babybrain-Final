@@ -194,12 +194,12 @@ export function SessionSchedule({
                 onClick={() => onSelect?.(slot.id)}
                 className={`min-h-12 rounded-[11px] border px-2 py-2 text-[15px] font-black tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
                   active
-                    ? "border-baby-cta bg-baby-cta text-white shadow-pink"
+                    ? "border-baby-pink bg-baby-pink text-baby-ink shadow-card"
                     : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
                 }`}
               >
                 {slot.time}
-                {shared && <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-white/90" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
+                {shared && <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-baby-ink/70" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
               </button>
             );
           })}

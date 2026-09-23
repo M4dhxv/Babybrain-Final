@@ -2082,7 +2082,7 @@ function ActivityDetailPage() {
                     return (
                       <div
                         key={p.id}
-                        className={`flex items-center justify-between gap-3 rounded-[12px] border p-4 ${selected ? "border-baby-cta bg-palette-pinkTint" : "border-[#EBE3E5]"}`}
+                        className={`flex items-center justify-between gap-3 rounded-[12px] border p-4 ${selected ? "border-[#A7D8F8] bg-[#EDF7FD]" : "border-[#EBE3E5]"}`}
                       >
                         <div>
                           <h3 className="font-black">{p.name}</h3>
@@ -2096,14 +2096,16 @@ function ActivityDetailPage() {
                             picked and terms are accepted. */}
                         {selected ? (
                           // Once picked, this isn't a call to action any more
-                          // — the row's own pink border/tint already says
+                          // — the row's own blue border/tint already says
                           // "this one's chosen" — so the button steps back
                           // instead of staying the same loud pink CTA as
                           // "Select" (QA: the two read as identical at a
                           // glance). Same footprint as the button below, so
                           // nothing shifts when it flips between states.
+                          // Matches the booking page's own selected-package
+                          // badge (dashboard.tsx) rather than the pink CTA.
                           <span
-                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[11px] border border-baby-cta bg-white px-4 py-2.5 text-[13px] font-extrabold text-baby-cta"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[11px] border border-palette-blue bg-white px-4 py-2.5 text-[13px] font-extrabold text-palette-blueInk"
                           >
                             <Icon name="check" className="h-3.5 w-3.5" strokeWidth={3} /> Selected
                           </span>

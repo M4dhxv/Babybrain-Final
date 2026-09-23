@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 // refresh, and the visual cap on the pull indicator itself.
 const THRESHOLD = 64;
 const MAX_PULL = 90;
+// Below this much combined movement, a gesture is too small to call either
+// way yet — a finger settling before a swipe reads as a few px of jitter,
+// not a direction. Past it, whichever axis moved more decides: horizontal
+// (or diagonal-leaning-horizontal, the >1.5x margin the hero carousel's own
+// swipe uses) hands the gesture to whatever's underneath — a carousel swipe,
+// say — instead of being read as the start of a pull.
+const DEAD_ZONE = 10;
 
 /** Same check InstallBanner.tsx uses: any full-screen overlay (photo viewer,
  *  email sign-up popup) is up, so a drag inside it shouldn't be read as a
@@ -26,12 +33,14 @@ export function PullToRefresh() {
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef<number | null>(null);
+  const startX = useRef(0);
 
   useEffect(() => {
     if (refreshing) return;
     const onStart = (e: TouchEvent) => {
-      startY.current =
-        !overlayOpen() && window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+      const eligible = !overlayOpen() && window.scrollY <= 0 && e.touches.length === 1;
+      startY.current = eligible ? e.touches[0].clientY : null;
+      startX.current = e.touches[0]?.clientX ?? 0;
     };
     const onMove = (e: TouchEvent) => {
       if (startY.current == null) return;
@@ -39,6 +48,15 @@ export function PullToRefresh() {
       // flick still settling) — bail rather than pull from mid-page.
       if (window.scrollY > 0) { startY.current = null; setPull(0); return; }
       const delta = e.touches[0].clientY - startY.current;
+      const deltaX = e.touches[0].clientX - startX.current;
+      // Too small yet to call a direction — wait for more movement rather
+      // than committing to "pull" on the first pixel of what might turn out
+      // to be a horizontal swipe.
+      if (Math.abs(deltaX) < DEAD_ZONE && Math.abs(delta) < DEAD_ZONE) return;
+      // Decided once: a swipe that's mostly sideways (the hero carousel, an
+      // open gallery) hands off to whatever's underneath for the rest of
+      // this touch, rather than re-deciding every move and flip-flopping.
+      if (delta < Math.abs(deltaX) * 1.5) { startY.current = null; setPull(0); return; }
       if (delta <= 0) { setPull(0); return; }
       // Resistance past the threshold, the same rubber-band feel native
       // pull-to-refresh has, so it doesn't just track the finger 1:1.
