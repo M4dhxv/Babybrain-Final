@@ -19,11 +19,11 @@ function WifiOffIcon({ className = "h-10 w-10" }: { className?: string }) {
  * Full takeover shown in place of the app whenever the browser reports no
  * network (see App.tsx — mounted ahead of everything else, including the
  * install banner and pull-to-refresh, neither of which mean anything
- * offline). There's no service worker or offline cache in this app (see
- * styles/index.css's overscroll comment and index.html's boot watchdog for
- * the other places that gap already mattered), so this can't offer cached
- * content — it's honest about that instead of showing a broken half-loaded
- * page.
+ * offline). The service worker (public/sw.js) caches the app shell — this
+ * component's own bundle included — so it still renders from disk when
+ * truly offline; it just can't show anything that needs a live fetch (no
+ * app logo here, since logo-icon.png isn't part of the precached shell —
+ * only icon-192.png is, see sw.js's SHELL_URLS).
  *
  * `navigator.onLine` flipping back to true isn't trusted on its own (a
  * captive portal reports "online" with no real route out) — "Try again"
@@ -58,13 +58,6 @@ export function OfflinePage() {
       aria-live="polite"
       className="fixed inset-0 z-[2147483647] flex flex-col items-center justify-center gap-5 bg-baby-paper px-8 text-center"
     >
-      <img
-        src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`}
-        alt=""
-        width={64}
-        height={64}
-        className="h-16 w-16 opacity-90"
-      />
       <span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta">
         <WifiOffIcon />
       </span>

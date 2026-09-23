@@ -1106,8 +1106,64 @@ export type Database = {
           p_sort?: SortOption;
           p_limit?: number;
           p_offset?: number;
+          p_categories?: string[] | null;
+          p_age_min_months?: number | null;
+          p_age_max_months?: number | null;
+          p_regions?: string[] | null;
+          p_max_price?: number | null;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_time_min?: number | null;
+          p_time_max?: number | null;
         };
         Returns: ActivitySearchResult[];
+      };
+      // The shared filter/join core search_activities wraps — called directly
+      // for the Explore map, which needs every match, not one page. See
+      // migration 00166.
+      matching_activities: {
+        Args: {
+          p_query?: string | null;
+          p_category_slug?: string | null;
+          p_categories?: string[] | null;
+          p_age_months?: number | null;
+          p_age_min_months?: number | null;
+          p_age_max_months?: number | null;
+          p_date?: string | null;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_time_min?: number | null;
+          p_time_max?: number | null;
+          p_regions?: string[] | null;
+          p_max_price?: number | null;
+          p_lat?: number | null;
+          p_lng?: number | null;
+          p_radius_km?: number | null;
+        };
+        Returns: ActivitySearchResult[];
+      };
+      // The per-option counts Explore's mobile filter sheets show. See
+      // migration 00166.
+      search_activity_facets: {
+        Args: {
+          p_query?: string | null;
+          p_category_slug?: string | null;
+          p_categories?: string[] | null;
+          p_age_months?: number | null;
+          p_age_min_months?: number | null;
+          p_age_max_months?: number | null;
+          p_date?: string | null;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_time_min?: number | null;
+          p_time_max?: number | null;
+          p_regions?: string[] | null;
+          p_max_price?: number | null;
+          p_lat?: number | null;
+          p_lng?: number | null;
+          p_radius_km?: number | null;
+        };
+        Returns: { facet: string; key: string; cnt: number }[];
       };
     };
     Enums: { [_ in never]: never };
@@ -1179,6 +1235,16 @@ export interface ActivitySearchResult {
   provider_logo_url: string | null;
   provider_cover_image_url: string | null;
   provider_gallery_urls: string[] | null;
+  category_2_slug?: string | null;
+  category_2_name?: string | null;
+  is_course?: boolean | null;
+  run_starts_at?: string | null;
+  run_ends_at?: string | null;
+  /** Added in migration 00166 — computed server-side, see matching_activities. */
+  areas: SgRegion[] | null;
+  venues: { name: string | null; lat: number; lng: number; region: SgRegion | null }[] | null;
+  /** Only present on search_activities rows (not matching_activities/facets). */
+  total_count?: number | null;
 }
 
 /** Singapore areas used by the Explore "Area" filter and shown on cards. */

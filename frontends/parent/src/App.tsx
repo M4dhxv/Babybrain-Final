@@ -13,6 +13,7 @@ import {
   PageShell,
   PlusFeatureDialog,
   SectionTitle,
+  wixThumbUrl,
 } from "./components/ui";
 import {
   memo,
@@ -26,7 +27,7 @@ import {
 import { lazyRoute } from "./lib/lazyRoute";
 import { SelectField, Opt } from "./components/SelectField";
 import { categories } from "./data/content";
-import { useActivities, whenAt } from "./lib/useActivities";
+import { useActivities, useActivityPins, useFacetCounts } from "./lib/useActivities";
 import { InstallBanner } from "./components/InstallBanner";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { OfflinePage } from "./pages/OfflinePage";
@@ -442,13 +443,6 @@ const REGION_CENTROIDS: Record<string, { lat: number; lng: number }> = {
   west: { lat: 1.335, lng: 103.720 },
   sentosa: { lat: 1.2494, lng: 103.8303 },
 };
-/** Hour of day (0–23) of an ISO timestamp, in Singapore time. */
-function sgHour(iso?: string | null): number | null {
-  if (!iso) return null;
-  const h = new Date(iso).toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour: "2-digit", hour12: false });
-  const n = Number(h);
-  return Number.isFinite(n) ? n % 24 : null;
-}
 const PRICE_MAX = 200; // slider ceiling; at the ceiling the price filter is "Any".
 const timeLabel = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? "am" : "pm"}`;
 
@@ -856,19 +850,9 @@ function ExplorePage() {
   // the next-closest. So with an area pick we rank by area before distance.
   const [herePickedArea, setHerePickedArea] = useState<string | null>(null);
   const query = getParam("q");
-  // Render the list in pages of 50 rather than dumping ~300 rows (and their
-  // images) into the DOM at once. The map and the "N activities found" count
-  // still reflect the whole filtered set.
+  // First page size for cards — the map and facet counts aren't paginated
+  // (see useActivityPins/useFacetCounts), only the card list is.
   const PAGE = 50;
-  const [visibleCount, setVisibleCount] = useState(PAGE);
-
-  // Categories, ages and areas are all multi-select now, so we fetch the whole
-  // published set once (it's a few hundred rows) and filter in the browser.
-  const { activities, loading } = useActivities({
-    limit: 500,
-    sort: sort === "distance" ? "distance" : "popular",
-    query: query || null,
-  });
 
   const [minH, maxH] = timeRange;
   const priceActive = maxPrice < PRICE_MAX;
@@ -879,110 +863,42 @@ function ExplorePage() {
 
   // The price/time sliders fire onChange continuously while dragging — the
   // label above each ("Up to $X" / a time range) tracks that live, but what
-  // actually drives the filtered list is debounced so a drag doesn't
-  // recompute + re-render every card on every pixel of movement, only once
-  // motion settles.
+  // actually drives the fetched list is debounced so a drag doesn't fire a
+  // request on every pixel of movement, only once motion settles.
   const debouncedMaxPrice = useDebouncedValue(maxPrice, 120);
   const debouncedTimeRange = useDebouncedValue(timeRange, 120);
   const [debouncedMinH, debouncedMaxH] = debouncedTimeRange;
   const debouncedPriceActive = debouncedMaxPrice < PRICE_MAX;
   const debouncedTimeActive = debouncedMinH > 0 || debouncedMaxH < 23;
 
-  // Recomputed only when something a filter actually reads changes — this
-  // used to re-run (and re-render every visible card below it) on every
-  // render, including every tick of the price/time sliders while dragging.
-  /* One predicate for both the result list and the per-option counts on the
-     mobile sheets. `skip` leaves one facet out, so an option's count answers
-     "how many would I get if I picked this" given every OTHER filter. */
-  const matchesFilters = (a: (typeof activities)[number], skip?: "type" | "age" | "area") => {
-    const selectedBands = AGE_BANDS.filter((b) => ages.includes(b.key));
-    if (skip !== "type" && categories_.length && !catSlugsOf(a, cats).some((s) => categories_.includes(s))) return false;
-    // A class matches an age band when its own range overlaps that band.
-    if (skip !== "age" && selectedBands.length &&
-        !selectedBands.some((b) => a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min)) return false;
-    if (skip !== "area" && regions.length) {
-      /* `areas` is where this class actually runs (see useActivities). It used
-         to be "the listing's region OR any venue the provider owns anywhere",
-         which put a Katong class in front of a parent filtering on Sentosa
-         purely because the provider also had a Sentosa branch — QA 17/08. */
-      if (!a.areas.some((x) => regions.includes(x))) return false;
-    }
-    if (debouncedPriceActive && a.price != null && a.price > debouncedMaxPrice) return false;
-    // A camp Wix sends as one continuous multi-day occurrence: it belongs to a
-    // day window whenever it overlaps it (and it has no time of day), rather
-    // than only when its first midnight falls inside — which dropped a camp
-    // that was already running from every date-filtered list.
-    const multiDayRun = !!(a.isCourse && a.runStartsAt && a.runEndsAt && isMultiDay(a.runStartsAt, a.runEndsAt));
-    const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
-    const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
-    if ((dateFrom || dateTo) && multiDayRun) {
-      if (!(Date.parse(a.runEndsAt!) > from && Date.parse(a.runStartsAt!) < to)) return false;
-    } else if ((dateFrom || dateTo || debouncedTimeActive) && !multiDayRun) {
-      // Match on ANY upcoming session, and the same session must satisfy the date and the
-      // time of day together. Judging only the next session hid an activity whose
-      // afternoon class was not its soonest one.
-      if (!matchingStart(a)) return false;
-    }
-    return true;
+  // AgeTrack keeps a multi-band pick collapsed to one contiguous span, so the
+  // selected bands reduce to a single min/max range for the server filter.
+  const selectedAgeBands = AGE_BANDS.filter((b) => ages.includes(b.key));
+  const ageMinMonths = selectedAgeBands.length ? Math.min(...selectedAgeBands.map((b) => b.min)) : null;
+  const ageMaxMonths = selectedAgeBands.length ? Math.max(...selectedAgeBands.map((b) => b.max)) : null;
+
+  // Filtering, pagination and facet counts all happen server-side now (see
+  // search_activities / matching_activities / search_activity_facets,
+  // migration 00166) — this hook only ever holds the pages actually loaded,
+  // not the whole catalog.
+  const filterParams = {
+    query: query || null,
+    categories: categories_,
+    ageMinMonths,
+    ageMaxMonths,
+    regions,
+    maxPrice: debouncedPriceActive ? debouncedMaxPrice : null,
+    dateFrom: dateFrom || null,
+    dateTo: dateTo || null,
+    timeMin: debouncedTimeActive ? debouncedMinH : null,
+    timeMax: debouncedTimeActive ? debouncedMaxH : null,
+    sort: sort === "distance" ? "distance" as const : "popular" as const,
+    limit: PAGE,
   };
-
-  /** The soonest upcoming session that satisfies the date and time-of-day filters together. */
-  function matchingStart(a: (typeof activities)[number]): string | null {
-    const from = dateFrom ? new Date(`${dateFrom}T00:00:00+08:00`).getTime() : -Infinity;
-    const to = dateTo ? new Date(`${dateTo}T00:00:00+08:00`).getTime() + 86_400_000 : Infinity;
-    const starts = a.sessionStarts?.length ? a.sessionStarts : a.nextSessionAt ? [a.nextSessionAt] : [];
-    return (
-      starts.find((iso) => {
-        const t = new Date(iso).getTime();
-        if ((dateFrom || dateTo) && (t < from || t >= to)) return false;
-        if (debouncedTimeActive) {
-          const h = sgHour(iso);
-          if (h == null || h < debouncedMinH || h > debouncedMaxH) return false;
-        }
-        return true;
-      }) ?? null
-    );
-  }
-
-  const filtered = useMemo(
-    () =>
-      activities
-        .filter((a) => matchesFilters(a))
-        // One card per activity however many sessions match; with a date or time filter on,
-        // it shows the soonest MATCHING session rather than the next one overall.
-        .map((a) => {
-          if (!(dateFrom || dateTo || debouncedTimeActive)) return a;
-          const multiDay = !!(a.isCourse && a.runStartsAt && a.runEndsAt && isMultiDay(a.runStartsAt, a.runEndsAt));
-          const hit = multiDay ? null : matchingStart(a);
-          return hit && hit !== a.nextSessionAt ? { ...a, ...whenAt(hit) } : a;
-        }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, dateTo, debouncedTimeActive, debouncedMinH, debouncedMaxH]
-  );
-
-  // Only worked out while a mobile sheet is open — the desktop layout has no
-  // counts, and this walks every activity once per facet.
-  const facetCounts = useMemo(() => {
-    if (!mobileSheet) return null;
-    const type: Record<string, number> = {};
-    const age: Record<string, number> = {};
-    const area: Record<string, number> = {};
-    for (const a of activities) {
-      if (matchesFilters(a, "type")) {
-        for (const s of catSlugsOf(a, cats)) type[s] = (type[s] ?? 0) + 1;
-      }
-      if (matchesFilters(a, "age")) {
-        for (const b of AGE_BANDS) {
-          if (a.ageMinMonths <= b.max && a.ageMaxMonths >= b.min) age[b.key] = (age[b.key] ?? 0) + 1;
-        }
-      }
-      if (matchesFilters(a, "area")) {
-        for (const r of a.areas) area[r] = (area[r] ?? 0) + 1;
-      }
-    }
-    return { type, age, area };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileSheet, activities, categories_, cats, ages, regions, debouncedPriceActive, debouncedMaxPrice, dateFrom, dateTo, debouncedTimeActive, debouncedMinH, debouncedMaxH]);
+  const { activities, total, loading, loadingMore, hasMore, loadMore } = useActivities(filterParams);
+  // The map needs every matching pin, not just the loaded cards.
+  const { activities: pinActivities, loading: pinsLoading } = useActivityPins(filterParams);
+  const facetCounts = useFacetCounts(filterParams, !!mobileSheet);
 
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
@@ -993,10 +909,12 @@ function ExplorePage() {
   // first — the whole chosen area, then the next-closest area, and so on —
   // then by point distance within an area. Sorting purely by distance to the
   // area's centre otherwise slots border listings of the neighbouring area
-  // ahead of far-corner ones of your own (QA).
+  // ahead of far-corner ones of your own (QA). This is display-order polish
+  // on top of the server's own ordering, so it stays client-side — it only
+  // needs to reorder what's already loaded, not the whole matching set.
   const shown = useMemo(() => {
     const areaOrder = sort === "distance" && herePickedArea ? regionsByProximity(herePickedArea) : null;
-    return [...filtered].sort((x, y) => {
+    return [...activities].sort((x, y) => {
       if (sort === "soonest") {
         const ax = x.nextSessionAt ? Date.parse(x.nextSessionAt) : Infinity;
         const ay = y.nextSessionAt ? Date.parse(y.nextSessionAt) : Infinity;
@@ -1016,7 +934,7 @@ function ExplorePage() {
       return 0;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sort, herePickedArea, here]);
+  }, [activities, sort, herePickedArea, here]);
 
   function resetFilters() {
     setCategories([]); setAges([]); setRegions([]);
@@ -1026,11 +944,6 @@ function ExplorePage() {
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
-
-  // Any change to the filters, sort or search starts the list back at page one.
-  useEffect(() => {
-    setVisibleCount(PAGE);
-  }, [categories_, ages, regions, dateFrom, dateTo, timeRange, maxPrice, sort, query]);
 
   // Sorting by distance needs a location; ask only when it's chosen. If the
   // browser won't give one (denied, or no geolocation at all), fall back to the
@@ -1070,7 +983,8 @@ function ExplorePage() {
   }, [sort, here]);
 
   const selectClass = "h-10 rounded-[10px] border border-[#EBE3E5] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
-  const pinned = shown.filter((a) => a.venues.length > 0 || a.lat != null).length;
+  // The map's own pin set — every match, not just the loaded cards.
+  const pinned = pinActivities.filter((a) => a.venues.length > 0 || a.lat != null).length;
 
   return (
     <PageShell active="/explore">
@@ -1287,7 +1201,7 @@ function ExplorePage() {
                 onClick={() => setMobileSheet(null)}
                 className="mt-4 h-11 w-full rounded-[10px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-sm font-black text-white shadow-pink"
               >
-                Show {shown.length} results
+                Show {total} results
               </button>
             </div>
           </div>
@@ -1384,22 +1298,22 @@ function ExplorePage() {
           <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
-              <span className="text-xs font-bold text-[#68718f]">{pinned} of {shown.length} pinned</span>
+              <span className="text-xs font-bold text-[#68718f]">{pinned} of {pinActivities.length} pinned</span>
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              {loading ? (
+              {pinsLoading ? (
                 <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
               ) : (
                 <Suspense
                   fallback={<div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />}
                 >
-                  <ExploreMap activities={shown} regions={regions} />
+                  <ExploreMap activities={pinActivities} regions={regions} />
                 </Suspense>
               )}
             </div>
           </section>
           <section>
-            {!loading && shown.length === 0 ? (
+            {!loading && total === 0 ? (
               <div className="rounded-[12px] bg-[#FFF5F8] p-5 text-center font-bold text-black">
                 <p>No activities match these filters — try widening your search.</p>
                 <p className="mt-3">
@@ -1415,25 +1329,26 @@ function ExplorePage() {
                 <div className="mb-3 flex items-center justify-between">
                   {loading
                     ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
-                    : <p className="text-sm font-black">{`${shown.length} ${shown.length === 1 ? "activity" : "activities"} found`}</p>}
+                    : <p className="text-sm font-black">{`${total} ${total === 1 ? "activity" : "activities"} found`}</p>}
                 </div>
                 {loading ? (
                   <ActivityRowListSkeleton count={6} />
                 ) : (
                   <>
                     <div className="grid gap-2.5 xl:grid-cols-2">
-                      {shown.slice(0, visibleCount).map((activity) => (
+                      {shown.map((activity) => (
                         <ActivityRow key={activity.id} activity={activity} />
                       ))}
                     </div>
-                    {shown.length > visibleCount && (
+                    {hasMore && (
                       <div className="mt-5 flex justify-center">
                         <button
                           type="button"
-                          onClick={() => setVisibleCount((n) => n + PAGE)}
-                          className="rounded-[10px] border border-[#EBE3E5] bg-white px-6 py-2.5 text-sm font-black text-[#4a5680] shadow-card hover:border-baby-pink"
+                          onClick={loadMore}
+                          disabled={loadingMore}
+                          className="rounded-[10px] border border-[#EBE3E5] bg-white px-6 py-2.5 text-sm font-black text-[#4a5680] shadow-card hover:border-baby-pink disabled:opacity-60"
                         >
-                          Show more ({shown.length - visibleCount} left)
+                          {loadingMore ? "Loading…" : `Show more (${total - activities.length} left)`}
                         </button>
                       </div>
                     )}
@@ -1447,14 +1362,6 @@ function ExplorePage() {
       <Footer clearDock />
     </PageShell>
   );
-}
-
-/** Category slug for an activity — the RPC gives us the display name, so map
- *  it back through the category list the filter chips were built from. */
-function catSlugsOf(a: { category: string; category2?: string }, cats: { slug: string; name: string }[]) {
-  return [a.category, a.category2]
-    .map((n) => cats.find((c) => c.name === n)?.slug)
-    .filter((s): s is string => !!s);
 }
 
 /** The areas ordered by how near their centre is to `from`'s — `from` itself
@@ -1672,10 +1579,16 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
     return <img src={url} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
   }
   const whole = forceWhole || isGraphic || (ratio != null && (ratio < 1.4 || ratio > 3.6));
+  // The display box is 860x305 (see the grid column width this sits in); a
+  // Wix original is routinely 1500px+, so this was downloading many times
+  // the bytes it shows. `/v1/fit/` never crops, so measure()/looksLikeGraphic
+  // still see the same aspect ratio. The blurred backdrop is scaled up and
+  // blurred into mush regardless, so it gets a far smaller rendition.
+  const heroSrc = wixThumbUrl(url, 1000, 360);
   return (
     <div className="relative h-[305px] w-full shrink-0 overflow-hidden bg-[#F3EDF0]">
       {whole && (
-        <img src={url} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl" />
+        <img src={wixThumbUrl(url, 64, 64)} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl" />
       )}
       <img
         ref={(el) => { if (el?.complete) measure(el); }}
@@ -1687,7 +1600,7 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         // the image still displays regardless; only pixel access is
         // affected, which that function already falls back around.
         crossOrigin="anonymous"
-        src={url}
+        src={heroSrc}
         alt={alt}
         width={860}
         height={305}
@@ -1739,12 +1652,13 @@ const HeroCarousel = memo(function HeroCarousel({
     }, 3000);
     return () => clearInterval(t);
   }, [count, paused]);
-  // Warm the decode cache for every slide so none paints late.
+  // Warm the decode cache for every slide so none paints late — at the same
+  // resized rendition HeroSlide actually renders, not the full original.
   useEffect(() => {
     if (count <= 1) return;
     images.forEach((url) => {
       const img = new Image();
-      img.src = url;
+      img.src = wixThumbUrl(url, 1000, 360);
       img.decode?.().catch(() => {});
     });
   }, [imagesKey]); // eslint-disable-line react-hooks/exhaustive-deps

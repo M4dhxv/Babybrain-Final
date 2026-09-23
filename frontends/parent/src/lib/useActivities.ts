@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { cacheGet, cacheSet } from "./queryCache";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
@@ -28,10 +28,6 @@ export type LiveActivity = Activity & {
   providerName?: string;
   price?: number | null;
   nextSessionAt?: string | null;
-  /** Start time of every upcoming session, so the date and time-of-day filters can match an
-   *  activity on ANY of its sessions, not just the next one. Undefined until the second load
-   *  phase lands; the filters then fall back to `nextSessionAt`. */
-  sessionStarts?: string[];
   /** A Wix COURSE is enrolled as one booking for the whole run, so it can still
    *  be joined once it has begun. `runStartsAt`/`runEndsAt` are the occurrence a
    *  parent can still join — in progress or upcoming — which `nextSessionAt`
@@ -48,7 +44,8 @@ export type LiveActivity = Activity & {
   /** Every area this activity actually runs in — the areas of the venues it
    *  names, or its own single region when it names none. This, not `region`
    *  plus the provider's whole venue estate, is what the Area filter matches
-   *  on (QA 17/08). */
+   *  on (QA 17/08). Computed server-side now (see matching_activities in
+   *  migration 00166), not from a follow-up venue query. */
   areas: SgRegion[];
 };
 
@@ -70,15 +67,33 @@ const sgTime = (iso: string | null) =>
       })
     : "";
 
+/** Explore's filters, all applied server-side (see search_activities /
+ *  matching_activities / search_activity_facets in migration 00166). `ages`
+ *  is a single min/max range rather than a set of bands because the
+ *  AgeTrack UI already collapses a multi-band pick into one covering span. */
 export interface ActivityQuery {
   query?: string | null;
+  /** Legacy single-category filter, still supported by the RPC — Explore
+   *  itself always uses `categories` (multi-select). */
   category?: string | null;
+  categories?: string[];
   ageMonths?: number | null;
+  ageMinMonths?: number | null;
+  ageMaxMonths?: number | null;
+  regions?: string[];
+  maxPrice?: number | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  timeMin?: number | null;
+  timeMax?: number | null;
   sort?: SortOption;
   limit?: number;
 }
 
-/** A `search_activities` row. */
+/** A venue as `matching_activities`/`search_activities` return it (jsonb). */
+type VenueRow = { name: string | null; lat: number; lng: number; region: SgRegion | null };
+
+/** A `matching_activities` / `search_activities` row. */
 export type SearchRow = {
   id: string;
   slug: string;
@@ -108,11 +123,16 @@ export type SearchRow = {
   provider_logo_url: string | null;
   provider_cover_image_url: string | null;
   provider_gallery_urls: string[] | null;
-  // Added in 00144 — optional so the app still works if it deploys first.
   is_course?: boolean | null;
   run_starts_at?: string | null;
   run_ends_at?: string | null;
+  // Added in 00166 — computed server-side now, see matching_activities.
+  areas: SgRegion[] | null;
+  venues: VenueRow[] | null;
 };
+
+/** A `search_activities` row — `matching_activities` plus the page's total. */
+type SearchActivitiesRow = SearchRow & { total_count: number | null };
 
 /** The card's date and time for one specific session start (used when a filter picked
  *  a session other than the next one). */
@@ -125,7 +145,9 @@ export function whenAt(iso: string): { date: string; time: string } {
  *  "17 – 20 Sept" — rather than the start time of its first midnight. A course
  *  that has already begun has no *upcoming* session, which used to leave the
  *  card saying "Schedule TBC" while places were open; it falls back to the
- *  occurrence still running. Everything else is the next session, as before. */
+ *  occurrence still running. Everything else is the next session — already
+ *  the specific one matching any date/time filter, per `next_session_at`
+ *  (see matching_activities' `matchsess`). */
 export function cardWhen(r: SearchRow): { date: string; time: string } {
   if (r.is_course && r.run_starts_at && r.run_ends_at) {
     if (isMultiDay(r.run_starts_at, r.run_ends_at)) {
@@ -136,15 +158,13 @@ export function cardWhen(r: SearchRow): { date: string; time: string } {
   return { date: sgDate(r.next_session_at), time: sgTime(r.next_session_at) };
 }
 
-/** Everything on the card comes straight off the search row; only `venues` and
- *  `areas` need the follow-up venue lookups, so they're passed in — empty on
- *  the first paint, precise once the enrichment lands. */
-function toLiveActivity(
-  r: SearchRow,
-  venues: ActivityVenue[],
-  areas: SgRegion[],
-  sessionStarts?: string[]
-): LiveActivity {
+function toLiveActivity(r: SearchRow): LiveActivity {
+  const venues: ActivityVenue[] = (r.venues ?? []).map((v) => ({
+    name: v.name ?? "",
+    lat: v.lat,
+    lng: v.lng,
+    region: v.region,
+  }));
   return {
     id: r.id,
     slug: r.slug,
@@ -172,7 +192,6 @@ function toLiveActivity(
     providerName: r.provider_name ?? undefined,
     price: r.price ?? null,
     nextSessionAt: r.next_session_at ?? null,
-    sessionStarts,
     isCourse: r.is_course ?? false,
     runStartsAt: r.is_course ? r.run_starts_at ?? null : null,
     runEndsAt: r.is_course ? r.run_ends_at ?? null : null,
@@ -182,45 +201,28 @@ function toLiveActivity(
     durationMins: r.duration_mins,
     instantBook: r.instant_book ?? false,
     venues,
-    areas,
+    areas: r.areas ?? [],
   };
 }
 
-/** The listing's own single region — what the Area filter falls back to before
- *  (or when) the per-venue lookups resolve. */
-function fallbackRow(r: SearchRow): LiveActivity {
-  const venues: ActivityVenue[] =
-    r.latitude != null && r.longitude != null
-      ? [{ name: r.provider_name ?? r.title, lat: r.latitude, lng: r.longitude, region: r.region }]
-      : [];
-  const areas = r.region ? [r.region] : [];
-  return toLiveActivity(r, venues, areas);
-}
-
-const SESSION_PAGE = 1000; // the API returns at most this many rows per request
-const SESSION_MAX_PAGES = 15;
-
-/** Every upcoming, non-cancelled session for these activities. A single request
- *  is capped server-side (max_rows), which would silently drop the later slots of
- *  busy schedules, so this pages through until a short page comes back. */
-async function fetchUpcomingSessions(activityIds: string[]) {
-  const nowIso = new Date().toISOString();
-  const rows: Array<{ activity_id: string; location_id: string | null; starts_at: string }> = [];
-  for (let page = 0; page < SESSION_MAX_PAGES; page++) {
-    const { data } = await supabase
-      .from("activity_sessions")
-      .select("activity_id, location_id, starts_at")
-      .in("activity_id", activityIds)
-      .neq("status", "cancelled")
-      .gte("starts_at", nowIso)
-      .order("starts_at")
-      .order("id")
-      .range(page * SESSION_PAGE, (page + 1) * SESSION_PAGE - 1);
-    const got = (data ?? []) as unknown as typeof rows;
-    rows.push(...got);
-    if (got.length < SESSION_PAGE) break;
-  }
-  return { data: rows };
+/** The filter params every RPC in this file shares — `search_activities`,
+ *  `matching_activities` (map pins) and `search_activity_facets` all take
+ *  the same filter shape, just with pagination/limit on top for the first. */
+function filterArgs(params: ActivityQuery) {
+  return {
+    p_query: params.query ?? null,
+    p_category_slug: params.category ?? null,
+    p_categories: params.categories?.length ? params.categories : null,
+    p_age_months: params.ageMonths ?? null,
+    p_age_min_months: params.ageMinMonths ?? null,
+    p_age_max_months: params.ageMaxMonths ?? null,
+    p_regions: params.regions?.length ? params.regions : null,
+    p_max_price: params.maxPrice ?? null,
+    p_date_from: params.dateFrom || null,
+    p_date_to: params.dateTo || null,
+    p_time_min: params.timeMin ?? null,
+    p_time_max: params.timeMax ?? null,
+  };
 }
 
 /** How long a cached result is served without refetching. Explore's set
@@ -228,18 +230,95 @@ async function fetchUpcomingSessions(activityIds: string[]) {
  *  but refreshes them in the background. */
 const FRESH_MS = 60_000;
 
+const DEFAULT_PAGE_SIZE = 24;
+
 /**
- * Fetches published activities via the search_activities RPC and maps each row
- * into the content `Activity` shape used across the UI.
- *
- * Two-phase: the search RPC alone has everything the cards and every filter
- * except Area need, so its rows render immediately; the venue / session
- * lookups that draw the map pins and sharpen the Area filter merge in a beat
- * later without holding up the list. Results are cached (see queryCache) so
- * returning to Explore is instant.
+ * Fetches one page of published activities via the `search_activities` RPC —
+ * filtering, sorting and pagination all happen in Postgres now (migration
+ * 00166), so this only ever holds what's actually on screen: the loaded
+ * pages, not the whole catalog. `total` is the full matching count (for "N
+ * activities found" and whether there's more to load); `loadMore` fetches
+ * the next page and appends it. Results are cached (see queryCache) so
+ * returning to Explore is instant — only the first page is cached, so
+ * "Show more" always goes live.
  */
 export function useActivities(params: ActivityQuery = {}) {
   const key = "activities:" + JSON.stringify(params);
+  const seed = cacheGet<{ rows: LiveActivity[]; total: number }>(key);
+  const [activities, setActivities] = useState<LiveActivity[]>(seed?.data.rows ?? []);
+  const [total, setTotal] = useState(seed?.data.total ?? 0);
+  const [loading, setLoading] = useState(!seed);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cached = cacheGet<{ rows: LiveActivity[]; total: number }>(key);
+    if (cached) {
+      setActivities(cached.data.rows);
+      setTotal(cached.data.total);
+      setLoading(false);
+      if (cached.age < FRESH_MS) return; // fresh enough — no network at all
+      // else: fall through and revalidate quietly, keeping the cached rows on
+      // screen (no skeleton, no partial-data flash).
+    } else {
+      setActivities([]);
+      setTotal(0);
+      setLoading(true);
+    }
+
+    (async () => {
+      const { data } = await supabase.rpc("search_activities", {
+        ...filterArgs(params),
+        p_sort: params.sort ?? "popular",
+        p_limit: params.limit ?? DEFAULT_PAGE_SIZE,
+        p_offset: 0,
+      });
+      if (cancelled) return;
+      const rows = (data ?? []) as SearchActivitiesRow[];
+      const mapped = rows.map(toLiveActivity);
+      const t = rows[0]?.total_count ?? 0;
+      cacheSet(key, { rows: mapped, total: t });
+      setActivities(mapped);
+      setTotal(t);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const { data } = await supabase.rpc("search_activities", {
+      ...filterArgs(params),
+      p_sort: params.sort ?? "popular",
+      p_limit: params.limit ?? DEFAULT_PAGE_SIZE,
+      p_offset: activities.length,
+    });
+    const rows = (data ?? []) as SearchActivitiesRow[];
+    const more = rows.map(toLiveActivity);
+    setActivities((prev) => {
+      const next = [...prev, ...more];
+      cacheSet(key, { rows: next, total: rows[0]?.total_count ?? total });
+      return next;
+    });
+    setLoadingMore(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, activities.length]);
+
+  return { activities, total, loading, loadingMore, hasMore: activities.length < total, loadMore };
+}
+
+/**
+ * Every activity matching the current filters (unpaginated) — feeds the
+ * Explore map, which needs every pin regardless of how many cards have
+ * loaded. Calls `matching_activities` directly (the shared core
+ * `search_activities` also wraps), so it shares the exact filter semantics
+ * without a second copy of them.
+ */
+export function useActivityPins(params: ActivityQuery = {}) {
+  const key = "pins:" + JSON.stringify(params);
   const seed = cacheGet<LiveActivity[]>(key);
   const [activities, setActivities] = useState<LiveActivity[]>(seed?.data ?? []);
   const [loading, setLoading] = useState(!seed);
@@ -250,142 +329,18 @@ export function useActivities(params: ActivityQuery = {}) {
     if (cached) {
       setActivities(cached.data);
       setLoading(false);
-      if (cached.age < FRESH_MS) return; // fresh enough — no network at all
-      // else: fall through and revalidate quietly, keeping the cached rows on
-      // screen (no skeleton, no partial-data flash).
+      if (cached.age < FRESH_MS) return;
     } else {
-      setActivities([]);
       setLoading(true);
     }
-    const revalidating = Boolean(cached);
-
     (async () => {
-      const { data } = await supabase.rpc("search_activities", {
-        p_query: params.query ?? null,
-        p_category_slug: params.category ?? null,
-        p_age_months: params.ageMonths ?? null,
-        p_sort: params.sort ?? "popular",
-        p_limit: params.limit ?? 24,
-      });
+      const { data } = await supabase.rpc("matching_activities", filterArgs(params));
+      if (cancelled) return;
       const rows = (data ?? []) as SearchRow[];
-
-      // Phase 1 — cards on screen now. Skipped when we're only revalidating a
-      // cached full result (don't downgrade it to fallback venues mid-refresh).
-      if (!cancelled && !revalidating) {
-        setActivities(rows.map(fallbackRow));
-        setLoading(false);
-      }
-
-      /* The venues each activity ACTUALLY runs at — its own venue, plus any
-         venue an upcoming session overrides to (migration 00074).
-
-         This used to pull every venue belonging to the activity's provider,
-         which is what QA 17/08 hit: "I just have Sentosa selected and it is
-         showing me Lucy Sparkles in East, Wildlings in Central, Muckypups
-         East." All three own a Sentosa branch alongside branches elsewhere, so
-         every class they run matched a Sentosa filter — and drew a pin there.
-
-         Scoping to the activity is stricter than the data currently supports
-         (most listings don't name a venue yet, and fall through to their own
-         region), and that is the right way round. It sharpens on its own as
-         vendors set per-session venues. */
-      const activityIds = rows.map((r) => r.id);
-      const providerIds = [
-        ...new Set(rows.map((r) => r.provider_id).filter((x): x is string => !!x)),
-      ];
-      const locationIdsByActivity = new Map<string, Set<string>>();
-      const startsByActivity = new Map<string, string[]>();
-      const addLocation = (activityId: string, locationId: string | null) => {
-        if (!locationId) return;
-        const set = locationIdsByActivity.get(activityId) ?? new Set<string>();
-        set.add(locationId);
-        locationIdsByActivity.set(activityId, set);
-      };
-      if (activityIds.length) {
-        const [ownVenues, sessionVenues] = await Promise.all([
-          supabase.from("activities").select("id, location_id").in("id", activityIds),
-          // Also feeds sessionStarts (every upcoming start time) for the time / date filters.
-          fetchUpcomingSessions(activityIds),
-        ]);
-        for (const a of (ownVenues.data ?? []) as unknown as Array<{ id: string; location_id: string | null }>) {
-          addLocation(a.id, a.location_id);
-        }
-        for (const sv of (sessionVenues.data ?? []) as unknown as Array<{ activity_id: string; location_id: string | null; starts_at: string }>) {
-          addLocation(sv.activity_id, sv.location_id);
-          const list = startsByActivity.get(sv.activity_id) ?? [];
-          list.push(sv.starts_at);
-          startsByActivity.set(sv.activity_id, list);
-        }
-      }
-
-      // One round trip for every venue referenced above, plus each provider's
-      // primary branch — the fallback for a listing that names no venue and
-      // carries no coordinates of its own.
-      const venuesById = new Map<string, ActivityVenue>();
-      const primaryVenueByProvider = new Map<string, ActivityVenue>();
-      const referencedLocationIds = [...new Set([...locationIdsByActivity.values()].flatMap((s) => [...s]))];
-      if (referencedLocationIds.length || providerIds.length) {
-        const { data: locs } = await supabase
-          .from("provider_locations")
-          .select("id, provider_id, name, latitude, longitude, region, is_primary")
-          .or(
-            [
-              referencedLocationIds.length ? `id.in.(${referencedLocationIds.join(",")})` : null,
-              providerIds.length ? `provider_id.in.(${providerIds.join(",")})` : null,
-            ]
-              .filter(Boolean)
-              .join(",")
-          );
-        for (const l of (locs ?? []) as unknown as Array<{
-          id: string;
-          provider_id: string;
-          name: string;
-          latitude: number | null;
-          longitude: number | null;
-          region: SgRegion | null;
-          is_primary: boolean | null;
-        }>) {
-          if (l.latitude == null || l.longitude == null) continue;
-          const venue = { name: l.name, lat: l.latitude, lng: l.longitude, region: l.region };
-          venuesById.set(l.id, venue);
-          if (l.is_primary) primaryVenueByProvider.set(l.provider_id, venue);
-        }
-      }
-
-      // Phase 2 — precise venues + areas.
-      const mapped: LiveActivity[] = rows.map((r) => {
-        /* This activity's own venues, then the listing's own coordinate, then
-           the provider's primary branch — so nothing is left off the map, but
-           a listing never borrows a branch it doesn't teach at. */
-        const own = [...(locationIdsByActivity.get(r.id) ?? [])]
-          .map((id) => venuesById.get(id))
-          .filter((v): v is ActivityVenue => !!v);
-        const fallback =
-          r.latitude != null && r.longitude != null
-            ? [{ name: r.provider_name ?? r.title, lat: r.latitude, lng: r.longitude, region: r.region }]
-            : r.provider_id && primaryVenueByProvider.has(r.provider_id)
-              ? [primaryVenueByProvider.get(r.provider_id)!]
-              : [];
-        const venues = own.length > 0 ? own : fallback;
-        /* When the activity names its own venues those are definitive — a class
-           that only runs in Katong must not also answer to its provider's
-           Central head-office region. With no venues named, the listing's own
-           region is the best we have. */
-        const areas = [
-          ...new Set(
-            (own.length > 0 ? own.map((v) => v.region) : [r.region as SgRegion | null]).filter(
-              (x): x is SgRegion => !!x
-            )
-          ),
-        ];
-        return toLiveActivity(r, venues, areas, startsByActivity.get(r.id));
-      });
-
+      const mapped = rows.map(toLiveActivity);
       cacheSet(key, mapped);
-      if (!cancelled) {
-        setActivities(mapped);
-        setLoading(false);
-      }
+      setActivities(mapped);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -394,4 +349,46 @@ export function useActivities(params: ActivityQuery = {}) {
   }, [key]);
 
   return { activities, loading };
+}
+
+export interface FacetCounts {
+  type: Record<string, number>;
+  age: Record<string, number>;
+  area: Record<string, number>;
+}
+
+/**
+ * Per-option counts for the mobile filter sheets — "how many would match if
+ * I also picked this" for each type/age/area option, each computed with
+ * that one facet's own filter left out (search_activity_facets). Only
+ * fetched while `enabled` (a sheet is actually open), same gating as before.
+ */
+export function useFacetCounts(params: ActivityQuery, enabled: boolean): FacetCounts | null {
+  const [counts, setCounts] = useState<FacetCounts | null>(null);
+  const key = enabled ? "facets:" + JSON.stringify(params) : null;
+
+  useEffect(() => {
+    if (!key) {
+      setCounts(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("search_activity_facets", filterArgs(params));
+      if (cancelled) return;
+      const rows = (data ?? []) as { facet: string; key: string; cnt: number }[];
+      const next: FacetCounts = { type: {}, age: {}, area: {} };
+      for (const row of rows) {
+        const bucket = row.facet === "type" ? next.type : row.facet === "age" ? next.age : next.area;
+        bucket[row.key] = Number(row.cnt);
+      }
+      setCounts(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return counts;
 }

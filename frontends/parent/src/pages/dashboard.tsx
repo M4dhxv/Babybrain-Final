@@ -1917,10 +1917,11 @@ export function ProfilePage() {
             className="fixed inset-0 z-40 bg-black/30 lg:hidden"
           />
         )}
-        {/* Edge toggle: just two short pink bars on the left edge that fold into
-            an arrow (‹) on the drawer's edge when it's open. No box, so the page
-            keeps its full width. A dot on it flags unread messages or
-            notifications. Hold > 1s to drag it up or down. Mobile only. */}
+        {/* Edge toggle: a pink arrow on the left edge — pointing right (›) to
+            open, folding into pointing left (‹) once the drawer is open. No
+            box, so the page keeps its full width. A dot on it flags unread
+            messages or notifications. Hold > 1s to drag it up or down.
+            Mobile only. */}
         <button
           type="button"
           aria-label={
@@ -1952,8 +1953,8 @@ export function ProfilePage() {
                 <path d="M15 5l-7 7 7 7" />
               </svg>
             ) : (
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" aria-hidden="true">
-                <path d="M4 8h16M4 16h11" />
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 5l7 7-7 7" />
               </svg>
             )}
             {!menuOpen && (unreadMessages > 0 || unreadNotifications > 0) && (
