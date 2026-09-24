@@ -89,30 +89,32 @@
 
 /* "This is the one" flash for a booking/package/token row a parent lands on
    from a notification link (dashboard.tsx's useRowHighlight/BookingList).
-   A single spring — small overshoot, settle past, ease back — synced with a
-   ring that blooms in and fades its blur out rather than snapping off.
+   The card rises and holds — not an instant snap back down — with a pink
+   shadow underneath standing in for the ring, then eases back to resting.
    #FA4D8D is baby.cta, the same pink these cards already turn to on hover,
    so the highlight reads as "more of this card's own colour" rather than an
-   unrelated accent. Keyframes live here because Tailwind can't emit a
-   multi-stage spring from an arbitrary `animate-[...]` value. */
-@keyframes bb-highlight-bounce {
-  0% { transform: scale(1); }
-  35% { transform: scale(1.035); }
-  60% { transform: scale(0.99); }
-  80% { transform: scale(1.008); }
-  100% { transform: scale(1); }
+   unrelated accent. 1.6s matches the JS highlight window (useRowHighlight /
+   BookingList's own timer) so the card is back at rest exactly when the
+   `?highlight=` state clears. Keyframes live here because Tailwind can't
+   emit a multi-stage animation from an arbitrary `animate-[...]` value. */
+@keyframes bb-highlight-elevate {
+  0% { transform: translateY(0); box-shadow: 0 1px 2px rgba(17, 26, 76, 0.06); border-color: transparent; }
+  20% { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  75% { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  100% { transform: translateY(0); box-shadow: 0 1px 2px rgba(17, 26, 76, 0.06); border-color: transparent; }
 }
-@keyframes bb-highlight-ring {
-  0% { box-shadow: 0 0 0 0 rgba(250, 77, 141, 0); border-color: transparent; }
-  15% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
-  70% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
-  100% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0); border-color: transparent; }
+/* Same colour cues, no rise — border/shadow only, for reduced motion. */
+@keyframes bb-highlight-elevate-reduced {
+  0% { box-shadow: 0 1px 2px rgba(17, 26, 76, 0.06); border-color: transparent; }
+  20% { box-shadow: 0 8px 16px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  75% { box-shadow: 0 8px 16px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  100% { box-shadow: 0 1px 2px rgba(17, 26, 76, 0.06); border-color: transparent; }
 }
 .bb-highlight {
-  animation: bb-highlight-bounce 0.6s cubic-bezier(.34,1.56,.64,1), bb-highlight-ring 1.6s ease-out;
+  animation: bb-highlight-elevate 1.6s cubic-bezier(.3,1.4,.5,1);
 }
 @media (prefers-reduced-motion: reduce) {
-  .bb-highlight { animation: bb-highlight-ring 1.6s ease-out; }
+  .bb-highlight { animation: bb-highlight-elevate-reduced 1.6s ease-out; }
 }
 
 /* Stream Chat's own theme, repainted in the CTA pink — the same colour as the

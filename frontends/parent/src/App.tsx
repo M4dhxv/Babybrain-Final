@@ -38,7 +38,7 @@ import { useActivityDetail, useFavorite, usePlan, useRecommendations, toCard, is
 import { supabase, AUTH_STORAGE_KEY } from "./lib/supabase";
 import { cacheFetch } from "./lib/queryCache";
 import { apiGet, apiPost } from "./lib/api";
-import { goTo, useLocation, routePath, getParam, scrollToWhenReady } from "./lib/nav";
+import { goTo, useLocation, routePath, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref } from "./lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay } from "./lib/schedule";
 import { SessionSchedule } from "./components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "./lib/activityMedia";
@@ -819,29 +819,48 @@ function ExplorePage() {
   // "Top rated" and "Most popular" read the same to parents, so popularity now
   // covers both; the other two sorts are the ones QA asked for.
   const [sort, setSort] = useState<"popular" | "distance" | "soonest">("popular");
-  // Seed from the query string so home-page tiles and header search land on a
-  // pre-filtered list.
+  // Seed every filter from the query string — home-page tiles, header search
+  // and category emails only ever set `cat`/`age` (still a single value
+  // there), but this is also how a parent's own filter picks survive leaving
+  // for an activity page and coming back: the sync effect below keeps the
+  // address bar in step with every filter as it changes, so a fresh mount
+  // (returning via "back to results" or the browser's own back button) reads
+  // the same filters straight back out instead of resetting to nothing.
   const [categories_, setCategories] = useState<string[]>(() => {
     const c = getParam("cat");
-    return c ? [c] : [];
+    return c ? c.split(",").filter(Boolean) : [];
   });
   const [ages, setAges] = useState<string[]>(() => {
     const a = getParam("age");
     if (!a) return [];
     // Home tiles pass a band key; older emails pass ?age=<months>.
-    if (AGE_BANDS.some((b) => b.key === a)) return [a];
-    const band = AGE_BANDS.find((b) => Number(a) >= b.min && Number(a) <= b.max);
-    return band ? [band.key] : [];
+    return [...new Set(
+      a.split(",").filter(Boolean).flatMap((v) => {
+        if (AGE_BANDS.some((b) => b.key === v)) return [v];
+        const band = AGE_BANDS.find((b) => Number(v) >= b.min && Number(v) <= b.max);
+        return band ? [band.key] : [];
+      })
+    )];
   });
-  const [regions, setRegions] = useState<string[]>([]);
+  const [regions, setRegions] = useState<string[]>(() => {
+    const r = getParam("region");
+    return r ? r.split(",").filter(Boolean) : [];
+  });
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => getParam("from") || "");
   // Upper bound for the "Today / This weekend / Next 7 days" quick picks.
   // Empty means open-ended, which is all the desktop "Date from" box ever sets.
-  const [dateTo, setDateTo] = useState("");
+  const [dateTo, setDateTo] = useState(() => getParam("to") || "");
   const [pickingDate, setPickingDate] = useState(false);
-  const [timeRange, setTimeRange] = useState<[number, number]>([0, 23]);
-  const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
+  const [timeRange, setTimeRange] = useState<[number, number]>(() => {
+    const min = getParam("timeMin");
+    const max = getParam("timeMax");
+    return [min ? Number(min) : 0, max ? Number(max) : 23];
+  });
+  const [maxPrice, setMaxPrice] = useState(() => {
+    const p = getParam("price");
+    return p ? Number(p) : PRICE_MAX;
+  });
   const [showMore, setShowMore] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | "type" | "age" | "area" | "sort">(null);
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
@@ -942,6 +961,31 @@ function ExplorePage() {
     setDateFrom(""); setDateTo(""); setPickingDate(false); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
   }
 
+  // Keeps the address bar (and, via rememberExploreUrl, the "back to
+  // results" link on the activity page) in step with every filter — plain
+  // history.replaceState rather than goTo, since this fires on every filter
+  // tweak (including mid-drag on the price/time sliders) and goTo's
+  // scroll-to-top would otherwise yank the page up on each one. Nothing else
+  // needs to react to this URL, so it deliberately skips goTo's pushState
+  // and location-change broadcast too.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (categories_.length) params.set("cat", categories_.join(","));
+    if (ages.length) params.set("age", ages.join(","));
+    if (regions.length) params.set("region", regions.join(","));
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo) params.set("to", dateTo);
+    if (timeActive) { params.set("timeMin", String(minH)); params.set("timeMax", String(maxH)); }
+    if (priceActive) params.set("price", String(maxPrice));
+    if (sort !== "popular") params.set("sort", sort);
+    const search = params.toString();
+    const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+    window.history.replaceState({}, "", url);
+    rememberExploreUrl(search ? `?${search}` : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, categories_, ages, regions, dateFrom, dateTo, minH, maxH, timeActive, maxPrice, priceActive, sort]);
+
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
@@ -994,8 +1038,13 @@ function ExplorePage() {
         <div className="mb-4 flex items-end justify-between">
           <div>
             <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="search" className="inline h-6 w-6 text-baby-green" /></h1>
-            <p className="mt-1 text-base font-semibold text-[#4a5680] sm:text-lg">
-              {query ? <>Results for “{query}”. <a href="/explore" className="font-black text-baby-pink">Clear search</a></> : "Browse activities across Singapore."}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-semibold text-[#4a5680] sm:text-lg">
+              <span>{query ? <>Results for “{query}”. <a href="/explore" className="font-black text-baby-pink">Clear search</a></> : "Browse activities across Singapore."}</span>
+              {anyFilter && (
+                <button type="button" onClick={resetFilters} className="text-sm font-black text-baby-pink hover:underline sm:text-base">
+                  Clear all filters
+                </button>
+              )}
             </p>
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
@@ -1917,7 +1966,7 @@ function ActivityDetailPage() {
       <PageShell active="/explore">
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Activity not found.</p>
-          <a href="/explore" className="font-bold text-baby-pink">← Back to results</a>
+          <a href={exploreReturnHref()} className="font-bold text-baby-pink">← Back to results</a>
         </main>
       </PageShell>
     );
@@ -2028,7 +2077,7 @@ function ActivityDetailPage() {
       <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
         <section className="order-1 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
-            <a href="/explore" className="font-bold text-baby-lilac">← Back to results</a>
+            <a href={exploreReturnHref()} className="font-bold text-baby-lilac">← Back to results</a>
             <div className="flex flex-1 flex-col justify-center">
               <h1 className="text-[29px] font-black">{activity.title}</h1>
               {activity.provider_name &&

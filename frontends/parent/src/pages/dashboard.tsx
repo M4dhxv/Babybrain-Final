@@ -600,9 +600,9 @@ function useRowHighlight(id: string): boolean {
   return flashing;
 }
 
-/** Bounce + colour-matched ring applied on top of a row's own border/tint
- *  while it's the highlight target (see the bb-highlight keyframes in
- *  styles/index.css — Tailwind alone can't express the spring). */
+/** Elevate-and-hold + colour-matched glow applied on top of a row's own
+ *  border/tint while it's the highlight target (see the bb-highlight
+ *  keyframes in styles/index.css — Tailwind alone can't express it). */
 const HIGHLIGHT_RING = "bb-highlight";
 
 /** One make-up token, shared by the flat and the split-by-child lists. */

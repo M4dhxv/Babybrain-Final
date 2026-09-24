@@ -110,6 +110,34 @@ export function isSpaRoute(pathOrUrl: string): boolean {
   return SPA_ROUTES.has(normalisePath(path));
 }
 
+const EXPLORE_RETURN_KEY = "bb:exploreReturn";
+
+/** Remembers the last Explore URL (filters and all) a parent had open, so a
+ *  "back to results" link from an activity page can return them to the same
+ *  filtered view instead of a bare, unfiltered /explore. sessionStorage
+ *  rather than the URL itself because the "back to results" link lives on a
+ *  different page (/activity) than the state it needs to recall — a fresh
+ *  tab starts clean, same as the filters themselves would. */
+export function rememberExploreUrl(search: string) {
+  try {
+    sessionStorage.setItem(EXPLORE_RETURN_KEY, search);
+  } catch {
+    // Private browsing / storage disabled — the link just falls back to a
+    // bare /explore, same as before this existed.
+  }
+}
+
+/** Where "back to results" should go: the last remembered Explore URL
+ *  (filters and all), or a bare /explore if none was recorded this session. */
+export function exploreReturnHref(): string {
+  try {
+    const search = sessionStorage.getItem(EXPLORE_RETURN_KEY);
+    return search ? `/explore${search}` : "/explore";
+  } catch {
+    return "/explore";
+  }
+}
+
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
