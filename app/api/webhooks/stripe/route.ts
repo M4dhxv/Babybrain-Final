@@ -329,12 +329,17 @@ export async function POST(request: Request) {
     }
 
     case 'checkout.session.expired': {
-      // Stripe abandons a session ~30 min after it's created. Release the
-      // local pending event-ticket order now so its one-per-ticket-type slot
-      // frees immediately, instead of the user having to trip the stale-row
-      // sweep in the checkout route on a later attempt. The Wix reservation
-      // releases itself. (Needs 'checkout.session.expired' enabled on the
-      // endpoint — see scripts/setup-stripe-webhooks.mjs.)
+      // Stripe abandons a session ~30 min after it's created. Release
+      // whatever this checkout was holding now, instead of leaving it
+      // 'pending' indefinitely — the seat it reserved on a session, or the
+      // one-per-ticket-type slot it held, stays squatted until something
+      // clears it. Reacting here means most abandoned attempts clear within
+      // ~30 min of being abandoned rather than waiting on the sweep-stale-
+      // pending-bookings cron backstop (00172) for anything this misses (a
+      // webhook delivery failure, an endpoint outage). The Wix reservation
+      // for a Wix-linked booking releases itself, nothing to do there.
+      // (Needs 'checkout.session.expired' enabled on the endpoint — see
+      // scripts/setup-stripe-webhooks.mjs.)
       const expired = event.data.object as Stripe.Checkout.Session;
       if (expired.metadata?.kind === 'wix_event_ticket' && expired.metadata?.order_id) {
         await admin
@@ -343,6 +348,26 @@ export async function POST(request: Request) {
           .eq('id', expired.metadata.order_id)
           .eq('status', 'pending')
           .eq('payment_status', 'none');
+      } else if (expired.metadata?.kind === 'booking' && expired.metadata?.seat_ids) {
+        const seatIds = expired.metadata.seat_ids.split(',').filter(Boolean);
+        if (seatIds.length) {
+          await admin
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .in('id', seatIds)
+            .eq('status', 'pending')
+            .eq('payment_status', 'none');
+        }
+      } else if (expired.metadata?.kind === 'wix_booking' && expired.metadata?.booking_ids) {
+        const bookingIds = JSON.parse(expired.metadata.booking_ids) as string[];
+        if (bookingIds.length) {
+          await admin
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .in('id', bookingIds)
+            .eq('status', 'pending')
+            .eq('payment_status', 'none');
+        }
       }
       break;
     }

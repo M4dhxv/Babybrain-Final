@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { DatePicker } from "./DatePicker";
 import { resolveAvatar } from "../lib/avatars";
@@ -41,6 +41,47 @@ export function wixThumbUrl(url: string, w: number, h: number): string {
   const safeExt = ext && ["jpg", "png", "webp", "gif"].includes(ext) ? ext : "jpg";
   // `fit`, not `fill`: cards show the whole image, so Wix must not crop it server-side.
   return `${url}/v1/fit/w_${w},h_${h}/file.${safeExt}`;
+}
+
+/** A card/row's thumbnail, guaranteed to end up showing *something* rather
+ *  than a permanently broken image icon. Wix's CDN is a third party — a
+ *  since-deleted source file, a throttled request, a transient edge hiccup —
+ *  none of that is under this app's control, and none of it used to have any
+ *  recovery: the `<img>` just failed silently with nothing watching for it,
+ *  which is exactly what "the image sometimes doesn't render" looks like
+ *  from the outside. `onError` catches that and swaps to the brand mark;
+ *  `isLogo` tells the caller to switch to the un-cropped/padded treatment a
+ *  logo needs, the same as when the activity had no photo at all. */
+/** Neutral photo-style placeholder — for the small `object-cover` booking
+ *  thumbnails (My Bookings, Past activities), where a stretched/cropped
+ *  logo would look wrong. Same asset already used when an activity has no
+ *  image_urls at all, so a broken photo degrades to the same look as a
+ *  never-had-one activity, not a new visual state. */
+export const ACTIVITY_PLACEHOLDER_URL = `${import.meta.env.BASE_URL}assets/crops/activity-play.png`;
+
+/** For the handful of spots that render a raw `<img src>` without going
+ *  through useThumb (a fixed-size list thumbnail, not a resized Wix
+ *  rendition) — same "never leave a broken image icon" guarantee, swapping
+ *  to the neutral placeholder instead of the brand mark since these are all
+ *  `object-cover`. */
+export function fallbackToPlaceholder(e: SyntheticEvent<HTMLImageElement>) {
+  const img = e.currentTarget;
+  if (img.dataset.fallback) return;
+  img.dataset.fallback = "1";
+  img.src = ACTIVITY_PLACEHOLDER_URL;
+}
+
+export function useThumb(url: string, w: number, h: number) {
+  // Every caller keys its list by activity id, so a different activity is a
+  // different component instance (mount, not update) — this never needs to
+  // reset itself mid-life for a changed `url`.
+  const [broken, setBroken] = useState(false);
+  const isLogo = broken || url === FALLBACK_LOGO_URL;
+  return {
+    src: isLogo ? FALLBACK_LOGO_URL : wixThumbUrl(url, w, h),
+    isLogo,
+    onError: () => setBroken(true),
+  };
 }
 
 /** "That's a Plus feature" prompt.
@@ -871,18 +912,20 @@ export const ActivityCard = memo(function ActivityCard({
   onFavoriteToggled?: (activityId: string, saved: boolean) => void;
 }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
+  const thumb = useThumb(activity.image, 640, 174);
   return (
     <article className="relative flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
         <img
-          src={wixThumbUrl(activity.image, 640, 174)}
+          src={thumb.src}
+          onError={thumb.onError}
           alt=""
           width={400}
           height={108}
           loading="lazy"
           decoding="async"
           className={
-            activity.image === FALLBACK_LOGO_URL
+            thumb.isLogo
               ? "h-full w-full bg-[#F3EDF0] object-contain p-4"
               : "h-full w-full bg-[#F3EDF0] object-contain"
           }
@@ -981,18 +1024,20 @@ export const ActivityCard = memo(function ActivityCard({
 
 export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
   const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
+  const thumb = useThumb(activity.image, 440, 352);
   return (
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       <div className="relative">
         <img
-          src={wixThumbUrl(activity.image, 440, 352)}
+          src={thumb.src}
+          onError={thumb.onError}
           alt=""
           width={220}
           height={176}
           loading="lazy"
           decoding="async"
           className={
-            activity.image === FALLBACK_LOGO_URL
+            thumb.isLogo
               ? "h-44 w-full bg-[#F3EDF0] object-contain p-6 sm:h-full sm:min-h-[100px]"
               : "h-44 w-full bg-[#F3EDF0] object-contain sm:h-full sm:min-h-[100px]"
           }

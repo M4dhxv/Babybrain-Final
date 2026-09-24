@@ -23,7 +23,9 @@ import {
   PlusFeatureDialog,
   ConfirmDialog,
   SectionTitle,
-  wixThumbUrl,
+  useThumb,
+  fallbackToPlaceholder,
+  ACTIVITY_PLACEHOLDER_URL,
 } from "../components/ui";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { SelectField, Opt } from "../components/SelectField";
@@ -880,7 +882,7 @@ function ChildForm({
 function ChildClassRow({ b }: { b: BookingItem }) {
   return (
     <a href={b.removed ? "/explore" : b.slug ? `/activity?slug=${b.slug}` : "/profile?tab=bookings"} className="flex items-center gap-3 rounded-[12px] border border-[#F4EFF0] bg-white p-3 shadow-card transition hover:border-baby-pink">
-      <img src={b.image} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 rounded-[10px] object-cover" />
+      <img src={b.image} onError={fallbackToPlaceholder} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 rounded-[10px] object-cover" />
       <div className="min-w-0 flex-1">
         <h4 className="truncate font-black">{b.title}</h4>
         <p className="text-xs font-semibold text-[#59658d]">{b.when || "Schedule TBC"}</p>
@@ -1621,7 +1623,7 @@ export function ProfilePage() {
               slug: act?.slug ?? "",
               // activity-play is the only crop without a category tag baked
               // into the artwork, so it's the safe generic fallback.
-              image: act?.image_urls?.[0] ?? `${import.meta.env.BASE_URL}assets/crops/activity-play.png`,
+              image: act?.image_urls?.[0] ?? ACTIVITY_PLACEHOLDER_URL,
               startsAt: s?.starts_at ?? null,
               endsAt: s?.ends_at ?? null,
               venue: s?.provider_locations?.address || s?.provider_locations?.name || act?.address || "",
@@ -2990,7 +2992,7 @@ function PastActivitiesTab({
     return (
       <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card">
         <div className="flex items-center gap-4">
-          <img src={b.image} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
+          <img src={b.image} onError={fallbackToPlaceholder} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
             <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
@@ -3417,7 +3419,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 slug renamed by unlinkWixActivities) — send those clicks to
                 the activities list instead of a dead link. */}
             <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="flex items-start gap-3 sm:items-center sm:gap-4">
-              <img src={b.image} alt="" width={64} height={64} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover sm:h-16 sm:w-16" />
+              <img src={b.image} onError={fallbackToPlaceholder} alt="" width={64} height={64} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover sm:h-16 sm:w-16" />
               <div className="min-w-0 flex-1">
                 <h3 className="truncate font-black">{b.title}</h3>
                 {b.when && (
@@ -4669,6 +4671,11 @@ export function BookingPage() {
   // The same photo the activity page leads with (own photos, else the vendor's profile picture and
   // catalogue), not a stock crop or just the first upload.
   const img = resolveActivityImage(activity, activity.provider_contact) ?? FALLBACK_LOGO_URL;
+  // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
+  // two independent requests (different Wix thumbnail sizes), so each gets
+  // its own broken-image state.
+  const heroImg = useThumb(img, 490, 416);
+  const summaryImg = useThumb(img, 224, 192);
   const ageText = formatAgeRange(activity.age_min_months, activity.age_max_months);
 
   return (
@@ -4686,7 +4693,7 @@ export function BookingPage() {
           <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
             <section>
               <div className="grid gap-5 md:grid-cols-[245px_1fr]">
-                <img src={wixThumbUrl(img, 490, 416)} alt={activity.title} width={245} height={208} decoding="async" className={`h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain${img === FALLBACK_LOGO_URL ? " p-6" : ""}`} />
+                <img src={heroImg.src} onError={heroImg.onError} alt={activity.title} width={245} height={208} decoding="async" className={`h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain${heroImg.isLogo ? " p-6" : ""}`} />
                 <div>
                   <h2 className="text-xl font-black">{activity.title}</h2>
                   <p className="mt-2 font-semibold">{ageText}</p>
@@ -5047,7 +5054,7 @@ export function BookingPage() {
             <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
-                <img src={wixThumbUrl(img, 224, 192)} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${img === FALLBACK_LOGO_URL ? " p-3" : ""}`} />
+                <img src={summaryImg.src} onError={summaryImg.onError} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${summaryImg.isLogo ? " p-3" : ""}`} />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <div className="mt-2 flex flex-wrap gap-1.5">{[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => <span key={n} className="inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{n}</span>)}</div>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">

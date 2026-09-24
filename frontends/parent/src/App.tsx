@@ -1620,8 +1620,9 @@ function looksLikeGraphic(el: HTMLImageElement): boolean {
   } catch {
     // A canvas tainted by a cross-origin image with no CORS headers throws
     // on getImageData — fall back to the aspect-ratio heuristic below rather
-    // than guessing. The <img> itself still renders fine either way;
-    // `crossOrigin` only affects whether its pixels are readable.
+    // than guessing. Only ever called on the invisible probe image in
+    // HeroSlide, never the one actually shown to the parent — see its own
+    // comment for why that split matters.
     return false;
   }
 }
@@ -1635,18 +1636,50 @@ function looksLikeGraphic(el: HTMLImageElement): boolean {
 function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: string; priority: boolean; forceWhole?: boolean }) {
   const [ratio, setRatio] = useState<number | null>(null);
   const [isGraphic, setIsGraphic] = useState(false);
-  const measure = (el: HTMLImageElement | null) => {
+  // A Wix CDN response missing (or inconsistent about) CORS headers, a
+  // throttled request, a since-deleted source file — none of that is under
+  // this app's control, and this is the actual hero photo, not a card
+  // thumbnail with 50 siblings to fall back on visually. `broken` guarantees
+  // it degrades to the brand mark instead of a permanently blank hero.
+  const [broken, setBroken] = useState(false);
+
+  // Pixel-samples a separate, invisible copy purely to tell a logo/wordmark
+  // from a photo (looksLikeGraphic) — never the visible <img> below. This
+  // used to run `crossOrigin="anonymous"` on that visible image instead: a
+  // request tagged `crossorigin` isn't just unreadable to canvas if the
+  // response lacks a matching CORS header, per the spec it fails to load at
+  // all, same as a broken URL. Wix's CDN answering that inconsistently (an
+  // edge cache miss, a throttled anonymous fetch, a plain missing header on
+  // some path) is exactly what "the hero image sometimes doesn't render"
+  // looks like from here — this probe can fail freely instead, since its
+  // only job is a cosmetic whole-vs-cropped decision that already falls back
+  // to the aspect-ratio heuristic below when it can't tell.
+  useEffect(() => {
+    if (url === FALLBACK_LOGO_URL) return;
+    let cancelled = false;
+    const probe = new Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => {
+      if (!cancelled) setIsGraphic(looksLikeGraphic(probe));
+    };
+    probe.src = wixThumbUrl(url, 64, 64);
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const measureRatio = (el: HTMLImageElement | null) => {
     if (!el || !el.naturalWidth || !el.naturalHeight) return;
     setRatio(el.naturalWidth / el.naturalHeight);
-    setIsGraphic(looksLikeGraphic(el));
   };
-  if (url === FALLBACK_LOGO_URL) {
-    return <img src={url} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
+
+  if (url === FALLBACK_LOGO_URL || broken) {
+    return <img src={FALLBACK_LOGO_URL} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
   }
   const whole = forceWhole || isGraphic || (ratio != null && (ratio < 1.4 || ratio > 3.6));
   // The display box is 860x305 (see the grid column width this sits in); a
   // Wix original is routinely 1500px+, so this was downloading many times
-  // the bytes it shows. `/v1/fit/` never crops, so measure()/looksLikeGraphic
+  // the bytes it shows. `/v1/fit/` never crops, so measureRatio/looksLikeGraphic
   // still see the same aspect ratio. The blurred backdrop is scaled up and
   // blurred into mush regardless, so it gets a far smaller rendition.
   const heroSrc = wixThumbUrl(url, 1000, 360);
@@ -1656,15 +1689,7 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         <img src={wixThumbUrl(url, 64, 64)} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl" />
       )}
       <img
-        ref={(el) => { if (el?.complete) measure(el); }}
-        // Must precede `src` (React sets DOM props in this order for a new
-        // element): crossOrigin only takes effect for the request it's set
-        // before, so setting it after src would start a non-CORS fetch and
-        // permanently taint the canvas looksLikeGraphic reads pixels from —
-        // harmless when the host doesn't send CORS headers either way, since
-        // the image still displays regardless; only pixel access is
-        // affected, which that function already falls back around.
-        crossOrigin="anonymous"
+        ref={(el) => { if (el?.complete) measureRatio(el); }}
         src={heroSrc}
         alt={alt}
         width={860}
@@ -1672,7 +1697,8 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         decoding="async"
         fetchPriority={priority ? "high" : "auto"}
         loading="eager"
-        onLoad={(e) => measure(e.currentTarget)}
+        onLoad={(e) => measureRatio(e.currentTarget)}
+        onError={() => setBroken(true)}
         className={`relative h-full w-full ${whole ? "object-contain" : "object-cover object-[center_15%]"}`}
       />
     </div>
