@@ -44,7 +44,7 @@ import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { apiGet, apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
-import { goTo, getParam } from "../lib/nav";
+import { goTo, getParam, scrollToWhenReady } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands } from "../lib/schedule";
 import { downloadBookingIcs, downloadScheduleIcs } from "../lib/ics";
 import { downloadSchedulePdf, withinRange } from "../lib/schedule-pdf";
@@ -131,7 +131,114 @@ type BookingItem = {
   seatStatuses: string[];
 };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
-type NotifItem = { id: string; title: string; body: string; read_at: string | null; created_at: string };
+/** `data` is deliberately untyped (jsonb, shape varies by `type` — see
+ *  notificationTarget below, which is the one place that reads into it). */
+type NotifItem = { id: string; type: string; title: string; body: string; read_at: string | null; created_at: string; data: Record<string, unknown> };
+
+/** One suggested activity inside a 'suggested_activities' notification's
+ *  `data.activities` — the shape session_email_details/toLiveActivity-adjacent
+ *  code on the backend builds (see 00120_suggested_activities_digest.sql). */
+type SuggestedActivity = { activity_name?: string; date_time?: string; url?: string };
+
+/** Where tapping a notification should go, and (for a booking/token/package
+ *  one) which row on the destination tab to flash so the parent can find the
+ *  thing that changed instead of scanning a whole list.
+ *
+ *  Every notification type already carries `booking_id` / `token_id` /
+ *  `package_purchase_id` in its `data` (see the various `insert into
+ *  public.notifications` call sites across supabase/migrations) — this just
+ *  reads them back out. Falls back to the plain `data.url` (a digest with
+ *  nothing specific to highlight, e.g. suggested_activities' own container
+ *  notification) when none of the specific ids are present. */
+function notificationTarget(n: NotifItem): string | null {
+  const d = n.data ?? {};
+  const bookingId = typeof d.booking_id === "string" ? d.booking_id : null;
+  const tokenId = typeof d.token_id === "string" ? d.token_id : null;
+  const packageId = typeof d.package_purchase_id === "string" ? d.package_purchase_id : null;
+  const url = typeof d.url === "string" ? d.url : null;
+
+  // A deep link straight into checkout (e.g. "/book?slug=...&token=...") is
+  // already more useful than sending the parent to a list to go find the
+  // thing themselves — keep it as-is, no highlight needed since it's the
+  // only thing on that page.
+  if (url && !url.startsWith("/profile?tab=")) return url;
+
+  if (packageId) return `/profile?tab=packages&highlight=${encodeURIComponent(packageId)}`;
+  if (tokenId) return `/profile?tab=makeup&highlight=${encodeURIComponent(tokenId)}`;
+  if (bookingId) return `/profile?tab=bookings&highlight=${encodeURIComponent(bookingId)}`;
+  return url;
+}
+
+/** One row on the Notifications tab. Most types resolve to a single link (see
+ *  notificationTarget); 'suggested_activities' is different — its `data`
+ *  holds up to 5 activities rather than one target, so it opens as a small
+ *  dropdown of links instead of navigating the whole card. */
+function NotificationRow({ n }: { n: NotifItem }) {
+  const [open, setOpen] = useState(false);
+  const activities =
+    n.type === "suggested_activities" && Array.isArray(n.data?.activities)
+      ? (n.data.activities as SuggestedActivity[])
+      : null;
+  const target = activities ? null : notificationTarget(n);
+  const cardClass = `rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#EBE3E5] bg-white" : "border-[#DAEEFB] bg-[#FFF5F8]"}`;
+
+  const body = (
+    <div className="flex items-start gap-2">
+      {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-pink" />}
+      <div className="min-w-0 flex-1">
+        <p className="font-black">{n.title}</p>
+        {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
+        <p className="mt-1 text-xs font-semibold text-[#6D748A]">{sgDateTime(n.created_at)}</p>
+      </div>
+      {target && <Icon name="chevron" className="mt-1 h-4 w-4 flex-shrink-0 -rotate-90 text-[#9AA2BD]" />}
+    </div>
+  );
+
+  if (activities) {
+    return (
+      <div className={cardClass}>
+        {body}
+        {activities.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              className="mt-3 flex items-center gap-1.5 text-xs font-black text-baby-cta"
+            >
+              <Icon name="chevron" className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+              {open ? "Hide activities" : `View ${activities.length} ${activities.length === 1 ? "activity" : "activities"}`}
+            </button>
+            {open && (
+              <div className="mt-2 space-y-1 border-t border-[#F4EFF0] pt-2.5">
+                {activities.map((a, i) => (
+                  <a
+                    key={i}
+                    href={a.url ?? "/explore"}
+                    className="block rounded-[8px] px-2 py-1.5 text-sm font-bold text-[#34406f] hover:bg-palette-pinkTint"
+                  >
+                    {a.activity_name ?? "Activity"}
+                    {a.date_time && <span className="ml-1.5 font-semibold text-[#6D748A]">· {a.date_time}</span>}
+                  </a>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (target) {
+    return (
+      <a href={target} className={`block ${cardClass} transition hover:border-baby-pink`}>
+        {body}
+      </a>
+    );
+  }
+
+  return <div className={cardClass}>{body}</div>;
+}
 type TokenItem = { id: string; status: string; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
 
@@ -470,10 +577,36 @@ function groupByChild<T extends { childId?: string | null; child_id?: string | n
   return groups;
 }
 
+/** True for a couple of seconds when this row's id matches `?highlight=` in
+ *  the URL — the parent arrived here from a notification's "view this" link
+ *  rather than by browsing, so the row scrolls into view and flashes once to
+ *  say "this one" instead of leaving them to scan the whole list. One-shot:
+ *  keyed on `id`, which is stable for the row's lifetime. */
+function useRowHighlight(id: string): boolean {
+  const [flashing, setFlashing] = useState(false);
+  useEffect(() => {
+    if (getParam("highlight") !== id) return;
+    setFlashing(true);
+    const stopScroll = scrollToWhenReady(`row-${id}`);
+    const t = window.setTimeout(() => setFlashing(false), 1800);
+    return () => {
+      stopScroll();
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+  return flashing;
+}
+
+/** Ring + tint applied on top of a row's own border/background while it's
+ *  the highlight target — same blue used for "Selected" states elsewhere. */
+const HIGHLIGHT_RING = "ring-2 ring-palette-blueStrong ring-offset-2";
+
 /** One make-up token, shared by the flat and the split-by-child lists. */
 function TokenRow({ t }: { t: TokenItem }) {
+  const highlighted = useRowHighlight(t.id);
   return (
-    <div className="flex flex-col gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card sm:flex-row sm:items-center sm:gap-4">
+    <div id={`row-${t.id}`} className={`flex flex-col gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card transition-shadow sm:flex-row sm:items-center sm:gap-4 ${highlighted ? HIGHLIGHT_RING : ""}`}>
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
         <div className="min-w-0 flex-1">
@@ -505,12 +638,14 @@ function tokenStatusStyle(status: string) {
 
 /** One class pack, shared by the active and the used/expired lists. */
 function PackageCard({ p }: { p: PackageItem }) {
+  const highlighted = useRowHighlight(p.id);
   const clickable = p.status !== "expired" && p.remaining > 0;
   const Card = clickable ? "a" : "div";
   return (
     <Card
+      id={`row-${p.id}`}
       {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
-      className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card ${clickable ? "transition hover:border-baby-pink" : "opacity-60"}`}
+      className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card transition-shadow ${clickable ? "transition hover:border-baby-pink" : "opacity-60"} ${highlighted ? HIGHLIGHT_RING : ""}`}
     >
       <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-cta"><Icon name="store" className="h-6 w-6" /></span>
       <div className="min-w-0 flex-1">
@@ -1255,7 +1390,7 @@ export function ProfilePage() {
       cacheFetch(`profile:notifications:${uid}`, 0, () =>
         supabase
           .from("notifications")
-          .select("id, title, body, read_at, created_at")
+          .select("id, type, title, body, read_at, created_at, data")
           .order("created_at", { ascending: false })
           .limit(100)
           .then(({ data }) => data ?? [])
@@ -1698,7 +1833,7 @@ export function ProfilePage() {
     cacheFetch(`profile:notifications:${uid}`, PROFILE_FRESH_MS, () =>
       supabase
         .from("notifications")
-        .select("id, title, body, read_at, created_at")
+        .select("id, type, title, body, read_at, created_at, data")
         .order("created_at", { ascending: false })
         .limit(100)
         .then(({ data }) => data ?? [])
@@ -2498,18 +2633,7 @@ export function ProfilePage() {
                 <EmptyPanel icon="bell" copy="No notifications yet — booking updates and reminders will show up here." />
               ) : (
                 <div className="space-y-2.5">
-                  {notifications.map((n) => (
-                    <div key={n.id} className={`rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#EBE3E5] bg-white" : "border-[#DAEEFB] bg-[#FFF5F8]"}`}>
-                      <div className="flex items-start gap-2">
-                        {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-pink" />}
-                        <div>
-                          <p className="font-black">{n.title}</p>
-                          {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
-                          <p className="mt-1 text-xs font-semibold text-[#6D748A]">{sgDateTime(n.created_at)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  {notifications.map((n) => <NotificationRow key={n.id} n={n} />)}
                 </div>
               )}
             </div>
@@ -3074,6 +3198,22 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   const [exporting, setExporting] = useState(false);
   const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Arrived here from a notification's "view this booking" link — scroll to
+  // and briefly flash that one row (see useRowHighlight's comment; this list
+  // renders its rows inline rather than through a per-row component, so the
+  // same one-shot behaviour is done here with plain state instead of the
+  // hook, to keep the number of hooks fixed regardless of `items.length`).
+  const [highlightId, setHighlightId] = useState<string | null>(() => getParam("highlight"));
+  useEffect(() => {
+    if (!highlightId) return;
+    const stopScroll = scrollToWhenReady(`row-${highlightId}`);
+    const t = window.setTimeout(() => setHighlightId(null), 1800);
+    return () => {
+      stopScroll();
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightId]);
 
   const hoursLabel = (h: number) => (h === 1 ? "1 hour" : `${h} hours`);
   const upcoming = (b: BookingItem) =>
@@ -3258,7 +3398,13 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
         const cancelWhy = cancelBlockReason(b);
         const reschedWhy = reschedBlockReason(b);
         return (
-          <div key={b.id} className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink">
+          <div
+            key={b.id}
+            id={`row-${b.id}`}
+            className={`rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink ${
+              highlightId != null && (b.id === highlightId || b.allIds.includes(highlightId)) ? HIGHLIGHT_RING : ""
+            }`}
+          >
             {/* A removed activity's own detail page is gone (unpublished,
                 slug renamed by unlinkWixActivities) — send those clicks to
                 the activities list instead of a dead link. */}
@@ -3488,6 +3634,16 @@ export function PaymentPage() {
   );
 }
 
+/** How long a pack's credits stay valid once bought — shown as the info icon's
+ *  tooltip in booking step 5, before the parent commits to buying. The vendor
+ *  sets one or the other, never both; checked in the same order as the
+ *  vendor portal's own PackagesPage.tsx summary. */
+function packValidityText(p: { validity_days: number | null; expiry_date: string | null }) {
+  if (p.validity_days) return `Credits valid for ${p.validity_days} day${p.validity_days === 1 ? "" : "s"} after purchase`;
+  if (p.expiry_date) return `Credits valid until ${sgDay(p.expiry_date)}`;
+  return undefined;
+}
+
 /** One selectable row in the booking flow's "Choose your package" step. */
 /** A row in booking step 4 — name and price on the left, the action on the
  *  right, as in the design. Selecting the row drives the main CTA; pack rows
@@ -3498,6 +3654,7 @@ function PackageOption({
   title,
   price,
   badge,
+  infoTooltip,
   action,
 }: {
   selected: boolean;
@@ -3505,6 +3662,8 @@ function PackageOption({
   title: string;
   price: string;
   badge?: string;
+  /** Shown as a hover/tap info icon beside the title — e.g. how long the pack's credits stay valid once bought. */
+  infoTooltip?: string;
   /** Shown on the right for packs you can buy outright. */
   action?: { label: string; onClick: () => void };
 }) {
@@ -3528,6 +3687,24 @@ function PackageOption({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-black">{title}</span>
           {badge && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#FFD77A]">{badge}</span>}
+          {infoTooltip && (
+            <svg
+              onClick={(e) => e.stopPropagation()}
+              aria-label={infoTooltip}
+              role="img"
+              className="h-3.5 w-3.5 flex-shrink-0 text-[#9AA2BD]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <title>{infoTooltip}</title>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v5.5M12 8v.01" />
+            </svg>
+          )}
         </div>
         <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
       </div>
@@ -3600,7 +3777,7 @@ export function BookingPage() {
   // broad "any class" pack alongside an activity-restricted one), the parent
   // picks which to spend from; null defers to the oldest eligible one.
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
-  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean }[]>([]);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean; validity_days: number | null; expiry_date: string | null }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>("single");
   // The provider's own consents / waivers / disclosures for this class, and
@@ -3673,10 +3850,10 @@ export function BookingPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value, validity_days, expiry_date")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean; validity_days: number | null; expiry_date: string | null }>)
     ).then((rows) => {
       const applicable = rows
         .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
@@ -4828,6 +5005,7 @@ export function BookingPage() {
                               onSelect={() => setPayWith(`pack:${p.id}`)}
                               title={p.name}
                               price={`$${(p.price_cents / 100).toFixed(0)}`}
+                              infoTooltip={packValidityText(p)}
                               badge={
                                 anyManualBestValue
                                   ? p.best_value
@@ -4878,7 +5056,7 @@ export function BookingPage() {
           <div>
             <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
             {err && (
-              <div ref={errRef} role="alert" className="mt-3 flex items-start gap-2 rounded-[10px] bg-[#FEEBF2] px-3.5 py-2.5 text-sm font-bold text-baby-cta">
+              <div ref={errRef} role="alert" className="mt-3 flex items-start gap-2 rounded-[10px] bg-palette-purpleSoft px-3.5 py-2.5 text-sm font-bold text-palette-purpleInk">
                 <Icon name="bell" className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{err}</span>
               </div>

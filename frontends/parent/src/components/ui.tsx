@@ -15,6 +15,20 @@ import { requestInstall, useInstallState } from "../lib/install";
 import { useUnreadMessages } from "../lib/chat";
 import { useUnreadNotifications } from "../lib/notifications";
 
+/** Small circular loading indicator for inline spots (a count still being
+ *  fetched, a button mid-request) where the bouncing-dot RainbowLoader is too
+ *  wide. Track + spinning arc, same construction as PullToRefresh's own
+ *  spinner. Colour follows `currentColor` so it matches whatever text it
+ *  sits next to. */
+export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg role="status" aria-label="Loading" viewBox="0 0 24 24" className={className} fill="none">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+      <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="origin-center animate-spin" />
+    </svg>
+  );
+}
+
 /** Requests a resized rendition from Wix's own CDN (documented `/v1/fill/`
  *  URL transform) instead of the full original upload — a card renders at a
  *  few hundred px wide, but an unresized Wix photo is routinely 1500px+, so

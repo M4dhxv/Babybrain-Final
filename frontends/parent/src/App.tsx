@@ -13,6 +13,7 @@ import {
   PageShell,
   PlusFeatureDialog,
   SectionTitle,
+  Spinner,
   wixThumbUrl,
 } from "./components/ui";
 import {
@@ -1199,9 +1200,16 @@ function ExplorePage() {
               <button
                 type="button"
                 onClick={() => setMobileSheet(null)}
-                className="mt-4 h-11 w-full rounded-[10px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-sm font-black text-white shadow-pink"
+                disabled={loading}
+                className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-sm font-black text-white shadow-pink disabled:opacity-70"
               >
-                Show {total} results
+                {loading ? (
+                  <>
+                    <Spinner className="h-4 w-4" /> Counting results…
+                  </>
+                ) : (
+                  `Show ${total} results`
+                )}
               </button>
             </div>
           </div>
@@ -1298,11 +1306,19 @@ function ExplorePage() {
           <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
-              <span className="text-xs font-bold text-[#68718f]">{pinned} of {pinActivities.length} pinned</span>
+              {pinsLoading ? (
+                <span className="flex items-center gap-1.5 text-xs font-bold text-[#68718f]">
+                  <Spinner className="h-3.5 w-3.5" /> Updating…
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-[#68718f]">{pinned} of {pinActivities.length} pinned</span>
+              )}
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
               {pinsLoading ? (
-                <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
+                <div className="flex h-[395px] w-full items-center justify-center bg-[#F3EDF0]" aria-hidden="true">
+                  <Spinner className="h-8 w-8 text-baby-pink" />
+                </div>
               ) : (
                 <Suspense
                   fallback={<div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />}

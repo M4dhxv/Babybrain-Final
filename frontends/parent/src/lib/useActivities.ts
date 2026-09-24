@@ -261,8 +261,12 @@ export function useActivities(params: ActivityQuery = {}) {
       // else: fall through and revalidate quietly, keeping the cached rows on
       // screen (no skeleton, no partial-data flash).
     } else {
-      setActivities([]);
-      setTotal(0);
+      // No cache for this exact filter combo (a brand new filter, most
+      // often) — used to zero `activities`/`total` here, which flashed
+      // "Show 0 results" for the second or so before the RPC answered.
+      // Leave them as whatever the previous filter left behind; callers key
+      // their loading UI (a spinner) off `loading` instead of inferring it
+      // from a suspiciously-zero count.
       setLoading(true);
     }
 

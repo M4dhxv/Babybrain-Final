@@ -75,6 +75,7 @@ export function ExploreMap({
       center: SG_CENTER,
       zoom: 11,
       minZoom: 10,
+      maxZoom: 16,
       maxBounds: SG_MAX_BOUNDS,
       scrollWheelZoom: false,
       attributionControl: true,
@@ -104,13 +105,22 @@ export function ExploreMap({
     // near-white rather than green; that's the ceiling this tile source has.
     //
     // Split into base + labels because this style serves place names as a
-    // separate transparent overlay. maxNativeZoom stops at the deepest level
-    // the service actually has (18) while maxZoom lets the map keep zooming —
-    // Leaflet upscales the last real tile instead of going blank.
+    // separate transparent overlay.
+    //
+    // maxNativeZoom/maxZoom both stop at 16, matched to the map's own
+    // `maxZoom` above — this used to read 18/19 (Leaflet upscaling the last
+    // real tile past 18 rather than going blank), but confirmed by sampling
+    // actual tiles over Singapore, both Canvas layers stop carrying real
+    // detail past zoom 16 here: 17 and 18 serve the exact same
+    // "Map data not available" placeholder everywhere tested, from dense
+    // Orchard Road to the quieter East Coast — so upscaling had nothing real
+    // left to upscale from 17 onward, just that placeholder blown up and
+    // blurred. Capping all three at 16 keeps the map at the deepest zoom this
+    // tile source actually has, instead of pinch-zooming into a dead end.
     const esri = (service: string, opts: L.TileLayerOptions = {}) =>
       L.tileLayer(
         `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`,
-        { maxNativeZoom: 18, maxZoom: 19, ...opts }
+        { maxNativeZoom: 16, maxZoom: 16, ...opts }
       );
     esri("World_Light_Gray_Base", {
       // Every data provider Esri requires is still credited; "Esri" simply
