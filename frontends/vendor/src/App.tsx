@@ -2,6 +2,7 @@ import { Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { capturePageview } from './lib/posthog';
+import { supabase } from './lib/supabase';
 import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './layouts/PortalLayout';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -47,6 +48,15 @@ function RecoveryRedirect() {
   useEffect(() => {
     if (recovery) navigate('/reset-password');
   }, [recovery, navigate]);
+  // Supabase clears the token fragment only when it succeeds. A link whose token
+  // it rejected is left as `#access_token=…`, which HashRouter shows as the 404.
+  useEffect(() => {
+    void supabase.auth.initialize().then(() => {
+      if (/^#(access_token|error)/.test(window.location.hash)) {
+        navigate('/forgot-password?expired=1', { replace: true });
+      }
+    });
+  }, [navigate]);
   return null;
 }
 
@@ -134,7 +144,13 @@ function App() {
 
             {/* Branded 404 — also reachable directly at #/404 */}
             <Route path="/404" element={<NotFoundPage />} />
-            <Route path="*" element={<NotFoundPage />} />
+            {/* An old-style link lands as `#access_token=…`, which HashRouter
+                reads as a path. Hold on the loader while Supabase consumes it
+                instead of flashing the 404. */}
+            <Route
+              path="*"
+              element={/^#access_token=/.test(window.location.hash) ? <RouteFallback /> : <NotFoundPage />}
+            />
           </Routes>
         </Suspense>
         </RouteErrorBoundary>

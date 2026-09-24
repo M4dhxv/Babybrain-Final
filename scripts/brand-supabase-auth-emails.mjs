@@ -79,10 +79,17 @@ const layout = (inner) => `<div style="background:#FFFFFF;margin:0;padding:0">
 </div>`;
 
 const p = (html) => `<p style="margin:0 0 16px">${html}</p>`;
-const cta = (label) =>
-  `<p style="margin:0 0 20px"><a href="{{ .ConfirmationURL }}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${label}</a></p>`;
-const fallback =
-  `<p style="margin:0 0 16px;font-size:14px;color:#9a9a9a">Or paste this into your browser:<br/><span style="word-break:break-all">{{ .ConfirmationURL }}</span></p>`;
+const cta = (label, url = '{{ .ConfirmationURL }}') =>
+  `<p style="margin:0 0 20px"><a href="${url}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${label}</a></p>`;
+const fallback = (url = '{{ .ConfirmationURL }}') =>
+  `<p style="margin:0 0 16px;font-size:14px;color:#9a9a9a">Or paste this into your browser:<br/><span style="word-break:break-all">${url}</span></p>`;
+// Recovery links point straight at the app with the hashed token, instead of
+// at Supabase's /verify (which spends the token on the first GET). Mail
+// scanners such as Microsoft Defender Safe Links open every link before the
+// recipient does, so the /verify link was dead by the time a vendor clicked it.
+// The app spends the token only when the user presses Continue (verifyOtp).
+// Both reset pages handle `?token_hash=` — deploy them before applying this.
+const RECOVERY_URL = '{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery';
 const code = () =>
   `<p style="margin:0 0 20px;font-size:30px;font-weight:700;letter-spacing:5px;color:#4a4a4a">{{ .Token }}</p>`;
 const sign = `<p style="margin:24px 0 0">All the best,<br/>Katie<br/>Founder, BabyBrain</p>`;
@@ -96,15 +103,15 @@ const T = {
       p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.') +
       cta('Confirm my email') +
       p('This link is valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
-      fallback + sign),
+      fallback() + sign),
   },
   recovery: {
     subject: 'Reset your password 👶🧠',
     html: layout(greet +
       p('We received a request to reset the password on your BabyBrain account.') +
-      cta('Set a new password') +
+      cta('Set a new password', RECOVERY_URL) +
       p('This link is valid for one hour. If you didn’t ask for this, nothing has changed — you can ignore this email.') +
-      fallback + sign),
+      fallback(RECOVERY_URL) + sign),
   },
   magic_link: {
     subject: 'Your BabyBrain log-in link 👶🧠',
@@ -112,14 +119,14 @@ const T = {
       p('Here’s your link to log in — no password needed.') +
       cta('Log in to BabyBrain') +
       p('This link is valid for one hour and can only be used once.') +
-      fallback + sign),
+      fallback() + sign),
   },
   invite: {
     subject: 'You’re invited to BabyBrain 👶🧠',
     html: layout(greet +
       p('You’ve been invited to join BabyBrain — activities for little ones across Singapore, in one place.') +
       cta('Accept the invitation') +
-      fallback + sign),
+      fallback() + sign),
   },
   email_change: {
     subject: 'Confirm your new email 👶🧠',
@@ -127,7 +134,7 @@ const T = {
       p('Please confirm <strong style="color:#4a4a4a">{{ .NewEmail }}</strong> so we can use it for your BabyBrain account.') +
       cta('Confirm new email') +
       p('If you didn’t request this change, please contact us at hello@babybrain.sg straight away.') +
-      fallback + sign),
+      fallback() + sign),
   },
   reauthentication: {
     subject: 'Your BabyBrain verification code 👶🧠',

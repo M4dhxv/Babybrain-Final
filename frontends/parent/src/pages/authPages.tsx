@@ -122,9 +122,25 @@ export function ResetPasswordPage() {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Scanner-proof links carry a `token_hash` that is only spent when the
+  // parent presses Continue — Outlook/Defender pre-opening the link spends nothing.
+  const [tokenHash] = useState(() => getParam("token_hash"));
+  const [linkError, setLinkError] = useState(false);
+
+  async function continueFromLink() {
+    setBusy(true);
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: "recovery" });
+    setBusy(false);
+    if (error) return setLinkError(true);
+    setReady(true);
+  }
+
   // Supabase parses the recovery token from the URL and fires PASSWORD_RECOVERY;
   // until we have a session the user can't set a new password.
   useEffect(() => {
+    // With a token_hash, only the Continue press may unlock the form — an
+    // existing session must not stand in for the link's account.
+    if (tokenHash) return;
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setReady(true);
     });
@@ -160,6 +176,17 @@ export function ResetPasswordPage() {
             <p className="mt-3 rounded-[10px] bg-[#F1FBEF] px-3 py-3 text-sm font-semibold text-palette-green">
               Password updated. Taking you to your profile…
             </p>
+          ) : tokenHash && !ready ? (
+            linkError ? (
+              <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#FFD77A]">
+                That link has expired or was already used. <a href="/forgot-password" className="font-black text-baby-pink">Request a new one</a>, or log in if you've already set your password.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 font-semibold text-[#5a6690]">Continue to choose a new password for your account.</p>
+                <Button type="button" onClick={continueFromLink} disabled={busy} className="mt-5 w-full justify-center">{busy ? "Checking link…" : "Continue"}</Button>
+              </>
+            )
           ) : !ready ? (
             <p className="mt-3 rounded-[10px] bg-[#FEF9EB] px-3 py-3 text-sm font-semibold text-[#FFD77A]">
               This page only works from the reset link in your email. Open that link, or <a href="/forgot-password" className="font-black text-baby-pink">request a new one</a>.

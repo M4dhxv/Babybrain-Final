@@ -126,15 +126,20 @@ export async function POST(request: Request) {
   const needsPassword = !member.last_sign_in_at;
   let setPasswordUrl: string | null = null;
   if (needsPassword) {
-    // Mirror the portal's own forgot-password redirect: land on the SPA root
-    // so supabase-js picks up the recovery hash and RecoveryRedirect forwards
-    // to /reset-password. A pre-hashed URL would collide with that token hash.
+    // Link straight to the portal with the hashed token rather than using
+    // `action_link` (Supabase's /verify). /verify spends the token on the
+    // first GET, and mail scanners such as Microsoft Defender Safe Links open
+    // every link before the invitee does, so the invitee got a dead link. The
+    // portal spends the token only when the invitee presses Continue
+    // (verifyOtp on #/reset-password). No redirect allow-list is involved.
     const { data: linkData } = await admin.auth.admin.generateLink({
       type: 'recovery',
       email: normalized,
-      options: { redirectTo: `${appOrigin(request)}/vendor/` },
     });
-    setPasswordUrl = linkData?.properties?.action_link ?? null;
+    const tokenHash = linkData?.properties?.hashed_token;
+    setPasswordUrl = tokenHash
+      ? `${appOrigin(request)}/vendor?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
+      : null;
   }
 
   const { data: provider } = await admin
