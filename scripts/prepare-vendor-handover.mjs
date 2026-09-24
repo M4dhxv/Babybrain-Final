@@ -41,8 +41,9 @@
  *      so the password we have been signing in with stops being the one they
  *      get. Same call and same generator as provision-vendor-accounts.mjs.
  *
- * It SENDS NOTHING, on purpose — a real vendor's inbox is never touched by a
- * script run. admin.auth.admin.updateUserById({ password }) fires neither
+ * Without --send-reset it SENDS NOTHING — a real vendor's inbox is only
+ * touched when you ask for the handover email (see the SEND_RESET block).
+ * admin.auth.admin.updateUserById({ password }) fires neither
  * handle_new_user() (no INSERT) nor handle_user_email_confirmed()
  * (email_confirmed_at doesn't change), so no notifications row is written and
  * therefore no Resend mail goes out. The script asserts that afterwards rather
@@ -62,6 +63,8 @@ import { createClient } from '@supabase/supabase-js';
 import postgres from 'postgres';
 import crypto from 'node:crypto';
 import { parseDbUrl } from './lib/db-url.mjs';
+import { Resend } from 'resend';
+import { renderEmail } from '../lib/emails/render.ts';
 
 for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
   const m = line.match(/^([A-Z_]+)=(.*)$/);
@@ -91,7 +94,7 @@ const PORTAL = arg('portal', 'https://test.babybrain.sg/vendor');
 
 if (!SLUG) {
   console.error('Usage: node scripts/prepare-vendor-handover.mjs --slug=<provider-slug> [--apply]');
-  console.error('       [--cover=URL] [--portal=URL] [--keep-password] [--force]');
+  console.error('       [--cover=URL] [--portal=URL] [--owner-email=…] [--keep-password] [--send-reset] [--force]');
   process.exit(1);
 }
 
@@ -166,6 +169,7 @@ if (!APPLY) {
   if (COVER) console.log(`Would set cover_image_url to ${COVER}`);
   console.log(KEEP_PASSWORD ? 'Would leave the password alone.' : 'Would reset the password and print it once.');
   console.log(`Portal to hand over: ${PORTAL}`);
+  if (SEND_RESET) console.log('Would email the owner a "set your password" link (token_hash, scanner-proof) via Resend.');
   console.log(`Existing notification rows for this owner: ${notifsBefore}`);
   console.log('\nNothing written. Re-run with --apply.');
   await sql.end();
@@ -230,33 +234,43 @@ if (OWNER_EMAIL && OWNER_EMAIL.toLowerCase() !== owner.email.toLowerCase()) {
   console.log(`Login moved: ${owner.email} -> ${OWNER_EMAIL} (providers.contact_email unchanged).`);
 }
 
-// The one auth email that survives this portal. An invite or magic link lands
-// on `<portal>#access_token=…`, which the HashRouter reads as a route, matches
-// nothing, and renders the catch-all 404 (App.tsx:137). Only PASSWORD_RECOVERY
-// has a rescue path (AuthProvider.tsx:216 -> RecoveryRedirect).
+// --send-reset mails the owner a "your account is ready — set your password"
+// email. The link is built here from generateLink's hashed_token and points
+// straight at the portal (`<PORTAL>?token_hash=…&type=recovery`); the token is
+// spent only when the owner presses Continue on #/reset-password (verifyOtp).
+// Supabase's own /verify link is NOT used: it spends the token on the first
+// GET, and mail scanners such as Microsoft Defender Safe Links open every link
+// before the recipient does, so vendors were clicking an already-used link.
+// Sending through Resend ourselves also sidesteps Supabase's ~2/hour auth-email
+// cap, and generateLink sends nothing on its own. A fresh link voids any
+// earlier reset link for this account.
 //
-// PORTAL must have NO trailing slash: the hosted allow-list is exact-match, and
-// `…/vendor/` is silently rewritten to site_url.
+// PORTAL must have NO trailing slash (vite serves /vendor/, Next rewrites both,
+// but keep the link identical to what the portal itself generates).
 if (SEND_RESET) {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(PORTAL)}`,
-    {
-      method: 'POST',
-      headers: {
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: loginEmail }),
-    }
-  );
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    console.error(`\nReset email NOT sent (HTTP ${res.status}): ${body.msg ?? JSON.stringify(body)}`);
-    if (body.error_code === 'over_email_send_rate_limit') {
-      console.error('Raise Authentication -> Rate Limits -> "Emails sent per hour", or wait out the window.');
-    }
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: loginEmail,
+  });
+  const tokenHash = linkData?.properties?.hashed_token;
+  if (linkErr || !tokenHash) {
+    console.error(`\nHandover email NOT sent: could not create a link (${linkErr?.message ?? 'no token'}).`);
   } else {
-    console.log(`Reset email sent to ${loginEmail}, returning to ${PORTAL}.`);
+    const setPasswordUrl = `${PORTAL}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+    const rendered = renderEmail(
+      'provider_account_handover',
+      { business_name: provider.business_name, set_password_url: setPasswordUrl, sign_in_url: `${PORTAL}/#/login` },
+      { appUrl: new URL(PORTAL).origin }
+    );
+    const { data: sent, error: sendErr } = await new Resend(process.env.RESEND_API_KEY).emails.send({
+      from: process.env.EMAIL_FROM ?? 'Katie from BabyBrain <hello@updates.babybrain.sg>',
+      replyTo: 'hello@babybrain.sg',
+      to: loginEmail,
+      subject: rendered.subject,
+      html: rendered.html,
+    });
+    if (sendErr) console.error(`\nHandover email NOT sent: ${sendErr.message}`);
+    else console.log(`Handover email sent to ${loginEmail} (Resend id ${sent.id}).`);
   }
 }
 
