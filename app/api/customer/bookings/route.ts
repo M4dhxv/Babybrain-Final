@@ -2,6 +2,94 @@ import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+type Admin = ReturnType<typeof createAdminClient>;
+
+/** Was this booking made by redeeming a make-up token? (redeemed_booking_id
+ *  is cleared when such a booking is cancelled — 00081 — so this only ever
+ *  matches a live one.) And, for a cancelled booking, did an auto make-up
+ *  token get minted to compensate it? (00080) */
+async function compensationSets(admin: Admin, allIds: string[]) {
+  if (!allIds.length) return { redeemedByToken: new Set<string>(), autoCompensated: new Set<string>() };
+  const [{ data: redeemed }, { data: minted }] = await Promise.all([
+    admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', allIds),
+    admin
+      .from('make_up_tokens')
+      .select('origin_booking_id')
+      .in('origin_booking_id', allIds)
+      .eq('auto_issued', true),
+  ]);
+  return {
+    redeemedByToken: new Set(
+      (redeemed ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id)
+    ),
+    autoCompensated: new Set(
+      (minted ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
+    ),
+  };
+}
+
+/** Which of the caller's *waitlisted* bookings can be paid for right now to
+ *  claim a seat — a paid class, this booking still unsettled, the session
+ *  has a free seat, and it's near enough the front of the queue to be in
+ *  line for one. Fully derived, so it vanishes the instant the seat fills. */
+async function claimableSeats(admin: Admin, rows: Array<{ status: string; session_id: string | null }>) {
+  const claimable = new Set<string>();
+  const wlSessionIds = [
+    ...new Set(rows.filter((r) => r.status === 'waitlisted').map((r) => r.session_id).filter(Boolean)),
+  ] as string[];
+  if (!wlSessionIds.length) return claimable;
+
+  const [{ data: sess }, { data: sessBookings }] = await Promise.all([
+    admin
+      .from('activity_sessions')
+      .select('id, capacity, price, activities(price)')
+      .in('id', wlSessionIds),
+    admin
+      .from('bookings')
+      .select('id, session_id, status, payment_status, package_purchase_id, waitlist_position, waitlist_pay_invited, created_at')
+      .in('session_id', wlSessionIds),
+  ]);
+  const wlBookingIds = (sessBookings ?? [])
+    .filter((b) => b.status === 'waitlisted')
+    .map((b) => b.id);
+  let redeemedWl = new Set<string>();
+  if (wlBookingIds.length) {
+    const { data: rt } = await admin
+      .from('make_up_tokens')
+      .select('redeemed_booking_id')
+      .eq('status', 'redeemed')
+      .in('redeemed_booking_id', wlBookingIds);
+    redeemedWl = new Set((rt ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id));
+  }
+  const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
+    b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
+  for (const s of sess ?? []) {
+    const price = Number(s.price ?? (s.activities as { price?: number | null } | null)?.price ?? 0);
+    if (price <= 0) continue; // free class: promotion is automatic
+    const onSession = (sessBookings ?? []).filter((b) => b.session_id === s.id);
+    const wl = onSession.filter((b) => b.status === 'waitlisted');
+
+    // A vendor who used "Promote" on an unpaid booking has offered the seat
+    // explicitly — show "Pay now" even if the class is at capacity.
+    for (const b of wl) {
+      if (b.waitlist_pay_invited && !isSettled(b)) claimable.add(b.id);
+    }
+
+    const taken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
+    const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - taken;
+    if (free <= 0) continue;
+    const queue = wl.sort(
+      (a, b) =>
+        (a.waitlist_position ?? 1e9) - (b.waitlist_position ?? 1e9) ||
+        String(a.created_at).localeCompare(String(b.created_at))
+    );
+    for (let i = 0; i < Math.min(free, queue.length); i++) {
+      if (!isSettled(queue[i])) claimable.add(queue[i].id);
+    }
+  }
+  return claimable;
+}
+
 /**
  * The signed-in parent's own booking history.
  *
@@ -45,87 +133,18 @@ export async function GET(request: Request) {
   });
   const allIds = rows.map((r) => r.id);
 
-  // Was this booking made by redeeming a make-up token? (redeemed_booking_id
-  // is cleared when such a booking is cancelled — 00081 — so this only ever
-  // matches a live one.) And, for a cancelled booking, did an auto make-up
-  // token get minted to compensate it? (00080)
-  let redeemedByToken = new Set<string>();
-  let autoCompensated = new Set<string>();
-  if (allIds.length) {
-    const [{ data: redeemed }, { data: minted }] = await Promise.all([
-      admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', allIds),
-      admin
-        .from('make_up_tokens')
-        .select('origin_booking_id')
-        .in('origin_booking_id', allIds)
-        .eq('auto_issued', true),
-    ]);
-    redeemedByToken = new Set(
-      (redeemed ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id)
-    );
-    autoCompensated = new Set(
-      (minted ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
-    );
-  }
-
-  // Which of the caller's *waitlisted* bookings can be paid for right now to
-  // claim a seat — a paid class, this booking still unsettled, the session
-  // has a free seat, and it's near enough the front of the queue to be in
-  // line for one. Fully derived, so it vanishes the instant the seat fills.
-  const claimable = new Set<string>();
-  const wlSessionIds = [
-    ...new Set(rows.filter((r) => r.status === 'waitlisted').map((r) => r.session_id).filter(Boolean)),
-  ] as string[];
-  if (wlSessionIds.length) {
-    const [{ data: sess }, { data: sessBookings }] = await Promise.all([
-      admin
-        .from('activity_sessions')
-        .select('id, capacity, price, activities(price)')
-        .in('id', wlSessionIds),
-      admin
-        .from('bookings')
-        .select('id, session_id, status, payment_status, package_purchase_id, waitlist_position, waitlist_pay_invited, created_at')
-        .in('session_id', wlSessionIds),
-    ]);
-    const wlBookingIds = (sessBookings ?? [])
-      .filter((b) => b.status === 'waitlisted')
-      .map((b) => b.id);
-    let redeemedWl = new Set<string>();
-    if (wlBookingIds.length) {
-      const { data: rt } = await admin
-        .from('make_up_tokens')
-        .select('redeemed_booking_id')
-        .eq('status', 'redeemed')
-        .in('redeemed_booking_id', wlBookingIds);
-      redeemedWl = new Set((rt ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id));
-    }
-    const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
-      b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
-    for (const s of sess ?? []) {
-      const price = Number(s.price ?? (s.activities as { price?: number | null } | null)?.price ?? 0);
-      if (price <= 0) continue; // free class: promotion is automatic
-      const onSession = (sessBookings ?? []).filter((b) => b.session_id === s.id);
-      const wl = onSession.filter((b) => b.status === 'waitlisted');
-
-      // A vendor who used "Promote" on an unpaid booking has offered the seat
-      // explicitly — show "Pay now" even if the class is at capacity.
-      for (const b of wl) {
-        if (b.waitlist_pay_invited && !isSettled(b)) claimable.add(b.id);
-      }
-
-      const taken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
-      const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - taken;
-      if (free <= 0) continue;
-      const queue = wl.sort(
-        (a, b) =>
-          (a.waitlist_position ?? 1e9) - (b.waitlist_position ?? 1e9) ||
-          String(a.created_at).localeCompare(String(b.created_at))
-      );
-      for (let i = 0; i < Math.min(free, queue.length); i++) {
-        if (!isSettled(queue[i])) claimable.add(queue[i].id);
-      }
-    }
-  }
+  // These two blocks (compensation/redeemed-token lookups, and waitlist
+  // claimability) read completely disjoint tables and never touch each
+  // other's results — they used to run one after the other regardless,
+  // which on a booking history of any size was two full sequential DB
+  // round trips this route just didn't need to pay serially. Run together
+  // instead; each keeps its own internal dependency chain where it has one
+  // (the waitlist block's token lookup still has to wait on its own
+  // session/bookings query, since it needs the ids that comes back with).
+  const [{ redeemedByToken, autoCompensated }, claimable] = await Promise.all([
+    compensationSets(admin, allIds),
+    claimableSeats(admin, rows),
+  ]);
 
   const bookings = rows.map((r) => {
     // A session-level policy override (migration 00133) wins over the

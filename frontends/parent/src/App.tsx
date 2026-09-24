@@ -818,7 +818,7 @@ function datePresets(): { key: string; label: string; from: string; to: string }
 function ExplorePage() {
   // "Top rated" and "Most popular" read the same to parents, so popularity now
   // covers both; the other two sorts are the ones QA asked for.
-  const [sort, setSort] = useState<"popular" | "distance" | "soonest">("popular");
+  const [sort, setSort] = useState<"popular" | "distance" | "soonest" | "price_asc" | "price_desc">("popular");
   // Seed every filter from the query string — home-page tiles, header search
   // and category emails only ever set `cat`/`age` (still a single value
   // there), but this is also how a parent's own filter picks survive leaving
@@ -912,7 +912,11 @@ function ExplorePage() {
     dateTo: dateTo || null,
     timeMin: debouncedTimeActive ? debouncedMinH : null,
     timeMax: debouncedTimeActive ? debouncedMaxH : null,
-    sort: sort === "distance" ? "distance" as const : "popular" as const,
+    sort:
+      sort === "distance" ? "distance" as const
+      : sort === "price_asc" ? "price_asc" as const
+      : sort === "price_desc" ? "price_desc" as const
+      : "popular" as const,
     limit: PAGE,
   };
   const { activities, total, loading, loadingMore, hasMore, loadMore } = useActivities(filterParams);
@@ -1133,7 +1137,7 @@ function ExplorePage() {
                   <div>
                     <p className="mb-2 text-xs font-bold text-[#68718f]">Sort by</p>
                     <div className="flex flex-wrap gap-2">
-                      {([["popular", "Most popular"], ["distance", "Nearest"], ["soonest", "Starting soonest"]] as const).map(([v, l]) => (
+                      {([["popular", "Most popular"], ["distance", "Nearest"], ["soonest", "Starting soonest"], ["price_asc", "Price: low to high"], ["price_desc", "Price: high to low"]] as const).map(([v, l]) => (
                         <button
                           key={v}
                           type="button"
@@ -1294,6 +1298,8 @@ function ExplorePage() {
                 <Opt value="popular">Most popular</Opt>
                 <Opt value="distance">Nearest</Opt>
                 <Opt value="soonest">Starting soonest</Opt>
+                <Opt value="price_asc">Price: low to high</Opt>
+                <Opt value="price_desc">Price: high to low</Opt>
               </SelectField>
             </label>
             <button

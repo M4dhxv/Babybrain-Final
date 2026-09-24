@@ -590,9 +590,15 @@ function useRowHighlight(id: string): boolean {
   const [flashing, setFlashing] = useState(false);
   useEffect(() => {
     if (getParam("highlight") !== id) return;
-    setFlashing(true);
-    const stopScroll = scrollHighlightIntoView(`row-${id}`);
-    const t = window.setTimeout(() => setFlashing(false), 1600);
+    let t: number | undefined;
+    // The flash timer starts when the row is actually found and scrolled to,
+    // not from mount — otherwise a slow-loading list could run out this
+    // whole animation window before the row ever exists, and it'd scroll
+    // into view already faded back to invisible.
+    const stopScroll = scrollHighlightIntoView(`row-${id}`, () => {
+      setFlashing(true);
+      t = window.setTimeout(() => setFlashing(false), 1600);
+    });
     return () => {
       stopScroll();
       window.clearTimeout(t);
@@ -1545,8 +1551,22 @@ export function ProfilePage() {
   // exception for a parent viewing their own past booking. Once a vendor
   // removes/unpublishes an activity, that join silently came back null and
   // My Bookings fell back to a bare "Class" placeholder with no date.
-  function loadBookings() {
-    apiGet<{
+  //
+  // Unlike every other read on this page (favourites, packages, tokens,
+  // notifications), this one never went through cacheFetch — every mount
+  // re-ran the full route from scratch, including its own several sequential
+  // DB round trips (see the route's own comments), so returning to this tab
+  // always paid that cost again even seconds later. `cached: true` (the
+  // initial mount) allows a fresh-enough cached copy to resolve instantly;
+  // every other caller (cancel/reschedule/claim/reconcile — anything that
+  // just changed a booking) omits it, which invalidates first so it can never
+  // hand back a stale list right after the very action that changed it.
+  function loadBookings(opts?: { cached?: boolean }) {
+    const uid = session?.user.id;
+    if (!uid) return;
+    const key = `profile:bookings:${uid}`;
+    if (!opts?.cached) cacheInvalidate(key);
+    cacheFetch(key, PROFILE_FRESH_MS, () => apiGet<{
       bookings: Array<{
         id: string;
         status: string;
@@ -1581,7 +1601,7 @@ export function ProfilePage() {
         refund_mode: "refund" | "none";
         can_claim?: boolean;
       }>;
-    }>("/api/customer/bookings")
+    }>("/api/customer/bookings"))
       .then(({ bookings: rows }) => {
         // A multi-child booking (00084) arrives as one row per seat sharing a
         // booking_group_id. Collapse each group into a single card; a solo
@@ -1810,7 +1830,7 @@ export function ProfilePage() {
       setFavChildren(m);
     });
 
-    loadBookings();
+    loadBookings({ cached: true });
 
     cacheFetch(`profile:reviews:${uid}`, PROFILE_FRESH_MS, () =>
       supabase
@@ -3213,11 +3233,21 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   // renders its rows inline rather than through a per-row component, so the
   // same one-shot behaviour is done here with plain state instead of the
   // hook, to keep the number of hooks fixed regardless of `items.length`).
-  const [highlightId, setHighlightId] = useState<string | null>(() => getParam("highlight"));
+  const [highlightId] = useState<string | null>(() => getParam("highlight"));
+  // Separate from highlightId itself (which never changes once set): this
+  // flips true only once the target row is actually found and scrolled to,
+  // and only then starts the fade-out timer — a fixed timer running from
+  // mount could finish (and fade back to invisible) before a slow-loading
+  // list ever rendered the row for it to highlight, which is exactly what
+  // "the highlighted row is there but not visibly marked" looked like.
+  const [flashing, setFlashing] = useState(false);
   useEffect(() => {
     if (!highlightId) return;
-    const stopScroll = scrollHighlightIntoView(`row-${highlightId}`);
-    const t = window.setTimeout(() => setHighlightId(null), 1600);
+    let t: number | undefined;
+    const stopScroll = scrollHighlightIntoView(`row-${highlightId}`, () => {
+      setFlashing(true);
+      t = window.setTimeout(() => setFlashing(false), 1600);
+    });
     return () => {
       stopScroll();
       window.clearTimeout(t);
@@ -3412,7 +3442,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             key={b.id}
             id={`row-${b.id}`}
             className={`rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card transition hover:border-baby-pink ${
-              highlightId != null && (b.id === highlightId || b.allIds.includes(highlightId)) ? HIGHLIGHT_RING : ""
+              flashing && highlightId != null && (b.id === highlightId || b.allIds.includes(highlightId)) ? HIGHLIGHT_RING : ""
             }`}
           >
             {/* A removed activity's own detail page is gone (unpublished,

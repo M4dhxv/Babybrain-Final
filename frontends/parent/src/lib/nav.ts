@@ -83,8 +83,17 @@ export function scrollToWhenReady(id: string, tries = 40, everyMs = 100): () => 
  * rendered siblings instead: the first row aligns to the top (nothing above
  * it to waste space on), the last couple align to the bottom, everything
  * else centers — so the target always lands fully inside the viewport.
+ *
+ * Polls for up to 30s by default (a slow list load — e.g. My Bookings' own
+ * multi-round-trip fetch — shouldn't outrun a 4-second window and land the
+ * parent on an unscrolled page next to the row they came here to see, which
+ * is exactly what a too-short poll looked like). `onFound` lets the caller
+ * start a highlight animation timer from the moment the row actually
+ * appears, not from when this was first called — otherwise a highlight
+ * fired eagerly on a fixed timer can finish (and fade back to invisible)
+ * before a slow-loading row ever exists to show it on.
  */
-export function scrollHighlightIntoView(id: string, tries = 40, everyMs = 100): () => void {
+export function scrollHighlightIntoView(id: string, onFound?: () => void, tries = 150, everyMs = 200): () => void {
   let n = 0;
   const timer = window.setInterval(() => {
     const el = document.getElementById(id);
@@ -94,6 +103,7 @@ export function scrollHighlightIntoView(id: string, tries = 40, everyMs = 100): 
       const block: ScrollLogicalPosition = idx <= 0 ? "start" : idx >= siblings.length - 2 ? "end" : "center";
       el.scrollIntoView({ behavior: "auto", block });
       window.clearInterval(timer);
+      onFound?.();
     } else if (++n > tries) {
       window.clearInterval(timer);
     }
