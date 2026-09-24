@@ -3779,6 +3779,16 @@ function PackageOption({
 
 export function BookingPage() {
   const { activity, sessions, courseSpan, eventSoldOut, loading } = useActivityDetail(getParam("slug"));
+  // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
+  // two independent requests (different Wix thumbnail sizes), so each gets
+  // its own broken-image state. Hooks, so they have to run unconditionally —
+  // ahead of the loading/not-found early returns below, not after them
+  // (a build-breaking rules-of-hooks violation caught by ESLint, not tsc,
+  // which is how it shipped and kept shipping across several commits: no one
+  // ran the actual `npm run build` locally, only `tsc --noEmit`).
+  const img = activity ? resolveActivityImage(activity, activity.provider_contact) ?? FALLBACK_LOGO_URL : FALLBACK_LOGO_URL;
+  const heroImg = useThumb(img, 490, 416);
+  const summaryImg = useThumb(img, 224, 192);
   const { session: auth, children: kids } = useAuth();
   const redeemToken = getParam("token");
   /* "A spot has opened up" emails deep-link here with the freed slot
@@ -4698,14 +4708,6 @@ export function BookingPage() {
     );
   }
 
-  // The same photo the activity page leads with (own photos, else the vendor's profile picture and
-  // catalogue), not a stock crop or just the first upload.
-  const img = resolveActivityImage(activity, activity.provider_contact) ?? FALLBACK_LOGO_URL;
-  // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
-  // two independent requests (different Wix thumbnail sizes), so each gets
-  // its own broken-image state.
-  const heroImg = useThumb(img, 490, 416);
-  const summaryImg = useThumb(img, 224, 192);
   const ageText = formatAgeRange(activity.age_min_months, activity.age_max_months);
 
   return (
