@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { ResendConfirmation } from "../components/ResendConfirmation";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
+import { geocodePostal } from "../lib/geocode";
 import { goTo } from "../lib/nav";
 import {
   PASSWORD_RULES,
@@ -239,6 +240,12 @@ export default function OnboardingPage() {
         return setConfirmSent(true);
       }
       const uid = session.user.id;
+      // Best-effort: resolves postal_code to coordinates so the recommendation
+      // engine's distance scoring (compute_recommendations_for_child) has
+      // something to work with — it previously read parent_profiles.latitude/
+      // longitude, which nothing ever wrote, so every parent fell back to its
+      // neutral "unknown location" score regardless of where they actually are.
+      const coords = await geocodePostal(postcode);
       await supabase.from("parent_profiles").update({
         full_name: fullName,
         phone: phone || null,
@@ -247,6 +254,7 @@ export default function OnboardingPage() {
         // Only written when actually ticked — a null here means no consent, and
         // that is the state every account starts in.
         ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
+        ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
       }).eq("id", uid);
       await supabase.from("user_preferences").update({
         preferred_days: days as never,

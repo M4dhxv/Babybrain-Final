@@ -87,6 +87,34 @@
   height: 0.4375rem;
 }
 
+/* "This is the one" flash for a booking/package/token row a parent lands on
+   from a notification link (dashboard.tsx's useRowHighlight/BookingList).
+   A single spring — small overshoot, settle past, ease back — synced with a
+   ring that blooms in and fades its blur out rather than snapping off.
+   #FA4D8D is baby.cta, the same pink these cards already turn to on hover,
+   so the highlight reads as "more of this card's own colour" rather than an
+   unrelated accent. Keyframes live here because Tailwind can't emit a
+   multi-stage spring from an arbitrary `animate-[...]` value. */
+@keyframes bb-highlight-bounce {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.035); }
+  60% { transform: scale(0.99); }
+  80% { transform: scale(1.008); }
+  100% { transform: scale(1); }
+}
+@keyframes bb-highlight-ring {
+  0% { box-shadow: 0 0 0 0 rgba(250, 77, 141, 0); border-color: transparent; }
+  15% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  70% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0.22); border-color: #FA4D8D; }
+  100% { box-shadow: 0 0 0 5px rgba(250, 77, 141, 0); border-color: transparent; }
+}
+.bb-highlight {
+  animation: bb-highlight-bounce 0.6s cubic-bezier(.34,1.56,.64,1), bb-highlight-ring 1.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-highlight { animation: bb-highlight-ring 1.6s ease-out; }
+}
+
 /* Stream Chat's own theme, repainted in the CTA pink — the same colour as the
    filled "Book a class" buttons (#FA4D8D, `baby.cta`).
 

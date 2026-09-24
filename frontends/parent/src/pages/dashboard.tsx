@@ -43,8 +43,9 @@ import { useUnreadMessages } from "../lib/chat";
 import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { apiGet, apiPost } from "../lib/api";
+import { geocodePostal } from "../lib/geocode";
 import { cleanRpcErrorMessage } from "../lib/errors";
-import { goTo, getParam, scrollToWhenReady } from "../lib/nav";
+import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands } from "../lib/schedule";
 import { downloadBookingIcs, downloadScheduleIcs } from "../lib/ics";
 import { downloadSchedulePdf, withinRange } from "../lib/schedule-pdf";
@@ -190,7 +191,7 @@ function NotificationRow({ n }: { n: NotifItem }) {
         {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
         <p className="mt-1 text-xs font-semibold text-[#6D748A]">{sgDateTime(n.created_at)}</p>
       </div>
-      {target && <Icon name="chevron" className="mt-1 h-4 w-4 flex-shrink-0 -rotate-90 text-[#9AA2BD]" />}
+      {target && <Icon name="chevron" className="mt-1 h-4 w-4 flex-shrink-0 text-[#9AA2BD]" />}
     </div>
   );
 
@@ -577,9 +578,10 @@ function groupByChild<T extends { childId?: string | null; child_id?: string | n
   return groups;
 }
 
-/** True for a couple of seconds when this row's id matches `?highlight=` in
- *  the URL — the parent arrived here from a notification's "view this" link
- *  rather than by browsing, so the row scrolls into view and flashes once to
+/** True for the ~1.6s the bb-highlight animation runs when this row's id
+ *  matches `?highlight=` in the URL — the parent arrived here from a
+ *  notification's "view this" link rather than by browsing, so the row
+ *  scrolls fully into view (see scrollHighlightIntoView) and bounces once to
  *  say "this one" instead of leaving them to scan the whole list. One-shot:
  *  keyed on `id`, which is stable for the row's lifetime. */
 function useRowHighlight(id: string): boolean {
@@ -587,8 +589,8 @@ function useRowHighlight(id: string): boolean {
   useEffect(() => {
     if (getParam("highlight") !== id) return;
     setFlashing(true);
-    const stopScroll = scrollToWhenReady(`row-${id}`);
-    const t = window.setTimeout(() => setFlashing(false), 1800);
+    const stopScroll = scrollHighlightIntoView(`row-${id}`);
+    const t = window.setTimeout(() => setFlashing(false), 1600);
     return () => {
       stopScroll();
       window.clearTimeout(t);
@@ -598,9 +600,10 @@ function useRowHighlight(id: string): boolean {
   return flashing;
 }
 
-/** Ring + tint applied on top of a row's own border/background while it's
- *  the highlight target — same blue used for "Selected" states elsewhere. */
-const HIGHLIGHT_RING = "ring-2 ring-palette-blueStrong ring-offset-2";
+/** Bounce + colour-matched ring applied on top of a row's own border/tint
+ *  while it's the highlight target (see the bb-highlight keyframes in
+ *  styles/index.css — Tailwind alone can't express the spring). */
+const HIGHLIGHT_RING = "bb-highlight";
 
 /** One make-up token, shared by the flat and the split-by-child lists. */
 function TokenRow({ t }: { t: TokenItem }) {
@@ -1145,6 +1148,10 @@ export function EditProfilePage() {
     if (postcodeProblem) return setError(postcodeProblem);
     setBusy(true);
     setError(null);
+    // Best-effort — see geocode.ts. Re-resolved on every save (not just when
+    // the postcode changed) so a parent who never touched location before
+    // this fix still gets coordinates the next time they save their profile.
+    const coords = await geocodePostal(postcode);
     const { error: pErr } = await supabase
       .from("parent_profiles")
       .update({
@@ -1152,6 +1159,7 @@ export function EditProfilePage() {
         phone: phone.trim() || null,
         postal_code: postcode.trim(),
         avatar_seed: avatarSeed,
+        ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
       })
       .eq("id", session.user.id);
     // QA: "interests show up under the parent section — remove, interests are
@@ -3206,8 +3214,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   const [highlightId, setHighlightId] = useState<string | null>(() => getParam("highlight"));
   useEffect(() => {
     if (!highlightId) return;
-    const stopScroll = scrollToWhenReady(`row-${highlightId}`);
-    const t = window.setTimeout(() => setHighlightId(null), 1800);
+    const stopScroll = scrollHighlightIntoView(`row-${highlightId}`);
+    const t = window.setTimeout(() => setHighlightId(null), 1600);
     return () => {
       stopScroll();
       window.clearTimeout(t);

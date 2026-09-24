@@ -73,6 +73,34 @@ export function scrollToWhenReady(id: string, tries = 40, everyMs = 100): () => 
   return () => window.clearInterval(timer);
 }
 
+/**
+ * Like scrollToWhenReady, but for a row inside a list where always aligning
+ * to the top can walk the target half off-screen — a row near the bottom of
+ * a long list, aligned to `block: "start"`, leaves the browser trying to put
+ * a whole screen's worth of nothing beneath it, which either clips the row
+ * against the page's real end or (with more content below) pushes it up
+ * against a header. Picks the alignment from the row's position among its
+ * rendered siblings instead: the first row aligns to the top (nothing above
+ * it to waste space on), the last couple align to the bottom, everything
+ * else centers — so the target always lands fully inside the viewport.
+ */
+export function scrollHighlightIntoView(id: string, tries = 40, everyMs = 100): () => void {
+  let n = 0;
+  const timer = window.setInterval(() => {
+    const el = document.getElementById(id);
+    if (el) {
+      const siblings = el.parentElement ? Array.from(el.parentElement.children) : [el];
+      const idx = siblings.indexOf(el);
+      const block: ScrollLogicalPosition = idx <= 0 ? "start" : idx >= siblings.length - 2 ? "end" : "center";
+      el.scrollIntoView({ behavior: "auto", block });
+      window.clearInterval(timer);
+    } else if (++n > tries) {
+      window.clearInterval(timer);
+    }
+  }, everyMs);
+  return () => window.clearInterval(timer);
+}
+
 /** Whether `pathOrUrl` is a route this SPA renders in place (so a link to it
  *  can be a pushState instead of a full reload). Anything non-relative, or a
  *  path outside the set, returns false. */
