@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
 import { klaviyoEnabled, metricFor, trackEvent, upsertProfile } from '@/lib/klaviyo';
+import { sendPushToUser } from '@/lib/push';
 
 /** Chat reply emails wait this long and are dropped if the message was read. */
 const CHAT_TYPES = new Set(['provider_message', 'provider_message_response']);
@@ -40,11 +41,24 @@ export async function POST(request: Request) {
 
   const { data: notification } = await admin
     .from('notifications')
-    .select('id, user_id, type, title, body, data, email_status, created_at')
+    .select('id, user_id, type, title, body, data, email_status, push_status, created_at')
     .eq('id', notificationId)
     .single();
   if (!notification || notification.email_status !== 'pending') {
     return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // Push goes out on this first call, ahead of the chat-email-delay logic
+  // below — unlike email, push shouldn't wait 8h. push_status guards against
+  // the delayed chat re-post (below) sending it a second time.
+  if (notification.push_status === 'pending') {
+    const pushData = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
+    await sendPushToUser(notification.user_id, {
+      title: notification.title,
+      body: notification.body,
+      url: typeof pushData.url === 'string' ? pushData.url : undefined,
+    }).catch((err) => console.error(`[notifications webhook] push failed for ${notificationId}:`, err));
+    await admin.from('notifications').update({ push_status: 'sent' }).eq('id', notificationId);
   }
 
   // Chat replies: hold the email until the message has sat unread for 8h.

@@ -38,12 +38,14 @@
     "resend": "^4.5.0",
     "stream-chat": "^9.3.0",
     "stream-chat-react": "^13.0.0",
-    "stripe": "^22.2.3"
+    "stripe": "^22.2.3",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/web-push": "^3.6.4",
     "postgres": "^3.4.5",
     "typescript": "^5.8.0"
   }

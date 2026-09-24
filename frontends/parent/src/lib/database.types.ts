@@ -853,9 +853,9 @@ export type Database = {
         Relationships: [];
       };
       packages: {
-        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; expiry_date: string | null; allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null };
-        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null };
-        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null };
+        Row: { id: string; provider_id: string; activity_ids: string[] | null; name: string; credits: number; price_cents: number; active: boolean; created_at: string; validity_days: number | null; expiry_date: string | null; allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null; available_until: string | null };
+        Insert: { provider_id: string; activity_ids?: string[] | null; name: string; credits: number; price_cents: number; active?: boolean; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null; available_until?: string | null };
+        Update: { name?: string; credits?: number; price_cents?: number; active?: boolean; activity_ids?: string[] | null; validity_days?: number | null; expiry_date?: string | null; allowed_weekday?: number | null; allowed_start_time?: string | null; starts_at?: string | null; available_until?: string | null };
         Relationships: [];
       };
       package_purchases: {
@@ -975,6 +975,14 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      save_push_subscription: {
+        Args: { p_endpoint: string; p_p256dh: string; p_auth: string };
+        Returns: void;
+      };
+      delete_push_subscription: {
+        Args: { p_endpoint: string };
+        Returns: void;
+      };
       upcoming_activity_sessions: {
         Args: { p_activity_id: string; p_limit?: number };
         Returns: {

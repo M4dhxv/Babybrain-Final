@@ -1860,10 +1860,10 @@ function ActivityDetailPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date, best_value")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null; best_value: boolean }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean }>)
     ).then((rows) => {
       setPacks(
         rows

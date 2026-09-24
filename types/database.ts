@@ -485,6 +485,7 @@ export type Database = {
           data: Json;
           read_at: string | null;
           email_status: EmailStatus;
+          push_status: EmailStatus;
           created_at: string;
         };
         Insert: {
@@ -495,10 +496,31 @@ export type Database = {
           body?: string;
           data?: Json;
         };
-        Update: { read_at?: string | null; email_status?: EmailStatus };
+        Update: { read_at?: string | null; email_status?: EmailStatus; push_status?: EmailStatus };
               Relationships: [
           {
             foreignKeyName: 'notifications_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'parent_profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          created_at: string;
+        };
+        Insert: { user_id: string; endpoint: string; p256dh: string; auth: string };
+        Update: { endpoint?: string; p256dh?: string; auth?: string };
+        Relationships: [
+          {
+            foreignKeyName: 'push_subscriptions_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'parent_profiles';

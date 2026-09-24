@@ -30,6 +30,7 @@ type Pack = {
   id: string; name: string; credits: number; price_cents: number; active: boolean;
   activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
   allowed_weekday: number | null; allowed_start_time: string | null; starts_at: string | null;
+  available_until: string | null;
   best_value: boolean;
 };
 type Purchase = {
@@ -43,7 +44,7 @@ const emptyPack = {
   name: '', credits: '', price: '',
   expiryMode: 'none' as ExpiryMode, validity_days: '', expiry_date: '',
   activity_ids: [] as string[], allowed_weekday: '', allowed_start_time: '',
-  starts_date: '', starts_time: '', best_value: false,
+  starts_date: '', starts_time: '', until_date: '', until_time: '', best_value: false,
 };
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 /** A plain YYYY-MM-DD (no time component) formatted without a UTC round-trip,
@@ -70,18 +71,19 @@ function sgtDateTimeParts(iso: string) {
   };
 }
 
-/** A pack's own [start, end) window, or null when it isn't scheduled at all
- *  (an ordinary always-on pack, which never conflicts with anything —
- *  multiple such packs per activity is intended, see packages-multi-
- *  per-activity-is-intended). Only packs that actually use the start-date
- *  feature participate in conflict checking. expiry_date is a fixed
- *  calendar date shared by every purchase (00132); validity_days is
- *  per-purchase and so doesn't bound the pack itself. */
-function packWindow(p: { starts_at: string | null; expiry_date: string | null }): { start: number; end: number } | null {
+/** A pack's own [available from, available until) sale window, or null when
+ *  it isn't scheduled at all (an ordinary always-on pack, which never
+ *  conflicts with anything — multiple such packs per activity is intended,
+ *  see packages-multi-per-activity-is-intended). Only packs that actually
+ *  use the start-date feature participate in conflict checking. This is
+ *  purely about when the pack can be *bought*; expiry_date/validity_days
+ *  (00132) instead govern how long a purchase already made stays valid for
+ *  its buyer, and don't bound the pack itself. */
+function packWindow(p: { starts_at: string | null; available_until: string | null }): { start: number; end: number } | null {
   if (!p.starts_at) return null;
   return {
     start: new Date(p.starts_at).getTime(),
-    end: p.expiry_date ? new Date(`${p.expiry_date}T23:59:59+08:00`).getTime() : Infinity,
+    end: p.available_until ? new Date(p.available_until).getTime() : Infinity,
   };
 }
 const scopeSet = (ids: string[] | null) => (ids && ids.length ? new Set(ids) : null);
@@ -108,7 +110,7 @@ export default function PackagesPage() {
     async () => {
       const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
         supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
-        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at, best_value').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
+        supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at, available_until, best_value').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
         supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
       ]);
       return {
@@ -142,14 +144,17 @@ export default function PackagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newParam, canManage]);
 
-  /** Active/Upcoming/Expired reflects the schedule the parent app actually
-   *  enforces; Paused is the vendor's own on/off switch. Mirrors
-   *  displayStatus below, which does the same for purchases. */
+  /** Active/Upcoming/Expired reflects the sale window (available_from /
+   *  available_until) the parent app actually enforces; Paused is the
+   *  vendor's own on/off switch. This is about whether the pack can still be
+   *  bought — separate from expiry_date/validity_days, which only govern how
+   *  long a purchase already made stays valid. Mirrors displayStatus below,
+   *  which does the analogous thing for purchases. */
   const packStatus = (p: Pack): 'paused' | 'upcoming' | 'active' | 'expired' => {
     if (!p.active) return 'paused';
     const now = new Date();
     if (p.starts_at && new Date(p.starts_at) > now) return 'upcoming';
-    if (p.expiry_date && new Date(`${p.expiry_date}T23:59:59+08:00`) <= now) return 'expired';
+    if (p.available_until && new Date(p.available_until) <= now) return 'expired';
     return 'active';
   };
   const packStatusBadge = (s: ReturnType<typeof packStatus>) => cn(
@@ -163,7 +168,8 @@ export default function PackagesPage() {
 
   const packRestriction = (p: Pack) => {
     const parts: string[] = [];
-    if (p.starts_at) parts.push(`starts ${fmtDateTime(p.starts_at)}`);
+    if (p.starts_at) parts.push(`available from ${fmtDateTime(p.starts_at)}`);
+    if (p.available_until) parts.push(`until ${fmtDateTime(p.available_until)}`);
     if (p.activity_ids && p.activity_ids.length > 0) {
       const names = p.activity_ids.map((id) => activities.find((a) => a.id === id)?.title ?? 'one activity');
       parts.push(names.length <= 2 ? names.join(' & ') : `${names.length} activities`);
@@ -184,6 +190,7 @@ export default function PackagesPage() {
     setPackError(null);
     setPackNotice(null);
     const starts = p.starts_at ? sgtDateTimeParts(p.starts_at) : null;
+    const until = p.available_until ? sgtDateTimeParts(p.available_until) : null;
     setPackForm({
       name: p.name,
       credits: String(p.credits),
@@ -196,6 +203,8 @@ export default function PackagesPage() {
       allowed_start_time: p.allowed_start_time ?? '',
       starts_date: starts?.date ?? '',
       starts_time: starts?.time ?? '',
+      until_date: until?.date ?? '',
+      until_time: until?.time ?? '',
       best_value: p.best_value,
     });
     document.getElementById('pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -232,8 +241,9 @@ export default function PackagesPage() {
     if (packForm.expiryMode === 'days' && (!packForm.validity_days || Number(packForm.validity_days) < 1)) return setPackError('Enter how many days the pack stays valid, or choose another expiry.');
     if (packForm.expiryMode === 'date' && !packForm.expiry_date) return setPackError('Pick an expiry date.');
     if (packForm.starts_time && !packForm.starts_date) return setPackError('Pick a start date too.');
-    if (packForm.starts_date && packForm.expiryMode === 'date' && packForm.expiry_date && packForm.expiry_date < packForm.starts_date) {
-      return setPackError('Expiry date is before the start date.');
+    if (packForm.until_time && !packForm.until_date) return setPackError('Pick an "available until" date too.');
+    if (packForm.until_date && packForm.starts_date && `${packForm.until_date}T${packForm.until_time || '00:00'}` <= `${packForm.starts_date}T${packForm.starts_time || '00:00'}`) {
+      return setPackError('"Available until" is before "Available from".');
     }
 
     setSavingPack(true);
@@ -247,6 +257,7 @@ export default function PackagesPage() {
       allowed_weekday: packForm.allowed_weekday !== '' ? Number(packForm.allowed_weekday) : null,
       allowed_start_time: packForm.allowed_start_time || null,
       starts_at: packForm.starts_date ? new Date(`${packForm.starts_date}T${packForm.starts_time || '00:00'}:00+08:00`).toISOString() : null,
+      available_until: packForm.until_date ? new Date(`${packForm.until_date}T${packForm.until_time || '23:59'}:00+08:00`).toISOString() : null,
       best_value: packForm.best_value,
     };
     const { error } = editingPackId
@@ -325,7 +336,7 @@ export default function PackagesPage() {
   const formWindow = packForm.starts_date
     ? packWindow({
         starts_at: new Date(`${packForm.starts_date}T${packForm.starts_time || '00:00'}:00+08:00`).toISOString(),
-        expiry_date: packForm.expiryMode === 'date' ? packForm.expiry_date || null : null,
+        available_until: packForm.until_date ? new Date(`${packForm.until_date}T${packForm.until_time || '23:59'}:00+08:00`).toISOString() : null,
       })
     : null;
   const packConflicts = formWindow
@@ -437,10 +448,17 @@ export default function PackagesPage() {
                     </label>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Start (optional)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Available from (optional)</label>
                     <div className="flex w-full gap-2">
-                      <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack start date" className="w-32 flex-shrink-0" />
-                      <TimePicker value={packForm.starts_time} onChange={(v) => setPackForm({ ...packForm, starts_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Start time (SGT); leave blank for start of day" aria-label="Start time" />
+                      <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack available-from date" className="w-32 flex-shrink-0" />
+                      <TimePicker value={packForm.starts_time} onChange={(v) => setPackForm({ ...packForm, starts_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Available-from time (SGT); leave blank for start of day" aria-label="Available-from time" />
+                    </div>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Available until (optional)</label>
+                    <div className="flex w-full gap-2">
+                      <DatePicker value={packForm.until_date} onChange={(v) => setPackForm({ ...packForm, until_date: v })} aria-label="Pack available-until date" className="w-32 flex-shrink-0" />
+                      <TimePicker value={packForm.until_time} onChange={(v) => setPackForm({ ...packForm, until_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Available-until time (SGT); leave blank for end of day" aria-label="Available-until time" />
                     </div>
                   </div>
                   <div className="w-full sm:w-auto">
@@ -513,6 +531,7 @@ export default function PackagesPage() {
                 </div>
                 <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-class pack limited to the Monday 4:00 pm class.</p>
                 <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per class.</p>
+                <p className="mt-1 text-xs text-gray-500">Available from/until decide when parents can buy this pack. Expiry is separate — it decides how long each parent's credits stay valid, always counted from the day they buy it, not from "Available from".</p>
               </>
             )}
           </div>

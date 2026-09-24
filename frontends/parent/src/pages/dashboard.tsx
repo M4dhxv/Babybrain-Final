@@ -64,6 +64,8 @@ import { CHILD_AVATARS, PARENT_AVATARS, type AvatarOption } from "../lib/avatars
 import { dobError, postcodeError } from "../lib/validation";
 import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
 import { lazyRoute } from "../lib/lazyRoute";
+import { isStandalone } from "../lib/install";
+import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "../lib/push";
 
 const MessagesTab = lazyRoute(
   () => import("../components/MessagesTab").then((m) => ({ default: m.MessagesTab })),
@@ -2585,6 +2587,8 @@ export function ProfilePage() {
                 </div>
               </div>
 
+              <NotificationsPanel />
+
               <DeleteAccountPanel isPlus={isPlus} />
             </div>
           )}
@@ -2592,6 +2596,56 @@ export function ProfilePage() {
       </main>
       <Footer />
     </PageShell>
+  );
+}
+
+/** Settings → Notifications. Only rendered for an installed app (isStandalone) —
+ *  iOS can't deliver push to a plain Safari tab at all, and prompting
+ *  tab visitors elsewhere is friction with no payoff. Mirrors the toggle
+ *  pattern of the other Settings cards above it. */
+function NotificationsPanel() {
+  const [state, setState] = useState<PushState | "loading">("loading");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPushState().then(setState).catch(() => setState("unsupported"));
+  }, []);
+
+  async function toggle() {
+    setBusy(true);
+    setError(null);
+    try {
+      setState(state === "subscribed" ? await unsubscribeFromPush() : await subscribeToPush());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't update your notification setting — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!isStandalone() || state === "unsupported") return null;
+
+  return (
+    <div className="mt-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Notifications</p>
+          <p className="mt-1 font-black">Push notifications</p>
+          <p className="mt-1 text-sm font-semibold text-[#59658d]">
+            {state === "denied"
+              ? "Blocked in your device settings — enable notifications for BabyBrain there to turn this back on."
+              : "Get a notification for booking updates and messages, even when the app is closed."}
+          </p>
+        </div>
+        {state !== "denied" && state !== "loading" && (
+          <Button type="button" variant={state === "subscribed" ? "outline" : "primary"} onClick={toggle} disabled={busy}>
+            {busy ? "Saving…" : state === "subscribed" ? "Turn off" : "Turn on"}
+          </Button>
+        )}
+      </div>
+      {error && <p className="mt-3 text-sm font-bold text-red-600">{error}</p>}
+    </div>
   );
 }
 
@@ -3619,10 +3673,10 @@ export function BookingPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, expiry_date, best_value")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; expiry_date: string | null; best_value: boolean }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean }>)
     ).then((rows) => {
       const applicable = rows
         .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))

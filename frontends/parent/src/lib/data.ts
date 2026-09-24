@@ -18,13 +18,17 @@ import {
 } from "./database.types";
 
 /** Whether a vendor's package (credit pack) is currently on sale — has
- *  passed its scheduled `starts_at` (if any) and hasn't reached its fixed
- *  `expiry_date` (if any). Mirrors the vendor portal's packStatus in
- *  PackagesPage.tsx; both must be kept in step with each other. */
-export function isPackOnSale(p: { starts_at: string | null; expiry_date: string | null }) {
+ *  passed its scheduled `starts_at` ("Available from", if any) and hasn't
+ *  reached its `available_until` ("Available until", if any). This is only
+ *  about the sale window; expiry_date/validity_days are a separate,
+ *  per-purchase concern (how long a parent's own credits stay valid once
+ *  bought) and don't affect whether the pack is still listed. Mirrors the
+ *  vendor portal's packStatus in PackagesPage.tsx; both must be kept in step
+ *  with each other. */
+export function isPackOnSale(p: { starts_at: string | null; available_until: string | null }) {
   const now = new Date();
   if (p.starts_at && new Date(p.starts_at) > now) return false;
-  if (p.expiry_date && new Date(`${p.expiry_date}T23:59:59+08:00`) <= now) return false;
+  if (p.available_until && new Date(p.available_until) <= now) return false;
   return true;
 }
 

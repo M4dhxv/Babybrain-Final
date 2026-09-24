@@ -69,3 +69,38 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// Web Push only ever reaches an installed app (lib/push.ts gates the
+// subscribe prompt on isStandalone()) — the payload mirrors a `notifications`
+// row (title/body/url) sent by app/api/webhooks/notifications.
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { title: "BabyBrain", body: event.data ? event.data.text() : "" };
+  }
+  const { title = "BabyBrain", body = "", url = "/app/" } = payload;
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/app/assets/brand/icon-192.png",
+      badge: "/app/assets/brand/icon-192.png",
+      data: { url },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/app/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find((c) => c.url === url);
+      if (existing) return existing.focus();
+      const sameOrigin = clients.find((c) => new URL(c.url).origin === self.location.origin);
+      if (sameOrigin) return sameOrigin.focus().then(() => sameOrigin.navigate(url));
+      return self.clients.openWindow(url);
+    }),
+  );
+});
