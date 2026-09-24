@@ -26,6 +26,36 @@ const timeoutFetch: typeof fetch = (input, init) => {
 // out to the parent site would land there already "signed in".
 export const AUTH_STORAGE_KEY = 'sb-babybrain-vendor-auth-token';
 
+// A reset/confirm link that was already used or has expired comes back as
+// `/vendor#error=access_denied&error_code=otp_expired&…`. The HashRouter reads
+// that fragment as a route path and renders the catch-all 404, and Supabase
+// leaves it in place on error. Swap it for the forgot-password page before the
+// client or router ever sees it. (Email security scanners that pre-open links
+// burn the one-time token, so the vendor's own click is often the "used" one.)
+if (typeof window !== 'undefined') {
+  const hash = window.location.hash.replace(/^#/, '');
+  if (!hash.startsWith('/') && /(^|&)error(_code|_description)?=/.test(hash)) {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}#/forgot-password?expired=1`
+    );
+  }
+  // Scanner-proof reset links arrive as `/vendor?token_hash=…&type=recovery`.
+  // Nothing is spent until the vendor presses the button on the reset page, so
+  // a mail scanner opening the link first no longer burns it. Move the token
+  // into the hash route that page reads.
+  const q = new URLSearchParams(window.location.search);
+  const tokenHash = q.get('token_hash');
+  if (tokenHash && q.get('type') === 'recovery') {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}#/reset-password?token_hash=${encodeURIComponent(tokenHash)}`
+    );
+  }
+}
+
 // Browser Supabase client (localStorage session). RLS scopes every query
 // to the signed-in vendor's provider(s) — same backend as the parent app.
 export const supabase = createClient<Database>(

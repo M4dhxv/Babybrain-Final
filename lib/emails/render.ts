@@ -446,6 +446,19 @@ const T: Record<string, Template> = {
         : cta(str(d, 'sign_in_url') ?? ctx.appUrl, 'Sign in to the vendor portal')) +
       sign),
 
+  // Sent by scripts/prepare-vendor-handover.mjs --send-reset when an account we
+  // built is handed to its real owner. `set_password_url` is a token_hash link
+  // spent only on the owner's Continue press, so mail scanners can't burn it.
+  provider_account_handover: (d, ctx) =>
+    wrap(ctx, `Your BabyBrain account for ${esc(str(d, 'business_name') ?? 'your business')} is ready 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`We’ve set up ${bold(str(d, 'business_name') ?? 'your business')} on BabyBrain — your profile, venues and classes are in place. It’s over to you to take the keys.`) +
+      cta(str(d, 'set_password_url') ?? ctx.appUrl, 'Set your password') +
+      p('Then accept the vendor terms and connect Stripe so payouts go straight to your bank — it takes a few minutes.') +
+      p(`If the link has expired, use “Forgot password?” on the ${link(ctx, str(d, 'sign_in_url') ?? '/vendor', 'sign-in page')} with this email address.`) +
+      fallbackLink(str(d, 'set_password_url') ?? ctx.appUrl) +
+      sign),
+
   provider_message_response: (d, ctx) =>
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +

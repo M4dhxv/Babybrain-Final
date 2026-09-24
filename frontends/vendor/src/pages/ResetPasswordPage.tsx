@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/auth/AuthProvider';
 import { BrandLogo } from '@/components/BrandLogo';
+import { supabase } from '@/lib/supabase';
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -14,10 +15,23 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Scanner-proof links carry a `token_hash` that is only spent here, on the
+  // vendor's own click — Outlook/Defender pre-opening the link spends nothing.
+  const tokenHash = new URLSearchParams(useLocation().search).get('token_hash');
+  const [verified, setVerified] = useState(false);
+  const [linkError, setLinkError] = useState(false);
 
   // The reset link must have produced a recovery session, otherwise there's
   // nothing to update.
-  const ready = recovery || !!session;
+  const ready = tokenHash ? verified : recovery || !!session;
+
+  async function continueFromLink() {
+    setBusy(true);
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: 'recovery' });
+    setBusy(false);
+    if (error) setLinkError(true);
+    else setVerified(true);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +60,23 @@ export default function ResetPasswordPage() {
           <div className="mt-4 rounded-lg bg-green-50 px-3 py-3 text-sm font-medium text-green-700">
             Password updated. Taking you to your dashboard…
           </div>
+        ) : tokenHash && !ready ? (
+          linkError ? (
+            <div className="mt-4 rounded-lg bg-amber-50 px-3 py-3 text-sm font-medium text-amber-700">
+              That link has expired or was already used.{' '}
+              <button className="font-semibold underline" onClick={() => navigate('/forgot-password')}>
+                Request a new one
+              </button>
+              , or sign in if you've already set your password.
+            </div>
+          ) : (
+            <>
+              <p className="mb-6 text-sm text-gray-500">Continue to choose a new password for your account.</p>
+              <Button className="w-full" onClick={continueFromLink} disabled={busy}>
+                {busy ? 'Checking link…' : 'Continue'}
+              </Button>
+            </>
+          )
         ) : !ready ? (
           <div className="mt-4 rounded-lg bg-amber-50 px-3 py-3 text-sm font-medium text-amber-700">
             This page only works from the reset link in your email. Open that link, or{' '}

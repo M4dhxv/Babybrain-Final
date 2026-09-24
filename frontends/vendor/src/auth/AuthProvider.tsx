@@ -281,7 +281,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+        // No trailing slash: the hosted redirect allow-list is exact-match, and
+        // `/vendor/` (BASE_URL) is silently rewritten to the parent site_url.
+        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`,
       });
       return error ? { error: error.message } : {};
     },

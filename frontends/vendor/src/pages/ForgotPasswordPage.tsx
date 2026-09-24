@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { AuthHeader } from '@/components/AuthHeader';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const expired = new URLSearchParams(useLocation().search).has('expired');
   const { resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,11 @@ export default function ForgotPasswordPage() {
           </>
         ) : (
           <>
+            {expired && (
+              <div className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                That link has expired or was already used. Enter your email for a fresh one, or sign in if you've already set your password.
+              </div>
+            )}
             <p className="mb-6 text-sm text-gray-500">Enter your email and we'll send you a link to set a new password.</p>
             {error && (
               <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</div>
