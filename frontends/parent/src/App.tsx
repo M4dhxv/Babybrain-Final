@@ -1906,6 +1906,10 @@ function ActivityDetailPage() {
       </PageShell>
     );
   }
+  /** Same URL as the "Book" CTA's href — reused by the "Book" link inline in the
+   * selection-confirmation messages below, so tapping either takes the parent
+   * to the same place. */
+  const bookHref = `/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}${pickedPackId ? `&pack=${encodeURIComponent(pickedPackId)}` : ""}`;
 
   const next = sessions[0];
   const nextMins = next
@@ -2066,7 +2070,7 @@ function ActivityDetailPage() {
                 </>
               ) : (
                 sessions.length > 0 ? (
-                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} />
+                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} />
                 ) : (
                   <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
                 )
@@ -2125,7 +2129,7 @@ function ActivityDetailPage() {
                 </div>
                 {pickedPackId && (
                   <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
-                    <span>Click on Book a class to proceed with this purchase.</span>
+                    <span>Click on <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> to proceed with this purchase.</span>
                     <button type="button" onClick={() => setPickedPackId(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
                       Clear
                     </button>
@@ -2190,10 +2194,10 @@ function ActivityDetailPage() {
               </button>
             ) : (
               <Button
-                href={`/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}${pickedPackId ? `&pack=${encodeURIComponent(pickedPackId)}` : ""}`}
+                href={bookHref}
                 variant="pink"
                 className="mt-4 w-full"
-              ><Icon name="calendar" className="h-4 w-4" /> Book a class</Button>
+              ><Icon name="calendar" className="h-4 w-4" /> Book</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
                 a listing that books on the provider's own site has no chat to

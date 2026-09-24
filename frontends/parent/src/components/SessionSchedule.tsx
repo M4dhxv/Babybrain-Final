@@ -63,12 +63,15 @@ export function SessionSchedule({
   durationMins,
   selectedId,
   onSelect,
+  bookHref,
 }: {
   sessions: Session[];
   durationMins?: number | null;
   /** The session the parent tapped, held by the page so the Book button can carry it to checkout. */
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
+  /** Same URL as the page's "Book" CTA — embedded in the "Click on Book…" message below so it's a link, not just a hint. */
+  bookHref?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [showAllTimes, setShowAllTimes] = useState(false);
@@ -215,7 +218,7 @@ export function SessionSchedule({
         )}
         {picked && (
           <p role="status" className="mt-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
-            Click on Book a class to proceed with this time.
+            Click on {bookHref ? <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> : "Book"} to proceed with this time.
           </p>
         )}
       </div>
@@ -349,7 +352,7 @@ export function SessionSchedule({
 
           {flat.some((f) => f.id === selectedId) && (
             <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
-              <span>Click on Book a class to proceed with this time.</span>
+              <span>Click on {bookHref ? <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> : "Book"} to proceed with this time.</span>
               <button type="button" onClick={() => onSelect?.(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
                 Clear
               </button>

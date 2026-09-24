@@ -4637,7 +4637,7 @@ export function BookingPage() {
                       </p>
                     )}
                     <section>
-                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of children"}</h3>
+                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
