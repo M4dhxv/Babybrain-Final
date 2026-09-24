@@ -2,7 +2,7 @@
 
 ## Git and deploys (MUST)
 
-- Never run `git commit`, `git push` or `supabase db push` without explicit confirmation from Aman, in every session.
+- Claude must never run `git commit`, `git push` or `supabase db push` without explicit confirmation from whoever is running that session (Aman, Madhav, or any other collaborator/admin), in every session. This restriction applies only to Claude — it does not require Aman's specific sign-off, and it does not restrict human collaborators (e.g. Madhav) committing or pushing directly themselves under their own judgement; Claude should not block or second-guess a human's own commits.
 - Work in batches: finish and verify the changes, list what is uncommitted, and ask whether to bundle it into one commit. Do not commit per task.
 - Once confirmed, commit straight to `main` (no feature branch, no PR).
 - A push to `main` ships to Production via Vercel, and `supabase db push` applies every pending migration, not just yours. Confirm both before running.
