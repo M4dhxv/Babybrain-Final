@@ -1,4 +1,4 @@
--- 00173_vendor_users_skip_confirm_welcome.sql
+-- 00174_vendor_users_skip_confirm_welcome.sql
 --
 -- 00165 taught handle_new_user() to skip the parent bootstrap for
 -- account_kind = 'vendor' users, but its sibling handle_user_email_confirmed()
