@@ -74,15 +74,50 @@ export function scrollToWhenReady(id: string, tries = 40, everyMs = 100): () => 
 }
 
 /**
+ * Every page sits under PageShell's `<header class="sticky top-0 ...">`
+ * (ui.tsx) — real screen space the browser's own `scrollIntoView` has no
+ * idea is there. Asking it for `block: "start"` lands the target's top edge
+ * exactly at the scroll container's top, which is then the first thing the
+ * sticky header draws over: the row ends up scrolled *past*, showing only
+ * whatever peeks out beneath the header, not hidden by too little scroll but
+ * by scrolling exactly as far as asked and then something else covering the
+ * result. This measures the header itself (one `<header>` per page, so no
+ * selector to keep in sync by hand) and scrolls by plain arithmetic instead,
+ * so the target's own top can never land underneath it.
+ */
+function scrollRowIntoView(el: HTMLElement, position: "start" | "center" | "end") {
+  const headerH = document.querySelector("header")?.getBoundingClientRect().height ?? 0;
+  const rect = el.getBoundingClientRect();
+  const viewportH = window.innerHeight;
+  const visibleH = viewportH - headerH;
+  const pad = 12; // breathing room off the header/viewport edge, not flush against it
+  let delta: number;
+  if (position === "start") {
+    delta = rect.top - headerH - pad;
+  } else if (position === "end") {
+    delta = rect.bottom - viewportH + pad;
+  } else {
+    delta = rect.top - headerH - (visibleH - rect.height) / 2;
+  }
+  // Already fully within the visible (below-header) region — leave it alone
+  // rather than nudging by a few px for its own sake.
+  if (rect.top >= headerH + pad && rect.bottom <= viewportH - pad) return;
+  window.scrollTo({ top: Math.max(0, window.scrollY + delta), behavior: "auto" });
+}
+
+/**
  * Like scrollToWhenReady, but for a row inside a list where always aligning
  * to the top can walk the target half off-screen — a row near the bottom of
- * a long list, aligned to `block: "start"`, leaves the browser trying to put
- * a whole screen's worth of nothing beneath it, which either clips the row
- * against the page's real end or (with more content below) pushes it up
- * against a header. Picks the alignment from the row's position among its
- * rendered siblings instead: the first row aligns to the top (nothing above
- * it to waste space on), the last couple align to the bottom, everything
- * else centers — so the target always lands fully inside the viewport.
+ * a long list, aligned to the top, leaves the browser trying to put a whole
+ * screen's worth of nothing beneath it, which either clips the row against
+ * the page's real end or (with more content below) pushes it up against the
+ * sticky header. Picks the alignment from the row's position among every
+ * other highlightable row on the page (not its raw DOM siblings — a list can
+ * render its own non-row chrome, like My Bookings' "Export schedule" button,
+ * ahead of the first real row, which threw off a plain sibling-index count):
+ * the first row aligns to the top, the last couple align to the bottom,
+ * everything else centers — so the target always lands fully inside the
+ * visible viewport, below the sticky header (see scrollRowIntoView).
  *
  * Polls for up to 30s by default (a slow list load — e.g. My Bookings' own
  * multi-round-trip fetch — shouldn't outrun a 4-second window and land the
@@ -98,11 +133,11 @@ export function scrollHighlightIntoView(id: string, onFound?: () => void, tries 
   const timer = window.setInterval(() => {
     const el = document.getElementById(id);
     if (el) {
-      const siblings = el.parentElement ? Array.from(el.parentElement.children) : [el];
-      const idx = siblings.indexOf(el);
-      const block: ScrollLogicalPosition = idx <= 0 ? "start" : idx >= siblings.length - 2 ? "end" : "center";
-      el.scrollIntoView({ behavior: "auto", block });
       window.clearInterval(timer);
+      const rows = Array.from(document.querySelectorAll('[id^="row-"]'));
+      const idx = rows.indexOf(el);
+      const position: "start" | "center" | "end" = idx <= 0 ? "start" : idx >= rows.length - 2 ? "end" : "center";
+      scrollRowIntoView(el, position);
       onFound?.();
     } else if (++n > tries) {
       window.clearInterval(timer);
