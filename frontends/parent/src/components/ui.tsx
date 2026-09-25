@@ -506,8 +506,24 @@ export function SearchBox({ className = "", autoFocus = false }: { className?: s
         onChange={(e) => setTerm(e.target.value)}
         aria-label="Search activities"
         placeholder="Search activities…"
-        className="h-9 w-full rounded-full border border-[#EBE3E5] bg-white pl-9 pr-3 text-[13px] font-semibold text-baby-ink outline-none placeholder:text-[#6D7488] focus:border-baby-pink"
+        className="h-9 w-full rounded-full border border-[#EBE3E5] bg-white pl-9 pr-8 text-[13px] font-semibold text-baby-ink outline-none placeholder:text-[#6D7488] focus:border-baby-pink"
       />
+      {term && (
+        <button
+          type="button"
+          onClick={() => {
+            setTerm("");
+            // Only a submitted search (a "q" in the URL) needs clearing —
+            // an untyped-but-unsubmitted term just clears locally, same as
+            // Explore's own "Clear search" link (App.tsx) does today.
+            if (new URLSearchParams(window.location.search).get("q")) goTo("/explore");
+          }}
+          aria-label="Clear search"
+          className="absolute right-2.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-[#6D7488] hover:bg-[#F4EFF0] hover:text-baby-ink"
+        >
+          <Icon name="close" className="h-3.5 w-3.5" />
+        </button>
+      )}
     </form>
   );
 }
