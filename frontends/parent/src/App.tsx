@@ -23,10 +23,14 @@ import ContactPage from "./pages/ContactPage";
 const BookedPage = lazyRoute(() => import("./pages/BookedPage"), "BookedPage");
 const OnboardingPage = lazyRoute(() => import("./pages/OnboardingPage"), "OnboardingPage");
 
-const ProfilePage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.ProfilePage })), "ProfilePage");
-const EditProfilePage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.EditProfilePage })), "EditProfilePage");
-const PaymentPage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.PaymentPage })), "PaymentPage");
-const BookingPage = lazyRoute(() => import("./pages/dashboard").then((m) => ({ default: m.BookingPage })), "BookingPage");
+// These four used to share one "dashboard" chunk (Profile/EditProfile/
+// Payment/Booking bundled together, ~35 KB gzip) — opening just the Booking
+// checkout page, including from a notification, paid for all four. Each is
+// now its own chunk, same reasoning as Home/Explore/ActivityDetail above.
+const ProfilePage = lazyRoute(() => import("./pages/ProfilePage"), "ProfilePage");
+const EditProfilePage = lazyRoute(() => import("./pages/EditProfilePage"), "EditProfilePage");
+const PaymentPage = lazyRoute(() => import("./pages/PaymentPage"), "PaymentPage");
+const BookingPage = lazyRoute(() => import("./pages/BookingPage"), "BookingPage");
 const LoginPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.LoginPage })), "LoginPage");
 const ForgotPasswordPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.ForgotPasswordPage })), "ForgotPasswordPage");
 const ResetPasswordPage = lazyRoute(() => import("./pages/authPages").then((m) => ({ default: m.ResetPasswordPage })), "ResetPasswordPage");

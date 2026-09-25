@@ -33,6 +33,10 @@ import {
   PlayCircle,
   FileText,
   ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -96,6 +100,12 @@ const formatDuration = (mins: number | null | undefined): string => {
 
 /** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
+
+/** Matches ageLabel-adjacent formatting the parent app uses on the booking
+ *  and confirmation pages ("6m – 2.5y"), reused verbatim by the preview. */
+type PreviewSession = { id: string; starts_at: string; ends_at: string; capacity: number | null; price: number | null; location_id: string | null };
+type PreviewPolicy = { id: string; title: string; body: string; document_url: string | null; required: boolean };
+type PreviewPackage = { id: string; name: string; credits: number; price_cents: number };
 
 /* Recurrence helpers for the "Add sessions" form. All operate on plain
    yyyy-mm-dd calendar strings via UTC so a vendor in another timezone still
@@ -544,13 +554,28 @@ export default function ActivitiesPage() {
 
   /* Parent-view preview. Vendors kept publishing blind and then opening the
      public site in another tab to check; this shows the same information
-     without leaving the table. Read-only — the CTAs are rendered inert. */
+     without leaving the table. Read-only — the CTAs are rendered inert.
+     Three pages mirror the parent's actual journey: the activity page, the
+     booking page, and the post-booking confirmation — navigated with the
+     arrows in the header bar. */
   const [previewFor, setPreviewFor] = useState<Activity | null>(null);
   const [previewDuration, setPreviewDuration] = useState<number | 'loading' | null>('loading');
+  const [previewPage, setPreviewPage] = useState(0);
+  const PREVIEW_PAGE_COUNT = 3;
+  const [previewSessions, setPreviewSessions] = useState<PreviewSession[]>([]);
+  const [previewPolicies, setPreviewPolicies] = useState<PreviewPolicy[]>([]);
+  const [previewPackages, setPreviewPackages] = useState<PreviewPackage[]>([]);
+  /* Index into the carousel shown on page 1 — the one thing in the preview
+     that stays interactive, so a vendor can check every photo's crop without
+     leaving the table. Reset whenever a different activity (or a fresh open
+     of the same one) is previewed. */
+  const [previewPhotoAt, setPreviewPhotoAt] = useState(0);
 
   function openPreview(a: Activity) {
     setShowMenu(null);
     setPreviewFor(a);
+    setPreviewPage(0);
+    setPreviewPhotoAt(0);
   }
 
   /* Nothing stores a duration on the activity — the parent page derives it
@@ -580,6 +605,47 @@ export default function ActivitiesPage() {
     })();
     return () => { stale = true; };
   }, [previewFor, sessionCounts]);
+
+  /* Feeds the booking-page and confirmation-page previews: the next few
+     upcoming sessions (for the date/time step and the "when" line), and this
+     provider's terms and packages, scoped to this activity exactly as the
+     real booking page scopes them (provider-wide, or activity_ids includes
+     this one). */
+  useEffect(() => {
+    if (!previewFor || !provider) { setPreviewSessions([]); setPreviewPolicies([]); setPreviewPackages([]); return; }
+    let stale = false;
+    supabase
+      .from('activity_sessions')
+      .select('id, starts_at, ends_at, capacity, price, location_id')
+      .eq('activity_id', previewFor.id)
+      .neq('status', 'cancelled')
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at')
+      .limit(6)
+      .then(({ data }) => { if (!stale) setPreviewSessions((data ?? []) as PreviewSession[]); });
+    supabase
+      .from('provider_policies')
+      .select('id, title, body, document_url, required, activity_ids')
+      .eq('provider_id', provider.id)
+      .eq('active', true)
+      .order('sort_order')
+      .then(({ data }) => {
+        if (stale) return;
+        const rows = (data ?? []) as unknown as Array<PreviewPolicy & { activity_ids: string[] | null }>;
+        setPreviewPolicies(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(previewFor.id)));
+      });
+    supabase
+      .from('packages')
+      .select('id, name, credits, price_cents, activity_ids')
+      .eq('provider_id', provider.id)
+      .eq('active', true)
+      .then(({ data }) => {
+        if (stale) return;
+        const rows = (data ?? []) as unknown as Array<PreviewPackage & { activity_ids: string[] | null }>;
+        setPreviewPackages(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(previewFor.id)));
+      });
+    return () => { stale = true; };
+  }, [previewFor, provider]);
 
   /* The activity's own address is often blank on Wix-synced rows, which left
      the parent view with no Location at all. Fall back to the linked venue. */
@@ -1168,6 +1234,17 @@ export default function ActivitiesPage() {
       return a.cover_image_url && fromProfile.includes(a.cover_image_url) ? a.cover_image_url : fromProfile[0];
     }
     return own[0] || fallbackImage(a);
+  };
+
+  /** The full ordered gallery behind resolveThumbnail's first pick — same
+   *  source precedence (own custom photos, else the provider's pool, else the
+   *  category placeholder) but every image, for the preview carousel. */
+  const resolveGallery = (a: Activity): string[] => {
+    const own = (a.image_urls ?? []).filter(Boolean);
+    if (a.image_source === 'custom' && own.length > 0) return own;
+    const fromProfile = providerPhotoPool();
+    if (fromProfile.length > 0) return fromProfile;
+    return own.length > 0 ? own : [fallbackImage(a)];
   };
 
   // Reads left to right as the life of an activity: live → still a draft →
@@ -2429,12 +2506,32 @@ export default function ActivitiesPage() {
         </div>
       )}
 
-      {/* Parent-view preview. Deliberately a copy of the parent activity page
-          (frontends/parent App.tsx) rather than a vendor-styled summary — the
-          point is to show exactly what a family sees, so the palette, radii
-          and Nunito face are the parent app's, not this one's. Everything is
-          inert; the sessions and reviews blocks are left out. */}
-      {previewFor && (
+      {/* Parent-view preview. Deliberately a copy of the parent app's three
+          screens (frontends/parent App.tsx's activity page, booking page and
+          booking-confirmation page) rather than a vendor-styled summary — the
+          point is to show exactly what a family sees at each step, so the
+          palette, radii and Nunito face are the parent app's, not this one's.
+          Everything is inert except the photo carousel (page 1) and a
+          policy's "read the full document" link (page 2) — the two places a
+          vendor actually needs to click something to check it. The header's
+          arrows step between the three pages. */}
+      {previewFor && (() => {
+        const gallery = resolveGallery(previewFor);
+        const photoAt = previewPhotoAt % gallery.length;
+        const stepPhoto = (d: number) => setPreviewPhotoAt((i) => (i + d + gallery.length) % gallery.length);
+        const nextSession = previewSessions[0] ?? null;
+        const sessionsByDate: Record<string, PreviewSession[]> = {};
+        previewSessions.forEach((s) => {
+          const key = new Date(s.starts_at).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short' });
+          (sessionsByDate[key] ||= []).push(s);
+        });
+        const dateKeys = Object.keys(sessionsByDate);
+        const selectedDateKey = dateKeys[0] ?? null;
+        const price = previewFor.price != null ? Number(previewFor.price) : null;
+        const ageText = previewFor.age_min_months != null && previewFor.age_max_months != null ? ageLabel(previewFor.age_min_months, previewFor.age_max_months) : null;
+        const pageLabels = ['Activity page', 'Booking page', 'Booking confirmation'];
+
+        return (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/25 p-4 backdrop-blur-sm"
           onClick={() => setPreviewFor(null)}
@@ -2451,21 +2548,48 @@ export default function ActivitiesPage() {
               <div className="flex items-center gap-2.5">
                 <Eye className="h-4 w-4 flex-shrink-0 text-[#FA4D8D]" />
                 <div>
-                  <h3 className="text-sm font-bold text-[#111A4C]">Parent view</h3>
+                  <h3 className="text-sm font-bold text-[#111A4C]">Parent view — {pageLabels[previewPage]}</h3>
                   <p className="text-xs text-gray-500">How this looks to families on BabyBrain.sg</p>
                 </div>
               </div>
-              <button onClick={() => setPreviewFor(null)} aria-label="Close preview" className="rounded-lg p-1.5 hover:bg-gray-100">
-                <X className="h-4 w-4 text-gray-500" />
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 rounded-full bg-gray-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPage((p) => Math.max(0, p - 1))}
+                    disabled={previewPage === 0}
+                    aria-label="Previous page"
+                    className="rounded-full p-1.5 text-gray-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-1 text-xs font-bold text-gray-500">{previewPage + 1} / {PREVIEW_PAGE_COUNT}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPage((p) => Math.min(PREVIEW_PAGE_COUNT - 1, p + 1))}
+                    disabled={previewPage === PREVIEW_PAGE_COUNT - 1}
+                    aria-label="Next page"
+                    className="rounded-full p-1.5 text-gray-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <button onClick={() => setPreviewFor(null)} aria-label="Close preview" className="rounded-lg p-1.5 hover:bg-gray-100">
+                  <X className="h-4 w-4 text-gray-500" />
+                </button>
+              </div>
             </div>
 
-            {/* pointer-events-none: nothing in the preview is clickable. */}
-            {/* The scroller keeps its pointer events — putting them on this
-                element made it transparent to the wheel, so a long description
-                or address could not be reached. The inert layer is inside it. */}
+            {/* pointer-events-none: nothing in the preview is clickable, save
+                the photo carousel and a policy document link (both opt back
+                in with pointer-events-auto below). The scroller keeps its
+                pointer events — putting them on this element made it
+                transparent to the wheel, so a long description or address
+                could not be reached. The inert layer is inside it. */}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <div className="pointer-events-none select-none p-5 text-[#111A4C]">
+              <div className="select-none p-5 text-[#111A4C]">
+              {previewPage === 0 && (
+              <div className="pointer-events-none">
               {!previewFor.is_published && (
                 <p className="mb-4 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                   Not published yet — families can&rsquo;t find this. This is how it would look once it is.
@@ -2493,14 +2617,42 @@ export default function ActivitiesPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="relative">
+                    {/* The one interactive piece of this whole preview — a vendor
+                        needs to actually cycle their photos to check crops, not
+                        just see the first one. No auto-advance timer, unlike the
+                        real parent-facing carousel, so it never moves on its own
+                        while a vendor is looking at it. */}
+                    <div className="relative overflow-hidden rounded-[18px]">
                       <img
-                        src={resolveThumbnail(previewFor)}
+                        src={gallery[photoAt]}
                         alt={previewFor.title}
-                        className="h-[240px] w-full rounded-[18px] object-cover lg:h-[305px]"
+                        className={cn(
+                          'h-[240px] w-full lg:h-[305px]',
+                          gallery[photoAt] === provider?.logo_url ? 'object-contain bg-[#F3EDF0] p-8' : 'object-cover'
+                        )}
                       />
-                      <span className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-[#111A4C] shadow">
-                        <ExternalLink className="h-3.5 w-3.5" /> View photo
+                      {gallery.length > 1 && (
+                        <div className="pointer-events-auto absolute right-3 top-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => stepPhoto(-1)}
+                            aria-label="Previous photo"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => stepPhoto(1)}
+                            aria-label="Next photo"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white transition hover:bg-black/55"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                      <span className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 rounded-[10px] bg-white/95 px-3 py-2 text-[13px] font-bold text-[#111A4C] shadow">
+                        <ExternalLink className="h-3.5 w-3.5" /> {gallery.length > 1 ? `${photoAt + 1} / ${gallery.length}` : 'View photo'}
                       </span>
                     </div>
                   </div>
@@ -2511,11 +2663,26 @@ export default function ActivitiesPage() {
                       <p className="font-semibold text-[#34406f]">{previewFor.description}</p>
                     </section>
                   )}
+
+                  <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
+                    <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
+                    {previewSessions.length === 0 ? (
+                      <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {previewSessions.map((s) => (
+                          <div key={s.id} className={cn('rounded-[10px] border px-3 py-2.5 text-sm font-bold', s.id === nextSession?.id ? 'border-[#FA4D8D] bg-[#FEEBF2] text-[#FA4D8D]' : 'border-[#DCD2D5] bg-white text-[#34406f]')}>
+                            {fmtDateTime(s.starts_at)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
 
                 <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">
-                  {previewFor.price != null && Number(previewFor.price) > 0 ? (
-                    <p><strong className="text-[30px] text-[#C7B1E6]">${Number(previewFor.price)}</strong> <span className="font-bold">/ class</span></p>
+                  {price != null && price > 0 ? (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">${price}</strong> <span className="font-bold">/ class</span></p>
                   ) : (
                     <p><strong className="text-[30px] text-[#C7B1E6]">Free</strong></p>
                   )}
@@ -2568,14 +2735,249 @@ export default function ActivitiesPage() {
                 </aside>
               </div>
               </div>
+              )}
+
+              {previewPage === 1 && (
+                <div className="mx-auto max-w-[1024px]">
+                  <div className="pointer-events-none mb-5 flex gap-3 text-sm font-bold"><span>Home</span><span>›</span><span>Activities</span><span>›</span><span>{previewFor.title}</span><span>›</span><span className="text-[#FA4D8D]">Book</span></div>
+                  <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-sm">
+                    <header className="pointer-events-none grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr]">
+                      <span className="grid h-20 w-20 place-items-center rounded-full bg-[#FA4D8D] text-white"><CalendarDays className="h-10 w-10" /></span>
+                      <div><h1 className="text-[28px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
+                    </header>
+                    <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
+                      <section className="pointer-events-none">
+                        <div className="grid gap-5 md:grid-cols-[245px_1fr]">
+                          <img src={resolveThumbnail(previewFor)} alt={previewFor.title} className="h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain" />
+                          <div>
+                            <h2 className="text-xl font-black">{previewFor.title}</h2>
+                            {ageText && <p className="mt-2 font-semibold">{ageText}</p>}
+                            <div className="mt-5 space-y-3 font-semibold text-[#4a5685]">
+                              {previewLocation(previewFor) && <p className="flex gap-2"><MapPin className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {previewLocation(previewFor)}</p>}
+                              {previewFor.category_id && <p className="flex gap-2"><Music className="h-5 w-5 text-[#C7B1E6]" /> {categoryName(previewFor.category_id)}</p>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
+                          {previewSessions.length === 0 ? (
+                            <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet.</p>
+                          ) : (
+                            <>
+                              <section>
+                                <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                  {dateKeys.map((d) => {
+                                    const [weekday, dayMonth] = d.split(', ');
+                                    return (
+                                      <div key={d} className={cn('rounded-[10px] border px-3 py-4 text-sm font-bold', d === selectedDateKey ? 'border-[#FA4D8D] bg-[#FEEBF2] text-[#FA4D8D]' : 'border-[#DCD2D5] bg-white')}>
+                                        <span className="block whitespace-nowrap">{weekday},</span>
+                                        <span className="block whitespace-nowrap">{dayMonth}</span>
+                                        <span className="mt-2 block text-xs font-semibold text-[#697390]">{sessionsByDate[d].length} {sessionsByDate[d].length === 1 ? 'time' : 'times'}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </section>
+                              <section>
+                                <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                  {(selectedDateKey ? sessionsByDate[selectedDateKey] : []).map((s) => (
+                                    <div key={s.id} className={cn('rounded-[10px] border px-3 py-4 font-bold', s.id === nextSession?.id ? 'border-[#FA4D8D] bg-[#FEEBF2] text-[#FA4D8D]' : 'border-[#DCD2D5] bg-white')}>
+                                      <span className="block whitespace-nowrap">{new Date(s.starts_at).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' })}</span>
+                                      <span className="mt-2 block text-xs font-semibold text-[#697390]">{s.capacity != null ? `${s.capacity} spots` : 'Available'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            </>
+                          )}
+                          <section>
+                            <h3 className="mb-2 text-xl font-black">3. Number of tickets/passes</h3>
+                            <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
+                              <span className="grid h-12 w-12 place-items-center">-</span>
+                              <span className="grid h-12 w-14 place-items-center">1</span>
+                              <span className="grid h-12 w-12 place-items-center">+</span>
+                            </div>
+                          </section>
+
+                          {(previewPolicies.length > 0 || previewFor.info_request_enabled) && (
+                            <section>
+                              <h3 className="mb-2 text-xl font-black">4. Provider terms</h3>
+                              <p className="mb-4 text-sm font-semibold text-[#59658d]">
+                                {provider?.business_name?.trim() || 'This provider'} asks you to read and accept the following before the class.
+                              </p>
+                              <div className="space-y-3">
+                                {previewPolicies.map((p) => (
+                                  <div key={p.id} className="flex gap-3 rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                                    <span className="mt-1 h-4 w-4 shrink-0 rounded border-2 border-[#DCD2D5]" />
+                                    <span className="min-w-0">
+                                      <span className="block font-black">
+                                        {p.title}
+                                        {p.required ? <span className="ml-1 text-[#FA4D8D]">*</span> : (
+                                          <span className="ml-2 rounded-full bg-[#F4EFF0] px-2 py-0.5 text-[10px] font-bold text-[#6D748D]">Optional</span>
+                                        )}
+                                      </span>
+                                      {p.body && <span className="mt-1 block whitespace-pre-wrap text-sm font-semibold leading-6 text-[#4a5685]">{p.body}</span>}
+                                      {p.document_url && (
+                                        <a
+                                          href={p.document_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="pointer-events-auto mt-1 inline-flex items-center gap-1 text-sm font-black text-[#A7D8F8] underline"
+                                        >
+                                          <ExternalLink className="h-3.5 w-3.5" /> Read the full document
+                                        </a>
+                                      )}
+                                    </span>
+                                  </div>
+                                ))}
+                                {previewFor.info_request_enabled && (
+                                  <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                                    <p className="font-black">{previewFor.info_request_prompt?.trim() || 'The provider needs some extra information'} <span className="text-[#FA4D8D]">*</span></p>
+                                    <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                  </div>
+                                )}
+                              </div>
+                            </section>
+                          )}
+
+                          {previewPackages.length > 0 && (
+                            <section className="pointer-events-none">
+                              <h3 className="mb-2 text-xl font-black">5. Select package</h3>
+                              <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#FA4D8D] bg-[#FEEBF2] p-4">
+                                  <span className="font-black">Single class</span>
+                                  <span className="font-black text-[#FA4D8D]">{price != null ? `$${price.toFixed(2)}` : 'Price on enquiry'}</span>
+                                </div>
+                                {previewPackages.map((p) => (
+                                  <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                                    <div><span className="block font-black">{p.name}</span><span className="text-sm font-semibold text-[#59658d]">{p.credits} classes</span></div>
+                                    <span className="font-black">${(p.price_cents / 100).toFixed(0)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+                        </div>
+                      </section>
+
+                      <aside className="pointer-events-none h-fit rounded-[16px] border border-[#EBE3E5] bg-white p-5">
+                        <h2 className="text-xl font-black">Booking summary</h2>
+                        <div className="mt-5 flex gap-4">
+                          <img src={resolveThumbnail(previewFor)} alt="" className="h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain" />
+                          <div><h3 className="font-black">{previewFor.title}</h3>{ageText && <p className="mt-1 text-sm font-semibold">{ageText}</p>}</div>
+                        </div>
+                        <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
+                          <p className="flex gap-2"><CalendarDays className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {nextSession ? fmtDateTime(nextSession.starts_at) : 'Select a date & time'}</p>
+                          {previewLocation(previewFor) && <p className="flex gap-2"><MapPin className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {previewLocation(previewFor)}</p>}
+                        </div>
+                        <div className="my-5 border-t border-[#F4EFF0]" />
+                        <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-[#FA4D8D]">{price != null ? `$${price.toFixed(2)}` : 'Price on enquiry'}</span></p>
+                      </aside>
+                    </div>
+                  </section>
+                  <section className="pointer-events-none mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6">
+                    <div className="flex items-center gap-5">
+                      <span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-[#FA4D8D]"><Lock className="h-8 w-8" /></span>
+                      <p><span className="block font-bold">Total amount</span><strong className="text-3xl">{price != null ? `$${price.toFixed(2)}` : '—'}</strong></p>
+                    </div>
+                    <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white">
+                      <Lock className="h-5 w-5" /> {price != null && price > 0 ? `Pay $${price.toFixed(2)}` : 'Confirm booking'}
+                    </span>
+                    <div className="space-y-0.5 text-center">
+                      {previewFor.allow_cancellation === false && <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>}
+                      {previewFor.allow_cancellation !== false && previewFor.cancellation_refund_mode === 'none' && <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>}
+                      {price != null && price > 0 && <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>}
+                    </div>
+                  </section>
+                </div>
+              )}
+
+              {previewPage === 2 && (
+                <div className="pointer-events-none mx-auto max-w-[1024px]">
+                  <div className="mb-5 flex gap-3 text-sm font-bold"><span>Home</span><span>›</span><span>Activities</span><span>›</span><span>Class details</span><span>›</span><span className="text-[#FA4D8D]">Book</span></div>
+                  <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[100px_1fr]">
+                    <span className="grid h-20 w-20 place-items-center rounded-full bg-[#FA4D8D] text-white"><Check className="h-12 w-12" /></span>
+                    <div><h1 className="text-[32px] font-black">Your class is booked!</h1><p className="mt-2 text-lg font-semibold">We can&rsquo;t wait to see your little one there.</p></div>
+                  </section>
+                  <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
+                    <div className="space-y-5">
+                      <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6">
+                        <h2 className="text-xl font-black">Class details</h2>
+                        <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
+                          <img src={resolveThumbnail(previewFor)} alt="" className="h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain" />
+                          <div>
+                            <h3 className="text-xl font-black">{previewFor.title}</h3>
+                            {nextSession && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><CalendarDays className="mr-2 inline h-5 w-5 text-[#C7B1E6]" />{fmtDateTime(nextSession.starts_at)}</p></div>}
+                            {previewLocation(previewFor) && <p className="mt-3 font-semibold text-[#4a5685]"><MapPin className="mr-2 inline h-5 w-5 text-[#C7B1E6]" />{previewLocation(previewFor)}</p>}
+                          </div>
+                        </div>
+                        {previewFor.description?.trim() && (
+                          <div className="mt-5 border-t border-[#F4EFF0] pt-5">
+                            <h3 className="font-black">About this class</h3>
+                            <p className="mt-3 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{previewFor.description.trim()}</p>
+                          </div>
+                        )}
+                        {previewFor.confirmation_message?.trim() && (
+                          <div className="mt-5 rounded-[12px] bg-[#F4F0FA] p-4">
+                            <h3 className="font-black text-[#C7B1E6]">From &ldquo;{previewFor.title}&rdquo;</h3>
+                            <p className="mt-2 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{previewFor.confirmation_message.trim()}</p>
+                          </div>
+                        )}
+                      </article>
+                      <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6">
+                        <h2 className="text-xl font-black">What to bring &amp; know</h2>
+                        {previewFor.what_to_bring?.trim() ? (
+                          <p className="mt-5 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{previewFor.what_to_bring.trim()}</p>
+                        ) : (
+                          <div className="mt-5 grid gap-4 md:grid-cols-3">
+                            {[['Arrive 10 mins early', 'Enable your child to get comfortable'], ['Dress comfortably', 'Allow for movement and potential mess'], ['Bring essentials', 'Socks, water and wipes encouraged']].map(([title, note]) => (
+                              <div key={title} className="text-center">
+                                <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-[#FA4D8D]"><CalendarDays className="h-8 w-8" /></span>
+                                <h3 className="mt-3 font-black">{title}</h3>
+                                <p className="mt-2 text-sm font-semibold text-[#59658d]">{note}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    </div>
+                    <aside className="space-y-5">
+                      <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6">
+                        <h2 className="text-xl font-black">Booking summary</h2>
+                        <div className="mt-5 space-y-4 font-semibold">
+                          <p className="flex justify-between"><span>Class</span><span className="text-right">{previewFor.title}</span></p>
+                          {nextSession && <p className="flex justify-between"><span>When</span><span className="text-right">{fmtDateTime(nextSession.starts_at)}</span></p>}
+                          {previewLocation(previewFor) && <p className="flex justify-between"><span>Where</span><span className="text-right">{previewLocation(previewFor)}</span></p>}
+                          <p className="flex justify-between"><span>Status</span><strong className="text-[#4CAF7D]">Confirmed</strong></p>
+                        </div>
+                        <p className="mt-5 rounded-[12px] bg-[#F1FBEF] p-4 font-semibold text-[#4CAF7D]"><Check className="mr-2 inline h-5 w-5" /> Booking confirmed</p>
+                        <span className="mt-5 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white">View my bookings</span>
+                        <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#DCD2D5] px-6 py-3 text-[15px] font-extrabold text-[#34406f]"><CalendarDays className="h-4 w-4" /> Add to calendar</span>
+                      </article>
+                      <article className="rounded-[16px] bg-[#F4F0FA] p-6">
+                        <h2 className="text-xl font-black text-[#C7B1E6]">Need help?</h2>
+                        <p className="mt-3 font-semibold">Questions about this class? Message the provider directly.</p>
+                        <span className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#DCD2D5] px-6 py-3 text-[15px] font-extrabold text-[#34406f]"><Mail className="h-4 w-4" /> Message the provider</span>
+                      </article>
+                    </aside>
+                  </section>
+                </div>
+              )}
+              </div>
             </div>
 
             <div className="border-t border-[#EBE3E5] bg-white px-5 py-2.5 text-center text-xs text-gray-500">
-              Preview only — nothing here is clickable.
+              {previewPage === 0 && 'Preview only — everything is inert except the photo carousel.'}
+              {previewPage === 1 && "Preview only — everything is inert except a policy's document link."}
+              {previewPage === 2 && 'Preview only — nothing here is clickable.'}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Schedule Drawer — the bookable dates/times for one activity */}
       {scheduleFor && (

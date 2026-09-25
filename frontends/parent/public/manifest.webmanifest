@@ -3,7 +3,7 @@
   "short_name": "BabyBrain",
   "description": "Find and book the best kids' activities and classes in Singapore.",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/app/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

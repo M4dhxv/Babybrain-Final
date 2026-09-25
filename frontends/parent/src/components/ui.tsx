@@ -903,12 +903,7 @@ function placeLabel(activity: Activity): React.ReactNode {
   // so plainly (in the vendor's own words, when they gave one) rather than
   // showing the vendor's own (unrelated) address.
   if (activity.isCustomLocation) {
-    return (
-      <>
-        {activity.customLocationLabel?.trim() || "Custom"}{" "}
-        <span className="text-[10px] font-semibold text-[#8890a8]">as defined by you</span>
-      </>
-    );
+    return activity.customLocationLabel?.trim() || "Custom";
   }
   const region = regionLabel(activity.region);
   if (region) return region;
