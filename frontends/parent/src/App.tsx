@@ -2054,7 +2054,14 @@ function ActivityDetailPage() {
      activity's defaults. Same session-first, activity-fallback resolution the
      booking page and booking trigger use. */
   const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
-  const nextVenueAddress = nextVenue ?? activity.address ?? null;
+  // A private session at the customer's own home has no fixed address to
+  // show here — unless this particular session was itself moved to a real
+  // venue (nextVenue, a session-level override still allowed for one-off
+  // exceptions), in which case that address wins as usual.
+  const nextVenueAddress =
+    nextVenue ??
+    (activity.is_custom_location ? activity.custom_location_label?.trim() || "Custom" : activity.address) ??
+    null;
   // Falls back to the provider's own cover/logo/gallery when this listing
   // has no photos of its own (or is explicitly set to borrow theirs) — see
   // activityMedia.ts. Recomputed on every load, so clearing an activity's
