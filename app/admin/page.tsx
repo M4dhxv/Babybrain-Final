@@ -212,6 +212,7 @@ type EditActivity = {
   age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
   description: string | null; external_booking_url: string | null;
   image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
+  location_id: string | null;
   is_custom_location: boolean; custom_location_label: string | null;
   sessions: EditSession[];
 };
@@ -1336,6 +1337,7 @@ function EditVendorModal({
             external_booking_url: a.external_booking_url,
             requires_medical_disclosure: a.requires_medical_disclosure,
             bookings_paused: a.bookings_paused,
+            location_id: a.is_custom_location ? null : a.location_id,
             is_custom_location: a.is_custom_location,
             custom_location_label: a.is_custom_location ? a.custom_location_label : null,
             sessions: [
@@ -1638,14 +1640,26 @@ function EditVendorModal({
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
                           <input type="checkbox" checked={a.is_custom_location} disabled={gone}
-                            onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, is_custom_location: e.target.checked } : x))} />
+                            onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id
+                              ? { ...x, is_custom_location: e.target.checked, location_id: e.target.checked ? null : x.location_id }
+                              : x))} />
                           Private session at customer&rsquo;s home
                         </label>
                       </div>
-                      {a.is_custom_location && (
+                      {/* Exactly one of the two: a fixed venue from this
+                          provider's own list, or (Private session ticked)
+                          the free-text label shown to parents instead. */}
+                      <label style={{ ...lbl, marginTop: 8, display: 'block' }}>Location</label>
+                      {a.is_custom_location ? (
                         <input value={a.custom_location_label ?? ''} style={{ ...input(), marginTop: 8 }} disabled={gone}
                           placeholder='Shown to parents instead of "Custom", e.g. "We travel to you"'
                           onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, custom_location_label: e.target.value } : x))} />
+                      ) : (
+                        <select value={a.location_id ?? ''} style={{ ...input(), marginTop: 8 }} disabled={gone}
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, location_id: e.target.value || null } : x))}>
+                          <option value="">No fixed venue</option>
+                          {d.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
                       )}
                     </div>
                   </div>
