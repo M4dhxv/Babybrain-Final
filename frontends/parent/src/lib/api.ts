@@ -36,3 +36,16 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
   if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
   return res.json() as Promise<T>;
 }
+
+/**
+ * GET for routes that are public and unauthenticated on the server (e.g.
+ * /api/wix/slots, /api/public/provider-plan) — skips the `getSession()`
+ * round trip and Bearer header that `apiGet` always pays for, since the
+ * route ignores them anyway.
+ */
+export async function apiGetPublic<T = unknown>(path: string): Promise<T> {
+  const base = (import.meta.env.VITE_API_BASE as string) || "";
+  const res = await fetch(`${base}${path}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+  return res.json() as Promise<T>;
+}

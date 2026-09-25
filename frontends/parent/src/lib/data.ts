@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
-import { apiGet } from "./api";
+import { apiGet, apiGetPublic } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
@@ -174,6 +174,13 @@ export interface ActivityDetail {
   // disabled "Sold out" rather than "0 spots". Always false for non-events.
   eventSoldOut: boolean;
   loading: boolean;
+  // Once `loading` is false the activity shell (title/hero/description/
+  // provider) is ready to render, but sessions and reviews/provider-plan
+  // each resolve on their own — these flags let the page show a per-section
+  // skeleton instead of blocking the whole page or flashing a false "no
+  // sessions"/"no reviews" empty state.
+  sessionsLoading: boolean;
+  reviewsLoading: boolean;
 }
 
 const EMPTY_DETAIL: ActivityDetail = {
@@ -183,6 +190,8 @@ const EMPTY_DETAIL: ActivityDetail = {
   courseSpan: null,
   eventSoldOut: false,
   loading: true,
+  sessionsLoading: false,
+  reviewsLoading: false,
 };
 
 // A cache hit within this window skips the network entirely, same pattern as
@@ -230,7 +239,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
         .eq("is_published", true)
         .maybeSingle();
       if (!act) {
-        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, eventSoldOut: false, loading: false });
+        if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, eventSoldOut: false, loading: false, sessionsLoading: false, reviewsLoading: false });
         return;
       }
 
@@ -256,7 +265,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       let wixCourseSpan: { start: string; end: string } | null = null;
       const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
         ? Promise.all([
-            apiGet<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
+            apiGetPublic<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
               `/api/wix/slots?activityId=${act.id}`
             )
               .then((r) => {
@@ -326,8 +335,47 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           })
         : Promise.resolve(false);
 
-      const [sessions, { data: reviews }, providerCanMessage, eventSoldOut] = await Promise.all([
-        sessionsPromise,
+      // The core row is enough to render the whole shell (hero, title,
+      // description, provider, price-on-enquiry state) — don't hold that
+      // back for sessions/reviews/provider-plan, which each populate their
+      // own section independently below.
+      const coreActivity = {
+        ...act,
+        category_name:
+          (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
+        category_name_2:
+          (act.category_2 as unknown as { name: string } | null)?.name ?? null,
+        provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
+        provider_can_message: false,
+      };
+      if (cancelled) return;
+      setState({
+        activity: coreActivity,
+        sessions: [],
+        reviews: [],
+        courseSpan: null,
+        eventSoldOut: false,
+        loading: false,
+        sessionsLoading: true,
+        reviewsLoading: true,
+      });
+
+      const sessionsPhase = Promise.all([sessionsPromise, eventSoldOutPromise]).then(
+        ([sessions, eventSoldOut]) => {
+          if (!cancelled) {
+            setState((s) => ({
+              ...s,
+              sessions,
+              courseSpan: wixCourseSpan,
+              eventSoldOut,
+              sessionsLoading: false,
+            }));
+          }
+          return { sessions, courseSpan: wixCourseSpan, eventSoldOut };
+        }
+      );
+
+      const reviewsPhase = Promise.all([
         supabase
           .from("reviews")
           .select("*")
@@ -335,30 +383,37 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
           .order("created_at", { ascending: false })
           .limit(10),
         act.provider_id
-          ? apiGet<{ canMessage: boolean }>(`/api/public/provider-plan?providerId=${act.provider_id}`)
+          ? apiGetPublic<{ canMessage: boolean }>(`/api/public/provider-plan?providerId=${act.provider_id}`)
               .then((r) => r.canMessage)
               .catch(() => false)
           : Promise.resolve(false),
-        eventSoldOutPromise,
-      ]);
-      const next: ActivityDetail = {
-        activity: {
-          ...act,
-          category_name:
-            (act.activity_categories as unknown as { name: string } | null)?.name ?? null,
-          category_name_2:
-            (act.category_2 as unknown as { name: string } | null)?.name ?? null,
-          provider_contact: (act.providers as unknown as ProviderContact | null) ?? null,
-          provider_can_message: providerCanMessage,
-        },
-        sessions,
-        reviews: reviews ?? [],
-        courseSpan: wixCourseSpan,
-        eventSoldOut,
+      ]).then(([{ data: reviews }, providerCanMessage]) => {
+        if (!cancelled) {
+          setState((s) => ({
+            ...s,
+            reviews: reviews ?? [],
+            activity: s.activity ? { ...s.activity, provider_can_message: providerCanMessage } : s.activity,
+            reviewsLoading: false,
+          }));
+        }
+        return { reviews: reviews ?? [], providerCanMessage };
+      });
+
+      // Cache one complete snapshot once both phases have settled, same as
+      // the single setState this replaced — a partial (still-loading) state
+      // is never what gets written to the cache.
+      const [sessionsResult, reviewsResult] = await Promise.all([sessionsPhase, reviewsPhase]);
+      if (cancelled) return;
+      cacheSet(detailKey, {
+        activity: { ...coreActivity, provider_can_message: reviewsResult.providerCanMessage },
+        sessions: sessionsResult.sessions,
+        reviews: reviewsResult.reviews,
+        courseSpan: sessionsResult.courseSpan,
+        eventSoldOut: sessionsResult.eventSoldOut,
         loading: false,
-      };
-      cacheSet(detailKey, next);
-      if (!cancelled) setState(next);
+        sessionsLoading: false,
+        reviewsLoading: false,
+      });
     })();
     return () => {
       cancelled = true;

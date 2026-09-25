@@ -480,7 +480,7 @@ type HeaderProps = {
 
 /** Header search — jumps to Explore with the term applied. A plain form so
  *  Enter just works; `goTo` handles it as a client-side navigation. */
-function SearchBox({ className = "", autoFocus = false }: { className?: string; autoFocus?: boolean }) {
+export function SearchBox({ className = "", autoFocus = false }: { className?: string; autoFocus?: boolean }) {
   const loc = useLocation();
   const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   // Keep the box in step with the URL when navigation happens elsewhere

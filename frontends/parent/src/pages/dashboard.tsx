@@ -3778,7 +3778,7 @@ function PackageOption({
 }
 
 export function BookingPage() {
-  const { activity, sessions, courseSpan, eventSoldOut, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, courseSpan, eventSoldOut, loading, sessionsLoading } = useActivityDetail(getParam("slug"));
   // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
   // two independent requests (different Wix thumbnail sizes), so each gets
   // its own broken-image state. Hooks, so they have to run unconditionally —
@@ -4691,7 +4691,10 @@ export function BookingPage() {
   // straight contradiction (QA).
   const displayTotal = redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : total;
 
-  if (loading) {
+  // Unlike the activity-detail page, booking needs sessions to pick a
+  // default date/time immediately — wait for both phases, same as this
+  // hook's old single-gate behavior, rather than flashing "no sessions" here.
+  if (loading || sessionsLoading) {
     return (
       <PageShell active="/book">
         <BookingPageSkeleton />

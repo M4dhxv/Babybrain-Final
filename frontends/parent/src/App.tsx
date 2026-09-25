@@ -12,6 +12,7 @@ import {
   MiniActivityGrid,
   PageShell,
   PlusFeatureDialog,
+  SearchBox,
   SectionTitle,
   Spinner,
   wixThumbUrl,
@@ -1054,6 +1055,14 @@ function ExplorePage() {
           <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
+        {/* Mobile/tablet search — desktop already has one in the header nav.
+            Sticky just under the header so it's still reachable once the map
+            and cards have scrolled past, without duplicating the hamburger's
+            own search. */}
+        <div className="sticky top-[74px] z-20 -mx-4 mb-4 bg-baby-paper px-4 py-2 sm:-mx-6 sm:px-6 lg:hidden">
+          <SearchBox />
+        </div>
+
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 [transform:translateZ(0)] sm:hidden" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <div className="mx-auto flex max-w-[420px] items-center gap-1 rounded-full border border-[#F0E4D8] bg-baby-paper p-1 shadow-[0_10px_24px_rgba(33,29,32,0.16)]">
             {(
@@ -1900,7 +1909,7 @@ function ContactLink({
 }
 
 function ActivityDetailPage() {
-  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const { isPlus } = usePlan();
@@ -2165,6 +2174,11 @@ function ActivityDetailPage() {
                     ))}
                   </div>
                 </>
+              ) : sessionsLoading ? (
+                <div className="animate-pulse space-y-2">
+                  <div className="h-14 rounded-[10px] bg-[#F4EFF0]" />
+                  <div className="h-14 rounded-[10px] bg-[#F4EFF0]" />
+                </div>
               ) : (
                 sessions.length > 0 ? (
                   <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} />
@@ -2241,20 +2255,29 @@ function ActivityDetailPage() {
           <section id="reviews" className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
             <h2 className="mb-3 text-xl font-black">Reviews ({activity.rating_count})</h2>
             <ReviewForm activityId={activity.id} />
-            {reviews.map((r) => (
-              <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
-                <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
-                {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
-                <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
-                {r.provider_response && (
-                  <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
-                    <p className="text-xs font-black text-baby-pink">Response from the provider</p>
-                    <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
-                  </div>
-                )}
+            {reviewsLoading ? (
+              <div className="animate-pulse space-y-3">
+                <div className="h-10 rounded-[10px] bg-[#F4EFF0]" />
+                <div className="h-10 rounded-[10px] bg-[#F4EFF0]" />
               </div>
-            ))}
-            {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
+            ) : (
+              <>
+                {reviews.map((r) => (
+                  <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
+                    <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
+                    {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
+                    <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
+                    {r.provider_response && (
+                      <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
+                        <p className="text-xs font-black text-baby-pink">Response from the provider</p>
+                        <p className="mt-1 text-sm font-semibold text-[#34406f]">{r.provider_response}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
+              </>
+            )}
           </section>
         </div>
         <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
@@ -2264,6 +2287,8 @@ function ActivityDetailPage() {
               ) : (
                 <p><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ class</span></p>
               )
+            ) : sessionsLoading ? (
+              <div className="h-[30px] w-24 animate-pulse rounded-[6px] bg-[#F4EFF0]" />
             ) : (
               <>
                 <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
@@ -2281,6 +2306,14 @@ function ActivityDetailPage() {
               >
                 <Icon name="calendar" className="h-4 w-4" /> Book on provider's site
               </a>
+            ) : sessionsLoading ? (
+              <button
+                type="button"
+                disabled
+                className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
+              >
+                <Icon name="calendar" className="h-4 w-4" /> Checking availability…
+              </button>
             ) : soldOut ? (
               <button
                 type="button"
