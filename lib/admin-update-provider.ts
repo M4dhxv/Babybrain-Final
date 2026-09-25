@@ -45,6 +45,7 @@ export type ProviderDetail = {
     age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
     description: string | null; external_booking_url: string | null;
     image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
+    is_custom_location: boolean; custom_location_label: string | null;
     /** Upcoming sessions, as Singapore wall-clock for the form. */
     sessions: { id: string; starts_at: string; ends_at: string; capacity: number | null;
                 teacher_name: string | null; studio: string | null }[];
@@ -79,7 +80,8 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
       .eq('provider_id', id).order('is_primary', { ascending: false }).order('name'),
     db.from('activities')
       .select('id, title, slug, category_id, age_min_months, age_max_months, price, is_published, ' +
-              'description, external_booking_url, image_urls, requires_medical_disclosure, bookings_paused')
+              'description, external_booking_url, image_urls, requires_medical_disclosure, bookings_paused, ' +
+              'is_custom_location, custom_location_label')
       .eq('provider_id', id).order('title'),
     db.from('activity_categories').select('id, slug, name'),
   ]);
@@ -93,6 +95,7 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
     age_min_months: number; age_max_months: number; price: number | null;
     is_published: boolean; description: string | null; external_booking_url: string | null;
     image_urls: string[] | null; requires_medical_disclosure: boolean; bookings_paused: boolean;
+    is_custom_location: boolean; custom_location_label: string | null;
   };
   const actRows = (acts.data ?? []) as unknown as RawActivity[];
   const actIds = actRows.map((a) => a.id);
@@ -133,6 +136,8 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
         image_urls: a.image_urls ?? [],
         requires_medical_disclosure: a.requires_medical_disclosure,
         bookings_paused: a.bookings_paused,
+        is_custom_location: a.is_custom_location,
+        custom_location_label: a.custom_location_label,
         sessions: sessByAct.get(a.id) ?? [],
       };
     }),
@@ -189,6 +194,8 @@ export type ActivityPatch = {
   external_booking_url?: string | null;
   requires_medical_disclosure?: boolean;
   bookings_paused?: boolean;
+  is_custom_location?: boolean;
+  custom_location_label?: string | null;
   sessions?: SessionPatch[];
   _delete?: boolean;
 };
@@ -374,6 +381,8 @@ export async function updateProviderWithCatalogue(
       if (a.external_booking_url !== undefined) row.external_booking_url = a.external_booking_url || null;
       if (a.requires_medical_disclosure !== undefined) row.requires_medical_disclosure = a.requires_medical_disclosure;
       if (a.bookings_paused !== undefined) row.bookings_paused = a.bookings_paused;
+      if (a.is_custom_location !== undefined) row.is_custom_location = a.is_custom_location;
+      if (a.custom_location_label !== undefined) row.custom_location_label = a.custom_location_label?.trim() || null;
       if (a.category_slug !== undefined) {
         if (!catId[a.category_slug]) throw new Error(`Unknown category "${a.category_slug}".`);
         row.category_id = catId[a.category_slug];

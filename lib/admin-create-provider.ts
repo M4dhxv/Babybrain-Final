@@ -55,6 +55,12 @@ export type NewActivity = {
   image_urls?: string[];
   external_booking_url?: string | null;
   requires_medical_disclosure?: boolean;
+  /** A private session at the customer's own home rather than a fixed venue
+   *  — see migration 00175/00176. Matches every Explore area filter (or
+   *  narrows to only these when "Custom location" is picked), and shows
+   *  custom_location_label (or a generic "Custom") instead of a region. */
+  is_custom_location?: boolean;
+  custom_location_label?: string | null;
   sessions?: NewSession[];
 };
 
@@ -322,6 +328,8 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
         image_urls: (a.image_urls ?? []).map((u) => u.trim()).filter(Boolean),
         is_published: a.is_published ?? true,
         requires_medical_disclosure: a.requires_medical_disclosure ?? false,
+        is_custom_location: a.is_custom_location ?? false,
+        custom_location_label: a.is_custom_location ? (a.custom_location_label?.trim() || null) : null,
         // A per-class link wins over the vendor-wide one; with neither, the
         // class books through BabyBrain rather than linking out.
         external_booking_url: a.external_booking_url?.trim() || bookingUrl,

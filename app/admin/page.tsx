@@ -75,6 +75,7 @@ type DraftActivity = {
   title: string; category_slug: string; description: string;
   age_min_months: string; age_max_months: string; price: string; is_published: boolean;
   image_urls: string; external_booking_url: string; requires_medical_disclosure: boolean;
+  is_custom_location: boolean; custom_location_label: string;
   sessions: DraftSession[];
 };
 /** Images are entered as URLs, one per line. */
@@ -211,6 +212,7 @@ type EditActivity = {
   age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
   description: string | null; external_booking_url: string | null;
   image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
+  is_custom_location: boolean; custom_location_label: string | null;
   sessions: EditSession[];
 };
 type ProviderDetail = {
@@ -823,6 +825,8 @@ function AddVendorView() {
             image_urls: splitUrls(a.image_urls),
             external_booking_url: a.external_booking_url,
             requires_medical_disclosure: a.requires_medical_disclosure,
+            is_custom_location: a.is_custom_location,
+            custom_location_label: a.is_custom_location ? a.custom_location_label : null,
             sessions: a.sessions
               .filter((s) => s.starts_at.trim())
               .map((s) => ({
@@ -1019,6 +1023,7 @@ function AddVendorView() {
                 title: '', category_slug: defaultCategory, description: '',
                 age_min_months: '', age_max_months: '', price: '', is_published: true,
                 image_urls: '', external_booking_url: '', requires_medical_disclosure: false,
+                is_custom_location: false, custom_location_label: '',
                 sessions: [],
               }])}
               style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add class</button>
@@ -1098,6 +1103,16 @@ function AddVendorView() {
                       onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, requires_medical_disclosure: e.target.checked } : x))} />
                     Ask for a medical disclosure before booking
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13 }}>
+                    <input type="checkbox" checked={a.is_custom_location}
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, is_custom_location: e.target.checked } : x))} />
+                    Private session at the customer&rsquo;s home (no fixed venue)
+                  </label>
+                  {a.is_custom_location && (
+                    <input value={a.custom_location_label} style={{ ...input(), marginTop: 6 }}
+                      placeholder='Shown to parents instead of "Custom", e.g. "We travel to you"'
+                      onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, custom_location_label: e.target.value } : x))} />
+                  )}
                 </div>
               </div>
 
@@ -1321,6 +1336,8 @@ function EditVendorModal({
             external_booking_url: a.external_booking_url,
             requires_medical_disclosure: a.requires_medical_disclosure,
             bookings_paused: a.bookings_paused,
+            is_custom_location: a.is_custom_location,
+            custom_location_label: a.is_custom_location ? a.custom_location_label : null,
             sessions: [
               ...a.sessions
                 .filter((s) => s.starts_at.trim())
@@ -1619,7 +1636,17 @@ function EditVendorModal({
                             onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, bookings_paused: e.target.checked } : x))} />
                           Bookings paused
                         </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                          <input type="checkbox" checked={a.is_custom_location} disabled={gone}
+                            onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, is_custom_location: e.target.checked } : x))} />
+                          Private session at customer&rsquo;s home
+                        </label>
                       </div>
+                      {a.is_custom_location && (
+                        <input value={a.custom_location_label ?? ''} style={{ ...input(), marginTop: 8 }} disabled={gone}
+                          placeholder='Shown to parents instead of "Custom", e.g. "We travel to you"'
+                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, custom_location_label: e.target.value } : x))} />
+                      )}
                     </div>
                   </div>
 

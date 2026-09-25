@@ -192,6 +192,10 @@ export type Database = {
           popularity: number;
           provider_id: string | null;
           location_id: string | null;
+          // 00175/00176 — a private session at the customer's own home
+          // rather than a fixed venue; matches every Explore area filter.
+          is_custom_location: boolean;
+          custom_location_label: string | null;
           default_capacity: number | null;
           vendor_category: VendorCategory | null;
           requires_medical_disclosure: boolean;
@@ -253,6 +257,8 @@ export type Database = {
           is_published?: boolean;
           provider_id?: string | null;
           location_id?: string | null;
+          is_custom_location?: boolean;
+          custom_location_label?: string | null;
           default_capacity?: number | null;
           vendor_category?: VendorCategory | null;
           requires_medical_disclosure?: boolean;

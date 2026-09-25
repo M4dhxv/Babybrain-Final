@@ -624,7 +624,18 @@ const AREA_HINTS: Record<string, string> = {
   north: "Woodlands, Yishun, Kranji",
   west: "Clementi, Jurong, Bukit Timah",
   sentosa: "Sentosa Island",
+  custom: "as defined by you",
 };
+
+/** Private/at-home sessions with no fixed region (see migration 00175) get
+ *  their own pseudo-area alongside the real ones — added here, not to
+ *  REGION_FILTERS itself, since that list is shared with the onboarding/
+ *  profile "preferred region" pickers, where "Custom location" makes no
+ *  sense as a home-region preference. */
+const AREA_FILTER_OPTIONS = [
+  ...REGION_FILTERS.map(([k, l]) => ({ key: k, label: l })),
+  { key: "custom", label: "Custom location" },
+];
 
 function AreaCards({
   options, selected, counts, onChange,
@@ -1135,7 +1146,7 @@ function ExplorePage() {
               {mobileSheet === "age" && <AgeTrack ages={ages} onChange={setAges} />}
               {mobileSheet === "area" && (
                 <AreaCards
-                  options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))}
+                  options={AREA_FILTER_OPTIONS}
                   selected={regions}
                   counts={facetCounts?.area}
                   onChange={setRegions}
@@ -1295,7 +1306,7 @@ function ExplorePage() {
           <ChipFilter
             label="Area"
             allLabel="All areas"
-            options={REGION_FILTERS.map(([k, l]) => ({ key: k, label: l }))}
+            options={AREA_FILTER_OPTIONS}
             selected={regions}
             onChange={setRegions}
           />
