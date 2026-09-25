@@ -17,6 +17,11 @@ export type Activity = {
   price?: number | null;
   durationMins?: number | null;
   region?: string | null;
+  /** A private session at the customer's own home rather than a fixed venue —
+   *  shown as `customLocationLabel` (or "Custom" if unset) / "as defined by
+   *  you" instead of `region`. */
+  isCustomLocation?: boolean;
+  customLocationLabel?: string | null;
   /** Bookable on BabyBrain rather than the provider's own site. */
   instantBook?: boolean;
 };

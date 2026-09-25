@@ -898,7 +898,18 @@ function providerLabel(activity: Activity): string | null {
 /** Region name where we have one. The address fallback is the tail of the
  *  address, which is usually "Singapore 098327" — a postal code is no use to a
  *  parent scanning cards, so it's stripped rather than shown. */
-function placeLabel(activity: Activity): string {
+function placeLabel(activity: Activity): React.ReactNode {
+  // A private session at the customer's own home has no fixed region — say
+  // so plainly (in the vendor's own words, when they gave one) rather than
+  // showing the vendor's own (unrelated) address.
+  if (activity.isCustomLocation) {
+    return (
+      <>
+        {activity.customLocationLabel?.trim() || "Custom"}{" "}
+        <span className="text-[10px] font-semibold text-[#8890a8]">as defined by you</span>
+      </>
+    );
+  }
   const region = regionLabel(activity.region);
   if (region) return region;
   const venue = (activity.venue ?? "").replace(/\b\d{6}\b/g, "").replace(/[,\s]+$/, "").trim();

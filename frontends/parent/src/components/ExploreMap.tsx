@@ -279,7 +279,9 @@ export function ExploreMap({
                 : "Free"
               : null,
             formatDuration(a.durationMins),
-            regionLabel(a.region) || null,
+            a.isCustomLocation
+              ? `${a.customLocationLabel?.trim() || "Custom"} (as defined by you)`
+              : regionLabel(a.region) || null,
           ].filter(Boolean);
           return (
             `<a href="/activity?slug=${encodeURIComponent(a.slug)}" style="display:block;text-decoration:none;margin:6px 0">` +

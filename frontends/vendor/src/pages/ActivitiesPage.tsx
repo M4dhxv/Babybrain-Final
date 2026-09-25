@@ -158,6 +158,11 @@ const emptyForm = {
   title: '', category_id: '', secondary_category_id: '', vendor_category: '' as VendorCategory | '',
   description: '', age_min_months: '', age_max_months: '', price: '',
   location_id: '', default_capacity: '',
+  // A private session held at the customer's own home rather than a fixed
+  // venue — see 00175. Clears location_id and always matches every region
+  // filter on Explore instead of inheriting the provider's own address.
+  is_custom_location: false,
+  custom_location_label: '',
   // Images (00130): 'profile' (default) borrows the provider's own
   // logo/cover/gallery; 'custom' uses this activity's own uploads. Either
   // way cover_image_url is an explicit pick from whichever set is active.
@@ -1210,6 +1215,8 @@ export default function ActivitiesPage() {
       age_max_months: String(a.age_max_months ?? ''),
       price: a.price != null ? String(a.price) : '',
       location_id: a.location_id ?? '',
+      is_custom_location: a.is_custom_location ?? false,
+      custom_location_label: a.custom_location_label ?? '',
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_source: (a.image_source === 'custom' ? 'custom' : 'profile') as 'profile' | 'custom',
       image_urls: a.image_urls ?? [],
@@ -1358,7 +1365,9 @@ export default function ActivitiesPage() {
           }
         : {
             price: form.price ? Number(form.price) : null,
-            location_id: form.location_id || null,
+            location_id: form.is_custom_location ? null : form.location_id || null,
+            is_custom_location: form.is_custom_location,
+            custom_location_label: form.is_custom_location ? form.custom_location_label.trim() || null : null,
             default_capacity: Number(form.default_capacity),
             address: loc?.address ?? null,
             postal_code: loc?.postal_code ?? null,
@@ -2079,7 +2088,33 @@ export default function ActivitiesPage() {
             {!isWixLinked && (
               <>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Location</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-gray-900 block">Location</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Private session at the customer's home</span>
+                  <Switch
+                    checked={form.is_custom_location}
+                    onCheckedChange={(v) => setForm({ ...form, is_custom_location: v, location_id: v ? '' : form.location_id })}
+                  />
+                </div>
+              </div>
+              {form.is_custom_location ? (
+                <>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    placeholder="e.g. We travel to you"
+                    className={inputCls}
+                    value={form.custom_location_label}
+                    onChange={(e) => setForm({ ...form, custom_location_label: e.target.value })}
+                    aria-label="Custom location label"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Optional — shown to parents instead of "Custom". This always shows up on Explore no matter which area a parent searches, followed by "as defined by you".
+                  </p>
+                </>
+              ) : (
+                <>
               <SelectField className={inputCls} value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Select a location" aria-label="Location">
                 <Opt value="">Select a location</Opt>
                 {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
@@ -2093,6 +2128,8 @@ export default function ActivitiesPage() {
                    override either per session, so one activity covers every
                    venue and price. */
                 <p className="mt-1 text-xs text-gray-500">Default venue. Any session can be moved to another one under Manage schedule.</p>
+              )}
+                </>
               )}
             </div>
             <div>

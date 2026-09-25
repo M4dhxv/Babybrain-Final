@@ -129,6 +129,9 @@ export type SearchRow = {
   // Added in 00166 — computed server-side now, see matching_activities.
   areas: SgRegion[] | null;
   venues: VenueRow[] | null;
+  // Added in 00175 — a private session at the customer's own home.
+  is_custom_location?: boolean | null;
+  custom_location_label?: string | null;
 };
 
 /** A `search_activities` row — `matching_activities` plus the page's total. */
@@ -198,6 +201,8 @@ function toLiveActivity(r: SearchRow): LiveActivity {
     ageMinMonths: r.age_min_months,
     ageMaxMonths: r.age_max_months,
     region: r.region,
+    isCustomLocation: r.is_custom_location ?? false,
+    customLocationLabel: r.custom_location_label ?? null,
     durationMins: r.duration_mins,
     instantBook: r.instant_book ?? false,
     venues,
