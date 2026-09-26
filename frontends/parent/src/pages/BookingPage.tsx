@@ -1227,8 +1227,8 @@ export default function BookingPage() {
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {alreadyBookedPending
-                          ? <>{bookChild?.name ?? "This child"} has an earlier attempt to book this session that was never paid for — pick up where you left off below, or check your <a href="/profile?tab=bookings" className="underline">bookings</a> for it.</>
-                          : <>{bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.</>}
+                          ? <span>{bookChild?.name ?? "This child"} has an earlier attempt to book this session that was never paid for — pick up where you left off below, or check your <a href="/profile?tab=bookings" className="underline">bookings</a> for it.</span>
+                          : <span>{bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.</span>}
                       </p>
                     )}
                     <section>
