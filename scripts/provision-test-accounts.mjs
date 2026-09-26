@@ -221,6 +221,16 @@ async function provision(v) {
     verification_status: 'verified',
     status: 'active',
     region: v.region,
+    // Deliberate override, test project only: no stripe_account_id exists for
+    // a demo vendor and never will, so gate the vendor portal's own publish
+    // button (frontends/vendor/src/pages/ActivitiesPage.tsx's
+    // `!provider?.payouts_enabled` check) open by hand instead of it nagging
+    // for a real Stripe Connect setup. Same "settle manually, no live Stripe"
+    // mode the admin form's own "Publish anyway" checkbox grants for exactly
+    // this reason (lib/admin-update-provider.ts) — app/api/vendor/earnings
+    // only ever calls Stripe when stripe_account_id is set, so this stays
+    // inert rather than pointing at a real Connect account.
+    payouts_enabled: true,
   });
   console.log(`  Provider ready (${provider.id})`);
 
