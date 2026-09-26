@@ -182,8 +182,17 @@ function looksLikeGraphic(el: HTMLImageElement): boolean {
  *  which between them catch a landscape logo whether or not it's the provider's own logo_url —
  *  aspect ratio alone can't tell a landscape logo from a landscape photo). */
 function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: string; priority: boolean; forceWhole?: boolean }) {
-  const [ratio, setRatio] = useState<number | null>(null);
-  const [isGraphic, setIsGraphic] = useState(false);
+  // Whole-vs-cropped (object-contain+blurred-backdrop vs object-cover) used to
+  // be decided from two separate async signals (a naturalWidth/Height ratio
+  // measured off the full-size <img> itself, and a `looksLikeGraphic` probe)
+  // that each resolved after first paint. That meant every slide painted
+  // once in the *wrong* mode — cropped by default — then flipped to whole
+  // the instant either signal landed, which is exactly the flicker QA saw on
+  // resized/logo images opening the activity page. Now both signals come off
+  // one small probe image, and the real slide doesn't mount until that probe
+  // resolves (or `forceWhole` already answers the question synchronously),
+  // so there's only ever one paint of the real image, in the right mode.
+  const [meta, setMeta] = useState<{ ratio: number; isGraphic: boolean } | null>(null);
   // A Wix CDN response missing (or inconsistent about) CORS headers, a
   // throttled request, a since-deleted source file — none of that is under
   // this app's control, and this is the actual hero photo, not a card
@@ -192,44 +201,47 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
   const [broken, setBroken] = useState(false);
 
   // Pixel-samples a separate, invisible copy purely to tell a logo/wordmark
-  // from a photo (looksLikeGraphic) — never the visible <img> below. This
-  // used to run `crossOrigin="anonymous"` on that visible image instead: a
-  // request tagged `crossorigin` isn't just unreadable to canvas if the
-  // response lacks a matching CORS header, per the spec it fails to load at
-  // all, same as a broken URL. Wix's CDN answering that inconsistently (an
-  // edge cache miss, a throttled anonymous fetch, a plain missing header on
-  // some path) is exactly what "the hero image sometimes doesn't render"
-  // looks like from here — this probe can fail freely instead, since its
-  // only job is a cosmetic whole-vs-cropped decision that already falls back
-  // to the aspect-ratio heuristic below when it can't tell.
+  // from a photo (looksLikeGraphic), and doubles as the ratio measurement —
+  // never the visible <img> below. This used to run `crossOrigin="anonymous"`
+  // on that visible image instead: a request tagged `crossorigin` isn't just
+  // unreadable to canvas if the response lacks a matching CORS header, per
+  // the spec it fails to load at all, same as a broken URL. Wix's CDN
+  // answering that inconsistently (an edge cache miss, a throttled anonymous
+  // fetch, a plain missing header on some path) is exactly what "the hero
+  // image sometimes doesn't render" looks like from here — this probe can
+  // fail freely instead, since its only job is a cosmetic whole-vs-cropped
+  // decision that already falls back to "cropped" below when it can't tell.
   useEffect(() => {
-    if (url === FALLBACK_LOGO_URL) return;
+    if (url === FALLBACK_LOGO_URL || forceWhole) return;
     let cancelled = false;
     const probe = new Image();
     probe.crossOrigin = "anonymous";
     probe.onload = () => {
-      if (!cancelled) setIsGraphic(looksLikeGraphic(probe));
+      if (cancelled || !probe.naturalWidth || !probe.naturalHeight) return;
+      setMeta({ ratio: probe.naturalWidth / probe.naturalHeight, isGraphic: looksLikeGraphic(probe) });
+    };
+    probe.onerror = () => {
+      if (!cancelled) setMeta({ ratio: 1, isGraphic: false });
     };
     probe.src = wixThumbUrl(url, 64, 64);
     return () => {
       cancelled = true;
     };
-  }, [url]);
-
-  const measureRatio = (el: HTMLImageElement | null) => {
-    if (!el || !el.naturalWidth || !el.naturalHeight) return;
-    setRatio(el.naturalWidth / el.naturalHeight);
-  };
+  }, [url, forceWhole]);
 
   if (url === FALLBACK_LOGO_URL || broken) {
     return <img src={FALLBACK_LOGO_URL} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
   }
-  const whole = forceWhole || isGraphic || (ratio != null && (ratio < 1.4 || ratio > 3.6));
+  if (!forceWhole && !meta) {
+    return <div className="h-[305px] w-full shrink-0 animate-pulse bg-[#F3EDF0]" />;
+  }
+  const whole = forceWhole || (meta ? meta.isGraphic || meta.ratio < 1.4 || meta.ratio > 3.6 : false);
   // The display box is 860x305 (see the grid column width this sits in); a
   // Wix original is routinely 1500px+, so this was downloading many times
-  // the bytes it shows. `/v1/fit/` never crops, so measureRatio/looksLikeGraphic
-  // still see the same aspect ratio. The blurred backdrop is scaled up and
-  // blurred into mush regardless, so it gets a far smaller rendition.
+  // the bytes it shows. `/v1/fit/` never crops, so the probe's ratio and
+  // looksLikeGraphic still see the same aspect ratio. The blurred backdrop is
+  // scaled up and blurred into mush regardless, so it gets a far smaller
+  // rendition.
   const heroSrc = wixThumbUrl(url, 1000, 360);
   return (
     <div className="relative h-[305px] w-full shrink-0 overflow-hidden bg-[#F3EDF0]">
@@ -237,7 +249,6 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         <img src={wixThumbUrl(url, 64, 64)} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl" />
       )}
       <img
-        ref={(el) => { if (el?.complete) measureRatio(el); }}
         src={heroSrc}
         alt={alt}
         width={860}
@@ -245,7 +256,6 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         decoding="async"
         fetchPriority={priority ? "high" : "auto"}
         loading="eager"
-        onLoad={(e) => measureRatio(e.currentTarget)}
         onError={() => setBroken(true)}
         className={`relative h-full w-full ${whole ? "object-contain" : "object-cover object-[center_15%]"}`}
       />
