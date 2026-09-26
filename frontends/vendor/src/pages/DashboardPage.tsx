@@ -106,39 +106,85 @@ export default function DashboardPage() {
 
   // Everything the dashboard shows, in one stale-while-revalidate read: a
   // revisit paints the last figures instantly and refreshes them behind a thin
-  // top bar, instead of blanking to a loader. Every query below is byte-for-byte
-  // the one this page has always run — only the plumbing changed.
+  // top bar, instead of blanking to a loader.
+  //
+  // The fetcher itself used to be a strict waterfall — overview, THEN
+  // activities/locations, THEN sessions, THEN booking counts, THEN recent
+  // bookings, THEN every one of this provider's bookings ever, THEN
+  // attendance — seven network round trips back to back even though most of
+  // them don't actually depend on each other. Only `sessions` needs
+  // `activities`' ids, and only the two count queries need ids from the read
+  // just before them; `overview`, `activities`/`locations`, `recent bookings`
+  // and the attendance sample all only need the provider id, so they go out
+  // together. That collapses the critical path from 7 sequential trips to 3
+  // parallel waves.
+  //
+  // The attendance-rate read was also unbounded — every non-cancelled
+  // booking this provider has ever taken, with no limit, just to compute one
+  // percentage. For a vendor with a long history that was, on its own, the
+  // slowest query on the page and it only gets slower over time. A recent
+  // sample of 200 is plenty to represent an attendance rate.
   const { data, loading, refreshing } = useProviderQuery<DashboardData>(
     provider ? `dashboard:${provider.id}` : null,
     async () => {
-      const { data: ov } = await supabase.rpc('provider_overview', { p_provider: provider!.id });
-      const overview = (ov?.[0] as ProviderOverview) ?? null;
+      const nowIso = new Date().toISOString();
+      // Fetched 90 days out (not just the next 4) so the date-range control has
+      // something to actually narrow — it used to just navigate to /bookings.
+      const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
 
-      const [{ data: acts }, { data: locs }] = await Promise.all([
+      const [ovRes, actsRes, locsRes, recentRes, sampleBksRes] = await Promise.all([
+        supabase.rpc('provider_overview', { p_provider: provider!.id }),
         supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider!.id),
         supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
+        // 1.3: recent bookings with the booked child's name (security-definer
+        // RPC). Fetched 30 (not 4) so the status filter has more than one
+        // screenful to narrow.
+        supabase.rpc('provider_recent_bookings', { p_provider: provider!.id, p_limit: 30 }),
+        // Attendance rate = present / marked, across a recent sample of this
+        // provider's non-cancelled bookings.
+        supabase.from('bookings').select('id').eq('provider_id', provider!.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       ]);
+
+      const overview = (ovRes.data?.[0] as ProviderOverview) ?? null;
+      const acts = actsRes.data;
+      const locs = locsRes.data;
       const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const activityLocationOf = new Map((acts ?? []).map((a) => [a.id, a.location_id]));
       const wixTypeOf = new Map((acts ?? []).map((a) => [a.id, a.wix_service_type]));
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
-      if (!ids.length) return { overview, upcoming: [], recent: [], attendanceRate: null };
 
-      const nowIso = new Date().toISOString();
-      // Fetched 90 days out (not just the next 4) so the date-range control has
-      // something to actually narrow — it used to just navigate to /bookings.
-      const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
-      const { data: sess } = await supabase
-        .from('activity_sessions')
-        .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
-        .in('activity_id', ids)
-        .neq('status', 'cancelled')
-        .gte('starts_at', nowIso)
-        .lte('starts_at', in90dIso)
-        .order('starts_at')
-        .limit(60);
-      const sessIds = (sess ?? []).map((s) => s.id);
+      const recent: RecentBooking[] = (recentRes.data ?? []).map((r) => ({
+        id: r.booking_id,
+        child: r.child_name,
+        activity: r.activity_title,
+        time: sgWhen(r.starts_at),
+        status: r.status,
+        isRepeat: r.is_repeat,
+        packageName: r.package_name,
+      }));
+
+      const sampleBks = sampleBksRes.data ?? [];
+
+      const [sessRes, attRes] = await Promise.all([
+        ids.length
+          ? supabase
+              .from('activity_sessions')
+              .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
+              .in('activity_id', ids)
+              .neq('status', 'cancelled')
+              .gte('starts_at', nowIso)
+              .lte('starts_at', in90dIso)
+              .order('starts_at')
+              .limit(60)
+          : Promise.resolve({ data: [] as { id: string; activity_id: string; starts_at: string; capacity: number | null; location_id: string | null; wix_remaining_capacity: number | null; wix_slot_key: string | null }[] }),
+        sampleBks.length
+          ? supabase.from('attendance').select('status').in('booking_id', sampleBks.map((b) => b.id))
+          : Promise.resolve({ data: [] as { status: string }[] }),
+      ]);
+
+      const sess = sessRes.data ?? [];
+      const sessIds = sess.map((s) => s.id);
       const counts: Record<string, number> = {};
       if (sessIds.length) {
         const { data: bks } = await supabase
@@ -149,7 +195,7 @@ export default function DashboardPage() {
           if (isHeldBookingStatus(b.status)) counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
-      const upcoming: UpcomingSession[] = (sess ?? []).map((s) => {
+      const upcoming: UpcomingSession[] = sess.map((s) => {
         const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
         // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
         // figure and our held local rows, so a Wix class booked directly on
@@ -169,41 +215,10 @@ export default function DashboardPage() {
         };
       });
 
-      // 1.3: recent bookings with the booked child's name (security-definer RPC).
-      // Fetched 30 (not 4) so the status filter has more than one screenful to
-      // narrow.
-      const { data: recentRows } = await supabase
-        .rpc('provider_recent_bookings', { p_provider: provider!.id, p_limit: 30 });
-      const recent: RecentBooking[] = (recentRows ?? []).map((r) => ({
-        id: r.booking_id,
-        child: r.child_name,
-        activity: r.activity_title,
-        time: sgWhen(r.starts_at),
-        status: r.status,
-        isRepeat: r.is_repeat,
-        packageName: r.package_name,
-      }));
-
-      // Attendance rate = present / marked, across this provider's non-cancelled
-      // bookings.
-      const { data: allBks } = await supabase
-        .from('bookings')
-        .select('id, status, created_at, session_id')
-        .eq('provider_id', provider!.id)
-        .neq('status', 'cancelled')
-        .order('created_at', { ascending: false });
-      const bks = allBks ?? [];
-      let attendanceRate: string | null = null;
-      if (bks.length) {
-        const { data: att } = await supabase
-          .from('attendance')
-          .select('status')
-          .in('booking_id', bks.map((b) => b.id));
-        const marked = (att ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
-        attendanceRate = marked.length
-          ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
-          : null;
-      }
+      const marked = (attRes.data ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
+      const attendanceRate = marked.length
+        ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
+        : null;
 
       return { overview, upcoming, recent, attendanceRate };
     },
