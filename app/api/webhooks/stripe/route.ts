@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { getStripe, LIVE_STATUSES, periodEndIso, intervalOf } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
+import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { stripeConfigKeyFor } from '@/lib/stripe-config';
@@ -459,48 +460,42 @@ export async function POST(request: Request) {
           .map((s) => s.trim())
           .filter(Boolean);
         const paymentIntent = (session.payment_intent as string) ?? null;
-        const patch = {
-          payment_status: 'paid' as const,
-          status: 'confirmed' as const,
-          stripe_payment_intent: paymentIntent,
-        };
-        if (seatIds.length > 0) {
-          await admin.from('bookings').update(patch).in('id', seatIds);
-        } else if (groupId) {
-          await admin.from('bookings').update(patch).eq('booking_group_id', groupId);
-        } else {
-          await admin.from('bookings').update(patch).eq('id', bookingId);
-        }
+
+        // confirm_paid_booking_seats (00180) re-checks capacity under a
+        // session-row lock before confirming a waitlisted seat being claimed
+        // via "Pay now" — a pending seat (already reserved at booking time)
+        // is always confirmed. Anyone this checkout charged but couldn't
+        // seat because a concurrent claim won the race is refunded here and
+        // left on the waitlist.
+        const { confirmedIds } = await confirmPaidBookingSeats(admin, {
+          seatIds,
+          groupId,
+          bookingId,
+          paymentIntent,
+        });
 
         // Ledger entry so the vendor can see what they earned on this booking
-        // and what was deducted. Idempotent on the payment intent.
+        // and what was deducted. Idempotent on the payment intent. Only the
+        // seats that actually got confirmed count toward gross — a refunded
+        // loser's money was never really earned.
         // provider_id is stamped on the booking by handle_booking_insert.
-        const { data: booked } =
-          seatIds.length > 0
-            ? await admin
-                .from('bookings')
-                .select('amount, provider_id')
-                .in('id', seatIds)
-            : groupId
-              ? await admin
-                  .from('bookings')
-                  .select('amount, provider_id')
-                  .eq('booking_group_id', groupId)
-              : await admin
-                  .from('bookings')
-                  .select('amount, provider_id')
-                  .eq('id', bookingId);
-        const rows = booked ?? [];
-        const providerId = rows[0]?.provider_id ?? null;
-        if (providerId) {
-          const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
-          await recordSale(admin, {
-            providerId,
-            source: 'booking',
-            bookingId,
-            grossCents,
-            paymentIntentId: paymentIntent,
-          });
+        if (confirmedIds.length > 0) {
+          const { data: booked } = await admin
+            .from('bookings')
+            .select('amount, provider_id')
+            .in('id', confirmedIds);
+          const rows = booked ?? [];
+          const providerId = rows[0]?.provider_id ?? null;
+          if (providerId) {
+            const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
+            await recordSale(admin, {
+              providerId,
+              source: 'booking',
+              bookingId,
+              grossCents,
+              paymentIntentId: paymentIntent,
+            });
+          }
         }
       }
 

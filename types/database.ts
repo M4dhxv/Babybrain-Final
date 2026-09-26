@@ -1498,6 +1498,10 @@ export type Database = {
         Args: { p_purchase_id: string; p_session_id: string; p_child_id?: string | null; p_policies?: string[]; p_wix_booking_id?: string | null; p_quantity?: number; p_medical?: string | null; p_info?: string | null; p_guest_names?: string[] };
         Returns: { status: string; waitlisted_count: number }[];
       };
+      confirm_paid_booking_seats: {
+        Args: { p_seat_ids: string[]; p_payment_intent?: string | null };
+        Returns: { id: string; confirmed: boolean }[];
+      };
       purchase_package_and_book: {
         Args: {
           p_user_id: string;

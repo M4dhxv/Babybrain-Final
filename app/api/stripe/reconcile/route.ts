@@ -3,6 +3,7 @@ import { getStripe } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
+import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
@@ -154,38 +155,43 @@ export async function POST(request: Request) {
       .map((s) => s.trim())
       .filter(Boolean);
     const paymentIntent = (session.payment_intent as string) ?? null;
-    const patch = {
-      payment_status: 'paid' as const,
-      status: 'confirmed' as const,
-      stripe_payment_intent: paymentIntent,
-    };
-    // RLS is bypassed by the admin client, so scope the write to this parent.
-    const scoped = admin.from('bookings').update(patch).eq('user_id', user.id);
-    await (seatIds.length > 0
-      ? scoped.in('id', seatIds)
-      : groupId
-        ? scoped.eq('booking_group_id', groupId)
-        : scoped.eq('id', bookingId));
+
+    // confirm_paid_booking_seats (00180) re-checks capacity under a
+    // session-row lock before confirming a waitlisted seat being claimed via
+    // "Pay now" — this races the webhook by design (reconcile is a safety
+    // net for a delayed delivery), so both must agree on who actually wins a
+    // contested freed seat rather than each independently confirming it.
+    // RLS is bypassed by the admin client, so scope reads/writes to this
+    // parent's own bookings.
+    const { confirmedIds } = await confirmPaidBookingSeats(admin, {
+      seatIds,
+      groupId,
+      bookingId,
+      paymentIntent,
+      scopeUserId: user.id,
+    });
 
     // Same ledger entry the webhook would have written. recordSale is
     // idempotent on the payment intent, so whichever path runs first wins.
-    const readScoped = admin.from('bookings').select('amount, provider_id').eq('user_id', user.id);
-    const { data: booked } = await (seatIds.length > 0
-      ? readScoped.in('id', seatIds)
-      : groupId
-        ? readScoped.eq('booking_group_id', groupId)
-        : readScoped.eq('id', bookingId));
-    const rows = booked ?? [];
-    const providerId = rows[0]?.provider_id ?? null;
-    if (providerId) {
-      const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
-      await recordSale(admin, {
-        providerId,
-        source: 'booking',
-        bookingId,
-        grossCents,
-        paymentIntentId: paymentIntent,
-      });
+    // Only the seats that actually got confirmed count toward gross.
+    if (confirmedIds.length > 0) {
+      const { data: booked } = await admin
+        .from('bookings')
+        .select('amount, provider_id')
+        .in('id', confirmedIds)
+        .eq('user_id', user.id);
+      const rows = booked ?? [];
+      const providerId = rows[0]?.provider_id ?? null;
+      if (providerId) {
+        const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
+        await recordSale(admin, {
+          providerId,
+          source: 'booking',
+          bookingId,
+          grossCents,
+          paymentIntentId: paymentIntent,
+        });
+      }
     }
     return NextResponse.json({ applied: true, kind });
   }
