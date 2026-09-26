@@ -416,10 +416,18 @@ function toggleTimeBucket(i: number, range: [number, number], active: boolean): 
 }
 
 const sgDateKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+// Pure calendar-day arithmetic on the y/m/d key itself, entirely in UTC —
+// never construct-then-shift a real Date the way this used to
+// (`new Date(...+08:00)` then `.setDate(.getDate()+days)`), because
+// getDate/setDate read and write the *browser's local* calendar day, not
+// Singapore's. For a visitor outside SG (any timezone, and especially one
+// with DST) that local day can already differ from the SG day at that
+// instant, so shifting it and converting back could land on the wrong SG
+// date — this is exactly why "Next 7 days" worked for some visitors and
+// not others. Date.UTC + toISOString never touch the local zone at all.
 const shiftDateKey = (key: string, days: number) => {
-  const d = new Date(`${key}T00:00:00+08:00`);
-  d.setDate(d.getDate() + days);
-  return sgDateKey(d);
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 /** [from, to] for each quick date pick, in Singapore calendar days. */
 function datePresets(): { key: string; label: string; from: string; to: string }[] {
@@ -467,8 +475,11 @@ export default function ExplorePage() {
   });
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
   const [dateFrom, setDateFrom] = useState(() => getParam("from") || "");
-  // Upper bound for the "Today / This weekend / Next 7 days" quick picks.
-  // Empty means open-ended, which is all the desktop "Date from" box ever sets.
+  // Upper bound for the "Today / This weekend / Next 7 days" quick picks and
+  // the mobile "Pick a date" single-day input (which sets it equal to
+  // dateFrom, for an exact-day match). Empty means open-ended — the desktop
+  // "Date from" box under "More filters" is the one place that's still
+  // intentional: a broad "starting from this date" search with no end.
   const [dateTo, setDateTo] = useState(() => getParam("to") || "");
   const [pickingDate, setPickingDate] = useState(false);
   const [timeRange, setTimeRange] = useState<[number, number]>(() => {
@@ -842,8 +853,14 @@ export default function ExplorePage() {
                     </div>
                     {(pickingDate || ((!!dateFrom || !!dateTo) && !datePresets().some((p) => dateFrom === p.from && dateTo === p.to))) && (
                       <label className="mt-2 flex flex-col gap-1">
-                        <span className="text-xs font-bold text-[#68718f]">From this date onwards</span>
-                        <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(""); }} className={`${selectClass} w-full`} />
+                        <span className="text-xs font-bold text-[#68718f]">On this date</span>
+                        {/* "Pick a date" sits next to Today/This weekend/Next 7
+                            days as a single-day pick, so it sets both bounds
+                            to the same day — leaving `dateTo` empty (as this
+                            used to) turned it into "from this date onwards",
+                            which is why picking one exact day still surfaced
+                            activities on every later date too. */}
+                        <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(v); }} className={`${selectClass} w-full`} />
                       </label>
                     )}
                   </div>
