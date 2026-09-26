@@ -19,6 +19,10 @@ export type EmailData = Record<string, unknown>;
 export interface EmailCtx {
   appUrl: string;
   recipientName?: string | null;
+  /** Which app the footer's "Update your profile" / "Unsubscribe" links point
+   *  into. renderEmail() sets this from the template type (every `provider_*`
+   *  key is a vendor template) — callers don't need to pass it themselves. */
+  audience?: 'parent' | 'provider';
 }
 export interface RenderedEmail {
   subject: string;
@@ -82,6 +86,14 @@ function activityCard(ctx: EmailCtx, a: EmailData): string {
 
 function layout(ctx: EmailCtx, inner: string): string {
   const { appUrl } = ctx;
+  // The vendor portal is a HashRouter SPA under /vendor/ — a plain
+  // /vendor/settings 404s. Mirrors vendorPageUrl() in lib/cors.ts, which
+  // can't be reused here directly since it needs a Request to read the
+  // origin from, and this layout only has the already-resolved appUrl.
+  const [profileHref, unsubscribeHref] =
+    ctx.audience === 'provider'
+      ? [`${appUrl}/vendor/#/settings`, `${appUrl}/vendor/#/settings?unsubscribe=1`]
+      : [`${appUrl}/profile`, `${appUrl}/profile?unsubscribe=1`];
   return `<div style="background:#FFFFFF;margin:0;padding:0">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;font-weight:300;font-size:18px;line-height:1.6;color:#767676">
     <div style="text-align:center;margin-bottom:28px">
@@ -92,8 +104,8 @@ function layout(ctx: EmailCtx, inner: string): string {
       <img src="${appUrl}/assets/brand/logo-horizontal.png" alt="BabyBrain" width="132" style="max-width:132px;height:auto;margin-bottom:12px" /><br/>
       <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram <img src="${appUrl}/assets/brand/instagram.png" alt="Instagram" width="15" height="15" style="width:15px;height:15px;vertical-align:-2px;border:0" /></a>
       <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
-        <a href="${appUrl}/profile" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
-        <a href="${appUrl}/profile?unsubscribe=1" style="color:#9a9a9a">Unsubscribe</a>
+        <a href="${profileHref}" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
+        <a href="${unsubscribeHref}" style="color:#9a9a9a">Unsubscribe</a>
       </div>
     </div>
   </div>
@@ -576,8 +588,14 @@ const ALIASES: Record<string, string> = {
 
 /** Returns the branded email for a notification type, or null if unmapped. */
 export function renderEmail(type: string, data: EmailData, ctx: EmailCtx): RenderedEmail | null {
-  const tpl = T[type] ?? T[ALIASES[type] ?? ''];
-  return tpl ? tpl(data, ctx) : null;
+  // Resolve the alias first: `provider_message` (who sent it) aliases to the
+  // parent-facing `message_response` (who receives it) — the footer's
+  // audience must follow the resolved key, not the raw notification type.
+  const resolvedType = type in T ? type : (ALIASES[type] ?? type);
+  const tpl = T[resolvedType];
+  if (!tpl) return null;
+  const audience: EmailCtx['audience'] = ctx.audience ?? (resolvedType.startsWith('provider_') ? 'provider' : 'parent');
+  return tpl(data, { ...ctx, audience });
 }
 
 export const EMAIL_TYPES = Object.keys(T);

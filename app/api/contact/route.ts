@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 import { renderEmail } from '@/lib/emails/render';
 import { rateLimited, clientIp } from '@/lib/rate-limit';
+import { guardOperationalRecipients } from '@/lib/deployment-guard';
 
 /**
  * Contact form on /contact — stores the message, then emails the support inbox.
@@ -103,6 +104,17 @@ export async function POST(request: Request) {
     );
   }
 
+  // On a non-production deployment (e.g. the test project), never deliver to
+  // a real inbox even if SUPPORT_EMAIL is misconfigured to point at one — see
+  // lib/deployment-guard.ts.
+  const [guardedInbox] = guardOperationalRecipients([SUPPORT_INBOX]);
+  if (!guardedInbox) {
+    console.error(`[contact] blocked send — SUPPORT_EMAIL resolves to a production-only inbox on a non-production deployment (VERCEL_URL=${process.env.VERCEL_URL})`);
+    await markSent(false, 'blocked: production-only recipient on non-prod deployment');
+    if (storedId) return NextResponse.json({ sent: true, delivered: false });
+    return NextResponse.json({ error: 'Email is not configured for this environment.' }, { status: 503 });
+  }
+
   const resend = new Resend(process.env.RESEND_API_KEY);
   // Branded like every other BabyBrain email — this used to go out as a bare
   // unstyled block, which is what QA saw arriving in the inbox.
@@ -121,7 +133,7 @@ export async function POST(request: Request) {
   )!;
   const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
-    to: SUPPORT_INBOX,
+    to: guardedInbox,
     replyTo: email.trim(),
     subject: rendered.subject,
     html: rendered.html,
@@ -132,7 +144,7 @@ export async function POST(request: Request) {
     // the usual cause is an unverified sending domain, and that never surfaced.
     console.error(
       `[contact] Resend rejected the send from "${process.env.EMAIL_FROM ?? '(default)'}" ` +
-        `to "${SUPPORT_INBOX}": ${error.name ?? 'error'} — ${error.message}`
+        `to "${guardedInbox}": ${error.name ?? 'error'} — ${error.message}`
     );
     await markSent(false, `${error.name ?? 'error'}: ${error.message}`);
     // Stored safely, so the parent has done their bit — don't show a failure

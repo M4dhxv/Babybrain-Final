@@ -42,12 +42,12 @@ function sampleData(type: string): EmailData {
     case 'provider_activity_full':
       return { ...activity };
     case 'auth_email_change':
-      return { action_url: 'https://babybrain.sg/auth/callback', new_email: 'newemail@example.com' };
+      return { action_url: 'https://babybrain-final.vercel.app/auth/callback', new_email: 'newemail@example.com' };
     case 'auth_confirm_signup':
     case 'auth_recovery':
     case 'auth_magic_link':
     case 'auth_invite':
-      return { action_url: 'https://babybrain.sg/auth/callback' };
+      return { action_url: 'https://babybrain-final.vercel.app/auth/callback' };
     case 'package_rebook':
       return { ...activity, provider_name: 'BabyBrain Demo Studio' };
     case 'provider_claim_code':
@@ -64,8 +64,11 @@ export async function GET(request: Request) {
   const type = new URL(request.url).searchParams.get('type');
   if (!type) return NextResponse.json({ error: 'Missing type' }, { status: 400 });
 
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const rendered = renderEmail(type, sampleData(type), {
-    appUrl: 'https://babybrain.sg',
+    appUrl,
     recipientName: 'Sarah',
   });
   if (!rendered) return NextResponse.json({ error: `Unknown email type "${type}"` }, { status: 404 });

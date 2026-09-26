@@ -50,12 +50,27 @@ function AcceptedPill() {
   );
 }
 
-function ComplianceTab() {
-  const { provider } = useAuth();
+function ComplianceTab({ justUnsubscribed = false }: { justUnsubscribed?: boolean }) {
+  const { provider, refreshProvider } = useAuth();
   const [consentOpen, setConsentOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
   // One checkbox on Claim your business covers all three documents.
   const termsAccepted = !!provider?.vendor_terms_accepted_at;
   const marketingAccepted = !!provider?.marketing_consent_at;
+
+  async function setMarketingConsent(consented: boolean) {
+    if (!provider) return;
+    setConsentBusy(true);
+    try {
+      await supabase
+        .from('providers')
+        .update({ marketing_consent_at: consented ? new Date().toISOString() : null })
+        .eq('id', provider.id);
+      await refreshProvider();
+    } finally {
+      setConsentBusy(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">
@@ -66,6 +81,11 @@ function ComplianceTab() {
           <p className="text-xs text-gray-500">Ensure your profile is compliant and up to date.</p>
         </div>
       </div>
+      {justUnsubscribed && (
+        <div className="mb-4 rounded-xl border border-green-300 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
+          You've been unsubscribed from marketing emails.
+        </div>
+      )}
       <div className="space-y-3">
         {LEGAL_DOC_ROWS.map((row) => (
           <Link
@@ -93,7 +113,19 @@ function ComplianceTab() {
             <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', consentOpen && 'rotate-180')} />
           </button>
           {consentOpen && (
-            <p className="px-4 pb-4 pl-14 text-sm leading-relaxed text-gray-600">{MARKETING_CONSENT_TEXT}</p>
+            <div className="px-4 pb-4 pl-14">
+              <p className="text-sm leading-relaxed text-gray-600">{MARKETING_CONSENT_TEXT}</p>
+              <Button
+                type="button"
+                variant={marketingAccepted ? 'outline' : 'default'}
+                size="sm"
+                className="mt-3"
+                disabled={consentBusy}
+                onClick={() => setMarketingConsent(!marketingAccepted)}
+              >
+                {consentBusy ? 'Saving…' : marketingAccepted ? 'Unsubscribe' : 'Subscribe'}
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -122,6 +154,7 @@ const emptyProfileForm = {
 export default function SettingsPage() {
   const { provider, role, session, refreshProvider, signOut } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
+  const [justUnsubscribed, setJustUnsubscribed] = useState(false);
 
   /* Deep-linkable: "Add a Location" on the dashboard and the Locations tab in
      Activities both land here and should highlight Locations, not Profile. */
@@ -226,6 +259,22 @@ export default function SettingsPage() {
       const next = new URLSearchParams(searchParams);
       next.delete('edit');
       setSearchParams(next, { replace: true });
+    }
+
+    // The "Unsubscribe" link in every provider_* email footer
+    // (lib/emails/render.ts) points at /vendor/#/settings?tab=compliance&unsubscribe=1
+    // — until now nothing here read that param, so the link silently did nothing.
+    if (searchParams.get('unsubscribe') === '1') {
+      supabase
+        .from('providers')
+        .update({ marketing_consent_at: null })
+        .eq('id', provider.id)
+        .then(() => {
+          refreshProvider();
+          setJustUnsubscribed(true);
+          setActiveTab('compliance');
+          setSearchParams({ tab: 'compliance' }, { replace: true });
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
@@ -737,7 +786,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {activeTab === 'compliance' && <ComplianceTab />}
+        {activeTab === 'compliance' && <ComplianceTab justUnsubscribed={justUnsubscribed} />}
 
         {activeTab === 'integrations' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">

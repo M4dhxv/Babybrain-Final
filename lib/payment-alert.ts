@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import type Stripe from 'stripe';
+import { guardOperationalRecipients } from './deployment-guard';
 
 /**
  * "Tell me every time money comes in."
@@ -29,10 +30,12 @@ const money = (cents: number | null | undefined, currency: string | null | undef
 
 export async function sendPaymentAlert(session: Stripe.Checkout.Session): Promise<void> {
   try {
-    const to = (process.env.ADMIN_EMAILS ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const to = guardOperationalRecipients(
+      (process.env.ADMIN_EMAILS ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
     if (!to.length || !process.env.RESEND_API_KEY) return;
 
     const kind = session.metadata?.kind ?? 'payment';

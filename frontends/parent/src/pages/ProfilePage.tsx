@@ -1520,6 +1520,38 @@ export default function ProfilePage() {
     }
   }
 
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [justUnsubscribed, setJustUnsubscribed] = useState(false);
+
+  /** Withdraws (or restores) marketing consent — set back to null / stamped
+   *  with now(), per the column's own doc comment in migration 00094. */
+  async function setMarketingConsent(consented: boolean) {
+    if (!session) return;
+    setConsentBusy(true);
+    try {
+      await supabase
+        .from("parent_profiles")
+        .update({ marketing_consent_at: consented ? new Date().toISOString() : null })
+        .eq("id", session.user.id);
+      refresh();
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  // The "Unsubscribe" link in every branded email footer (lib/emails/render.ts)
+  // points at /profile?unsubscribe=1 — until now nothing here read that param,
+  // so the link silently did nothing. Withdraws consent once session is ready,
+  // then drops the param so a refresh doesn't re-fire it.
+  useEffect(() => {
+    if (getParam("unsubscribe") !== "1" || !session) return;
+    setMarketingConsent(false).then(() => {
+      setJustUnsubscribed(true);
+      goTo("/profile?tab=settings", { replace: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
     if (!session) {
       setFavsLoaded(true);
@@ -2422,6 +2454,12 @@ export default function ProfilePage() {
                 </div>
               )}
 
+              {justUnsubscribed && (
+                <div className="mb-4 rounded-[12px] border border-green-300 bg-green-50 px-4 py-3 text-sm font-bold text-palette-green">
+                  You've been unsubscribed from marketing emails.
+                </div>
+              )}
+
               {/* Plan & Billing */}
               <div className="mb-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2481,6 +2519,28 @@ export default function ProfilePage() {
                   <Button href="/edit-profile" variant="outline"><Icon name="pen" className="h-4 w-4" /> Edit profile</Button>
                   <Button href="/forgot-password" variant="outline"><Icon name="lock" className="h-4 w-4" /> Change password</Button>
                   <Button type="button" variant="soft" onClick={() => signOut()}>Sign out</Button>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Email preferences</p>
+                    <p className="mt-1 font-black">Marketing emails</p>
+                    <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                      {profile?.marketing_consent_at
+                        ? "Offers, promotions and news from BabyBrain. Booking and account emails are unaffected."
+                        : "You're unsubscribed from offers, promotions and news. Booking and account emails still come through."}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={profile?.marketing_consent_at ? "outline" : "primary"}
+                    onClick={() => setMarketingConsent(!profile?.marketing_consent_at)}
+                    disabled={consentBusy}
+                  >
+                    {consentBusy ? "Saving…" : profile?.marketing_consent_at ? "Unsubscribe" : "Subscribe"}
+                  </Button>
                 </div>
               </div>
 
