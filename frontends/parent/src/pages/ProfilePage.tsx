@@ -36,6 +36,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useUnreadMessages } from "../lib/chat";
 import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
+import { sessionCacheGet, sessionCacheSet, sessionCacheInvalidate } from "../lib/sessionCache";
 import { apiGet, apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
@@ -70,6 +71,42 @@ const MessagesTab = lazyRoute(
 // tables calls cacheInvalidate on its key, so this is purely about cutting
 // repeat-visit/duplicate-mount fetches, not risking stale-after-your-own-edit.
 const PROFILE_FRESH_MS = 60_000;
+
+/** One row from /api/customer/bookings, either scope. */
+type CustomerBookingRow = {
+  id: string;
+  status: string;
+  child_id: string | null;
+  guest_name: string | null;
+  booking_group_id: string | null;
+  package_purchase_id: string | null;
+  children: { name: string } | null;
+  activity_sessions: {
+    starts_at: string;
+    ends_at: string | null;
+    activity_id: string;
+    // Who's taking it and where in the building, per session (00074).
+    teacher_name: string | null;
+    studio: string | null;
+    // The venue can live on the session rather than the activity
+    // (migration 00074 moved location per-session), so a class run at
+    // one venue leaves activities.address null.
+    provider_locations: { name: string | null; address: string | null } | null;
+    activities: {
+      title: string; slug: string; image_urls: string[]; address: string | null;
+      allow_cancellation: boolean; allow_rescheduling: boolean;
+      cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
+      wix_removed_at: string | null;
+      wix_missing_since: string | null;
+      wix_service_type: string | null;
+      wix_service_id: string | null;
+    } | null;
+  } | null;
+  compensation: "token" | "credit" | "none" | null;
+  paid_with: "token" | "credit" | "cash" | "free";
+  refund_mode: "refund" | "none";
+  can_claim?: boolean;
+};
 
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
@@ -1304,48 +1341,39 @@ export default function ProfilePage() {
   // every other caller (cancel/reschedule/claim/reconcile — anything that
   // just changed a booking) omits it, which invalidates first so it can never
   // hand back a stale list right after the very action that changed it.
+  // The full read used to be one unbounded query over *every* booking a
+  // parent has ever made — cancelled and long-past ones included — plus two
+  // more full-history lookups (compensation, waitlist claimability) chained
+  // after it. For an active family that's a lot of rows re-joined and
+  // re-shipped on every single visit to this tab, even though a cancelled
+  // booking from six months ago never changes again. The backend now splits
+  // this into `scope=active` (upcoming/pending/waitlisted, always fetched
+  // fresh) and `scope=history` (cancelled or long past — see the route's own
+  // ACTIVE_WINDOW_MS) — and history additionally gets a sessionStorage cache
+  // (lib/sessionCache.ts) that survives well past the shared cache's
+  // 10-minute cap, since re-running that whole join again next visit buys
+  // nothing when the answer can't have changed.
   function loadBookings(opts?: { cached?: boolean }) {
     const uid = session?.user.id;
     if (!uid) return;
-    const key = `profile:bookings:${uid}`;
-    if (!opts?.cached) cacheInvalidate(key);
-    cacheFetch(key, PROFILE_FRESH_MS, () => apiGet<{
-      bookings: Array<{
-        id: string;
-        status: string;
-        child_id: string | null;
-        guest_name: string | null;
-        booking_group_id: string | null;
-        package_purchase_id: string | null;
-        children: { name: string } | null;
-        activity_sessions: {
-          starts_at: string;
-          ends_at: string | null;
-          activity_id: string;
-          // Who's taking it and where in the building, per session (00074).
-          teacher_name: string | null;
-          studio: string | null;
-          // The venue can live on the session rather than the activity
-          // (migration 00074 moved location per-session), so a class run at
-          // one venue leaves activities.address null.
-          provider_locations: { name: string | null; address: string | null } | null;
-          activities: {
-            title: string; slug: string; image_urls: string[]; address: string | null;
-            allow_cancellation: boolean; allow_rescheduling: boolean;
-            cancellation_cutoff_hours: number; reschedule_cutoff_hours: number;
-            wix_removed_at: string | null;
-            wix_missing_since: string | null;
-            wix_service_type: string | null;
-            wix_service_id: string | null;
-          } | null;
-        } | null;
-        compensation: "token" | "credit" | "none" | null;
-        paid_with: "token" | "credit" | "cash" | "free";
-        refund_mode: "refund" | "none";
-        can_claim?: boolean;
-      }>;
-    }>("/api/customer/bookings"))
-      .then(({ bookings: rows }) => {
+    const activeKey = `profile:bookings:active:${uid}`;
+    const historyKey = `profile:bookings:history:${uid}`;
+    if (!opts?.cached) { cacheInvalidate(activeKey); sessionCacheInvalidate(historyKey); }
+
+    const activeP = cacheFetch(activeKey, PROFILE_FRESH_MS, () =>
+      apiGet<{ bookings: CustomerBookingRow[] }>("/api/customer/bookings?scope=active")
+    );
+    const historyP = (async () => {
+      const cached = sessionCacheGet<{ bookings: CustomerBookingRow[] }>(historyKey);
+      if (cached) return cached;
+      const fresh = await apiGet<{ bookings: CustomerBookingRow[] }>("/api/customer/bookings?scope=history");
+      sessionCacheSet(historyKey, fresh);
+      return fresh;
+    })();
+
+    Promise.all([activeP, historyP])
+      .then(([active, history]) => {
+        const rows = [...active.bookings, ...history.bookings];
         // A multi-child booking (00084) arrives as one row per seat sharing a
         // booking_group_id. Collapse each group into a single card; a solo
         // booking is its own group of one. Rows come newest-first, so the

@@ -6,26 +6,26 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 /** Was this booking made by redeeming a make-up token? (redeemed_booking_id
  *  is cleared when such a booking is cancelled — 00081 — so this only ever
- *  matches a live one.) And, for a cancelled booking, did an auto make-up
- *  token get minted to compensate it? (00080) */
-async function compensationSets(admin: Admin, allIds: string[]) {
-  if (!allIds.length) return { redeemedByToken: new Set<string>(), autoCompensated: new Set<string>() };
-  const [{ data: redeemed }, { data: minted }] = await Promise.all([
-    admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', allIds),
-    admin
-      .from('make_up_tokens')
-      .select('origin_booking_id')
-      .in('origin_booking_id', allIds)
-      .eq('auto_issued', true),
-  ]);
-  return {
-    redeemedByToken: new Set(
-      (redeemed ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id)
-    ),
-    autoCompensated: new Set(
-      (minted ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id)
-    ),
-  };
+ *  matches a live one.) Every row needs this — an active booking can be
+ *  paid_with "token" same as a cancelled one can. */
+async function redeemedTokensFor(admin: Admin, ids: string[]) {
+  if (!ids.length) return new Set<string>();
+  const { data } = await admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', ids);
+  return new Set((data ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id));
+}
+
+/** For a cancelled booking, did an auto make-up token get minted to
+ *  compensate it? (00080) Only cancelled bookings ever carry a
+ *  `compensation` value, and cancelled bookings only ever live in the
+ *  `history` scope — an active-scope caller never needs this lookup. */
+async function autoCompensatedFor(admin: Admin, ids: string[]) {
+  if (!ids.length) return new Set<string>();
+  const { data } = await admin
+    .from('make_up_tokens')
+    .select('origin_booking_id')
+    .in('origin_booking_id', ids)
+    .eq('auto_issued', true);
+  return new Set((data ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id));
 }
 
 /** Which of the caller's *waitlisted* bookings can be paid for right now to
@@ -90,8 +90,43 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
   return claimable;
 }
 
+const BOOKING_COLUMNS =
+  'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))';
+
+// A booking whose session started this long ago is treated as settled
+// history rather than something that still needs a fresh read every visit —
+// generous enough to comfortably cover a still-running multi-week course
+// (whose *first* session can be well in the past while the course itself
+// isn't over), so this is purely a caching boundary, not the exact
+// upcoming-vs-past line the frontend itself draws per booking (that still
+// happens client-side, against the merged result of both scopes — see
+// ProfilePage's isPast/isUpcoming, which are course-aware in a way a single
+// SQL cutoff can't cheaply be).
+const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** cancelled or pending/waitlisted are never "settled" — cancelled because
+ *  the My Bookings tab keeps showing it (however old) alongside upcoming
+ *  ones, pending/waitlisted because they're mid-flight and need to stay
+ *  fresh regardless of how old the session date is. Everything else
+ *  (confirmed) is settled once its session is more than ACTIVE_WINDOW_MS in
+ *  the past. */
+function isActive(r: { status: string; startsAt: string | null }, boundaryMs: number): boolean {
+  if (r.status === 'cancelled') return false;
+  if (r.status !== 'confirmed') return true;
+  return !r.startsAt || new Date(r.startsAt).getTime() >= boundaryMs;
+}
+
 /**
- * The signed-in parent's own booking history.
+ * The signed-in parent's own booking history, split into two independently
+ * cacheable scopes (`?scope=active|history`).
+ *
+ * This used to be one unbounded query over a parent's *entire* booking
+ * history plus two more full-history lookups chained after it — for a
+ * long-time family that's a lot of rows re-joined and re-shipped on every
+ * single visit, even though a cancelled or long-past booking never changes
+ * again. The frontend fetches `active` fresh every time and caches `history`
+ * far longer (lib/sessionCache.ts) than the rest of this page's reads, since
+ * redoing that whole join buys nothing when the answer can't have changed.
  *
  * The direct client-side query this replaces relied on RLS's "published
  * activities are public" policy, which has no exception for a parent looking
@@ -107,13 +142,36 @@ export async function GET(request: Request) {
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
+  const scope = new URL(request.url).searchParams.get('scope');
+  if (scope !== 'active' && scope !== 'history') {
+    return NextResponse.json({ error: 'scope must be "active" or "history"' }, { status: 400 });
+  }
+
   const admin = createAdminClient();
+
+  // A lightweight pass to classify every booking without paying for the big
+  // multi-table join on rows this request doesn't even want — then the real
+  // select below only ever touches the ids that matched.
+  const { data: classifyRows, error: classifyError } = await admin
+    .from('bookings')
+    .select('id, status, activity_sessions(starts_at)')
+    .eq('user_id', user.id);
+  if (classifyError) return NextResponse.json({ error: classifyError.message }, { status: 500 });
+
+  const boundaryMs = Date.now() - ACTIVE_WINDOW_MS;
+  const matchingIds = (classifyRows ?? [])
+    .filter((r) => {
+      const active = isActive({ status: r.status, startsAt: r.activity_sessions?.starts_at ?? null }, boundaryMs);
+      return scope === 'active' ? active : !active;
+    })
+    .map((r) => r.id);
+
+  if (!matchingIds.length) return NextResponse.json({ bookings: [] });
+
   const { data, error } = await admin
     .from('bookings')
-    .select(
-      'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))'
-    )
-    .eq('user_id', user.id)
+    .select(BOOKING_COLUMNS)
+    .in('id', matchingIds)
     .order('created_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -133,17 +191,17 @@ export async function GET(request: Request) {
   });
   const allIds = rows.map((r) => r.id);
 
-  // These two blocks (compensation/redeemed-token lookups, and waitlist
-  // claimability) read completely disjoint tables and never touch each
-  // other's results — they used to run one after the other regardless,
-  // which on a booking history of any size was two full sequential DB
-  // round trips this route just didn't need to pay serially. Run together
-  // instead; each keeps its own internal dependency chain where it has one
-  // (the waitlist block's token lookup still has to wait on its own
-  // session/bookings query, since it needs the ids that comes back with).
-  const [{ redeemedByToken, autoCompensated }, claimable] = await Promise.all([
-    compensationSets(admin, allIds),
-    claimableSeats(admin, rows),
+  // These read completely disjoint tables and never touch each other's
+  // results, so they run together rather than one after the other. Which
+  // ones are even needed depends on the scope: `autoCompensated` only ever
+  // labels a cancelled booking (history-only), `claimableSeats` only ever
+  // matches a waitlisted one (active-only, isActive above always keeps
+  // waitlisted rows out of history) — running either for the scope that
+  // can't use it would just be a wasted round trip.
+  const [redeemedByToken, autoCompensated, claimable] = await Promise.all([
+    redeemedTokensFor(admin, allIds),
+    scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
+    scope === 'active' ? claimableSeats(admin, rows) : Promise.resolve(new Set<string>()),
   ]);
 
   const bookings = rows.map((r) => {
