@@ -4,7 +4,7 @@ import {
   addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
   isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, MapPin, CalendarRange, Users, User as UserIcon, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, MapPin, CalendarRange, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
@@ -22,11 +22,12 @@ const NO_LOCATIONS: ScheduleLocation[] = [];
 const NO_SESSIONS: EnrichedSession[] = [];
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
-// Week view's SessionCard is far richer (location, teacher, capacity) than
-// the month view's one-line chip, so its per-day cap is lower — 2 is what
-// reliably fits the fixed card height below even when every optional line
-// is present.
-const WEEK_CARD_SESSION_CAP = 2;
+// Week view rows are one-line-compact (CompactSessionRow) and a same-time
+// group collapses to a single chip (ParallelSlotGroup) — both cost about
+// the same ~36px regardless of how many parallel classes a slot has, so
+// this cap is just "how many of those rows fit the fixed card height
+// below", not "how many individual sessions".
+const WEEK_CARD_SESSION_CAP = 6;
 
 const sgTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' });
@@ -431,31 +432,20 @@ export default function SchedulePage() {
                       {format(d, 'd')}
                     </button>
                   </div>
-                  <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
+                  <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
                     {groupByStart(visible).map((g) =>
                       g.items.length === 1 ? (
-                        <SessionCard
+                        <CompactSessionRow
                           key={g.items[0].id}
                           s={g.items[0]}
                           onClick={() => navigate(`/bookings?session=${g.items[0].id}`)}
                         />
                       ) : (
-                        <div key={g.key} className="space-y-1.5">
-                          <div className="text-xs font-semibold text-gray-900">
-                            {sgTime(g.items[0].starts_at)}
-                            {g.items.every((x) => x.ends_at === g.items[0].ends_at) && ` – ${sgTime(g.items[0].ends_at)}`}
-                          </div>
-                          <div className="ml-0.5 space-y-2 border-l-2 border-purple-100 pl-2">
-                            {g.items.map((x) => (
-                              <SessionCard
-                                key={x.id}
-                                s={x}
-                                hideTime
-                                onClick={() => navigate(`/bookings?session=${x.id}`)}
-                              />
-                            ))}
-                          </div>
-                        </div>
+                        <ParallelSlotGroup
+                          key={g.key}
+                          items={g.items}
+                          onOpenSession={(id) => navigate(`/bookings?session=${id}`)}
+                        />
                       )
                     )}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
@@ -584,72 +574,72 @@ export default function SchedulePage() {
   );
 }
 
-function SessionCard({
+/** One-line week-view row: time · title on the left, capacity on the right.
+ *  Full detail (location, teacher, Paused/Course/Wix badges) lives in the
+ *  day dialog now — this only keeps the paused/Wix colour tint, since that's
+ *  the one signal worth catching at a glance across a whole week. */
+function CompactSessionRow({
   s, onClick, hideTime = false,
 }: { s: EnrichedSession; onClick: () => void; hideTime?: boolean }) {
   const full = s.capacity != null && s.booked >= s.capacity;
   const wixOverflow = s.wixClassOverflow;
+  const count = s.isCourse
+    ? 'Enrolled'
+    : wixOverflow > 0
+      ? `${s.capacity}/${s.capacity} +${wixOverflow}`
+      : `${s.booked}${s.capacity != null ? `/${s.capacity}` : ''}`;
   return (
-    <div className="relative">
+    <button
+      type="button"
+      onClick={onClick}
+      title={wixOverflow > 0 ? `${s.capacity} on Wix · ${wixOverflow} held on BabyBrain beyond Wix capacity` : s.bookingsPaused ? 'Bookings paused for this session' : undefined}
+      className={cn(
+        'flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors',
+        s.bookingsPaused
+          ? 'border-amber-200 bg-amber-50/80 hover:bg-amber-50'
+          : s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
+      )}
+    >
+      <span className="min-w-0 truncate text-xs text-gray-900">
+        {!hideTime && <span className="font-semibold">{sgTime(s.starts_at)} · </span>}
+        {s.title}
+      </span>
+      <span className={cn('shrink-0 text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/** Same-time parallel classes collapse to one chip — "9:00am · 3 classes" —
+ *  so a busy slot costs the same one row as a single session; expanding it
+ *  reveals each class as its own CompactSessionRow. */
+function ParallelSlotGroup({
+  items, onOpenSession,
+}: { items: EnrichedSession[]; onOpenSession: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const first = items[0];
+  const sameEnd = items.every((x) => x.ends_at === first.ends_at);
+  return (
+    <div>
       <button
-        onClick={onClick}
-        className={cn(
-          'w-full rounded-lg border px-2.5 py-2 text-left transition-colors',
-          s.bookingsPaused
-            ? 'border-amber-200 bg-amber-50/80 hover:bg-amber-50'
-            : s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
-        )}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 rounded-lg bg-purple-50 px-2.5 py-1.5 text-left text-xs font-medium text-purple-700 hover:bg-purple-100"
       >
-        <div className="flex items-center justify-between gap-2">
-          {hideTime
-            ? <div className="min-w-0 truncate text-xs font-semibold text-gray-900">{s.title}</div>
-            : <div className="text-xs font-semibold text-gray-900">{sgTime(s.starts_at)} – {sgTime(s.ends_at)}</div>}
-          <div className="flex shrink-0 items-center gap-1">
-            {s.bookingsPaused && (
-              <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Paused</span>
-            )}
-            {s.isCourse && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Course</span>
-            )}
-            {s.fromWix && (
-              <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">Wix</span>
-            )}
-          </div>
-        </div>
-        {!hideTime && <div className="truncate text-xs text-gray-700">{s.title}</div>}
-      {s.locationName && (
-        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500">
-          <MapPin className="h-3 w-3 flex-shrink-0" /> <span className="truncate">{s.locationName}</span>
-        </div>
-      )}
-      {(s.teacherName || s.studio) && (
-        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-purple-700">
-          <UserIcon className="h-3 w-3 flex-shrink-0" />
-          <span className="truncate">{[s.teacherName, s.studio].filter(Boolean).join(' · ')}</span>
-        </div>
-      )}
-      <div className="mt-1 flex items-center gap-1 text-[11px]">
-        <Users className="h-3 w-3 text-gray-400" />
-        <span
-          className={cn(full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}
-          title={wixOverflow > 0 ? `${s.capacity} on Wix · ${wixOverflow} held on BabyBrain beyond Wix capacity` : undefined}
-        >
-          {wixOverflow > 0
-            ? `${s.capacity}/${s.capacity}`
-            : `${s.booked}${s.capacity != null ? `/${s.capacity}` : ''}`}
-          {/* A course is enrolled as one whole programme, so this count is
-              the course's total enrolment carried across every occurrence —
-              not people booked for this specific date. */}
-          {s.isCourse
-            ? ' enrolled · course'
-            : wixOverflow > 0
-              ? ` +${wixOverflow}`
-              : full
-                ? ' · Full'
-                : ''}
+        <span className="min-w-0 truncate">
+          {sgTime(first.starts_at)}{sameEnd ? ` – ${sgTime(first.ends_at)}` : ''} · {items.length} classes
         </span>
-      </div>
+        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5 pl-2">
+          {items.map((x) => (
+            <CompactSessionRow key={x.id} s={x} hideTime onClick={() => onOpenSession(x.id)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
