@@ -8,6 +8,7 @@ import PortalLayout from './layouts/PortalLayout';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import { lazyRoute } from '@/lib/lazyRoute';
+import { Toaster } from '@/components/ui/sonner';
 
 // Every page is its own chunk, fetched when its route is first visited, so a
 // first load (or a hard reload) no longer ships all ~25 pages — plus recharts,
@@ -97,6 +98,13 @@ function RouteFallback() {
 function App() {
   return (
     <AuthProvider>
+      {/* Mounted once, globally — the portal has a full Sonner toast system
+          installed (components/ui/sonner.tsx) but nothing ever called
+          `toast()`; every save/delete either showed a page-local banner
+          (invisible once you'd scrolled away) or nothing at all. `theme`
+          is forced to light — this app has no dark mode, so leaving it on
+          "system" would toast dark-on-dark for anyone with a dark OS. */}
+      <Toaster theme="light" position="top-center" richColors closeButton />
       <HashRouter>
         <RecoveryRedirect />
         <ScrollToTop />

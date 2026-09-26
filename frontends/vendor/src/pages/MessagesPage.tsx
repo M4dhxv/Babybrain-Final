@@ -135,6 +135,10 @@ export default function MessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // `retryNonce` re-runs the connect effect without a page reload — this
+  // used to be a full-page dead end on any failure (a dropped connection, a
+  // slow Stream edge) with no way back short of hitting F5.
+  const [retryNonce, setRetryNonce] = useState(0);
   useEffect(() => {
     let active = true;
     getChatClient()
@@ -143,7 +147,7 @@ export default function MessagesPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [retryNonce]);
 
   if (error) {
     return (
@@ -152,6 +156,13 @@ export default function MessagesPage() {
           <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <h3 className="font-semibold text-gray-900">Messages unavailable</h3>
           <p className="text-sm text-gray-500 mt-1">{error}</p>
+          <button
+            type="button"
+            onClick={() => { setError(null); setRetryNonce((n) => n + 1); }}
+            className="mt-4 rounded-lg bg-[#FA4D8D] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Try again
+          </button>
         </div>
       </div>
     );

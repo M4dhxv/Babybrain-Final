@@ -416,7 +416,7 @@ export default function DayDetailDialog({
 
               <DialogPrimitive.Close
                 aria-label="Close"
-                className="absolute right-4 top-4 rounded-xs text-gray-500 opacity-70 transition-opacity hover:opacity-100 focus:outline-none"
+                className="absolute right-4 top-4 rounded-xs text-gray-500 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
               >
                 <X className="h-4 w-4" />
               </DialogPrimitive.Close>

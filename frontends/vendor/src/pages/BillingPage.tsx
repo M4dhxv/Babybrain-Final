@@ -11,6 +11,7 @@ import {
   CalendarCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta, nextPlan } from '@/lib/plans';
@@ -25,6 +26,7 @@ export default function BillingPage() {
   const { provider, subscription } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const plan = planMeta(subscription?.plan);
   const upgrade = nextPlan(subscription?.plan);
@@ -275,11 +277,7 @@ export default function BillingPage() {
                 </p>
               </div>
               <Button
-                onClick={() => {
-                  if (window.confirm(`Cancel your ${plan.short.replace(' Plan', '')} subscription? It stays active until the end of the current billing period.`)) {
-                    stripe('/api/vendor/stripe/portal', 'cancel', { intent: 'cancel' });
-                  }
-                }}
+                onClick={() => setConfirmCancel(true)}
                 disabled={busy === 'cancel'}
                 variant="outline"
                 className="rounded-lg border-red-300 text-red-600 hover:bg-red-100 text-sm flex-shrink-0"
@@ -290,6 +288,19 @@ export default function BillingPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title={`Cancel your ${plan.short.replace(' Plan', '')} subscription?`}
+        description="It stays active until the end of the current billing period."
+        confirmLabel="Cancel subscription"
+        cancelLabel="Keep plan"
+        onConfirm={() => {
+          setConfirmCancel(false);
+          stripe('/api/vendor/stripe/portal', 'cancel', { intent: 'cancel' });
+        }}
+      />
     </div>
   );
 }

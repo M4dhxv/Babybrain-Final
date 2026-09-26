@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { NumberInput } from '@/components/ui/number-input';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
@@ -11,6 +12,7 @@ import { SelectField, Opt } from '@/components/ui/select-field';
 import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 /**
  * The package purchases table's column tracks. Header and body rows are separate grids, so the
@@ -129,6 +131,18 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+  const [togglingPackId, setTogglingPackId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Pack | null>(null);
+  const [deletingPack, setDeletingPack] = useState(false);
+  // Name/credits/price used to only be checked inside createPack() — so a
+  // mistake was invisible until Save was clicked, then again after every
+  // fix. These three are common enough (and cheap enough to validate) to
+  // flag as soon as the field is touched, instead of only at submit.
+  const [packTouched, setPackTouched] = useState<{ name?: boolean; credits?: boolean; price?: boolean }>({});
+  const touch = (field: keyof typeof packTouched) => setPackTouched((t) => ({ ...t, [field]: true }));
+  const packNameErr = packTouched.name && !packForm.name.trim() ? 'Give the pack a name.' : null;
+  const packCreditsErr = packTouched.credits && !(Number(packForm.credits) >= 1) ? 'At least 1 class.' : null;
+  const packPriceErr = packTouched.price && packForm.price !== '' && (Number.isNaN(Number(packForm.price)) || Number(packForm.price) < 0) ? 'Enter a valid price.' : null;
 
   const load = refetch;
 
@@ -189,6 +203,7 @@ export default function PackagesPage() {
     setEditingPackId(p.id);
     setPackError(null);
     setPackNotice(null);
+    setPackTouched({});
     const starts = p.starts_at ? sgtDateTimeParts(p.starts_at) : null;
     const until = p.available_until ? sgtDateTimeParts(p.available_until) : null;
     setPackForm({
@@ -211,21 +226,27 @@ export default function PackagesPage() {
   }
 
   async function togglePack(p: Pack) {
-    await supabase.from('packages').update({ active: !p.active }).eq('id', p.id);
+    setTogglingPackId(p.id);
+    const { error } = await supabase.from('packages').update({ active: !p.active }).eq('id', p.id);
+    setTogglingPackId(null);
+    if (error) { toast.error(`Could not ${p.active ? 'pause' : 'resume'} "${p.name}".`, { description: error.message }); return; }
+    toast.success(`"${p.name}" ${p.active ? 'paused' : 'resumed'}.`);
     load();
   }
 
   async function deletePack(p: Pack) {
-    if (!window.confirm(`Delete "${p.name}"? Parents who already bought it keep their credits.`)) return;
+    setDeletingPack(true);
     const { error } = await supabase.from('packages').delete().eq('id', p.id);
+    setDeletingPack(false);
+    setDeleteTarget(null);
     if (error) {
       // A pack that has been purchased is referenced by package_purchases, so
       // deleting it would orphan real credits — deactivate instead.
-      setPackError(`${error.message}. Try marking it inactive instead.`);
+      toast.error(`Could not delete "${p.name}".`, { description: 'It already has purchases — try marking it inactive instead.' });
       return;
     }
     if (editingPackId === p.id) { setEditingPackId(null); setPackForm(emptyPack); }
-    setPackNotice(`Deleted "${p.name}".`);
+    toast.success(`Deleted "${p.name}".`);
     load();
   }
 
@@ -233,6 +254,7 @@ export default function PackagesPage() {
     if (!provider) return;
     setPackError(null);
     setPackNotice(null);
+    setPackTouched({ name: true, credits: true, price: true });
     const credits = Number(packForm.credits);
     const price = Number(packForm.price);
     if (!packForm.name.trim()) return setPackError('Give the pack a name.');
@@ -268,6 +290,7 @@ export default function PackagesPage() {
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
     setEditingPackId(null);
     setPackForm(emptyPack);
+    setPackTouched({});
     load();
   }
 
@@ -397,8 +420,13 @@ export default function PackagesPage() {
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
                       {canManage ? (
-                        <button onClick={() => togglePack(p)} title={p.active ? 'Pause this pack' : 'Resume this pack'} className={packStatusBadge(packStatus(p))}>
-                          {packStatusLabel(packStatus(p))}
+                        <button
+                          onClick={() => togglePack(p)}
+                          disabled={togglingPackId === p.id}
+                          title={p.active ? 'Pause this pack' : 'Resume this pack'}
+                          className={cn(packStatusBadge(packStatus(p)), togglingPackId === p.id && 'opacity-50')}
+                        >
+                          {togglingPackId === p.id ? 'Working…' : packStatusLabel(packStatus(p))}
                         </button>
                       ) : (
                         <span className={packStatusBadge(packStatus(p))}>{packStatusLabel(packStatus(p))}</span>
@@ -408,7 +436,7 @@ export default function PackagesPage() {
                           <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => deletePack(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
+                          <button onClick={() => setDeleteTarget(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </>
@@ -425,15 +453,39 @@ export default function PackagesPage() {
                 <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Pack name</label>
-                    <input id="pack-name-input" value={packForm.name} onChange={(e) => setPackForm({ ...packForm, name: e.target.value })} placeholder="10-class pack" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-auto" />
+                    <input
+                      id="pack-name-input"
+                      value={packForm.name}
+                      onChange={(e) => setPackForm({ ...packForm, name: e.target.value })}
+                      onBlur={() => touch('name')}
+                      placeholder="10-class pack"
+                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-auto', packNameErr ? 'border-red-300' : 'border-gray-300')}
+                    />
+                    {packNameErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packNameErr}</p>}
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Classes</label>
-                    <NumberInput value={packForm.credits} onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })} placeholder="10" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-24" />
+                    <NumberInput
+                      value={packForm.credits}
+                      onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })}
+                      onBlur={() => touch('credits')}
+                      placeholder="10"
+                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-24', packCreditsErr ? 'border-red-300' : 'border-gray-300')}
+                    />
+                    {packCreditsErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packCreditsErr}</p>}
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
-                    <NumberInput min="0" step="any" value={packForm.price} onChange={(e) => setPackForm({ ...packForm, price: e.target.value })} placeholder="180" className="h-9 w-full rounded-lg border border-gray-300 px-3 text-sm sm:w-28" />
+                    <NumberInput
+                      min="0"
+                      step="any"
+                      value={packForm.price}
+                      onChange={(e) => setPackForm({ ...packForm, price: e.target.value })}
+                      onBlur={() => touch('price')}
+                      placeholder="180"
+                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-28', packPriceErr ? 'border-red-300' : 'border-gray-300')}
+                    />
+                    {packPriceErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packPriceErr}</p>}
                   </div>
                   <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end sm:pb-2">
                     <input
@@ -610,6 +662,16 @@ export default function PackagesPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={deleteTarget ? `Delete "${deleteTarget.name}"?` : ''}
+        description="Parents who already bought it keep their credits."
+        confirmLabel="Delete"
+        loading={deletingPack}
+        onConfirm={() => deleteTarget && deletePack(deleteTarget)}
+      />
     </div>
   );
 }

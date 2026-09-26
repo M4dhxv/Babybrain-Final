@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingRows } from '@/components/Skeletons';
 import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
@@ -22,6 +23,7 @@ import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity'
 import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 /**
  * The class roster table's column tracks. Header and body rows are separate grids, so the
@@ -777,6 +779,7 @@ export default function BookingsPage() {
      outright. Migration 00091 adds the delete policy, scoped to manual rows. */
   const [rowError, setRowError] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
+  const [deleteManualTarget, setDeleteManualTarget] = useState<RosterRow | null>(null);
   const [editingManual, setEditingManual] = useState<string | null>(null);
   const [manualEdit, setManualEdit] = useState({ name: '', contact: '', paid: false });
   /* The cancel confirm panel for the selected booking: the vendor picks
@@ -820,7 +823,6 @@ export default function BookingsPage() {
   }
 
   async function deleteManualBooking(row: RosterRow) {
-    if (!window.confirm(`Delete the manual entry for ${row.child_name}? It's removed from the roster for good.`)) return;
     setRowBusy(true);
     let error: { message: string } | null = null;
     try {
@@ -830,8 +832,9 @@ export default function BookingsPage() {
       error = { message: e instanceof Error ? e.message : 'Could not delete the booking.' };
     }
     setRowBusy(false);
-    if (error) { setRowError(error.message); return; }
-    setRowError(null);
+    setDeleteManualTarget(null);
+    if (error) { toast.error('Could not delete that entry.', { description: error.message }); return; }
+    toast.success(`Deleted the manual entry for ${row.child_name}.`);
     setSelected(0);
     setMobileDetail(false);
     loadRoster(sessionId);
@@ -1605,7 +1608,7 @@ export default function BookingsPage() {
                                 <Pencil className="h-4 w-4" /> Edit entry
                               </button>
                               <button
-                                onClick={() => deleteManualBooking(sel)}
+                                onClick={() => setDeleteManualTarget(sel)}
                                 disabled={rowBusy}
                                 className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
                               >
@@ -1839,6 +1842,16 @@ export default function BookingsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteManualTarget}
+        onOpenChange={(open) => { if (!open) setDeleteManualTarget(null); }}
+        title={deleteManualTarget ? `Delete the manual entry for ${deleteManualTarget.child_name}?` : ''}
+        description="It's removed from the roster for good."
+        confirmLabel="Delete"
+        loading={rowBusy}
+        onConfirm={() => deleteManualTarget && deleteManualBooking(deleteManualTarget)}
+      />
     </div>
   );
 }

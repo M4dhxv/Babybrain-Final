@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingRows } from '@/components/Skeletons';
 import { MapPin, Pencil, Plus, RefreshCw, Save, Store, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
@@ -39,6 +41,8 @@ export default function LocationsManager({
   const [editForm, setEditForm] = useState({ name: '', address: '', postal_code: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ProviderLocation | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   // "Fetch from Wix" — pulls the vendor's real Wix business address(es)
   // instead of retyping one. Independent of whether Wix is even connected;
@@ -153,8 +157,12 @@ export default function LocationsManager({
   }
 
   async function removeLocation(id: string) {
-    if (!window.confirm('Remove this location?')) return;
-    await supabase.from('provider_locations').delete().eq('id', id);
+    setRemoving(true);
+    const { error: err } = await supabase.from('provider_locations').delete().eq('id', id);
+    setRemoving(false);
+    setRemoveTarget(null);
+    if (err) { toast.error('Could not remove that location.', { description: err.message }); return; }
+    toast.success('Location removed.');
     load();
     onChanged?.();
   }
@@ -314,7 +322,7 @@ export default function LocationsManager({
                 <button onClick={() => startEdit(loc)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-200 hover:text-gray-700" title="Edit location">
                   <Pencil className="w-4 h-4" />
                 </button>
-                <button onClick={() => removeLocation(loc.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove location">
+                <button onClick={() => setRemoveTarget(loc)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove location">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -351,6 +359,16 @@ export default function LocationsManager({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title="Remove this location?"
+        description={removeTarget ? `"${removeTarget.name}" will no longer be available to pick for activities.` : undefined}
+        confirmLabel="Remove"
+        loading={removing}
+        onConfirm={() => removeTarget && removeLocation(removeTarget.id)}
+      />
     </>
   );
 }

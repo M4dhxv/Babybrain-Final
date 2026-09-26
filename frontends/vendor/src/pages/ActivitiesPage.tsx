@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { NumberInput } from '@/components/ui/number-input';
 import { LoadingRows } from '@/components/Skeletons';
 import { useSearchParams } from 'react-router-dom';
@@ -45,6 +46,7 @@ import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PoliciesManager } from '@/components/PoliciesManager';
 import {
   DropdownMenu,
@@ -532,6 +534,9 @@ export default function ActivitiesPage() {
   const [customDateDraft, setCustomDateDraft] = useState('');
   const [savingSess, setSavingSess] = useState(false);
   const [sessError, setSessError] = useState<string | null>(null);
+  const [togglingSessId, setTogglingSessId] = useState<string | null>(null);
+  const [removeSessTarget, setRemoveSessTarget] = useState<Sess | null>(null);
+  const [removingSess, setRemovingSess] = useState(false);
   // Heads-up only: sessions were saved, but overlap something on the Wix calendar.
   const [sessNotice, setSessNotice] = useState<string | null>(null);
   // Every date the current recurrence settings would create a session on —
@@ -995,30 +1000,31 @@ export default function ActivitiesPage() {
      the Wix booking routes check it (isWixSessionPaused). */
   async function toggleSessionPause(s: Sess) {
     if (!scheduleFor) return;
+    setTogglingSessId(s.id);
     const { error } = await supabase
       .from('activity_sessions')
       .update({ bookings_paused: !s.bookings_paused })
       .eq('id', s.id);
-    if (error) { setSessError(error.message); return; }
-    setSessError(null);
+    setTogglingSessId(null);
+    if (error) { toast.error('Could not update this session.', { description: error.message }); return; }
+    toast.success(s.bookings_paused ? 'Bookings resumed for this session.' : 'Bookings paused for this session.');
     await loadSessions(scheduleFor.id);
   }
 
   async function removeSession(s: Sess) {
     if (!scheduleFor) return;
     const total = s.booked + s.waitlisted;
-    const warn = total > 0
-      ? `This session has ${total} booking${total > 1 ? 's' : ''}${s.waitlisted ? ` (${s.waitlisted} on the waitlist)` : ''}. Cancelling it cancels those bookings, emails and notifies the parents, and issues their credit or make-up token. Continue?`
-      : 'Remove this session?';
-    if (!window.confirm(warn)) return;
     // A session with bookings can't be deleted (bookings reference it), so it
     // is cancelled instead: parents' bookings are cancelled, emailed and
     // notified in the database (00154). An empty one is simply deleted.
+    setRemovingSess(true);
     const { error } = total > 0
       ? await supabase.rpc('vendor_cancel_session', { p_session_id: s.id })
       : await supabase.from('activity_sessions').delete().eq('id', s.id);
-    if (error) { setSessError(error.message); return; }
-    setSessError(null);
+    setRemovingSess(false);
+    setRemoveSessTarget(null);
+    if (error) { toast.error('Could not remove this session.', { description: error.message }); return; }
+    toast.success(total > 0 ? 'Session cancelled — parents have been notified.' : 'Session removed.');
     await loadSessions(scheduleFor.id);
     load();
   }
@@ -3353,7 +3359,8 @@ export default function ActivitiesPage() {
                             Editing / removing a Wix session stays Wix's job. */}
                         <button
                           onClick={() => toggleSessionPause(s)}
-                          className={cn('p-1.5 rounded-lg', s.bookings_paused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}
+                          disabled={togglingSessId === s.id}
+                          className={cn('p-1.5 rounded-lg disabled:opacity-50', s.bookings_paused ? 'text-amber-600 hover:bg-amber-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700')}
                           title={s.bookings_paused ? 'Resume bookings for this session' : 'Pause bookings for this session only'}
                         >
                           {s.bookings_paused ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
@@ -3372,7 +3379,7 @@ export default function ActivitiesPage() {
                             <button onClick={() => startEditSess(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Edit teacher / studio">
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button onClick={() => removeSession(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title={s.booked + s.waitlisted > 0 ? 'Cancel session' : 'Remove session'}>
+                            <button onClick={() => setRemoveSessTarget(s)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600" title={s.booked + s.waitlisted > 0 ? 'Cancel session' : 'Remove session'}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </>
@@ -3386,6 +3393,20 @@ export default function ActivitiesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!removeSessTarget}
+        onOpenChange={(open) => { if (!open) setRemoveSessTarget(null); }}
+        title={removeSessTarget && removeSessTarget.booked + removeSessTarget.waitlisted > 0 ? 'Cancel this session?' : 'Remove this session?'}
+        description={
+          removeSessTarget && removeSessTarget.booked + removeSessTarget.waitlisted > 0
+            ? `This session has ${removeSessTarget.booked + removeSessTarget.waitlisted} booking${removeSessTarget.booked + removeSessTarget.waitlisted > 1 ? 's' : ''}${removeSessTarget.waitlisted ? ` (${removeSessTarget.waitlisted} on the waitlist)` : ''}. Cancelling it cancels those bookings, emails and notifies the parents, and issues their credit or make-up token.`
+            : undefined
+        }
+        confirmLabel={removeSessTarget && removeSessTarget.booked + removeSessTarget.waitlisted > 0 ? 'Cancel session' : 'Remove'}
+        loading={removingSess}
+        onConfirm={() => removeSessTarget && removeSession(removeSessTarget)}
+      />
     </div>
   );
 }

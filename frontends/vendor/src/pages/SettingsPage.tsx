@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingRows } from '@/components/Skeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone, Crop } from 'lucide-react';
@@ -16,6 +17,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import type { VendorCategory } from '@/lib/database.types';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
 import { SelectField, Opt } from '@/components/ui/select-field';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -204,6 +206,7 @@ export default function SettingsPage() {
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeErr, setRemoveErr] = useState<{ id: string; text: string } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
 
   const isOwner = role === 'owner';
 
@@ -417,20 +420,24 @@ export default function SettingsPage() {
   async function removeMember(m: Member) {
     if (!provider) return;
     const who = profiles[m.user_id]?.full_name || m.invited_email || 'this member';
-    if (!window.confirm(`Remove ${who} from the team? They lose access to this business immediately.`)) return;
     setRemovingId(m.id);
     setRemoveErr(null);
     try {
       await apiPost('/api/vendor/staff/remove', { provider_id: provider.id, user_id: m.user_id });
       setExpandedMember(null);
+      setRemoveTarget(null);
       const { data } = await supabase
         .from('provider_members')
         .select('id, user_id, role, invited_email, status')
         .eq('provider_id', provider.id);
       setTeam((data as Member[]) ?? []);
       refreshProfiles();
+      toast.success(`Removed ${who} from the team.`);
     } catch (e) {
-      setRemoveErr({ id: m.id, text: e instanceof Error ? e.message : 'Could not remove this member.' });
+      const text = e instanceof Error ? e.message : 'Could not remove this member.';
+      setRemoveErr({ id: m.id, text });
+      setRemoveTarget(null);
+      toast.error(`Could not remove ${who}.`, { description: text });
     } finally {
       setRemovingId(null);
     }
@@ -730,7 +737,7 @@ export default function SettingsPage() {
                           <div className="mt-2">
                             <button
                               type="button"
-                              onClick={() => removeMember(m)}
+                              onClick={() => setRemoveTarget(m)}
                               disabled={removingId === m.id}
                               className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
                             >
@@ -794,6 +801,16 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title={removeTarget ? `Remove ${profiles[removeTarget.user_id]?.full_name || removeTarget.invited_email || 'this member'} from the team?` : ''}
+        description="They lose access to this business immediately."
+        confirmLabel="Remove"
+        loading={!!removeTarget && removingId === removeTarget.id}
+        onConfirm={() => removeTarget && removeMember(removeTarget)}
+      />
     </div>
   );
 }
