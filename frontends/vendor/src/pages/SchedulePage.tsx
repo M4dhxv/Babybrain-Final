@@ -4,7 +4,7 @@ import {
   addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
   isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, ChevronDown, MapPin, CalendarRange, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, MapPin, CalendarRange, RefreshCw, Users, User as UserIcon, CalendarX2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { apiGet } from '@/lib/api';
@@ -22,15 +22,34 @@ const NO_LOCATIONS: ScheduleLocation[] = [];
 const NO_SESSIONS: EnrichedSession[] = [];
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
-// Week view rows are one-line-compact (CompactSessionRow) and a same-time
-// group collapses to a single chip (ParallelSlotGroup) — both cost about
-// the same ~36px regardless of how many parallel classes a slot has, so
-// this cap is just "how many of those rows fit the fixed card height
-// below", not "how many individual sessions".
-const WEEK_CARD_SESSION_CAP = 6;
 
 const sgTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' });
+
+/** A consistent colour per activity across the whole calendar — the same
+ *  class reads as "the same class" whichever day/slot it appears in,
+ *  instead of every card defaulting to the same one or two brand tints.
+ *  Picked deterministically from the activity id, so it never needs its own
+ *  stored column and never reshuffles between loads. A paused session
+ *  always overrides to amber — that's the one state worth breaking the
+ *  pattern for, since it means "don't book this" regardless of which class
+ *  it is. */
+type SlotAccent = { bar: string };
+const ACTIVITY_ACCENTS: SlotAccent[] = [
+  { bar: 'bg-pink-400' },
+  { bar: 'bg-orange-400' },
+  { bar: 'bg-purple-400' },
+  { bar: 'bg-green-400' },
+  { bar: 'bg-blue-400' },
+];
+const PAUSED_ACCENT: SlotAccent = { bar: 'bg-amber-400' };
+
+function accentFor(s: EnrichedSession): SlotAccent {
+  if (s.bookingsPaused) return PAUSED_ACCENT;
+  let hash = 0;
+  for (let i = 0; i < s.activity_id.length; i++) hash = (hash * 31 + s.activity_id.charCodeAt(i)) | 0;
+  return ACTIVITY_ACCENTS[Math.abs(hash) % ACTIVITY_ACCENTS.length];
+}
 
 type EnrichedSession = {
   id: string;
@@ -405,17 +424,17 @@ export default function SchedulePage() {
           <div className="flex snap-x snap-mandatory gap-3 sm:grid sm:min-w-[900px] sm:snap-none sm:grid-cols-7">
             {weekDays.map((d) => {
               const daySessions = sessionsFor(d);
-              // A day with a handful of sessions and a day with one used to
-              // both size their card to their own content, so the row of 7
-              // cards ended at 7 different heights ("the view schedule is
-              // uneven"). Capping how many sessions render per card — same
-              // "+N more" pattern the month view already uses — keeps every
-              // card the same fixed height regardless of how busy that day
-              // is; the rest is one tap away in the day dialog.
-              const visible = daySessions.slice(0, WEEK_CARD_SESSION_CAP);
-              const overflow = daySessions.length - visible.length;
+              // No cap here on purpose — a vendor asked to see the whole
+              // day, not a truncated "+N more". Every card in the row still
+              // lines up: with no explicit height on any of them, CSS
+              // Grid's default stretch sizes the row to the tallest card's
+              // real content and fills the rest with blank space, rather
+              // than the min-height floor that caused the original "uneven"
+              // complaint (a min-height changes what the browser treats as
+              // that item's own minimum content size, which is what broke
+              // stretch the first time this was tried).
               return (
-                <div key={d.toISOString()} className="flex h-[280px] w-[calc(50%-0.375rem)] shrink-0 snap-start flex-col rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
+                <div key={d.toISOString()} className="flex w-[calc(50%-0.375rem)] shrink-0 snap-start flex-col rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="text-xs font-medium text-gray-500">{format(d, 'EEE')}</span>
                     <button
@@ -432,10 +451,10 @@ export default function SchedulePage() {
                       {format(d, 'd')}
                     </button>
                   </div>
-                  <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
-                    {groupByStart(visible).map((g) =>
+                  <div className="flex-1 space-y-1.5">
+                    {groupByStart(daySessions).map((g) =>
                       g.items.length === 1 ? (
-                        <CompactSessionRow
+                        <SlotCard
                           key={g.items[0].id}
                           s={g.items[0]}
                           onClick={() => navigate(`/bookings?session=${g.items[0].id}`)}
@@ -448,17 +467,13 @@ export default function SchedulePage() {
                         />
                       )
                     )}
-                    {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
+                    {daySessions.length === 0 && (
+                      <div className="flex h-full min-h-[100px] flex-col items-center justify-center gap-1.5 text-gray-300">
+                        <CalendarX2 className="h-5 w-5" />
+                        <span className="text-xs">No sessions</span>
+                      </div>
+                    )}
                   </div>
-                  {overflow > 0 && (
-                    <button
-                      type="button"
-                      onClick={(e) => openDay(d, e.currentTarget)}
-                      className="mt-2 shrink-0 text-left text-xs font-medium text-[#FA4D8D] hover:underline"
-                    >
-                      +{overflow} more
-                    </button>
-                  )}
                 </div>
               );
             })}
@@ -574,46 +589,65 @@ export default function SchedulePage() {
   );
 }
 
-/** One-line week-view row: time · title on the left, capacity on the right.
- *  Full detail (location, teacher, Paused/Course/Wix badges) lives in the
- *  day dialog now — this only keeps the paused/Wix colour tint, since that's
- *  the one signal worth catching at a glance across a whole week. */
-function CompactSessionRow({
+/** One week-view slot card: a coloured accent bar (consistent per activity —
+ *  see accentFor), time, title with a chevron hinting it opens the booking
+ *  roster, who's teaching it (when set), and capacity. Location and the
+ *  Wix/Course badges still live in the day dialog, one tap away — the
+ *  instructor is worth showing here too since "who's running this one"
+ *  is exactly the kind of thing a vendor scans a whole week for. */
+function SlotCard({
   s, onClick, hideTime = false,
 }: { s: EnrichedSession; onClick: () => void; hideTime?: boolean }) {
   const full = s.capacity != null && s.booked >= s.capacity;
   const wixOverflow = s.wixClassOverflow;
+  const accent = accentFor(s);
+  // A course is enrolled as one whole programme, so this is the course's
+  // total enrolment carried across every occurrence — not people booked for
+  // this specific date — but it's still a real count, not just the bare
+  // word "Enrolled" with no number (that was this card's own bug: dropping
+  // the figure the original SessionCard always showed alongside the label).
   const count = s.isCourse
-    ? 'Enrolled'
+    ? `${s.booked}${s.capacity != null ? `/${s.capacity}` : ''} enrolled`
     : wixOverflow > 0
       ? `${s.capacity}/${s.capacity} +${wixOverflow}`
       : `${s.booked}${s.capacity != null ? `/${s.capacity}` : ''}`;
+  // Instructor only — studio doesn't belong on this card. Some sessions
+  // genuinely have no teacher on file (never entered, or a Wix-synced class
+  // Wix itself has no such field for), shown as its own line rather than
+  // silently omitted, so every card has the same shape and it's obvious at
+  // a glance which sessions are missing one to fill in.
+  const staff = s.teacherName?.trim() || 'No instructor set';
   return (
     <button
       type="button"
       onClick={onClick}
       title={wixOverflow > 0 ? `${s.capacity} on Wix · ${wixOverflow} held on BabyBrain beyond Wix capacity` : s.bookingsPaused ? 'Bookings paused for this session' : undefined}
-      className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors',
-        s.bookingsPaused
-          ? 'border-amber-200 bg-amber-50/80 hover:bg-amber-50'
-          : s.fromWix ? 'border-purple-100 bg-purple-50/60 hover:bg-purple-50' : 'border-gray-100 bg-pink-50/60 hover:bg-pink-50'
-      )}
+      className="flex w-full items-stretch gap-2 rounded-lg border border-gray-100 bg-gray-50/60 py-1.5 pr-2.5 text-left transition-colors hover:bg-gray-100/80"
     >
-      <span className="min-w-0 truncate text-xs text-gray-900">
-        {!hideTime && <span className="font-semibold">{sgTime(s.starts_at)} · </span>}
-        {s.title}
-      </span>
-      <span className={cn('shrink-0 text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
-        {count}
+      <span className={cn('w-1 shrink-0 rounded-full', accent.bar)} />
+      <span className="min-w-0 flex-1">
+        {!hideTime && <span className="block text-xs font-semibold text-gray-900">{sgTime(s.starts_at)}</span>}
+        <span className="flex items-center justify-between gap-1">
+          <span className="min-w-0 truncate text-xs text-gray-800">{s.title}</span>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        </span>
+        <span className={cn('flex items-center gap-1 truncate text-[11px]', s.teacherName?.trim() ? 'text-purple-700' : 'text-gray-400')}>
+          <UserIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{staff}</span>
+        </span>
+        <span className={cn('flex items-center gap-1 text-[11px]', full ? 'font-medium text-[#FA4D8D]' : 'text-gray-500')}>
+          <Users className="h-3 w-3 shrink-0" />
+          {count}
+        </span>
       </span>
     </button>
   );
 }
 
 /** Same-time parallel classes collapse to one chip — "9:00am · 3 classes" —
- *  so a busy slot costs the same one row as a single session; expanding it
- *  reveals each class as its own CompactSessionRow. */
+ *  so a busy slot costs about the same space as a single session; expanding
+ *  it reveals each class as its own coloured-dot row, same accent as its
+ *  SlotCard would use elsewhere in the week. */
 function ParallelSlotGroup({
   items, onOpenSession,
 }: { items: EnrichedSession[]; onOpenSession: (id: string) => void }) {
@@ -626,17 +660,24 @@ function ParallelSlotGroup({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 rounded-lg bg-purple-50 px-2.5 py-1.5 text-left text-xs font-medium text-purple-700 hover:bg-purple-100"
+        className="flex w-full items-stretch gap-2 rounded-lg border border-purple-100 bg-purple-50/60 py-1.5 pr-2.5 text-left transition-colors hover:bg-purple-50"
       >
-        <span className="min-w-0 truncate">
-          {sgTime(first.starts_at)}{sameEnd ? ` – ${sgTime(first.ends_at)}` : ''} · {items.length} classes
+        <span className="w-1 shrink-0 rounded-full bg-purple-400" />
+        <span className="flex min-w-0 flex-1 items-center justify-between gap-1">
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold text-gray-900">{sgTime(first.starts_at)}{sameEnd ? ` – ${sgTime(first.ends_at)}` : ''}</span>
+            <span className="flex items-center gap-1 text-[11px] text-purple-700">
+              <Users className="h-3 w-3 shrink-0" />
+              {items.length} classes
+            </span>
+          </span>
+          <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-purple-400 transition-transform', open && 'rotate-180')} />
         </span>
-        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
         <div className="mt-1.5 space-y-1.5 pl-2">
           {items.map((x) => (
-            <CompactSessionRow key={x.id} s={x} hideTime onClick={() => onOpenSession(x.id)} />
+            <SlotCard key={x.id} s={x} hideTime onClick={() => onOpenSession(x.id)} />
           ))}
         </div>
       )}
