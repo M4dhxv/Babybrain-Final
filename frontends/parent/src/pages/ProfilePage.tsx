@@ -3246,6 +3246,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                 cancelWhy={cancelWhy}
               />
             )}
+            {b.status === "pending" && !b.canClaim && (
+              <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
+                <Icon name="bell" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-palette-yellow" />
+                <span>Your previous attempt to book this slot was abandoned before payment went through — book it again to complete the payment and confirm the space.</span>
+              </div>
+            )}
             {b.canClaim && (
               <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-bold text-palette-greenInk">

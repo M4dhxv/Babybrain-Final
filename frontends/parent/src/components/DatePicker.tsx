@@ -153,13 +153,26 @@ export function DatePicker({
     setOpen(true);
   };
 
+  // Popover width from its own `w-[264px]` below — kept in sync with it so
+  // the clamp actually matches what gets rendered.
+  const POPOVER_WIDTH = 264;
+  const EDGE_MARGIN = 8;
+
   const place = () => {
     const el = wrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const room = window.innerHeight - r.bottom;
     const drop: 'down' | 'up' = room < 330 && r.top > room ? 'up' : 'down';
-    setPos({ left: r.left, top: drop === 'down' ? r.bottom + 4 : r.top - 4, drop });
+    // A field near the right edge (e.g. the "To" field of a two-column date
+    // range) would otherwise anchor the popover at the field's own left edge
+    // and let it run off the right of the viewport — clamp so it always
+    // stays fully on-screen instead.
+    const left = Math.min(
+      Math.max(r.left, EDGE_MARGIN),
+      window.innerWidth - POPOVER_WIDTH - EDGE_MARGIN
+    );
+    setPos({ left, top: drop === 'down' ? r.bottom + 4 : r.top - 4, drop });
   };
 
   useLayoutEffect(() => {

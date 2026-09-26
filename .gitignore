@@ -36,3 +36,6 @@ email-previews/
 .DS_Store
 **/.DS_Store
 .stripe-webhook-secrets.local.md
+
+# Rendered auth-email templates for manual dashboard paste (scripts/brand-supabase-auth-emails.mjs --dump)
+.auth-email-dump/

@@ -1,10 +1,16 @@
 /** Printable schedule of a parent's bookings ("export bookings in PDF calendar
  *  view", from the founder QA round).
  *
- *  Rather than pull in a PDF library, this opens a clean, print-styled window
- *  and triggers the browser's print dialog — every browser offers "Save as
- *  PDF" there, and the output stays crisp and selectable. Nothing leaves the
- *  device.
+ *  Rather than pull in a PDF library, this prints a clean, print-styled
+ *  document and triggers the browser's print dialog — every browser offers
+ *  "Save as PDF" there, and the output stays crisp and selectable. Nothing
+ *  leaves the device.
+ *
+ *  This used to `window.open("", "_blank", ...)` a real popup window, but on
+ *  a phone running the app installed as a PWA (standalone display mode)
+ *  that hands the blank popup to the system browser instead of opening a
+ *  tab — from the parent's side, the app itself appears to close. Printing
+ *  from a hidden same-window iframe instead never leaves the page. QA 26/09.
  */
 
 export interface ScheduleEntry {
@@ -135,16 +141,39 @@ export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: strin
   <footer>Share this with grandparents and helpers so everyone knows where to be.</footer>
 </body></html>`;
 
-  const win = window.open("", "_blank", "width=900,height=1000");
-  if (!win) {
-    alert("Please allow pop-ups for babybrain.sg to download your schedule.");
+  // A same-window hidden iframe instead of a popup window: a popup hands off
+  // to the system browser on an installed PWA (see the comment above), while
+  // an iframe's print() runs against its own document without ever
+  // navigating the page itself.
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = "900px";
+  iframe.style.height = "1000px";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+
+  const cleanup = () => iframe.remove();
+  const doc = iframe.contentWindow?.document;
+  if (!doc) {
+    cleanup();
+    alert("Could not prepare the schedule for printing — please try again.");
     return;
   }
-  win.document.write(html);
-  win.document.close();
-  // Give the new document a tick to lay out before the print dialog opens.
-  win.addEventListener("load", () => {
-    win.focus();
-    win.print();
-  });
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const win = iframe.contentWindow!;
+  const doPrint = () => { win.focus(); win.print(); };
+  // document.write() renders synchronously, so `load` may already have fired
+  // by the time we can listen for it — check readyState first rather than
+  // risk waiting on an event that already happened.
+  if (doc.readyState === "complete") doPrint();
+  else iframe.addEventListener("load", doPrint, { once: true });
+  // "afterprint" isn't reliable across every mobile browser, so this is a
+  // best-effort tidy-up with a generous fallback timeout as the backstop.
+  win.addEventListener("afterprint", cleanup);
+  setTimeout(cleanup, 60_000);
 }

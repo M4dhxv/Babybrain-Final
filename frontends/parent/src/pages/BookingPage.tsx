@@ -190,11 +190,14 @@ export default function BookingPage() {
      address when the class is hosted at the family's own condo. */
   const [infoResponse, setInfoResponse] = useState("");
   /* Sessions this parent already holds a live booking on, as
-     `${session_id}:${child_id}`. Booking the same child onto the same class
-     twice is allowed — a parent may well want two slots for a friend — so this
-     only drives a confirmation step, never a block. */
-  const [existingBookings, setExistingBookings] = useState<Set<string>>(new Set());
-  const [dupPrompt, setDupPrompt] = useState<null | { childName: string; proceed: () => void }>(null);
+     `${session_id}:${child_id}` -> that booking's status. Booking the same
+     child onto the same class twice is allowed — a parent may well want two
+     slots for a friend — so this only drives a confirmation step, never a
+     block. A "pending" hit is not a real duplicate: it's usually an earlier
+     checkout attempt that was abandoned before Stripe confirmed it, so it
+     gets its own message rather than "book a second place anyway?". */
+  const [existingBookings, setExistingBookings] = useState<Map<string, string>>(new Map());
+  const [dupPrompt, setDupPrompt] = useState<null | { childName: string; pending: boolean; proceed: () => void }>(null);
 
   // A Wix Event–backed activity (wix_service_type='EVENT', see
   // 00070_wix_events_as_activities.sql) reuses this whole page — the only
@@ -269,15 +272,24 @@ export default function BookingPage() {
   // What this parent has already booked on this activity's sessions, so the
   // form can warn before putting the same child on the same class twice.
   useEffect(() => {
-    if (!auth || !activity?.id) { setExistingBookings(new Set()); return; }
+    if (!auth || !activity?.id) { setExistingBookings(new Map()); return; }
     supabase
       .from("bookings")
       .select("session_id, child_id, status, activity_sessions!inner(activity_id)")
       .eq("activity_sessions.activity_id", activity.id)
       .in("status", ["confirmed", "pending"])
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as Array<{ session_id: string; child_id: string | null }>;
-        setExistingBookings(new Set(rows.map((r) => `${r.session_id}:${r.child_id ?? ""}`)));
+        const rows = (data ?? []) as unknown as Array<{ session_id: string; child_id: string | null; status: string }>;
+        // A child can hold both a stale "pending" row and a later "confirmed"
+        // one for the same session (e.g. they abandoned checkout, then paid
+        // on a later attempt) — confirmed should win so the prompt doesn't
+        // call a real booking an abandoned one.
+        const map = new Map<string, string>();
+        for (const r of rows) {
+          const key = `${r.session_id}:${r.child_id ?? ""}`;
+          if (map.get(key) !== "confirmed") map.set(key, r.status);
+        }
+        setExistingBookings(map);
       });
   }, [auth, activity?.id]);
 
@@ -966,9 +978,13 @@ export default function BookingPage() {
   // explains exactly what, rather than silently doing nothing.
   const bookingIncomplete = !sessionId || consentProblem() != null;
 
+  /** Status of this child's existing booking on the chosen session, if any. */
+  const existingBookingStatus = sessionId ? existingBookings.get(`${sessionId}:${bookChildId ?? ""}`) : undefined;
   /** True when this child already holds a live booking on the chosen session. */
-  const alreadyBooked =
-    !!sessionId && existingBookings.has(`${sessionId}:${bookChildId ?? ""}`);
+  const alreadyBooked = existingBookingStatus != null;
+  /** True when that existing booking never got past Stripe — not a real
+   *  duplicate, just an abandoned checkout attempt. */
+  const alreadyBookedPending = existingBookingStatus === "pending";
 
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
@@ -1006,6 +1022,7 @@ export default function BookingPage() {
     if (alreadyBooked) {
       setDupPrompt({
         childName: bookChild?.name ?? "This child",
+        pending: alreadyBookedPending,
         proceed: () => { setDupPrompt(null); go(); },
       });
       return;
@@ -1209,7 +1226,9 @@ export default function BookingPage() {
                     {alreadyBooked && !childAgeMismatch && (
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                        {bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.
+                        {alreadyBookedPending
+                          ? <>{bookChild?.name ?? "This child"} has an earlier attempt to book this session that was never paid for — pick up where you left off below, or check your <a href="/profile?tab=bookings" className="underline">bookings</a> for it.</>
+                          : <>{bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.</>}
                       </p>
                     )}
                     <section>
@@ -1509,9 +1528,13 @@ export default function BookingPage() {
       </main>
       {dupPrompt && (
         <ConfirmDialog
-          title="Already booked on this class"
-          copy={`${dupPrompt.childName} already has a place on this session. Book a second place anyway?`}
-          confirmLabel="Yes, book again"
+          title={dupPrompt.pending ? "Finish this booking?" : "Already booked on this class"}
+          copy={
+            dupPrompt.pending
+              ? `Your previous attempt to book this slot for ${dupPrompt.childName} was abandoned before payment went through. Continue to complete the payment and confirm the space.`
+              : `${dupPrompt.childName} already has a place on this session. Book a second place anyway?`
+          }
+          confirmLabel={dupPrompt.pending ? "Continue to payment" : "Yes, book again"}
           cancelLabel="Cancel"
           onConfirm={dupPrompt.proceed}
           onClose={() => setDupPrompt(null)}

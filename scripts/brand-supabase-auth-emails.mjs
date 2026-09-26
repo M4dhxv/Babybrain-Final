@@ -21,6 +21,11 @@
  * The management token comes from supabase.com/dashboard/account/tokens and is
  * never stored here. Re-running is safe and idempotent.
  *
+ * RESEND_API_KEY is optional: without it, only the branded templates/subjects
+ * (and --urls, if passed) are applied, and the SMTP fields are left untouched
+ * — the project keeps sending through Supabase's own shared mailer, which is
+ * rate-limited but requires no Resend credential.
+ *
  * For a non-production project (e.g. the test one), also pass --urls to set its
  * Site URL and Redirect URLs. Password-reset and confirm links only work when
  * the requesting site is on that list; a fresh project defaults to localhost.
@@ -39,6 +44,9 @@
 // vars still win over the file.
 if (process.env.ENV_FILE) process.loadEnvFile(process.env.ENV_FILE);
 const SBP = process.env.SBP;
+// Optional: without it, SMTP is left alone and only templates/subjects (and
+// --urls, if passed) are applied — auth mail keeps going through Supabase's
+// own shared sender and its default rate limit.
 const RESEND = process.env.RESEND_API_KEY;
 const PROD_REF = 'laftgypwwfevzggxknii';
 const PROD_SITE = 'https://babybrain-final.vercel.app';
@@ -48,11 +56,14 @@ const LIVE = process.argv.includes('--live');
 // --urls also sets Site URL + Redirect URLs. Without it they are left alone, so
 // re-running against production never changes where auth links point.
 const URLS = process.argv.includes('--urls');
+// --dump needs no token at all: writes subject+html per template to files for
+// pasting into the dashboard by hand (Authentication > Emails), for when the
+// account creating the token can't be granted project_admin_write.
+const DUMP = process.argv.includes('--dump');
 if (URLS && REF === PROD_REF && SITE.replace(/\/$/, '') !== PROD_SITE) {
   throw new Error(`Refusing --urls: production must keep Site URL ${PROD_SITE}`);
 }
-if (!SBP) throw new Error('SBP (Supabase management token) is required');
-if (!RESEND) throw new Error('RESEND_API_KEY is required');
+if (!DUMP && !SBP) throw new Error('SBP (Supabase management token) is required');
 
 const PINK = '#FA5D93';
 const IG = 'https://www.instagram.com/babybrainsg';
@@ -159,15 +170,48 @@ const T = {
   },
 };
 
-const payload = {
-  // ---- 1. sender: Resend SMTP on the verified subdomain ----
-  smtp_host: 'smtp.resend.com',
-  smtp_port: '587',
-  smtp_user: 'resend',
-  smtp_pass: RESEND,
-  smtp_sender_name: 'BabyBrain',
-  smtp_admin_email: 'hello@updates.babybrain.sg',
-};
+if (DUMP) {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const outDir = process.env.DUMP_DIR || path.join(process.cwd(), '.auth-email-dump');
+  fs.mkdirSync(outDir, { recursive: true });
+  // key -> the label Supabase's dashboard uses under Authentication > Emails
+  const DASHBOARD_NAME = {
+    confirmation: 'Confirm signup',
+    recovery: 'Reset password',
+    magic_link: 'Magic Link',
+    invite: 'Invite user',
+    email_change: 'Change email address',
+    reauthentication: 'Reauthentication',
+    password_changed_notification: 'Password changed (Security notification — may not be editable in the UI yet)',
+    email_changed_notification: 'Email changed (Security notification — may not be editable in the UI yet)',
+  };
+  console.log(`Writing templates to ${outDir}\n`);
+  for (const [k, v] of Object.entries(T)) {
+    const file = path.join(outDir, `${k}.html`);
+    fs.writeFileSync(file, v.html, 'utf8');
+    console.log(`${DASHBOARD_NAME[k] || k}`);
+    console.log(`  subject: ${v.subject}`);
+    console.log(`  body:    ${file}`);
+  }
+  console.log(`\nIn the Supabase dashboard: Authentication > Emails (per template) — paste the`);
+  console.log(`Subject as shown, and the .html file's contents into the message body/source view.`);
+  process.exit(0);
+}
+
+const payload = {};
+// ---- 1. sender: Resend SMTP on the verified subdomain (only when a key is given) ----
+if (RESEND) {
+  payload.smtp_host = 'smtp.resend.com';
+  payload.smtp_port = '587';
+  payload.smtp_user = 'resend';
+  payload.smtp_pass = RESEND;
+  payload.smtp_sender_name = process.env.SMTP_SENDER_NAME || 'BabyBrain';
+  // Must be on a domain verified under the account that owns RESEND_API_KEY —
+  // defaults to production's verified domain, override for other accounts
+  // (e.g. Resend's onboarding@resend.dev sandbox address).
+  payload.smtp_admin_email = process.env.SMTP_ADMIN_EMAIL || 'hello@updates.babybrain.sg';
+}
 // ---- 1b. where auth links may point (only with --urls) ----
 // Reset / magic-link / confirm links only work when the requesting site is the
 // Site URL or matches the allow-list; otherwise Supabase falls back to Site URL,
@@ -185,7 +229,9 @@ for (const [k, v] of Object.entries(T)) {
 
 (async () => {
   console.log(`project ${REF}`);
-  console.log(`sender   BabyBrain <hello@updates.babybrain.sg> via smtp.resend.com:587`);
+  console.log(RESEND
+    ? `sender   ${payload.smtp_sender_name} <${payload.smtp_admin_email}> via smtp.resend.com:587`
+    : `sender   (unchanged — no RESEND_API_KEY given, Supabase's own mailer stays in place)`);
   if (URLS) console.log(`urls     site_url ${payload.site_url}  allow-list ${payload.uri_allow_list}`);
   console.log(`branding ${Object.keys(T).length} templates:`);
   for (const [k, v] of Object.entries(T)) {
@@ -204,9 +250,11 @@ for (const [k, v] of Object.entries(T)) {
     process.exit(1);
   }
   console.log('\nAPPLIED.');
-  console.log('  smtp_host        =', body.smtp_host);
-  console.log('  smtp_sender_name =', body.smtp_sender_name);
-  console.log('  smtp_admin_email =', body.smtp_admin_email);
+  if (RESEND) {
+    console.log('  smtp_host        =', body.smtp_host);
+    console.log('  smtp_sender_name =', body.smtp_sender_name);
+    console.log('  smtp_admin_email =', body.smtp_admin_email);
+  }
   if (URLS) {
     console.log('  site_url         =', body.site_url);
     console.log('  uri_allow_list   =', body.uri_allow_list);
