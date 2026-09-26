@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   addDays, addMonths, differenceInCalendarDays, eachDayOfInterval, endOfDay, endOfMonth, endOfWeek, format,
@@ -19,8 +19,14 @@ type ScheduleActivity = { id: string; title: string; location_id: string | null;
 type ScheduleLocation = { id: string; name: string };
 const NO_ACTIVITIES: ScheduleActivity[] = [];
 const NO_LOCATIONS: ScheduleLocation[] = [];
+const NO_SESSIONS: EnrichedSession[] = [];
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
+// Week view's SessionCard is far richer (location, teacher, capacity) than
+// the month view's one-line chip, so its per-day cap is lower — 2 is what
+// reliably fits the fixed card height below even when every optional line
+// is present.
+const WEEK_CARD_SESSION_CAP = 2;
 
 const sgTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit' });
@@ -58,18 +64,13 @@ export default function SchedulePage() {
   const [dayDetail, setDayDetail] = useState<Date | null>(null);
   const [dayOrigin, setDayOrigin] = useState<OriginRect | null>(null);
 
-  const [sessions, setSessions] = useState<EnrichedSession[]>([]);
-  const [loading, setLoading] = useState(true);
   const [wixError, setWixError] = useState<string | null>(null);
   const [wixSyncedAt, setWixSyncedAt] = useState<Date | null>(null);
-  const [syncNonce, setSyncNonce] = useState(0);
 
   // This provider's activities + locations — near-static for a session, so
   // stale-while-revalidate cached: revisiting Schedule paints the filters
-  // instantly instead of re-running these two queries. The session fetch below
-  // is deliberately NOT cached — it carries live Wix availability and must be
-  // fresh every time.
-  const { data: refData, loading: refLoading, refreshing } = useProviderQuery<{
+  // instantly instead of re-running these two queries.
+  const { data: refData, loading: refLoading, refreshing: refsRefreshing } = useProviderQuery<{
     activities: ScheduleActivity[];
     locations: ScheduleLocation[];
   }>(
@@ -100,10 +101,26 @@ export default function SchedulePage() {
     [view, cursor]
   );
 
-  useEffect(() => {
-    if (!provider || activities.length === 0) { setLoading(false); return; }
-    (async () => {
-      setLoading(true);
+  // Sessions used to be a raw fetch-on-mount effect, deliberately uncached —
+  // live Wix availability has to be trusted. But that meant leaving the
+  // Schedule tab and coming straight back (or the app losing focus for a
+  // minute) re-ran the whole thing from a blank page every time: a full
+  // skeleton, a Wix round-trip per linked activity, two Supabase queries —
+  // real "hustle" for a page that mostly looks the same second to second.
+  // Routing it through the same stale-while-revalidate cache the reference
+  // data already uses (`useProviderQuery`, `lib/queryCache.ts`) fixes that
+  // without weakening the freshness guarantee: a cached page still repaints
+  // instantly, but every read is *always* followed by a live refetch that
+  // replaces it — a stale value is only ever shown a beat early, never
+  // trusted as final. The cache's own 10-minute cap means a longer absence
+  // just falls back to today's cold-load skeleton, no separate "please
+  // refresh" prompt needed.
+  const sessionsKey = provider && activities.length > 0
+    ? `schedule-sessions:${provider.id}:${rangeStart.toISOString()}:${rangeEnd.toISOString()}`
+    : null;
+  const { data: sessionsData, loading, refreshing: sessionsRefreshing, refetch: refetchSessions } = useProviderQuery<EnrichedSession[]>(
+    sessionsKey,
+    async () => {
       setWixError(null);
 
       // Refresh live Wix availability for every Wix-linked activity in view
@@ -162,47 +179,44 @@ export default function SchedulePage() {
           if (isHeldBookingStatus(b.status)) counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
-      setSessions(
-        rows.map((s) => {
-          const act = activityMap.get(s.activity_id);
-          const locId = s.location_id ?? act?.location_id ?? null;
-          const fromWix = !!s.wix_slot_key;
-          // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
-          // figure and our held local rows — a Wix-sourced slot can be
-          // booked directly on Wix's own site, so the local count alone
-          // would under-report it; the reverse also happens (Wix's own
-          // availability endpoint has been observed to lag a booking just
-          // made through BabyBrain), so this always takes the higher number
-          // rather than trusting either side exclusively.
-          const { booked, overflow: wixClassOverflow } = computeWixAwareCapacity({
-            wixSlotKey: s.wix_slot_key,
-            wixRemainingCapacity: s.wix_remaining_capacity,
-            capacity: s.capacity,
-            wixServiceType: act?.wix_service_type,
-            localHeldCount: counts[s.id] ?? 0,
-          });
-          return {
-            id: s.id,
-            activity_id: s.activity_id,
-            title: act?.title ?? 'Activity',
-            starts_at: s.starts_at,
-            ends_at: s.ends_at,
-            capacity: s.capacity,
-            booked,
-            locationName: locId ? locationMap.get(locId) ?? null : null,
-            teacherName: s.teacher_name,
-            studio: s.studio,
-            fromWix,
-            isCourse: act?.wix_service_type === 'COURSE',
-            wixClassOverflow,
-            bookingsPaused: !!s.bookings_paused,
-          };
-        })
-      );
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, activities, locations, rangeStart, rangeEnd, syncNonce]);
+      return rows.map((s) => {
+        const act = activityMap.get(s.activity_id);
+        const locId = s.location_id ?? act?.location_id ?? null;
+        const fromWix = !!s.wix_slot_key;
+        // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
+        // figure and our held local rows — a Wix-sourced slot can be
+        // booked directly on Wix's own site, so the local count alone
+        // would under-report it; the reverse also happens (Wix's own
+        // availability endpoint has been observed to lag a booking just
+        // made through BabyBrain), so this always takes the higher number
+        // rather than trusting either side exclusively.
+        const { booked, overflow: wixClassOverflow } = computeWixAwareCapacity({
+          wixSlotKey: s.wix_slot_key,
+          wixRemainingCapacity: s.wix_remaining_capacity,
+          capacity: s.capacity,
+          wixServiceType: act?.wix_service_type,
+          localHeldCount: counts[s.id] ?? 0,
+        });
+        return {
+          id: s.id,
+          activity_id: s.activity_id,
+          title: act?.title ?? 'Activity',
+          starts_at: s.starts_at,
+          ends_at: s.ends_at,
+          capacity: s.capacity,
+          booked,
+          locationName: locId ? locationMap.get(locId) ?? null : null,
+          teacherName: s.teacher_name,
+          studio: s.studio,
+          fromWix,
+          isCourse: act?.wix_service_type === 'COURSE',
+          wixClassOverflow,
+          bookingsPaused: !!s.bookings_paused,
+        };
+      });
+    },
+  );
+  const sessions = sessionsData ?? NO_SESSIONS;
 
   const filtered = useMemo(
     () =>
@@ -261,7 +275,7 @@ export default function SchedulePage() {
 
   return (
     <div className="relative">
-      {refreshing && <RefreshBar />}
+      {(refsRefreshing || sessionsRefreshing) && <RefreshBar />}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
@@ -274,11 +288,11 @@ export default function SchedulePage() {
         </div>
         {wixLinkedIds.length > 0 && (
           <button
-            onClick={() => setSyncNonce((n) => n + 1)}
-            disabled={loading}
+            onClick={() => refetchSessions()}
+            disabled={loading || sessionsRefreshing}
             className="hidden items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:inline-flex"
           >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            <RefreshCw className={cn('h-4 w-4', (loading || sessionsRefreshing) && 'animate-spin')} />
             Refresh Wix
           </button>
         )}
@@ -297,11 +311,11 @@ export default function SchedulePage() {
           {/* Refresh Wix — mobile only; desktop keeps it in the page header */}
           {wixLinkedIds.length > 0 && (
             <button
-              onClick={() => setSyncNonce((n) => n + 1)}
-              disabled={loading}
+              onClick={() => refetchSessions()}
+              disabled={loading || sessionsRefreshing}
               className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:hidden"
             >
-              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              <RefreshCw className={cn('h-4 w-4', (loading || sessionsRefreshing) && 'animate-spin')} />
               Refresh Wix
             </button>
           )}
@@ -390,8 +404,17 @@ export default function SchedulePage() {
           <div className="flex snap-x snap-mandatory gap-3 sm:grid sm:min-w-[900px] sm:snap-none sm:grid-cols-7">
             {weekDays.map((d) => {
               const daySessions = sessionsFor(d);
+              // A day with a handful of sessions and a day with one used to
+              // both size their card to their own content, so the row of 7
+              // cards ended at 7 different heights ("the view schedule is
+              // uneven"). Capping how many sessions render per card — same
+              // "+N more" pattern the month view already uses — keeps every
+              // card the same fixed height regardless of how busy that day
+              // is; the rest is one tap away in the day dialog.
+              const visible = daySessions.slice(0, WEEK_CARD_SESSION_CAP);
+              const overflow = daySessions.length - visible.length;
               return (
-                <div key={d.toISOString()} className="min-h-[240px] w-[calc(50%-0.375rem)] shrink-0 snap-start rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
+                <div key={d.toISOString()} className="flex h-[280px] w-[calc(50%-0.375rem)] shrink-0 snap-start flex-col rounded-xl border border-gray-200 bg-white p-3 sm:w-auto sm:shrink">
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="text-xs font-medium text-gray-500">{format(d, 'EEE')}</span>
                     <button
@@ -408,8 +431,8 @@ export default function SchedulePage() {
                       {format(d, 'd')}
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    {groupByStart(daySessions).map((g) =>
+                  <div className="min-h-0 flex-1 space-y-2 overflow-hidden">
+                    {groupByStart(visible).map((g) =>
                       g.items.length === 1 ? (
                         <SessionCard
                           key={g.items[0].id}
@@ -437,6 +460,15 @@ export default function SchedulePage() {
                     )}
                     {daySessions.length === 0 && <div className="text-xs text-gray-300">No sessions</div>}
                   </div>
+                  {overflow > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => openDay(d, e.currentTarget)}
+                      className="mt-2 shrink-0 text-left text-xs font-medium text-[#FA4D8D] hover:underline"
+                    >
+                      +{overflow} more
+                    </button>
+                  )}
                 </div>
               );
             })}
