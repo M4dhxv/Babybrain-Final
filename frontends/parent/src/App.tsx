@@ -6,7 +6,7 @@ import { useOnline } from "./lib/useOnline";
 import { useAuth } from "./auth/AuthProvider";
 import { AUTH_STORAGE_KEY } from "./lib/supabase";
 import { useLocation, routePath } from "./lib/nav";
-import { RainbowLoader } from "./components/RainbowLoader";
+import { BootSplash } from "./components/BootSplash";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { warmDashboard } from "./lib/prefetch";
 import { lazyRoute } from "./lib/lazyRoute";
@@ -83,8 +83,8 @@ function App() {
   }, [session]);
 
   const bootLoader = (
-    <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
-      <RainbowLoader className="py-4" label="Loading" />
+    <main data-bb-loading className="mx-auto max-w-[1180px] px-6">
+      <BootSplash label="Loading" />
     </main>
   );
 

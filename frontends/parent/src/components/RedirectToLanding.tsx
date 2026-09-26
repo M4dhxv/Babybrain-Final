@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { goTo, routePath } from "../lib/nav";
-import { RainbowLoader } from "./RainbowLoader";
+import { BootSplash } from "./BootSplash";
 
 /** No session (signed out, or the refresh token expired while the tab sat
  *  open): send them to log in instead of showing a signed-in page's logged-out
@@ -24,8 +24,8 @@ export default function RedirectToLanding() {
     goTo(`/login?next=${encodeURIComponent(dest)}`, { replace: true });
   }, [dest]);
   return (
-    <main data-bb-loading className="mx-auto max-w-[1180px] px-6 py-16">
-      <RainbowLoader className="py-4" label="Taking you to log in" />
+    <main data-bb-loading className="mx-auto max-w-[1180px] px-6">
+      <BootSplash label="Taking you to log in" />
     </main>
   );
 }

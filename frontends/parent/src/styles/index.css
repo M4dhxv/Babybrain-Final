@@ -95,6 +95,42 @@
   height: 0.4375rem;
 }
 
+/* Full-screen boot loader — the mascot orbited by the brand dots. Mirrors
+   index.html's #bb-boot splash (same mark, same motion) so a lazy route
+   chunk downloading or the auth gate resolving — both AFTER React has
+   mounted and #bb-boot is already gone — keeps showing the branded splash
+   instead of dropping to the plain six-dot RainbowLoader. Drives
+   <BootSplash> (components/BootSplash.tsx). Keyframes live here for the
+   same reason as bb-wave above. */
+@keyframes bb-splash-pop {
+  0% { opacity: 0; transform: scale(0.5); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes bb-splash-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes bb-splash-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.04); }
+}
+.bb-splash-orbit {
+  animation: bb-splash-pop 0.3s ease-out forwards, bb-splash-orbit 5s linear infinite;
+}
+.bb-splash-icon {
+  animation: bb-splash-pop 0.3s cubic-bezier(.34,1.56,.64,1) forwards, bb-splash-bob 2.4s ease-in-out infinite;
+  animation-delay: 0.08s, 0.4s;
+}
+.bb-splash-name {
+  animation: bb-splash-pop 0.3s ease-out forwards;
+  animation-delay: 0.2s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-splash-orbit { animation: none; opacity: 1; }
+  .bb-splash-icon, .bb-splash-name { animation: none; opacity: 1; transform: none; }
+}
+
 /* "This is the one" flash for a booking/package/token row a parent lands on
    from a notification link (dashboard.tsx's useRowHighlight/BookingList).
    The card rises and holds — not an instant snap back down — with a pink
