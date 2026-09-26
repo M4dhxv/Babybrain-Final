@@ -2530,6 +2530,9 @@ export default function ActivitiesPage() {
         const price = previewFor.price != null ? Number(previewFor.price) : null;
         const ageText = previewFor.age_min_months != null && previewFor.age_max_months != null ? ageLabel(previewFor.age_min_months, previewFor.age_max_months) : null;
         const pageLabels = ['Activity page', 'Booking page', 'Booking confirmation'];
+        // Mirrors BookingPage.tsx's nonCancellable: Wix events/courses are always
+        // non-cancellable regardless of the activity's own toggle.
+        const previewNonCancellable = previewFor.wix_service_type === 'EVENT' || previewFor.wix_service_type === 'COURSE' || previewFor.allow_cancellation === false;
 
         return (
         <div
@@ -2688,7 +2691,7 @@ export default function ActivitiesPage() {
                   )}
 
                   <span className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white" style={{ boxShadow: '0 8px 20px rgba(250,93,147,.32)' }}>
-                    <CalendarDays className="h-4 w-4" /> Book a class
+                    <CalendarDays className="h-4 w-4" /> Book
                   </span>
                   <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
                     <Mail className="h-4 w-4" /> Chat with provider
@@ -2706,7 +2709,7 @@ export default function ActivitiesPage() {
                     <ExternalLink className="h-4 w-4" /> Website
                   </span>
                   <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#A7D8F8] px-6 py-3 text-[15px] font-extrabold text-[#A7D8F8]">
-                    <Users className="h-4 w-4" /> Class group chat
+                    <Users className="h-4 w-4" /> Session group chat
                   </span>
                   <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] bg-[#FEEBF2] px-6 py-3 text-[15px] font-extrabold text-[#FFC1D6]">
                     <Heart className="h-4 w-4" /> Save to favourites
@@ -2743,7 +2746,7 @@ export default function ActivitiesPage() {
                   <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-sm">
                     <header className="pointer-events-none grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr]">
                       <span className="grid h-20 w-20 place-items-center rounded-full bg-[#FA4D8D] text-white"><CalendarDays className="h-10 w-10" /></span>
-                      <div><h1 className="text-[28px] font-black">Book your class</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
+                      <div><h1 className="text-[28px] font-black">Book your session</h1><p className="text-lg font-semibold">Choose your preferred date, time &amp; package.</p></div>
                     </header>
                     <div className="grid gap-5 p-6 lg:grid-cols-[1fr_340px]">
                       <section className="pointer-events-none">
@@ -2801,7 +2804,7 @@ export default function ActivitiesPage() {
                             </div>
                           </section>
 
-                          {(previewPolicies.length > 0 || previewFor.info_request_enabled) && (
+                          {(previewPolicies.length > 0 || previewFor.info_request_enabled || previewFor.requires_medical_disclosure) && (
                             <section>
                               <h3 className="mb-2 text-xl font-black">4. Provider terms</h3>
                               <p className="mb-4 text-sm font-semibold text-[#59658d]">
@@ -2835,6 +2838,15 @@ export default function ActivitiesPage() {
                                 {previewFor.info_request_enabled && (
                                   <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
                                     <p className="font-black">{previewFor.info_request_prompt?.trim() || 'The provider needs some extra information'} <span className="text-[#FA4D8D]">*</span></p>
+                                    <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                  </div>
+                                )}
+                                {previewFor.requires_medical_disclosure && (
+                                  <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                                    <p className="font-black">Medical &amp; health disclosure <span className="text-[#FA4D8D]">*</span></p>
+                                    <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                                      Anything the provider should know — allergies, conditions, medication. Write &ldquo;none&rdquo; if there is nothing to declare.
+                                    </p>
                                     <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
                                   </div>
                                 )}
@@ -2878,17 +2890,17 @@ export default function ActivitiesPage() {
                       </aside>
                     </div>
                   </section>
-                  <section className="pointer-events-none mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6">
+                  <section className="pointer-events-none mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 md:grid-cols-[1fr_360px]">
                     <div className="flex items-center gap-5">
                       <span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-[#FA4D8D]"><Lock className="h-8 w-8" /></span>
                       <p><span className="block font-bold">Total amount</span><strong className="text-3xl">{price != null ? `$${price.toFixed(2)}` : '—'}</strong></p>
                     </div>
-                    <span className="mt-3 flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white">
+                    <span className="flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white">
                       <Lock className="h-5 w-5" /> {price != null && price > 0 ? `Pay $${price.toFixed(2)}` : 'Confirm booking'}
                     </span>
-                    <div className="space-y-0.5 text-center">
-                      {previewFor.allow_cancellation === false && <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>}
-                      {previewFor.allow_cancellation !== false && previewFor.cancellation_refund_mode === 'none' && <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>}
+                    <div className="space-y-0.5 text-center md:col-span-2">
+                      {previewNonCancellable && <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>}
+                      {!previewNonCancellable && previewFor.cancellation_refund_mode === 'none' && <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>}
                       {price != null && price > 0 && <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>}
                     </div>
                   </section>
