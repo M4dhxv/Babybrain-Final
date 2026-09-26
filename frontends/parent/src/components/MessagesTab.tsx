@@ -65,8 +65,8 @@ function ChatPanes({
           EmptyStateIndicator={() => (
             <div className="p-6 text-center text-sm font-semibold text-[#68718f]">
               {readOnly
-                ? "No conversations yet. Class group chats appear here once a provider starts one for a class you've booked."
-                : "No conversations yet. Message a provider from a class page to start one."}
+                ? "No conversations yet. Session group chats appear here once a provider starts one for a session you've booked."
+                : "No conversations yet. Message a provider from a session page to start one."}
             </div>
           )}
         />

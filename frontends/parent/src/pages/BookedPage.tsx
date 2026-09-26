@@ -60,10 +60,10 @@ export default function BookedPage() {
   return (
     <PageShell active="/booked" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-7">
-        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Class details</span><span>›</span><span className="text-baby-pink">Book</span></div>
+        <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Session details</span><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
-          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your class is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p>{!waitlisted && wlLeft > 0 && <p className="mt-2 font-semibold text-palette-orangeStrong">{wlLeft === 1 ? "One place didn't fit and is on the waitlist" : `${wlLeft} places didn't fit and are on the waitlist`} — we'll email you to pay for {wlLeft === 1 ? "it" : "them"} if a spot opens.</p>}</div>
+          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your session is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll notify you the moment a spot opens up." : "We can't wait to see your little one there."}</p>{!waitlisted && wlLeft > 0 && <p className="mt-2 font-semibold text-palette-orangeStrong">{wlLeft === 1 ? "One place didn't fit and is on the waitlist" : `${wlLeft} places didn't fit and are on the waitlist`} — we'll email you to pay for {wlLeft === 1 ? "it" : "them"} if a spot opens.</p>}</div>
           {/* The full stacked logo (mascot + wordmark), not the confetti mascot
               crop lifted from the mockup — same call as the Book page header,
               which already dropped the confetti. */}
@@ -72,7 +72,7 @@ export default function BookedPage() {
         <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
           <div className="space-y-5">
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
-              <h2 className="text-xl font-black">Class details</h2>
+              <h2 className="text-xl font-black">Session details</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
                 {/* The photo the activity page leads with. Until it has loaded, a neutral block: the old
                     fixed stock image flashed here first and read as the wrong class. */}
@@ -93,7 +93,7 @@ export default function BookedPage() {
               </div>
               {detail?.description?.trim() && (
                 <div className="mt-5 border-t border-[#F4EFF0] pt-5">
-                  <h3 className="font-black">About this class</h3>
+                  <h3 className="font-black">About this session</h3>
                   <p className="mt-3 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{detail.description.trim()}</p>
                 </div>
               )}

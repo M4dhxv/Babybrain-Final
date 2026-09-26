@@ -134,10 +134,10 @@ export function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: strin
 </style></head>
 <body>
   <header>
-    <h1>Class schedule${parentName ? ` — ${esc(parentName)}` : ""}</h1>
-    <div class="sub">${esc(rangeLabel(range))} · ${sorted.length} ${sorted.length === 1 ? "class" : "classes"} · generated ${esc(generated)} · babybrain.sg</div>
+    <h1>Session schedule${parentName ? ` — ${esc(parentName)}` : ""}</h1>
+    <div class="sub">${esc(rangeLabel(range))} · ${sorted.length} ${sorted.length === 1 ? "session" : "sessions"} · generated ${esc(generated)} · babybrain.sg</div>
   </header>
-  ${days || '<p class="meta">No upcoming classes.</p>'}
+  ${days || '<p class="meta">No upcoming sessions.</p>'}
   <footer>Share this with grandparents and helpers so everyone knows where to be.</footer>
 </body></html>`;
 

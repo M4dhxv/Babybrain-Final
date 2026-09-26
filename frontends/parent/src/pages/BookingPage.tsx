@@ -1071,7 +1071,7 @@ export default function BookingPage() {
     return (
       <PageShell active="/book">
         <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">
-          Class not found. <a href="/explore" className="text-baby-pink">Browse activities →</a>
+          Session not found. <a href="/explore" className="text-baby-pink">Browse activities →</a>
         </main>
       </PageShell>
     );
@@ -1086,7 +1086,7 @@ export default function BookingPage() {
         <section className="rounded-[18px] border border-[#EBE3E5] bg-white shadow-card">
           <header className="grid items-center gap-5 border-b border-[#F4EFF0] p-6 md:grid-cols-[90px_1fr_240px]">
             <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="calendar" className="h-10 w-10" /></span>
-            <div><h1 className="text-[34px] font-black">{isEvent ? "Get your tickets" : "Book your class"}</h1><p className="text-lg font-semibold">{isEvent ? "Pick how many tickets you need, then check out." : "Choose your preferred date, time & package."}</p></div>
+            <div><h1 className="text-[34px] font-black">{isEvent ? "Get your tickets" : "Book your session"}</h1><p className="text-lg font-semibold">{isEvent ? "Pick how many tickets you need, then check out." : "Choose your preferred date, time & package."}</p></div>
             {/* The brand icon itself, rather than the confetti mascot crop that
                 was lifted from the design mockup. */}
             <img src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`} alt="" className="hidden h-24 object-contain md:block" />
@@ -1202,7 +1202,7 @@ export default function BookingPage() {
                     )}
                     {kids.length > 1 && (
                       <section>
-                        <h3 className="mb-4 text-xl font-black">Who's this class for?</h3>
+                        <h3 className="mb-4 text-xl font-black">Who's this session for?</h3>
                         <div className="flex flex-wrap gap-2">
                           {kids.map((k) => (
                             <button

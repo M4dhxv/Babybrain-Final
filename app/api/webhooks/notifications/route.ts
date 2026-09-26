@@ -96,7 +96,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const data = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
 
   // Everything from here on can throw (a bad template, Resend rejecting the

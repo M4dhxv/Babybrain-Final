@@ -106,7 +106,9 @@ export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   // Branded like every other BabyBrain email — this used to go out as a bare
   // unstyled block, which is what QA saw arriving in the inbox.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const rendered = renderEmail(
     'contact_received',
     {

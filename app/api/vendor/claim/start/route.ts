@@ -104,7 +104,9 @@ export async function POST(request: Request) {
   // Rendered through the shared template so it carries the BabyBrain logo,
   // typeface and footer like every other transactional email, instead of the
   // bare block QA saw arriving (21/08).
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const rendered = renderEmail(
     'provider_claim_code',
     {

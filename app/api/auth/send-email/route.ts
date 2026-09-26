@@ -89,7 +89,9 @@ export async function POST(request: Request) {
   const to = data.email_action_type === 'email_change_new' ? user.new_email : user.email;
   if (!to) return NextResponse.json({ error: 'No recipient' }, { status: 400 });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const templateKey = ACTION_TEMPLATES[data.email_action_type];
   if (!templateKey) {
     // Unknown action: let Supabase handle it rather than sending nothing.

@@ -67,7 +67,7 @@ export function ClassGroupChat({
       >
         <div className="flex items-center justify-between border-b border-[#F4EFF0] px-5 py-3">
           <div>
-            <p className="text-sm font-bold text-baby-ink">{activityTitle} — class group</p>
+            <p className="text-sm font-bold text-baby-ink">{activityTitle} — session group</p>
             <p className="text-xs text-[#59658d]">Parents booked into your slot + the provider</p>
           </div>
           <button

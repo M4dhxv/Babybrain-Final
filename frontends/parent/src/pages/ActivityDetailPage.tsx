@@ -918,7 +918,7 @@ export default function ActivityDetailPage() {
             </div>
             <ChatButton
               icon="people"
-              label="Class group chat"
+              label="Session group chat"
               disabledReason={groupChatBlockedReason}
               onOpen={requireLogin(() => setGroupChat(true))}
             />

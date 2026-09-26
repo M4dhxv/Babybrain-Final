@@ -905,10 +905,10 @@ function ChildClasses({ child, bookings, recs }: { child: Child; bookings: Booki
 
   return (
     <section className="mt-5 rounded-[16px] border border-[#FED7E4] bg-[#FFF5F8] p-5">
-      <h2 className="text-xl font-black">{child.name}'s classes</h2>
+      <h2 className="text-xl font-black">{child.name}'s sessions</h2>
       {bookings.length === 0 ? (
         <p className="mt-3 rounded-[12px] bg-white p-4 text-sm font-semibold text-[#68718f]">
-          No classes booked for {child.name} yet. <a href="/explore" className="font-black text-baby-pink">Explore activities →</a>
+          No sessions booked for {child.name} yet. <a href="/explore" className="font-black text-baby-pink">Explore activities →</a>
         </p>
       ) : (
         <div className="mt-3 space-y-4">
@@ -998,7 +998,7 @@ function ChildrenTab({
                       <div>
                         <h3 className="font-black">{c.name}</h3>
                         <p className="text-sm font-semibold text-[#59658d]">{formatChildAge(c.date_of_birth)}</p>
-                        <p className="mt-0.5 text-xs font-bold text-baby-pink">{open ? "Hide classes ▲" : `View classes ▾${booked ? ` · ${booked} booked` : ""}`}</p>
+                        <p className="mt-0.5 text-xs font-bold text-baby-pink">{open ? "Hide sessions ▲" : `View sessions ▾${booked ? ` · ${booked} booked` : ""}`}</p>
                       </div>
                     </button>
                     {c.interests.length > 0 && (
@@ -2060,7 +2060,7 @@ export default function ProfilePage() {
                     </span>
                     <p className="mt-3 font-black">Saving activities is a Plus feature</p>
                     <p className="mx-auto mt-1 max-w-[360px] text-sm font-semibold text-[#68718f]">
-                      Keep a shortlist of the classes you like and come back to them any time.
+                      Keep a shortlist of the sessions you like and come back to them any time.
                     </p>
                     <Button href="/pricing" size="sm" className="mt-3"><Icon name="star" className="h-4 w-4" /> Upgrade to Plus</Button>
                   </div>
@@ -2115,7 +2115,7 @@ export default function ProfilePage() {
           {tab === "bookings" && (
             <div>
               <h1 className="mb-1 text-[26px] font-black">Bookings</h1>
-              <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes still to come. Once a class time has passed it moves to Past activities.</p>
+              <p className="mb-4 text-sm font-semibold text-[#59658d]">Sessions still to come. Once a session time has passed it moves to Past activities.</p>
               <div className="mb-4 flex items-center gap-2">
                 <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} className="min-w-0 flex-1" />
                 {bookingsLoaded && upcomingBookings.length > 1 && (
@@ -2147,11 +2147,11 @@ export default function ProfilePage() {
                     </section>
                   ))}
                   {shownUpcoming.length === 0 && (
-                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming classes yet."} onChanged={loadBookings} isPlus={isPlus} />
+                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
                   )}
                 </div>
               ) : (
-                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming classes yet."} onChanged={loadBookings} isPlus={isPlus} />
+                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
               )}
             </div>
           )}
@@ -2179,13 +2179,13 @@ export default function ProfilePage() {
           {tab === "packages" && planKnown && !isPlus && (
             <PlusLock
               title="Packages are a Plus feature"
-              copy="With Plus, every class pack you buy through BabyBrain is stored here and you can click straight through to book. On the free plan we email your pack details to you instead."
+              copy="With Plus, every session pack you buy through BabyBrain is stored here and you can click straight through to book. On the free plan we email your pack details to you instead."
             />
           )}
           {tab === "packages" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Packages</h1>
-              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Class packs you've bought through BabyBrain — each booking with that provider can use a credit. Packs bought directly with a provider won't appear here.</p>
+              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Session packs you've bought through BabyBrain — each booking with that provider can use a credit. Packs bought directly with a provider won't appear here.</p>
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {filterChild && (
                 <p className="mb-3 rounded-[10px] bg-[#F4F0FA] px-3 py-2 text-xs font-bold text-[#7A67A6]">
@@ -2228,7 +2228,7 @@ export default function ProfilePage() {
           {tab === "makeup" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Make-up tokens</h1>
-              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed class — redeem them when you book a future session with that provider.</p>
+              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed session — redeem them when you book a future session with that provider.</p>
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {!tokensLoaded ? (
                 <ListRowsSkeleton count={2} lines={2} />
@@ -2820,7 +2820,7 @@ function PastActivitiesTab({
   return (
     <div>
       <h1 className="mb-1 text-[26px] font-black">Past activities</h1>
-      <p className="mb-4 text-sm font-semibold text-[#59658d]">Classes whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
+      <p className="mb-4 text-sm font-semibold text-[#59658d]">Sessions whose time has passed. Tell us whether you made it — your provider can mark this too.</p>
       {filterChips}
       {error && <p className="mt-3 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-baby-cta">{error}</p>}
 

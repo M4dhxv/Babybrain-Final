@@ -152,7 +152,9 @@ export async function POST(request: Request) {
   // /vendor/#/login — a bare /vendor/login has no rewrite and lands on
   // Vercel's own 404, not the sign-in page.
   const signInUrl = vendorPageUrl(request, '/login');
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain.sg';
+  // babybrain.sg is a "coming soon" placeholder, not the deployed app — see
+  // scripts/setup-stripe-portal.mjs. Falls back to the known-working host.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
 
   const rendered = renderEmail(
     'provider_staff_invite',

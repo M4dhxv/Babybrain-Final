@@ -139,7 +139,7 @@ export default function EditProfilePage() {
 
         <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h2 className="font-black">Your avatar</h2>
-          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick the one you like — it shows on your account and in class chats.</p>
+          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick the one you like — it shows on your account and in session chats.</p>
           <AvatarPicker
             options={PARENT_AVATARS}
             value={avatarSeed}
