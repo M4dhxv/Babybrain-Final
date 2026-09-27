@@ -213,6 +213,12 @@ export function ExploreMap({
       regions.length === 0 || (!!r && regions.includes(r));
 
     for (const a of activities) {
+      // A custom-location activity ("we travel to you") has no venue a
+      // parent could actually go to — the coordinate the server falls back
+      // to for it is just the provider's own registered address (matching_
+      // activities, migration 00175), which read as a real venue pin here
+      // and misled parents into thinking that's where the session happens.
+      if (a.isCustomLocation) continue;
       if (a.venues && a.venues.length > 0) {
         // Only the venues in the chosen areas get a pin. A venue with no region
         // recorded is dropped while a filter is on rather than guessed at —

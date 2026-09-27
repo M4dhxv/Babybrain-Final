@@ -664,8 +664,11 @@ export default function ExplorePage() {
   }, [sort, here]);
 
   const selectClass = "h-10 rounded-[10px] border border-[#EBE3E5] bg-white px-3 text-[13px] font-bold shadow-card focus:border-baby-pink focus:outline-none";
-  // The map's own pin set — every match, not just the loaded cards.
-  const pinned = pinActivities.filter((a) => a.venues.length > 0 || a.lat != null).length;
+  // The map's own pin set — every match, not just the loaded cards. Mirrors
+  // ExploreMap's own isCustomLocation exclusion (a "we travel to you"
+  // listing has no real venue to pin), so this count matches what's
+  // actually drawn rather than over-counting it as pinned.
+  const pinned = pinActivities.filter((a) => !a.isCustomLocation && (a.venues.length > 0 || a.lat != null)).length;
 
   return (
     <PageShell active="/explore">
