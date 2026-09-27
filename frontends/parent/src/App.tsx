@@ -83,7 +83,7 @@ function App() {
   }, [session]);
 
   const bootLoader = (
-    <main data-bb-loading className="mx-auto max-w-[1180px] px-6">
+    <main data-bb-loading className="mx-auto flex min-h-[100dvh] max-w-[1180px] items-center justify-center px-6">
       <BootSplash label="Loading" />
     </main>
   );
