@@ -143,8 +143,12 @@ export interface ProviderContact {
  * (`pending`/`confirmed`/`completed`, matching what
  * `/api/public/booked-counts` and `handle_booking_insert()` both count) in
  * one round trip.
+ *
+ * `limit` bounds distinct upcoming *days* (migration 00181), not raw session
+ * rows — a day is all-or-nothing, so a high-frequency listing's later days
+ * aren't silently dropped just because its first day alone fills a row cap.
  */
-async function fetchUpcomingSessions(activityId: string, limit = 8): Promise<ActivitySession[]> {
+async function fetchUpcomingSessions(activityId: string, limit = 14): Promise<ActivitySession[]> {
   const { data } = await supabase.rpc("upcoming_activity_sessions", {
     p_activity_id: activityId,
     p_limit: limit,
@@ -762,6 +766,7 @@ export function toCard(
       .pop() ?? "",
     date: when.date,
     time: when.time,
+    nextSessionAt: multiDayRun ? null : nextSession?.starts_at ?? (run ? run.starts_at : null),
     // Empty when there are no reviews, so the card drops the rating line
     // rather than printing a bare "New" beside nothing else.
     rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "",

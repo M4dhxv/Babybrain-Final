@@ -64,6 +64,7 @@ export function SessionSchedule({
   selectedId,
   onSelect,
   bookHref,
+  preferredSessionAt,
 }: {
   sessions: Session[];
   durationMins?: number | null;
@@ -72,6 +73,13 @@ export function SessionSchedule({
   onSelect?: (id: string | null) => void;
   /** Same URL as the page's "Book" CTA — embedded in the "Click on Book…" message below so it's a link, not just a hint. */
   bookHref?: string;
+  /** The session timestamp whichever card/link brought the parent here
+   *  advertised (e.g. Explore's `?at=`, matching a date filter). Until the
+   *  parent taps a day themselves, the picker opens on *that* day rather than
+   *  always the globally soonest one — otherwise a date-filtered search can
+   *  land here and show a different "next available" day than the one just
+   *  promised on the card. */
+  preferredSessionAt?: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [showAllTimes, setShowAllTimes] = useState(false);
@@ -157,8 +165,13 @@ export function SessionSchedule({
   }
   const monthIdx = Math.min(monthTab, monthGroups.length - 1);
   const monthGroup = monthGroups[monthIdx];
-  const expandDay = monthGroup.days.find((d) => d.key === selectedDayKey) ?? monthGroup.days[0];
-  const selectedDay = days.find((d) => d.key === selectedDayKey) ?? days[0];
+  // Once the parent explicitly taps a day, that choice wins outright; until
+  // then, fall back to the day `preferredSessionAt` names (if it's actually
+  // among the upcoming days) before the globally soonest one.
+  const preferredDayKey = preferredSessionAt ? dayKey(preferredSessionAt) : null;
+  const defaultDayKey = (preferredDayKey && days.some((d) => d.key === preferredDayKey)) ? preferredDayKey : days[0].key;
+  const expandDay = monthGroup.days.find((d) => d.key === (selectedDayKey ?? defaultDayKey)) ?? monthGroup.days[0];
+  const selectedDay = days.find((d) => d.key === (selectedDayKey ?? defaultDayKey)) ?? days[0];
   const shownSlots = showAllTimes ? selectedDay.slots : selectedDay.slots.slice(0, VISIBLE_TIMES);
   // Only label a slot with who/where when its time isn't unique that day.
   const timeCount = new Map<string, number>();

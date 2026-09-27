@@ -8,6 +8,11 @@ export type Activity = {
   venue: string;
   date: string;
   time: string;
+  /** The exact session `date`/`time` were rendered from — the specific
+   *  occurrence a date/time filter matched, not just any upcoming one. Passed
+   *  through to the activity page so its own schedule picker opens on the
+   *  same day, instead of independently defaulting to its soonest slot. */
+  nextSessionAt?: string | null;
   rating: string;
   slug?: string;
   id?: string;

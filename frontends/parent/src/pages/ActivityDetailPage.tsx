@@ -470,6 +470,10 @@ export default function ActivityDetailPage() {
   const [galleryAt, setGalleryAt] = useState<number | null>(null);
   /** The session tapped in the schedule; carried to the booking page as ?session=. */
   const [pickedSessionId, setPickedSessionId] = useState<string | null>(null);
+  /** The session timestamp the referring card advertised (Explore's `?at=`,
+   *  set from whichever date/time filter was active) — see SessionSchedule's
+   *  `preferredSessionAt`. */
+  const preferredSessionAt = getParam("at");
 
   /* The browser resolves the hash before Vite has mounted, and reviews arrive
      asynchronously after that, so #reviews (the post-activity check-in email's
@@ -732,7 +736,7 @@ export default function ActivityDetailPage() {
                 </div>
               ) : (
                 sessions.length > 0 ? (
-                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} />
+                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
                 ) : (
                   <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
                 )

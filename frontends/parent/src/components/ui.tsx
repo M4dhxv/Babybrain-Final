@@ -911,6 +911,18 @@ function placeLabel(activity: Activity): React.ReactNode {
   return venue || "Singapore";
 }
 
+/** The card's date/time (`activity.date`/`.time`) is a specific session — the
+ *  one a date/time filter matched, not just whichever is soonest. Carrying
+ *  its timestamp through to the activity page lets that page's own schedule
+ *  picker open on the same day, instead of independently defaulting to its
+ *  globally soonest slot and silently showing a different date than the card
+ *  promised (QA: Explore date filter). */
+function activityHref(activity: Activity): string {
+  if (!activity.slug) return "/activity";
+  const at = activity.nextSessionAt ? `&at=${encodeURIComponent(activity.nextSessionAt)}` : "";
+  return `/activity?slug=${activity.slug}${at}`;
+}
+
 /** "From $32" — a price the parent can see without opening the listing. */
 function priceLabel(activity: Activity): string | null {
   const p = activity.price;
@@ -933,7 +945,7 @@ export const ActivityCard = memo(function ActivityCard({
   compact?: boolean;
   onFavoriteToggled?: (activityId: string, saved: boolean) => void;
 }) {
-  const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
+  const href = activityHref(activity);
   const thumb = useThumb(activity.image, 640, 174);
   return (
     <article className="relative flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
@@ -1045,7 +1057,7 @@ export const ActivityCard = memo(function ActivityCard({
 });
 
 export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
-  const href = activity.slug ? `/activity?slug=${activity.slug}` : "/activity";
+  const href = activityHref(activity);
   const thumb = useThumb(activity.image, 440, 352);
   return (
     <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">

@@ -284,7 +284,7 @@ export function ExploreMap({
               : regionLabel(a.region) || null,
           ].filter(Boolean);
           return (
-            `<a href="/activity?slug=${encodeURIComponent(a.slug)}" style="display:block;text-decoration:none;margin:6px 0">` +
+            `<a href="/activity?slug=${encodeURIComponent(a.slug)}${a.nextSessionAt ? `&at=${encodeURIComponent(a.nextSessionAt)}` : ""}" style="display:block;text-decoration:none;margin:6px 0">` +
             `<span style="display:block;color:#A7D8F8;font-weight:700">${esc(a.title)}</span>` +
             (bits.length
               ? `<span style="display:block;color:#59658d;font-weight:600;font-size:11.5px">${esc(bits.join(" · "))}</span>`
