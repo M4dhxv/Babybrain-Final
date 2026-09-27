@@ -116,8 +116,6 @@ export default function OnboardingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
-  /** Plus was chosen but payment can't start until the email is confirmed. */
-  const [plusAfterConfirm, setPlusAfterConfirm] = useState(false);
   const [emailExists, setEmailExists] = useState(false);
   /* Sign-up is a two-step wizard: step 1 is the profile form, step 2 is the
      plan picker. The account is only created once a plan is chosen on step 2,
@@ -236,7 +234,6 @@ export default function OnboardingPage() {
         // parent to payment as soon as they're back, confirmed. Dropping it
         // here used to leave a parent who picked Plus on Free, never charged.
         setBusy(false);
-        setPlusAfterConfirm(plan === "plus");
         return setConfirmSent(true);
       }
       const uid = session.user.id;
@@ -318,12 +315,7 @@ export default function OnboardingPage() {
       <PageShell active="/onboarding">
         <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
           <h1 className="text-2xl font-black">Check your email</h1>
-          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account — it'll bring you straight back to your profile.</p>
-          {plusAfterConfirm && (
-            <p className="mt-3 rounded-[12px] bg-[#FFF5F8] px-4 py-3 text-sm font-bold text-[#44507b]">
-              You chose Plus. Once you've confirmed your email we'll take you straight to payment to start your subscription.
-            </p>
-          )}
+          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
           <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam or promotions folder — it can take a couple of minutes.</p>
           <ResendConfirmation email={email} startCoolingDown />
           <p className="mt-3 text-sm font-semibold text-[#5a6690]">
