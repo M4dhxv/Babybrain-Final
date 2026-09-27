@@ -340,7 +340,7 @@ export function SessionSchedule({
                   ))}
                 </div>
               )}
-              <div className="mt-2.5 flex flex-wrap gap-2">
+              <div className="mt-2.5 grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2">
                 {expandDay.slots.map((slot) => {
                   const active = selectedId === slot.id;
                   const shared = expandDay.slots.filter((x) => x.time === slot.time).length > 1;

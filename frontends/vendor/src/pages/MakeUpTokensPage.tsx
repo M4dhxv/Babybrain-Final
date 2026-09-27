@@ -189,7 +189,7 @@ export default function MakeUpTokensPage() {
         {!loading && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <div className={cn(TOKEN_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
-              <div>Family</div><div>Original class</div><div>Status</div><div>Issued</div><div>Expires</div>
+              <div>Family</div><div>Original session</div><div>Status</div><div>Issued</div><div>Expires</div>
             </div>
             {visible.map((t) => {
               const editable = canManage && t.status !== 'redeemed';

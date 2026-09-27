@@ -325,7 +325,7 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
             <p className="mt-1 text-[11px] text-gray-400">
               {policy.booking_cutoff_minutes === '0'
                 ? 'Parents can book right up to the start time.'
-                : `Parents can't book within ${policy.booking_cutoff_minutes || '15'} minutes of the class starting.`}
+                : `Parents can't book within ${policy.booking_cutoff_minutes || '15'} minutes of the session starting.`}
             </p>
           </div>
         </div>
@@ -2256,14 +2256,14 @@ export default function ActivitiesPage() {
                     form.image_source === 'custom' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                   )}
                 >
-                  Upload for this class
+                  Upload for this activity
                 </button>
               </div>
 
               {form.image_source === 'profile' ? (
                 profileImages.length > 0 ? (
                   <div className="mt-2">
-                    <p className="mb-1.5 text-xs text-gray-500">Parents will see your profile photos. Pick which one leads for this class:</p>
+                    <p className="mb-1.5 text-xs text-gray-500">Parents will see your profile photos. Pick which one leads for this activity:</p>
                     <div className="flex flex-wrap gap-2">
                       {profileImages.map((url) => (
                         <button
@@ -2286,7 +2286,7 @@ export default function ActivitiesPage() {
                 ) : (
                   <p className="mt-2 text-xs text-gray-500">
                     You haven&rsquo;t added any profile photos yet — add some under{' '}
-                    <a href="/vendor/#/settings" className="font-medium text-[#FA4D8D] hover:underline">Settings</a>, or switch to uploading photos just for this class.
+                    <a href="/vendor/#/settings" className="font-medium text-[#FA4D8D] hover:underline">Settings</a>, or switch to uploading photos just for this activity.
                   </p>
                 )
               ) : (
@@ -2444,7 +2444,7 @@ export default function ActivitiesPage() {
                 <p className="mt-1 text-xs text-gray-500">
                   {form.booking_cutoff_minutes === '0'
                     ? 'Parents can book right up to the start time.'
-                    : `Parents can't book within ${form.booking_cutoff_minutes || '15'} minutes of the class starting.`}
+                    : `Parents can't book within ${form.booking_cutoff_minutes || '15'} minutes of the session starting.`}
                 </p>
               </div>
             </div>
@@ -2454,7 +2454,7 @@ export default function ActivitiesPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-gray-900">Ask parents for extra information</div>
-                  <div className="text-xs text-gray-500">For anything you need before the class — e.g. an address when you host at their condo</div>
+                  <div className="text-xs text-gray-500">For anything you need before the session — e.g. an address when you host at their condo</div>
                 </div>
                 <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} />
               </div>
@@ -2464,7 +2464,7 @@ export default function ActivitiesPage() {
                   <textarea
                     rows={2}
                     maxLength={300}
-                    placeholder="e.g. Which condo is the class at, and the unit number?"
+                    placeholder="e.g. Which condo is the session at, and the unit number?"
                     className={cn(inputCls, 'resize-none')}
                     value={form.info_request_prompt}
                     onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
@@ -2691,7 +2691,7 @@ export default function ActivitiesPage() {
 
                 <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">
                   {price != null && price > 0 ? (
-                    <p><strong className="text-[30px] text-[#C7B1E6]">${price}</strong> <span className="font-bold">/ class</span></p>
+                    <p><strong className="text-[30px] text-[#C7B1E6]">${price}</strong> <span className="font-bold">/ session</span></p>
                   ) : (
                     <p><strong className="text-[30px] text-[#C7B1E6]">Free</strong></p>
                   )}
@@ -2814,7 +2814,7 @@ export default function ActivitiesPage() {
                             <section>
                               <h3 className="mb-2 text-xl font-black">4. Provider terms</h3>
                               <p className="mb-4 text-sm font-semibold text-[#59658d]">
-                                {provider?.business_name?.trim() || 'This provider'} asks you to read and accept the following before the class.
+                                {provider?.business_name?.trim() || 'This provider'} asks you to read and accept the following before the session.
                               </p>
                               <div className="space-y-3">
                                 {previewPolicies.map((p) => (
@@ -2863,15 +2863,15 @@ export default function ActivitiesPage() {
                           {previewPackages.length > 0 && (
                             <section className="pointer-events-none">
                               <h3 className="mb-2 text-xl font-black">5. Select package</h3>
-                              <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
+                              <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#FA4D8D] bg-[#FEEBF2] p-4">
-                                  <span className="font-black">Single class</span>
+                                  <span className="font-black">Single session</span>
                                   <span className="font-black text-[#FA4D8D]">{price != null ? `$${price.toFixed(2)}` : 'Price on enquiry'}</span>
                                 </div>
                                 {previewPackages.map((p) => (
                                   <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
-                                    <div><span className="block font-black">{p.name}</span><span className="text-sm font-semibold text-[#59658d]">{p.credits} classes</span></div>
+                                    <div><span className="block font-black">{p.name}</span><span className="text-sm font-semibold text-[#59658d]">{p.credits} {p.credits === 1 ? "session" : "sessions"}</span></div>
                                     <span className="font-black">${(p.price_cents / 100).toFixed(0)}</span>
                                   </div>
                                 ))}
@@ -2915,15 +2915,15 @@ export default function ActivitiesPage() {
 
               {previewPage === 2 && (
                 <div className="pointer-events-none mx-auto max-w-[1024px]">
-                  <div className="mb-5 flex gap-3 text-sm font-bold"><span>Home</span><span>›</span><span>Activities</span><span>›</span><span>Class details</span><span>›</span><span className="text-[#FA4D8D]">Book</span></div>
+                  <div className="mb-5 flex gap-3 text-sm font-bold"><span>Home</span><span>›</span><span>Activities</span><span>›</span><span>Activity details</span><span>›</span><span className="text-[#FA4D8D]">Book</span></div>
                   <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[100px_1fr]">
                     <span className="grid h-20 w-20 place-items-center rounded-full bg-[#FA4D8D] text-white"><Check className="h-12 w-12" /></span>
-                    <div><h1 className="text-[32px] font-black">Your class is booked!</h1><p className="mt-2 text-lg font-semibold">We can&rsquo;t wait to see your little one there.</p></div>
+                    <div><h1 className="text-[32px] font-black">Your session is booked!</h1><p className="mt-2 text-lg font-semibold">We can&rsquo;t wait to see your little one there.</p></div>
                   </section>
                   <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_350px]">
                     <div className="space-y-5">
                       <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6">
-                        <h2 className="text-xl font-black">Class details</h2>
+                        <h2 className="text-xl font-black">Activity details</h2>
                         <div className="mt-5 grid gap-5 md:grid-cols-[245px_1fr]">
                           <img src={resolveThumbnail(previewFor)} alt="" className="h-52 w-full rounded-[12px] bg-[#F3EDF0] object-contain" />
                           <div>
@@ -2934,7 +2934,7 @@ export default function ActivitiesPage() {
                         </div>
                         {previewFor.description?.trim() && (
                           <div className="mt-5 border-t border-[#F4EFF0] pt-5">
-                            <h3 className="font-black">About this class</h3>
+                            <h3 className="font-black">About this activity</h3>
                             <p className="mt-3 whitespace-pre-wrap font-semibold leading-7 text-[#3f4b78]">{previewFor.description.trim()}</p>
                           </div>
                         )}
@@ -2966,7 +2966,7 @@ export default function ActivitiesPage() {
                       <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6">
                         <h2 className="text-xl font-black">Booking summary</h2>
                         <div className="mt-5 space-y-4 font-semibold">
-                          <p className="flex justify-between"><span>Class</span><span className="text-right">{previewFor.title}</span></p>
+                          <p className="flex justify-between"><span>Activity</span><span className="text-right">{previewFor.title}</span></p>
                           {nextSession && <p className="flex justify-between"><span>When</span><span className="text-right">{fmtDateTime(nextSession.starts_at)}</span></p>}
                           {previewLocation(previewFor) && <p className="flex justify-between"><span>Where</span><span className="text-right">{previewLocation(previewFor)}</span></p>}
                           <p className="flex justify-between"><span>Status</span><strong className="text-[#4CAF7D]">Confirmed</strong></p>
@@ -2977,7 +2977,7 @@ export default function ActivitiesPage() {
                       </article>
                       <article className="rounded-[16px] bg-[#F4F0FA] p-6">
                         <h2 className="text-xl font-black text-[#C7B1E6]">Need help?</h2>
-                        <p className="mt-3 font-semibold">Questions about this class? Message the provider directly.</p>
+                        <p className="mt-3 font-semibold">Questions about this session? Message the provider directly.</p>
                         <span className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#DCD2D5] px-6 py-3 text-[15px] font-extrabold text-[#34406f]"><Mail className="h-4 w-4" /> Message the provider</span>
                       </article>
                     </aside>

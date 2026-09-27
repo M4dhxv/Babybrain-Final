@@ -21,10 +21,10 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
     items: [
       ["How does booking work?", "For providers integrated with BabyBrain, you find a class you like, select your package and session, and book directly through us — no contact forms, no waiting for a reply. For providers who aren't integrated, we'll redirect you to their site to book."],
       ["Why can I book some providers on BabyBrain but get sent to others' websites?", "It depends on the plan each provider is on. Some are fully set up to book directly through BabyBrain; others aren't there yet or have decided not to integrate, so we send you to their site to book. We're working on getting more providers fully integrated to make the process smoother for you."],
-      ["What happens after I book?", "You'll get a booking confirmation by email, along with reminders before your class so nothing slips."],
+      ["What happens after I book?", "You'll get a booking confirmation by email, along with reminders before your session so nothing slips."],
       ["What if I need to cancel or reschedule?", "Cancellation and rescheduling policies are set by each provider and vary, so check the provider's page for the details before you book."],
       ["Can I get a refund?", "Whether a refund is issued is decided by each provider, under the policy on their page. Have a look there before booking so you know where you stand."],
-      ["What happens if a provider cancels a class?", "You'll get an email letting you know. What happens next — a make-up token, a refund, or something else — depends on that provider's policy."],
+      ["What happens if a provider cancels a session?", "You'll get an email letting you know. What happens next — a make-up token, a refund, or something else — depends on that provider's policy."],
       ["Do I have to create an account?", "Yes — you'll need a free account to book and to receive your confirmations and reminders. It only takes a minute."],
     ],
   },
@@ -40,11 +40,11 @@ const FAQ_GROUPS: { group: string; items: [string, React.ReactNode][] }[] = [
     group: "Managing your account",
     items: [
       ["Can I manage passes I've already bought?", "Yes — with Plus, your packages and make-up tokens across every provider live in one place on your profile, so you never lose track of what you've paid for. Just click through to use them. On the free plan, these are sent to you by email to use from there."],
-      ["How do make-up classes work?", "Make-up tokens follow each provider's own rules. With Plus, they're gathered on your profile and you click through to book one. On the free plan, they come to you by email and you book from the link there."],
+      ["How do make-up sessions work?", "Make-up tokens follow each provider's own rules. With Plus, they're gathered on your profile and you click through to book one. On the free plan, they come to you by email and you book from the link there."],
       ["What if I have more than one child?", "Add as many children as you like on the free plan — your family profile holds all of them, and you'll see suggestions based on each child's age and your preferences, with every booking in one place."],
       ["Why should I upgrade to Plus?", "Free covers everything you need to browse & book, keep your family profile and get suggestions. Plus (SGD 15/month or SGD 165/year) adds twice-weekly curated activity emails, all your packages and make-up tokens for every vendor in one place, saved favourite providers, exporting and sharing your booked activities in calendar view, messaging integrated providers and other parents booked on the same activity, and priority support."],
       ["Can I cancel my Plus subscription anytime?", "Yes. On the monthly plan you can cancel anytime with 14 days' notice. The annual plan runs for the full year and isn't refundable if you cancel partway through."],
-      ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked classes comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the class."],
+      ["Why can I see messages from parents and the provider but not respond?", "Seeing messages on your booked sessions comes with every account. Sending them is a Plus feature — and the provider needs to offer messaging too. Upgrade to Plus, and where the provider has it enabled, you'll be able to message them and other parents in the session."],
     ],
   },
   {

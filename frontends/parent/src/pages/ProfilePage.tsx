@@ -388,7 +388,7 @@ function ExportScheduleDialog({
         <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#FFC1D6]" : "text-[#59658d]"}`}>
           {invalid
             ? "The end date is before the start date."
-            : `${selected.length} ${selected.length === 1 ? "class" : "classes"} in this range`}
+            : `${selected.length} ${selected.length === 1 ? "session" : "sessions"} in this range`}
         </p>
 
         <div className="mt-4 flex gap-3">
@@ -682,7 +682,7 @@ function PackageCard({ p }: { p: PackageItem }) {
   return (
     <Card
       id={`row-${p.id}`}
-      {...(clickable ? { href: p.bookHref, title: "Book a class with this pack" } : {})}
+      {...(clickable ? { href: p.bookHref, title: "Book a session with this pack" } : {})}
       className={`flex items-center gap-4 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card transition-shadow ${clickable ? "transition hover:border-baby-pink" : "opacity-60"} ${highlighted ? HIGHLIGHT_RING : ""}`}
     >
       <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FED7E4] text-baby-cta"><Icon name="store" className="h-6 w-6" /></span>
@@ -1021,7 +1021,7 @@ function ChildrenTab({
         <>
           {kids.length === 0 ? (
             <p className="mt-4 rounded-[12px] bg-[#FFF5F8] p-5 text-center font-semibold text-[#68718f]">
-              No child profiles yet — add one to get personalised matches and track their classes.
+              No child profiles yet — add one to get personalised matches and track their sessions.
             </p>
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -1523,7 +1523,7 @@ export default function ProfilePage() {
           : `/explore?q=${encodeURIComponent(r.providers?.business_name ?? "")}`;
         return {
           id: r.id,
-          name: r.packages?.name ?? "Class package",
+          name: r.packages?.name ?? "Session package",
           provider: r.providers?.business_name ?? "A provider",
           total: r.credits_total,
           remaining: r.credits_remaining,
@@ -2255,7 +2255,7 @@ export default function ProfilePage() {
               {!packagesLoaded ? (
                 <ListRowsSkeleton count={2} lines={2} />
               ) : visiblePackages.length === 0 ? (
-                <EmptyPanel icon="store" copy="No packages yet. Providers offering class packs show a 'Buy pack' option on their class pages." cta="Browse activities" href="/explore" />
+                <EmptyPanel icon="store" copy="No packages yet. Providers offering session packs show a 'Buy pack' option on their activity pages." cta="Browse activities" href="/explore" />
               ) : (
                 <>
                   {activePackages.length > 0 && (
@@ -2293,7 +2293,7 @@ export default function ProfilePage() {
               {!tokensLoaded ? (
                 <ListRowsSkeleton count={2} lines={2} />
               ) : visibleTokens.length === 0 ? (
-                <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a class, your provider can issue one here." />
+                <EmptyPanel icon="gift" copy="No make-up tokens yet. If you miss a session, your provider can issue one here." />
               ) : splitByChild ? (
                 /* Split by child first, then active/finished within each child,
                    so a parent still sees whose token is whose. */
@@ -2892,7 +2892,7 @@ function PastActivitiesTab({
         <section>
           <h2 className="mb-2 text-sm font-black text-[#46527d]">Attended ({attended.length})</h2>
           {attended.length === 0
-            ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">No attended classes recorded yet.</p>
+            ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">No attended sessions recorded yet.</p>
             : <div className="space-y-3">{attended.map((b) => <Row key={b.id} b={b} />)}</div>}
         </section>
         <section>
@@ -2915,7 +2915,7 @@ function PastActivitiesTab({
       {loading ? (
         <BookingsSkeleton />
       ) : items.length === 0 ? (
-        <EmptyPanel icon="check" copy="Nothing here yet — classes move across once their time has passed." cta="Browse activities" href="/explore" />
+        <EmptyPanel icon="check" copy="Nothing here yet — sessions move across once their time has passed." cta="Browse activities" href="/explore" />
       ) : groups ? (
         <div className="mt-4 space-y-8">
           {groups.map((g) => (
@@ -3098,19 +3098,19 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
       : b.isCourse
       ? "This is a course — your enrolment covers the whole run, so it can't be cancelled online. Contact the provider if you need help."
       : !b.allowCancel
-      ? "The provider does not allow cancellations for this class. Contact them directly if you need help."
+      ? "The provider does not allow cancellations for this session. Contact them directly if you need help."
       : cutoffPassed(b, b.cancelCutoffH)
-        ? `The cancellation window for this class has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
+        ? `The cancellation window for this session has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
         : null;
   const reschedBlockReason = (b: BookingItem) =>
     b.isEvent
       ? "This is a ticketed event — it can't be rescheduled once booked. Contact the provider if you need help."
       : b.isCourse
-      ? "This is a course — your enrolment covers every session in the run, so there's no single class to move. Contact the provider if you need help."
+      ? "This is a course — your enrolment covers every session in the run, so there's no single session to move. Contact the provider if you need help."
       : !b.allowReschedule
-      ? "The provider does not allow rescheduling for this class. Contact them directly if you need help."
+      ? "The provider does not allow rescheduling for this session. Contact them directly if you need help."
       : cutoffPassed(b, b.resCutoffH)
-        ? `The rescheduling window for this class has closed — rescheduling closes ${hoursLabel(b.resCutoffH)} before the session.`
+        ? `The rescheduling window for this session has closed — rescheduling closes ${hoursLabel(b.resCutoffH)} before the session.`
         : null;
 
   const party = (b: BookingItem) => b.places.length > 1;
@@ -3343,7 +3343,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             {b.canClaim && (
               <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-bold text-palette-greenInk">
-                  A spot has opened up on this class — pay to confirm it before it's taken.
+                  A spot has opened up on this session — pay to confirm it before it's taken.
                 </p>
                 <button
                   type="button"
@@ -3392,8 +3392,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   {b.compensation === "none"
                     ? "Payment for this activity is non-refundable, if cancelled — no credit or make-up token was issued."
                     : b.compensation === "token"
-                    ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another class — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
-                    : `${b.places.length > 1 ? `${b.places.length} class credits have` : "1 class credit has"} been returned to your package.`}
+                    ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another session — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
+                    : `${b.places.length > 1 ? `${b.places.length} session credits have` : "1 session credit has"} been returned to your package.`}
                 </span>
               </div>
             )}

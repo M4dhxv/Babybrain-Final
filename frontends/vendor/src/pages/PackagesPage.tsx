@@ -141,7 +141,7 @@ export default function PackagesPage() {
   const [packTouched, setPackTouched] = useState<{ name?: boolean; credits?: boolean; price?: boolean }>({});
   const touch = (field: keyof typeof packTouched) => setPackTouched((t) => ({ ...t, [field]: true }));
   const packNameErr = packTouched.name && !packForm.name.trim() ? 'Give the pack a name.' : null;
-  const packCreditsErr = packTouched.credits && !(Number(packForm.credits) >= 1) ? 'At least 1 class.' : null;
+  const packCreditsErr = packTouched.credits && !(Number(packForm.credits) >= 1) ? 'At least 1 session.' : null;
   const packPriceErr = packTouched.price && packForm.price !== '' && (Number.isNaN(Number(packForm.price)) || Number(packForm.price) < 0) ? 'Enter a valid price.' : null;
 
   const load = refetch;
@@ -412,7 +412,7 @@ export default function PackagesPage() {
                   <div key={p.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <span className="font-medium text-gray-900">{p.name}</span>
-                      <span className="ml-2 text-sm text-gray-500">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</span>
+                      <span className="ml-2 text-sm text-gray-500">{p.credits} {p.credits === 1 ? "session" : "sessions"} · ${(p.price_cents / 100).toFixed(0)}</span>
                       {p.best_value && (
                         <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Best value</span>
                       )}
@@ -458,13 +458,13 @@ export default function PackagesPage() {
                       value={packForm.name}
                       onChange={(e) => setPackForm({ ...packForm, name: e.target.value })}
                       onBlur={() => touch('name')}
-                      placeholder="10-class pack"
+                      placeholder="10-session pack"
                       className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-auto', packNameErr ? 'border-red-300' : 'border-gray-300')}
                     />
                     {packNameErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packNameErr}</p>}
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Classes</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Sessions</label>
                     <NumberInput
                       value={packForm.credits}
                       onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })}
@@ -581,8 +581,8 @@ export default function PackagesPage() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-class pack limited to the Monday 4:00 pm class.</p>
-                <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per class.</p>
+                <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-session pack limited to the Monday 4:00 pm session.</p>
+                <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per session.</p>
                 <p className="mt-1 text-xs text-gray-500">Available from/until decide when parents can buy this pack. Expiry is separate — it decides how long each parent's credits stay valid, always counted from the day they buy it, not from "Available from".</p>
               </>
             )}

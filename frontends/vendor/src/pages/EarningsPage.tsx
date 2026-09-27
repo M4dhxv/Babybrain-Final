@@ -333,7 +333,7 @@ export default function EarningsPage() {
             <p className="text-sm text-gray-500">Loading…</p>
           ) : data && data.ledger.length === 0 ? (
             <p className="text-sm text-gray-500">
-              No paid bookings yet. Free classes and pack redemptions don't appear here.
+              No paid bookings yet. Free sessions and pack redemptions don't appear here.
             </p>
           ) : (
             /* Same table on every width — it just scrolls sideways on a
@@ -365,7 +365,7 @@ export default function EarningsPage() {
                         <td className="py-3">
                           <div className="text-gray-900">{row.label}</div>
                           <div className="text-xs text-gray-400">
-                            {row.source === 'package' ? 'Class pack' : 'Booking'}
+                            {row.source === 'package' ? 'Session pack' : 'Booking'}
                           </div>
                         </td>
                         <td className="py-3 text-right text-gray-900 whitespace-nowrap">{money(row.gross_cents, row.currency)}</td>

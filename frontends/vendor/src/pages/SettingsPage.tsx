@@ -550,7 +550,7 @@ export default function SettingsPage() {
                     </div>
                   ) : (
                     <p className="text-sm text-gray-400">
-                      No catalogue photos yet — used as the default photos for any class that doesn&rsquo;t have its own.
+                      No catalogue photos yet — used as the default photos for any activity that doesn&rsquo;t have its own.
                     </p>
                   )}
                 </section>
@@ -623,7 +623,7 @@ export default function SettingsPage() {
                     />
                     <label className="text-xs text-gray-500 mb-1 block">Catalogue photos ({form.gallery_urls.length}/{GALLERY_MAX})</label>
                     <p className="mb-2 text-xs text-gray-500">
-                      Shown for any class that doesn't have its own photos (see Activities → edit → Images).
+                      Shown for any activity that doesn't have its own photos (see Activities → edit → Images).
                     </p>
                     {form.gallery_urls.length > 0 && (
                       <div className="mb-2 flex flex-wrap gap-2">

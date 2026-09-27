@@ -1445,12 +1445,12 @@ export default function BookingsPage() {
                     </div>
                     {sel.child_id && (
                       <div>
-                        <div className="text-xs text-gray-500 mb-1">Skill level (this class)</div>
+                        <div className="text-xs text-gray-500 mb-1">Skill level (this session)</div>
                         <SelectField
                           value={sel.skill_level ?? ''}
                           disabled={!canManage || savingSkill}
                           onChange={(v) => setSkillLevel(sel, v)}
-                          aria-label="Skill level for this class"
+                          aria-label="Skill level for this session"
                           className="w-full px-3 py-2"
                         >
                           <Opt value="">Not set</Opt>
@@ -1703,7 +1703,7 @@ export default function BookingsPage() {
               </div>
               <div className="flex items-start gap-2 mt-5 p-3 bg-blue-50 rounded-xl">
                 <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">Promoting confirms a family that already paid (package credit, make-up token, or a free class). On a paid class they haven't paid for, it sends them a "pay now" link instead — their place is confirmed once they pay.</p>
+                <p className="text-xs text-blue-700">Promoting confirms a family that already paid (package credit, make-up token, or a free session). On a paid session they haven't paid for, it sends them a "pay now" link instead — their place is confirmed once they pay.</p>
               </div>
             </div>
           )}

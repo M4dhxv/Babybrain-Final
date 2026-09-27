@@ -216,7 +216,7 @@ export default function PayoutsCard() {
           </div>
           <div>
             <h3 className="font-semibold text-gray-900">Stripe payouts</h3>
-            <p className="text-xs text-gray-500">Where your class payments land.</p>
+            <p className="text-xs text-gray-500">Where your session payments land.</p>
           </div>
         </div>
         <button

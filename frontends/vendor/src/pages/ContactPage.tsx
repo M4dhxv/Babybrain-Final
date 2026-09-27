@@ -69,7 +69,7 @@ const FAQS: [string, ReactNode][] = [
   ],
   [
     'What is the policy on cancellations and rescheduling?',
-    'BabyBrain can be configured to reflect your own cancellation and rescheduling policies. Settings can be adjusted so that cancellation or rescheduling options are not offered, or so that they are only available up to a specified cut-off time. If you offer make-up classes or tokens, you can assign these directly to parents through your BabyBrain portal.',
+    'BabyBrain can be configured to reflect your own cancellation and rescheduling policies. Settings can be adjusted so that cancellation or rescheduling options are not offered, or so that they are only available up to a specified cut-off time. If you offer make-up sessions or tokens, you can assign these directly to parents through your BabyBrain portal.',
   ],
   [
     'How do reviews work?',

@@ -216,7 +216,7 @@ export function PoliciesManager({
               >
                 {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
               </MultiSelectField>
-              <p className="mt-1 text-[11px] text-gray-400">Leave as “All of my activities”, or tick the specific classes this applies to.</p>
+              <p className="mt-1 text-[11px] text-gray-400">Leave as “All of my activities”, or tick the specific activities this applies to.</p>
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Document (optional)</label>

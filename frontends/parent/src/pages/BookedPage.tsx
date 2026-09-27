@@ -119,7 +119,7 @@ export default function BookedPage() {
           <aside className="space-y-5">
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
-              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Class</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
+              <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Activity</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
@@ -135,7 +135,7 @@ export default function BookedPage() {
             </article>
             <article className="rounded-[16px] bg-[#F4F0FA] p-6">
               <h2 className="text-xl font-black text-baby-lilac">Need help?</h2>
-              <p className="mt-3 font-semibold">Questions about this class? Message the provider directly.</p>
+              <p className="mt-3 font-semibold">Questions about this session? Message the provider directly.</p>
               <Button
                 href={slug ? `/activity?slug=${encodeURIComponent(slug)}#enquire` : "/contact"}
                 variant="outline"

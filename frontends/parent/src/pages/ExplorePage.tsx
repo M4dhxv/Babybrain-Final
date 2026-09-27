@@ -476,10 +476,12 @@ export default function ExplorePage() {
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
   const [dateFrom, setDateFrom] = useState(() => getParam("from") || "");
   // Upper bound for the "Today / This weekend / Next 7 days" quick picks and
-  // the mobile "Pick a date" single-day input (which sets it equal to
-  // dateFrom, for an exact-day match). Empty means open-ended — the desktop
-  // "Date from" box under "More filters" is the one place that's still
-  // intentional: a broad "starting from this date" search with no end.
+  // both single-day date inputs (mobile's "Pick a date" and desktop's "More
+  // filters" box), which set it equal to dateFrom for an exact-day match.
+  // Empty means open-ended, which nothing sets by default any more — QA
+  // flagged desktop's box as the one place still searching "from this date
+  // onwards" while mobile's equivalent matched one exact day, an inconsistency
+  // rather than an intentional difference.
   const [dateTo, setDateTo] = useState(() => getParam("to") || "");
   const [pickingDate, setPickingDate] = useState(false);
   const [timeRange, setTimeRange] = useState<[number, number]>(() => {
@@ -988,8 +990,13 @@ export default function ExplorePage() {
           {showMore && (
             <div className="grid gap-3 border-t border-[#F4EFF0] pt-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-[#68718f]">Date from</span>
-                <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(""); }} className={`${selectClass} w-full`} />
+                <span className="text-xs font-bold text-[#68718f]">On this date</span>
+                {/* Exact single-day match, same as mobile's "Pick a date"
+                    (setDateTo mirrors setDateFrom) — this used to leave
+                    dateTo empty ("from this date onwards"), the one place
+                    still open-ended after the mobile fix, which read as a
+                    platform inconsistency rather than a deliberate one. */}
+                <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setDateTo(v); }} className={`${selectClass} w-full`} />
               </label>
               <label className="flex flex-col justify-center gap-1">
                 <span className="flex justify-between text-xs font-bold text-[#68718f]"><span>Price</span><span className="text-baby-pink">{priceActive ? `Up to $${maxPrice}` : "Any"}</span></span>

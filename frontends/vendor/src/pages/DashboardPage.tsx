@@ -321,7 +321,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1">
               <div className="font-semibold text-gray-900">Add an activity</div>
-              <div className="text-xs text-gray-500">Create a new class<br/>or activity</div>
+              <div className="text-xs text-gray-500">Create a new activity</div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400" />
           </button>
@@ -465,7 +465,7 @@ export default function DashboardPage() {
                       )}>
                         {booking.isRepeat ? 'Repeat' : 'New'}
                       </span>
-                      <span className="text-[10px] text-gray-400">{booking.packageName ?? 'Single class'}</span>
+                      <span className="text-[10px] text-gray-400">{booking.packageName ?? 'Single session'}</span>
                     </div>
                   </div>
                   <div className="text-right">

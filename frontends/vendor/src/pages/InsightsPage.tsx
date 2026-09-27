@@ -242,7 +242,7 @@ export default function InsightsPage() {
         </h3>
         <p className="mb-4 text-xs text-gray-500">
           Parents whose first booking with you was paid for on its own, and how many went on to buy a
-          class pack. {RANGES.find((r) => r.days === days)?.label ?? `Last ${days} days`}.
+          session pack. {RANGES.find((r) => r.days === days)?.label ?? `Last ${days} days`}.
         </p>
         {loading ? (
           <RainbowLoader className="py-6" label="Loading insights" />

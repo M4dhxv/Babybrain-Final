@@ -634,7 +634,7 @@ export default function ActivityDetailPage() {
         : null;
   const groupChatBlockedReason =
     chatBlockedReason ?? (session && !hasBooking
-      ? "The class group chat unlocks once you've booked this class. You can still chat with the provider directly."
+      ? "The session group chat unlocks once you've booked this session. You can still chat with the provider directly."
       : null);
   const requireLogin = (open: () => void) => () => {
     if (!session) goTo("/login");
@@ -756,7 +756,7 @@ export default function ActivityDetailPage() {
                       >
                         <div>
                           <h3 className="font-black">{p.name}</h3>
-                          <p className="text-sm font-semibold text-[#59658d]">{p.credits} classes · ${(p.price_cents / 100).toFixed(0)}</p>
+                          <p className="text-sm font-semibold text-[#59658d]">{p.credits} {p.credits === 1 ? "session" : "sessions"} · ${(p.price_cents / 100).toFixed(0)}</p>
                         </div>
                         {/* Picking a pack here no longer buys it — that used
                             to skip choosing a class/time and the provider's
@@ -840,7 +840,7 @@ export default function ActivityDetailPage() {
               nextPrice <= 0 ? (
                 <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
               ) : (
-                <p><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ class</span></p>
+                <p><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
               )
             ) : sessionsLoading ? (
               <div className="h-[30px] w-24 animate-pulse rounded-[6px] bg-[#F4EFF0]" />
@@ -972,7 +972,7 @@ export default function ActivityDetailPage() {
               )}
               {next && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next available class"}</strong>
+                  <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next available session"}</strong>
                   <span className="text-right">
                     {activity.wix_service_type === "COURSE" && courseRunRange ? courseRunRange : sgDateTime(next.starts_at)}
                   </span>
@@ -1054,7 +1054,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         rows={3}
-        placeholder="Share how the class went (optional)"
+        placeholder="Share how the session went (optional)"
         className="mt-3 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
       />
       {error && <p className="mt-2 text-sm font-bold text-[#FFC1D6]">{error}</p>}

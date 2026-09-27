@@ -1102,7 +1102,7 @@ export default function BookingPage() {
                     {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
                     {displayStaff && <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayStaff}</p>}
                     {activity.category_name && <p className="flex gap-2"><Icon name="music" className="h-5 w-5 text-baby-lilac" /> {[activity.category_name, activity.category_name_2].filter(Boolean).join(" · ")}</p>}
-                    <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New class"}</p>
+                    <p className="flex gap-2"><Icon name="star" className="h-5 w-5 text-baby-lilac" /> {activity.rating_count > 0 ? `${Number(activity.rating_avg).toFixed(1)} (${activity.rating_count} reviews)` : "New"}</p>
                   </div>
                 </div>
               </div>
@@ -1367,12 +1367,12 @@ export default function BookingPage() {
                     {!redeemToken && !isEvent && !isCourse && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">5. Select package</h3>
-                        <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this class on its own, or use a multi-class pack.</p>
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
                         <div className="space-y-3">
                           <PackageOption
                             selected={payWith === "single"}
                             onSelect={() => setPayWith("single")}
-                            title="Single class"
+                            title="Single session"
                             price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
                           />
                           {packageCredit && matchingCredits.length === 1 && (
@@ -1444,7 +1444,7 @@ export default function BookingPage() {
                         {restrictedCredit && !packageCredit && (
                           <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
                             You have package credits with this provider, but they can't be used for this{" "}
-                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "class" : "session slot"} — check your package's designated class or weekly slot.
+                            {restrictedCredit.activity_ids && restrictedCredit.activity_ids.length > 0 && !restrictedCredit.activity_ids.includes(activity?.id ?? "") ? "activity" : "session slot"} — check your package's designated activity or weekly slot.
                           </p>
                         )}
                       </section>
@@ -1481,12 +1481,12 @@ export default function BookingPage() {
             )}
           </div>
           {redeemToken && (
-            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this class is on the house.</p>
+            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this session is on the house.</p>
           )}
           {activity?.bookings_paused ? (
-            /* 1.1: the vendor has paused bookings for this class */
+            /* 1.1: the vendor has paused bookings for this activity */
             <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-palette-yellow">
-              <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this class are temporarily paused by the provider. Please check back later or enquire with them directly.
+              <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this activity are temporarily paused by the provider. Please check back later or enquire with them directly.
             </div>
           ) : soldOut ? (
             /* Wix Event / Wix COURSE with nothing left to book — no waitlist
@@ -1528,7 +1528,7 @@ export default function BookingPage() {
       </main>
       {dupPrompt && (
         <ConfirmDialog
-          title={dupPrompt.pending ? "Finish this booking?" : "Already booked on this class"}
+          title={dupPrompt.pending ? "Finish this booking?" : "Already booked on this session"}
           copy={
             dupPrompt.pending
               ? `Your previous attempt to book this slot for ${dupPrompt.childName} was abandoned before payment went through. Continue to complete the payment and confirm the space.`

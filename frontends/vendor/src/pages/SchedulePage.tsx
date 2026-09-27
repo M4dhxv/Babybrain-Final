@@ -668,7 +668,7 @@ function ParallelSlotGroup({
             <span className="block text-xs font-semibold text-gray-900">{sgTime(first.starts_at)}{sameEnd ? ` – ${sgTime(first.ends_at)}` : ''}</span>
             <span className="flex items-center gap-1 text-[11px] text-purple-700">
               <Users className="h-3 w-3 shrink-0" />
-              {items.length} classes
+              {items.length} sessions
             </span>
           </span>
           <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-purple-400 transition-transform', open && 'rotate-180')} />
