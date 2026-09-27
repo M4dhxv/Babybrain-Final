@@ -98,13 +98,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Unhandled action ${data.email_action_type}` }, { status: 501 });
   }
 
-  // Supabase gives us the raw token; the verify endpoint turns it into a
-  // session and forwards to redirect_to.
+  // Points at our own /auth/confirm rather than Supabase's own
+  // `/auth/v1/verify` — that raw <project-ref>.supabase.co URL (and the
+  // token) used to be plainly visible in the email's "paste this into your
+  // browser" fallback text, exposing which Supabase project and deployment
+  // back the app. /auth/confirm does the same verifyOtp server-side and
+  // only ever shows the parent our own domain.
+  const nextPath = (() => {
+    try {
+      const u = new URL(data.redirect_to || `${appUrl}/profile`);
+      // Older links (or a stale redirect_to) point at /auth/callback?next=…
+      // — unwrap that inner next rather than bouncing through it twice.
+      return u.pathname === '/auth/callback' ? u.searchParams.get('next') || '/profile' : `${u.pathname}${u.search}`;
+    } catch {
+      return '/profile';
+    }
+  })();
   const actionUrl =
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/verify` +
-    `?token=${encodeURIComponent(data.token_hash)}` +
+    `${appUrl}/auth/confirm` +
+    `?token_hash=${encodeURIComponent(data.token_hash)}` +
     `&type=${encodeURIComponent(data.email_action_type)}` +
-    `&redirect_to=${encodeURIComponent(data.redirect_to || `${appUrl}/auth/callback?next=/profile`)}`;
+    `&next=${encodeURIComponent(nextPath)}`;
 
   const email = renderEmail(
     templateKey,

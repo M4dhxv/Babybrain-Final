@@ -7,6 +7,16 @@ import { getCachedSubscription, setCachedSubscription, clearCachedSubscription }
 import { cacheInvalidate } from '@/lib/queryCache';
 import { disconnectChat } from '@/lib/chat';
 
+/** supabase-js falls back to `JSON.stringify(body)` when a GoTrue error
+ *  response has none of msg/message/error_description/error (see auth-js's
+ *  `_getErrorMessage`) — an infra-level 500 with an empty JSON body then
+ *  surfaces as the literal string "{}" here rather than a readable message.
+ *  Same fallback as the parent app's AuthProvider. */
+function authErrorMessage(error: { message: string }): string {
+  const m = error.message.trim();
+  return m && !/^[{[]/.test(m) ? m : 'Something went wrong on our end — please try again in a moment.';
+}
+
 export interface Subscription {
   plan: SubscriptionPlan;
   status: string;
@@ -277,7 +287,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     recovery,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -285,12 +295,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // `/vendor/` (BASE_URL) is silently rewritten to the parent site_url.
         redirectTo: `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`,
       });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     updatePassword: async (password) => {
       const { error } = await supabase.auth.updateUser({ password });
       setRecovery(false);
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     signOut: async () => {
       clearCachedSubscription();

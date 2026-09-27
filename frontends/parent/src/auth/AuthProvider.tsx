@@ -34,6 +34,19 @@ interface AuthState {
   refresh: () => Promise<void>;
 }
 
+/** supabase-js falls back to `JSON.stringify(body)` when a GoTrue error
+ *  response has none of msg/message/error_description/error (see auth-js's
+ *  `_getErrorMessage`) — an infra-level 500 with an empty JSON body then
+ *  surfaces as the literal string "{}" here, which read as a broken app to a
+ *  parent rather than "something went wrong, try again" (QA: sign-up showed
+ *  a bare "{}" under the plan picker). Anything that isn't plainly
+ *  human-readable falls back to a generic message instead of being shown
+ *  verbatim. */
+function authErrorMessage(error: { message: string }): string {
+  const m = error.message.trim();
+  return m && !/^[{[]/.test(m) ? m : "Something went wrong on our end — please try again in a moment.";
+}
+
 /** A paid plan chosen at sign-up, stored as auth metadata until payment lands. */
 export interface SignupPlanIntent {
   plan: "plus";
@@ -256,7 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dataResolved,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     signUp: async (email, password, fullName, onboarding, intent) => {
       const { data, error } = await supabase.auth.signUp({
@@ -273,7 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile`,
         },
       });
-      if (error) return { error: error.message };
+      if (error) return { error: authErrorMessage(error) };
       // With "Confirm email" on, Supabase won't error on a duplicate address —
       // it returns a fake user with no identities instead, so enumerating
       // registered emails isn't possible from the response alone. That's the
@@ -287,17 +300,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile` },
       });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: appUrl("/reset-password"),
       });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     updatePassword: async (password) => {
       const { error } = await supabase.auth.updateUser({ password });
-      return error ? { error: error.message } : {};
+      return error ? { error: authErrorMessage(error) } : {};
     },
     signOut: async () => {
       await supabase.auth.signOut();
