@@ -1933,7 +1933,7 @@ export default function ProfilePage() {
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:[scrollbar-width:thin] lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           <div className="min-h-full rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:min-h-0">
             <div className="flex items-center gap-3">

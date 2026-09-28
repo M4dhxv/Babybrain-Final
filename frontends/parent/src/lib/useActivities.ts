@@ -88,6 +88,11 @@ export interface ActivityQuery {
   timeMax?: number | null;
   sort?: SortOption;
   limit?: number;
+  /** Rows fetched per `loadMore()` call — separate from `limit` (the first
+   *  page's size), for a caller that reveals its own rows client-side a few
+   *  at a time and only calls `loadMore()` once the loaded batch runs out
+   *  (Explore's "Load more"). Defaults to LOAD_MORE_PAGE_SIZE. */
+  loadMoreLimit?: number;
 }
 
 /** A venue as `matching_activities`/`search_activities` return it (jsonb). */
@@ -236,6 +241,12 @@ function filterArgs(params: ActivityQuery) {
 const FRESH_MS = 60_000;
 
 const DEFAULT_PAGE_SIZE = 24;
+/** Rows pulled per background fetch once the caller has revealed everything
+ *  already in memory — a real network round trip, so it's sized like a page
+ *  (matching DEFAULT_PAGE_SIZE), not like a single reveal step. A caller that
+ *  reveals loaded rows a few at a time (Explore's "Load more") only hits this
+ *  once per batch, not once per click. */
+const LOAD_MORE_PAGE_SIZE = DEFAULT_PAGE_SIZE;
 
 /**
  * Fetches one page of published activities via the `search_activities` RPC —
@@ -302,7 +313,7 @@ export function useActivities(params: ActivityQuery = {}) {
     const { data } = await supabase.rpc("search_activities", {
       ...filterArgs(params),
       p_sort: params.sort ?? "popular",
-      p_limit: params.limit ?? DEFAULT_PAGE_SIZE,
+      p_limit: params.loadMoreLimit ?? LOAD_MORE_PAGE_SIZE,
       p_offset: activities.length,
     });
     const rows = (data ?? []) as SearchActivitiesRow[];

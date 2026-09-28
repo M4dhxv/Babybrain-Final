@@ -555,6 +555,21 @@ export default function ExplorePage() {
   // The map needs every matching pin, not just the loaded cards.
   const { activities: pinActivities, loading: pinsLoading } = useActivityPins(filterParams);
   const facetCounts = useFacetCounts(filterParams, !!mobileSheet);
+  // "Load more" reveals REVEAL_STEP more of the already-fetched rows per
+  // click first, with no network call — only once the whole loaded PAGE is
+  // revealed does the next click fall through to loadMore() and fetch a new
+  // batch. Keeps the button responsive to a click without a round trip every
+  // time, and matches the goal of not hard-fetching on every tap.
+  const REVEAL_STEP = 20;
+  const [revealCount, setRevealCount] = useState(REVEAL_STEP);
+  // A new search (any filter, region, sort, etc.) resets which of its
+  // (different) rows are revealed — reusing the same key shape the hook
+  // itself caches on, so this fires exactly when the hook's own fetch does.
+  const filterKey = JSON.stringify(filterParams);
+  useEffect(() => {
+    setRevealCount(REVEAL_STEP);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
@@ -1066,19 +1081,66 @@ export default function ExplorePage() {
                 ) : (
                   <>
                     <div className="grid gap-2.5 xl:grid-cols-2">
-                      {shown.map((activity) => (
+                      {/* Only the revealed slice renders — the rest of this
+                          fetched page sits in `activities` already, ready for
+                          the next click to reveal instantly with no fetch. */}
+                      {shown.slice(0, revealCount).map((activity) => (
                         <ActivityRow key={activity.id} activity={activity} />
                       ))}
                     </div>
-                    {hasMore && (
-                      <div className="mt-5 flex justify-center">
+                    {revealCount < total && (
+                      <div className="mt-6 flex flex-col items-center gap-2">
+                        {/* Count + progress bar, so a parent scrolling through a
+                            long list of activities can see how much is left
+                            without counting cards themselves. */}
+                        <p className="text-xs font-bold text-[#59658d]">
+                          Showing {Math.min(revealCount, activities.length)} of {total}
+                        </p>
+                        <div className="h-1 w-40 overflow-hidden rounded-full bg-[#EBE3E5]">
+                          <div
+                            className="h-full rounded-full bg-baby-cta transition-[width]"
+                            style={{ width: `${Math.round((Math.min(revealCount, activities.length) / total) * 100)}%` }}
+                          />
+                        </div>
                         <button
                           type="button"
-                          onClick={loadMore}
+                          onClick={() => {
+                            // Rows already fetched but not yet shown: just
+                            // reveal more of them — no network call. Only once
+                            // the loaded page is exhausted does a click fetch
+                            // the next one (see useActivities' loadMoreLimit).
+                            if (revealCount < activities.length) {
+                              setRevealCount((n) => Math.min(activities.length, n + REVEAL_STEP));
+                              return;
+                            }
+                            if (hasMore) {
+                              loadMore().then(() => setRevealCount((n) => n + REVEAL_STEP));
+                            }
+                          }}
                           disabled={loadingMore}
-                          className="rounded-[10px] border border-[#EBE3E5] bg-white px-6 py-2.5 text-sm font-black text-[#4a5680] shadow-card hover:border-baby-pink disabled:opacity-60"
+                          className="mt-1 inline-flex items-center gap-2 rounded-full bg-baby-cta pl-6 pr-2 py-2 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                         >
-                          {loadingMore ? "Loading…" : `Show more (${total - activities.length} left)`}
+                          {loadingMore ? (
+                            "Loading…"
+                          ) : (
+                            <>
+                              Load more
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-baby-cta">
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2.5}
+                                >
+                                  <path d="M12 5v14M5 12l7 7 7-7" />
+                                </svg>
+                              </span>
+                            </>
+                          )}
                         </button>
                       </div>
                     )}
