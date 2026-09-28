@@ -11,6 +11,7 @@ import {
   fetchWixSessionLiveness,
   fetchWixCourseSpan,
   fetchWixConfirmedAppointmentBookings,
+  fetchWixBookingStatuses,
   createWixBooking,
   createWixClassBooking,
   fetchWixBookingRevision,
@@ -819,6 +820,18 @@ async function reconcileStaleWixSessions(
     const bookedOnWix = s.wix_remaining_capacity != null && s.capacity != null && s.wix_remaining_capacity < s.capacity;
     const hasLocalBooking = bookedSessionIds.has(s.id);
     if (!hasLocalBooking && !bookedOnWix) {
+      // A row re-keyed `wixbooking:<id>` by reconcileRescheduledWixAppointments
+      // is the moved appointment's own row. Once its booking is cancelled it is
+      // stale (Wix never lists that synthetic key), but the cancelled booking
+      // still references it, so the delete below fails silently and the row
+      // stayed `scheduled` — a phantom open slot beside the real one. Settle
+      // it as cancelled instead. Scoped to this key prefix: Wix can never
+      // re-offer it, whereas a normal slot key can come back and the upsert
+      // does not reset `status`.
+      if (s.wix_slot_key!.startsWith('wixbooking:')) {
+        await admin.from('activity_sessions').update({ status: 'cancelled' }).eq('id', s.id);
+        continue;
+      }
       await admin.from('activity_sessions').delete().eq('id', s.id);
       continue;
     }
@@ -840,6 +853,85 @@ async function reconcileStaleWixSessions(
     if (dropped) {
       await cancelWixDroppedSession(admin, s as { id: string; wix_slot_key: string; starts_at: string }, dropped);
     }
+  }
+}
+
+/** A vendor cancelling an APPOINTMENT on Wix used to leave the parent's
+ *  booking `confirmed` here forever: nothing looked at Wix's booking status
+ *  (reconcileRescheduledWixAppointments only follows CONFIRMED bookings), and
+ *  the freed slot simply reappeared as bookable. Asks Wix for the current
+ *  status of every upcoming locally-held Wix appointment booking and cancels
+ *  the ones Wix reports CANCELED as a VENDOR cancellation (`cancelled_by`
+ *  set), the same stamp cancel_wix_session uses: that is what makes
+ *  notify_booking_cancelled send the class_cancelled email and
+ *  compensate_cancelled_booking (00080) issue the make-up token / return the
+ *  pack credit. Only the booking is cancelled, not its session — unlike a
+ *  dropped class occurrence the slot is still real and Wix re-offers it, so
+ *  the ordinary upsert keeps it bookable. A booking Wix doesn't return, or a
+ *  failed lookup, is left alone (the next sync tries again). Idempotent: only
+ *  pending/confirmed/waitlisted rows are touched. */
+async function cancelWixCancelledAppointmentBookings(
+  admin: SupabaseClient<Database>,
+  activityId: string,
+  creds: WixCredentials
+): Promise<void> {
+  const { data: rows } = await admin
+    .from('bookings')
+    .select('id, wix_booking_id, activity_sessions!inner(activity_id, starts_at)')
+    .eq('activity_sessions.activity_id', activityId)
+    .gt('activity_sessions.starts_at', new Date().toISOString())
+    .not('wix_booking_id', 'is', null)
+    .in('status', ['pending', 'confirmed', 'waitlisted']);
+  if (!rows?.length) return;
+
+  let statuses: Map<string, string>;
+  try {
+    statuses = await fetchWixBookingStatuses(creds, rows.map((r) => r.wix_booking_id as string));
+  } catch (e) {
+    console.error('Wix appointment cancellation check failed', activityId, e);
+    return;
+  }
+  const cancelled = rows.filter((r) => {
+    const s = statuses.get(r.wix_booking_id as string);
+    return s === 'CANCELED' || s === 'CANCELED_MANUALLY';
+  });
+  if (cancelled.length === 0) return;
+
+  // There is no portal user here, so borrow the provider's owner, then any
+  // member, then a nil uuid so the flag is never null — same fallback order as
+  // cancel_wix_session (00146).
+  const { data: act } = await admin
+    .from('activities')
+    .select('provider_id, providers(owner_id)')
+    .eq('id', activityId)
+    .maybeSingle();
+  const providerId = (act as any)?.provider_id as string | undefined;
+  let actor: string | null = (act as any)?.providers?.owner_id ?? null;
+  if (!actor && providerId) {
+    const { data: m } = await admin
+      .from('provider_members')
+      .select('user_id')
+      .eq('provider_id', providerId)
+      .not('user_id', 'is', null)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    actor = (m as any)?.user_id ?? null;
+  }
+  actor ??= '00000000-0000-0000-0000-000000000000';
+
+  for (const r of cancelled) {
+    const { error } = await admin
+      .from('bookings')
+      .update({
+        status: 'cancelled',
+        cancel_refund_mode: 'refund',
+        cancel_reason: 'Appointment cancelled by the provider on Wix',
+        cancelled_by: actor,
+      })
+      .eq('id', r.id)
+      .in('status', ['pending', 'confirmed', 'waitlisted']);
+    if (error) console.error('Wix appointment cancel failed', r.id, error);
   }
 }
 
@@ -1045,6 +1137,9 @@ export async function syncWixActivityAvailability(
   // Fix up any already-booked session Wix has since moved, before anything
   // below treats the new availability as the whole story — see the
   // function's own doc comment for why this can't just be the upsert.
+  // Wix-cancelled appointments first, so they aren't then followed as live
+  // bookings by the reschedule pass below.
+  await cancelWixCancelledAppointmentBookings(admin, activity.id, creds);
   await reconcileRescheduledWixAppointments(admin, activity.id, confirmedBookings);
   // Wix offers a rolling start time every split-interval (a 45-minute
   // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,

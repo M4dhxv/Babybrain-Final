@@ -486,6 +486,23 @@ export async function fetchWixConfirmedAppointmentBookings(creds: WixCredentials
     .map((b) => ({ id: b.id, start: b.startDate!, end: b.endDate! }));
 }
 
+/** Wix's own status (CONFIRMED | CANCELED | CANCELED_MANUALLY | ...) for
+ *  specific booking ids. Only real UUIDs are queried: a class/course booking's
+ *  `wix_booking_id` is a short reference code, which Wix rejects as an invalid
+ *  filter for the whole call. An id Wix doesn't return is simply absent from
+ *  the map — callers must treat that as "unknown", never as "cancelled". */
+export async function fetchWixBookingStatuses(creds: WixCredentials, bookingIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(bookingIds)].filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+  for (let i = 0; i < ids.length; i += 100) {
+    const data = await wixFetch<{ bookings?: { id: string; status: string }[] }>(creds, '/bookings/v2/bookings/query', {
+      query: { filter: { id: { $in: ids.slice(i, i + 100) } }, paging: { limit: 100 } },
+    });
+    for (const b of data.bookings ?? []) out.set(b.id, b.status);
+  }
+  return out;
+}
+
 export interface WixLocation {
   id: string;
   name: string;
