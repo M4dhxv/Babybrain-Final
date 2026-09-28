@@ -1552,16 +1552,18 @@ export default function ProfilePage() {
   const [justUnsubscribed, setJustUnsubscribed] = useState(false);
 
   /** Withdraws (or restores) marketing consent — set back to null / stamped
-   *  with now(), per the column's own doc comment in migration 00094. */
+   *  with now(), per the column's own doc comment in migration 00094. Goes
+   *  through the server so the choice also reaches the Klaviyo list; a
+   *  direct table write would leave Klaviyo still emailing someone who
+   *  unsubscribed here. */
   async function setMarketingConsent(consented: boolean) {
     if (!session) return;
     setConsentBusy(true);
     try {
-      await supabase
-        .from("parent_profiles")
-        .update({ marketing_consent_at: consented ? new Date().toISOString() : null })
-        .eq("id", session.user.id);
+      await apiPost("/api/customer/marketing-consent", { consented });
       refresh();
+    } catch (e) {
+      console.error("[marketing consent] save failed", e);
     } finally {
       setConsentBusy(false);
     }
@@ -2255,6 +2257,16 @@ export default function ProfilePage() {
             </div>
           )}
 
+          {/* A Free parent who buys a pack returns here from Stripe. Without
+              this they only saw the Plus lock and couldn't tell the purchase
+              worked (guide review 28 Sep). The credits do show on the
+              provider's booking page for Free parents too. */}
+          {tab === "packages" && planKnown && !isPlus && getParam("purchase") === "success" && (
+            <p role="status" className="mb-4 rounded-[12px] bg-[#F1FBEF] p-4 font-semibold text-palette-green">
+              <Icon name="check" className="mr-2 inline h-5 w-5" />
+              Payment received — your pack is ready. We&apos;ve emailed you the details, and your credits appear automatically when you book a class with this provider.
+            </p>
+          )}
           {tab === "packages" && planKnown && !isPlus && (
             <PlusLock
               title="Packages are a Plus feature"

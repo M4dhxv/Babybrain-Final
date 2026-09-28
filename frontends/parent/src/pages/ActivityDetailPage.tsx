@@ -12,7 +12,7 @@ import { useActivityDetail, useFavorite, usePlan, isPackOnSale } from "../lib/da
 import { supabase } from "../lib/supabase";
 import { cacheFetch } from "../lib/queryCache";
 import { goTo, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref } from "../lib/nav";
-import { sgDateTime, sgDayRange, courseStrands, isMultiDay } from "../lib/schedule";
+import { sgDateTime, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { formatDuration } from "../lib/database.types";
@@ -572,6 +572,11 @@ export default function ActivityDetailPage() {
    * to the same place. */
   const bookHref = `/book?slug=${activity.slug}${pickedSessionId ? `&session=${encodeURIComponent(pickedSessionId)}` : ""}${pickedPackId ? `&pack=${encodeURIComponent(pickedPackId)}` : ""}`;
 
+  // Dates past their booking cut-off stay out of the picker (founder, 28 Sep):
+  // the server refuses them anyway, so offering one only led to an error.
+  const openSessions = sessions.filter((s) =>
+    bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity.booking_cutoff_minutes)
+  );
   const next = sessions[0];
   const nextMins = next
     ? Math.round((new Date(next.ends_at).getTime() - new Date(next.starts_at).getTime()) / 60000)
@@ -742,10 +747,12 @@ export default function ActivityDetailPage() {
                   <div className="h-14 rounded-[10px] bg-[#F4EFF0]" />
                 </div>
               ) : (
-                sessions.length > 0 ? (
-                  <SessionSchedule sessions={sessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
+                openSessions.length > 0 ? (
+                  <SessionSchedule sessions={openSessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
                 ) : (
-                  <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
+                  <p className="text-sm font-semibold text-[#68718f]">
+                    {sessions.length > 0 ? "Bookings for the upcoming sessions are closed." : "No upcoming sessions scheduled."}
+                  </p>
                 )
               )}
             </section>

@@ -3,12 +3,12 @@ import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
-import { klaviyoEnabled, metricFor, trackEvent, upsertProfile } from '@/lib/klaviyo';
+import { klaviyoEnabled, metricFor, setMarketingSubscription, trackEvent, upsertProfile } from '@/lib/klaviyo';
 import { sendPushToUser } from '@/lib/push';
 
 /** Chat reply emails wait this long and are dropped if the message was read. */
-const CHAT_TYPES = new Set(['provider_message', 'provider_message_response']);
-const CHAT_EMAIL_DELAY_MS = 8 * 60 * 60 * 1000;
+const CHAT_TYPES = new Set(['provider_message', 'provider_message_response', 'class_group_message', 'provider_class_group_message']);
+const CHAT_EMAIL_DELAY_MS = 4 * 60 * 60 * 1000; // keep in step with send_pending_chat_emails() (00190)
 
 async function chatMessageRead(channelId: unknown, userId: string, sentAt: Date): Promise<boolean> {
   if (typeof channelId !== 'string') return false;
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   }
 
   // Push goes out on this first call, ahead of the chat-email-delay logic
-  // below — unlike email, push shouldn't wait 8h. push_status guards against
+  // below — unlike email, push shouldn't wait 4h. push_status guards against
   // the delayed chat re-post (below) sending it a second time.
   if (notification.push_status === 'pending') {
     const pushData = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     await admin.from('notifications').update({ push_status: 'sent' }).eq('id', notificationId);
   }
 
-  // Chat replies: hold the email until the message has sat unread for 8h.
+  // Chat replies: hold the email until the message has sat unread for 4h.
   // Left 'pending' while waiting; the hourly send_pending_chat_emails() cron
   // re-posts them here once they're old enough.
   if (CHAT_TYPES.has(notification.type)) {
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
   // other auth user) are looked up via the auth admin API.
   const { data: profile } = await admin
     .from('parent_profiles')
-    .select('email, full_name')
+    .select('email, full_name, marketing_consent_at')
     .eq('id', notification.user_id)
     .maybeSingle();
 
@@ -149,9 +149,19 @@ export async function POST(request: Request) {
   // Mirror the event into Klaviyo so the marketing flows have something to
   // trigger on. No-ops unless KLAVIYO_API_KEY is set, and never blocks the
   // transactional send above.
+  //
+  // Consent gate (PDPA): parents who gave marketing consent only. A vendor
+  // has no parent_profiles row, so vendors are never sent either.
   const metric = metricFor(notification.type);
-  if (metric && klaviyoEnabled()) {
-    await upsertProfile({ email, firstName: name, properties: { babybrain_user_id: notification.user_id } });
+  const consented = Boolean(profile?.marketing_consent_at);
+  if (metric && consented && klaviyoEnabled()) {
+    await upsertProfile({ email, firstName: name, properties: { babybrain_user_id: notification.user_id, marketing_consent: true } });
+    // The welcome is sent once, right after sign-up, so it is where consent
+    // given on the sign-up form reaches the Klaviyo list. Later changes go
+    // through /api/customer/marketing-consent.
+    if (['welcome', 'parent_welcome_free', 'parent_welcome_paid'].includes(notification.type)) {
+      await setMarketingSubscription(email, true);
+    }
     await trackEvent({
       metric,
       email,

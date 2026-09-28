@@ -12,6 +12,12 @@
  *
  * Set KLAVIYO_API_KEY (a private `pk_…` key) to switch this on. Without it
  * every call is a no-op, so nothing breaks in environments that don't use it.
+ * KLAVIYO_LIST_ID (the BabyBrain newsletter list) additionally syncs the
+ * email marketing subscription — see setMarketingSubscription.
+ *
+ * Consent (PDPA): only parents with marketing consent (parent_profiles.
+ * marketing_consent_at) are sent to Klaviyo at all. Vendors and non-consenting
+ * parents never are — the gate lives in the notifications webhook.
  *
  * Metric names are stable — renaming one breaks the flow attached to it.
  */
@@ -118,6 +124,44 @@ export async function trackEvent(params: {
           },
         },
       },
+    },
+  });
+}
+
+/**
+ * Email marketing subscription on the BabyBrain list (KLAVIYO_LIST_ID).
+ *
+ * Only ever called on an explicit consent action: ticking the box at sign-up
+ * (applied when the welcome email goes out) or Subscribe / Unsubscribe in the
+ * parent's Settings (and the footer unsubscribe link, which lands there).
+ * Deliberately NOT called on every event: someone who unsubscribes inside
+ * Klaviyo must never be quietly re-subscribed by a booking email.
+ *
+ * No-op unless both KLAVIYO_API_KEY and KLAVIYO_LIST_ID are set.
+ */
+export async function setMarketingSubscription(email: string, subscribed: boolean): Promise<boolean> {
+  const listId = process.env.KLAVIYO_LIST_ID;
+  if (!listId) return false;
+  const kind = subscribed ? 'profile-subscription-bulk-create-job' : 'profile-subscription-bulk-delete-job';
+  return klaviyo(subscribed ? '/profile-subscription-bulk-create-jobs' : '/profile-subscription-bulk-delete-jobs', {
+    data: {
+      type: kind,
+      attributes: {
+        profiles: {
+          data: [
+            {
+              type: 'profile',
+              attributes: {
+                email,
+                subscriptions: {
+                  email: { marketing: { consent: subscribed ? 'SUBSCRIBED' : 'UNSUBSCRIBED' } },
+                },
+              },
+            },
+          ],
+        },
+      },
+      relationships: { list: { data: { type: 'list', id: listId } } },
     },
   });
 }

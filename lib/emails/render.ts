@@ -285,7 +285,12 @@ const T: Record<string, Template> = {
       // `manual` is set by notify_manual_make_up_token() (migration 00150): the
       // provider issued it by hand, so it may carry an expiry and isn't
       // necessarily a replacement for a cancelled booking.
-      (d.manual
+      // `reason: 'waitlist_race'` (lib/confirm-paid-booking-seats.ts): two
+      // waitlisted parents paid for the same freed seat and this one lost.
+      // No cash refunds, so the payment became a token.
+      (d.reason === 'waitlist_race'
+        ? p(`Someone else claimed the spot on ${bold(str(d, 'activity_name') ?? 'the class')} a moment before your payment went through. Your payment has been turned into a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}, so you haven’t lost anything. It doesn’t expire, and you’re still on the waitlist.`)
+        : d.manual
         ? p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has issued you a make-up token${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name') as string)}` : ''}. ${str(d, 'expires_on') ? `Use it before ${bold(str(d, 'expires_on') as string)}.` : 'It doesn’t expire.'}`)
         : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a class')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
       p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
@@ -365,6 +370,13 @@ const T: Record<string, Template> = {
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`You have a response to a message you sent, ${link(ctx, '/login', 'log in')} to view it.`) +
+      sign),
+
+  // Parent side of the class group chat email; see provider_class_group_message.
+  class_group_message: (d, ctx) =>
+    wrap(ctx, 'New messages in your class group chat 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'class')} group chat. ${link(ctx, str(d, 'url') ?? '/profile?tab=messages', 'Open the chat')} to read and reply.`) +
       sign),
 
   unsubscribe_response: (d, ctx) =>
@@ -475,6 +487,15 @@ const T: Record<string, Template> = {
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`You have a response to a message you sent, ${link(ctx, '/vendor', 'log in')} to view it.`) +
+      sign),
+
+  // Class group chat (class-/session- channels), sent 4h after a message the
+  // recipient still hasn't read. At most one pending per person per group
+  // (app/api/webhooks/stream), so a busy group sends one email, not dozens.
+  provider_class_group_message: (d, ctx) =>
+    wrap(ctx, 'New messages in your class group chat 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'class')} group chat. ${link(ctx, '/vendor', 'Log in')} to read and reply.`) +
       sign),
 
   provider_unsubscribe_response: (d, ctx) =>

@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     // contested freed seat rather than each independently confirming it.
     // RLS is bypassed by the admin client, so scope reads/writes to this
     // parent's own bookings.
-    const { confirmedIds } = await confirmPaidBookingSeats(admin, {
+    const { confirmedIds, tokenIds } = await confirmPaidBookingSeats(admin, {
       seatIds,
       groupId,
       bookingId,
@@ -173,12 +173,14 @@ export async function POST(request: Request) {
 
     // Same ledger entry the webhook would have written. recordSale is
     // idempotent on the payment intent, so whichever path runs first wins.
-    // Only the seats that actually got confirmed count toward gross.
-    if (confirmedIds.length > 0) {
+    // Confirmed seats and make-up-token seats both count toward gross (no
+    // cash refunds, so a token seat's money is kept).
+    const earnedIds = [...confirmedIds, ...tokenIds];
+    if (earnedIds.length > 0) {
       const { data: booked } = await admin
         .from('bookings')
         .select('amount, provider_id')
-        .in('id', confirmedIds)
+        .in('id', earnedIds)
         .eq('user_id', user.id);
       const rows = booked ?? [];
       const providerId = rows[0]?.provider_id ?? null;

@@ -149,80 +149,14 @@ try {
   check('cancel_booking cancels but does NOT refund', cancelled.status === 'cancelled' && cancelled.payment_status === 'paid',
     `${cancelled.status}/${cancelled.payment_status}`);
 
-  // --- 6. A real charge, then a real refund through our endpoint ---
-  const pm = await stripe.paymentMethods.create({ type: 'card', card: { token: 'tok_visa' } });
-  const intent = await stripe.paymentIntents.create({
-    amount: 4500, currency: 'sgd', payment_method: pm.id, confirm: true,
-    automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-  });
-  check('Test charge succeeded', intent.status === 'succeeded', intent.status);
-
-  await admin.from('bookings').update({ payment_status: 'paid', status: 'confirmed', stripe_payment_intent: intent.id, amount: 45 }).eq('id', booking.id);
-  const { data: earning } = await admin.from('provider_earnings').insert({
-    provider_id: provider.id, source: 'booking', booking_id: booking.id, gross_cents: 4500,
-    commission_cents: 450, net_cents: 4050, commission_rate: 0.1, fee_payer: 'vendor',
-    routed_to_connect: false, stripe_payment_intent: intent.id, status: 'platform_owed',
-  }).select().single();
-
-  // Staff-level users must not be able to refund.
-  const staffEmail = `pay.staff.${stamp}@babybrain-validation.test`;
-  const { data: staffU } = await admin.auth.admin.createUser({ email: staffEmail, password, email_confirm: true });
-  await admin.from('provider_members').insert({ provider_id: provider.id, user_id: staffU.user.id, role: 'staff', status: 'active' });
-  const staffRes = await fetch(`${API}/api/vendor/bookings/refund`, {
-    method: 'POST', headers: hdr(await token(staffEmail)),
-    body: JSON.stringify({ provider_id: provider.id, booking_id: booking.id }),
-  });
-  check('Staff cannot issue refunds', staffRes.status === 403, `HTTP ${staffRes.status}`);
-  await admin.auth.admin.deleteUser(staffU.user.id);
-
-  // A refund larger than the sale is rejected.
-  const tooBig = await fetch(`${API}/api/vendor/bookings/refund`, {
-    method: 'POST', headers: hdr(vendorToken),
-    body: JSON.stringify({ provider_id: provider.id, booking_id: booking.id, amount_cents: 999999 }),
-  });
-  check('Over-refunding is rejected', tooBig.status === 400, `HTTP ${tooBig.status}`);
-
-  // The real thing.
-  const refundRes = await fetch(`${API}/api/vendor/bookings/refund`, {
+  // --- 6. No cash refunds (founder, 28 Sep): the vendor refund endpoint was
+  // removed on 29 Sep, so a cancelled booking only ever returns a credit or a
+  // make-up token (step 5 above).
+  const goneRes = await fetch(`${API}/api/vendor/bookings/refund`, {
     method: 'POST', headers: hdr(vendorToken),
     body: JSON.stringify({ provider_id: provider.id, booking_id: booking.id }),
   });
-  const refundBody = await refundRes.json();
-  check('Owner can refund a paid booking', refundRes.ok, refundBody.error ?? '');
-  check('Refund is for the full amount', refundBody.amount_cents === 4500, String(refundBody.amount_cents));
-
-  const refreshed = await stripe.paymentIntents.retrieve(intent.id);
-  check('Stripe shows the charge refunded', refreshed.status === 'succeeded' && refreshed.amount_received === 4500
-    && (await stripe.refunds.list({ payment_intent: intent.id })).data.length === 1);
-
-  const { data: afterBooking } = await admin.from('bookings').select('payment_status, status').eq('id', booking.id).single();
-  check('Booking marked refunded + cancelled', afterBooking.payment_status === 'refunded' && afterBooking.status === 'cancelled',
-    `${afterBooking.payment_status}/${afterBooking.status}`);
-
-  const { data: afterEarning } = await admin.from('provider_earnings').select('status').eq('id', earning.id).single();
-  check('Earnings ledger marks the sale refunded', afterEarning.status === 'refunded', afterEarning.status);
-
-  // Refunding twice is refused by Stripe, not silently double-refunded.
-  const again = await fetch(`${API}/api/vendor/bookings/refund`, {
-    method: 'POST', headers: hdr(vendorToken),
-    body: JSON.stringify({ provider_id: provider.id, booking_id: booking.id }),
-  });
-  const againBody = await again.json();
-  check('Refunding an already-refunded booking is a no-op', again.ok && againBody.amount_cents === 0, JSON.stringify(againBody));
-
-  // --- 7. Another vendor's booking is off limits ---
-  const otherEmail = `pay.other.${stamp}@babybrain-validation.test`;
-  const { data: otherU } = await admin.auth.admin.createUser({ email: otherEmail, password, email_confirm: true });
-  const { data: otherProv } = await admin.from('providers')
-    .insert({ owner_id: otherU.user.id, business_name: `Other Co ${stamp}`, status: 'active' }).select().single();
-  await admin.from('provider_members').insert({ provider_id: otherProv.id, user_id: otherU.user.id, role: 'owner', status: 'active' });
-  const crossRes = await fetch(`${API}/api/vendor/bookings/refund`, {
-    method: 'POST', headers: hdr(await token(otherEmail)),
-    body: JSON.stringify({ provider_id: otherProv.id, booking_id: booking.id }),
-  });
-  check('Cannot refund another business s booking', crossRes.status === 404, `HTTP ${crossRes.status}`);
-  await admin.from('providers').delete().eq('id', otherProv.id);
-  await admin.auth.admin.deleteUser(otherU.user.id);
+  check('Vendor cash-refund endpoint no longer exists', goneRes.status === 404, `HTTP ${goneRes.status}`);
 } finally {
   await admin.from('provider_earnings').delete().eq('provider_id', provider.id);
   if (bookingId) await admin.from('bookings').delete().eq('id', bookingId);

@@ -1,14 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
-import { getStripe } from '@/lib/stripe';
 
 type Admin = SupabaseClient<Database>;
 
 export interface ConfirmPaidSeatsResult {
   confirmedIds: string[];
   /** Charged but couldn't be seated because a concurrent claim on the same
-   *  freed seat won the race — refunded here, left on the waitlist. */
-  refundedIds: string[];
+   *  freed seat won the race. No cash refunds: the payment became a make-up
+   *  token for the vendor and the seat stays on the waitlist. The money is
+   *  kept, so these count toward the vendor's earnings like confirmed seats. */
+  tokenIds: string[];
 }
 
 /**
@@ -24,16 +25,15 @@ export interface ConfirmPaidSeatsResult {
  * same freed seat could both pay and both get confirmed, a real overbook.
  * confirm_paid_booking_seats() (migration 00180) closes that under the same
  * session-row lock handle_booking_insert already uses; this wrapper then
- * refunds whoever this checkout charged but couldn't seat, leaving them on
- * the waitlist rather than paid-but-not-queued or silently out of pocket.
+ * gives whoever this checkout charged but couldn't seat a make-up token for
+ * the vendor (no cash refunds), leaving them on the waitlist rather than
+ * paid-but-not-queued or silently out of pocket.
  *
  * Callers: compute the provider_earnings ledger's gross from `confirmedIds`
- * only, not every seat this checkout charged — a refunded loser's money was
- * never really earned. This deliberately does NOT touch provider_earnings
- * itself (unlike lib/refunds.ts's refundBooking): that ledger's one row per
- * payment_intent covers every seat in the checkout, and marking it
- * "refunded" here would wrongly zero out the seats that stayed confirmed
- * when only one of several lost the race.
+ * plus `tokenIds`. The money for a token seat is kept (the token is redeemed
+ * later as a class at the same vendor), so it was earned like a confirmed
+ * seat. This deliberately does NOT touch provider_earnings itself: that
+ * ledger's one row per payment_intent covers every seat in the checkout.
  */
 export async function confirmPaidBookingSeats(
   admin: Admin,
@@ -62,7 +62,7 @@ export async function confirmPaidBookingSeats(
     const { data } = await q;
     ids = (data ?? []).map((r) => r.id);
   }
-  if (ids.length === 0) return { confirmedIds: [], refundedIds: [] };
+  if (ids.length === 0) return { confirmedIds: [], tokenIds: [] };
 
   const { data: rows, error } = await admin.rpc('confirm_paid_booking_seats', {
     p_seat_ids: ids,
@@ -70,57 +70,98 @@ export async function confirmPaidBookingSeats(
   });
   if (error || !rows) {
     console.error('[confirmPaidBookingSeats] RPC failed:', error?.message ?? 'no rows returned');
-    return { confirmedIds: [], refundedIds: [] };
+    return { confirmedIds: [], tokenIds: [] };
   }
 
   const confirmedIds = rows.filter((r) => r.confirmed).map((r) => r.id);
   const losers = rows.filter((r) => !r.confirmed).map((r) => r.id);
 
-  const refundedIds: string[] = [];
+  const tokenIds: string[] = [];
   for (const id of losers) {
-    if (await refundLostWaitlistClaim(admin, id)) refundedIds.push(id);
+    if (await compensateLostWaitlistClaim(admin, id)) tokenIds.push(id);
   }
 
-  return { confirmedIds, refundedIds };
+  return { confirmedIds, tokenIds };
 }
 
 /**
- * Refund a single seat that lost the capacity race in
- * confirm_paid_booking_seats — same split-aware refund logic as
- * lib/refunds.ts's refundBooking, but deliberately does NOT cancel the
- * booking: the parent still belongs on the waitlist, they just didn't win
- * this particular freed seat. Never throws — called from webhook/reconcile,
- * which must not fail over a refund hiccup.
+ * Compensate a single seat that lost the capacity race in
+ * confirm_paid_booking_seats. BabyBrain gives no cash refunds, only credits
+ * and make-up tokens (founder, 29 Sep), so the payment becomes a make-up token
+ * for this vendor instead of going back to the card. It used to be refunded.
+ *
+ * The booking is deliberately NOT cancelled: the parent keeps their place on
+ * the waitlist, they just didn't win this particular freed seat. Its
+ * payment_status is never set to 'paid' (the RPC only does that for seats it
+ * confirms), so it can't later be auto-confirmed as "already paid" on top of
+ * the token.
+ *
+ * Idempotent on the booking: the webhook and /api/stripe/reconcile both run
+ * this for the same checkout, and only the first issues a token. Never throws.
  */
-async function refundLostWaitlistClaim(admin: Admin, bookingId: string): Promise<boolean> {
-  const { data: booking } = await admin
-    .from('bookings')
-    .select('id, amount, stripe_payment_intent, payment_status')
-    .eq('id', bookingId)
-    .maybeSingle();
-  if (!booking || !booking.stripe_payment_intent || booking.payment_status === 'refunded') return false;
-
-  const amountCents = Math.round(Number(booking.amount ?? 0) * 100);
-  if (amountCents <= 0) return false;
-
+async function compensateLostWaitlistClaim(admin: Admin, bookingId: string): Promise<boolean> {
   try {
-    const stripe = getStripe();
-    const intent = await stripe.paymentIntents.retrieve(booking.stripe_payment_intent, {
-      expand: ['latest_charge'],
+    const { data: booking } = await admin
+      .from('bookings')
+      .select('id, user_id, child_id, provider_id, session_id, amount, stripe_payment_intent')
+      .eq('id', bookingId)
+      .maybeSingle();
+    if (!booking || !booking.user_id || !booking.provider_id || !booking.stripe_payment_intent) return false;
+    if (Math.round(Number(booking.amount ?? 0) * 100) <= 0) return false;
+
+    const { data: existing } = await admin
+      .from('make_up_tokens')
+      .select('id')
+      .eq('origin_booking_id', bookingId)
+      .limit(1)
+      .maybeSingle();
+    if (existing) return true;
+
+    // auto_issued: the manual-token trigger stays quiet; the email below
+    // explains what actually happened.
+    const { data: token, error } = await admin
+      .from('make_up_tokens')
+      .insert({
+        provider_id: booking.provider_id,
+        user_id: booking.user_id,
+        child_id: booking.child_id,
+        origin_booking_id: bookingId,
+        status: 'issued',
+        auto_issued: true,
+      })
+      .select('id')
+      .single();
+    if (error || !token) {
+      console.error('[compensateLostWaitlistClaim] token insert failed for', bookingId, error?.message);
+      return false;
+    }
+
+    const { data: session } = await admin
+      .from('activity_sessions')
+      .select('activities(title, slug, providers(business_name))')
+      .eq('id', booking.session_id)
+      .maybeSingle();
+    const act = (session as { activities?: { title?: string; slug?: string; providers?: { business_name?: string } } } | null)?.activities;
+    const activityName = act?.title ?? null;
+    const providerName = act?.providers?.business_name ?? null;
+
+    await admin.from('notifications').insert({
+      user_id: booking.user_id,
+      type: 'make_up_token_issued',
+      title: 'Make-up token issued',
+      body: `Someone else claimed the spot${activityName ? ` on ${activityName}` : ''} just before your payment went through. Your payment is now a make-up token${providerName ? ` for ${providerName}` : ''}, and you're still on the waitlist.`,
+      data: {
+        reason: 'waitlist_race',
+        activity_name: activityName,
+        provider_name: providerName,
+        url: act?.slug ? `/book?slug=${act.slug}&token=${token.id}` : '/profile?tab=makeup',
+        token_id: token.id,
+        booking_id: bookingId,
+      },
     });
-    const charge = intent.latest_charge as { transfer?: unknown; application_fee_amount?: number | null } | null;
-    await stripe.refunds.create({
-      payment_intent: booking.stripe_payment_intent,
-      amount: amountCents,
-      ...(charge?.application_fee_amount ? { refund_application_fee: true } : {}),
-      ...(charge?.transfer ? { reverse_transfer: true } : {}),
-      metadata: { booking_id: bookingId, reason: 'lost_waitlist_claim_race' },
-    });
+    return true;
   } catch (e) {
-    console.error('[refundLostWaitlistClaim] Stripe refund failed for', bookingId, e);
+    console.error('[compensateLostWaitlistClaim] failed for', bookingId, e);
     return false;
   }
-
-  await admin.from('bookings').update({ payment_status: 'refunded' as const }).eq('id', bookingId);
-  return true;
 }

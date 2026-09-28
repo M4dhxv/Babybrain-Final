@@ -123,7 +123,7 @@ export async function POST(request: Request) {
         {
           error: cutoff === 0
             ? 'This class has already started.'
-            : `Bookings for this class close ${cutoff} minutes before it starts.`,
+            : 'Bookings for this class are closed.',
         },
         { status: 400 }
       );

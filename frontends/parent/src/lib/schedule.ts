@@ -79,6 +79,14 @@ export const sgShortRange = (start: string, endRaw: string) => {
 export const isMultiDay = (start: string, end: string | null | undefined) =>
   !!end && (new Date(end).getTime() - new Date(start).getTime() > 24 * 60 * 60 * 1000 || isAllDay(start, end));
 
+/** Whether a session can still be booked: the same cut-off the database
+ *  enforces (enforce_booking_insert_defaults) — the session's own cut-off,
+ *  else the activity's, else 15 minutes before the start. Used to keep dates
+ *  whose bookings have closed out of the picker, so a parent isn't offered a
+ *  time only to be told "Bookings for this class are closed." at checkout. */
+export const bookingOpen = (startsAt: string, cutoffMinutes: number | null | undefined, now = Date.now()) =>
+  new Date(startsAt).getTime() - (cutoffMinutes ?? 15) * 60_000 > now;
+
 /** A Wix COURSE runs on more than one weekly slot — e.g. Wednesdays
  *  5:30–6:30 pm and Thursdays 5:30–7:00 pm — and one enrolment covers all
  *  of them. Groups a course's occurrences into those distinct strands

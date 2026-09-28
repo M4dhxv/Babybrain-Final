@@ -18,7 +18,7 @@ import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam } from "../lib/nav";
-import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands } from "../lib/schedule";
+import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
 import { useActivityDetail, isPackOnSale } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
@@ -364,8 +364,11 @@ export default function BookingPage() {
   }
 
   // Group upcoming sessions by date so the user picks a date, then a time.
+  // Times past their booking cut-off are left out: the server would refuse
+  // them with "Bookings for this class are closed." (founder, 28 Sep).
   const byDate: Record<string, ActivitySession[]> = {};
   sessions.forEach((s) => {
+    if (!bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes)) return;
     (byDate[sgDay(s.starts_at)] ||= []).push(s);
   });
   const dates = Object.keys(byDate);
@@ -408,15 +411,18 @@ export default function BookingPage() {
   useEffect(() => {
     if (!preselectPending || loading) return;
     // The slot may be gone by the time the parent opens the email — someone
-    // else booked it, or the vendor pulled the session. Fall through to the
-    // normal default rather than leaving the picker empty.
+    // else booked it, the vendor pulled the session, or its booking cut-off
+    // has passed. Fall through to the normal default rather than leaving the
+    // picker empty or pre-selecting a time the server will refuse.
     const want = sessions.find((x) => x.id === wantSessionId);
-    if (want) {
+    const wantOpen = !!want && (isEvent || isCourse ||
+      bookingOpen(want.starts_at, want.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes));
+    if (want && wantOpen) {
       setDateKey(sgDay(want.starts_at));
       setSessionId(want.id);
     }
     setPreselectPending(false);
-  }, [preselectPending, loading, sessions, wantSessionId]);
+  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes]);
 
   useEffect(() => {
     if (preselectPending) return;
@@ -955,9 +961,9 @@ export default function BookingPage() {
       else setErr("Could not start checkout — please try again.");
     } catch (e) {
       console.error(e);
-      // Show the server's reason (e.g. "Bookings for this class close 1440
-      // minutes before it starts.") — the same message the normal booking
-      // flow shows for the same class.
+      // Show the server's reason (e.g. "Bookings for this class are
+      // closed.") — the same message the normal booking flow shows for the
+      // same class.
       setErr(e instanceof Error && e.message ? cleanRpcErrorMessage(e.message) : "Could not start checkout — please try again.");
     } finally {
       setBusy(false);
@@ -1149,7 +1155,12 @@ export default function BookingPage() {
                         </div>
                       </section>
                     )}
-                    {!isEvent && !isCourse && (
+                    {!isEvent && !isCourse && dates.length === 0 && (
+                      <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
+                        Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
+                      </p>
+                    )}
+                    {!isEvent && !isCourse && dates.length > 0 && (
                       <>
                         <section>
                           <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>

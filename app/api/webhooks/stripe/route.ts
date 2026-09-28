@@ -465,9 +465,9 @@ export async function POST(request: Request) {
         // session-row lock before confirming a waitlisted seat being claimed
         // via "Pay now" — a pending seat (already reserved at booking time)
         // is always confirmed. Anyone this checkout charged but couldn't
-        // seat because a concurrent claim won the race is refunded here and
-        // left on the waitlist.
-        const { confirmedIds } = await confirmPaidBookingSeats(admin, {
+        // seat because a concurrent claim won the race gets a make-up token
+        // for the vendor (no cash refunds) and stays on the waitlist.
+        const { confirmedIds, tokenIds } = await confirmPaidBookingSeats(admin, {
           seatIds,
           groupId,
           bookingId,
@@ -475,15 +475,16 @@ export async function POST(request: Request) {
         });
 
         // Ledger entry so the vendor can see what they earned on this booking
-        // and what was deducted. Idempotent on the payment intent. Only the
-        // seats that actually got confirmed count toward gross — a refunded
-        // loser's money was never really earned.
+        // and what was deducted. Idempotent on the payment intent. Confirmed
+        // seats and token seats both count toward gross: a token seat's money
+        // is kept and later redeemed as a class at the same vendor.
         // provider_id is stamped on the booking by handle_booking_insert.
-        if (confirmedIds.length > 0) {
+        const earnedIds = [...confirmedIds, ...tokenIds];
+        if (earnedIds.length > 0) {
           const { data: booked } = await admin
             .from('bookings')
             .select('amount, provider_id')
-            .in('id', confirmedIds);
+            .in('id', earnedIds);
           const rows = booked ?? [];
           const providerId = rows[0]?.provider_id ?? null;
           if (providerId) {
