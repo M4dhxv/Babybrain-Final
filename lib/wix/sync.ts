@@ -1010,6 +1010,37 @@ export type WixAvailabilitySyncResult =
   | { kind: 'class'; sessions: WixClassSession[]; courseSpan: { start: string; end: string } | null }
   | { kind: 'appointment'; slots: WixTimeSlot[] };
 
+/** How far ahead the class-session refresh has to look for THIS activity.
+ *  The cron's base window is short (14 days for a CLASS), but a parent can hold
+ *  a booking on an occurrence well beyond it. If the vendor moves such an
+ *  occurrence on Wix, a window that doesn't reach it never sees the new time:
+ *  the booked row stays stale (Wix still lists the session, so it is not
+ *  "dropped") and `on_session_rescheduled` doesn't fire until the date finally
+ *  comes inside the window, about two weeks before the class, if ever. So the
+ *  window is stretched to the furthest occurrence with an active booking, plus
+ *  a margin so a move a few weeks later is still inside it. Capped so one odd
+ *  far-future booking can't turn every sync into a huge fetch. CLASS only: a
+ *  COURSE's booked row is an anchor spanning the whole run, not an occurrence. */
+const BOOKED_CLASS_WINDOW_MARGIN_DAYS = 30;
+const BOOKED_CLASS_WINDOW_MAX_DAYS = 180;
+async function classWindowDays(admin: SupabaseClient<Database>, activityId: string, days: number): Promise<number> {
+  const { data } = await admin
+    .from('bookings')
+    .select('activity_sessions!inner(activity_id, starts_at)')
+    .eq('activity_sessions.activity_id', activityId)
+    .gt('activity_sessions.starts_at', new Date().toISOString())
+    .in('status', ['pending', 'confirmed', 'waitlisted'])
+    .limit(1000);
+  let furthest = 0;
+  for (const row of data ?? []) {
+    const s = row.activity_sessions as unknown as { starts_at: string } | null;
+    if (s) furthest = Math.max(furthest, new Date(s.starts_at).getTime());
+  }
+  if (!furthest) return days;
+  const needed = Math.ceil((furthest - Date.now()) / 86400000) + BOOKED_CLASS_WINDOW_MARGIN_DAYS;
+  return Math.min(BOOKED_CLASS_WINDOW_MAX_DAYS, Math.max(days, needed));
+}
+
 /** Fetches one activity's live Wix availability and upserts it into
  *  activity_sessions — branching the same way app/api/wix/slots/route.ts's
  *  GET handler does (APPOINTMENT via the time-slots API, CLASS/COURSE via
@@ -1035,6 +1066,7 @@ export async function syncWixActivityAvailability(
     throw new Error('Activity is not linked to a bookable Wix service');
   }
 
+  if (activity.wix_service_type === 'CLASS') days = await classWindowDays(admin, activity.id, days);
   const windowStart = new Date();
   const windowEnd = new Date(windowStart.getTime() + days * 24 * 60 * 60 * 1000);
   // Fetched alongside availability rather than before it so it costs no
