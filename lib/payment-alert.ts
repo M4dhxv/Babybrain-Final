@@ -30,13 +30,18 @@ const money = (cents: number | null | undefined, currency: string | null | undef
 
 export async function sendPaymentAlert(session: Stripe.Checkout.Session): Promise<void> {
   try {
-    const to = guardOperationalRecipients(
-      (process.env.ADMIN_EMAILS ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    );
-    if (!to.length || !process.env.RESEND_API_KEY) return;
+    // No live payment had ever produced an alert (checked 28 Sep): every failure
+    // below was swallowed, so nobody could see why. Accept any separator in
+    // ADMIN_EMAILS, fall back to the founder inbox, and log every early exit.
+    const configured = (process.env.ADMIN_EMAILS ?? '')
+      .split(/[\s,;]+/)
+      .map((s) => s.trim().replace(/^["'<]+|[>"']+$/g, ''))
+      .filter((s) => s.includes('@'));
+    const to = guardOperationalRecipients(configured.length ? configured : ['hello@babybrain.sg']);
+    if (!to.length || !process.env.RESEND_API_KEY) {
+      console.error('[payment-alert] not sent: no recipient or RESEND_API_KEY', { recipients: to.length });
+      return;
+    }
 
     const kind = session.metadata?.kind ?? 'payment';
     const label = KIND_LABEL[kind] ?? kind;
@@ -58,13 +63,16 @@ export async function sendPaymentAlert(session: Stripe.Checkout.Session): Promis
         : 'This is a TEST-mode payment — no real money moved.',
     ].filter(Boolean);
 
-    await new Resend(process.env.RESEND_API_KEY).emails.send({
-      from: process.env.EMAIL_FROM ?? 'BabyBrain <hello@updates.babybrain.sg>',
+    // Resend reports a rejected send in `error` rather than throwing.
+    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({
+      from: process.env.EMAIL_FROM || 'BabyBrain <hello@updates.babybrain.sg>',
       to,
       subject: `${live}${label}: ${money(session.amount_total, session.currency)}`,
       text: lines.join('\n'),
     });
-  } catch {
+    if (error) console.error('[payment-alert] Resend rejected the alert:', error);
+  } catch (e) {
     // Bookkeeping only — see the note above about never failing the webhook.
+    console.error('[payment-alert] failed:', e);
   }
 }
