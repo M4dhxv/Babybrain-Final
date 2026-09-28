@@ -190,14 +190,27 @@
   --str-chat__primary-overlay-color: rgba(250, 77, 141, 0.6);
 }
 
-/* Slim scrollbar for the desktop side panels that pin under the header and
-   scroll inside themselves on a short screen (Profile sidebar, activity
-   booking card, booking summary). The default Windows bar is ~15px with arrow
-   buttons, which is heavy inside a rounded card. Chrome/Edge/Safari take the
-   ::-webkit-scrollbar rules; scrollbar-width is set only where those are not
-   supported, because Chrome ignores the pseudo-elements once it is set. */
+/* Scrollbar for the desktop side panels that pin under the header and scroll
+   inside themselves on a short screen (Profile sidebar, activity booking
+   card, booking/booked summary). Two things fixed here:
+   - Hidden until the panel is hovered (or scrolled with the keyboard, via
+     :focus-within), so it doesn't sit on screen as a permanent gray line —
+     the default width-0 avoids the flash of a laid-out-but-invisible track.
+   - Applied to the element that also owns the panel's own border-radius and
+     overflow, never to an outer wrapper — a rounded card whose overflow
+     ancestor is a plain rectangle above it (no radius of its own) draws its
+     native scrollbar flush with THAT rectangle's edge, which visually pokes
+     outside the rounded card sitting inside it. Chromium only clips a
+     scrollbar to the border-radius of the box it is drawn on.
+   scrollbar-width is the non-Chromium fallback: always-on and can't match
+   the hover reveal, since Firefox/Safari have no scrollbar pseudo-elements
+   to hide/show. */
 .bb-slim-scroll::-webkit-scrollbar {
-  width: 6px;
+  width: 0px;
+}
+.bb-slim-scroll:hover::-webkit-scrollbar,
+.bb-slim-scroll:focus-within::-webkit-scrollbar {
+  width: 5px;
 }
 .bb-slim-scroll::-webkit-scrollbar-button {
   display: none;
@@ -206,15 +219,15 @@
   background: transparent;
 }
 .bb-slim-scroll::-webkit-scrollbar-thumb {
-  background: #d9cfd2;
+  background: #F4C0D1;
   border-radius: 9999px;
 }
 .bb-slim-scroll::-webkit-scrollbar-thumb:hover {
-  background: #b9adb1;
+  background: #FA4D8D;
 }
 @supports not selector(::-webkit-scrollbar) {
   .bb-slim-scroll {
     scrollbar-width: thin;
-    scrollbar-color: #d9cfd2 transparent;
+    scrollbar-color: #F4C0D1 transparent;
   }
 }

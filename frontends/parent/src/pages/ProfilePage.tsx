@@ -1933,8 +1933,17 @@ export default function ProfilePage() {
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
+          {/* The scroll boundary on desktop: max-height + overflow live here,
+              on the same box as its own rounded corners (12px, matching the
+              nav card inside), not on the outer <aside> above — a plain
+              rectangle with no radius of its own, whose native scrollbar
+              would otherwise be drawn flush with ITS square edge and poke out
+              past the rounded card sitting inside it. Unconstrained on
+              mobile, where the outer <aside> (the sliding drawer) still owns
+              the scroll exactly as before. */}
+          <div className="lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:rounded-[12px] bb-slim-scroll">
           <div className="min-h-full rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:min-h-0">
             <div className="flex items-center gap-3">
               <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
@@ -1997,6 +2006,7 @@ export default function ProfilePage() {
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
             <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
+          </div>
           </div>
         </aside>
         <aside className="order-3 space-y-4 lg:hidden">
