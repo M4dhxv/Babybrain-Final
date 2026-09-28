@@ -238,7 +238,7 @@ export default function PlansPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       {/* Header
           Logo / nav / buttons used to be a 3-child flex row with
           justify-between, which centers the nav in the *gap* between the
@@ -312,7 +312,7 @@ export default function PlansPage() {
       </header>
 
       {/* Pricing Section */}
-      <div className="max-w-5xl mx-auto px-8 py-12">
+      <div className="w-full max-w-5xl mx-auto px-8 py-12">
         {/* Header */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold text-[#111A4C] mb-3">Something for everyone</h1>

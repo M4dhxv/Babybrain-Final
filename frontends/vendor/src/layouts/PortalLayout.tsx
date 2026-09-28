@@ -106,6 +106,8 @@ export default function PortalLayout() {
     return () => { el.style.overflow = previous; };
   }, []);
 
+  const fillsScreen = location.pathname.startsWith('/messages');
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Mobile top bar */}
@@ -268,10 +270,25 @@ export default function PortalLayout() {
           often a stale lazy chunk after a redeploy) shows a Reload panel with
           the sidebar still in place — and switching to any other tab clears it,
           because the key change remounts a fresh boundary. */}
-      <main className="flex-1 overflow-auto pt-14 md:pt-0">
-        <RouteErrorBoundary key={location.pathname} home="/dashboard">
-          <Outlet />
-        </RouteErrorBoundary>
+      <main className={`flex-1 overflow-auto pt-14 md:pt-0 ${fillsScreen ? '' : 'flex flex-col'}`}>
+        {/* Sticky footer: the flex-1 wrapper makes a short page (a few
+            notifications, an empty list) fill the screen, so the footer sits at
+            the bottom of it instead of riding up under the content. No min-h-0:
+            the wrapper must not shrink below its content, or a tall page would
+            overflow it and slide under the footer. Messages is the exception:
+            its root is `h-full`, so it needs main itself as its height parent
+            and keeps the footer below the fold, as before. */}
+        {fillsScreen ? (
+          <RouteErrorBoundary key={location.pathname} home="/dashboard">
+            <Outlet />
+          </RouteErrorBoundary>
+        ) : (
+          <div className="flex flex-1 flex-col">
+            <RouteErrorBoundary key={location.pathname} home="/dashboard">
+              <Outlet />
+            </RouteErrorBoundary>
+          </div>
+        )}
         <SiteFooter />
       </main>
     </div>

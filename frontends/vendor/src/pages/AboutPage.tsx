@@ -19,7 +19,7 @@ export default function AboutPage() {
   const softShadow = 'shadow-[0_2px_6px_rgba(17,26,76,0.06),0_12px_28px_rgba(17,26,76,0.10)]';
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
         <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
           <BrandLogo className="h-10" />
@@ -39,7 +39,7 @@ export default function AboutPage() {
       {/* Centre column mirrors the parent About page 1:1 — Nunito face, the
           parent's arbitrary sizes/colours, no vendor restyling. */}
       <main
-        className="mx-auto max-w-[1024px] px-6 py-8 text-[#111A4C]"
+        className="mx-auto w-full max-w-[1024px] px-6 py-8 text-[#111A4C]"
         style={{ fontFamily: "'Nunito', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}
       >
         <section className="relative grid items-center gap-8 md:grid-cols-[1fr_520px]">

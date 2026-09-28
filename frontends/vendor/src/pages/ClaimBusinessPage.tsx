@@ -277,7 +277,7 @@ export default function ClaimBusinessPage() {
   );
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <AuthHeader>
         <Button
           variant="outline"
@@ -296,7 +296,7 @@ export default function ClaimBusinessPage() {
         </Button>
       </AuthHeader>
 
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8 sm:px-8">
         <div className="mb-8 text-center">
           <h1 className="mb-2 text-3xl font-bold text-[#111A4C]">Claim your business</h1>
           <p className="text-gray-600">Search your business on BabyBrain and verify ownership to get started.</p>

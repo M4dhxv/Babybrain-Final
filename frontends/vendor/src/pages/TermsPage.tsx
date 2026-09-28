@@ -258,7 +258,7 @@ export default function TermsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4 sm:px-8">
         <button className="flex cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
           <BrandLogo className="h-10" />
@@ -275,7 +275,7 @@ export default function TermsPage() {
         </Button>
       </header>
 
-      <main className="mx-auto max-w-[760px] px-6 py-10 sm:px-8">
+      <main className="mx-auto w-full max-w-[760px] px-6 py-10 sm:px-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-[#111A4C] sm:text-4xl">Terms &amp; Policies</h1>
           <p className="mt-2 text-sm font-semibold text-gray-400">Last updated: {doc.updated}</p>
