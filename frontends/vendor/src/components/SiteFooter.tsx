@@ -59,7 +59,7 @@ const columns: {
 
 export default function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-gray-100 bg-white px-6 py-14 sm:px-8">
+    <footer className="mt-auto border-t border-gray-100 bg-white px-6 py-7 sm:px-8">
       <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
         <div>
           <BrandLogo className="h-12" />
@@ -125,7 +125,7 @@ export default function SiteFooter() {
           </div>
         ))}
       </div>
-      <p className="mt-10 text-center text-sm text-gray-400">
+      <p className="mt-6 text-center text-sm text-gray-400">
         © {new Date().getFullYear()} BabyBrain.sg. All rights reserved.
       </p>
     </footer>

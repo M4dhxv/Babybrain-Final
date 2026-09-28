@@ -91,7 +91,7 @@ const STATUS_LABEL: Record<LedgerRow['status'], { text: string; className: strin
   pending: { text: 'In your Stripe balance', className: 'bg-blue-100 text-blue-800' },
   in_transit: { text: 'On its way to your bank', className: 'bg-blue-100 text-blue-800' },
   paid_out: { text: 'Paid out', className: 'bg-green-300 text-green-800' },
-  platform_owed: { text: 'With BabyBrain', className: 'bg-yellow-300 text-yellow-800' },
+  platform_owed: { text: 'Awaiting payout', className: 'bg-yellow-300 text-yellow-800' },
   refunded: { text: 'Refunded', className: 'bg-gray-100 text-gray-600' },
 };
 
