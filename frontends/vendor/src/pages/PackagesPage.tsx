@@ -88,6 +88,12 @@ function packWindow(p: { starts_at: string | null; available_until: string | nul
     end: p.available_until ? new Date(p.available_until).getTime() : Infinity,
   };
 }
+/** Packs are for classes only: a Wix Event (one ticketed occurrence), COURSE
+ *  (enrolled as a whole programme) or APPOINTMENT (a single one-to-one slot)
+ *  can't be paid for with a one-credit-per-session pack. The parent app already
+ *  hides packs on these (BookingPage's packagesNotOffered), so offering them in
+ *  the "Restrict to activities" picker only invited packs that can never be used. */
+const PACK_INELIGIBLE_WIX_TYPES = new Set(['EVENT', 'COURSE', 'APPOINTMENT']);
 const scopeSet = (ids: string[] | null) => (ids && ids.length ? new Set(ids) : null);
 /** null scope = "any of the provider's activities", which overlaps everything. */
 const scopesOverlap = (a: Set<string> | null, b: Set<string> | null) => {
@@ -104,14 +110,14 @@ export default function PackagesPage() {
   const [activeTab, setActiveTab] = useState('Packs');
 
   const { data, loading, refreshing, refetch } = useProviderQuery<{
-    activities: { id: string; title: string }[];
+    activities: { id: string; title: string; wix_service_type: string | null }[];
     packs: Pack[];
     purchases: Purchase[];
   }>(
     provider ? `packages:${provider.id}` : null,
     async () => {
       const [{ data: acts }, { data: pks }, { data: purch }] = await Promise.all([
-        supabase.from('activities').select('id, title').eq('provider_id', provider!.id).is('archived_at', null),
+        supabase.from('activities').select('id, title, wix_service_type').eq('provider_id', provider!.id).is('archived_at', null),
         supabase.from('packages').select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, allowed_weekday, allowed_start_time, starts_at, available_until, best_value').eq('provider_id', provider!.id).order('created_at', { ascending: false }),
         supabase.rpc('provider_package_purchases', { p_provider: provider!.id }),
       ]);
@@ -123,6 +129,9 @@ export default function PackagesPage() {
     },
   );
   const activities = data?.activities ?? [];
+  // What a pack can be scoped to. `activities` (all of them) stays for naming
+  // an existing pack's restriction, even if it points at an ineligible one.
+  const packEligibleActivities = activities.filter((a) => !PACK_INELIGIBLE_WIX_TYPES.has(a.wix_service_type ?? ''));
   const packs = data?.packs ?? [];
   const purchases = data?.purchases ?? [];
 
@@ -131,6 +140,10 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+  // Set when the pack being edited was scoped only to Events/Courses/
+  // Appointments: with those dropped from the picker its scope would read as
+  // empty = "any of my activities", so saving must first pick real classes.
+  const [needsClassScope, setNeedsClassScope] = useState(false);
   const [togglingPackId, setTogglingPackId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Pack | null>(null);
   const [deletingPack, setDeletingPack] = useState(false);
@@ -204,6 +217,9 @@ export default function PackagesPage() {
     setPackError(null);
     setPackNotice(null);
     setPackTouched({});
+    const onlyIneligible = !!p.activity_ids?.length && !p.activity_ids.some((id) => packEligibleActivities.some((a) => a.id === id));
+    setNeedsClassScope(onlyIneligible);
+    if (onlyIneligible) setPackNotice('This pack was limited to events, courses or appointments, which no longer support packs. Choose the classes it should apply to before saving.');
     const starts = p.starts_at ? sgtDateTimeParts(p.starts_at) : null;
     const until = p.available_until ? sgtDateTimeParts(p.available_until) : null;
     setPackForm({
@@ -213,7 +229,10 @@ export default function PackagesPage() {
       expiryMode: p.expiry_date ? 'date' : p.validity_days != null ? 'days' : 'none',
       validity_days: p.validity_days != null ? String(p.validity_days) : '',
       expiry_date: p.expiry_date ?? '',
-      activity_ids: p.activity_ids ?? [],
+      // Drop any ineligible (Event/Course/Appointment) activity a pack was
+      // scoped to before this rule: the picker no longer offers them, and
+      // leaving them selected would carry them silently through a save.
+      activity_ids: (p.activity_ids ?? []).filter((id) => packEligibleActivities.some((a) => a.id === id)),
       allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
       allowed_start_time: p.allowed_start_time ?? '',
       starts_date: starts?.date ?? '',
@@ -258,6 +277,7 @@ export default function PackagesPage() {
     const credits = Number(packForm.credits);
     const price = Number(packForm.price);
     if (!packForm.name.trim()) return setPackError('Give the pack a name.');
+    if (needsClassScope && packForm.activity_ids.length === 0) return setPackError('Choose which classes this pack applies to — it was limited to events, courses or appointments, which no longer support packs.');
     if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
     if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
     if (packForm.expiryMode === 'days' && (!packForm.validity_days || Number(packForm.validity_days) < 1)) return setPackError('Enter how many days the pack stays valid, or choose another expiry.');
@@ -289,6 +309,7 @@ export default function PackagesPage() {
     if (error) return setPackError(error.message);
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
     setEditingPackId(null);
+    setNeedsClassScope(false);
     setPackForm(emptyPack);
     setPackTouched({});
     load();
@@ -539,7 +560,7 @@ export default function PackagesPage() {
                   </button>
                   {editingPackId && (
                     <button
-                      onClick={() => { setEditingPackId(null); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
+                      onClick={() => { setEditingPackId(null); setNeedsClassScope(false); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
                       className="h-9 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 sm:w-auto"
                     >
                       Cancel
@@ -567,7 +588,7 @@ export default function PackagesPage() {
                       className="h-9 w-full sm:w-56"
                       panelWidth={256}
                     >
-                      {activities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
+                      {packEligibleActivities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
                     </MultiSelectField>
                   </div>
                   <div className="w-full sm:w-auto">
@@ -581,7 +602,8 @@ export default function PackagesPage() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-session pack limited to the Monday 4:00 pm session.</p>
+                <p className="mt-2 text-xs text-gray-500">Packs are for classes only. Wix events, courses and appointments can't be paid for with a pack, so they aren't listed here and parents won't see packs on them — "Any of my activities" covers your classes only.</p>
+                <p className="mt-1 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-session pack limited to the Monday 4:00 pm session.</p>
                 <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per session.</p>
                 <p className="mt-1 text-xs text-gray-500">Available from/until decide when parents can buy this pack. Expiry is separate — it decides how long each parent's credits stay valid, always counted from the day they buy it, not from "Available from".</p>
               </>

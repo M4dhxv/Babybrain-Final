@@ -402,22 +402,27 @@ export default function BookingsPage() {
     if (!sessionId || !manualForm.name.trim()) { setManualError('A name is required.'); return; }
     setSavingManual(true);
     setManualError(null);
-    // Server-side so a Wix-linked class is booked on Wix too (its seat count
-    // and the parent's "spots left" both come from Wix).
+    // Stored on BabyBrain only — never written to Wix, even for a Wix-linked
+    // activity (see /api/vendor/bookings/manual).
     let error: { message: string } | null = null;
+    let wixLinked = false;
     try {
-      await apiPost('/api/vendor/bookings/manual', {
+      const res = await apiPost<{ wix_linked?: boolean }>('/api/vendor/bookings/manual', {
         provider_id: provider?.id,
         session_id: sessionId,
         name: manualForm.name.trim(),
         contact: manualForm.contact.trim() || null,
         paid: manualForm.paid,
       });
+      wixLinked = !!res?.wix_linked;
     } catch (e) {
       error = { message: e instanceof Error ? e.message : 'Could not add the booking.' };
     }
     setSavingManual(false);
     if (error) { setManualError(error.message); return; }
+    if (wixLinked) {
+      toast.success('Booking added on BabyBrain.', { description: "It isn't in your Wix calendar and doesn't change Wix's seat count — add it in Wix too if you need it there." });
+    }
     setManualForm({ name: '', contact: '', paid: false });
     setShowManual(false);
     loadRoster(sessionId);
@@ -1101,6 +1106,11 @@ export default function BookingsPage() {
           <div className="mb-6 max-w-2xl rounded-xl border border-gray-200 bg-white p-4">
             <div className="text-sm font-semibold text-gray-900 mb-1">Add a booking taken outside BabyBrain</div>
             <p className="text-xs text-gray-500 mb-3">Recorded against the selected session so your roster and attendance stay complete.</p>
+            {!!activityWixType[sessionActivity[sessionId]] && (
+              <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                This is a Wix-linked activity. The booking is saved on BabyBrain only — it won't appear in your Wix calendar or change Wix's seat count, so add it in Wix too if you need it there.
+              </div>
+            )}
             {manualError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{manualError}</div>}
             <div className="flex flex-wrap items-end gap-3">
               <div>

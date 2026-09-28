@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
-import { getProviderWixCredentials, encodeWixSlotKey, decodeWixSlotKey, fetchWixClassSessions } from '@/lib/wix/client';
-import { createWixBookingAndSession, cancelWixLinkedBooking } from '@/lib/wix/sync';
+import { getProviderWixCredentials } from '@/lib/wix/client';
+import { cancelWixLinkedBooking } from '@/lib/wix/sync';
 
 /**
- * Vendor adds a booking taken outside BabyBrain (phone, walk-in). For a
- * Wix-linked class it is created in Wix FIRST — Wix owns the seat count, and
- * the parent-facing availability (/api/wix/slots) reads Wix's remaining
- * capacity — then mirrored locally with the wix_booking_id, so the roster,
- * Wix's calendar and the parent's "spots left" all agree. Non-Wix activities
- * just get the local row. If the local insert fails after Wix accepted, the
- * Wix booking is cancelled again so no orphan seat is left behind.
+ * Vendor adds a booking taken outside BabyBrain (phone, walk-in). It is stored
+ * on BabyBrain only — for a Wix-linked activity too: nothing is written to
+ * Wix, so it does not appear in the vendor's Wix calendar and does not change
+ * Wix's seat count or the parent-facing "spots left" from Wix. The response's
+ * `wix_linked` lets the portal say so.
  * Body: { provider_id, session_id, name, contact?, paid? }
+ *
+ * (Entries created before this rule may carry a wix_booking_id from when a
+ * class booking was also created in Wix; DELETE below still frees that seat.)
  */
 export const maxDuration = 60;
 
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
   const { data: activity } = session
     ? await admin
         .from('activities')
-        .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type')
+        .select('id, provider_id, wix_service_id, wix_service_type, wix_event_id')
         .eq('id', session.activity_id)
         .maybeSingle()
     : { data: null };
@@ -62,83 +63,40 @@ export async function POST(request: Request) {
   }
 
   const contact = body.contact?.trim() || null;
-  let sessionId = session.id;
-  let wixBookingId: string | null = null;
-  let creds = null as Awaited<ReturnType<typeof getProviderWixCredentials>>;
 
-  if (activity.wix_service_id && session.wix_slot_key) {
-    creds = await getProviderWixCredentials(admin, body.provider_id);
-    if (!creds) {
-      return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
-    }
-    let slotKey = session.wix_slot_key;
-    try {
-      // A COURSE anchor row ('wixcourse:<scheduleId>') isn't a resolvable
-      // slot — pick any live occurrence of that schedule; the Wix call books
-      // the whole schedule anyway.
-      if (slotKey.startsWith('wixcourse:')) {
-        const scheduleId = slotKey.slice('wixcourse:'.length);
-        const live = await fetchWixClassSessions(creds, activity.wix_service_id, 60);
-        const occ = live.find((s) => s.scheduleId === scheduleId);
-        if (!occ) {
-          return NextResponse.json({ error: 'That course has no open dates left on Wix.' }, { status: 409 });
-        }
-        slotKey = encodeWixSlotKey({ kind: 'class', sessionId: occ.id });
-      } else {
-        decodeWixSlotKey(slotKey); // throws on a key we can't book against
-      }
-    } catch {
-      return NextResponse.json({ error: 'This session can\'t be booked through Wix.' }, { status: 409 });
-    }
-
-    const [first, ...rest] = name.split(/\s+/);
-    const isEmail = !!contact && contact.includes('@');
-    const result = await createWixBookingAndSession(
-      admin,
-      creds,
-      { id: activity.id, wix_service_id: activity.wix_service_id, wix_resource_id: activity.wix_resource_id, wix_service_type: activity.wix_service_type },
-      `wix:${slotKey}`,
-      { firstName: first || 'Guest', lastName: rest.join(' ') || '-', email: isEmail ? contact! : '', phone: contact && !isEmail ? contact : '' },
-      1,
-      null, // vendors may book inside the parent cut-off window
-    );
-    if (!result.ok) {
-      const msg = result.status === 409 && /no longer available|Not enough/i.test(result.error)
-        ? AT_CAPACITY_MESSAGE
-        : result.error;
-      return NextResponse.json({ error: msg }, { status: result.status });
-    }
-    sessionId = result.sessionId;
-    wixBookingId = result.wixBookingId;
-  }
+  // Manual bookings are recorded on BabyBrain ONLY — never written to Wix, for
+  // any Wix-linked activity (class, course, appointment or event). They used to
+  // be created in Wix first for a class, but Events have no service/slot to
+  // book against, so the behaviour differed by type and a vendor saw an
+  // unsynced entry with no warning. One rule now: the entry lives here, and for
+  // a Wix-linked activity the vendor is told it won't appear in Wix or change
+  // Wix's seat count (`wix_linked` drives that notice in the portal).
+  const wixLinked = !!(activity.wix_service_id || activity.wix_service_type || activity.wix_event_id);
 
   const { data: row, error } = await admin
     .from('bookings')
     .insert({
-      session_id: sessionId,
+      session_id: session.id,
       guest_name: name,
       guest_contact: contact,
       payment_status: body.paid ? 'paid' : 'none',
       status: 'confirmed',
-      wix_booking_id: wixBookingId,
       // Manual rows have no parent account; the generated types predate that.
     } as never)
     .select('id, status')
     .single();
   if (error || !row) {
     console.error('Manual booking local insert failed', error);
-    if (wixBookingId && creds) {
-      const undo = await cancelWixLinkedBooking(creds, wixBookingId);
-      if (!undo.ok) console.error('ORPHAN Wix booking after failed manual insert', wixBookingId);
-    }
     return NextResponse.json({ error: error?.message ?? 'Could not save the booking' }, { status: 500 });
   }
-  return NextResponse.json({ id: row.id, status: row.status, synced_to_wix: !!wixBookingId });
+  return NextResponse.json({ id: row.id, status: row.status, wix_linked: wixLinked, synced_to_wix: false });
 }
 
 /**
- * Deleting a manual entry also frees its seat on Wix. Only manual rows
- * (no user_id) are deletable, same rule as the RLS policy from 00091.
+ * Deleting a manual entry also frees its seat on Wix — but only for a legacy
+ * entry that was created in Wix (has a wix_booking_id); entries stored on
+ * BabyBrain only have nothing to free. Only manual rows (no user_id) are
+ * deletable, same rule as the RLS policy from 00091.
  * Query: ?provider_id=&booking_id=
  */
 export async function DELETE(request: Request) {

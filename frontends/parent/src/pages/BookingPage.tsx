@@ -211,6 +211,12 @@ export default function BookingPage() {
   // These give the run's span for the added "Runs …" line and the booking
   // confirmation / My Bookings date range.
   const isCourse = activity?.wix_service_type === "COURSE";
+  const isAppointment = activity?.wix_service_type === "APPOINTMENT";
+  // Multi-session packs are for classes only. A Wix Event is one ticketed
+  // occurrence, a COURSE is enrolled as one whole programme, and an
+  // APPOINTMENT is a single one-to-one slot — one credit = one session doesn't
+  // map onto any of them, so the pack step is hidden and payment stays "single".
+  const packagesNotOffered = isEvent || isCourse || isAppointment;
   // Non-cancellable once booked: always for Wix ticketed events and courses
   // (reserved inside Wix), and for any other activity where the provider has
   // turned the cancellation toggle off on the edit-activity card. Drives the
@@ -257,9 +263,11 @@ export default function BookingPage() {
         .eq("active", true)
         .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean; validity_days: number | null; expiry_date: string | null }>)
     ).then((rows) => {
-      const applicable = rows
-        .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
-        .filter(isPackOnSale);
+      const applicable = packagesNotOffered
+        ? []
+        : rows
+            .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
+            .filter(isPackOnSale);
       setPacks(applicable);
       // Arrived here with a pack already picked on the Activity page —
       // preselect it the same way the party still needs its own date/time.
@@ -267,7 +275,7 @@ export default function BookingPage() {
         setPayWith(`pack:${wantPackId}`);
       }
     });
-  }, [activity?.provider_id, activity?.id, wantPackId]);
+  }, [activity?.provider_id, activity?.id, wantPackId, packagesNotOffered]);
 
   // What this parent has already booked on this activity's sessions, so the
   // form can warn before putting the same child on the same class twice.
@@ -450,14 +458,14 @@ export default function BookingPage() {
   // step isn't even shown for one, and routing its checkout through the
   // package-credit path hits an RPC that can't take an event occurrence.
   useEffect(() => {
-    // Events and courses are a single whole purchase — a multi-class pack
-    // (one credit = one session) doesn't map onto them, so the "Select
-    // package" step is hidden and payment stays "single".
-    if (isEvent || isCourse) { if (payWith !== "single") setPayWith("single"); return; }
+    // Events, courses and appointments are a single whole purchase — a
+    // multi-class pack (one credit = one session) doesn't map onto them, so
+    // the "Select package" step is hidden and payment stays "single".
+    if (packagesNotOffered) { if (payWith !== "single") setPayWith("single"); return; }
     if (packageCredit && payWith === "single") setPayWith("credit");
     else if (!packageCredit && payWith === "credit") setPayWith("single");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packageCredit?.id, isEvent, isCourse]);
+  }, [packageCredit?.id, packagesNotOffered]);
 
   const times = dateKey ? byDate[dateKey] ?? [] : [];
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
@@ -1013,7 +1021,7 @@ export default function BookingPage() {
       // A Wix Event is always bought as a ticket through Wix — package
       // credits and pack purchases don't apply, and redeem_package_credit
       // 400s on an event occurrence. Guard here too in case payWith is stale.
-      if (isEvent) return pay();
+      if (packagesNotOffered) return pay();
       if (payWith === "credit") return payWithPackage();
       if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
       return pay();
@@ -1367,7 +1375,7 @@ export default function BookingPage() {
                         books a real seat, so the same slot + terms gating the
                         main CTA already enforces for a single-class booking
                         must apply here too — see checkout()/buyPack(). */}
-                    {!redeemToken && !isEvent && !isCourse && (
+                    {!redeemToken && !packagesNotOffered && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">5. Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>

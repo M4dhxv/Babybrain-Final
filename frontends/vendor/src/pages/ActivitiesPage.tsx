@@ -647,7 +647,10 @@ export default function ActivitiesPage() {
       .then(({ data }) => {
         if (stale) return;
         const rows = (data ?? []) as unknown as Array<PreviewPackage & { activity_ids: string[] | null }>;
-        setPreviewPackages(rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(previewFor.id)));
+        // Packs are for classes only — the parent app hides them on a Wix
+        // Event/COURSE/APPOINTMENT, so the preview must too.
+        const packsNotOffered = previewFor.wix_service_type === 'EVENT' || previewFor.wix_service_type === 'COURSE' || previewFor.wix_service_type === 'APPOINTMENT';
+        setPreviewPackages(packsNotOffered ? [] : rows.filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(previewFor.id)));
       });
     return () => { stale = true; };
   }, [previewFor, provider]);

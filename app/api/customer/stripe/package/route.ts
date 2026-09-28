@@ -130,6 +130,21 @@ export async function POST(request: Request) {
     }
   }
 
+  // Packs are for classes only. Buying one to book a Wix Event, COURSE or
+  // APPOINTMENT occurrence would take payment for a pack that can never be
+  // redeemed there — the booking page hides the option, this is the backstop.
+  if (activitySessionId) {
+    const { data: target } = await admin
+      .from('activity_sessions')
+      .select('activities(wix_service_type)')
+      .eq('id', activitySessionId)
+      .maybeSingle();
+    const targetType = (target?.activities as { wix_service_type: string | null } | null)?.wix_service_type ?? '';
+    if (['EVENT', 'COURSE', 'APPOINTMENT'].includes(targetType)) {
+      return NextResponse.json({ error: 'Packages can only be used on classes.' }, { status: 400 });
+    }
+  }
+
   const origin = appOrigin(request);
 
   // Class packs are vendor revenue, but this checkout never split them: the

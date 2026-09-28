@@ -76,16 +76,28 @@ export async function POST(request: Request) {
   const { data: session } = await admin
     .from('activity_sessions')
     .select(
-      'starts_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, activities(provider_id, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, wix_service_id)'
+      'starts_at, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, activities(provider_id, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, wix_service_id, wix_service_type)'
     )
     .eq('id', sessionId)
     .maybeSingle();
   const activity = session?.activities as {
     provider_id: string; allow_cancellation: boolean; cancellation_cutoff_hours: number;
     cancellation_refund_mode: 'refund' | 'none' | null; wix_service_id: string | null;
+    wix_service_type: string | null;
   } | null;
   if (!session || !activity) {
     return NextResponse.json({ error: 'Class not found' }, { status: 404 });
+  }
+  // A ticketed Wix Event and a COURSE enrolment are reserved inside Wix and
+  // can't be cancelled by the parent once booked — the parent app hides the
+  // button (ProfilePage's cancelBlockReason), this is the can't-be-bypassed
+  // backstop. Without it an Event (no wix_service_id) would be cancelled
+  // locally only, leaving the ticket valid in Wix.
+  if (activity.wix_service_type === 'EVENT' || activity.wix_service_type === 'COURSE') {
+    return NextResponse.json(
+      { error: `This is ${activity.wix_service_type === 'EVENT' ? 'a ticketed event' : 'a course'} — it can't be cancelled once booked. Contact the provider if you need help.` },
+      { status: 400 }
+    );
   }
   // A session-level override (migration 00133) wins over the activity's
   // default; null on the session means "inherit".

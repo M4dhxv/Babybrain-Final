@@ -171,6 +171,12 @@ export async function POST(request: Request) {
   if (!activity?.wix_service_id || !activity.provider_id) {
     return NextResponse.json({ error: 'Activity is not linked to a Wix service' }, { status: 404 });
   }
+  // Packs are for classes only: a Wix Event, COURSE or APPOINTMENT can't be
+  // paid for with a one-credit-per-session pack. The booking page hides the
+  // option; this is the can't-be-bypassed backstop.
+  if (['EVENT', 'COURSE', 'APPOINTMENT'].includes(activity.wix_service_type ?? '')) {
+    return NextResponse.json({ error: 'Package credits can only be used on classes.' }, { status: 400 });
+  }
 
   // Paused / required-information up front. The RPC below runs on the
   // parent's own client, so enforce_booking_insert_defaults does apply to it

@@ -506,6 +506,10 @@ export default function ActivityDetailPage() {
     return () => { cancelled = true; };
   }, [sessions]);
 
+  const packagesNotOffered =
+    activity?.wix_service_type === "EVENT" ||
+    activity?.wix_service_type === "COURSE" ||
+    activity?.wix_service_type === "APPOINTMENT";
   useEffect(() => {
     if (!activity?.provider_id) return;
     const providerId = activity.provider_id;
@@ -519,13 +523,16 @@ export default function ActivityDetailPage() {
         .eq("active", true)
         .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean }>)
     ).then((rows) => {
+      // Packs are for classes only — never offered on a Wix Event, COURSE or
+      // APPOINTMENT (same rule as the booking page's packagesNotOffered).
+      if (packagesNotOffered) { setPacks([]); return; }
       setPacks(
         rows
           .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
           .filter(isPackOnSale),
       );
     });
-  }, [activity?.provider_id, activity?.id]);
+  }, [activity?.provider_id, activity?.id, packagesNotOffered]);
 
   // Hooks stay above the loading / not-found early returns below. This one
   // sat after them once, so the first render (loading) ran one hook fewer than

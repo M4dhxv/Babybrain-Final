@@ -452,13 +452,27 @@ export async function syncProviderWixEvents(
         .select('id')
         .in('activity_id', activityIds);
       const sessionIds = (sessions ?? []).map((s: any) => s.id);
-      if (sessionIds.length) {
-        await admin
-          .from('bookings')
-          .update({ status: 'cancelled' })
-          .in('session_id', sessionIds)
-          .neq('status', 'cancelled')
-          .neq('status', 'completed');
+      // Cancelled through cancel_wix_session (00146) — the same path a
+      // cancelled Wix class takes — so the bookings are stamped as a VENDOR
+      // cancellation (cancelled_by set). A bare status update left it null,
+      // which 00143 treats as a parent/system cancel: the parent got only a
+      // quiet in-app notice and no email. Via the RPC they get the branded
+      // class_cancelled email, and a paid ticket-holder the make-up token
+      // (compensate_cancelled_booking). See lib/wix/events-sync.ts.
+      for (const sessionId of sessionIds) {
+        const { error } = await admin.rpc('cancel_wix_session', { p_session_id: sessionId });
+        if (error) {
+          console.error('Wix event cancel_wix_session failed', sessionId, error);
+          // Never leave the ticket-holders on a confirmed booking for a gone
+          // event just because the RPC is missing/failing — fall back to the
+          // plain cancel (no email, but the roster is right).
+          await admin
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .eq('session_id', sessionId)
+            .neq('status', 'cancelled')
+            .neq('status', 'completed');
+        }
       }
     }
     await admin
