@@ -518,7 +518,15 @@ export async function POST(request: Request) {
         // us which delivery actually did the work, so recordSale/notify only
         // fire once per real purchase.
         const result = await purchasePackageAndBook(admin, session);
-        if (result && !result.alreadyCredited && result.package) {
+        // null means the purchase was NOT recorded (the RPC errored or the
+        // package is gone) — the parent has paid and holds nothing. Answering
+        // 200 here is how a SGD 710 pack vanished on 28 Sep: Stripe marked the
+        // event delivered and never retried. A 500 makes Stripe retry and
+        // flags the failing endpoint on its dashboard.
+        if (!result) {
+          return NextResponse.json({ error: 'Package purchase not recorded' }, { status: 500 });
+        }
+        if (!result.alreadyCredited && result.package) {
           await recordSale(admin, {
             providerId: result.package.provider_id,
             source: 'package',
