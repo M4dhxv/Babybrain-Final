@@ -1465,7 +1465,7 @@ export default function BookingPage() {
               </div>
             </section>
 
-            <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+            <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:[scrollbar-width:thin]">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={summaryImg.src} onError={summaryImg.onError} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${summaryImg.isLogo ? " p-3" : ""}`} />

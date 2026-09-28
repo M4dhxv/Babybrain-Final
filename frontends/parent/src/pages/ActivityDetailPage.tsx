@@ -842,7 +842,7 @@ export default function ActivityDetailPage() {
             )}
           </section>
         </div>
-        <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
+        <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:[scrollbar-width:thin] lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
             {nextPrice != null ? (
               nextPrice <= 0 ? (
                 <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>

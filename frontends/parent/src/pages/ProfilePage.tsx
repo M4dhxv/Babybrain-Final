@@ -1933,7 +1933,7 @@ export default function ProfilePage() {
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:static lg:z-auto lg:w-auto lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:[scrollbar-width:thin] lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           <div className="min-h-full rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:min-h-0">
             <div className="flex items-center gap-3">
@@ -1989,8 +1989,17 @@ export default function ProfilePage() {
               })}
             </nav>
           </div>
+          {/* Desktop only: "Need help?" rides inside the pinned sidebar so the
+              nav and the help card stay in view together while the tab
+              content scrolls. On mobile the drawer stays nav-only and the same
+              card follows the content below. */}
+          <div className="mt-4 hidden rounded-[12px] bg-[#EDF7FD] p-5 lg:block">
+            <h3 className="font-black">Need help?</h3>
+            <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
+            <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
+          </div>
         </aside>
-        <aside className="order-3 space-y-4 lg:col-start-1 lg:row-start-2">
+        <aside className="order-3 space-y-4 lg:hidden">
           {/* Invite a friend removed: the referral mechanism isn't built,
               so the $10-credit promise had nothing behind it. */}
           <div className="rounded-[12px] bg-[#EDF7FD] p-5">

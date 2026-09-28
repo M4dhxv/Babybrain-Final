@@ -116,7 +116,7 @@ export default function BookedPage() {
               )}
             </article>
           </div>
-          <aside className="space-y-5">
+          <aside className="space-y-5 lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:[scrollbar-width:thin]">
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Activity</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
