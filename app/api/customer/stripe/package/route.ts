@@ -83,6 +83,53 @@ export async function POST(request: Request) {
     );
   }
 
+  // The class booked alongside the pack must be bookable right now. The seat is
+  // inserted later by the webhook as the service role, and
+  // enforce_booking_insert_defaults() skips every parent-facing check for the
+  // service role — so without this, a parent could pay for a class inside the
+  // vendor's booking cutoff (28 Sep: a 24h-cutoff class booked 17h out) that
+  // the normal booking flow refuses. Same rules and same wording as that
+  // trigger, so both flows show the parent the identical message.
+  if (activitySessionId) {
+    const { data: sess } = await admin
+      .from('activity_sessions')
+      .select('starts_at, bookings_paused, booking_cutoff_minutes, activities(provider_id, bookings_paused, booking_cutoff_minutes, providers(status))')
+      .eq('id', activitySessionId)
+      .maybeSingle();
+    const act = sess?.activities as unknown as {
+      provider_id: string | null;
+      bookings_paused: boolean | null;
+      booking_cutoff_minutes: number | null;
+      providers: { status: string | null } | null;
+    } | null;
+    if (!sess || !act || act.provider_id !== pkg.provider_id) {
+      return NextResponse.json({ error: 'This class can’t be booked with this package.' }, { status: 400 });
+    }
+    if ((act.providers?.status ?? 'active') !== 'active') {
+      return NextResponse.json({ error: 'This provider is not currently taking bookings.' }, { status: 400 });
+    }
+    if (act.bookings_paused) {
+      return NextResponse.json({ error: 'Bookings for this class are currently paused.' }, { status: 400 });
+    }
+    if (sess.bookings_paused) {
+      return NextResponse.json(
+        { error: 'Bookings for this session are currently paused — other dates may still be available.' },
+        { status: 400 }
+      );
+    }
+    const cutoff = sess.booking_cutoff_minutes ?? act.booking_cutoff_minutes ?? 15;
+    if (sess.starts_at && new Date(sess.starts_at).getTime() - cutoff * 60_000 <= now.getTime()) {
+      return NextResponse.json(
+        {
+          error: cutoff === 0
+            ? 'This class has already started.'
+            : `Bookings for this class close ${cutoff} minutes before it starts.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const origin = appOrigin(request);
 
   // Class packs are vendor revenue, but this checkout never split them: the

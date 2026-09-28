@@ -947,7 +947,10 @@ export default function BookingPage() {
       else setErr("Could not start checkout — please try again.");
     } catch (e) {
       console.error(e);
-      setErr("Could not start checkout — please try again.");
+      // Show the server's reason (e.g. "Bookings for this class close 1440
+      // minutes before it starts.") — the same message the normal booking
+      // flow shows for the same class.
+      setErr(e instanceof Error && e.message ? cleanRpcErrorMessage(e.message) : "Could not start checkout — please try again.");
     } finally {
       setBusy(false);
     }
