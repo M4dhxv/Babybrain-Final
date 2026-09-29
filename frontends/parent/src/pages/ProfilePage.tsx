@@ -1945,8 +1945,16 @@ export default function ProfilePage() {
               past the rounded card sitting inside it. Unconstrained on
               mobile, where the outer <aside> (the sliding drawer) still owns
               the scroll exactly as before. */}
-          <div className="lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto lg:rounded-[12px] bb-slim-scroll">
-          <div className="min-h-full rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:min-h-0">
+          <div className="flex min-h-full flex-col lg:max-h-[calc(100dvh-106px)] lg:min-h-0">
+          {/* Mobile: the wrapper is the drawer's full height and the card grows
+              to fill it (flex-1), so the white panel runs to the bottom and the
+              "Need help?" card can pin there. A bare `min-h-full` on the card
+              did nothing — its parent had no height to be a percentage of.
+              Desktop: the card itself is the scroll box (it owns the border and
+              radius), so its scrollbar sits inside the white panel, and it
+              shrinks to leave room for the "Need help?" card below, which
+              therefore stays in view. */}
+          <div className="flex flex-1 flex-col rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:block lg:min-h-0 lg:flex-initial lg:overflow-y-auto bb-slim-scroll">
             <div className="flex items-center gap-3">
               <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
               <div className="min-w-0">
@@ -1999,25 +2007,24 @@ export default function ProfilePage() {
                 );
               })}
             </nav>
+            {/* Mobile: "Need help?" sits at the bottom of the drawer, inside the
+                white panel, so the nav and help stay together like on desktop. */}
+            <div className="mt-auto pt-6 lg:hidden">
+              <div className="rounded-[12px] bg-[#EDF7FD] p-5">
+                <h3 className="font-black">Need help?</h3>
+                <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
+                <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
+              </div>
+            </div>
           </div>
           {/* Desktop only: "Need help?" rides inside the pinned sidebar so the
               nav and the help card stay in view together while the tab
-              content scrolls. On mobile the drawer stays nav-only and the same
-              card follows the content below. */}
-          <div className="mt-4 hidden rounded-[12px] bg-[#EDF7FD] p-5 lg:block">
+              content scrolls. */}
+          <div className="mt-4 hidden shrink-0 rounded-[12px] bg-[#EDF7FD] p-5 lg:block">
             <h3 className="font-black">Need help?</h3>
             <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
             <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
           </div>
-          </div>
-        </aside>
-        <aside className="order-3 space-y-4 lg:hidden">
-          {/* Invite a friend removed: the referral mechanism isn't built,
-              so the $10-credit promise had nothing behind it. */}
-          <div className="rounded-[12px] bg-[#EDF7FD] p-5">
-            <h3 className="font-black">Need help?</h3>
-            <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
           </div>
         </aside>
         <section className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
