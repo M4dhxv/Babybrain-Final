@@ -3,7 +3,7 @@ import { PageShell, Button, Icon, Footer } from "../components/ui";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { getParam } from "../lib/nav";
-import { downloadBookingIcs } from "../lib/ics";
+import AddToCalendar from "../components/AddToCalendar";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { wixThumbUrl } from "../components/ui";
 
@@ -131,14 +131,7 @@ export default function BookedPage() {
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="mt-3 w-full"
-                  onClick={() => downloadBookingIcs({ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue })}
-                >
-                  <Icon name="calendar" className="h-4 w-4" /> Add to calendar
-                </Button>
+                <AddToCalendar event={{ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue }} />
               )}
             </article>
             <article className="rounded-[16px] bg-[#F4F0FA] p-6">

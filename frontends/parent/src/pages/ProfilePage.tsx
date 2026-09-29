@@ -41,7 +41,7 @@ import { apiGet, apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
-import { downloadBookingIcs, downloadScheduleIcs } from "../lib/ics";
+import { downloadScheduleIcs, opensCalendarFromLink, scheduleFileUrl } from "../lib/ics";
 import { downloadSchedulePdf, withinRange } from "../lib/schedule-pdf";
 import {
   usePlan,
@@ -408,22 +408,46 @@ function ExportScheduleDialog({
             variant="outline"
             disabled={!!invalid || selected.length === 0}
             onClick={() => {
-              downloadScheduleIcs(
-                selected.map((e, i) => ({
-                  id: `${i}-${e.startsAt}`,
-                  title: e.title,
-                  startsAt: e.startsAt,
-                  endsAt: e.endsAt ?? null,
-                  venue: e.venue,
-                }))
-              );
+              const events = selected.map((e, i) => ({
+                id: `${i}-${e.startsAt}`,
+                title: e.title,
+                startsAt: e.startsAt,
+                endsAt: e.endsAt ?? null,
+                venue: e.venue,
+              }));
+              // iPhone / iPad / Mac / Android: a real link that returns a
+              // calendar file opens the calendar app's "Add all" directly. A
+              // Blob download (below) is unreliable on iOS, so it is only the
+              // fallback — desktop browsers, or a range too big for a link.
+              const link = opensCalendarFromLink() ? scheduleFileUrl(events) : null;
+              if (link) window.location.assign(link);
+              else downloadScheduleIcs(events);
               onClose();
             }}
             className="flex-1 justify-center"
           >
-            <Icon name="calendar" className="h-4 w-4" /> Calendar
+            <Icon name="calendar" className="h-4 w-4" /> Add to calendar
           </Button>
         </div>
+        <button
+          type="button"
+          disabled={!!invalid || selected.length === 0}
+          onClick={() => {
+            downloadScheduleIcs(
+              selected.map((e, i) => ({
+                id: `${i}-${e.startsAt}`,
+                title: e.title,
+                startsAt: e.startsAt,
+                endsAt: e.endsAt ?? null,
+                venue: e.venue,
+              }))
+            );
+            onClose();
+          }}
+          className="mt-3 w-full text-center text-xs font-bold text-[#59658d] underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          Or download the calendar file (.ics) for Google, Outlook or other apps
+        </button>
       </div>
     </div>
   );
@@ -3338,22 +3362,6 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                     header row isn't three things fighting for ~340px. */}
                 <BookingStatusChip b={b} className="mt-1.5 sm:hidden" />
               </div>
-              {/* Adding a single class to your own calendar is free; only the
-                  bulk date-range export + PDF above is a Plus feature. */}
-              {b.startsAt && b.status !== "cancelled" && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    downloadBookingIcs({ id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue });
-                  }}
-                  className="hidden items-center gap-1 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8] sm:flex"
-                  title="Add to calendar"
-                >
-                  <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
-                </button>
-              )}
               <BookingStatusChip b={b} className="hidden shrink-0 sm:flex" />
             </a>
             {party(b) && (
