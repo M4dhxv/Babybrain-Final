@@ -15,7 +15,10 @@ import { formatChildAge } from "../lib/database.types";
 import RedirectToLanding from "../components/RedirectToLanding";
 import { ActivityCardGridSkeleton, ChildCardSkeleton } from "../components/Skeletons";
 
-export default function MatchesPage({ active = "/matches" }: { active?: string }) {
+// The signed-in Home and /matches ("See all matches") are the same personalised
+// page, so both highlight Home in the header — it used to light up "Explore
+// Activities" here, which is a different page.
+export default function MatchesPage({ active = "/" }: { active?: string }) {
   const { session, profile, children, loading, dataResolved } = useAuth();
   const { data: recsByChild, loading: recsLoading } = useRecommendations(children);
   // A stored session renders this page on the first paint, before the

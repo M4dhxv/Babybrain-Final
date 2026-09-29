@@ -553,12 +553,7 @@ export function Header({
   useEffect(() => {
     setMenuOpen(false);
   }, [loc]);
-  const navItems = [
-    routes[0],
-    { href: active === "/matches" ? "/matches" : "/explore", label: "Explore Activities" },
-    routes[2],
-    routes[3],
-  ];
+  const navItems = routes;
 
   // Plain cream header. In the installed app the OS status bar is a solid
   // bright pink (theme-color #FA4D8D) and meets this as a hard block — no
