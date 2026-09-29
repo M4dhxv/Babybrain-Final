@@ -570,7 +570,7 @@ export function useRecommendations(children: Child[]) {
       // child_id then score so each child's rows stay contiguous and
       // already-sorted, letting the per-child top-8 below just slice instead
       // of re-sorting.
-      const { data: recs } = await supabase
+      const { data: recs, error: recsError } = await supabase
         .from("user_recommendations")
         // Sessions come along so the card can show a duration. Unlike the
         // Explore list, these rows don't go through `search_activities`
@@ -596,6 +596,14 @@ export function useRecommendations(children: Child[]) {
         .in("child_id", children.map((c) => c.id))
         .order("child_id", { ascending: true })
         .order("score", { ascending: false });
+      // A failed load (dropped connection, expired token mid-refresh) used to
+      // fall through as "no recommendations" and be cached for 5 minutes — the
+      // Home page then showed an empty section until the cache expired. Keep
+      // whatever is on screen and don't cache the failure.
+      if (recsError) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
       type RecRow = NonNullable<typeof recs>[number];
       const byChild = new Map<string, RecRow[]>();
       for (const r of recs ?? []) {
@@ -605,7 +613,14 @@ export function useRecommendations(children: Child[]) {
       }
       const out = children.map((child) => ({
         child,
-        recs: (byChild.get(child.id) ?? []).slice(0, 8).map((r) => {
+        recs: (byChild.get(child.id) ?? []).filter((r) => {
+          // Rows are rebuilt hourly, so between runs an activity can have been
+          // unpublished (RLS then hands back null) or run out of sessions.
+          // Drop those BEFORE taking the top 8 — slicing first left blank
+          // slots (or a whole empty section) even with valid ones further down.
+          const a = r.activities as unknown as { activity_sessions?: unknown[] } | null;
+          return !!a && (a.activity_sessions?.length ?? 0) > 0;
+        }).slice(0, 8).map((r) => {
           const act = (r.activities as unknown as
             | (ActivityRow & {
                 activity_categories?: { name: string } | null;
