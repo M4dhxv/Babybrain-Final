@@ -112,7 +112,13 @@ function layout(ctx: EmailCtx, inner: string): string {
 </div>`;
 }
 
-const wrap = (ctx: EmailCtx, subject: string, inner: string): RenderedEmail => ({ subject, html: layout(ctx, inner) });
+// A subject line is plain text, not HTML: templates that pass a name through
+// esc() would otherwise show "Inspire Mum &amp; Baby" in the inbox. Undo the
+// escaping here so every template's subject reads correctly.
+const plainSubject = (s: string): string =>
+  s.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e as string] as string));
+
+const wrap = (ctx: EmailCtx, subject: string, inner: string): RenderedEmail => ({ subject: plainSubject(subject), html: layout(ctx, inner) });
 
 // Benefit bullet list used across welcome/nudge emails.
 const bullets = (items: string[]) =>
