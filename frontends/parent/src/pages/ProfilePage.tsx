@@ -1950,11 +1950,13 @@ export default function ProfilePage() {
               to fill it (flex-1), so the white panel runs to the bottom and the
               "Need help?" card can pin there. A bare `min-h-full` on the card
               did nothing — its parent had no height to be a percentage of.
-              Desktop: the card itself is the scroll box (it owns the border and
-              radius), so its scrollbar sits inside the white panel, and it
-              shrinks to leave room for the "Need help?" card below, which
-              therefore stays in view. */}
-          <div className="flex flex-1 flex-col rounded-[12px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:block lg:min-h-0 lg:flex-initial lg:overflow-y-auto bb-slim-scroll">
+              One panel on both breakpoints: the white card owns the border,
+              radius and shadow; everything scrolls in a region inside it (so
+              the scrollbar sits inside the card) and "Need help?" is the last
+              item in that region — reached by scrolling to the end, and pushed
+              to the drawer's bottom on mobile when the menu is short. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card lg:flex-initial">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 bb-slim-scroll">
             <div className="flex items-center gap-3">
               <AnimalAvatar seed={profile?.avatar_seed ?? parentName} kind="parent" className="h-14 w-14" />
               <div className="min-w-0">
@@ -2007,9 +2009,7 @@ export default function ProfilePage() {
                 );
               })}
             </nav>
-            {/* Mobile: "Need help?" sits at the bottom of the drawer, inside the
-                white panel, so the nav and help stay together like on desktop. */}
-            <div className="mt-auto pt-6 lg:hidden">
+            <div className="mt-auto pt-6">
               <div className="rounded-[12px] bg-[#EDF7FD] p-5">
                 <h3 className="font-black">Need help?</h3>
                 <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
@@ -2017,13 +2017,6 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-          {/* Desktop only: "Need help?" rides inside the pinned sidebar so the
-              nav and the help card stay in view together while the tab
-              content scrolls. */}
-          <div className="mt-4 hidden shrink-0 rounded-[12px] bg-[#EDF7FD] p-5 lg:block">
-            <h3 className="font-black">Need help?</h3>
-            <p className="mt-2 text-sm font-semibold">Our support team is here for you.</p>
-            <a href="/contact" className="mt-4 block font-black text-[#FFC1D6]">Contact support →</a>
           </div>
           </div>
         </aside>
