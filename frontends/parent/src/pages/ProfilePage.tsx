@@ -3374,7 +3374,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
             {b.canClaim && (
               <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-bold text-palette-greenInk">
-                  A spot has opened up on this session — pay to confirm it before it's taken.
+                  A spot has opened up on this session — book it now. The first to book gets it.
                 </p>
                 <button
                   type="button"
@@ -3382,7 +3382,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
                   onClick={() => payToClaim(b)}
                   className="w-full rounded-[9px] bg-baby-cta px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-60 sm:w-auto sm:py-1.5 sm:text-xs"
                 >
-                  {busyId === b.id ? "Starting…" : "Pay now"}
+                  {busyId === b.id ? "Starting…" : "Book now"}
                 </button>
               </div>
             )}

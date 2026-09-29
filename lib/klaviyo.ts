@@ -1,4 +1,12 @@
 /**
+ * Klaviyo integration — NOT CALLED ANYWHERE (decided 29 Sep).
+ *
+ * Klaviyo is managed by hand: the app sends nothing to it. Katie exports
+ * parents who gave marketing consent (and withdrawals to suppress) from
+ * /admin → Marketing (app/api/admin/marketing-contacts) and imports them
+ * herself. This file is kept so automatic sync can be switched back on later
+ * by calling it again from the notifications webhook and the consent route.
+ *
  * Klaviyo integration.
  *
  * QA: "None of the Klaviyo e-mail flows are set up."
@@ -164,6 +172,31 @@ export async function setMarketingSubscription(email: string, subscribed: boolea
       relationships: { list: { data: { type: 'list', id: listId } } },
     },
   });
+}
+
+/**
+ * Whether Klaviyo already holds a profile for this email. Read-only; used so
+ * an opt-out only ever touches someone Klaviyo already has, and never creates
+ * a profile for a person who didn't consent. False when Klaviyo is off or the
+ * lookup fails.
+ */
+export async function klaviyoProfileExists(email: string): Promise<boolean> {
+  if (!enabled()) return false;
+  try {
+    const filter = encodeURIComponent(`equals(email,"${email.replace(/"/g, '')}")`);
+    const res = await fetch(`${API}/profiles/?filter=${filter}&fields[profile]=email`, {
+      headers: {
+        Authorization: `Klaviyo-API-Key ${process.env.KLAVIYO_API_KEY}`,
+        revision: REVISION,
+        accept: 'application/json',
+      },
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { data?: unknown[] };
+    return (body.data?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Map a BabyBrain notification onto its Klaviyo metric, if one exists. */

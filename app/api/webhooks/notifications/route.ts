@@ -3,7 +3,6 @@ import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
-import { klaviyoEnabled, metricFor, setMarketingSubscription, trackEvent, upsertProfile } from '@/lib/klaviyo';
 import { sendPushToUser } from '@/lib/push';
 
 /** Chat reply emails wait this long and are dropped if the message was read. */
@@ -80,7 +79,7 @@ export async function POST(request: Request) {
   // other auth user) are looked up via the auth admin API.
   const { data: profile } = await admin
     .from('parent_profiles')
-    .select('email, full_name, marketing_consent_at')
+    .select('email, full_name')
     .eq('id', notification.user_id)
     .maybeSingle();
 
@@ -146,29 +145,8 @@ export async function POST(request: Request) {
     .update({ email_status: sendError ? 'failed' : 'sent' })
     .eq('id', notificationId);
 
-  // Mirror the event into Klaviyo so the marketing flows have something to
-  // trigger on. No-ops unless KLAVIYO_API_KEY is set, and never blocks the
-  // transactional send above.
-  //
-  // Consent gate (PDPA): parents who gave marketing consent only. A vendor
-  // has no parent_profiles row, so vendors are never sent either.
-  const metric = metricFor(notification.type);
-  const consented = Boolean(profile?.marketing_consent_at);
-  if (metric && consented && klaviyoEnabled()) {
-    await upsertProfile({ email, firstName: name, properties: { babybrain_user_id: notification.user_id, marketing_consent: true } });
-    // The welcome is sent once, right after sign-up, so it is where consent
-    // given on the sign-up form reaches the Klaviyo list. Later changes go
-    // through /api/customer/marketing-consent.
-    if (['welcome', 'parent_welcome_free', 'parent_welcome_paid'].includes(notification.type)) {
-      await setMarketingSubscription(email, true);
-    }
-    await trackEvent({
-      metric,
-      email,
-      name,
-      properties: { notification_type: notification.type, title: notification.title, ...data },
-    });
-  }
+  // Klaviyo is managed by hand (decided 29 Sep): nothing is mirrored to it
+  // from here. Katie exports consenting parents from /admin → Marketing.
 
   return NextResponse.json({ ok: !sendError });
 }

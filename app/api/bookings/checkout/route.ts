@@ -97,26 +97,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }
 
-  // Paying to claim a freed seat from the waitlist: the seat isn't held, so
-  // re-check there's actually one going before sending the parent to Stripe.
-  // The moment the class fills, this "Pay now" stops working — that's the
-  // "expire the link when the vacancy is filled" behaviour. A vendor "Promote"
-  // on an unpaid booking (waitlist_pay_invited, 00101) is an explicit offer,
-  // so it's allowed through even at capacity.
+  // Paying to claim a freed seat from the waitlist ("Pay now"): hold the
+  // seat BEFORE sending the parent to Stripe. claim_waitlist_seats (00197)
+  // moves the seats to pending under the session lock, so two parents can
+  // never both pay for the same spot, and nobody pays for one that's gone.
+  // A vendor "Promote" (waitlist_pay_invited, 00101) is an explicit offer and
+  // may go over capacity. An unpaid hold goes back to the waitlist after 45
+  // minutes (release_stale_pending_bookings).
   const waitlisted = chargeSeats.filter((s) => (s as { status?: string }).status === 'waitlisted');
-  const vendorInvited = waitlisted.every(
-    (s) => (s as { waitlist_pay_invited?: boolean }).waitlist_pay_invited === true
-  );
-  if (waitlisted.length > 0 && !vendorInvited) {
-    const { count } = await admin
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('session_id', booking.session_id)
-      .in('status', ['pending', 'confirmed']);
-    const cap = sess?.capacity ?? null;
-    if (cap != null && (count ?? 0) + seatCount > cap) {
+  if (waitlisted.length > 0) {
+    const rpc = admin.rpc as unknown as (
+      fn: 'claim_waitlist_seats',
+      args: { p_seat_ids: string[] }
+    ) => Promise<{ error: { message: string } | null }>;
+    const { error: claimError } = await rpc.call(admin, 'claim_waitlist_seats', {
+      p_seat_ids: waitlisted.map((s) => s.id),
+    });
+    if (claimError) {
       return NextResponse.json(
-        { error: "That spot has been taken — you're still on the waitlist." },
+        { error: claimError.message.includes('taken') ? claimError.message : "That spot has been taken — you're still on the waitlist." },
         { status: 409 }
       );
     }
@@ -142,6 +141,9 @@ export async function POST(request: Request) {
 
   const params = {
     mode: 'payment' as const,
+    // Close the checkout before the 45-minute clean-up releases an unpaid
+    // seat, so nobody can pay for a place that has already gone back.
+    expires_at: Math.floor(Date.now() / 1000) + 40 * 60,
     payment_method_types: ONE_OFF_PAYMENT_METHODS,
     line_items: [
       {

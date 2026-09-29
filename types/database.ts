@@ -62,6 +62,7 @@ export type Database = {
           terms_accepted_at: string | null;
           terms_version: string | null;
           marketing_consent_at: string | null;
+          marketing_consent_withdrawn_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -77,6 +78,7 @@ export type Database = {
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           marketing_consent_at?: string | null;
+          marketing_consent_withdrawn_at?: string | null;
         };
         Update: {
           full_name?: string;
@@ -88,6 +90,7 @@ export type Database = {
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           marketing_consent_at?: string | null;
+          marketing_consent_withdrawn_at?: string | null;
         };
               Relationships: [];
       };

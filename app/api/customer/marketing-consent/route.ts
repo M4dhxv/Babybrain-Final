@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { setMarketingSubscription, upsertProfile } from '@/lib/klaviyo';
 
 /**
  * A parent gives or withdraws marketing consent (Settings → Subscribe /
  * Unsubscribe, and the footer unsubscribe link that lands there).
  *
- * Saves parent_profiles.marketing_consent_at (stamped now, or cleared) and
- * mirrors the choice onto the Klaviyo list, so an unsubscribe here also stops
- * Klaviyo's marketing emails. Klaviyo is a no-op until its env vars are set.
+ * Saves parent_profiles.marketing_consent_at (stamped now, or cleared) and,
+ * on withdrawal, marketing_consent_withdrawn_at (00198). Klaviyo is managed by
+ * hand (decided 29 Sep), so nothing is sent to it from here: Katie exports
+ * consenting parents, and withdrawals to suppress, from /admin → Marketing.
  *
  * Body: { consented: boolean }
  */
@@ -23,24 +23,28 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
+  const { data: before } = await admin
+    .from('parent_profiles')
+    .select('marketing_consent_at')
+    .eq('id', user.id)
+    .maybeSingle();
+  const hadConsent = Boolean(before?.marketing_consent_at);
+
+  const now = new Date().toISOString();
   const { data: profile, error } = await admin
     .from('parent_profiles')
-    .update({ marketing_consent_at: consented ? new Date().toISOString() : null })
+    .update(
+      consented
+        ? { marketing_consent_at: now, marketing_consent_withdrawn_at: null }
+        : // Only a real opt-out is a withdrawal; unsubscribing when you never
+          // subscribed leaves nothing for Katie to suppress.
+          { marketing_consent_at: null, ...(hadConsent ? { marketing_consent_withdrawn_at: now } : {}) }
+    )
     .eq('id', user.id)
-    .select('email, full_name')
+    .select('id')
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!profile) return NextResponse.json({ error: 'No parent profile for this account' }, { status: 404 });
-
-  const email = profile.email ?? user.email;
-  if (email) {
-    // Only create the Klaviyo profile for someone opting in; an opt-out just
-    // flips the subscription on a profile Klaviyo may already hold.
-    if (consented) {
-      await upsertProfile({ email, firstName: profile.full_name, properties: { babybrain_user_id: user.id, marketing_consent: true } });
-    }
-    await setMarketingSubscription(email, consented);
-  }
 
   return NextResponse.json({ ok: true, consented });
 }
