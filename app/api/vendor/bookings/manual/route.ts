@@ -10,7 +10,12 @@ import { cancelWixLinkedBooking } from '@/lib/wix/sync';
  * Wix, so it does not appear in the vendor's Wix calendar and does not change
  * Wix's seat count or the parent-facing "spots left" from Wix. The response's
  * `wix_linked` lets the portal say so.
- * Body: { provider_id, session_id, name, contact?, paid? }
+ * Body: { provider_id, session_id, name, contact?, paid?, increase_capacity? }
+ *
+ * `increase_capacity` is for a FULL native session: raises its capacity by one
+ * and books the guest into that seat atomically, without offering the seat to
+ * the waitlist (add_manual_booking_over_capacity, migration 00196). Wix-linked
+ * sessions refuse it — Wix owns their capacity.
  *
  * (Entries created before this rule may carry a wix_booking_id from when a
  * class booking was also created in Wix; DELETE below still frees that seat.)
@@ -23,6 +28,7 @@ const AT_CAPACITY_MESSAGE =
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     provider_id?: string; session_id?: string; name?: string; contact?: string; paid?: boolean;
+    increase_capacity?: boolean;
   };
   const name = body.name?.trim();
   if (!body.provider_id || !body.session_id || !name) {
@@ -46,6 +52,26 @@ export async function POST(request: Request) {
     : { data: null };
   if (!session || !activity || activity.provider_id !== body.provider_id) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  }
+
+  if (body.increase_capacity) {
+    if (session.wix_slot_key || activity.wix_service_id || activity.wix_service_type || activity.wix_event_id) {
+      return NextResponse.json(
+        { error: "This slot's capacity is managed on Wix, so it can't be increased here. Raise it in Wix instead." },
+        { status: 400 }
+      );
+    }
+    const { data: result, error: rpcError } = await admin.rpc('add_manual_booking_over_capacity', {
+      p_session_id: session.id,
+      p_name: name,
+      p_contact: body.contact?.trim() || null,
+      p_paid: !!body.paid,
+    });
+    if (rpcError || !result) {
+      console.error('Manual booking over-capacity failed', rpcError);
+      return NextResponse.json({ error: rpcError?.message ?? 'Could not save the booking' }, { status: 500 });
+    }
+    return NextResponse.json({ ...result, wix_linked: false, synced_to_wix: false });
   }
 
   // A full session can't take a manual booking (the insert would be turned into
@@ -88,6 +114,15 @@ export async function POST(request: Request) {
   if (error || !row) {
     console.error('Manual booking local insert failed', error);
     return NextResponse.json({ error: error?.message ?? 'Could not save the booking' }, { status: 500 });
+  }
+  // The capacity check above isn't atomic with this insert. If two entries race
+  // for the last seat, handle_booking_insert (00156) serializes them on the
+  // session row and turns the loser into a waitlist row. A vendor adding a
+  // booking never asked for that — undo it and report the same "at capacity".
+  if (row.status === 'waitlisted') {
+    const { error: undoError } = await admin.from('bookings').delete().eq('id', row.id);
+    if (undoError) console.error('Manual booking waitlist rollback failed', undoError);
+    return NextResponse.json({ error: AT_CAPACITY_MESSAGE }, { status: 409 });
   }
   return NextResponse.json({ id: row.id, status: row.status, wix_linked: wixLinked, synced_to_wix: false });
 }

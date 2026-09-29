@@ -1489,6 +1489,10 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      add_manual_booking_over_capacity: {
+        Args: { p_session_id: string; p_name: string; p_contact: string | null; p_paid: boolean };
+        Returns: { id: string; status: string; capacity_increased: boolean; waitlisted: number };
+      };
       cancel_wix_session: {
         Args: { p_session_id: string };
         Returns: number;

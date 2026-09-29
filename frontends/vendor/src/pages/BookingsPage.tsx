@@ -448,15 +448,18 @@ export default function BookingsPage() {
     // activity (see /api/vendor/bookings/manual).
     let error: { message: string } | null = null;
     let wixLinked = false;
+    let capacityRaised = false;
     try {
-      const res = await apiPost<{ wix_linked?: boolean }>('/api/vendor/bookings/manual', {
+      const res = await apiPost<{ wix_linked?: boolean; capacity_increased?: boolean }>('/api/vendor/bookings/manual', {
         provider_id: provider?.id,
         session_id: sessionId,
         name: manualForm.name.trim(),
         contact: manualForm.contact.trim() || null,
         paid: manualForm.paid,
+        increase_capacity: slotIsFull,
       });
       wixLinked = !!res?.wix_linked;
+      capacityRaised = !!res?.capacity_increased;
     } catch (e) {
       error = { message: e instanceof Error ? e.message : 'Could not add the booking.' };
     }
@@ -464,6 +467,12 @@ export default function BookingsPage() {
     if (error) { setManualError(error.message); return; }
     if (wixLinked) {
       toast.success('Booking added on BabyBrain.', { description: "It isn't in your Wix calendar and doesn't change Wix's seat count — add it in Wix too if you need it there." });
+    }
+    if (capacityRaised) {
+      // Keep the picker's own copy of the capacity in step with the database.
+      setSessions((prev) => prev.map((s) => (s.id === sessionId && s.capacity != null ? { ...s, capacity: s.capacity + 1 } : s)));
+      setDaySessions((prev) => prev.map((s) => (s.id === sessionId && s.capacity != null ? { ...s, capacity: s.capacity + 1 } : s)));
+      toast.success('Booking added and capacity increased by one.');
     }
     setManualForm({ name: '', contact: '', paid: false });
     setShowManual(false);
@@ -714,6 +723,16 @@ export default function BookingsPage() {
   const rosterLoading = !!sessionId && rosterSessionId !== sessionId;
   const booked = useMemo(() => roster.filter((r) => r.status === 'confirmed' || r.status === 'completed'), [roster]);
   const waitlisted = useMemo(() => roster.filter((r) => r.status === 'waitlisted'), [roster]);
+  // A full BabyBrain-native slot: "Add booking" then raises the capacity by one
+  // and books the guest into that seat (the waitlist isn't offered it). Same
+  // seat count the server uses (pending + confirmed). Wix-linked slots are out —
+  // Wix owns their capacity — so they keep the plain "at capacity" refusal.
+  const slotIsFull = useMemo(() => {
+    if (!currentSession || currentSession.capacity == null || rosterSessionId !== sessionId) return false;
+    if (currentSession.wix_slot_key || activityWixType[sessionActivity[sessionId]]) return false;
+    const held = roster.filter((r) => r.status === 'pending' || r.status === 'confirmed').length;
+    return held >= currentSession.capacity;
+  }, [currentSession, roster, rosterSessionId, sessionId, activityWixType, sessionActivity]);
   /* QA 04/09: "Under bookings, when there is a waitlist and you click on that
      tab, all the bookings are still showing on the left — should just show the
      waitlist." The left-hand list now follows the tab. Attendance is still
@@ -1176,6 +1195,13 @@ export default function BookingsPage() {
                 This is a Wix-linked activity. The booking is saved on BabyBrain only — it won't appear in your Wix calendar or change Wix's seat count, so add it in Wix too if you need it there.
               </div>
             )}
+            {slotIsFull && (
+              <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                This slot is full{waitlisted.length > 0 ? ` and ${waitlisted.length} ${waitlisted.length === 1 ? 'family is' : 'families are'} on the waitlist` : ''}.
+                Adding this booking raises its capacity from {currentSession?.capacity} to {(currentSession?.capacity ?? 0) + 1}
+                {waitlisted.length > 0 ? ' — the new seat is yours, so waitlisted families are not offered it and keep their place in the queue.' : '.'}
+              </div>
+            )}
             {manualError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{manualError}</div>}
             <div className="flex flex-wrap items-end gap-3">
               <div>
@@ -1191,7 +1217,7 @@ export default function BookingsPage() {
                 Paid outside BabyBrain
               </label>
               <button onClick={addManualBooking} disabled={savingManual || !manualForm.name.trim()} className="h-9 rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50">
-                {savingManual ? 'Adding…' : 'Add booking'}
+                {savingManual ? 'Adding…' : slotIsFull ? 'Increase the capacity and add this booking' : 'Add booking'}
               </button>
               <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             </div>
