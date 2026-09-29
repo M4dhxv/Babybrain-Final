@@ -271,7 +271,19 @@ export default function BookingsPage() {
     setMobileDetail(false);
     setSearchParams(t === 'Bookings' ? {} : { tab: t }, { replace: true });
   };
-  const [sessions, setSessions] = useState<SessionOpt[]>([]);
+  // The default picker list: the next few sessions per activity plus recent
+  // past ones (see the load effect below). A date the vendor picks beyond that
+  // is fetched on demand into `daySessions` and merged in as `sessions`.
+  const [baseSessions, setSessions] = useState<SessionOpt[]>([]);
+  const [daySessions, setDaySessions] = useState<SessionOpt[]>([]);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [activityTitles, setActivityTitles] = useState<Record<string, string>>({});
+  const sessions = useMemo(() => {
+    if (!daySessions.length) return baseSessions;
+    const have = new Set(baseSessions.map((s) => s.id));
+    return [...baseSessions, ...daySessions.filter((s) => !have.has(s.id))]
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [baseSessions, daySessions]);
   const [sessionActivity, setSessionActivity] = useState<Record<string, string>>({});
   // activity id -> wix_service_type, so the roster can tell whether the
   // selected session's activity is a Wix Event / COURSE (no Waitlist tab).
@@ -331,6 +343,36 @@ export default function BookingsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredSessions]);
+  // A picked date is loaded from the server on demand, so any day is reachable
+  // however many sessions the activity runs — the default list is capped per
+  // activity and would otherwise hide later days entirely.
+  useEffect(() => {
+    const ids = Object.keys(activityTitles);
+    if (!dateFilter || !ids.length) { setDaySessions([]); setDayLoading(false); return; }
+    let cancelled = false;
+    setDayLoading(true);
+    (async () => {
+      const { data } = await supabase
+        .from('activity_sessions')
+        .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key')
+        .in('activity_id', ids)
+        .neq('status', 'cancelled')
+        .gte('starts_at', sgStartOfDayIso(dateFilter))
+        .lt('starts_at', sgStartOfDayIso(sgKeyShift(dateFilter, 1)))
+        .order('starts_at', { ascending: true })
+        .limit(300);
+      if (cancelled) return;
+      const rows = data ?? [];
+      setSessionActivity((prev) => ({ ...prev, ...Object.fromEntries(rows.map((s) => [s.id, s.activity_id])) }));
+      setDaySessions(rows.map((s) => ({
+        id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: activityTitles[s.activity_id] ?? 'Activity',
+        teacher_name: s.teacher_name, studio: s.studio, wix_remaining_capacity: s.wix_remaining_capacity,
+        wix_slot_key: s.wix_slot_key,
+      })));
+      setDayLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [dateFilter, activityTitles]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   // Which session's roster `roster` holds. Until it matches the selected session
   // the roster is stale/empty, so "no bookings" messages must not show.
@@ -507,7 +549,30 @@ export default function BookingsPage() {
         teacher_name: s.teacher_name, studio: s.studio, wix_remaining_capacity: s.wix_remaining_capacity,
         wix_slot_key: s.wix_slot_key,
       }));
+      // A ?session= deep-link (Schedule calendar click) can point past the
+      // per-activity cap above — fetch that one session so it still resolves.
+      const requestedId = searchParams.get('session');
+      if (requestedId && !opts.some((o) => o.id === requestedId)) {
+        const { data: one } = await supabase
+          .from('activity_sessions')
+          .select('id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key')
+          .eq('id', requestedId)
+          .in('activity_id', ids)
+          .maybeSingle();
+        if (one) {
+          sess.push(one);
+          opts.push({
+            id: one.id, starts_at: one.starts_at, capacity: one.capacity, title: map.get(one.activity_id) ?? 'Activity',
+            teacher_name: one.teacher_name, studio: one.studio, wix_remaining_capacity: one.wix_remaining_capacity,
+            wix_slot_key: one.wix_slot_key,
+          });
+          opts.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+        }
+      }
       setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
+      // Set together with the sessions (not earlier) so the date-filter fetch
+      // below can't resolve first and then be overwritten by this.
+      setActivityTitles(Object.fromEntries(map));
       setSessions(opts);
       // The Schedule tab deep-links here with ?session=, so a click on a
       // calendar session lands straight on its roster instead of whichever
@@ -1045,8 +1110,8 @@ export default function BookingsPage() {
           <div className="flex w-full flex-col gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 sm:w-auto sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
               <Baby className="w-4 h-4 shrink-0 text-[#FA4D8D]" />
-              <SelectField bare value={sessionId} onChange={setSessionId} aria-label="Session" className="min-w-0 flex-1 font-medium sm:flex-none" placeholder={dateFilter ? 'No sessions on this date' : 'No sessions yet'}>
-                {filteredSessions.length === 0 && <Opt value="" disabled>{dateFilter ? 'No sessions on this date' : 'No sessions yet'}</Opt>}
+              <SelectField bare value={sessionId} onChange={setSessionId} aria-label="Session" className="min-w-0 flex-1 font-medium sm:flex-none" placeholder={dayLoading ? 'Loading sessions…' : dateFilter ? 'No sessions on this date' : 'No sessions yet'}>
+                {filteredSessions.length === 0 && <Opt value="" disabled>{dayLoading ? 'Loading sessions…' : dateFilter ? 'No sessions on this date' : 'No sessions yet'}</Opt>}
                 {filteredSessions.map((s) => (
                   <Opt key={s.id} value={s.id}>
                     {s.title} • {sgDateTime(s.starts_at)}{s.starts_at < startTodayIso ? ' • past' : ''}

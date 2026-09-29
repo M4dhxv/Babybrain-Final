@@ -127,6 +127,12 @@ export interface ProviderContact {
   gallery_urls: string[] | null;
 }
 
+// How many distinct days that have listed sessions a parent sees on an activity
+// page. Passed explicitly to the RPC, so this — not the SQL default — is the
+// real limit. It counts days with sessions, not calendar days: a weekly class
+// therefore reaches well past 40 calendar days out.
+const UPCOMING_SESSION_DAYS = 40;
+
 /**
  * A locally-recorded session's upcoming rows, with `capacity` already turned
  * from the class's total into what's actually still open — "10 spots" used
@@ -148,7 +154,7 @@ export interface ProviderContact {
  * rows — a day is all-or-nothing, so a high-frequency listing's later days
  * aren't silently dropped just because its first day alone fills a row cap.
  */
-async function fetchUpcomingSessions(activityId: string, limit = 14): Promise<ActivitySession[]> {
+async function fetchUpcomingSessions(activityId: string, limit = UPCOMING_SESSION_DAYS): Promise<ActivitySession[]> {
   const { data } = await supabase.rpc("upcoming_activity_sessions", {
     p_activity_id: activityId,
     p_limit: limit,
