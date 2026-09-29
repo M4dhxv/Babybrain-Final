@@ -710,6 +710,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          allow_manual_payouts: boolean;
           is_auto_listed: boolean;
           source_url: string | null;
           synced_at: string | null;
@@ -759,12 +760,15 @@ export type Database = {
           marketing_consent_at?: string | null;
           medical_disclosure_mode?: 'off' | 'all' | 'some';
           medical_disclosure_activity_ids?: string[];
+          // Admin-only (migration 00200); the DB rejects it from a signed-in session.
+          allow_manual_payouts?: boolean;
         };
         Update: Partial<Database['public']['Tables']['providers']['Insert']> & {
           is_claimed?: boolean;
           verification_status?: 'unverified' | 'pending' | 'verified';
           stripe_account_id?: string | null;
           payouts_enabled?: boolean;
+          allow_manual_payouts?: boolean;
           wix_site_id?: string | null;
         };
         Relationships: [];

@@ -637,6 +637,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          allow_manual_payouts: boolean;
           wix_site_id: string | null;
           vendor_terms_accepted_at: string | null;
           booking_messaging_terms_accepted_at: string | null;
@@ -681,6 +682,7 @@ export type Database = {
           verification_status?: 'unverified' | 'pending' | 'verified';
           stripe_account_id?: string | null;
           payouts_enabled?: boolean;
+          allow_manual_payouts?: boolean;
         };
         Relationships: [];
       };

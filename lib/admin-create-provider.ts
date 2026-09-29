@@ -247,6 +247,9 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
       verification_status: 'unverified',
       status: 'active',
       synced_at: new Date().toISOString(),
+      // Persisted, not a one-shot: the vendor's own portal has to let them
+      // publish too (migration 00200).
+      allow_manual_payouts: Boolean(input.overridePayoutGate),
     })
     .select('id, slug, business_name, region')
     .single();

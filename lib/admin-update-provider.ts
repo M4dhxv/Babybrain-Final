@@ -36,6 +36,10 @@ export type ProviderDetail = {
   cover_image_url: string | null;
   uen: string | null;
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
+  /** Live Stripe payouts (set by Stripe's webhook — read-only here). */
+  payouts_enabled: boolean;
+  /** Admin-set: vendor may publish without Stripe; BabyBrain settles manually. */
+  allow_manual_payouts: boolean;
   locations: {
     id: string; name: string; address: string | null; postal_code: string | null;
     region: string | null; is_primary: boolean; latitude: number | null; longitude: number | null;
@@ -68,7 +72,7 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
     .select(
       'id, business_name, slug, description, vendor_category, contact_email, contact_phone, whatsapp, ' +
         'website, address, postal_code, region, status, is_claimed, is_auto_listed, latitude, longitude, ' +
-        'logo_url, cover_image_url, uen, social'
+        'logo_url, cover_image_url, uen, social, payouts_enabled, allow_manual_payouts'
     )
     .eq('id', id)
     .maybeSingle();
@@ -163,6 +167,10 @@ export type ProviderPatch = Partial<{
   cover_image_url: string | null;
   uen: string | null;
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null };
+  /** Persisted: lets the vendor publish BabyBrain-checkout classes without
+   *  Stripe payouts (BabyBrain settles their paid bookings manually). Honoured
+   *  by this save's publish gate AND by the vendor portal's own gate. */
+  allow_manual_payouts: boolean;
 }>;
 
 export type SessionPatch = {
@@ -229,8 +237,17 @@ export async function updateProviderWithCatalogue(
   const warnings: string[] = [];
 
   const { data: before } = await db
-    .from('providers').select('id, address, postal_code, business_name, payouts_enabled').eq('id', id).maybeSingle();
+    .from('providers').select('id, address, postal_code, business_name, payouts_enabled, allow_manual_payouts').eq('id', id).maybeSingle();
   if (!before) throw new Error('That vendor no longer exists.');
+
+  // Publishing into BabyBrain checkout without Stripe is allowed when payouts
+  // are live, the vendor is already flagged for manual settlement, this same
+  // save turns that flag on, or (older clients) the one-shot override is sent.
+  const manualSettlementOk =
+    Boolean(before.payouts_enabled) ||
+    Boolean((before as { allow_manual_payouts?: boolean }).allow_manual_payouts) ||
+    input.provider?.allow_manual_payouts === true ||
+    Boolean(input.overridePayoutGate);
 
   let regeocoded = false;
 
@@ -243,6 +260,8 @@ export async function updateProviderWithCatalogue(
                      'logo_url', 'cover_image_url', 'uen'] as const) {
       if (k in patch) row[k] = (patch[k] as string | null) ?? null;
     }
+    // A boolean, not text — kept out of the string loop above.
+    if (typeof patch.allow_manual_payouts === 'boolean') row.allow_manual_payouts = patch.allow_manual_payouts;
     if (patch.social) {
       row.social = {
         instagram: patch.social.instagram?.trim() || null,
@@ -366,11 +385,11 @@ export async function updateProviderWithCatalogue(
       const willPublish = a.is_published ?? cur?.is_published ?? false;
       const wasPublished = cur?.is_published ?? false;
       const resolvedExternalUrl = a.external_booking_url !== undefined ? a.external_booking_url : cur?.external_booking_url;
-      if (willPublish && !wasPublished && !resolvedExternalUrl?.trim() && !before.payouts_enabled && !input.overridePayoutGate) {
+      if (willPublish && !wasPublished && !resolvedExternalUrl?.trim() && !manualSettlementOk) {
         throw new Error(
           `"${a.title ?? cur?.title ?? 'This class'}" would publish straight into BabyBrain checkout, but this ` +
           `vendor has no Stripe payouts set up. Add an external booking link, leave it unpublished, or tick ` +
-          `"Publish anyway" to have BabyBrain settle it manually until they connect Stripe.`
+          `"Let this vendor publish without Stripe" to have BabyBrain settle it manually until they connect Stripe.`
         );
       }
 

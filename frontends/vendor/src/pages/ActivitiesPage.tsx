@@ -336,6 +336,9 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
 
 export default function ActivitiesPage() {
   const { provider, role, refreshProvider } = useAuth();
+  // Live Stripe payouts, or an admin-granted waiver (providers.allow_manual_payouts,
+  // migration 00200 — only the admin API can set it).
+  const canPublishWithoutStripe = Boolean(provider?.payouts_enabled || provider?.allow_manual_payouts);
   const canManage = role === 'owner' || role === 'manager';
 
   const [showDrawer, setShowDrawer] = useState(false);
@@ -1590,8 +1593,10 @@ export default function ActivitiesPage() {
     const is_published = !a.is_published;
     // Going live requires a working payout destination — otherwise a paid
     // booking's money has nowhere of the vendor's own to land. Unpublishing
-    // is always allowed regardless of payout status.
-    if (is_published && !provider?.payouts_enabled) {
+    // is always allowed regardless of payout status. A BabyBrain admin can
+    // waive this per vendor (allow_manual_payouts) — BabyBrain then settles
+    // their paid bookings manually until they connect Stripe.
+    if (is_published && !canPublishWithoutStripe) {
       setSyncError('Set up payouts before publishing — go to Billing to connect Stripe.');
       return;
     }
@@ -1951,11 +1956,11 @@ export default function ActivitiesPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => togglePublish(a)}
-                            disabled={!!a.wix_missing_since || (!a.is_published && !provider?.payouts_enabled)}
+                            disabled={!!a.wix_missing_since || (!a.is_published && !canPublishWithoutStripe)}
                             title={
                               a.wix_missing_since
                                 ? 'Locked until this service is found again on a connected Wix account'
-                                : !a.is_published && !provider?.payouts_enabled
+                                : !a.is_published && !canPublishWithoutStripe
                                 ? 'Set up payouts under Billing before publishing'
                                 : undefined
                             }

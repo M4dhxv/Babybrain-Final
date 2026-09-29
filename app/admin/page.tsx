@@ -224,6 +224,7 @@ type ProviderDetail = {
   latitude: number | null; longitude: number | null;
   logo_url: string | null; cover_image_url: string | null; uen: string | null;
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
+  payouts_enabled: boolean; allow_manual_payouts: boolean;
   locations: EditLocation[]; activities: EditActivity[];
 };
 type SaveResult = {
@@ -1157,7 +1158,7 @@ function AddVendorView() {
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.muted }}>
           <input type="checkbox" checked={overridePayoutGate}
             onChange={(e) => setOverridePayoutGate(e.target.checked)} />
-          Publish anyway — this vendor has no Stripe payouts set up, BabyBrain will settle any paid bookings manually
+          Let this vendor publish without Stripe — BabyBrain will settle their paid bookings manually until they connect Stripe (saved on the vendor, so their own portal lets them publish too)
         </label>
 
         {done && (
@@ -1268,10 +1269,6 @@ function EditVendorModal({
   // the array, but a saved one has to be sent back with _delete.
   const [dropSess, setDropSess] = useState<{ actId: string; sessId: string }[]>([]);
   const [newLocs, setNewLocs] = useState<DraftLocation[]>([]);
-  // Needed to flip a BabyBrain-checkout class from Hidden to Published while
-  // this vendor's payouts aren't enabled. See admin-update-provider.ts.
-  const [overridePayoutGate, setOverridePayoutGate] = useState(false);
-
   useEffect(() => {
     adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
       .then((p) =>
@@ -1322,6 +1319,9 @@ function EditVendorModal({
             cover_image_url: d.cover_image_url,
             uen: d.uen,
             social: d.social ?? {},
+            // Saved on the vendor (migration 00200) so their own portal lets
+            // them publish too, not just this save.
+            allow_manual_payouts: d.allow_manual_payouts,
           },
           locations: [
             ...d.locations.map((l) => ({
@@ -1366,7 +1366,6 @@ function EditVendorModal({
             ],
             _delete: dropAct.includes(a.id),
           })),
-          overridePayoutGate,
         }),
       });
       setNote([
@@ -1710,10 +1709,18 @@ function EditVendorModal({
               </div>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.muted }}>
-              <input type="checkbox" checked={overridePayoutGate}
-                onChange={(e) => setOverridePayoutGate(e.target.checked)} />
-              Publish anyway — for any class with no Stripe payouts set up, BabyBrain will settle it manually
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, color: C.muted }}>
+              <input type="checkbox" style={{ marginTop: 2 }}
+                checked={d.allow_manual_payouts || d.payouts_enabled}
+                disabled={d.payouts_enabled}
+                onChange={(e) => set('allow_manual_payouts', e.target.checked)} />
+              <span>
+                Let this vendor publish without Stripe — BabyBrain settles their paid bookings manually until they connect Stripe.
+                {' '}
+                {d.payouts_enabled
+                  ? 'Not needed: their Stripe payouts are already on.'
+                  : 'Saved on the vendor: it also lets them publish from their own portal, not just in this save.'}
+              </span>
             </label>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>

@@ -732,6 +732,7 @@ export type Database = {
           status: ProviderStatus;
           stripe_account_id: string | null;
           payouts_enabled: boolean;
+          allow_manual_payouts: boolean;
           wix_site_id: string | null;
           created_at: string;
           updated_at: string;
@@ -764,6 +765,7 @@ export type Database = {
           verification_status?: 'unverified' | 'pending' | 'verified';
           stripe_account_id?: string | null;
           payouts_enabled?: boolean;
+          allow_manual_payouts?: boolean;
         };
         Relationships: [];
       };
