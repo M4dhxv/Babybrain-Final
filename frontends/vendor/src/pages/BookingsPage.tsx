@@ -514,10 +514,31 @@ export default function BookingsPage() {
   useEffect(() => {
     if (!provider) return;
     (async () => {
-      const { data: acts } = await supabase
+      const { data: allActs } = await supabase
         .from('activities')
-        .select('id, title, wix_service_type, requires_medical_disclosure')
+        .select('id, title, wix_service_type, requires_medical_disclosure, wix_removed_at, wix_missing_since')
         .eq('provider_id', provider.id);
+      // A removed activity (removed here, or gone from the connected Wix
+      // account: the same test as the Activities page's "Removed" status) is
+      // kept out of the picker so it stops cluttering it. Except while it still
+      // has a live upcoming booking (pending / confirmed / waitlisted): that is
+      // a leftover the vendor has to see and deal with, so it stays listed
+      // until it is cleared.
+      const removedIds = (allActs ?? []).filter((a) => a.wix_removed_at || a.wix_missing_since).map((a) => a.id);
+      const leftoverIds = new Set<string>();
+      if (removedIds.length) {
+        const { data: live } = await supabase
+          .from('bookings')
+          .select('activity_sessions!inner(activity_id)')
+          .in('status', ['pending', 'confirmed', 'waitlisted'])
+          .in('activity_sessions.activity_id', removedIds)
+          .gte('activity_sessions.starts_at', new Date().toISOString())
+          .limit(500);
+        for (const r of (live ?? []) as unknown as { activity_sessions: { activity_id: string } | null }[]) {
+          if (r.activity_sessions) leftoverIds.add(r.activity_sessions.activity_id);
+        }
+      }
+      const acts = (allActs ?? []).filter((a) => !(a.wix_removed_at || a.wix_missing_since) || leftoverIds.has(a.id));
       const map = new Map((acts ?? []).map((a) => [a.id, a.title]));
       setActivityWixType(Object.fromEntries((acts ?? []).map((a) => [a.id, a.wix_service_type])));
       setActivityRequiresMedical(Object.fromEntries((acts ?? []).map((a) => [a.id, !!a.requires_medical_disclosure])));
