@@ -107,6 +107,11 @@ type SessionOpt = {
   // Only trust wix_remaining_capacity above when the slot is actually
   // Wix-materialized (see lib/wixCapacity.ts) — null for a site-native session.
   wix_slot_key: string | null;
+  // The session itself was cancelled (dropped on Wix, or re-keyed after a moved
+  // appointment was cancelled) but it still holds cancelled bookings. Only
+  // listed while the Cancelled / All filter is on, so those bookings stay
+  // reachable instead of vanishing with the session.
+  cancelled?: boolean;
 };
 
 // A booking made directly on the vendor's own Wix site rather than through
@@ -274,6 +279,9 @@ export default function BookingsPage() {
   // The default picker list: the next few sessions per activity plus recent
   // past ones (see the load effect below). A date the vendor picks beyond that
   // is fetched on demand into `daySessions` and merged in as `sessions`.
+  // Bookings tab only: cancelled bookings stay out of the default view (they
+  // no longer hold a seat) but the vendor can still look them up.
+  const [statusFilter, setStatusFilter] = useState<'active' | 'cancelled' | 'all'>('active');
   const [baseSessions, setSessions] = useState<SessionOpt[]>([]);
   const [daySessions, setDaySessions] = useState<SessionOpt[]>([]);
   const [dayLoading, setDayLoading] = useState(false);
@@ -318,12 +326,19 @@ export default function BookingsPage() {
   // No date filter → today (incl. slots already past) plus everything ahead.
   // A date filter → exactly that calendar day, which can be up to
   // PAST_FILTER_DAYS in the past.
+  // A cancelled session only appears while the Cancelled / All filter is on, so
+  // its cancelled bookings can still be opened (the default view shows live
+  // sessions only).
+  const visibleSessions = useMemo(
+    () => (statusFilter === 'active' ? sessions.filter((s) => !s.cancelled) : sessions),
+    [sessions, statusFilter]
+  );
   const filteredSessions = useMemo(
     () =>
       dateFilter
-        ? sessions.filter((s) => sgDateKey(s.starts_at) === dateFilter)
-        : sessions.filter((s) => s.starts_at >= startTodayIso),
-    [sessions, dateFilter, startTodayIso]
+        ? visibleSessions.filter((s) => sgDateKey(s.starts_at) === dateFilter)
+        : visibleSessions.filter((s) => s.starts_at >= startTodayIso),
+    [visibleSessions, dateFilter, startTodayIso]
   );
   // Where the session picker lands with no date filter — the "Clear" button
   // below resets straight to this rather than to '', so it works even when
@@ -331,8 +346,8 @@ export default function BookingsPage() {
   // that case filteredSessions doesn't change, so the effect below — which
   // only reruns off filteredSessions — would never notice a plain setSessionId('')).
   const defaultSessionId = useMemo(
-    () => sessions.find((s) => s.starts_at >= startTodayIso)?.id ?? '',
-    [sessions, startTodayIso]
+    () => visibleSessions.find((s) => s.starts_at >= startTodayIso)?.id ?? '',
+    [visibleSessions, startTodayIso]
   );
   // Switching (or clearing) the date filter can leave the current selection
   // out of view — jump to the first session that's still in it rather than
@@ -423,9 +438,6 @@ export default function BookingsPage() {
     if (pulledDown > DISMISS_PX) setMobileDetail(false);
   };
   const [search, setSearch] = useState('');
-  // Bookings tab only: cancelled bookings stay out of the default view (they
-  // no longer hold a seat) but the vendor can still look them up.
-  const [statusFilter, setStatusFilter] = useState<'active' | 'cancelled' | 'all'>('active');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
   // Which waivers/consents a booking actually accepted — fetched per booking
@@ -548,15 +560,33 @@ export default function BookingsPage() {
             .limit(pastCap),
         ])
       );
+      // The session queries above leave out cancelled sessions, which would make
+      // a cancelled booking on one disappear from the vendor's list (e.g. an
+      // appointment the vendor cancelled on Wix, or a class dropped on Wix).
+      // Bring those sessions back - they are only shown under the Cancelled /
+      // All filter (see visibleSessions).
+      type CancelledSess = Pick<SessionOpt, 'id' | 'starts_at' | 'capacity' | 'teacher_name' | 'studio' | 'wix_remaining_capacity' | 'wix_slot_key'> & { activity_id: string };
+      const { data: cancelledRows } = await supabase
+        .from('bookings')
+        .select('activity_sessions!inner(id, starts_at, capacity, activity_id, teacher_name, studio, wix_remaining_capacity, wix_slot_key, status)')
+        .eq('status', 'cancelled')
+        .eq('activity_sessions.status', 'cancelled')
+        .in('activity_sessions.activity_id', ids)
+        .gte('activity_sessions.starts_at', pastStartIso)
+        .limit(500);
+      const cancelledSessions = ((cancelledRows ?? []) as unknown as { activity_sessions: CancelledSess | null }[])
+        .map((r) => r.activity_sessions)
+        .filter((s): s is CancelledSess => !!s);
+      const cancelledIds = new Set(cancelledSessions.map((s) => s.id));
       const seen = new Set<string>();
-      const sess = results
-        .flatMap((r) => r.data ?? [])
+      const sess = [...results.flatMap((r) => r.data ?? []), ...cancelledSessions]
         .filter((s) => !seen.has(s.id) && seen.add(s.id))
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-      const opts = sess.map((s) => ({
+      const opts: SessionOpt[] = sess.map((s) => ({
         id: s.id, starts_at: s.starts_at, capacity: s.capacity, title: map.get(s.activity_id) ?? 'Activity',
         teacher_name: s.teacher_name, studio: s.studio, wix_remaining_capacity: s.wix_remaining_capacity,
         wix_slot_key: s.wix_slot_key,
+        ...(cancelledIds.has(s.id) ? { cancelled: true } : {}),
       }));
       // A ?session= deep-link (Schedule calendar click) can point past the
       // per-activity cap above — fetch that one session so it still resolves.
@@ -597,7 +627,9 @@ export default function BookingsPage() {
       // Default to the first session from today onward (past ones are only
       // there for the date filter); fall back to the most recent past one if
       // there's nothing upcoming.
-      const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso);
+      // Live sessions only: a cancelled one is listed just for its cancelled
+      // bookings (Cancelled / All filter), never as the page's starting point.
+      const firstUpcoming = opts.find((o) => o.starts_at >= dayStartIso && !o.cancelled);
       // A ?session= deep-link always wins, even over an already-selected
       // session from before this navigation — otherwise a session left
       // over from a previous visit to this tab silently outranks the
@@ -1133,7 +1165,7 @@ export default function BookingsPage() {
                 {filteredSessions.length === 0 && <Opt value="" disabled>{dayLoading ? 'Loading sessions…' : dateFilter ? 'No sessions on this date' : 'No sessions yet'}</Opt>}
                 {filteredSessions.map((s) => (
                   <Opt key={s.id} value={s.id}>
-                    {s.title} • {sgDateTime(s.starts_at)}{s.starts_at < startTodayIso ? ' • past' : ''}
+                    {s.title} • {sgDateTime(s.starts_at)}{s.starts_at < startTodayIso ? ' • past' : ''}{s.cancelled ? ' • cancelled' : ''}
                   </Opt>
                 ))}
               </SelectField>

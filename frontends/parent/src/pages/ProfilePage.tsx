@@ -76,6 +76,8 @@ const PROFILE_FRESH_MS = 60_000;
 type CustomerBookingRow = {
   id: string;
   status: string;
+  // When the booking was made (the API already returns it).
+  created_at?: string | null;
   child_id: string | null;
   guest_name: string | null;
   booking_group_id: string | null;
@@ -110,6 +112,8 @@ type CustomerBookingRow = {
 
 type BookingItem = {
   id: string; status: string; when: string; title: string; slug: string; image: string;
+  /** When the booking was made (earliest seat of a party) - the "Booking time" sort. */
+  createdAt: string | null;
   startsAt: string | null; endsAt: string | null; venue: string;
   /** Teacher and/or studio for this session, when the vendor set them (00074). */
   staff: string;
@@ -315,6 +319,42 @@ function ExportScheduleDialog({
   const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(addDays(30));
 
+  // Live subscription: a private URL the parent's calendar app re-reads on its
+  // own, so a rescheduled or cancelled booking updates there (the file export
+  // above is a one-off copy). The link is per parent and can be reset.
+  const [showFeed, setShowFeed] = useState(false);
+  const [feed, setFeed] = useState<{ url: string; webcalUrl: string } | null>(null);
+  const [feedErr, setFeedErr] = useState<string | null>(null);
+  const [feedBusy, setFeedBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  async function loadFeed(rotate = false) {
+    setFeedErr(null);
+    setFeedBusy(true);
+    try {
+      const res = rotate
+        ? await apiPost<{ url: string; webcalUrl: string }>("/api/customer/calendar-link", {})
+        : await apiGet<{ url: string; webcalUrl: string }>("/api/customer/calendar-link");
+      setFeed(res);
+    } catch {
+      setFeedErr("Couldn't get your calendar link - please try again.");
+    }
+    setFeedBusy(false);
+  }
+  function openFeed() {
+    setShowFeed(true);
+    if (!feed) void loadFeed();
+  }
+  async function copyFeed() {
+    if (!feed) return;
+    try {
+      await navigator.clipboard.writeText(feed.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.prompt("Copy this link:", feed.url);
+    }
+  }
+
   const presets: [string, string, string][] = [
     ["Next 7 days", iso(new Date()), addDays(7)],
     ["Next 30 days", iso(new Date()), addDays(30)],
@@ -448,6 +488,71 @@ function ExportScheduleDialog({
         >
           Or download the calendar file (.ics) for Google, Outlook or other apps
         </button>
+
+        <div className="mt-4 border-t border-[#EBE3E5] pt-4">
+          {!showFeed ? (
+            <button
+              type="button"
+              onClick={openFeed}
+              className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-black text-baby-cta hover:bg-[#FEF1F6]"
+            >
+              Keep my calendar up to date (subscribe)
+            </button>
+          ) : (
+            <div>
+              <h3 className="text-sm font-black">Subscribe to your schedule</h3>
+              <p className="mt-1 text-xs font-semibold text-[#59658d]">
+                Your calendar re-reads this link by itself, so rescheduled or cancelled bookings update there. It
+                includes all your confirmed bookings, not just the range above.
+              </p>
+              {feedErr && <p className="mt-2 text-xs font-bold text-[#C90044]">{feedErr}</p>}
+              {feedBusy && !feed && <p className="mt-2 text-xs font-bold text-[#59658d]">Getting your link...</p>}
+              {feed && (
+                <>
+                  <input
+                    readOnly
+                    value={feed.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    aria-label="Your private calendar link"
+                    className="mt-3 h-10 w-full rounded-[10px] border border-[#FED7E4] bg-[#FAF7F7] px-3 text-xs font-semibold text-[#59658d]"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button type="button" onClick={copyFeed} className="flex-1 justify-center">
+                      {copied ? "Copied" : "Copy link"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.location.assign(feed.webcalUrl)}
+                      className="flex-1 justify-center"
+                    >
+                      Open in calendar app
+                    </Button>
+                  </div>
+                  <ul className="mt-3 list-disc space-y-1 pl-4 text-xs font-semibold text-[#59658d]">
+                    <li><b>Google:</b> on a computer, open Google Calendar, then Other calendars (+), From URL, and paste the link. Google refreshes it every 12-24 hours.</li>
+                    <li><b>Apple (iPhone / Mac):</b> tap Open in calendar app, then Subscribe.</li>
+                    <li><b>Outlook:</b> Add calendar, Subscribe from web, and paste the link.</li>
+                  </ul>
+                  <p className="mt-3 text-xs font-semibold text-[#59658d]">
+                    Anyone with this link can see your bookings. If it gets shared by mistake,{" "}
+                    <button
+                      type="button"
+                      disabled={feedBusy}
+                      onClick={() => {
+                        if (window.confirm("Reset your calendar link? The old one will stop updating.")) void loadFeed(true);
+                      }}
+                      className="font-black text-baby-cta underline-offset-2 hover:underline disabled:opacity-50"
+                    >
+                      reset it
+                    </button>
+                    .
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -517,7 +622,9 @@ function ChildSelect({
   );
 }
 
-type BookingSort = "latest" | "soonest";
+/** latest / soonest sort by the session's own date; bookedNew / bookedOld sort
+ *  by when the booking was made. */
+type BookingSort = "latest" | "soonest" | "bookedNew" | "bookedOld";
 const DEFAULT_BOOKING_SORT: BookingSort = "latest";
 const BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
@@ -589,10 +696,15 @@ function BookingsFilterPanel({
     `h-9 rounded-full border px-3.5 text-sm font-bold ${on ? "border-[#FA4D8D] bg-[#FED7E4] text-baby-cta" : "border-[#EBE3E5] bg-white text-[#4a5685]"}`;
   return (
     <div className="mb-4 rounded-[14px] border border-[#EBE3E5] bg-white p-4">
-      <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by date</p>
+      <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by class date</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
         <button type="button" className={chip(sort === "soonest")} onClick={() => onSort("soonest")}>Earliest first</button>
+      </div>
+      <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by booking time</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={chip(sort === "bookedNew")} onClick={() => onSort("bookedNew")}>New first</button>
+        <button type="button" className={chip(sort === "bookedOld")} onClick={() => onSort("bookedOld")}>Old first</button>
       </div>
       <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Status</p>
       <div className="flex flex-wrap gap-2">
@@ -1426,9 +1538,16 @@ export default function ProfilePage() {
             // A Wix COURSE booking's session row spans the whole run, so it
             // reads as a start–end date range rather than a single class time.
             const courseBooking = act?.wix_service_type === "COURSE";
+            // A party's seats are created together; take the earliest so the
+            // card sorts by when the booking was made.
+            const createdAt = seats.reduce<string | null>(
+              (min, x) => (x.created_at && (!min || x.created_at < min) ? x.created_at : min),
+              null
+            );
             return {
               id: r.id,
               status: r.status,
+              createdAt,
               when: s?.starts_at
                 ? courseBooking && s.ends_at
                   ? sgDayRange(s.starts_at, s.ends_at)
@@ -1830,6 +1949,12 @@ export default function ProfilePage() {
   const shownUpcoming = upcomingBookings
     .filter((b) => bookingStatus === "all" || b.status === bookingStatus || b.places.some((p) => p.status === bookingStatus))
     .sort((a, b) => {
+      // By when the booking was made. A booking with no timestamp goes last.
+      if (bookingSort === "bookedNew" || bookingSort === "bookedOld") {
+        if (!a.createdAt || !b.createdAt) return a.createdAt ? -1 : b.createdAt ? 1 : 0;
+        const d = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        return bookingSort === "bookedOld" ? d : -d;
+      }
       if (!a.startsAt || !b.startsAt) return a.startsAt ? -1 : b.startsAt ? 1 : 0;
       const d = new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
       return bookingSort === "soonest" ? d : -d;
