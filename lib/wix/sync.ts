@@ -895,7 +895,7 @@ async function cancelWixCancelledAppointmentBookings(
   }
   const cancelled = rows.filter((r) => {
     const s = statuses.get(r.wix_booking_id as string);
-    return s === 'CANCELED' || s === 'CANCELED_MANUALLY';
+    return s === 'CANCELED' || s === 'CANCELED_MANUALLY' || s === 'DECLINED';
   });
   if (cancelled.length === 0) return;
 
@@ -1154,6 +1154,17 @@ export async function syncWixActivityAvailability(
     return { kind: 'class', sessions, courseSpan };
   }
 
+  // Wix-cancelled appointments are settled BEFORE the availability fetch, and on
+  // their own: a Wix timeout or error fetching slots (the Promise.all below
+  // throws) used to skip this entirely, so a booking the vendor had cancelled on
+  // Wix stayed confirmed, with no email, until some later run got through. It
+  // also has to run before the reschedule pass, so a cancelled booking is not
+  // followed as a live one.
+  try {
+    await cancelWixCancelledAppointmentBookings(admin, activity.id, creds);
+  } catch (e) {
+    console.error('Wix appointment cancellation reconcile failed', activity.id, e);
+  }
   const [rawSlots, confirmedBookings, knownStaffIds] = await Promise.all([
     // The resource id is passed so each slot comes back carrying the staff
     // member Wix says is free for it — both to keep this list honest for a
@@ -1173,7 +1184,6 @@ export async function syncWixActivityAvailability(
   // function's own doc comment for why this can't just be the upsert.
   // Wix-cancelled appointments first, so they aren't then followed as live
   // bookings by the reschedule pass below.
-  await cancelWixCancelledAppointmentBookings(admin, activity.id, creds);
   await reconcileRescheduledWixAppointments(admin, activity.id, confirmedBookings);
   // Wix offers a rolling start time every split-interval (a 45-minute
   // service on a 30-minute split returns 10:00-10:45, 10:30-11:15,

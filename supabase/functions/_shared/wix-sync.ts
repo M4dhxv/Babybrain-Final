@@ -334,7 +334,7 @@ async function cancelWixCancelledAppointmentBookings(
   }
   const cancelled = rows.filter((r) => {
     const s = statuses.get(r.wix_booking_id as string);
-    return s === 'CANCELED' || s === 'CANCELED_MANUALLY';
+    return s === 'CANCELED' || s === 'CANCELED_MANUALLY' || s === 'DECLINED';
   });
   if (cancelled.length === 0) return;
 
@@ -548,6 +548,17 @@ async function syncWixActivityAvailability(
     return { kind: 'class', sessions, courseSpan };
   }
 
+  // Wix-cancelled appointments are settled BEFORE the availability fetch, and on
+  // their own: a Wix timeout or error fetching slots (the Promise.all below
+  // throws) used to skip this entirely, so a booking the vendor had cancelled on
+  // Wix stayed confirmed, with no email, until some later run got through. It
+  // also has to run before the reschedule pass, so a cancelled booking is not
+  // followed as a live one.
+  try {
+    await cancelWixCancelledAppointmentBookings(admin, activity.id, creds);
+  } catch (e) {
+    console.error('Wix appointment cancellation reconcile failed', activity.id, e);
+  }
   const [rawSlots, confirmedBookings, knownStaffIds] = await Promise.all([
     fetchWixAvailability(creds, activity.wix_service_id, days, [activity.wix_resource_id]),
     fetchWixConfirmedAppointmentBookings(creds, activity.wix_service_id).catch(() => []),
@@ -557,7 +568,6 @@ async function syncWixActivityAvailability(
   // below treats the new availability as the whole story.
   // Wix-cancelled appointments first, so they aren't then followed as live
   // bookings by the reschedule pass below.
-  await cancelWixCancelledAppointmentBookings(admin, activity.id, creds);
   await reconcileRescheduledWixAppointments(admin, activity.id, confirmedBookings);
   const slots = selectNonOverlappingSlots(rawSlots);
   const bookedStarts = new Set(confirmedBookings.map((b) => new Date(b.start).toISOString()));
@@ -764,7 +774,7 @@ export async function syncWixServicesToActivities(
   // each is an independent Wix fetch with no shared state.
   const availabilitySettled = await Promise.allSettled(
     activitiesForAvailabilitySync.map((a) =>
-      syncWixActivityAvailability(admin, a, creds, a.wix_service_type === 'COURSE' ? 60 : 14)
+      syncWixActivityAvailability(admin, a, creds, a.wix_service_type === 'COURSE' ? 60 : 30)
     )
   );
   availabilitySettled.forEach((r, i) => {

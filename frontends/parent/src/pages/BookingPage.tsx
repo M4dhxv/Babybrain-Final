@@ -138,7 +138,7 @@ export default function BookingPage() {
   const img = activity ? resolveActivityImage(activity, activity.provider_contact) ?? FALLBACK_LOGO_URL : FALLBACK_LOGO_URL;
   const heroImg = useThumb(img, 490, 416);
   const summaryImg = useThumb(img, 224, 192);
-  const { session: auth, children: kids } = useAuth();
+  const { session: auth, children: kids, dataResolved } = useAuth();
   const redeemToken = getParam("token");
   /* "A spot has opened up" emails deep-link here with the freed slot
      (migration 00083): /book?slug=…&session=<id>. Until that slot has been
@@ -594,6 +594,13 @@ export default function BookingPage() {
     }
     if (!sessionId) {
       setErr(isEvent || isCourse ? "This isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
+      return;
+    }
+    // Every booking belongs to a child. An empty list before the profile fetch
+    // has answered only means "not loaded yet" — posting then stored the
+    // booking with no child. A make-up token carries its own child.
+    if (!bookChildId && !redeemToken) {
+      setErr(dataResolved ? "Add your child's profile before booking." : "Still loading your profile — try again in a moment.");
       return;
     }
     if (isEvent && !ticketTypeId) {

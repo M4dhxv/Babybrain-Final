@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { getProviderWixCredentials } from '@/lib/wix/client';
+import { resolveBookingChild } from '@/lib/wix/booking-child';
 import { checkWixBookingGates, isWixSessionPaused, getWixSessionBookingCutoff, reserveWixSlotForCheckout } from '@/lib/wix/sync';
 
 /**
@@ -53,6 +54,11 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const admin = createAdminClient();
+  // Resolved before anything is reserved on Wix: the booking must belong to one
+  // of this parent's own children (see resolveBookingChild).
+  const child = await resolveBookingChild(admin, user.id, body.childId);
+  if (!child.ok) return NextResponse.json({ error: child.error }, { status: child.status });
+
   const { data: activity } = await admin
     .from('activities')
     .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type, title, slug, price, address, bookings_paused, booking_cutoff_minutes, info_request_enabled')
@@ -122,7 +128,7 @@ export async function POST(request: Request) {
   const groupId = count > 1 ? randomUUID() : null;
   const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
-    child_id: i === 0 ? (body.childId ?? null) : null,
+    child_id: i === 0 ? child.childId : null,
     guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Guest child'),
     booking_group_id: groupId,
     session_id: reserved.sessionId,
