@@ -276,7 +276,11 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
         ? Promise.all([
             apiGetPublic<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
-              `/api/wix/slots?activityId=${act.id}`
+              // Without `days` the route defaults to 7, which hid every
+              // appointment whose first bookable slot is 8+ days out and
+              // truncated classes at the furthest-booking window. 60 is the
+              // route's own ceiling (same as the vendor portal uses for courses).
+              `/api/wix/slots?activityId=${act.id}&days=60`
             )
               .then((r) => {
                 wixCourseSpan = r.course ?? null;
@@ -313,7 +317,12 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   booking_cutoff_minutes: null,
                 }));
               })
-              .catch(() => []),
+              .catch((e) => {
+                // Still degrades to "no sessions", but leaves a trace — a Wix
+                // outage and a genuinely empty calendar used to look identical.
+                console.error("Wix slots fetch failed", act.id, e);
+                return [];
+              }),
             // Filters (no wix_slot_key, not paused, future, capped, ordered)
             // and the booked-count subtraction both happen server-side now —
             // see fetchUpcomingSessions above.

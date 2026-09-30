@@ -426,12 +426,14 @@ async function syncWixServicesToActivitiesImpl(
   // activity's Wix hiccup (or a slow response) can't hold up or fail the
   // rest. A COURSE gets the same wide 60-day window app/api/wix/slots/
   // route.ts always forces for it (it's typically booked well ahead and
-  // reviewed far less often); everything else gets 14 days — enough to
-  // cover what Explore/the vendor's own preview show without fetching a
-  // full 60-day appointment book on every 15-minute cron tick.
+  // reviewed far less often); everything else gets 30 days — the same window
+  // the vendor portal asks for, so an appointment whose first bookable slot
+  // sits 2-4 weeks out (minimum-notice / booking-window settings on Wix) still
+  // gets a next-session time on its Explore card, without fetching a full
+  // 60-day appointment book on every 15-minute cron tick.
   const availabilitySettled = await Promise.allSettled(
     activitiesForAvailabilitySync.map((a) =>
-      syncWixActivityAvailability(admin, a, creds, a.wix_service_type === 'COURSE' ? 60 : 14)
+      syncWixActivityAvailability(admin, a, creds, a.wix_service_type === 'COURSE' ? 60 : 30)
     )
   );
   availabilitySettled.forEach((r, i) => {
