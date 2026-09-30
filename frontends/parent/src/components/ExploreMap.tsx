@@ -270,14 +270,11 @@ export function ExploreMap({
     const bounds: [number, number][] = [];
     for (const g of pinsRef.current) {
       bounds.push([g.lat, g.lng]);
-      const name = g.label ?? g.items[0].providerName;
       // QA: "You shouldn't have to click on pop out before seeing price",
       // "Can't see duration on activity pop outs", and the location should read
       // as an area rather than a postcode. Each row now carries price, duration
       // and area under the title.
-      const rows = g.items
-        .slice(0, 8)
-        .map((a) => {
+      const row = (a: LiveActivity) => {
           const bits = [
             a.price != null
               ? Number(a.price) > 0
@@ -297,12 +294,31 @@ export function ExploreMap({
               : "") +
             `</a>`
           );
+      };
+      // Co-located classes share a pin even when they belong to DIFFERENT
+      // providers (a mall or studio several businesses teach from). The popup
+      // used to print one vendor name, the first activity's, above the whole
+      // list, so every other vendor's class read as belonging to it. Group the
+      // rows by provider instead, each under its own name, in first-seen order.
+      // (An activity with no provider name falls back to the pin's venue name.)
+      const sections = new Map<string, LiveActivity[]>();
+      for (const a of g.items.slice(0, 8)) {
+        const vendor = a.providerName?.trim() || g.label || "";
+        const list = sections.get(vendor);
+        if (list) list.push(a);
+        else sections.set(vendor, [a]);
+      }
+      const body = [...sections]
+        .map(([vendor, list], i) => {
+          const heading = vendor
+            ? `<div style="font-weight:800;color:#111A4C;margin:${i ? "10px 0 4px" : "0 0 4px"};${i ? "padding-top:8px;border-top:1px solid #EBE3E5" : ""}">${esc(vendor)}</div>`
+            : "";
+          return heading + list.map(row).join("");
         })
         .join("");
       const html =
         `<div style="min-width:150px;font-family:inherit">` +
-        (name ? `<div style="font-weight:800;color:#111A4C;margin-bottom:4px">${esc(name)}</div>` : "") +
-        rows +
+        body +
         (g.items.length > 8 ? `<div style="color:#68718f;font-size:12px">+${g.items.length - 8} more</div>` : "") +
         `</div>`;
       // Caps the popup so it can never be taller than the 395px map — eight
