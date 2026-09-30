@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { rateLimited } from '@/lib/rate-limit';
+import { isPlusParent } from '@/lib/customer-plan';
 
 /**
  * A parent's private, subscribable calendar feed: /api/public/calendar-feed/<token>.ics
@@ -92,6 +93,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
     .eq('token', token)
     .maybeSingle();
   if (!owner) return notFound();
+  // Calendar sync is a Plus feature: a parent who has since dropped to Free stops
+  // getting updates (403 shows as an error in their calendar app).
+  if (!(await isPlusParent(admin, owner.user_id))) {
+    return new NextResponse('Calendar sync is a Plus feature', { status: 403, headers: { 'Cache-Control': 'no-store' } });
+  }
 
   const since = new Date(Date.now() - PAST_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await admin

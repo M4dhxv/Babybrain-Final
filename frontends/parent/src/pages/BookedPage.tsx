@@ -4,10 +4,15 @@ import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { getParam } from "../lib/nav";
 import AddToCalendar from "../components/AddToCalendar";
+import SubscribeCalendar from "../components/SubscribeCalendar";
+import { useAuth } from "../auth/AuthProvider";
+import { usePlan } from "../lib/data";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { wixThumbUrl } from "../components/ui";
 
 export default function BookedPage() {
+  const { session } = useAuth();
+  const { isPlus, known: planKnown } = usePlan();
   const title = getParam("title") || "your class";
   const when = getParam("when") || "";
   const status = getParam("status") || "confirmed";
@@ -132,6 +137,23 @@ export default function BookedPage() {
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {start && (
                 <AddToCalendar event={{ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue }} />
+              )}
+              {/* Live version of "add to calendar": this booking and every future
+                  one land in (and stay current in) the parent's calendar. */}
+              {session && planKnown && (
+                <div className="mt-4 border-t border-[#F4EFF0] pt-4">
+                  {isPlus ? (
+                    <SubscribeCalendar intro="Add this booking, and every future one, to your calendar once. It updates on its own if a session moves or is cancelled." />
+                  ) : (
+                    /* Calendar sync is a Plus feature (same as the schedule export). */
+                    <a
+                      href="/pricing"
+                      className="block rounded-[10px] bg-[#FEF4EB] px-3 py-2.5 text-center text-sm font-black text-[#C2691F] hover:bg-[#FDECD9]"
+                    >
+                      Keep your calendar up to date automatically with Plus &rarr;
+                    </a>
+                  )}
+                </div>
               )}
             </article>
             <article className="rounded-[16px] bg-[#F4F0FA] p-6">

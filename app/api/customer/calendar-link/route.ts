@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isPlusParent } from '@/lib/customer-plan';
 
 /**
- * The signed-in parent's private calendar-subscription link.
+ * The signed-in parent's private calendar-subscription link. Plus only (calendar
+ * export / sync is a Plus feature in the app, so the API enforces it too).
  *
  *   GET  -> { url, webcalUrl }   creates the token on first use, then returns it
  *   POST -> { url, webcalUrl }   rotates the token: the old link stops working
@@ -35,7 +37,11 @@ async function handle(request: Request, rotate: boolean) {
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  const db = createAdminClient() as unknown as TokenTable;
+  const admin = createAdminClient();
+  if (!(await isPlusParent(admin, user.id))) {
+    return NextResponse.json({ error: 'Calendar sync is a Plus feature', code: 'plus_required' }, { status: 403 });
+  }
+  const db = admin as unknown as TokenTable;
   if (!rotate) {
     const { data, error } = await db.from('calendar_feed_tokens').select('token').eq('user_id', user.id).maybeSingle();
     if (error) return NextResponse.json({ error: 'Could not load your calendar link' }, { status: 500 });

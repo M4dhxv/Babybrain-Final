@@ -107,6 +107,21 @@ export function scheduleFileUrl(events: IcsEvent[]): string | null {
   return `${base}/api/public/calendar?d=${d}`;
 }
 
+/** Android (phones and tablets). There is no native "subscribe to this link" on
+ *  Android and browsers cannot write to the device calendar, so Android users
+ *  subscribe through their Google account instead (see googleSubscribeUrl). */
+export function isAndroidDevice(): boolean {
+  return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+}
+
+/** Google's "add calendar from URL" link: opens Google Calendar with the feed
+ *  ready to subscribe to. The subscription lives on the parent's Google
+ *  account, so it also appears in the Calendar app on their Android phone and
+ *  updates itself (Google re-reads the feed every 12-24 hours). */
+export function googleSubscribeUrl(feedUrl: string): string {
+  return `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(feedUrl)}`;
+}
+
 export function googleCalendarUrl(ev: IcsEvent): string {
   const q = new URLSearchParams({
     action: "TEMPLATE",

@@ -42,6 +42,7 @@ import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { downloadScheduleIcs, opensCalendarFromLink, scheduleFileUrl } from "../lib/ics";
+import SubscribeCalendar from "../components/SubscribeCalendar";
 import { downloadSchedulePdf, withinRange } from "../lib/schedule-pdf";
 import {
   usePlan,
@@ -319,42 +320,6 @@ function ExportScheduleDialog({
   const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(addDays(30));
 
-  // Live subscription: a private URL the parent's calendar app re-reads on its
-  // own, so a rescheduled or cancelled booking updates there (the file export
-  // above is a one-off copy). The link is per parent and can be reset.
-  const [showFeed, setShowFeed] = useState(false);
-  const [feed, setFeed] = useState<{ url: string; webcalUrl: string } | null>(null);
-  const [feedErr, setFeedErr] = useState<string | null>(null);
-  const [feedBusy, setFeedBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  async function loadFeed(rotate = false) {
-    setFeedErr(null);
-    setFeedBusy(true);
-    try {
-      const res = rotate
-        ? await apiPost<{ url: string; webcalUrl: string }>("/api/customer/calendar-link", {})
-        : await apiGet<{ url: string; webcalUrl: string }>("/api/customer/calendar-link");
-      setFeed(res);
-    } catch {
-      setFeedErr("Couldn't get your calendar link - please try again.");
-    }
-    setFeedBusy(false);
-  }
-  function openFeed() {
-    setShowFeed(true);
-    if (!feed) void loadFeed();
-  }
-  async function copyFeed() {
-    if (!feed) return;
-    try {
-      await navigator.clipboard.writeText(feed.url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      window.prompt("Copy this link:", feed.url);
-    }
-  }
-
   const presets: [string, string, string][] = [
     ["Next 7 days", iso(new Date()), addDays(7)],
     ["Next 30 days", iso(new Date()), addDays(30)],
@@ -388,7 +353,7 @@ function ExportScheduleDialog({
           <div>
             <h2 className="text-xl font-black">Export your schedule</h2>
             <p className="mt-1 text-sm font-semibold text-[#59658d]">
-              Choose a date range, then save it as a PDF or add it to your calendar.
+              Keep your calendar up to date automatically, or export a date range as a PDF or one-off copy.
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-1 text-[#6D748A] hover:bg-[#FAF7F7]">
@@ -396,7 +361,14 @@ function ExportScheduleDialog({
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4">
+          <SubscribeCalendar />
+        </div>
+
+        <p className="mt-5 border-t border-[#EBE3E5] pt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">
+          Or export just a date range
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
           {presets.map(([label, f, t]) => {
             const on = from === f && to === t;
             return (
@@ -468,90 +440,6 @@ function ExportScheduleDialog({
           >
             <Icon name="calendar" className="h-4 w-4" /> Add to calendar
           </Button>
-        </div>
-        <button
-          type="button"
-          disabled={!!invalid || selected.length === 0}
-          onClick={() => {
-            downloadScheduleIcs(
-              selected.map((e, i) => ({
-                id: `${i}-${e.startsAt}`,
-                title: e.title,
-                startsAt: e.startsAt,
-                endsAt: e.endsAt ?? null,
-                venue: e.venue,
-              }))
-            );
-            onClose();
-          }}
-          className="mt-3 w-full text-center text-xs font-bold text-[#59658d] underline-offset-2 hover:underline disabled:opacity-50"
-        >
-          Or download the calendar file (.ics) for Google, Outlook or other apps
-        </button>
-
-        <div className="mt-4 border-t border-[#EBE3E5] pt-4">
-          {!showFeed ? (
-            <button
-              type="button"
-              onClick={openFeed}
-              className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-black text-baby-cta hover:bg-[#FEF1F6]"
-            >
-              Keep my calendar up to date (subscribe)
-            </button>
-          ) : (
-            <div>
-              <h3 className="text-sm font-black">Subscribe to your schedule</h3>
-              <p className="mt-1 text-xs font-semibold text-[#59658d]">
-                Your calendar re-reads this link by itself, so rescheduled or cancelled bookings update there. It
-                includes all your confirmed bookings, not just the range above.
-              </p>
-              {feedErr && <p className="mt-2 text-xs font-bold text-[#C90044]">{feedErr}</p>}
-              {feedBusy && !feed && <p className="mt-2 text-xs font-bold text-[#59658d]">Getting your link...</p>}
-              {feed && (
-                <>
-                  <input
-                    readOnly
-                    value={feed.url}
-                    onFocus={(e) => e.currentTarget.select()}
-                    aria-label="Your private calendar link"
-                    className="mt-3 h-10 w-full rounded-[10px] border border-[#FED7E4] bg-[#FAF7F7] px-3 text-xs font-semibold text-[#59658d]"
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <Button type="button" onClick={copyFeed} className="flex-1 justify-center">
-                      {copied ? "Copied" : "Copy link"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => window.location.assign(feed.webcalUrl)}
-                      className="flex-1 justify-center"
-                    >
-                      Open in calendar app
-                    </Button>
-                  </div>
-                  <ul className="mt-3 list-disc space-y-1 pl-4 text-xs font-semibold text-[#59658d]">
-                    <li><b>Google:</b> on a computer, open Google Calendar, then Other calendars (+), From URL, and paste the link. Google refreshes it every 12-24 hours.</li>
-                    <li><b>Apple (iPhone / Mac):</b> tap Open in calendar app, then Subscribe.</li>
-                    <li><b>Outlook:</b> Add calendar, Subscribe from web, and paste the link.</li>
-                  </ul>
-                  <p className="mt-3 text-xs font-semibold text-[#59658d]">
-                    Anyone with this link can see your bookings. If it gets shared by mistake,{" "}
-                    <button
-                      type="button"
-                      disabled={feedBusy}
-                      onClick={() => {
-                        if (window.confirm("Reset your calendar link? The old one will stop updating.")) void loadFeed(true);
-                      }}
-                      className="font-black text-baby-cta underline-offset-2 hover:underline disabled:opacity-50"
-                    >
-                      reset it
-                    </button>
-                    .
-                  </p>
-                </>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
