@@ -62,9 +62,13 @@ export function PullToRefresh() {
       // pull-to-refresh has, so it doesn't just track the finger 1:1.
       const eased = delta < THRESHOLD ? delta : THRESHOLD + (delta - THRESHOLD) / 3;
       setPull(Math.min(eased, MAX_PULL));
-      // Only once we're actually treating this as a pull — otherwise this
-      // would block ordinary upward scrolling from the very top of the page.
-      e.preventDefault();
+      // No preventDefault here, deliberately. `overscroll-behavior-y: none`
+      // (styles/index.css) already switches off the browser's own pull and
+      // bounce, and dragging down at scrollY 0 has nowhere to scroll anyway, so
+      // there is nothing to cancel. A *non-passive* touchmove listener on the
+      // document, though, makes phone browsers wait on the main thread for every
+      // touchmove of EVERY scroll before they may move the page - that was the
+      // jitter / lag / wobble of the sticky header and mobile menu everywhere.
     };
     const onEnd = () => {
       if (startY.current == null) return;
@@ -78,7 +82,7 @@ export function PullToRefresh() {
       });
     };
     document.addEventListener("touchstart", onStart, { passive: true });
-    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchmove", onMove, { passive: true });
     document.addEventListener("touchend", onEnd, { passive: true });
     document.addEventListener("touchcancel", onEnd, { passive: true });
     return () => {

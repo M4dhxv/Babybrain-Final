@@ -644,7 +644,7 @@ export function Header({
       <nav
         aria-hidden={!menuOpen}
         inert={!menuOpen}
-        className={`absolute inset-x-0 top-full border-t border-[#F4EFF0] bg-baby-paper px-4 py-3 shadow-soft transition-[opacity,transform] duration-150 ease-out lg:hidden ${
+        className={`absolute inset-x-0 top-full overscroll-contain border-t border-[#F4EFF0] bg-baby-paper px-4 py-3 shadow-soft transition-[opacity,transform] duration-150 ease-out will-change-[transform,opacity] [backface-visibility:hidden] lg:hidden ${
           menuOpen ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1.5 opacity-0"
         }`}
       >

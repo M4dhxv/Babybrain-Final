@@ -320,6 +320,17 @@ function ExportScheduleDialog({
   const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(addDays(30));
 
+  // The dialog is taller than a phone screen once Subscribe is open. Without
+  // this the page behind it took the scroll: lock it while the dialog is up,
+  // and the card below scrolls on its own (see its max-h / overflow-y-auto).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   const presets: [string, string, string][] = [
     ["Next 7 days", iso(new Date()), addDays(7)],
     ["Next 30 days", iso(new Date()), addDays(30)],
@@ -342,18 +353,18 @@ function ExportScheduleDialog({
   const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center overscroll-contain bg-black/40 p-4" onClick={onClose}>
       <div
         role="dialog"
         aria-label="Export schedule"
-        className="w-full max-w-[420px] rounded-[16px] bg-white p-5 shadow-soft"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-[420px] overflow-y-auto overscroll-contain rounded-[16px] bg-white p-5 shadow-soft"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-black">Export your schedule</h2>
             <p className="mt-1 text-sm font-semibold text-[#59658d]">
-              Keep your calendar up to date automatically, or export a date range as a PDF or one-off copy.
+              Export a date range as a PDF or a one-off calendar copy, or keep your calendar up to date automatically.
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-1 text-[#6D748A] hover:bg-[#FAF7F7]">
@@ -361,14 +372,7 @@ function ExportScheduleDialog({
           </button>
         </div>
 
-        <div className="mt-4">
-          <SubscribeCalendar />
-        </div>
-
-        <p className="mt-5 border-t border-[#EBE3E5] pt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">
-          Or export just a date range
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {presets.map(([label, f, t]) => {
             const on = from === f && to === t;
             return (
@@ -440,6 +444,13 @@ function ExportScheduleDialog({
           >
             <Icon name="calendar" className="h-4 w-4" /> Add to calendar
           </Button>
+        </div>
+
+        <p className="mt-5 border-t border-[#EBE3E5] pt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">
+          Or keep your calendar up to date automatically
+        </p>
+        <div className="mt-3">
+          <SubscribeCalendar />
         </div>
       </div>
     </div>

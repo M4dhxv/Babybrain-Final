@@ -199,6 +199,9 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
   // thumbnail with 50 siblings to fall back on visually. `broken` guarantees
   // it degrades to the brand mark instead of a permanently blank hero.
   const [broken, setBroken] = useState(false);
+  // Which image source has finished loading, so the photo can fade in (and a
+  // changed source fades in again) rather than popping in over the placeholder.
+  const [shownSrc, setShownSrc] = useState<string | null>(null);
 
   // Pixel-samples a separate, invisible copy purely to tell a logo/wordmark
   // from a photo (looksLikeGraphic), and doubles as the ratio measurement —
@@ -257,7 +260,11 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
         fetchPriority={priority ? "high" : "auto"}
         loading="eager"
         onError={() => setBroken(true)}
-        className={`relative h-full w-full ${whole ? "object-contain" : "object-cover object-[center_15%]"}`}
+        // Already decoded (cache hit) shows at once; otherwise it fades in when
+        // it lands, rather than popping in over the grey placeholder.
+        ref={(el) => { if (el?.complete && el.naturalWidth > 0) setShownSrc(heroSrc); }}
+        onLoad={() => setShownSrc(heroSrc)}
+        className={`relative h-full w-full transition-opacity duration-300 ease-out ${shownSrc === heroSrc ? "opacity-100" : "opacity-0"} ${whole ? "object-contain" : "object-cover object-[center_15%]"}`}
       />
     </div>
   );
@@ -682,7 +689,7 @@ export default function ActivityDetailPage() {
           stack down column 1. On mobile the page is a plain flex column and
           `order` puts it right after About: hero, About, rail, then the
           sessions/packages/reviews block. */}
-      <main className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
+      <main className="bb-reveal mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
         <section className="order-1 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
             <a href={exploreReturnHref()} className="font-bold text-baby-lilac">← Back to results</a>
@@ -748,9 +755,11 @@ export default function ActivityDetailPage() {
                 </div>
               ) : (
                 openSessions.length > 0 ? (
-                  <SessionSchedule sessions={openSessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
+                  <div className="bb-reveal">
+                    <SessionSchedule sessions={openSessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
+                  </div>
                 ) : (
-                  <p className="text-sm font-semibold text-[#68718f]">
+                  <p className="bb-reveal text-sm font-semibold text-[#68718f]">
                     {sessions.length > 0 ? "Bookings for the upcoming sessions are closed." : "No upcoming sessions scheduled."}
                   </p>
                 )
@@ -830,7 +839,7 @@ export default function ActivityDetailPage() {
                 <div className="h-10 rounded-[10px] bg-[#F4EFF0]" />
               </div>
             ) : (
-              <>
+              <div className="bb-reveal">
                 {reviews.map((r) => (
                   <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
                     <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
@@ -845,26 +854,26 @@ export default function ActivityDetailPage() {
                   </div>
                 ))}
                 {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
-              </>
+              </div>
             )}
           </section>
         </div>
         <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
             {nextPrice != null ? (
               nextPrice <= 0 ? (
-                <p><strong className="text-[30px] text-baby-lilac">Free</strong></p>
+                <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">Free</strong></p>
               ) : (
-                <p><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
+                <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
               )
             ) : sessionsLoading ? (
               <div className="h-[30px] w-24 animate-pulse rounded-[6px] bg-[#F4EFF0]" />
             ) : (
-              <>
+              <div className="bb-reveal">
                 <p className="text-xl font-black text-baby-lilac">Price on enquiry</p>
                 <p className="mt-1 text-sm font-semibold text-[#68718f]">
                   {activity.external_booking_url ? "See pricing on the provider's booking page." : "Contact the provider for pricing."}
                 </p>
-              </>
+              </div>
             )}
             {activity.external_booking_url ? (
               <a
@@ -887,7 +896,7 @@ export default function ActivityDetailPage() {
               <button
                 type="button"
                 disabled
-                className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
+                className="bb-reveal mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
               >
                 <Icon name="calendar" className="h-4 w-4" /> {activity.wix_service_type === "EVENT" ? "Sold out" : "Currently full"}
               </button>
@@ -895,7 +904,7 @@ export default function ActivityDetailPage() {
               <Button
                 href={bookHref}
                 variant="pink"
-                className="mt-4 w-full"
+                className="bb-reveal mt-4 w-full"
               ><Icon name="calendar" className="h-4 w-4" /> Book</Button>
             )}
             {/* Messaging is a Plus feature and needs an integrated provider:
