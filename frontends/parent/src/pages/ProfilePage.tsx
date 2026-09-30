@@ -1288,6 +1288,7 @@ export default function ProfilePage() {
   const adjustingRef = useRef(false);
   const draggedRef = useRef(false);
   const pressStartY = useRef(0);
+  const pressStartX = useRef(0);
   useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
 
   // While adjusting, kill every touch-scroll on the page — pointer capture
@@ -1306,6 +1307,7 @@ export default function ProfilePage() {
   function handlePressStart(e: ReactPointerEvent<HTMLButtonElement>) {
     draggedRef.current = false;
     pressStartY.current = e.clientY;
+    pressStartX.current = e.clientX;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     holdTimer.current = setTimeout(() => {
       adjustingRef.current = true;
@@ -1315,6 +1317,17 @@ export default function ProfilePage() {
   }
   function handlePressMove(e: ReactPointerEvent<HTMLButtonElement>) {
     if (!adjustingRef.current) {
+      // A sideways swipe on the handle opens / closes the drawer (right opens,
+      // left closes) - the handle is the natural thing to drag.
+      const dx = e.clientX - pressStartX.current;
+      const dy = e.clientY - pressStartY.current;
+      if (!draggedRef.current && Math.abs(dx) >= 28 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        draggedRef.current = true; // the click that follows must not toggle again
+        if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+        if (dx > 0) setMenuOpen(true);
+        else setMenuOpen(false);
+        return;
+      }
       // Slid away before the hold completed — that's a scroll attempt, not a
       // long-press; abandon the pending timer.
       if (holdTimer.current && Math.abs(e.clientY - pressStartY.current) > 10) {
@@ -1358,6 +1371,62 @@ export default function ProfilePage() {
     }
     setMenuOpen((v) => !v);
   }
+
+  // Swipe to open / close the drawer (phones and tablets only - at lg it is a
+  // static sidebar). Swipe right from the left edge to open; swipe left to close
+  // while it is open. Deliberately conservative so it never fights scrolling:
+  //  - opens only from the left EDGE zone (kept clear of the OS back gesture's
+  //    first few px), never mid-page, where carousels and strips live;
+  //  - a mostly-vertical move is a scroll and cancels the gesture;
+  //  - ignored while another dialog/overlay is up or the handle is being
+  //    repositioned, and when the touch started inside a horizontally
+  //    scrolled strip (that swipe belongs to the strip).
+  // Passive listeners throughout - nothing here can hold up scrolling.
+  useEffect(() => {
+    const EDGE = 56;
+    const DISTANCE = 56;
+    let sx = 0;
+    let sy = 0;
+    let mode: "open" | "close" | null = null;
+    const narrow = () => window.matchMedia("(max-width: 1023px)").matches;
+    const scrolledSideways = (el: EventTarget | null) => {
+      for (let n = el as HTMLElement | null; n && n !== document.body; n = n.parentElement) {
+        if (n.scrollLeft > 0 && n.scrollWidth > n.clientWidth) return true;
+      }
+      return false;
+    };
+    const onStart = (e: TouchEvent) => {
+      mode = null;
+      if (handleAdjusting || !narrow() || e.touches.length !== 1) return;
+      if (document.querySelector("div.fixed.inset-0")) return;
+      sx = e.touches[0].clientX;
+      sy = e.touches[0].clientY;
+      if (menuOpen) mode = "close";
+      else if (sx <= EDGE && !scrolledSideways(e.target)) mode = "open";
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!mode) return;
+      const dx = e.touches[0].clientX - sx;
+      const dy = e.touches[0].clientY - sy;
+      // Mostly vertical: a scroll, not a swipe.
+      if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { mode = null; return; }
+      if (Math.abs(dx) < DISTANCE || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (mode === "open" && dx > 0) setMenuOpen(true);
+      else if (mode === "close" && dx < 0) setMenuOpen(false);
+      mode = null;
+    };
+    const reset = () => { mode = null; };
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: true });
+    document.addEventListener("touchend", reset, { passive: true });
+    document.addEventListener("touchcancel", reset, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", reset);
+      document.removeEventListener("touchcancel", reset);
+    };
+  }, [menuOpen, handleAdjusting]);
 
   // Goes through the /api/customer/bookings backend route (service role)
   // instead of querying `bookings` directly from the browser — a direct
@@ -1929,14 +1998,18 @@ export default function ProfilePage() {
       <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
         {/* Tap-away scrim: covers the ~50% of the page the open drawer leaves
             visible, and closes the drawer when tapped. Mobile only. */}
-        {menuOpen && (
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
-            className="fixed inset-0 z-40 bg-black/30 lg:hidden"
-          />
-        )}
+        {/* Always mounted so it can fade with the drawer instead of popping in
+            and out (opacity only; inert and click-through while closed). */}
+        <button
+          type="button"
+          aria-label="Close menu"
+          aria-hidden={!menuOpen}
+          tabIndex={menuOpen ? 0 : -1}
+          onClick={() => setMenuOpen(false)}
+          className={`fixed inset-0 z-40 bg-black/30 transition-opacity duration-300 ease-out lg:hidden ${
+            menuOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          }`}
+        />
         {/* Edge toggle: a pink arrow on the left edge — pointing right (›) to
             open, folding into pointing left (‹) once the drawer is open. No
             box, so the page keeps its full width. A dot on it flags unread
@@ -1959,13 +2032,14 @@ export default function ProfilePage() {
           onContextMenu={(e) => e.preventDefault()}
           style={{
             top: handleY == null ? "50%" : `${clampHandleY(handleY)}px`,
-            transform: `translateY(-50%)${handleAdjusting ? " scale(1.15)" : ""}`,
+            // Slides with `transform` (like the drawer), not `left`: animating
+            // `left` re-runs layout and paint on the main thread every frame, so
+            // the handle stuttered and drifted out of step with the drawer.
+            transform: `translate(${menuOpen ? "calc(62vw - 44px)" : "0px"}, -50%)${handleAdjusting ? " scale(1.15)" : ""}`,
           }}
           // touch-none is unconditional: it has to be set before the gesture
           // starts, or the browser has already claimed the touch as a scroll.
-          className={`fixed z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] ease-out lg:hidden ${
-            handleAdjusting ? "transition-transform" : "transition-[left] duration-300"
-          } ${menuOpen ? "left-[calc(62%-44px)]" : "left-0"}`}
+          className="fixed left-0 z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] transition-transform duration-300 ease-out will-change-transform lg:hidden"
         >
           <span className="relative -ml-2 block [filter:drop-shadow(0_0_3px_#fff)_drop-shadow(0_0_1px_#fff)]">
             {menuOpen ? (
@@ -1983,7 +2057,7 @@ export default function ProfilePage() {
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out will-change-transform lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           {/* The scroll boundary on desktop: max-height + overflow live here,
               on the same box as its own rounded corners (12px, matching the
