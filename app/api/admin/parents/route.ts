@@ -2,33 +2,20 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchAll, isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
+import { loadParents, type AdminParent } from '@/lib/admin-parents';
 
 /**
  * Admin → Parents. One row per parent_profiles row with the numbers the
  * founder actually asks about (children, plan, bookings, spend, marketing
- * consent), filtered / sorted / paged here so the browser only gets one page.
+ * consent). The rows are built and briefly cached in lib/admin-parents.ts;
+ * filtering, sorting and paging happen here so the browser only gets one page.
  *
- * Read-only. Test accounts use the same rule as /api/admin/metrics
- * (isTestEmail or a vendor's own login) and are hidden unless asked for:
+ * Read-only. Test accounts (marked by an admin, or test-looking emails and
+ * vendor logins) are hidden unless asked for:
  *   ?test=hide (default) | show | only
  *
  * `&format=csv` returns every row matching the filters (no paging).
  */
-
-type ParentRow = {
-  id: string; full_name: string | null; email: string; phone: string | null; postal_code: string | null;
-  onboarding_completed_at: string | null; marketing_consent_at: string | null;
-  marketing_consent_withdrawn_at: string | null; created_at: string;
-};
-type Plan = 'free' | 'plus' | 'plus_past_due' | 'plus_canceled';
-
-export type AdminParent = {
-  id: string; name: string; email: string; phone: string | null; area: string | null;
-  children: { name: string; ageMonths: number }[];
-  plan: Plan; bookings: number; upcoming: number; spend: number; lastBookingAt: string | null;
-  marketing: 'consented' | 'withdrawn' | 'none'; onboarded: boolean; joinedAt: string; isTest: boolean;
-};
 
 const DAY = 864e5;
 const num = (v: string | null) => (v !== null && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -42,11 +29,6 @@ const csvCell = (v: unknown) => {
   const s = v == null ? '' : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-const ageMonths = (dob: string, now: number) => {
-  const d = new Date(dob), n = new Date(now);
-  return (n.getFullYear() - d.getFullYear()) * 12 + (n.getMonth() - d.getMonth()) - (n.getDate() < d.getDate() ? 1 : 0);
-};
-
 export async function GET(request: Request) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -54,69 +36,7 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   const admin = createAdminClient() as unknown as SupabaseClient;
   const now = Date.now();
-
-  const [parents, kids, bookings, sessions, subs, vendorAccounts] = await Promise.all([
-    fetchAll<ParentRow>((f, t) => admin.from('parent_profiles')
-      .select('id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at')
-      .range(f, t)),
-    fetchAll<{ parent_id: string; name: string; date_of_birth: string }>((f, t) =>
-      admin.from('children').select('parent_id, name, date_of_birth').range(f, t)),
-    fetchAll<{ user_id: string; session_id: string; status: string; payment_status: string; amount: number | null; created_at: string }>((f, t) =>
-      admin.from('bookings').select('user_id, session_id, status, payment_status, amount, created_at').range(f, t)),
-    fetchAll<{ id: string; starts_at: string }>((f, t) => admin.from('activity_sessions').select('id, starts_at').range(f, t)),
-    fetchAll<{ user_id: string; plan: string; status: string }>((f, t) =>
-      admin.from('customer_subscriptions').select('user_id, plan, status').range(f, t)),
-    vendorAccountIds(admin),
-  ]);
-
-  const kidsBy = new Map<string, { name: string; ageMonths: number }[]>();
-  for (const k of kids) {
-    const list = kidsBy.get(k.parent_id) ?? [];
-    list.push({ name: k.name, ageMonths: ageMonths(k.date_of_birth, now) });
-    kidsBy.set(k.parent_id, list);
-  }
-  const startsAt = new Map(sessions.map((s) => [s.id, Date.parse(s.starts_at)]));
-  const planBy = new Map<string, Plan>();
-  for (const s of subs) {
-    if (s.plan !== 'plus') continue;
-    planBy.set(s.user_id, s.status === 'past_due' ? 'plus_past_due'
-      : s.status === 'canceled' ? 'plus_canceled'
-      : s.status === 'active' || s.status === 'trialing' ? 'plus' : 'free');
-  }
-  type Agg = { bookings: number; upcoming: number; spend: number; last: number | null; last30: boolean; ever: boolean };
-  const aggBy = new Map<string, Agg>();
-  for (const b of bookings) {
-    // Cancelled and waitlisted seats aren't bookings the parent actually holds.
-    if (b.status === 'cancelled' || b.status === 'waitlisted') continue;
-    const a = aggBy.get(b.user_id) ?? { bookings: 0, upcoming: 0, spend: 0, last: null, last30: false, ever: true };
-    a.bookings += 1;
-    if ((startsAt.get(b.session_id) ?? 0) > now && b.status !== 'completed') a.upcoming += 1;
-    if (b.payment_status === 'paid') a.spend += Number(b.amount ?? 0);
-    const at = Date.parse(b.created_at);
-    if (a.last === null || at > a.last) a.last = at;
-    aggBy.set(b.user_id, a);
-  }
-
-  let rows: AdminParent[] = parents.map((p) => {
-    const a = aggBy.get(p.id);
-    return {
-      id: p.id,
-      name: p.full_name?.trim() || '',
-      email: p.email,
-      phone: p.phone,
-      area: p.postal_code,
-      children: (kidsBy.get(p.id) ?? []).sort((x, y) => x.ageMonths - y.ageMonths),
-      plan: planBy.get(p.id) ?? 'free',
-      bookings: a?.bookings ?? 0,
-      upcoming: a?.upcoming ?? 0,
-      spend: Math.round((a?.spend ?? 0) * 100) / 100,
-      lastBookingAt: a?.last ? new Date(a.last).toISOString() : null,
-      marketing: p.marketing_consent_at ? 'consented' : p.marketing_consent_withdrawn_at ? 'withdrawn' : 'none',
-      onboarded: !!p.onboarding_completed_at,
-      joinedAt: p.created_at,
-      isTest: isTestEmail(p.email) || vendorAccounts.has(p.id),
-    };
-  });
+  let rows = [...(await loadParents(admin, sp.get('fresh') === '1'))];
 
   // ---- filters -------------------------------------------------------------
   const test = sp.get('test');

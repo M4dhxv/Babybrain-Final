@@ -2614,6 +2614,167 @@ const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.f
 const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(v);
 const sgDay = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' });
 
+type ParentDetailT = {
+  profile: Record<string, string | number | boolean | null>;
+  children: { id: string; name: string; date_of_birth: string; gender: string | null; interests: string[] | null; notes: string | null }[];
+  preferences: { preferred_days: string[]; preferred_times: string[]; budget_min: number | null; budget_max: number | null; interests: string[] } | null;
+  subscription: { plan: string; billing_interval: string | null; status: string; current_period_end: string | null; cancel_at_period_end: boolean } | null;
+  bookings: {
+    id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
+    session: { starts_at: string; activity: { title: string } | null } | null;
+  }[];
+  isTest: boolean; testSource: 'manual' | 'auto' | null;
+};
+
+/** Everything held on one parent, with the test-account checkbox. */
+function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+  const [d, setD] = useState<ParentDetailT | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let stale = false;
+    adminFetch<ParentDetailT>(`/api/admin/parents/${id}`)
+      .then((r) => { if (!stale) setD(r); })
+      .catch((e) => { if (!stale) setErr(e instanceof Error ? e.message : String(e)); });
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => { stale = true; window.removeEventListener('keydown', onKey); };
+  }, [id, onClose]);
+
+  async function toggleTest(next: boolean) {
+    if (!d) return;
+    setSaving(true);
+    try {
+      await adminFetch(`/api/admin/parents/${id}`, { method: 'PATCH', body: JSON.stringify({ is_test: next }) });
+      setD({ ...d, isTest: next || d.testSource === 'auto', testSource: next ? 'manual' : d.testSource === 'auto' ? 'auto' : null,
+        profile: { ...d.profile, is_test: next } });
+      toast(next ? 'Marked as a test account' : 'No longer marked as a test account');
+      onChanged();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally { setSaving(false); }
+  }
+
+  const p = d?.profile;
+  const dash = <span style={{ color: C.muted }}>—</span>;
+  const when = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' }) : dash);
+  const field = (label: string, value: React.ReactNode) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 10, padding: '6px 0', fontSize: 13 }}>
+      <span style={{ color: C.muted, fontWeight: 700 }}>{label}</span><span style={{ wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  );
+  const section = (title: string, body: React.ReactNode) => (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>{title}</div>
+      {body}
+    </div>
+  );
+  const list = (v: string[] | null | undefined) => (v && v.length ? v.join(', ') : dash);
+  const autoOnly = d?.testSource === 'auto';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end', background: 'rgba(5,9,18,.6)' }}
+      onClick={onClose}>
+      <aside onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Parent details"
+        style={{ width: 'min(560px, 100%)', height: '100%', overflowY: 'auto', background: C.bg, borderLeft: `1px solid ${C.border}`, padding: 22, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 20 }}>{(p?.full_name as string) || (d ? 'No name' : 'Loading…')}</div>
+            <div style={{ color: C.muted, fontSize: 13 }}>{p?.email as string}</div>
+          </div>
+          <button type="button" style={tabBtn(false)} onClick={onClose}>Close</button>
+        </div>
+
+        {err && <p style={{ color: C.pink }}>{err}</p>}
+        {!d && !err && <div style={{ marginTop: 20 }}><Skeleton rows={6} height={34} /></div>}
+        {d && p && (<>
+          <div style={{ ...card(), marginTop: 18, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <input id="parent-is-test" type="checkbox" style={{ width: 18, height: 18, marginTop: 2 }}
+              checked={d.isTest} disabled={saving || autoOnly} onChange={(e) => toggleTest(e.target.checked)} />
+            <label htmlFor="parent-is-test" style={{ cursor: autoOnly ? 'default' : 'pointer' }}>
+              <div style={{ fontWeight: 800 }}>Test account {saving && <span style={{ color: C.blue }}>· saving…</span>}</div>
+              <div style={{ color: C.muted, fontSize: 12, marginTop: 2, lineHeight: 1.5 }}>
+                {autoOnly
+                  ? 'Treated as a test account automatically (test-looking email or a vendor login), so this can’t be unticked here.'
+                  : 'Hidden from the Parents list by default and shown with a Test badge when included.'}
+              </div>
+            </label>
+          </div>
+
+          {section('Account', <>
+            {field('Name', (p.full_name as string) || dash)}
+            {field('Email', p.email as string)}
+            {field('Phone', (p.phone as string) || dash)}
+            {field('Postal code', (p.postal_code as string) || dash)}
+            {field('Joined', when(p.created_at))}
+            {field('Last updated', when(p.updated_at))}
+            {field('Onboarding', p.onboarding_completed_at ? <>Completed · {when(p.onboarding_completed_at)}</> : 'Not completed')}
+            {field('Account ID', <code style={{ fontSize: 12 }}>{id}</code>)}
+          </>)}
+
+          {section('Plan', d.subscription ? <>
+            {field('Plan', <Badge tone={d.subscription.plan === 'plus' ? 'blue' : 'grey'}>{d.subscription.plan}</Badge>)}
+            {field('Status', d.subscription.status)}
+            {field('Billing', d.subscription.billing_interval ?? dash)}
+            {field('Renews / ends', when(d.subscription.current_period_end))}
+            {d.subscription.cancel_at_period_end && field('Cancelling', 'Ends at period end')}
+          </> : <div style={{ fontSize: 13 }}>Free plan</div>)}
+
+          {section('Marketing & terms', <>
+            {field('Marketing consent', p.marketing_consent_at ? <>Consented · {when(p.marketing_consent_at)}</>
+              : p.marketing_consent_withdrawn_at ? <>Withdrawn · {when(p.marketing_consent_withdrawn_at)}</> : 'Never asked')}
+            {field('Terms accepted', p.terms_accepted_at ? <>{when(p.terms_accepted_at)}{p.terms_version ? ` · v${p.terms_version}` : ''}</> : dash)}
+          </>)}
+
+          {section(`Children (${d.children.length})`, d.children.length === 0 ? <div style={{ color: C.muted, fontSize: 13 }}>None added.</div>
+            : d.children.map((c) => {
+              const months = Math.floor((Date.now() - Date.parse(c.date_of_birth)) / (30.4375 * 864e5));
+              return (
+                <div key={c.id} style={{ ...card(), marginTop: 8, padding: 12 }}>
+                  <div style={{ fontWeight: 800 }}>{c.name} <span style={{ color: C.muted, fontWeight: 600 }}>· {childAge(months)}</span></div>
+                  {field('Date of birth', c.date_of_birth)}
+                  {field('Gender', c.gender || dash)}
+                  {field('Interests', list(c.interests))}
+                  {field('Notes', c.notes || dash)}
+                </div>
+              );
+            }))}
+
+          {section('Preferences', d.preferences ? <>
+            {field('Preferred days', list(d.preferences.preferred_days))}
+            {field('Preferred times', list(d.preferences.preferred_times))}
+            {field('Budget', d.preferences.budget_min != null || d.preferences.budget_max != null
+              ? `${d.preferences.budget_min ?? 0} – ${d.preferences.budget_max ?? 'any'} SGD` : dash)}
+            {field('Interests', list(d.preferences.interests))}
+          </> : <div style={{ color: C.muted, fontSize: 13 }}>None set.</div>)}
+
+          {section(`Bookings (${d.bookings.length}${d.bookings.length === 100 ? '+ , latest 100' : ''})`, d.bookings.length === 0
+            ? <div style={{ color: C.muted, fontSize: 13 }}>No bookings yet.</div>
+            : <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead><tr style={{ color: C.muted, textAlign: 'left' }}>
+                  <th style={th()}>Activity</th><th style={th()}>Session</th><th style={th()}>Status</th><th style={{ ...th(), textAlign: 'right' }}>Paid</th><th style={th()}>Booked</th>
+                </tr></thead>
+                <tbody>
+                  {d.bookings.map((b) => (
+                    <tr key={b.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                      <td style={td()}>{b.session?.activity?.title ?? dash}{b.guest_name ? <span style={{ color: C.muted }}> · {b.guest_name}</span> : null}</td>
+                      <td style={{ ...td(), whiteSpace: 'nowrap' }}>{b.session ? sgDay(b.session.starts_at) : dash}</td>
+                      <td style={td()}><Badge tone={b.status === 'confirmed' || b.status === 'completed' ? 'green' : b.status === 'cancelled' ? 'grey' : 'amber'}>{b.status}</Badge></td>
+                      <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{b.payment_status === 'paid' && b.amount != null ? sgdDollars(Number(b.amount)) : b.payment_status === 'refunded' ? 'Refunded' : dash}</td>
+                      <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(b.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>)}
+        </>)}
+      </aside>
+    </div>
+  );
+}
+
 function ParentsView() {
   const [f, setF] = useState<ParentFilters>(NO_FILTERS);
   const [q, setQ] = useState('');           // what's typed; copied into f.q after a pause
@@ -2625,6 +2786,8 @@ function ParentsView() {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [more, setMore] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const cacheRef = useRef(new Map<string, ParentsPage>());
   const [extra, setExtra] = useState({ area: false, onboarded: false, last: false });
 
   useEffect(() => {
@@ -2642,9 +2805,12 @@ function ParentsView() {
 
   useEffect(() => {
     let stale = false;
+    const key = qs(true).toString();
+    const hit = cacheRef.current.get(key);
+    if (hit) setData(hit);
     setBusy(true); setErr(null);
-    adminFetch<ParentsPage>(`/api/admin/parents?${qs(true)}`)
-      .then((r) => { if (!stale) setData(r); })
+    adminFetch<ParentsPage>(`/api/admin/parents?${key}`)
+      .then((r) => { cacheRef.current.set(key, r); if (!stale) setData(r); })
       .catch((e) => { if (!stale) setErr(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!stale) setBusy(false); });
     return () => { stale = true; };
@@ -2657,6 +2823,7 @@ function ParentsView() {
     if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSort(k); setDir(k === 'name' ? 'asc' : 'desc'); }
     setPage(1);
   };
+  const closeDetail = useCallback(() => setOpenId(null), []);
   const reset = () => { setF(NO_FILTERS); setQ(''); setPage(1); };
   const active = (Object.keys(f) as (keyof ParentFilters)[]).filter((k) => f[k] && f[k] !== NO_FILTERS[k]).length;
 
@@ -2757,7 +2924,8 @@ function ParentsView() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 10px', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>
-          {data ? `${data.total} parent${data.total === 1 ? '' : 's'}` : ' '}{busy && data ? ' · updating…' : ''}
+          {data ? `${data.total} parent${data.total === 1 ? '' : 's'}` : ' '}
+          {busy && data && <span style={{ color: C.blue, fontWeight: 800, marginLeft: 8 }}>● Updating…</span>}
         </div>
         <button type="button" style={tabBtn(false)} onClick={exportCsv} disabled={exporting || !data?.total}>
           {exporting ? 'Exporting…' : 'Export CSV'}
@@ -2767,7 +2935,9 @@ function ParentsView() {
       {err && <p style={{ color: C.pink }}>{err}</p>}
       {!data && !err && <Skeleton rows={8} height={46} />}
       {data && (
-        <div style={{ ...card(), padding: 0, overflowX: 'auto', opacity: busy ? 0.6 : 1 }}>
+        <div style={{ ...card(), padding: 0, overflowX: 'auto', position: 'relative', opacity: busy ? 0.75 : 1 }}>
+          {busy && <div className="bb-skel" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: 0,
+            background: `linear-gradient(90deg, transparent 25%, ${C.blue} 50%, transparent 75%)`, backgroundSize: '400% 100%' }} />}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ color: C.muted, textAlign: 'left' }}>
@@ -2794,7 +2964,11 @@ function ParentsView() {
                 <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
                   <td style={td()}>
                     <div style={{ fontWeight: 700 }}>
-                      {r.name || <span style={{ color: C.muted }}>No name</span>}
+                      <button type="button" onClick={() => setOpenId(r.id)} title="View all details"
+                        style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, cursor: 'pointer',
+                          color: C.blue, textAlign: 'left' }}>
+                        {r.name || 'No name'}
+                      </button>
                       {r.isTest && <span style={{ marginLeft: 8 }}><Badge tone="amber">Test</Badge></span>}
                     </div>
                     <div style={{ color: C.muted, fontSize: 12 }}>{r.email}</div>
@@ -2830,6 +3004,8 @@ function ParentsView() {
           <button type="button" style={tabBtn(false)} disabled={data.page >= data.pages} onClick={() => setPage(data.page + 1)}>Next →</button>
         </div>
       )}
+
+      {openId && <ParentDetail id={openId} onClose={closeDetail} onChanged={() => { cacheRef.current.clear(); setF((p) => ({ ...p })); }} />}
     </div>
   );
 }

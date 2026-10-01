@@ -1,0 +1,76 @@
+import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/admin';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
+import { invalidateParents } from '@/lib/admin-parents';
+
+/**
+ * One parent, for the /admin → Parents detail panel.
+ *
+ * GET   — everything held on the account: profile, consent and terms, children,
+ *         preferences, plan, and booking history.
+ * PATCH — { is_test: boolean } marks / unmarks the account as a test account.
+ */
+
+type Params = { params: Promise<{ id: string }> };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function GET(request: Request, { params }: Params) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const { id } = await params;
+  if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+  const db = createAdminClient() as unknown as SupabaseClient;
+
+  const [profile, kids, prefs, sub, bookings, vendorAccounts] = await Promise.all([
+    db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
+    db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
+    db.from('user_preferences').select('preferred_days, preferred_times, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
+    db.from('customer_subscriptions').select('plan, billing_interval, status, current_period_end, cancel_at_period_end').eq('user_id', id).maybeSingle(),
+    db.from('bookings')
+      .select('id, status, payment_status, amount, created_at, guest_name, child_id, session:activity_sessions(starts_at, activity:activities(title))')
+      .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+    vendorAccountIds(db),
+  ]);
+  if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
+  if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+
+  const p = profile.data as Record<string, unknown> & { email: string; is_test?: boolean | null };
+  const manual = !!p.is_test;
+  const auto = isTestEmail(p.email) || vendorAccounts.has(id);
+  return NextResponse.json({
+    profile: p,
+    children: kids.data ?? [],
+    preferences: prefs.data ?? null,
+    subscription: sub.data ?? null,
+    bookings: bookings.data ?? [],
+    isTest: manual || auto,
+    testSource: manual ? 'manual' : auto ? 'auto' : null,
+  });
+}
+
+export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const { id } = await params;
+  if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+  const body = (await request.json().catch(() => null)) as { is_test?: unknown } | null;
+  if (!body || typeof body.is_test !== 'boolean') {
+    return NextResponse.json({ error: 'Expected { is_test: boolean }.' }, { status: 400 });
+  }
+
+  const db = createAdminClient() as unknown as SupabaseClient;
+  const { data, error } = await db.from('parent_profiles').update({ is_test: body.is_test }).eq('id', id).select('id').maybeSingle();
+  if (error) {
+    const needsMigration = /is_test/.test(error.message);
+    return NextResponse.json({
+      error: needsMigration ? 'Marking test accounts needs migration 00207 applied to the database first.' : error.message,
+    }, { status: needsMigration ? 409 : 500 });
+  }
+  if (!data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+  invalidateParents();
+  return NextResponse.json({ ok: true, is_test: body.is_test });
+}
