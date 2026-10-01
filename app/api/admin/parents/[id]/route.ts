@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
-import { invalidateParents } from '@/lib/admin-parents';
+import { invalidateParents, loadParents } from '@/lib/admin-parents';
 import { getStripe } from '@/lib/stripe';
 
 /**
@@ -25,15 +24,15 @@ export async function GET(request: Request, { params }: Params) {
   if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
   const db = createAdminClient() as unknown as SupabaseClient;
 
-  const [profile, kids, prefs, sub, bookings, vendorAccounts] = await Promise.all([
+  const [profile, kids, prefs, sub, bookings, parentRows] = await Promise.all([
     db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
     db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
-    db.from('user_preferences').select('preferred_days, preferred_times, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
+    db.from('user_preferences').select('preferred_days, preferred_times, preferred_regions, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
     db.from('customer_subscriptions').select('plan, billing_interval, status, current_period_end, cancel_at_period_end, stripe_customer_id').eq('user_id', id).maybeSingle(),
     db.from('bookings')
       .select('id, status, payment_status, amount, created_at, guest_name, child_id, session:activity_sessions(starts_at, activity:activities(title))')
       .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
-    vendorAccountIds(db),
+    loadParents(db),
   ]);
   if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
   if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
@@ -58,8 +57,7 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const p = profile.data as Record<string, unknown> & { email: string; is_test?: boolean | null };
-  const manual = !!p.is_test;
-  const auto = isTestEmail(p.email) || vendorAccounts.has(id);
+  const row = parentRows.find((r) => r.id === id);
   return NextResponse.json({
     profile: p,
     children: kids.data ?? [],
@@ -67,8 +65,11 @@ export async function GET(request: Request, { params }: Params) {
     subscription: sub.data ?? null,
     planPayments,
     bookings: bookings.data ?? [],
-    isTest: manual || auto,
-    testSource: manual ? 'manual' : auto ? 'auto' : null,
+    isTest: row?.isTest ?? !!p.is_test,
+    testSource: row?.testSource ?? (p.is_test ? 'manual' : null),
+    testReason: row?.testReason ?? null,
+    isVendor: row?.isVendor ?? false,
+    vendorNames: row?.vendorNames ?? [],
   });
 }
 

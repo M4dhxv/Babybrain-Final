@@ -26,18 +26,33 @@ export async function GET(request: Request) {
     ? [new Set<string>(), new Set<string>()]
     : await Promise.all([testProviderIds(admin), vendorAccountIds(admin)]);
 
+  // cancelled_from_status comes from migration 00210; until it is applied, fall back to inferring it.
+  const hasCancelOrigin = !(await admin.from('bookings').select('cancelled_from_status').limit(1)).error;
+  type BookingRow = {
+    id: string; user_id: string; session_id: string; status: string; payment_status: string; amount: number | null;
+    package_purchase_id: string | null; cancelled_from_status?: string | null; created_at: string;
+  };
+  const bookingCols: string = `id, user_id, session_id, status, payment_status, amount, package_purchase_id, created_at${hasCancelOrigin ? ', cancelled_from_status' : ''}`;
+
   const [providers, parents, activities, sessions, bookings, reviews, earnings, vendorSubs, plusSubs] =
     await Promise.all([
       fetchAll<{ id: string; status: string; created_at: string }>((f, t) =>
         admin.from('providers').select('id, status, created_at').range(f, t)),
-      fetchAll<{ id: string; email: string; created_at: string }>((f, t) =>
-        admin.from('parent_profiles').select('id, email, created_at').range(f, t)),
+      // is_test (marked in /admin → Parents) comes from migration 00207; before it is applied the
+      // read fails, so fall back to reading without it and nothing is marked.
+      (async () => {
+        type P = { id: string; email: string; created_at: string; is_test?: boolean | null };
+        const withFlag = await fetchAll<P>((f, t) =>
+          admin.from('parent_profiles').select('id, email, created_at, is_test').range(f, t));
+        if (withFlag.length) return withFlag;
+        return fetchAll<P>((f, t) => admin.from('parent_profiles').select('id, email, created_at').range(f, t));
+      })(),
       fetchAll<{ id: string; provider_id: string; is_published: boolean }>((f, t) =>
         admin.from('activities').select('id, provider_id, is_published').range(f, t)),
       fetchAll<{ id: string; activity_id: string; starts_at: string; capacity: number | null; status: string }>((f, t) =>
         admin.from('activity_sessions').select('id, activity_id, starts_at, capacity, status').range(f, t)),
-      fetchAll<{ id: string; user_id: string; session_id: string; status: string; payment_status: string; created_at: string }>((f, t) =>
-        admin.from('bookings').select('id, user_id, session_id, status, payment_status, created_at').range(f, t)),
+      fetchAll<BookingRow>((f, t) =>
+        admin.from('bookings').select(bookingCols).range(f, t) as unknown as PromiseLike<{ data: BookingRow[] | null; error: { message: string } | null }>),
       fetchAll<{ id: string; user_id: string; activity_id: string }>((f, t) =>
         admin.from('reviews').select('id, user_id, activity_id').range(f, t)),
       // livemode may not exist before migration 00161: fall back to reading without it.
@@ -57,7 +72,7 @@ export async function GET(request: Request) {
   // ---- what counts as live -------------------------------------------------
   const liveProvider = (id: string) => !testProviders.has(id);
   const testParents = new Set(
-    includeTest ? [] : parents.filter((p) => isTestEmail(p.email) || vendorAccounts.has(p.id)).map((p) => p.id)
+    includeTest ? [] : parents.filter((p) => p.is_test || isTestEmail(p.email) || vendorAccounts.has(p.id)).map((p) => p.id)
   );
   const liveParent = (id: string) => !testParents.has(id);
 
@@ -133,7 +148,21 @@ export async function GET(request: Request) {
   };
 
   // ---- booking health -------------------------------------------------------
-  const b30 = liveBookings.filter((b) => b.created_at >= iso(30 * DAY));
+  // Only a booking cancelled AFTER it was confirmed or paid is a real cancellation. One cancelled
+  // while pending (an abandoned or expired checkout) or waitlisted was never a booking, so it is
+  // left out of both sides of the cancellation rate. The state it was cancelled from is recorded by
+  // a trigger (migration 00210). Before that, or for a row with no record, infer it: a priced
+  // booking with no payment and no package credit was pending.
+  const neverConfirmed = (b: {
+    status: string; payment_status: string; amount: number | null; package_purchase_id: string | null;
+    cancelled_from_status?: string | null;
+  }) => {
+    if (b.status !== 'cancelled') return false;
+    if (b.cancelled_from_status) return b.cancelled_from_status === 'pending' || b.cancelled_from_status === 'waitlisted';
+    return b.payment_status === 'none' && Number(b.amount ?? 0) > 0 && !b.package_purchase_id;
+  };
+  const all30 = liveBookings.filter((b) => b.created_at >= iso(30 * DAY));
+  const b30 = all30.filter((b) => !neverConfirmed(b));
   const cancelled30 = b30.filter((b) => b.status === 'cancelled').length;
   const held = new Map<string, number>();
   for (const b of liveBookings) {
@@ -147,8 +176,19 @@ export async function GET(request: Request) {
   );
   const capacity = upcoming.reduce((t, s) => t + (s.capacity ?? 0), 0);
   const filled = upcoming.reduce((t, s) => t + Math.min(held.get(s.id) ?? 0, s.capacity ?? 0), 0);
+  // Every live booking falls in exactly one of these, so the three add up to "Bookings (all)":
+  // manual = added by a vendor with no parent account (guest roster entry); paid = the parent
+  // paid online; the rest are free classes, package credits and refunded bookings.
+  const manualBookings = liveBookings.filter((b) => !b.user_id);
+  const paidBookings = liveBookings.filter((b) => b.user_id && b.payment_status === 'paid');
   const health = {
-    bookings30: b30.length,
+    bookingSplit: {
+      manual: manualBookings.length,
+      paid: paidBookings.length,
+      paidAmount: paidBookings.reduce((t, b) => t + Number(b.amount ?? 0), 0),
+      other: liveBookings.length - manualBookings.length - paidBookings.length,
+    },
+    bookings30: all30.length,
     cancelled30,
     cancellationRate: b30.length ? cancelled30 / b30.length : null,
     waitlisted: liveBookings.filter((b) => b.status === 'waitlisted').length,

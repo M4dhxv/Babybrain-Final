@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fetchAll, isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
+import { fetchAll, isTestEmail } from '@/lib/admin-test-data';
 import { getStripe } from '@/lib/stripe';
 
 /**
@@ -21,9 +21,14 @@ export type AdminParent = {
   /** Everything paid: class bookings plus Plus subscription invoices. */
   spend: number; bookingSpend: number; planPaid: number; lastBookingAt: string | null;
   marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean; joinedAt: string;
+  /** Areas they asked for at sign-up: central, east, north-east, north, west, sentosa. */
+  regions: string[];
+  /** Holds an active seat at a vendor (owner or staff), with the business names. */
+  isVendor: boolean; vendorNames: string[];
   isTest: boolean;
-  /** 'manual' = flagged by an admin, 'auto' = test-looking email or a vendor login. */
+  /** 'manual' = flagged by an admin, 'auto' = decided by the rules below. */
   testSource: 'manual' | 'auto' | null;
+  testReason: string | null;
 };
 
 type ParentRow = {
@@ -79,7 +84,7 @@ export async function loadParents(admin: SupabaseClient, fresh = false): Promise
 
 async function build(admin: SupabaseClient, now: number, fresh: boolean): Promise<AdminParent[]> {
   const cols = 'id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at';
-  const [parents, kids, bookings, sessions, subs, vendorAccounts, testPaid, stripePaid] = await Promise.all([
+  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid] = await Promise.all([
     // is_test comes from migration 00207; until it is applied, read without it.
     (async () => {
       const withFlag = await admin.from('parent_profiles').select(`${cols}, is_test`).range(0, 0);
@@ -88,6 +93,8 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     })(),
     fetchAll<{ parent_id: string; name: string; date_of_birth: string }>((f, t) =>
       admin.from('children').select('parent_id, name, date_of_birth').range(f, t)),
+    fetchAll<{ user_id: string; preferred_regions: string[] | null }>((f, t) =>
+      admin.from('user_preferences').select('user_id, preferred_regions').range(f, t)),
     fetchAll<{ id: string; user_id: string; session_id: string; status: string; payment_status: string; amount: number | null; created_at: string }>((f, t) =>
       admin.from('bookings').select('id, user_id, session_id, status, payment_status, amount, created_at').range(f, t)),
     // Only future sessions matter (for "upcoming"), which is far fewer rows than all of them.
@@ -95,7 +102,9 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       admin.from('activity_sessions').select('id').gt('starts_at', new Date(now).toISOString()).range(f, t)),
     fetchAll<{ user_id: string; plan: string; status: string; stripe_customer_id: string | null }>((f, t) =>
       admin.from('customer_subscriptions').select('user_id, plan, status, stripe_customer_id').eq('plan', 'plus').range(f, t)),
-    vendorAccountIds(admin),
+    // Vendor seats, so vendor staff can be tagged (and told apart from vendor-only logins).
+    fetchAll<{ user_id: string; provider: { business_name: string | null; is_test: boolean | null } | null }>((f, t) =>
+      admin.from('provider_members').select('user_id, provider:providers(business_name, is_test)').eq('status', 'active').range(f, t) as unknown as PromiseLike<{ data: { user_id: string; provider: { business_name: string | null; is_test: boolean | null } | null }[] | null; error: { message: string } | null }>),
     // Bookings paid in Stripe test mode (provider_earnings.livemode = false) aren't real spend.
     // livemode comes from migration 00161; if the read fails nothing is excluded.
     fetchAll<{ booking_id: string | null }>((f, t) =>
@@ -109,6 +118,14 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     const list = kidsBy.get(k.parent_id) ?? [];
     list.push({ name: k.name, ageMonths: ageMonths(k.date_of_birth, now) });
     kidsBy.set(k.parent_id, list);
+  }
+  const regionsBy = new Map(prefs.map((r) => [r.user_id, r.preferred_regions ?? []]));
+  const seatsBy = new Map<string, { business_name: string | null; is_test: boolean | null }[]>();
+  for (const s of seats) {
+    if (!s.provider) continue;
+    const list = seatsBy.get(s.user_id) ?? [];
+    list.push(s.provider);
+    seatsBy.set(s.user_id, list);
   }
   const future = new Set(sessions.map((s) => s.id));
   const planBy = new Map<string, Plan>();
@@ -135,7 +152,17 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
 
   return parents.map((p) => {
     const a = aggBy.get(p.id);
-    const auto = isTestEmail(p.email) || vendorAccounts.has(p.id);
+    const seatList = seatsBy.get(p.id) ?? [];
+    const isVendor = seatList.length > 0;
+    const hasParentActivity = (kidsBy.get(p.id)?.length ?? 0) > 0 || (a?.bookings ?? 0) > 0;
+    // A vendor login only counts as test if it was never used as a parent (no children, no
+    // bookings) or every business it works for is a test vendor. Real parents who also work
+    // for a vendor are kept, and tagged Vendor.
+    const autoReason = isTestEmail(p.email) ? 'Test-looking email'
+      : isVendor && seatList.every((v) => v.is_test) ? 'Works only for test vendors'
+      : isVendor && !hasParentActivity ? 'Vendor login with no parent activity'
+      : null;
+    const auto = autoReason !== null;
     const manual = !!p.is_test;
     return {
       id: p.id,
@@ -154,8 +181,12 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       marketing: p.marketing_consent_at ? 'consented' : p.marketing_consent_withdrawn_at ? 'withdrawn' : 'not_consented',
       onboarded: !!p.onboarding_completed_at,
       joinedAt: p.created_at,
+      regions: regionsBy.get(p.id) ?? [],
+      isVendor,
+      vendorNames: [...new Set(seatList.map((v) => v.business_name).filter((n): n is string => !!n))],
       isTest: manual || auto,
       testSource: manual ? 'manual' : auto ? 'auto' : null,
+      testReason: manual ? 'Marked by an admin' : autoReason,
     };
   });
 }

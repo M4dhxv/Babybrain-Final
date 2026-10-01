@@ -23,6 +23,7 @@ type Metrics = {
   };
   growth: { newParents7: number; newParents30: number; newVendors30: number; parentsWhoBooked: number; activatedVendors: number };
   health: {
+    bookingSplit: { manual: number; paid: number; paidAmount: number; other: number };
     bookings30: number; cancelled30: number; cancellationRate: number | null;
     waitlisted: number; upcomingFillRate: number | null; upcomingSessions: number;
   };
@@ -628,6 +629,9 @@ function MetricsView() {
         ['Bookings (7d)', m.bookings.last7, C.pink],
         ['Bookings (30d)', m.health.bookings30, C.pink],
         ['Bookings (all)', m.totals.bookings, C.muted],
+        ['Manual bookings', m.health.bookingSplit.manual, C.blue, 'Added by vendors, no parent account'],
+        ['Paid bookings', m.health.bookingSplit.paid, C.green, `${sgdDollars(m.health.bookingSplit.paidAmount)} paid online`],
+        ['Free / package', m.health.bookingSplit.other, C.muted, 'Free classes and package credits'],
         ['Cancellation rate (30d)', pctText(m.health.cancellationRate), C.text, `${m.health.cancelled30} cancelled`],
         ['Upcoming fill rate', pctText(m.health.upcomingFillRate), C.green, `${m.health.upcomingSessions} sessions with a capacity`],
         ['On waitlists', m.health.waitlisted, C.muted],
@@ -2614,17 +2618,17 @@ type ParentRowT = {
   plan: 'free' | 'plus' | 'plus_past_due' | 'plus_canceled'; bookings: number; upcoming: number; spend: number;
   bookingSpend: number; planPaid: number;
   lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean;
-  joinedAt: string; isTest: boolean;
+  joinedAt: string; isTest: boolean; isVendor: boolean; vendorNames: string[]; regions: string[];
 };
 type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: number; pageSize: number };
 type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; test: string;
+  onboarded: string; min_spend: string; area: string; test: string; account: string; region: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', test: 'hide',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', test: 'hide', account: '', region: '',
 };
 const PLAN_BADGE: Record<ParentRowT['plan'], { label: string; tone: Tone }> = {
   free: { label: 'Free', tone: 'grey' }, plus: { label: 'Plus', tone: 'blue' },
@@ -2633,6 +2637,10 @@ const PLAN_BADGE: Record<ParentRowT['plan'], { label: string; tone: Tone }> = {
 const MARKETING_BADGE: Record<ParentRowT['marketing'], { label: string; tone: Tone }> = {
   consented: { label: 'Consented', tone: 'green' }, withdrawn: { label: 'Withdrawn', tone: 'pink' }, not_consented: { label: 'Not consented', tone: 'grey' },
 };
+const REGION_LABELS: Record<string, string> = {
+  central: 'Central', east: 'East', 'north-east': 'North-East', north: 'North', west: 'West', sentosa: 'Sentosa',
+};
+const regionText = (v: string[]) => v.map((x) => REGION_LABELS[x] ?? x).join(', ');
 const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.floor(m / 12)}y`);
 const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(v);
 const sgDay = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' });
@@ -2640,14 +2648,15 @@ const sgDay = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { timeZ
 type ParentDetailT = {
   profile: Record<string, string | number | boolean | null>;
   children: { id: string; name: string; date_of_birth: string; gender: string | null; interests: string[] | null; notes: string | null }[];
-  preferences: { preferred_days: string[]; preferred_times: string[]; budget_min: number | null; budget_max: number | null; interests: string[] } | null;
+  preferences: { preferred_days: string[]; preferred_times: string[]; preferred_regions: string[] | null; budget_min: number | null; budget_max: number | null; interests: string[] } | null;
   subscription: { plan: string; billing_interval: string | null; status: string; current_period_end: string | null; cancel_at_period_end: boolean } | null;
   planPayments: { id: string; paidAt: string; amount: number; currency: string; description: string | null }[];
   bookings: {
     id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
     session: { starts_at: string; activity: { title: string } | null } | null;
   }[];
-  isTest: boolean; testSource: 'manual' | 'auto' | null;
+  isTest: boolean; testSource: 'manual' | 'auto' | null; testReason: string | null;
+  isVendor: boolean; vendorNames: string[];
 };
 
 /** Everything held on one parent, with the test-account checkbox. */
@@ -2722,7 +2731,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
               <div style={{ fontWeight: 800 }}>Test account {saving && <span style={{ color: C.blue }}>· saving…</span>}</div>
               <div style={{ color: C.muted, fontSize: 12, marginTop: 2, lineHeight: 1.5 }}>
                 {autoOnly
-                  ? 'Treated as a test account automatically (test-looking email or a vendor login), so this can’t be unticked here.'
+                  ? `Treated as a test account automatically (${d.testReason?.toLowerCase() ?? 'by rule'}), so this can’t be unticked here.`
                   : 'Hidden from the Parents list by default and shown with a Test badge when included.'}
               </div>
             </label>
@@ -2736,6 +2745,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Joined', when(p.created_at))}
             {field('Last updated', when(p.updated_at))}
             {field('Onboarding', p.onboarding_completed_at ? <>Completed · {when(p.onboarding_completed_at)}</> : 'Not completed')}
+            {d.isVendor && field('Vendor', <>{d.vendorNames.join(', ') || 'Yes'} <Badge tone="blue">Vendor</Badge></>)}
             {field('Account ID', <code style={{ fontSize: 12 }}>{id}</code>)}
           </>)}
 
@@ -2779,6 +2789,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
           {section('Preferences', d.preferences ? <>
             {field('Preferred days', list(d.preferences.preferred_days))}
             {field('Preferred times', list(d.preferences.preferred_times))}
+            {field('Preferred areas', d.preferences.preferred_regions?.length ? regionText(d.preferences.preferred_regions) : dash)}
             {field('Budget', d.preferences.budget_min != null || d.preferences.budget_max != null
               ? `${d.preferences.budget_min ?? 0} – ${d.preferences.budget_max ?? 'any'} SGD` : dash)}
             {field('Interests', list(d.preferences.interests))}
@@ -2904,6 +2915,12 @@ function ParentsView() {
         <label style={{ ...lab, flex: '1 1 240px' }}>Search
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, phone or postal code…" style={input()} />
         </label>
+        <label style={{ ...lab, width: 140 }}>Preferred area
+          {sel('region', [['', 'Any'], ...Object.entries(REGION_LABELS) as [string, string][]])}
+        </label>
+        <label style={{ ...lab, width: 140 }}>Account
+          {sel('account', [['', 'All'], ['parent', 'Parents only'], ['vendor', 'Vendor staff']])}
+        </label>
         <label style={{ ...lab, width: 150 }}>Plan
           {sel('plan', [['', 'All plans'], ['free', 'Free'], ['plus', 'Plus'], ['plus_past_due', 'Plus · past due'], ['plus_canceled', 'Plus · canceled']])}
         </label>
@@ -2953,8 +2970,9 @@ function ParentsView() {
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: C.muted }}>Show extra columns:</span>
             {([['area', 'Area'], ['onboarded', 'Onboarded'], ['last', 'Last booking']] as const).map(([k, l]) => (
-              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))} />{l}
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))}
+                  style={{ flex: 'none', width: 16, height: 16, margin: 0 }} />{l}
               </label>
             ))}
             <button type="button" style={{ ...tabBtn(false), marginLeft: 'auto' }} onClick={reset}>Clear all filters</button>
@@ -2994,6 +3012,7 @@ function ParentsView() {
                 {sortTh('name', 'Parent')}
                 <th style={th()}>Phone</th>
                 {sortTh('children', 'Children')}
+                <th style={th()}>Preferred area</th>
                 <th style={th()}>Plan</th>
                 {sortTh('bookings', 'Bookings')}
                 {sortTh('spend', 'Spend', true)}
@@ -3019,6 +3038,7 @@ function ParentsView() {
                           color: C.blue, textAlign: 'left' }}>
                         {r.name || 'No name'}
                       </button>
+                      {r.isVendor && <span style={{ marginLeft: 8 }} title={r.vendorNames.join(', ')}><Badge tone="blue">Vendor</Badge></span>}
                       {r.isTest && <span style={{ marginLeft: 8 }}><Badge tone="amber">Test</Badge></span>}
                     </div>
                     <div style={{ color: C.muted, fontSize: 12 }}>{r.email}</div>
@@ -3030,6 +3050,7 @@ function ParentsView() {
                           {r.children.length} · {r.children.map((c) => childAge(c.ageMonths)).join(', ')}
                         </span>}
                   </td>
+                  <td style={td()}>{r.regions.length ? regionText(r.regions) : <span style={{ color: C.muted }}>—</span>}</td>
                   <td style={td()}><Badge tone={PLAN_BADGE[r.plan].tone}>{PLAN_BADGE[r.plan].label}</Badge></td>
                   <td style={td()}>
                     {r.bookings}{r.upcoming > 0 && <span style={{ color: C.muted }}> · {r.upcoming} upcoming</span>}

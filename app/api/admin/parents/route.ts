@@ -46,6 +46,13 @@ export async function GET(request: Request) {
   const q = (sp.get('q') ?? '').trim().toLowerCase();
   if (q) rows = rows.filter((r) => [r.name, r.email, r.phone ?? '', r.area ?? ''].some((v) => v.toLowerCase().includes(q)));
 
+  const region = sp.get('region');
+  if (region) rows = rows.filter((r) => r.regions.includes(region));
+
+  const account = sp.get('account');
+  if (account === 'vendor') rows = rows.filter((r) => r.isVendor);
+  else if (account === 'parent') rows = rows.filter((r) => !r.isVendor);
+
   const plan = sp.get('plan');
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);
 
@@ -102,11 +109,11 @@ export async function GET(request: Request) {
 
   if (sp.get('format') === 'csv') {
     const head = ['Name', 'Email', 'Phone', 'Postal code', 'Children', 'Plan', 'Bookings', 'Upcoming', 'Spend (SGD)',
-      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Test account'];
+      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Vendor', 'Preferred areas', 'Test account'];
     const body = rows.map((r) => [r.name, r.email, r.phone, r.area,
       r.children.map((c) => `${c.name} (${c.ageMonths < 24 ? `${c.ageMonths}m` : `${Math.floor(c.ageMonths / 12)}y`})`).join('; '),
       r.plan, r.bookings, r.upcoming, r.spend.toFixed(2), r.lastBookingAt?.slice(0, 10) ?? '', r.marketing,
-      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.isTest ? 'yes' : 'no'].map(csvCell).join(','));
+      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no'].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="parents.csv"' },
     });
