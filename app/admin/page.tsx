@@ -249,6 +249,107 @@ const C = {
 
 const supabase = createClient();
 
+// ---- navigation: grouped sidebar, tab kept in the URL (?tab=) ----
+type Tab = 'metrics' | 'parents' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
+const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string }[] }[] = [
+  { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: '▦' }] },
+  { label: 'People', items: [
+    { id: 'parents', label: 'Parents', icon: '☺' },
+    { id: 'addVendor', label: 'Vendors', icon: '＋' },
+    { id: 'vendors', label: 'Vendor data', icon: '☰' },
+    { id: 'marketing', label: 'Marketing', icon: '✉' },
+  ] },
+  { label: 'Money', items: [
+    { id: 'commercials', label: 'Commercials', icon: '％' },
+    { id: 'payments', label: 'Payments', icon: '$' },
+  ] },
+  { label: 'Comms', items: [
+    { id: 'messages', label: 'Messages', icon: '💬' },
+    { id: 'contact', label: 'Contact form', icon: '☎' },
+    { id: 'flows', label: 'Email flows', icon: '⚡' },
+  ] },
+];
+const TAB_IDS = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.id));
+function tabFromUrl(): Tab {
+  const t = new URLSearchParams(window.location.search).get('tab');
+  return (TAB_IDS as string[]).includes(t ?? '') ? (t as Tab) : 'metrics';
+}
+
+const ADMIN_CSS = `
+@keyframes bb-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+@keyframes bb-toast-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.bb-skel { border-radius: 8px; background: linear-gradient(90deg, #151d31 25%, #1c2740 37%, #151d31 63%); background-size: 400% 100%; animation: bb-shimmer 1.6s ease infinite; }
+.bb-shell { display: flex; min-height: 100%; }
+.bb-side { width: 220px; flex: none; border-right: 1px solid #26324f; padding: 16px 12px; position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto; box-sizing: border-box; }
+.bb-main { flex: 1; min-width: 0; }
+.bb-navbtn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 9px; border: none; background: transparent; color: #e8edf7; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; text-align: left; }
+.bb-navbtn:hover { background: #1c2740; }
+.bb-navbtn[aria-current="page"] { background: #4a90ff; color: #fff; }
+.bb-menu { display: none; }
+@media (max-width: 800px) {
+  .bb-shell { flex-direction: column; }
+  .bb-side { width: auto; height: auto; position: static; border-right: none; border-bottom: 1px solid #26324f; padding: 10px 12px; }
+  .bb-menu { display: block; }
+  .bb-groups[data-open="false"] { display: none; }
+}
+`;
+
+// ---- toasts: call toast('Saved') / toast(msg, 'error') from anywhere ----
+type ToastItem = { id: number; msg: string; kind: 'ok' | 'error' };
+let pushToast: ((msg: string, kind: 'ok' | 'error') => void) | null = null;
+function toast(msg: string, kind: 'ok' | 'error' = 'ok') { pushToast?.(msg, kind); }
+
+function Toaster() {
+  const [items, setItems] = useState<ToastItem[]>([]);
+  useEffect(() => {
+    let n = 0;
+    pushToast = (msg, kind) => {
+      const id = ++n;
+      setItems((p) => [...p.slice(-3), { id, msg, kind }]);
+      setTimeout(() => setItems((p) => p.filter((t) => t.id !== id)), kind === 'error' ? 7000 : 3500);
+    };
+    return () => { pushToast = null; };
+  }, []);
+  return (
+    <div role="status" aria-live="polite" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 10000,
+      display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 'min(380px, calc(100vw - 32px))' }}>
+      {items.map((t) => (
+        <div key={t.id} onClick={() => setItems((p) => p.filter((x) => x.id !== t.id))}
+          style={{ background: C.panel2, color: C.text, border: `1px solid ${t.kind === 'error' ? C.pink : C.green}`,
+            borderLeftWidth: 4, borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 700,
+            cursor: 'pointer', boxShadow: '0 6px 20px rgba(0,0,0,.35)', animation: 'bb-toast-in .18s ease-out' }}>
+          {t.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- status badge + skeleton loaders ----
+type Tone = 'green' | 'blue' | 'pink' | 'amber' | 'grey';
+function Badge({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  const bg = { green: C.green, blue: C.blue, pink: C.pink, amber: '#f5b942', grey: C.panel2 }[tone];
+  const fg = tone === 'grey' ? C.muted : '#0d1424';
+  return (
+    <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999,
+      background: bg, color: fg, whiteSpace: 'nowrap', textTransform: 'capitalize' }}>{children}</span>
+  );
+}
+function Skeleton({ rows = 5, height = 44 }: { rows?: number; height?: number }) {
+  return (
+    <div aria-busy="true" aria-label="Loading" style={{ display: 'grid', gap: 10 }}>
+      {Array.from({ length: rows }, (_, i) => <div key={i} className="bb-skel" style={{ height }} />)}
+    </div>
+  );
+}
+function CardsSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginTop: 22 }}>
+      {Array.from({ length: 8 }, (_, i) => <div key={i} className="bb-skel" style={{ height: 84 }} />)}
+    </div>
+  );
+}
+
 /**
  * Any tab's own fetch can outlive the page-load admin check (token expires
  * mid-session, or ADMIN_EMAILS changes under a live tab). Without this, only
@@ -279,7 +380,24 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
-  const [tab, setTab] = useState<'metrics' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing'>('metrics');
+  const [tab, setTabState] = useState<Tab>('metrics');
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // The tab lives in ?tab= so a refresh keeps your place and a view can be linked to.
+  useEffect(() => {
+    setTabState(tabFromUrl());
+    const onPop = () => setTabState(tabFromUrl());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const setTab = useCallback((t: Tab) => {
+    setTabState(t);
+    setMenuOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', t);
+    window.history.pushState(null, '', url);
+  }, []);
+  const signOut = async () => { await supabase.auth.signOut(); setPhase('login'); };
 
   useEffect(() => {
     onAuthFailure = (message) => setPhase(/Not an admin/.test(message) ? 'denied' : 'login');
@@ -299,42 +417,55 @@ export default function AdminPage() {
 
   useEffect(() => { check(); }, [check]);
 
+  const current = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.id === tab);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: C.bg, color: C.text,
       overflow: 'auto', fontFamily: 'Nunito, system-ui, sans-serif' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 24px', borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
-        {phase === 'ok' && (
-          <nav style={{ display: 'flex', gap: 8 }}>
-            {(['metrics', 'messages', 'contact', 'addVendor', 'vendors', 'commercials', 'payments', 'flows', 'marketing'] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>
-                {t === 'metrics' ? 'Metrics' : t === 'messages' ? 'Messages'
-                  : t === 'contact' ? 'Contact form' : t === 'addVendor' ? 'Vendors'
-                  : t === 'vendors' ? 'Vendor data'
-                  : t === 'commercials' ? 'Commercials' : t === 'payments' ? 'Payments'
-                  : t === 'marketing' ? 'Marketing' : 'Email flows'}
-              </button>
+      <style>{ADMIN_CSS}</style>
+      <div className="bb-shell">
+      {phase === 'ok' ? (
+        <aside className="bb-side">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 14px' }}>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
+            <button className="bb-menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)} style={tabBtn(false)}>
+              {current?.label ?? 'Menu'} ▾
+            </button>
+          </div>
+          <nav className="bb-groups" data-open={menuOpen} aria-label="Admin sections">
+            {NAV_GROUPS.map((g) => (
+              <div key={g.label} style={{ marginBottom: 14 }}>
+                <div style={{ color: C.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', padding: '0 12px 6px' }}>{g.label}</div>
+                {g.items.map((i) => (
+                  <button key={i.id} className="bb-navbtn" aria-current={tab === i.id ? 'page' : undefined} onClick={() => setTab(i.id)}>
+                    <span aria-hidden style={{ width: 18, textAlign: 'center' }}>{i.icon}</span>{i.label}
+                  </button>
+                ))}
+              </div>
             ))}
-            <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }} style={tabBtn(false)}>
-              Sign out
+            <button className="bb-navbtn" onClick={signOut} style={{ color: C.muted }}>
+              <span aria-hidden style={{ width: 18, textAlign: 'center' }}>⎋</span>Sign out
             </button>
           </nav>
-        )}
-      </header>
-
+        </aside>
+      ) : (
+        <header style={{ padding: '16px 24px', position: 'absolute', top: 0, left: 0 }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>BabyBrain · <span style={{ color: C.blue }}>Admin</span></div>
+        </header>
+      )}
+      <div className="bb-main">
       <main style={{ padding: 24, maxWidth: 1180, margin: '0 auto' }}>
-        {phase === 'loading' && <p style={{ color: C.muted }}>Loading…</p>}
+        {phase === 'loading' && <Skeleton rows={3} />}
         {phase === 'login' && <Login onDone={check} />}
         {phase === 'denied' && (
           <div style={{ ...card(), textAlign: 'center', padding: 40 }}>
             <p style={{ fontWeight: 800, fontSize: 18, color: C.text }}>This account isn&apos;t an admin.</p>
             <p style={{ color: C.muted, marginTop: 8 }}>Ask to be added to the ADMIN_EMAILS allowlist.</p>
-            <button onClick={async () => { await supabase.auth.signOut(); setPhase('login'); }}
+            <button onClick={signOut}
               style={{ ...primaryBtn(), marginTop: 16 }}>Sign out</button>
           </div>
         )}
         {phase === 'ok' && tab === 'metrics' && <MetricsView />}
+        {phase === 'ok' && tab === 'parents' && <ParentsView />}
         {phase === 'ok' && tab === 'messages' && <MessagesView />}
         {phase === 'ok' && tab === 'contact' && <ContactView />}
         {phase === 'ok' && tab === 'addVendor' && <AddVendorView />}
@@ -344,6 +475,9 @@ export default function AdminPage() {
         {phase === 'ok' && tab === 'flows' && <FlowsView />}
         {phase === 'ok' && tab === 'marketing' && <MarketingView />}
       </main>
+      </div>
+      </div>
+      <Toaster />
     </div>
   );
 }
@@ -414,7 +548,7 @@ function MetricsView() {
   }, [includeTest]);
 
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
-  if (!m) return <p style={{ color: C.muted }}>Loading metrics…</p>;
+  if (!m) return <CardsSkeleton />;
 
   type Row = [string, number | string, string, string?];
   const section = (title: string, rows: Row[]) => (
@@ -574,7 +708,7 @@ function MessagesView() {
           <input placeholder="Search conversations…" value={q} onChange={(e) => setQ(e.target.value)} style={input()} />
         </div>
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {channels === null && <p style={{ color: C.muted, padding: 16 }}>Loading…</p>}
+          {channels === null && <div style={{ padding: 16 }}><Skeleton rows={6} height={40} /></div>}
           {channels?.length === 0 && <p style={{ color: C.muted, padding: 16 }}>No conversations yet.</p>}
           {filtered.map((ch) => (
             <button key={ch.id} onClick={() => openChannel(ch)}
@@ -604,7 +738,7 @@ function MessagesView() {
               <div style={{ color: C.muted, fontSize: 12 }}>{active.kind} · {active.members.join(', ')}</div>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {loadingMsgs && <p style={{ color: C.muted }}>Loading messages…</p>}
+              {loadingMsgs && <Skeleton rows={4} height={36} />}
               {!loadingMsgs && messages.length === 0 && <p style={{ color: C.muted }}>No messages yet.</p>}
               {messages.map((msg) => (
                 <div key={msg.id} style={{ alignSelf: msg.isSupport ? 'flex-end' : 'flex-start', maxWidth: '70%' }}>
@@ -652,7 +786,7 @@ function ContactView() {
   }, []);
 
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
-  if (!rows) return <p style={{ color: C.muted }}>Loading…</p>;
+  if (!rows) return <Skeleton />;
 
   const undelivered = rows.filter((r) => !r.emailed).length;
 
@@ -847,10 +981,12 @@ function AddVendorView() {
         method: 'POST', body: JSON.stringify(payload),
       });
       setDone(r);
+      toast('Vendor created');
       reset();
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), 'error');
     } finally { setBusy(false); }
   }
 
@@ -1199,7 +1335,7 @@ function AddVendorView() {
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, area or type…" style={{ ...input(), maxWidth: 320 }} />
       </div>
-      {!meta ? <p style={{ color: C.muted }}>Loading…</p> : (
+      {!meta ? <Skeleton /> : (
         <div style={{ ...card(), padding: 0, overflow: 'hidden' }}>
           {filteredVendors.length === 0 && (
             <div style={{ padding: 16, color: C.muted, fontSize: 14 }}>No vendor matches that.</div>
@@ -1219,10 +1355,9 @@ function AddVendorView() {
                   {` · ${new Date(p.created_at).toLocaleDateString('en-SG')}`}
                 </div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999,
-                background: p.is_claimed ? C.green : C.panel2, color: p.is_claimed ? '#04220f' : C.muted }}>
+              <Badge tone={p.is_claimed ? 'green' : 'grey'}>
                 {p.is_claimed ? 'Claimed' : p.is_auto_listed ? 'Auto-listed' : 'Added by hand'}
-              </span>
+              </Badge>
               <span style={{ color: C.blue, fontWeight: 800, fontSize: 13 }}>Edit</span>
             </button>
           ))}
@@ -1372,9 +1507,11 @@ function EditVendorModal({
         `Saved — ${r.locationsChanged} venue${r.locationsChanged === 1 ? '' : 's'}, ${r.activitiesChanged} class${r.activitiesChanged === 1 ? '' : 'es'}, ${r.sessionsChanged} session${r.sessionsChanged === 1 ? '' : 's'}${r.regeocoded ? ', map pin moved' : ''}${r.provider.region ? `, ${r.provider.region}` : ''}.`,
         ...r.warnings,
       ]);
+      toast('Vendor saved');
       setTimeout(onSaved, 1200);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), 'error');
     } finally { setBusy(false); }
   }
 
@@ -1765,9 +1902,11 @@ function VendorsView() {
       const r = await adminFetch<{ checked: number; wp_sites: number; prices_updated: number; no_wp: number }>(
         '/api/admin/vendors/refresh', { method: 'POST' });
       setNote(`Done — checked ${r.checked}, ${r.prices_updated} price${r.prices_updated === 1 ? '' : 's'} updated, ${r.no_wp} unreachable.`);
+      toast('Price refresh finished');
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), 'error');
     } finally { setBusy(false); }
   }
 
@@ -1793,7 +1932,7 @@ function VendorsView() {
       {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
 
       <div style={{ fontWeight: 800, margin: '22px 0 10px' }}>Run history</div>
-      {runs === null && <p style={{ color: C.muted }}>Loading…</p>}
+      {runs === null && <Skeleton rows={4} />}
       {runs?.length === 0 && <p style={{ color: C.muted }}>No runs yet — trigger one above.</p>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1902,7 +2041,7 @@ function MarketingView() {
   }
 
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
-  if (!consented || !withdrawn) return <p style={{ color: C.muted }}>Loading…</p>;
+  if (!consented || !withdrawn) return <Skeleton />;
 
   const step = (n: number, text: React.ReactNode) => (
     <li style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: 10, marginBottom: 8 }}>
@@ -1983,7 +2122,7 @@ function FlowsView() {
   }
 
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
-  if (!flows) return <p style={{ color: C.muted }}>Loading…</p>;
+  if (!flows) return <Skeleton />;
 
   const wiredCount = flows.filter((f) => f.wired).length;
 
@@ -2070,7 +2209,7 @@ function FlowsView() {
             </div>
             <div style={{ flex: 1, overflow: 'auto', background: '#f4f4f4' }}>
               {preview === 'loading' ? (
-                <p style={{ color: C.muted, padding: 24 }}>Loading…</p>
+                <div style={{ padding: 24 }}><Skeleton rows={4} /></div>
               ) : (
                 <iframe title="Email preview" srcDoc={preview.html} style={{ width: '100%', height: '70vh', border: 'none', background: '#fff' }} />
               )}
@@ -2123,8 +2262,10 @@ function CommercialsView() {
       // even though the backend had already locked the terms.
       setRows((prev) => prev?.map((row) => (row.provider_id === providerId ? { ...row, ...r.applied } : row)) ?? prev);
       setNote('Saved. Applies to future sales — past earnings keep their original terms.');
+      toast('Commercial terms saved');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');
+      toast(e instanceof Error ? e.message : 'Could not save.', 'error');
       void load();
     } finally {
       setSaving(null);
@@ -2158,7 +2299,7 @@ function CommercialsView() {
       />
 
       {!rows ? (
-        <p style={{ color: C.muted }}>Loading…</p>
+        <Skeleton />
       ) : visible.length === 0 ? (
         <p style={{ color: C.muted }}>No vendors match.</p>
       ) : (
@@ -2346,7 +2487,7 @@ function PaymentsView() {
       {error && <div style={{ ...card(), borderColor: C.pink, color: C.pink }}>{error}</div>}
 
       {!data ? (
-        <p style={{ color: C.muted }}>Loading…</p>
+        <Skeleton />
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
@@ -2427,7 +2568,7 @@ function PaymentsView() {
                     <tr key={p.id} style={{ borderTop: `1px solid ${C.border}` }}>
                       <td style={td()}>{sgdDate(p.arrival_date)}</td>
                       <td style={{ ...td(), textAlign: 'right' }}>{sgd(p.amount_cents)}</td>
-                      <td style={{ ...td(), textTransform: 'capitalize' }}>{p.status}</td>
+                      <td style={td()}><Badge tone={p.status === 'active' ? 'green' : p.status === 'pending' ? 'amber' : 'grey'}>{p.status}</Badge></td>
                       <td style={{ ...td(), textTransform: 'capitalize' }}>{p.method}</td>
                     </tr>
                   ))}
@@ -2439,6 +2580,255 @@ function PaymentsView() {
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ---- Parents: who signed up, what they hold and spend, filterable ----
+type ParentRowT = {
+  id: string; name: string; email: string; phone: string | null; area: string | null;
+  children: { name: string; ageMonths: number }[];
+  plan: 'free' | 'plus' | 'plus_past_due' | 'plus_canceled'; bookings: number; upcoming: number; spend: number;
+  lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'none'; onboarded: boolean;
+  joinedAt: string; isTest: boolean;
+};
+type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: number; pageSize: number };
+type ParentFilters = {
+  q: string; plan: string; marketing: string; activity: string; has_children: string;
+  joined_from: string; joined_to: string; child_min: string; child_max: string;
+  onboarded: string; min_spend: string; area: string; test: string;
+};
+const NO_FILTERS: ParentFilters = {
+  q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', test: 'hide',
+};
+const PLAN_BADGE: Record<ParentRowT['plan'], { label: string; tone: Tone }> = {
+  free: { label: 'Free', tone: 'grey' }, plus: { label: 'Plus', tone: 'blue' },
+  plus_past_due: { label: 'Plus · past due', tone: 'amber' }, plus_canceled: { label: 'Plus · canceled', tone: 'grey' },
+};
+const MARKETING_BADGE: Record<ParentRowT['marketing'], { label: string; tone: Tone }> = {
+  consented: { label: 'Consented', tone: 'green' }, withdrawn: { label: 'Withdrawn', tone: 'pink' }, none: { label: 'None', tone: 'grey' },
+};
+const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.floor(m / 12)}y`);
+const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(v);
+const sgDay = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' });
+
+function ParentsView() {
+  const [f, setF] = useState<ParentFilters>(NO_FILTERS);
+  const [q, setQ] = useState('');           // what's typed; copied into f.q after a pause
+  const [sort, setSort] = useState('joined');
+  const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<ParentsPage | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [more, setMore] = useState(false);
+  const [extra, setExtra] = useState({ area: false, onboarded: false, last: false });
+
+  useEffect(() => {
+    const t = setTimeout(() => { setF((p) => (p.q === q ? p : { ...p, q })); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const qs = useCallback((withPage: boolean) => {
+    const sp = new URLSearchParams();
+    (Object.keys(f) as (keyof ParentFilters)[]).forEach((k) => { if (f[k]) sp.set(k, f[k]); });
+    sp.set('sort', sort); sp.set('dir', dir);
+    if (withPage) sp.set('page', String(page));
+    return sp;
+  }, [f, sort, dir, page]);
+
+  useEffect(() => {
+    let stale = false;
+    setBusy(true); setErr(null);
+    adminFetch<ParentsPage>(`/api/admin/parents?${qs(true)}`)
+      .then((r) => { if (!stale) setData(r); })
+      .catch((e) => { if (!stale) setErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!stale) setBusy(false); });
+    return () => { stale = true; };
+  }, [qs]);
+
+  const set = (k: keyof ParentFilters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setF((p) => ({ ...p, [k]: e.target.value })); setPage(1);
+  };
+  const sortBy = (k: string) => {
+    if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSort(k); setDir(k === 'name' ? 'asc' : 'desc'); }
+    setPage(1);
+  };
+  const reset = () => { setF(NO_FILTERS); setQ(''); setPage(1); };
+  const active = (Object.keys(f) as (keyof ParentFilters)[]).filter((k) => f[k] && f[k] !== NO_FILTERS[k]).length;
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/parents?${qs(false)}&format=csv`, {
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'parents.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Parents exported');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally { setExporting(false); }
+  }
+
+  const lab: React.CSSProperties = { display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 };
+  const sel = (k: keyof ParentFilters, opts: [string, string][]) => (
+    <select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+  );
+  const sortTh = (k: string, label: string, right?: boolean) => (
+    <th style={{ ...th(), textAlign: right ? 'right' : 'left', cursor: 'pointer', userSelect: 'none' }}
+      aria-sort={sort === k ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} onClick={() => sortBy(k)}>
+      {label}{sort === k ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <label style={{ ...lab, flex: '1 1 240px' }}>Search
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, phone or postal code…" style={input()} />
+        </label>
+        <label style={{ ...lab, width: 150 }}>Plan
+          {sel('plan', [['', 'All plans'], ['free', 'Free'], ['plus', 'Plus'], ['plus_past_due', 'Plus · past due'], ['plus_canceled', 'Plus · canceled']])}
+        </label>
+        <label style={{ ...lab, width: 160 }}>Marketing
+          {sel('marketing', [['', 'Any'], ['consented', 'Consented'], ['withdrawn', 'Withdrawn'], ['none', 'Never asked']])}
+        </label>
+        <label style={{ ...lab, width: 190 }}>Booking activity
+          {sel('activity', [['', 'Any'], ['never', 'Never booked'], ['once', 'Booked once'], ['repeat', 'Repeat (2+)'],
+            ['recent30', 'Booked in last 30 days'], ['dormant60', 'No booking for 60+ days']])}
+        </label>
+        <button type="button" style={tabBtn(more)} onClick={() => setMore((m) => !m)}>
+          More filters{active ? ` · ${active}` : ''} {more ? '▴' : '▾'}
+        </button>
+      </div>
+
+      {more && (
+        <div style={{ ...card(), marginTop: 12, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+            <label style={lab}>Has children
+              {sel('has_children', [['', 'Any'], ['yes', 'Yes'], ['no', 'No'], ])}
+            </label>
+            <label style={lab}>Child age from (months)
+              <input type="number" min={0} value={f.child_min} onChange={set('child_min')} style={input()} placeholder="e.g. 6" />
+            </label>
+            <label style={lab}>Child age to (months)
+              <input type="number" min={0} value={f.child_max} onChange={set('child_max')} style={input()} placeholder="e.g. 18" />
+            </label>
+            <label style={lab}>Joined from
+              <input type="date" value={f.joined_from} onChange={set('joined_from')} style={input()} />
+            </label>
+            <label style={lab}>Joined to
+              <input type="date" value={f.joined_to} onChange={set('joined_to')} style={input()} />
+            </label>
+            <label style={lab}>Min. spend (SGD)
+              <input type="number" min={0} value={f.min_spend} onChange={set('min_spend')} style={input()} placeholder="e.g. 100" />
+            </label>
+            <label style={lab}>Onboarding
+              {sel('onboarded', [['', 'Any'], ['yes', 'Completed'], ['no', 'Not completed']])}
+            </label>
+            <label style={lab}>Postal code starts with
+              <input value={f.area} onChange={set('area')} style={input()} placeholder="e.g. 52" />
+            </label>
+            <label style={lab}>Test accounts
+              {sel('test', [['hide', 'Hide (default)'], ['show', 'Include'], ['only', 'Only test accounts']])}
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
+            <span style={{ color: C.muted }}>Show extra columns:</span>
+            {([['area', 'Area'], ['onboarded', 'Onboarded'], ['last', 'Last booking']] as const).map(([k, l]) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))} />{l}
+              </label>
+            ))}
+            <button type="button" style={{ ...tabBtn(false), marginLeft: 'auto' }} onClick={reset}>Clear all filters</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 10px', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>
+          {data ? `${data.total} parent${data.total === 1 ? '' : 's'}` : ' '}{busy && data ? ' · updating…' : ''}
+        </div>
+        <button type="button" style={tabBtn(false)} onClick={exportCsv} disabled={exporting || !data?.total}>
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </button>
+      </div>
+
+      {err && <p style={{ color: C.pink }}>{err}</p>}
+      {!data && !err && <Skeleton rows={8} height={46} />}
+      {data && (
+        <div style={{ ...card(), padding: 0, overflowX: 'auto', opacity: busy ? 0.6 : 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: C.muted, textAlign: 'left' }}>
+                {sortTh('name', 'Parent')}
+                <th style={th()}>Phone</th>
+                {sortTh('children', 'Children')}
+                <th style={th()}>Plan</th>
+                {sortTh('bookings', 'Bookings')}
+                {sortTh('spend', 'Spend', true)}
+                <th style={th()}>Marketing</th>
+                {extra.area && <th style={th()}>Area</th>}
+                {extra.onboarded && <th style={th()}>Onboarded</th>}
+                {extra.last && sortTh('last', 'Last booking')}
+                {sortTh('joined', 'Joined')}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.length === 0 && (
+                <tr><td colSpan={12} style={{ ...td(), color: C.muted, textAlign: 'center', padding: 28 }}>
+                  No parents match these filters.
+                </td></tr>
+              )}
+              {data.rows.map((r) => (
+                <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={td()}>
+                    <div style={{ fontWeight: 700 }}>
+                      {r.name || <span style={{ color: C.muted }}>No name</span>}
+                      {r.isTest && <span style={{ marginLeft: 8 }}><Badge tone="amber">Test</Badge></span>}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 12 }}>{r.email}</div>
+                  </td>
+                  <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.phone || <span style={{ color: C.muted }}>—</span>}</td>
+                  <td style={td()}>
+                    {r.children.length === 0 ? <span style={{ color: C.muted }}>—</span>
+                      : <span title={r.children.map((c) => `${c.name} (${childAge(c.ageMonths)})`).join(', ')}>
+                          {r.children.length} · {r.children.map((c) => childAge(c.ageMonths)).join(', ')}
+                        </span>}
+                  </td>
+                  <td style={td()}><Badge tone={PLAN_BADGE[r.plan].tone}>{PLAN_BADGE[r.plan].label}</Badge></td>
+                  <td style={td()}>
+                    {r.bookings}{r.upcoming > 0 && <span style={{ color: C.muted }}> · {r.upcoming} upcoming</span>}
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{r.spend > 0 ? sgdDollars(r.spend) : <span style={{ color: C.muted }}>—</span>}</td>
+                  <td style={td()}><Badge tone={MARKETING_BADGE[r.marketing].tone}>{MARKETING_BADGE[r.marketing].label}</Badge></td>
+                  {extra.area && <td style={td()}>{r.area || <span style={{ color: C.muted }}>—</span>}</td>}
+                  {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}
+                  {extra.last && <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.lastBookingAt ? sgDay(r.lastBookingAt) : <span style={{ color: C.muted }}>—</span>}</td>}
+                  <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(r.joinedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data && data.pages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 14 }}>
+          <button type="button" style={tabBtn(false)} disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>← Prev</button>
+          <span style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>Page {data.page} of {data.pages}</span>
+          <button type="button" style={tabBtn(false)} disabled={data.page >= data.pages} onClick={() => setPage(data.page + 1)}>Next →</button>
+        </div>
       )}
     </div>
   );
