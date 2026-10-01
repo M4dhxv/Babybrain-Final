@@ -326,15 +326,42 @@ const T: Record<string, Template> = {
       sign),
 
   // notify_session_rescheduled (migration 00044/00126) fires when a vendor
-  // changes a booked session's date/time or location — the in-app
-  // notification's own title/body say what changed; this email stays
-  // generic per the spec ("review the details") rather than restating it.
-  session_rescheduled: (d, ctx) =>
-    wrap(ctx, 'There has been a change to an activity you have booked 👶🧠',
+  // changes a booked session's date/time or location (and 00202 for a
+  // Wix-linked venue move). Since 00209 the notification also carries
+  // `changes` ([{label, old, new}]), so the email shows what moved in a
+  // highlighted box above the booking, and links to that booking with
+  // ?highlight= so the bookings page flashes it. Older notifications, and
+  // ones with no `changes` (service removed), keep the original wording.
+  session_rescheduled: (d, ctx) => {
+    const bookingId = str(d, 'booking_id');
+    const href = bookingId ? `/profile?tab=bookings&highlight=${encodeURIComponent(bookingId)}` : str(d, 'url') ?? '/profile?tab=bookings';
+    const changes = (Array.isArray(d.changes) ? (d.changes as EmailData[]) : []).filter((c) => str(c, 'label') && str(c, 'new'));
+    const changedBox = changes.length
+      ? `<div style="background:#FFF1B8;border-radius:10px;padding:14px 16px;margin:0 0 12px;color:#5a4a00;font-size:16px;line-height:1.6">
+          <div style="font-weight:600;margin-bottom:4px">What changed</div>
+          ${changes
+            .map((c) => {
+              const was = str(c, 'old');
+              return `<div>${esc(str(c, 'label'))}: ${was ? `<span style="text-decoration:line-through;color:#8a7a3a">${esc(was)}</span> → ` : ''}<strong style="font-weight:600">${esc(str(c, 'new'))}</strong></div>`;
+            })
+            .join('')}
+        </div>`
+      : '';
+    const bookingRows = [str(d, 'activity_name') ? bold(str(d, 'activity_name')!) : null, str(d, 'date_time') ? esc(str(d, 'date_time')!) : null, str(d, 'address') ? esc(str(d, 'address')!) : null].filter(Boolean);
+    const bookingBox = changes.length
+      ? `<div style="background:#FCEFF4;border-radius:10px;padding:16px 18px;margin:0 0 16px;font-size:16px;line-height:1.7">
+          ${bookingRows.join('<br/>')}
+          <div style="margin-top:8px">${link(ctx, href, 'View this booking →')}</div>
+        </div>`
+      : '';
+    return wrap(ctx, 'There has been a change to an activity you have booked 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`There has been some changes to your ${bold(str(d, 'activity_name') ?? 'activity')} booking. Please make sure you review the details ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'here')}.`) +
+      p(`There has been some changes to your ${bold(str(d, 'activity_name') ?? 'activity')} booking. Please make sure you review the details ${link(ctx, href, 'here')}.`) +
+      changedBox +
+      bookingBox +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
-      sign),
+      sign);
+  },
 
   post_activity_checkin: (d, ctx) => {
     // The daily send_class_followups() cron writes `activity_name` (migration
