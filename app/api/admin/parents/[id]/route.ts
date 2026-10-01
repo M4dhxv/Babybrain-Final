@@ -68,6 +68,7 @@ export async function GET(request: Request, { params }: Params) {
     isTest: row?.isTest ?? !!p.is_test,
     testSource: row?.testSource ?? (p.is_test ? 'manual' : null),
     testReason: row?.testReason ?? null,
+    kind: row?.kind ?? (p.is_test ? 'test' : 'parent'),
     isVendor: row?.isVendor ?? false,
     vendorNames: row?.vendorNames ?? [],
   });

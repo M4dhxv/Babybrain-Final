@@ -14,6 +14,9 @@ import { getStripe } from '@/lib/stripe';
 
 export type Plan = 'free' | 'plus' | 'plus_past_due' | 'plus_canceled';
 
+/** One status per account, in this order of precedence: test > vendor login > vendor + parent > parent. */
+export type AccountKind = 'test' | 'vendor_login' | 'vendor_parent' | 'parent';
+
 export type AdminParent = {
   id: string; name: string; email: string; phone: string | null; area: string | null;
   children: { name: string; ageMonths: number }[];
@@ -23,6 +26,8 @@ export type AdminParent = {
   marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean; joinedAt: string;
   /** Areas they asked for at sign-up: central, east, north-east, north, west, sentosa. */
   regions: string[];
+  /** The one status shown for the account. */
+  kind: AccountKind;
   /** Holds an active seat at a vendor (owner or staff), with the business names. */
   isVendor: boolean; vendorNames: string[];
   isTest: boolean;
@@ -155,15 +160,17 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     const seatList = seatsBy.get(p.id) ?? [];
     const isVendor = seatList.length > 0;
     const hasParentActivity = (kidsBy.get(p.id)?.length ?? 0) > 0 || (a?.bookings ?? 0) > 0;
-    // A vendor login only counts as test if it was never used as a parent (no children, no
-    // bookings) or every business it works for is a test vendor. Real parents who also work
-    // for a vendor are kept, and tagged Vendor.
+    // Test = marked by an admin, a test-looking email, or works only for test vendors. A vendor
+    // login that was never used as a parent (no children, no bookings) is its own status, not
+    // "test". A vendor who also books as a parent is kept as "vendor + parent".
     const autoReason = isTestEmail(p.email) ? 'Test-looking email'
       : isVendor && seatList.every((v) => v.is_test) ? 'Works only for test vendors'
-      : isVendor && !hasParentActivity ? 'Vendor login with no parent activity'
       : null;
     const auto = autoReason !== null;
     const manual = !!p.is_test;
+    const kind: AccountKind = manual || auto ? 'test'
+      : isVendor ? (hasParentActivity ? 'vendor_parent' : 'vendor_login')
+      : 'parent';
     return {
       id: p.id,
       name: p.full_name?.trim() || '',
@@ -182,6 +189,7 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       onboarded: !!p.onboarding_completed_at,
       joinedAt: p.created_at,
       regions: regionsBy.get(p.id) ?? [],
+      kind,
       isVendor,
       vendorNames: [...new Set(seatList.map((v) => v.business_name).filter((n): n is string => !!n))],
       isTest: manual || auto,

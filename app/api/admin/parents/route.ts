@@ -10,9 +10,9 @@ import { loadParents, type AdminParent } from '@/lib/admin-parents';
  * consent). The rows are built and briefly cached in lib/admin-parents.ts;
  * filtering, sorting and paging happen here so the browser only gets one page.
  *
- * Read-only. Test accounts (marked by an admin, or test-looking emails and
- * vendor logins) are hidden unless asked for:
- *   ?test=hide (default) | show | only
+ * Read-only. Every account has one status (test / vendor login / vendor + parent / parent).
+ * By default only parents and vendor + parent accounts are listed:
+ *   ?account=all | parent | vendor_parent | vendor_login | test
  *
  * `&format=csv` returns every row matching the filters (no paging).
  */
@@ -39,19 +39,20 @@ export async function GET(request: Request) {
   let rows = [...(await loadParents(admin, sp.get('fresh') === '1'))];
 
   // ---- filters -------------------------------------------------------------
-  const test = sp.get('test');
-  if (test === 'only') rows = rows.filter((r) => r.isTest);
-  else if (test !== 'show') rows = rows.filter((r) => !r.isTest);
+  // Older links used ?test=show|only and ?account=vendor|parent; keep them working.
+  const legacyTest = sp.get('test');
+  const account = sp.get('account') ?? (legacyTest === 'show' ? 'all' : legacyTest === 'only' ? 'test' : '');
+  if (account === 'all') { /* everything */ }
+  else if (account === 'test' || account === 'vendor_login' || account === 'vendor_parent') rows = rows.filter((r) => r.kind === account);
+  else if (account === 'parent') rows = rows.filter((r) => r.kind === 'parent');
+  else if (account === 'vendor') rows = rows.filter((r) => r.kind === 'vendor_parent' || r.kind === 'vendor_login');
+  else rows = rows.filter((r) => r.kind === 'parent' || r.kind === 'vendor_parent');
 
   const q = (sp.get('q') ?? '').trim().toLowerCase();
   if (q) rows = rows.filter((r) => [r.name, r.email, r.phone ?? '', r.area ?? ''].some((v) => v.toLowerCase().includes(q)));
 
   const region = sp.get('region');
   if (region) rows = rows.filter((r) => r.regions.includes(region));
-
-  const account = sp.get('account');
-  if (account === 'vendor') rows = rows.filter((r) => r.isVendor);
-  else if (account === 'parent') rows = rows.filter((r) => !r.isVendor);
 
   const plan = sp.get('plan');
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);
@@ -110,11 +111,11 @@ export async function GET(request: Request) {
 
   if (sp.get('format') === 'csv') {
     const head = ['Name', 'Email', 'Phone', 'Postal code', 'Children', 'Plan', 'Bookings', 'Upcoming', 'Spend (SGD)',
-      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Vendor', 'Preferred areas', 'Test account'];
+      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account'];
     const body = rows.map((r) => [r.name, r.email, r.phone, r.area,
       r.children.map((c) => `${c.name} (${c.ageMonths < 24 ? `${c.ageMonths}m` : `${Math.floor(c.ageMonths / 12)}y`})`).join('; '),
       r.plan, r.bookings, r.upcoming, r.spend.toFixed(2), r.lastBookingAt?.slice(0, 10) ?? '', r.marketing,
-      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no'].map(csvCell).join(','));
+      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.kind, r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no'].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="parents.csv"' },
     });

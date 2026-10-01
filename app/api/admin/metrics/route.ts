@@ -99,11 +99,26 @@ export async function GET(request: Request) {
   const providerOfActivity = new Map(activities.map((a) => [a.id, a.provider_id]));
   const liveActivities = activities.filter((a) => liveProvider(a.provider_id));
   const providerOfSession = new Map(sessions.map((s) => [s.id, providerOfActivity.get(s.activity_id) ?? null]));
-  const liveBookings = bookings.filter((b) => {
+  // Only a booking cancelled AFTER it was confirmed or paid is a real cancellation. One cancelled
+  // while pending (an abandoned or expired checkout) or waitlisted was never a booking, so it is
+  // left out of every booking count and of the cancellation rate. The state it was cancelled from is recorded by
+  // a trigger (migration 00210). Before that, or for a row with no record, infer it: a priced
+  // booking with no payment and no package credit was pending.
+  const neverConfirmed = (b: {
+    status: string; payment_status: string; amount: number | null; package_purchase_id: string | null;
+    cancelled_from_status?: string | null;
+  }) => {
+    if (b.status !== 'cancelled') return false;
+    if (b.cancelled_from_status) return b.cancelled_from_status === 'pending' || b.cancelled_from_status === 'waitlisted';
+    return b.payment_status === 'none' && Number(b.amount ?? 0) > 0 && !b.package_purchase_id;
+  };
+  // Test parents and test vendors are filtered first; `excluded.bookings` reports only those.
+  const bookingsAfterTestFilter = bookings.filter((b) => {
     const prov = providerOfSession.get(b.session_id);
     // A booking whose session no longer exists has no known owner, so it is counted.
     return liveParent(b.user_id) && (prov == null || liveProvider(prov));
   });
+  const liveBookings = bookingsAfterTestFilter.filter((b) => !neverConfirmed(b));
   const liveReviews = reviews.filter((r) => liveParent(r.user_id) && liveProvider(providerOfActivity.get(r.activity_id) ?? ''));
   const liveEarnings = earnings.filter(
     (e) => liveProvider(String(e.provider_id)) && (includeTest || e.livemode !== false)
@@ -112,7 +127,8 @@ export async function GET(request: Request) {
   // ---- daily series (Singapore calendar days) -------------------------------
   const sgDate = (d: string) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
   const days: string[] = [];
-  for (let i = 13; i >= 0; i--) days.push(sgDate(iso(i * DAY)));
+  // 90 days, so the admin chart can switch between 7 / 14 / 30 / 90 without another request.
+  for (let i = 89; i >= 0; i--) days.push(sgDate(iso(i * DAY)));
   const bucket = (rows: { created_at: string }[]) => {
     const m = new Map<string, number>(days.map((d) => [d, 0]));
     for (const r of rows) {
@@ -123,7 +139,22 @@ export async function GET(request: Request) {
   };
   const bBookings = bucket(liveBookings);
   const bSignups = bucket(liveParents);
-  const daily = days.map((d) => ({ date: d, bookings: bBookings.get(d) ?? 0, signups: bSignups.get(d) ?? 0 }));
+  // For the chart: bookings made by parents vs added by vendors (no parent account), and gross sales taken.
+  const bParent = bucket(liveBookings.filter((b) => b.user_id));
+  const bManual = bucket(liveBookings.filter((b) => !b.user_id));
+  const salesByDay = new Map<string, number>();
+  for (const e of liveEarnings) {
+    if (e.status === 'refunded') continue;
+    const d = sgDate(String(e.created_at));
+    salesByDay.set(d, (salesByDay.get(d) ?? 0) + Number(e.gross_cents ?? 0));
+  }
+  const daily = days.map((d) => ({
+    date: d,
+    bookings: bParent.get(d) ?? 0,
+    manual: bManual.get(d) ?? 0,
+    signups: bSignups.get(d) ?? 0,
+    sales: salesByDay.get(d) ?? 0,
+  }));
   const today = days[days.length - 1];
   const last7 = days.slice(-7);
   const sum = (m: Map<string, number>, keys: string[]) => keys.reduce((n, k) => n + (m.get(k) ?? 0), 0);
@@ -166,21 +197,8 @@ export async function GET(request: Request) {
   };
 
   // ---- booking health -------------------------------------------------------
-  // Only a booking cancelled AFTER it was confirmed or paid is a real cancellation. One cancelled
-  // while pending (an abandoned or expired checkout) or waitlisted was never a booking, so it is
-  // left out of both sides of the cancellation rate. The state it was cancelled from is recorded by
-  // a trigger (migration 00210). Before that, or for a row with no record, infer it: a priced
-  // booking with no payment and no package credit was pending.
-  const neverConfirmed = (b: {
-    status: string; payment_status: string; amount: number | null; package_purchase_id: string | null;
-    cancelled_from_status?: string | null;
-  }) => {
-    if (b.status !== 'cancelled') return false;
-    if (b.cancelled_from_status) return b.cancelled_from_status === 'pending' || b.cancelled_from_status === 'waitlisted';
-    return b.payment_status === 'none' && Number(b.amount ?? 0) > 0 && !b.package_purchase_id;
-  };
   const all30 = liveBookings.filter((b) => b.created_at >= iso(30 * DAY));
-  const b30 = all30.filter((b) => !neverConfirmed(b));
+  const b30 = all30;
   const cancelled30 = b30.filter((b) => b.status === 'cancelled').length;
   const held = new Map<string, number>();
   for (const b of liveBookings) {
@@ -234,7 +252,7 @@ export async function GET(request: Request) {
     excluded: {
       vendors: providers.length - liveProviders.length,
       parents: parents.length - liveParents.length,
-      bookings: bookings.length - liveBookings.length,
+      bookings: bookings.length - bookingsAfterTestFilter.length,
       sales: earnings.length - liveEarnings.length,
     },
     totals: {

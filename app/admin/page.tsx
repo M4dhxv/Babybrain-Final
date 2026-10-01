@@ -12,7 +12,7 @@ type Metrics = {
   };
   bookings: { today: number; last7: number };
   signups: { today: number; last7: number };
-  daily: { date: string; bookings: number; signups: number }[];
+  daily: { date: string; bookings: number; manual: number; signups: number; sales: number }[];
   includeTest: boolean;
   excluded: { vendors: number; parents: number; bookings: number; sales: number };
   revenue: {
@@ -572,6 +572,161 @@ function TestDataBar({ includeTest, setIncludeTest, excluded }: {
 
 const pctText = (v: number | null) => (v == null ? '—' : `${Math.round(v * 1000) / 10}%`);
 
+// ---- Activity chart: range, series toggles, hover tooltip, pinned day, click-through ----
+type DailyPoint = { date: string; bookings: number; manual: number; signups: number; sales: number };
+type SeriesKey = 'bookings' | 'manual' | 'signups' | 'sales';
+const SERIES: { key: SeriesKey; label: string; color: string; hint: string }[] = [
+  { key: 'bookings', label: 'Bookings', color: '#ff5a9a', hint: 'Made by parents' },
+  { key: 'manual', label: 'Manual bookings', color: '#f5b942', hint: 'Added by vendors, no parent account' },
+  { key: 'signups', label: 'Signups', color: '#4a90ff', hint: 'New parent accounts' },
+  { key: 'sales', label: 'Sales', color: '#34c77b', hint: 'Gross sales taken, SGD (right axis)' },
+];
+const RANGES = [7, 14, 30, 90] as const;
+
+/** A tidy axis maximum (1, 2, 5 × a power of ten) at or above `v`. */
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  return ([1, 2, 5, 10].map((m) => m * pow).find((x) => x >= v) ?? v);
+}
+const dayLabel = (iso: string) => new Date(`${iso}T00:00:00+08:00`).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Singapore' });
+const money = (cents: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD', maximumFractionDigits: 0 }).format(cents / 100);
+
+function ActivityChart({ daily, onOpenParents }: { daily: DailyPoint[]; onOpenParents: (f: Partial<ParentFilters>) => void }) {
+  const [range, setRange] = useState<(typeof RANGES)[number]>(14);
+  const [on, setOn] = useState<Record<SeriesKey, boolean>>({ bookings: true, manual: false, signups: true, sales: true });
+  const [hover, setHover] = useState<number | null>(null);
+  const [pinned, setPinned] = useState<number | null>(null);
+
+  const pts = daily.slice(-range);
+  const n = pts.length;
+  const W = 1000, H = 280, L = 46, R = on.sales ? 58 : 14, T = 12, B = 30;
+  const plotW = W - L - R, plotH = H - T - B, colW = plotW / n;
+  const bars = SERIES.filter((s) => s.key !== 'sales' && on[s.key]);
+  const maxCount = niceMax(Math.max(0, ...pts.map((p) => Math.max(...bars.map((s) => p[s.key]), 0))));
+  const maxSales = niceMax(Math.max(0, ...pts.map((p) => p.sales)));
+  const barW = Math.max(3, Math.min(20, (colW * 0.78) / Math.max(1, bars.length)));
+  const x = (i: number) => L + colW * i + colW / 2;
+  const yCount = (v: number) => T + plotH - (v / maxCount) * plotH;
+  const ySales = (v: number) => T + plotH - (v / maxSales) * plotH;
+  const ticks = [0, 1, 2, 3, 4].map((t) => t / 4);
+  const labelEvery = Math.ceil(n / 10);
+  const totals = SERIES.map((s) => ({ ...s, total: pts.reduce((t, p) => t + p[s.key], 0) }));
+  const active = hover ?? pinned;
+  const sel = active != null ? pts[active] : null;
+  const toggle = (k: SeriesKey) => setOn((p) => (Object.values({ ...p, [k]: !p[k] }).some(Boolean) ? { ...p, [k]: !p[k] } : p));
+  const chipBtn = (isOn: boolean, color?: string): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+    border: `1px solid ${isOn ? color ?? C.blue : C.border}`, background: isOn ? 'rgba(74,144,255,.10)' : 'transparent', color: isOn ? C.text : C.muted,
+  });
+
+  return (
+    <div style={{ ...card(), marginTop: 22, padding: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 800 }}>Activity · last {range} days</div>
+        <div role="group" aria-label="Date range" style={{ display: 'flex', gap: 6 }}>
+          {RANGES.map((r) => (
+            <button key={r} type="button" onClick={() => { setRange(r); setHover(null); setPinned(null); }} aria-pressed={range === r}
+              style={{ ...tabBtn(range === r), padding: '4px 12px', fontSize: 12 }}>{r}d</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+        {totals.map((s) => (
+          <button key={s.key} type="button" onClick={() => toggle(s.key)} aria-pressed={on[s.key]} title={`${s.hint} — click to ${on[s.key] ? 'hide' : 'show'}`}
+            style={chipBtn(on[s.key], s.color)}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: on[s.key] ? s.color : C.border }} />
+            {s.label}
+            <span style={{ color: C.muted, fontWeight: 600 }}>{s.key === 'sales' ? money(s.total) : s.total}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }} role="img"
+          aria-label={`Bookings, signups and sales for the last ${range} days`}>
+          {ticks.map((t) => {
+            const y = T + plotH - t * plotH;
+            return (
+              <g key={t}>
+                <line x1={L} x2={W - R} y1={y} y2={y} stroke={C.border} strokeWidth={1} strokeDasharray={t === 0 ? undefined : '3 4'} />
+                {bars.length > 0 && <text x={L - 8} y={y + 4} textAnchor="end" fontSize={11} fill={C.muted}>{Math.round(t * maxCount * 10) / 10}</text>}
+                {on.sales && <text x={W - R + 8} y={y + 4} textAnchor="start" fontSize={11} fill={C.green}>{money(t * maxSales)}</text>}
+              </g>
+            );
+          })}
+
+          {active != null && <rect x={L + colW * active} y={T} width={colW} height={plotH} fill="rgba(74,144,255,.10)" rx={4} />}
+
+          {pts.map((p, i) => bars.map((s, bi) => {
+            const v = p[s.key];
+            const h = v ? Math.max(3, plotH - (yCount(v) - T)) : 0;
+            return h ? (
+              <rect key={`${p.date}-${s.key}`} x={x(i) - (bars.length * barW) / 2 + bi * barW} y={T + plotH - h} width={barW - 1} height={h}
+                rx={2} fill={s.color} opacity={active == null || active === i ? 1 : 0.45} />
+            ) : null;
+          }))}
+
+          {on.sales && (
+            <>
+              <path d={pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${ySales(p.sales)}`).join(' ')} fill="none" stroke={C.green} strokeWidth={2} strokeLinejoin="round" />
+              {pts.map((p, i) => p.sales > 0 && <circle key={p.date} cx={x(i)} cy={ySales(p.sales)} r={active === i ? 5 : 3} fill={C.green} />)}
+            </>
+          )}
+
+          {pts.map((p, i) => i % labelEvery === 0 && (
+            <text key={p.date} x={x(i)} y={H - 10} textAnchor="middle" fontSize={11} fill={active === i ? C.text : C.muted}>{p.date.slice(5)}</text>
+          ))}
+
+          {pts.map((p, i) => (
+            <rect key={`hit-${p.date}`} x={L + colW * i} y={T} width={colW} height={plotH + B} fill="transparent" style={{ cursor: 'pointer', outline: 'none' }}
+              tabIndex={0} role="button" aria-label={`${dayLabel(p.date)}: ${p.bookings} bookings, ${p.manual} manual, ${p.signups} signups, ${money(p.sales)} sales`}
+              onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+              onClick={() => setPinned((cur) => (cur === i ? null : i))}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPinned((cur) => (cur === i ? null : i)); } }} />
+          ))}
+        </svg>
+
+        {hover != null && (
+          <div style={{ position: 'absolute', top: 0, left: `${Math.min(78, Math.max(0, ((x(hover) / W) * 100) - 10))}%`, pointerEvents: 'none', zIndex: 5,
+            background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, minWidth: 150, boxShadow: '0 6px 20px rgba(0,0,0,.35)' }}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>{dayLabel(pts[hover].date)}</div>
+            {SERIES.map((s) => (
+              <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: on[s.key] ? C.text : C.muted, opacity: on[s.key] ? 1 : 0.6 }}>
+                <span><span style={{ color: s.color }}>■</span> {s.label}</span>
+                <strong>{s.key === 'sales' ? money(pts[hover][s.key]) : pts[hover][s.key]}</strong>
+              </div>
+            ))}
+            <div style={{ color: C.muted, marginTop: 4 }}>Click to pin</div>
+          </div>
+        )}
+      </div>
+
+      {pinned != null && sel && pts[pinned] && (
+        <div style={{ ...card(), marginTop: 12, padding: '10px 14px', background: C.bg, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+            <strong>{dayLabel(pts[pinned].date)}</strong>
+            <span style={{ color: C.muted }}> · {pts[pinned].bookings} bookings · {pts[pinned].manual} manual · {pts[pinned].signups} signups · {money(pts[pinned].sales)} sales</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {pts[pinned].signups > 0 && (
+              <button type="button" style={{ ...tabBtn(false), padding: '4px 12px', fontSize: 12 }}
+                onClick={() => onOpenParents({ joined_from: pts[pinned].date, joined_to: pts[pinned].date })}>
+                View {pts[pinned].signups} signup{pts[pinned].signups === 1 ? '' : 's'} →
+              </button>
+            )}
+            <button type="button" style={{ ...tabBtn(false), padding: '4px 12px', fontSize: 12 }} onClick={() => setPinned(null)}>Clear</button>
+          </div>
+        </div>
+      )}
+      <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
+        Hover or tab to a day for details, click to pin it. Click a legend chip to show or hide a series. Counts are by the day they were made (Singapore time).
+      </div>
+    </div>
+  );
+}
+
 function MetricsView({ onOpenParents }: { onOpenParents: (f: Partial<ParentFilters>) => void }) {
   const [m, setM] = useState<Metrics | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -614,7 +769,6 @@ function MetricsView({ onOpenParents }: { onOpenParents: (f: Partial<ParentFilte
   );
 
   const r = m.revenue;
-  const maxDaily = Math.max(1, ...m.daily.map((d) => Math.max(d.bookings, d.signups)));
   const ex = m.excluded;
   const excludedText = [
     ex.vendors ? `${ex.vendors} vendor${ex.vendors === 1 ? '' : 's'}` : '',
@@ -668,28 +822,7 @@ function MetricsView({ onOpenParents }: { onOpenParents: (f: Partial<ParentFilte
         ['Vendor plans at risk', m.subscriptions.vendorPastDue, C.pink, `${m.subscriptions.vendorCanceled} cancelled`],
       ])}
 
-      <div style={{ ...card(), marginTop: 22, padding: 20 }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>Last 14 days</div>
-        <div style={{ display: 'flex', gap: 16, color: C.muted, fontSize: 12, marginBottom: 14 }}>
-          <span><span style={{ color: C.pink }}>■</span> Bookings</span>
-          <span><span style={{ color: C.blue }}>■</span> Signups</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 140 }}>
-          {m.daily.map((d) => (
-            <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 110, width: '100%', justifyContent: 'center' }}>
-                <div title={`${d.bookings} bookings`} style={{ width: 8, background: C.pink, borderRadius: 3,
-                  height: `${(d.bookings / maxDaily) * 100}%`, minHeight: d.bookings ? 3 : 0 }} />
-                <div title={d.signups ? `${d.signups} signups — click to view them` : '0 signups'}
-                  onClick={d.signups ? () => onOpenParents({ joined_from: d.date, joined_to: d.date }) : undefined}
-                  style={{ width: 8, background: C.blue, borderRadius: 3, cursor: d.signups ? 'pointer' : 'default',
-                    height: `${(d.signups / maxDaily) * 100}%`, minHeight: d.signups ? 3 : 0 }} />
-              </div>
-              <div style={{ color: C.muted, fontSize: 9 }}>{d.date.slice(5)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ActivityChart daily={m.daily} onOpenParents={onOpenParents} />
 
       <div style={{ marginTop: 22 }}>
         <TestDataBar includeTest={includeTest} setIncludeTest={setIncludeTest} excluded={excludedText} />
@@ -2646,19 +2779,25 @@ type ParentRowT = {
   plan: 'free' | 'plus' | 'plus_past_due' | 'plus_canceled'; bookings: number; upcoming: number; spend: number;
   bookingSpend: number; planPaid: number;
   lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean;
-  joinedAt: string; isTest: boolean; isVendor: boolean; vendorNames: string[]; regions: string[];
+  joinedAt: string; isTest: boolean; kind: AccountKind; isVendor: boolean; vendorNames: string[]; regions: string[];
 };
+type AccountKind = 'test' | 'vendor_login' | 'vendor_parent' | 'parent';
 type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: number; pageSize: number };
 type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; test: string; account: string; region: string;
+  onboarded: string; min_spend: string; area: string; account: string; region: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', test: 'hide', account: '', region: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '',
 };
-const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'test'];
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region'];
+/** The one badge an account carries. Parents carry none. */
+const KIND_BADGE: Record<AccountKind, { label: string; tone: Tone } | null> = {
+  test: { label: 'Test', tone: 'amber' }, vendor_login: { label: 'Vendor login', tone: 'blue' },
+  vendor_parent: { label: 'Vendor + parent', tone: 'blue' }, parent: null,
+};
 /** Filters carried in the page link, e.g. /admin?tab=parents&plan=plus. */
 function filtersFromUrl(): ParentFilters {
   const sp = new URLSearchParams(window.location.search);
@@ -2677,6 +2816,26 @@ const MARKETING_BADGE: Record<ParentRowT['marketing'], { label: string; tone: To
 const REGION_LABELS: Record<string, string> = {
   central: 'Central', east: 'East', 'north-east': 'North-East', north: 'North', west: 'West', sentosa: 'Sentosa',
 };
+/** Singapore postal districts by the first two digits of the postal code (the "postal sector"). */
+const POSTAL_DISTRICTS: [number[], number, string][] = [
+  [[1, 2, 3, 4, 5, 6], 1, 'Raffles Place / Marina'], [[7, 8], 2, 'Tanjong Pagar'], [[14, 15, 16], 3, 'Queenstown / Tiong Bahru'],
+  [[9, 10], 4, 'Telok Blangah / Harbourfront'], [[11, 12, 13], 5, 'Pasir Panjang / Clementi'], [[17], 6, 'High Street / Beach Road'],
+  [[18, 19], 7, 'Middle Road / Golden Mile'], [[20, 21], 8, 'Little India'], [[22, 23], 9, 'Orchard / River Valley'],
+  [[24, 25, 26, 27], 10, 'Bukit Timah / Tanglin'], [[28, 29, 30], 11, 'Novena / Thomson'], [[31, 32, 33], 12, 'Balestier / Toa Payoh'],
+  [[34, 35, 36, 37], 13, 'Macpherson / Braddell'], [[38, 39, 40, 41], 14, 'Geylang / Paya Lebar'], [[42, 43, 44, 45], 15, 'Katong / Joo Chiat'],
+  [[46, 47, 48], 16, 'Bedok / Upper East Coast'], [[49, 50, 81], 17, 'Changi / Loyang'], [[51, 52], 18, 'Tampines / Pasir Ris'],
+  [[53, 54, 55, 82], 19, 'Hougang / Punggol'], [[56, 57], 20, 'Bishan / Ang Mo Kio'], [[58, 59], 21, 'Clementi Park / Upper Bukit Timah'],
+  [[60, 61, 62, 63, 64], 22, 'Jurong'], [[65, 66, 67, 68], 23, 'Bukit Panjang / Choa Chu Kang'], [[69, 70, 71], 24, 'Lim Chu Kang / Tengah'],
+  [[72, 73], 25, 'Woodlands / Kranji'], [[77, 78], 26, 'Upper Thomson / Springleaf'], [[75, 76], 27, 'Yishun / Sembawang'], [[79, 80], 28, 'Seletar'],
+];
+/** "D9 – Orchard / River Valley" for a 6-digit Singapore postal code, or null if it isn't one. */
+function postalDistrict(code: string | null | undefined): string | null {
+  const c = (code ?? '').trim();
+  if (!/^\d{6}$/.test(c)) return null;
+  const sector = Number(c.slice(0, 2));
+  const hit = POSTAL_DISTRICTS.find(([sectors]) => sectors.includes(sector));
+  return hit ? `D${hit[1]} – ${hit[2]}` : null;
+}
 const regionText = (v: string[]) => v.map((x) => REGION_LABELS[x] ?? x).join(', ');
 const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.floor(m / 12)}y`);
 const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(v);
@@ -2693,7 +2852,7 @@ type ParentDetailT = {
     session: { starts_at: string; activity: { title: string } | null } | null;
   }[];
   isTest: boolean; testSource: 'manual' | 'auto' | null; testReason: string | null;
-  isVendor: boolean; vendorNames: string[];
+  kind: AccountKind; isVendor: boolean; vendorNames: string[];
 };
 
 /** Everything held on one parent, with the test-account checkbox. */
@@ -2778,11 +2937,14 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Name', (p.full_name as string) || dash)}
             {field('Email', p.email as string)}
             {field('Phone', (p.phone as string) || dash)}
-            {field('Postal code', (p.postal_code as string) || dash)}
+            {field('Postal code', p.postal_code
+              ? <>{p.postal_code as string}{postalDistrict(p.postal_code as string) && <span style={{ color: C.muted }}> ({postalDistrict(p.postal_code as string)})</span>}</>
+              : dash)}
             {field('Joined', when(p.created_at))}
             {field('Last updated', when(p.updated_at))}
             {field('Onboarding', p.onboarding_completed_at ? <>Completed · {when(p.onboarding_completed_at)}</> : 'Not completed')}
-            {d.isVendor && field('Vendor', <>{d.vendorNames.join(', ') || 'Yes'} <Badge tone="blue">Vendor</Badge></>)}
+            {d.isVendor && field('Vendor', d.vendorNames.join(', ') || 'Yes')}
+            {field('Account type', KIND_BADGE[d.kind] ? <Badge tone={KIND_BADGE[d.kind]!.tone}>{KIND_BADGE[d.kind]!.label}</Badge> : 'Parent')}
             {field('Account ID', <code style={{ fontSize: 12 }}>{id}</code>)}
           </>)}
 
@@ -2826,7 +2988,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
           {section('Preferences', d.preferences ? <>
             {field('Preferred days', list(d.preferences.preferred_days))}
             {field('Preferred times', list(d.preferences.preferred_times))}
-            {field('Preferred areas', d.preferences.preferred_regions?.length ? regionText(d.preferences.preferred_regions) : dash)}
+            {field('Preferred regions', d.preferences.preferred_regions?.length ? regionText(d.preferences.preferred_regions) : dash)}
             {field('Budget', d.preferences.budget_min != null || d.preferences.budget_max != null
               ? `${d.preferences.budget_min ?? 0} – ${d.preferences.budget_max ?? 'any'} SGD` : dash)}
             {field('Interests', list(d.preferences.interests))}
@@ -2872,7 +3034,7 @@ function ParentsView() {
   const [openId, setOpenId] = useState<string | null>(null);
   const cacheRef = useRef(new Map<string, ParentsPage>());
   const freshRef = useRef(false);
-  const [extra, setExtra] = useState({ area: false, onboarded: false, last: false });
+  const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false });
 
   useEffect(() => {
     const t = setTimeout(() => { setF((p) => (p.q === q ? p : { ...p, q })); setPage(1); }, 300);
@@ -2963,11 +3125,8 @@ function ParentsView() {
         <label style={{ ...lab, flex: '1 1 240px' }}>Search
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, phone or postal code…" style={input()} />
         </label>
-        <label style={{ ...lab, width: 140 }}>Preferred area
-          {sel('region', [['', 'Any'], ...Object.entries(REGION_LABELS) as [string, string][]])}
-        </label>
-        <label style={{ ...lab, width: 140 }}>Account
-          {sel('account', [['', 'All'], ['parent', 'Parents only'], ['vendor', 'Vendor staff']])}
+        <label style={{ ...lab, width: 170 }}>Account type
+          {sel('account', [['', 'Parents (default)'], ['all', 'Everyone'], ['parent', 'Parents only'], ['vendor_parent', 'Vendor + parent'], ['vendor_login', 'Vendor logins'], ['test', 'Test accounts']])}
         </label>
         <label style={{ ...lab, width: 150 }}>Plan
           {sel('plan', [['', 'All plans'], ['free', 'Free'], ['plus', 'Plus'], ['plus_past_due', 'Plus · past due'], ['plus_canceled', 'Plus · canceled']])}
@@ -2990,6 +3149,9 @@ function ParentsView() {
             <label style={lab}>Has children
               {sel('has_children', [['', 'Any'], ['yes', 'Yes'], ['no', 'No'], ])}
             </label>
+            <label style={lab}>Preferred region
+              {sel('region', [['', 'Any'], ...Object.entries(REGION_LABELS) as [string, string][]])}
+            </label>
             <label style={lab}>Child age from (months)
               <input type="number" min={0} value={f.child_min} onChange={set('child_min')} style={input()} placeholder="e.g. 6" />
             </label>
@@ -3011,13 +3173,10 @@ function ParentsView() {
             <label style={lab}>Postal code starts with
               <input value={f.area} onChange={set('area')} style={input()} placeholder="e.g. 52" />
             </label>
-            <label style={lab}>Test accounts
-              {sel('test', [['hide', 'Hide (default)'], ['show', 'Include'], ['only', 'Only test accounts']])}
-            </label>
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: C.muted }}>Show extra columns:</span>
-            {([['area', 'Area'], ['onboarded', 'Onboarded'], ['last', 'Last booking']] as const).map(([k, l]) => (
+            {([['area', 'Postal code'], ['region', 'Preferred region'], ['onboarded', 'Onboarded'], ['last', 'Last booking']] as const).map(([k, l]) => (
               <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))}
                   style={{ flex: 'none', width: 16, height: 16, margin: 0 }} />{l}
@@ -3060,12 +3219,12 @@ function ParentsView() {
                 {sortTh('name', 'Parent')}
                 <th style={th()}>Phone</th>
                 {sortTh('children', 'Children')}
-                <th style={th()}>Preferred area</th>
                 <th style={th()}>Plan</th>
                 {sortTh('bookings', 'Bookings')}
                 {sortTh('spend', 'Spend', true)}
                 <th style={th()}>Marketing</th>
-                {extra.area && <th style={th()}>Area</th>}
+                {extra.area && <th style={th()}>Postal code</th>}
+                {extra.region && <th style={th()}>Preferred region</th>}
                 {extra.onboarded && <th style={th()}>Onboarded</th>}
                 {extra.last && sortTh('last', 'Last booking')}
                 {sortTh('joined', 'Joined')}
@@ -3086,8 +3245,11 @@ function ParentsView() {
                           color: C.blue, textAlign: 'left' }}>
                         {r.name || 'No name'}
                       </button>
-                      {r.isVendor && <span style={{ marginLeft: 8 }} title={r.vendorNames.join(', ')}><Badge tone="blue">Vendor</Badge></span>}
-                      {r.isTest && <span style={{ marginLeft: 8 }}><Badge tone="amber">Test</Badge></span>}
+                      {KIND_BADGE[r.kind] && (
+                        <span style={{ marginLeft: 8 }} title={r.vendorNames.join(', ')}>
+                          <Badge tone={KIND_BADGE[r.kind]!.tone}>{KIND_BADGE[r.kind]!.label}</Badge>
+                        </span>
+                      )}
                     </div>
                     <div style={{ color: C.muted, fontSize: 12 }}>{r.email}</div>
                   </td>
@@ -3098,7 +3260,6 @@ function ParentsView() {
                           {r.children.length} · {r.children.map((c) => childAge(c.ageMonths)).join(', ')}
                         </span>}
                   </td>
-                  <td style={td()}>{r.regions.length ? regionText(r.regions) : <span style={{ color: C.muted }}>—</span>}</td>
                   <td style={td()}><Badge tone={PLAN_BADGE[r.plan].tone}>{PLAN_BADGE[r.plan].label}</Badge></td>
                   <td style={td()}>
                     {r.bookings}{r.upcoming > 0 && <span style={{ color: C.muted }}> · {r.upcoming} upcoming</span>}
@@ -3106,6 +3267,7 @@ function ParentsView() {
                   <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }} title={`Bookings ${sgdDollars(r.bookingSpend)} + plan ${sgdDollars(r.planPaid)}`}>{r.spend > 0 ? sgdDollars(r.spend) : <span style={{ color: C.muted }}>—</span>}</td>
                   <td style={td()}><Badge tone={MARKETING_BADGE[r.marketing].tone}>{MARKETING_BADGE[r.marketing].label}</Badge></td>
                   {extra.area && <td style={td()}>{r.area || <span style={{ color: C.muted }}>—</span>}</td>}
+                  {extra.region && <td style={td()}>{r.regions.length ? regionText(r.regions) : <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}
                   {extra.last && <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.lastBookingAt ? sgDay(r.lastBookingAt) : <span style={{ color: C.muted }}>—</span>}</td>}
                   <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(r.joinedAt)}</td>
