@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
 import { invalidateParents } from '@/lib/admin-parents';
+import { getStripe } from '@/lib/stripe';
 
 /**
  * One parent, for the /admin → Parents detail panel.
@@ -28,7 +29,7 @@ export async function GET(request: Request, { params }: Params) {
     db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
     db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
     db.from('user_preferences').select('preferred_days, preferred_times, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
-    db.from('customer_subscriptions').select('plan, billing_interval, status, current_period_end, cancel_at_period_end').eq('user_id', id).maybeSingle(),
+    db.from('customer_subscriptions').select('plan, billing_interval, status, current_period_end, cancel_at_period_end, stripe_customer_id').eq('user_id', id).maybeSingle(),
     db.from('bookings')
       .select('id, status, payment_status, amount, created_at, guest_name, child_id, session:activity_sessions(starts_at, activity:activities(title))')
       .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
@@ -36,6 +37,25 @@ export async function GET(request: Request, { params }: Params) {
   ]);
   if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
   if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+
+  // What the parent has paid for their plan lives only in Stripe: read their paid invoices.
+  // If Stripe can't be reached (or the customer is from the other Stripe mode) the panel just omits it.
+  let planPayments: { id: string; paidAt: string; amount: number; currency: string; description: string | null }[] = [];
+  const customerId = (sub.data as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
+  if (customerId) {
+    try {
+      const list = await getStripe().invoices.list({ customer: customerId, status: 'paid', limit: 24 });
+      planPayments = list.data
+        .filter((i) => i.amount_paid > 0)
+        .map((i) => ({
+          id: i.id ?? '',
+          paidAt: new Date((i.status_transitions?.paid_at ?? i.created) * 1000).toISOString(),
+          amount: i.amount_paid / 100,
+          currency: i.currency,
+          description: i.lines.data[0]?.description ?? null,
+        }));
+    } catch { /* leave empty */ }
+  }
 
   const p = profile.data as Record<string, unknown> & { email: string; is_test?: boolean | null };
   const manual = !!p.is_test;
@@ -45,6 +65,7 @@ export async function GET(request: Request, { params }: Params) {
     children: kids.data ?? [],
     preferences: prefs.data ?? null,
     subscription: sub.data ?? null,
+    planPayments,
     bookings: bookings.data ?? [],
     isTest: manual || auto,
     testSource: manual ? 'manual' : auto ? 'auto' : null,

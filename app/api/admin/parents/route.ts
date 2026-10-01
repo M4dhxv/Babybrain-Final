@@ -50,7 +50,7 @@ export async function GET(request: Request) {
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);
 
   const marketing = sp.get('marketing');
-  if (marketing === 'consented' || marketing === 'withdrawn' || marketing === 'none') rows = rows.filter((r) => r.marketing === marketing);
+  if (marketing === 'consented' || marketing === 'withdrawn' || marketing === 'not_consented') rows = rows.filter((r) => r.marketing === marketing);
 
   const from = dateMs(sp.get('joined_from')), to = dateMs(sp.get('joined_to'), true);
   if (from !== null) rows = rows.filter((r) => Date.parse(r.joinedAt) >= from);

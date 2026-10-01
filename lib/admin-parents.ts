@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAll, isTestEmail, vendorAccountIds } from '@/lib/admin-test-data';
+import { getStripe } from '@/lib/stripe';
 
 /**
  * The admin Parents list, built once and held in memory for a short while.
@@ -16,8 +17,10 @@ export type Plan = 'free' | 'plus' | 'plus_past_due' | 'plus_canceled';
 export type AdminParent = {
   id: string; name: string; email: string; phone: string | null; area: string | null;
   children: { name: string; ageMonths: number }[];
-  plan: Plan; bookings: number; upcoming: number; spend: number; lastBookingAt: string | null;
-  marketing: 'consented' | 'withdrawn' | 'none'; onboarded: boolean; joinedAt: string;
+  plan: Plan; bookings: number; upcoming: number;
+  /** Everything paid: class bookings plus Plus subscription invoices. */
+  spend: number; bookingSpend: number; planPaid: number; lastBookingAt: string | null;
+  marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean; joinedAt: string;
   isTest: boolean;
   /** 'manual' = flagged by an admin, 'auto' = test-looking email or a vendor login. */
   testSource: 'manual' | 'auto' | null;
@@ -40,18 +43,43 @@ export const ageMonths = (dob: string, now: number) => {
 
 export function invalidateParents() { cache = null; }
 
+/**
+ * Plus subscription money actually collected, per Stripe customer (SGD).
+ * Stripe is the only place it's recorded, so read paid invoices and sum them.
+ * Held for 10 minutes on its own so the list stays quick; the Refresh button
+ * bypasses it. If Stripe can't be reached the list still loads, without it.
+ */
+let paidCache: { at: number; map: Map<string, number> } | null = null;
+async function plusPaidByCustomer(fresh: boolean): Promise<Map<string, number>> {
+  if (!fresh && paidCache && Date.now() - paidCache.at < 10 * 60_000) return paidCache.map;
+  const map = new Map<string, number>();
+  try {
+    let n = 0;
+    for await (const inv of getStripe().invoices.list({ status: 'paid', limit: 100 })) {
+      if (inv.currency === 'sgd' && typeof inv.customer === 'string' && inv.amount_paid > 0) {
+        map.set(inv.customer, (map.get(inv.customer) ?? 0) + inv.amount_paid);
+      }
+      if (++n >= 5000) break;
+    }
+    paidCache = { at: Date.now(), map };
+  } catch {
+    return paidCache?.map ?? map;
+  }
+  return map;
+}
+
 export async function loadParents(admin: SupabaseClient, fresh = false): Promise<AdminParent[]> {
   const now = Date.now();
   if (!fresh && cache && now - cache.at < TTL_MS) return cache.rows;
   if (!fresh && inflight) return inflight;
-  inflight = build(admin, now).then((rows) => { cache = { at: Date.now(), rows }; return rows; })
+  inflight = build(admin, now, fresh).then((rows) => { cache = { at: Date.now(), rows }; return rows; })
     .finally(() => { inflight = null; });
   return inflight;
 }
 
-async function build(admin: SupabaseClient, now: number): Promise<AdminParent[]> {
+async function build(admin: SupabaseClient, now: number, fresh: boolean): Promise<AdminParent[]> {
   const cols = 'id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at';
-  const [parents, kids, bookings, sessions, subs, vendorAccounts] = await Promise.all([
+  const [parents, kids, bookings, sessions, subs, vendorAccounts, testPaid, stripePaid] = await Promise.all([
     // is_test comes from migration 00207; until it is applied, read without it.
     (async () => {
       const withFlag = await admin.from('parent_profiles').select(`${cols}, is_test`).range(0, 0);
@@ -60,15 +88,21 @@ async function build(admin: SupabaseClient, now: number): Promise<AdminParent[]>
     })(),
     fetchAll<{ parent_id: string; name: string; date_of_birth: string }>((f, t) =>
       admin.from('children').select('parent_id, name, date_of_birth').range(f, t)),
-    fetchAll<{ user_id: string; session_id: string; status: string; payment_status: string; amount: number | null; created_at: string }>((f, t) =>
-      admin.from('bookings').select('user_id, session_id, status, payment_status, amount, created_at').range(f, t)),
+    fetchAll<{ id: string; user_id: string; session_id: string; status: string; payment_status: string; amount: number | null; created_at: string }>((f, t) =>
+      admin.from('bookings').select('id, user_id, session_id, status, payment_status, amount, created_at').range(f, t)),
     // Only future sessions matter (for "upcoming"), which is far fewer rows than all of them.
     fetchAll<{ id: string }>((f, t) =>
       admin.from('activity_sessions').select('id').gt('starts_at', new Date(now).toISOString()).range(f, t)),
-    fetchAll<{ user_id: string; plan: string; status: string }>((f, t) =>
-      admin.from('customer_subscriptions').select('user_id, plan, status').eq('plan', 'plus').range(f, t)),
+    fetchAll<{ user_id: string; plan: string; status: string; stripe_customer_id: string | null }>((f, t) =>
+      admin.from('customer_subscriptions').select('user_id, plan, status, stripe_customer_id').eq('plan', 'plus').range(f, t)),
     vendorAccountIds(admin),
+    // Bookings paid in Stripe test mode (provider_earnings.livemode = false) aren't real spend.
+    // livemode comes from migration 00161; if the read fails nothing is excluded.
+    fetchAll<{ booking_id: string | null }>((f, t) =>
+      admin.from('provider_earnings').select('booking_id').eq('livemode', false).not('booking_id', 'is', null).range(f, t)),
+    plusPaidByCustomer(fresh),
   ]);
+  const testPaidIds = new Set(testPaid.map((r) => r.booking_id));
 
   const kidsBy = new Map<string, { name: string; ageMonths: number }[]>();
   for (const k of kids) {
@@ -78,7 +112,9 @@ async function build(admin: SupabaseClient, now: number): Promise<AdminParent[]>
   }
   const future = new Set(sessions.map((s) => s.id));
   const planBy = new Map<string, Plan>();
+  const planPaidBy = new Map<string, number>();
   for (const s of subs) {
+    if (s.stripe_customer_id) planPaidBy.set(s.user_id, (stripePaid.get(s.stripe_customer_id) ?? 0) / 100);
     planBy.set(s.user_id, s.status === 'past_due' ? 'plus_past_due'
       : s.status === 'canceled' ? 'plus_canceled'
       : s.status === 'active' || s.status === 'trialing' ? 'plus' : 'free');
@@ -91,7 +127,7 @@ async function build(admin: SupabaseClient, now: number): Promise<AdminParent[]>
     const a = aggBy.get(b.user_id) ?? { bookings: 0, upcoming: 0, spend: 0, last: null };
     a.bookings += 1;
     if (future.has(b.session_id) && b.status !== 'completed') a.upcoming += 1;
-    if (b.payment_status === 'paid') a.spend += Number(b.amount ?? 0);
+    if (b.payment_status === 'paid' && !testPaidIds.has(b.id)) a.spend += Number(b.amount ?? 0);
     const at = Date.parse(b.created_at);
     if (a.last === null || at > a.last) a.last = at;
     aggBy.set(b.user_id, a);
@@ -111,9 +147,11 @@ async function build(admin: SupabaseClient, now: number): Promise<AdminParent[]>
       plan: planBy.get(p.id) ?? 'free',
       bookings: a?.bookings ?? 0,
       upcoming: a?.upcoming ?? 0,
-      spend: Math.round((a?.spend ?? 0) * 100) / 100,
+      bookingSpend: Math.round((a?.spend ?? 0) * 100) / 100,
+      planPaid: planPaidBy.get(p.id) ?? 0,
+      spend: Math.round(((a?.spend ?? 0) + (planPaidBy.get(p.id) ?? 0)) * 100) / 100,
       lastBookingAt: a?.last ? new Date(a.last).toISOString() : null,
-      marketing: p.marketing_consent_at ? 'consented' : p.marketing_consent_withdrawn_at ? 'withdrawn' : 'none',
+      marketing: p.marketing_consent_at ? 'consented' : p.marketing_consent_withdrawn_at ? 'withdrawn' : 'not_consented',
       onboarded: !!p.onboarding_completed_at,
       joinedAt: p.created_at,
       isTest: manual || auto,

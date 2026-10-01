@@ -252,23 +252,44 @@ const supabase = createClient();
 // ---- navigation: grouped sidebar, tab kept in the URL (?tab=) ----
 type Tab = 'metrics' | 'parents' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
 const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string }[] }[] = [
-  { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: '▦' }] },
+  { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: 'grid' }] },
   { label: 'People', items: [
-    { id: 'parents', label: 'Parents', icon: '☺' },
-    { id: 'addVendor', label: 'Vendors', icon: '＋' },
-    { id: 'vendors', label: 'Vendor data', icon: '☰' },
-    { id: 'marketing', label: 'Marketing', icon: '✉' },
+    { id: 'parents', label: 'Parents', icon: 'user' },
+    { id: 'addVendor', label: 'Vendors', icon: 'plus' },
+    { id: 'vendors', label: 'Vendor data', icon: 'list' },
+    { id: 'marketing', label: 'Marketing', icon: 'mail' },
   ] },
   { label: 'Money', items: [
-    { id: 'commercials', label: 'Commercials', icon: '％' },
-    { id: 'payments', label: 'Payments', icon: '$' },
+    { id: 'commercials', label: 'Commercials', icon: 'percent' },
+    { id: 'payments', label: 'Payments', icon: 'dollar' },
   ] },
   { label: 'Comms', items: [
-    { id: 'messages', label: 'Messages', icon: '💬' },
-    { id: 'contact', label: 'Contact form', icon: '☎' },
-    { id: 'flows', label: 'Email flows', icon: '⚡' },
+    { id: 'messages', label: 'Messages', icon: 'chat' },
+    { id: 'contact', label: 'Contact form', icon: 'phone' },
+    { id: 'flows', label: 'Email flows', icon: 'bolt' },
   ] },
 ];
+const ICON_PATHS: Record<string, string> = {
+  grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  plus: 'M12 5v14M5 12h14',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6',
+  percent: 'M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  dollar: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z',
+  bolt: 'M13 2L3 14h9l-1 8 10-12h-9z',
+  out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+};
+function NavIcon({ name }: { name: string }) {
+  return (
+    <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+      <path d={ICON_PATHS[name] ?? ICON_PATHS.grid} />
+    </svg>
+  );
+}
 const TAB_IDS = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.id));
 function tabFromUrl(): Tab {
   const t = new URLSearchParams(window.location.search).get('tab');
@@ -277,6 +298,7 @@ function tabFromUrl(): Tab {
 
 const ADMIN_CSS = `
 @keyframes bb-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+@keyframes bb-spin { to { transform: rotate(360deg) } }
 @keyframes bb-toast-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 .bb-skel { border-radius: 8px; background: linear-gradient(90deg, #151d31 25%, #1c2740 37%, #151d31 63%); background-size: 400% 100%; animation: bb-shimmer 1.6s ease infinite; }
 .bb-shell { display: flex; min-height: 100%; }
@@ -437,13 +459,13 @@ export default function AdminPage() {
                 <div style={{ color: C.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', padding: '0 12px 6px' }}>{g.label}</div>
                 {g.items.map((i) => (
                   <button key={i.id} className="bb-navbtn" aria-current={tab === i.id ? 'page' : undefined} onClick={() => setTab(i.id)}>
-                    <span aria-hidden style={{ width: 18, textAlign: 'center' }}>{i.icon}</span>{i.label}
+                    <NavIcon name={i.icon} />{i.label}
                   </button>
                 ))}
               </div>
             ))}
             <button className="bb-navbtn" onClick={signOut} style={{ color: C.muted }}>
-              <span aria-hidden style={{ width: 18, textAlign: 'center' }}>⎋</span>Sign out
+              <NavIcon name="out" />Sign out
             </button>
           </nav>
         </aside>
@@ -2590,7 +2612,8 @@ type ParentRowT = {
   id: string; name: string; email: string; phone: string | null; area: string | null;
   children: { name: string; ageMonths: number }[];
   plan: 'free' | 'plus' | 'plus_past_due' | 'plus_canceled'; bookings: number; upcoming: number; spend: number;
-  lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'none'; onboarded: boolean;
+  bookingSpend: number; planPaid: number;
+  lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean;
   joinedAt: string; isTest: boolean;
 };
 type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: number; pageSize: number };
@@ -2608,7 +2631,7 @@ const PLAN_BADGE: Record<ParentRowT['plan'], { label: string; tone: Tone }> = {
   plus_past_due: { label: 'Plus · past due', tone: 'amber' }, plus_canceled: { label: 'Plus · canceled', tone: 'grey' },
 };
 const MARKETING_BADGE: Record<ParentRowT['marketing'], { label: string; tone: Tone }> = {
-  consented: { label: 'Consented', tone: 'green' }, withdrawn: { label: 'Withdrawn', tone: 'pink' }, none: { label: 'None', tone: 'grey' },
+  consented: { label: 'Consented', tone: 'green' }, withdrawn: { label: 'Withdrawn', tone: 'pink' }, not_consented: { label: 'Not consented', tone: 'grey' },
 };
 const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.floor(m / 12)}y`);
 const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(v);
@@ -2619,6 +2642,7 @@ type ParentDetailT = {
   children: { id: string; name: string; date_of_birth: string; gender: string | null; interests: string[] | null; notes: string | null }[];
   preferences: { preferred_days: string[]; preferred_times: string[]; budget_min: number | null; budget_max: number | null; interests: string[] } | null;
   subscription: { plan: string; billing_interval: string | null; status: string; current_period_end: string | null; cancel_at_period_end: boolean } | null;
+  planPayments: { id: string; paidAt: string; amount: number; currency: string; description: string | null }[];
   bookings: {
     id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
     session: { starts_at: string; activity: { title: string } | null } | null;
@@ -2672,6 +2696,8 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
   );
   const list = (v: string[] | null | undefined) => (v && v.length ? v.join(', ') : dash);
   const autoOnly = d?.testSource === 'auto';
+  const planTotal = d && d.planPayments.length
+    ? new Intl.NumberFormat('en-SG', { style: 'currency', currency: d.planPayments[0].currency.toUpperCase() }).format(d.planPayments.reduce((n, i) => n + i.amount, 0)) : '';
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end', background: 'rgba(5,9,18,.6)' }}
@@ -2719,11 +2745,20 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Billing', d.subscription.billing_interval ?? dash)}
             {field('Renews / ends', when(d.subscription.current_period_end))}
             {d.subscription.cancel_at_period_end && field('Cancelling', 'Ends at period end')}
+            {field('Paid for plan', d.planPayments.length
+              ? <strong>{planTotal}</strong>
+              : <span style={{ color: C.muted }}>Nothing paid yet{d.subscription.status === 'trialing' ? ' (in free trial)' : ''}</span>)}
+            {d.planPayments.map((i) => (
+              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0 4px 160px', fontSize: 12, color: C.muted }}>
+                <span>{sgDay(i.paidAt)}{i.description ? ` · ${i.description}` : ''}</span>
+                <span style={{ color: C.text, whiteSpace: 'nowrap' }}>{new Intl.NumberFormat('en-SG', { style: 'currency', currency: i.currency.toUpperCase() }).format(i.amount)}</span>
+              </div>
+            ))}
           </> : <div style={{ fontSize: 13 }}>Free plan</div>)}
 
           {section('Marketing & terms', <>
             {field('Marketing consent', p.marketing_consent_at ? <>Consented · {when(p.marketing_consent_at)}</>
-              : p.marketing_consent_withdrawn_at ? <>Withdrawn · {when(p.marketing_consent_withdrawn_at)}</> : 'Never asked')}
+              : p.marketing_consent_withdrawn_at ? <>Withdrawn · {when(p.marketing_consent_withdrawn_at)}</> : 'Not consented')}
             {field('Terms accepted', p.terms_accepted_at ? <>{when(p.terms_accepted_at)}{p.terms_version ? ` · v${p.terms_version}` : ''}</> : dash)}
           </>)}
 
@@ -2788,6 +2823,7 @@ function ParentsView() {
   const [more, setMore] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const cacheRef = useRef(new Map<string, ParentsPage>());
+  const freshRef = useRef(false);
   const [extra, setExtra] = useState({ area: false, onboarded: false, last: false });
 
   useEffect(() => {
@@ -2809,8 +2845,10 @@ function ParentsView() {
     const hit = cacheRef.current.get(key);
     if (hit) setData(hit);
     setBusy(true); setErr(null);
-    adminFetch<ParentsPage>(`/api/admin/parents?${key}`)
-      .then((r) => { cacheRef.current.set(key, r); if (!stale) setData(r); })
+    const fresh = freshRef.current;
+    freshRef.current = false;
+    adminFetch<ParentsPage>(`/api/admin/parents?${key}${fresh ? '&fresh=1' : ''}`)
+      .then((r) => { cacheRef.current.set(key, r); if (!stale) { setData(r); if (fresh) toast('Parents refreshed'); } })
       .catch((e) => { if (!stale) setErr(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!stale) setBusy(false); });
     return () => { stale = true; };
@@ -2823,6 +2861,8 @@ function ParentsView() {
     if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSort(k); setDir(k === 'name' ? 'asc' : 'desc'); }
     setPage(1);
   };
+  // Skips both caches: the browser's remembered pages and the server's 30-second list.
+  const refresh = () => { cacheRef.current.clear(); freshRef.current = true; setF((p) => ({ ...p })); };
   const closeDetail = useCallback(() => setOpenId(null), []);
   const reset = () => { setF(NO_FILTERS); setQ(''); setPage(1); };
   const active = (Object.keys(f) as (keyof ParentFilters)[]).filter((k) => f[k] && f[k] !== NO_FILTERS[k]).length;
@@ -2868,7 +2908,7 @@ function ParentsView() {
           {sel('plan', [['', 'All plans'], ['free', 'Free'], ['plus', 'Plus'], ['plus_past_due', 'Plus · past due'], ['plus_canceled', 'Plus · canceled']])}
         </label>
         <label style={{ ...lab, width: 160 }}>Marketing
-          {sel('marketing', [['', 'Any'], ['consented', 'Consented'], ['withdrawn', 'Withdrawn'], ['none', 'Never asked']])}
+          {sel('marketing', [['', 'Any'], ['consented', 'Consented'], ['withdrawn', 'Withdrawn'], ['not_consented', 'Not consented']])}
         </label>
         <label style={{ ...lab, width: 190 }}>Booking activity
           {sel('activity', [['', 'Any'], ['never', 'Never booked'], ['once', 'Booked once'], ['repeat', 'Repeat (2+)'],
@@ -2927,9 +2967,19 @@ function ParentsView() {
           {data ? `${data.total} parent${data.total === 1 ? '' : 's'}` : ' '}
           {busy && data && <span style={{ color: C.blue, fontWeight: 800, marginLeft: 8 }}>● Updating…</span>}
         </div>
-        <button type="button" style={tabBtn(false)} onClick={exportCsv} disabled={exporting || !data?.total}>
-          {exporting ? 'Exporting…' : 'Export CSV'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={{ ...tabBtn(false), display: 'flex', alignItems: 'center', gap: 6 }} onClick={refresh} disabled={busy}
+            title="Reload the latest data">
+            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round" style={busy ? { animation: 'bb-spin .8s linear infinite' } : undefined}>
+              <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />
+            </svg>
+            {busy ? 'Refreshing…' : 'Refresh'}
+          </button>
+          <button type="button" style={tabBtn(false)} onClick={exportCsv} disabled={exporting || !data?.total}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        </div>
       </div>
 
       {err && <p style={{ color: C.pink }}>{err}</p>}
@@ -2984,7 +3034,7 @@ function ParentsView() {
                   <td style={td()}>
                     {r.bookings}{r.upcoming > 0 && <span style={{ color: C.muted }}> · {r.upcoming} upcoming</span>}
                   </td>
-                  <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{r.spend > 0 ? sgdDollars(r.spend) : <span style={{ color: C.muted }}>—</span>}</td>
+                  <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }} title={`Bookings ${sgdDollars(r.bookingSpend)} + plan ${sgdDollars(r.planPaid)}`}>{r.spend > 0 ? sgdDollars(r.spend) : <span style={{ color: C.muted }}>—</span>}</td>
                   <td style={td()}><Badge tone={MARKETING_BADGE[r.marketing].tone}>{MARKETING_BADGE[r.marketing].label}</Badge></td>
                   {extra.area && <td style={td()}>{r.area || <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}

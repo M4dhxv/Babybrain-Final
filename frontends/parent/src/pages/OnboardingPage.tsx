@@ -248,6 +248,8 @@ export default function OnboardingPage() {
         phone: phone || null,
         postal_code: postcode.trim(),
         terms_accepted_at: new Date().toISOString(),
+        // Finishing the wizard is what onboarding is; /admin → Parents reads this.
+        onboarding_completed_at: new Date().toISOString(),
         // Only written when actually ticked — a null here means no consent, and
         // that is the state every account starts in.
         ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
