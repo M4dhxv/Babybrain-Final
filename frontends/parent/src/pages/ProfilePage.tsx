@@ -185,12 +185,20 @@ type SuggestedActivity = { activity_name?: string; date_time?: string; url?: str
  *  nothing specific to highlight, e.g. suggested_activities' own container
  *  notification) when none of the specific ids are present. */
 
-function notificationTarget(n: NotifItem): string | null {
+function notificationTarget(n: NotifItem, isPlus: boolean): string | null {
   const d = n.data ?? {};
   const bookingId = typeof d.booking_id === "string" ? d.booking_id : null;
   const tokenId = typeof d.token_id === "string" ? d.token_id : null;
   const packageId = typeof d.package_purchase_id === "string" ? d.package_purchase_id : null;
   const url = typeof d.url === "string" ? d.url : null;
+
+  // A make-up token notification carries both a deep link into checkout
+  // (/book?slug=...&token=...) and the token id. For a Plus parent the token's
+  // own row on the Make-up tokens tab is the better landing: it can't dead-end
+  // if the original activity has since been removed, and the row flashes like
+  // a booking's does. A free parent has no such tab (it's a Plus-lock), so the
+  // checkout deep link stays their way to use it.
+  if (tokenId && isPlus) return `/profile?tab=makeup&highlight=${encodeURIComponent(tokenId)}`;
 
   // A deep link straight into checkout (e.g. "/book?slug=...&token=...") is
   // already more useful than sending the parent to a list to go find the
@@ -209,12 +217,13 @@ function notificationTarget(n: NotifItem): string | null {
  *  holds up to 5 activities rather than one target, so it opens as a small
  *  dropdown of links instead of navigating the whole card. */
 function NotificationRow({ n }: { n: NotifItem }) {
+  const { isPlus } = usePlan();
   const [open, setOpen] = useState(false);
   const activities =
     n.type === "suggested_activities" && Array.isArray(n.data?.activities)
       ? (n.data.activities as SuggestedActivity[])
       : null;
-  const target = activities ? null : notificationTarget(n);
+  const target = activities ? null : notificationTarget(n, isPlus);
   const cardClass = `rounded-[12px] border p-4 shadow-card ${n.read_at ? "border-[#EBE3E5] bg-white" : "border-[#DAEEFB] bg-[#FFF5F8]"}`;
 
   const body = (
@@ -245,15 +254,22 @@ function NotificationRow({ n }: { n: NotifItem }) {
               {open ? "Hide activities" : `View ${activities.length} ${activities.length === 1 ? "activity" : "activities"}`}
             </button>
             {open && (
-              <div className="mt-2 space-y-1 border-t border-[#F4EFF0] pt-2.5">
+              /* Same look as the suggested_activities email's activity cards
+                 (lib/emails/render.ts activityCard): pink tint, solid rail,
+                 name, date/time, "Book now". Whole card is the link. */
+              <div className="mt-3 space-y-2">
                 {activities.map((a, i) => (
                   <a
                     key={i}
                     href={a.url ?? "/explore"}
-                    className="block rounded-[8px] px-2 py-1.5 text-sm font-bold text-[#34406f] hover:bg-palette-pinkTint"
+                    className="flex overflow-hidden rounded-[10px] bg-[#FCEFF4] transition hover:brightness-[0.98]"
                   >
-                    {a.activity_name ?? "Activity"}
-                    {a.date_time && <span className="ml-1.5 font-semibold text-[#6D748A]">· {a.date_time}</span>}
+                    <span className="w-1 flex-shrink-0 bg-[#FA4D8D]" aria-hidden="true" />
+                    <span className="min-w-0 px-3.5 py-3">
+                      <span className="block font-black text-[#34406f]">{a.activity_name ?? "Activity"}</span>
+                      {a.date_time && <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{a.date_time}</span>}
+                      <span className="mt-1.5 block text-sm font-black text-baby-cta">Book now →</span>
+                    </span>
                   </a>
                 ))}
               </div>
