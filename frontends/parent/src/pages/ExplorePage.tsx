@@ -15,7 +15,6 @@ import { AGE_BANDS, categories } from "../data/content";
 import { useActivities, useActivityPins, useFacetCounts } from "../lib/useActivities";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
-import { RainbowLoader } from "../components/RainbowLoader";
 import { goTo, getParam, rememberExploreUrl } from "../lib/nav";
 import { lazyRoute } from "../lib/lazyRoute";
 import { Chip, REGION_FILTERS } from "./prefChips";
@@ -1045,14 +1044,14 @@ export default function ExplorePage() {
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
               {pinsLoading ? (
-                <div className="flex h-[395px] w-full items-center justify-center bg-[#F3EDF0]" aria-hidden="true">
-                  <Spinner className="h-8 w-8 text-baby-pink" />
-                </div>
+                <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
               ) : (
                 <Suspense
                   fallback={<div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />}
                 >
-                  <ExploreMap activities={pinActivities} regions={regions} />
+                  <div className="bb-reveal">
+                    <ExploreMap activities={pinActivities} regions={regions} />
+                  </div>
                 </Suspense>
               )}
             </div>
@@ -1073,8 +1072,8 @@ export default function ExplorePage() {
               <>
                 <div className="mb-3 flex items-center justify-between">
                   {loading
-                    ? <RainbowLoader size="sm" className="justify-start" label="Loading activities" />
-                    : <p className="text-sm font-black">{`${total} ${total === 1 ? "activity" : "activities"} found`}</p>}
+                    ? <div role="status" aria-label="Loading activities" className="h-4 w-36 animate-pulse rounded bg-[#F3EDF0]" />
+                    : <p className="bb-reveal text-sm font-black">{`${total} ${total === 1 ? "activity" : "activities"} found`}</p>}
                 </div>
                 {loading ? (
                   <ActivityRowListSkeleton count={6} />
@@ -1084,8 +1083,13 @@ export default function ExplorePage() {
                       {/* Only the revealed slice renders — the rest of this
                           fetched page sits in `activities` already, ready for
                           the next click to reveal instantly with no fetch. */}
-                      {shown.slice(0, revealCount).map((activity) => (
-                        <ActivityRow key={activity.id} activity={activity} />
+                      {shown.slice(0, revealCount).map((activity, i) => (
+                        // Each row eases in (same 260ms reveal as the activity page),
+                        // staggered 30ms apart for the first screenful so the list
+                        // cascades instead of popping in; later rows share the last delay.
+                        <div key={activity.id} className="bb-reveal" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+                          <ActivityRow activity={activity} />
+                        </div>
                       ))}
                     </div>
                     {revealCount < total && (

@@ -75,6 +75,29 @@ export function ActivityRowListSkeleton({ count = 6 }: { count?: number }) {
   );
 }
 
+/** The whole Explore page in outline — search bar, filter chips, map block and a
+ *  results list — shown while the page's code is still arriving, so the screen
+ *  keeps its shape instead of flashing a full-screen splash. */
+export function ExplorePageSkeleton() {
+  return (
+    <div className="mx-auto max-w-[1180px] px-6 py-5" aria-busy="true" aria-label="Loading activities">
+      <div className="h-11 w-full animate-pulse rounded-full bg-[#F3EDF0]" />
+      <div className="mt-3 flex gap-2 overflow-hidden">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-8 w-24 shrink-0 animate-pulse rounded-full bg-[#F6F1F3]" />
+        ))}
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
+        <div className="hidden h-[320px] animate-pulse rounded-[16px] bg-[#F6F1F3] lg:block" />
+        <div className="space-y-5">
+          <div className="h-[260px] animate-pulse rounded-[16px] bg-[#F3EDF0] sm:h-[395px]" />
+          <ActivityRowListSkeleton count={4} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Placeholder for the Home page's child card (avatar + name + age + interest
  *  pills), so the right column doesn't sit empty until auth resolves. */
 export function ChildCardSkeleton() {

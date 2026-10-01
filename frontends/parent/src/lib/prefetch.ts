@@ -9,6 +9,17 @@
  * genuine stale-chunk failure at nav time is caught by RouteErrorBoundary. */
 let warming = false;
 
+let warmingExplore = false;
+
+/** Warm the Explore page (and its map) so opening it from the nav is instant. Safe to call repeatedly. */
+export function warmExplore(): void {
+  if (warmingExplore) return;
+  warmingExplore = true;
+  Promise.all([import("../pages/ExplorePage"), import("../components/ExploreMap")]).catch(() => {
+    warmingExplore = false;
+  });
+}
+
 export function warmDashboard(): void {
   if (warming) return;
   warming = true;

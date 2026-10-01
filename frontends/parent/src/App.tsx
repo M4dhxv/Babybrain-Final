@@ -7,8 +7,9 @@ import { useAuth } from "./auth/AuthProvider";
 import { AUTH_STORAGE_KEY } from "./lib/supabase";
 import { useLocation, routePath } from "./lib/nav";
 import { BootSplash } from "./components/BootSplash";
+import { ExplorePageSkeleton } from "./components/Skeletons";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
-import { warmDashboard } from "./lib/prefetch";
+import { warmDashboard, warmExplore } from "./lib/prefetch";
 import { lazyRoute } from "./lib/lazyRoute";
 import AboutPage from "./pages/AboutPage";
 import TermsPage from "./pages/TermsPage";
@@ -82,6 +83,27 @@ function App() {
     };
   }, [session]);
 
+  // Explore is the page most visitors open next, so fetch it once the current page has settled
+  // (idle, never competing with it) — opening it is then instant rather than a chunk fetch.
+  useEffect(() => {
+    if (pathname === "/explore") return;
+    const ric = "requestIdleCallback" in window
+      ? (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback
+      : null;
+    const id = ric ? ric(warmExplore) : window.setTimeout(warmExplore, 2500);
+    return () => {
+      if (ric) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id);
+      else window.clearTimeout(id);
+    };
+  }, [pathname]);
+
+  // While Explore's chunk arrives, show the page in outline rather than the full-screen splash.
+  const exploreLoader = (
+    <main data-bb-loading>
+      <ExplorePageSkeleton />
+    </main>
+  );
+
   const bootLoader = (
     <main data-bb-loading className="mx-auto flex min-h-[100dvh] max-w-[1180px] items-center justify-center px-6">
       <BootSplash label="Loading" />
@@ -137,7 +159,7 @@ function App() {
   return (
     <>
       <RouteErrorBoundary key={pathname}>
-        <Suspense fallback={bootLoader}>{page}</Suspense>
+        <Suspense fallback={pathname === "/explore" ? exploreLoader : bootLoader}>{page}</Suspense>
       </RouteErrorBoundary>
       <PullToRefresh />
       <InstallBanner pathname={pathname} />
