@@ -114,11 +114,35 @@ async function resolveWixServiceLocation(
 
   const { data: existing } = await admin
     .from('provider_locations')
-    .select('id')
+    .select('id, name, address, postal_code')
     .eq('provider_id', providerId)
     .eq('wix_location_id', loc.id)
     .maybeSingle();
   if (existing) {
+    // The row was only ever created, never refreshed. A vendor who edits the
+    // address in Wix kept the same wix_location_id, so activities.address
+    // moved (Explore) while this row — what the vendor's activity shows, what
+    // the booking confirmation email prints (coalesce(session, activity
+    // location)) and what the area filter reads its region from — stayed on
+    // the old place. Wix is the source of truth for a Wix-linked location, so
+    // bring it back in step. Cleared coordinates: they belong to the old
+    // address, and the region trigger re-derives from the new postal code.
+    const name = known?.name ?? address ?? existing.name;
+    // Nothing from Wix (null address) never blanks a stored one.
+    if (address != null && (address !== existing.address || postalCode !== existing.postal_code || name !== existing.name)) {
+      const { error: refreshError } = await admin
+        .from('provider_locations')
+        .update({
+          name,
+          address,
+          postal_code: postalCode,
+          ...(address !== existing.address || postalCode !== existing.postal_code
+            ? { latitude: null, longitude: null }
+            : {}),
+        })
+        .eq('id', existing.id);
+      if (refreshError) console.error('Wix location refresh failed', existing.id, refreshError);
+    }
     cache.set(loc.id, existing.id);
     return { locationId: existing.id, address, postalCode };
   }
