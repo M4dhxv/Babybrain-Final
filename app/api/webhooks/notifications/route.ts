@@ -9,6 +9,13 @@ import { sendPushToUser } from '@/lib/push';
 const CHAT_TYPES = new Set(['provider_message', 'provider_message_response', 'class_group_message', 'provider_class_group_message']);
 const CHAT_EMAIL_DELAY_MS = 4 * 60 * 60 * 1000; // keep in step with send_pending_chat_emails() (00190)
 
+/** Promotional flows (digests/nudges the parent didn't trigger by doing
+ *  something). These go only to parents with marketing consent
+ *  (parent_profiles.marketing_consent_at, cleared on unsubscribe) — consent is
+ *  optional at sign-up, so everything else here is transactional and unaffected.
+ *  Mirrors the PDPA rule noted in OnboardingPage. */
+const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'providers_added', 'package_rebook']);
+
 async function chatMessageRead(channelId: unknown, userId: string, sentAt: Date): Promise<boolean> {
   if (typeof channelId !== 'string') return false;
   try {
@@ -45,6 +52,21 @@ export async function POST(request: Request) {
     .single();
   if (!notification || notification.email_status !== 'pending') {
     return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // Marketing flows: consented parents only, for email and push alike. Checked
+  // here, before anything is sent, so a withdrawal always wins even for a
+  // notification that was queued earlier.
+  if (MARKETING_TYPES.has(notification.type)) {
+    const { data: consent } = await admin
+      .from('parent_profiles')
+      .select('marketing_consent_at')
+      .eq('id', notification.user_id)
+      .maybeSingle();
+    if (!consent?.marketing_consent_at) {
+      await admin.from('notifications').update({ email_status: 'skipped', push_status: 'skipped' }).eq('id', notificationId);
+      return NextResponse.json({ ok: true, skipped: true, reason: 'no marketing consent' });
+    }
   }
 
   // Push goes out on this first call, ahead of the chat-email-delay logic
