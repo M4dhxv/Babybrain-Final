@@ -6,16 +6,33 @@ import { getAuthedContext } from '@/lib/api-auth';
  * whose email is in the ADMIN_EMAILS allowlist (comma-separated, set in the
  * deployment env). Mirrors {@link requireProviderRole} for the vendor side.
  */
-function adminEmails(): string[] {
-  return (process.env.ADMIN_EMAILS ?? '')
+
+export type AdminRole = 'admin' | 'support';
+
+function emailList(name: string): string[] {
+  return (process.env[name] ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 }
 
+/**
+ * `admin` = anyone in ADMIN_EMAILS (everything). `support` = anyone in ADMIN_SUPPORT_EMAILS: they can
+ * work the inbox (Messages, Contact form, Email flows) and look up parents, but not money, vendors
+ * or settings. Leave ADMIN_SUPPORT_EMAILS unset and nothing changes: only admins get in.
+ */
+export function adminRoleOf(email: string | null | undefined): AdminRole | null {
+  const e = (email ?? '').toLowerCase();
+  if (!e) return null;
+  if (emailList('ADMIN_EMAILS').includes(e)) return 'admin';
+  if (emailList('ADMIN_SUPPORT_EMAILS').includes(e)) return 'support';
+  return null;
+}
+
 export async function requireAdmin(
-  request: Request
-): Promise<{ ok: true; user: User } | { ok: false; status: number; error: string }> {
+  request: Request,
+  allow: AdminRole[] = ['admin']
+): Promise<{ ok: true; user: User; role: AdminRole } | { ok: false; status: number; error: string }> {
   // Production and Preview share one Supabase database (see lib/stripe-config.ts's
   // doc comment) — there is no sandboxed copy for a test/preview deployment to
   // mutate. So rather than "admin changes don't show up on test", the real
@@ -26,8 +43,8 @@ export async function requireAdmin(
   }
   const { user } = await getAuthedContext(request);
   if (!user) return { ok: false, status: 401, error: 'Not authenticated' };
-  if (!user.email || !adminEmails().includes(user.email.toLowerCase())) {
-    return { ok: false, status: 403, error: 'Not an admin' };
-  }
-  return { ok: true, user };
+  const role = adminRoleOf(user.email);
+  if (!role) return { ok: false, status: 403, error: 'Not an admin' };
+  if (!allow.includes(role)) return { ok: false, status: 403, error: 'Admin only' };
+  return { ok: true, user, role };
 }

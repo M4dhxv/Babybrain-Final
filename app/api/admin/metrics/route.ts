@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchAll, isTestEmail, testProviderIds } from '@/lib/admin-test-data';
+import { fetchAll, testProviderIds } from '@/lib/admin-test-data';
+import {
+  bookingBucket, classifyParent, countsAsParent, isLiveEarning, isManualBooking, isNeverConfirmed, isParentBooking,
+} from '@/lib/admin-test-rules';
 
 /**
  * Founder KPI snapshot, sourced straight from the Supabase database.
@@ -10,8 +13,9 @@ import { fetchAll, isTestEmail, testProviderIds } from '@/lib/admin-test-data';
  * By default this counts LIVE activity only: demo/QA vendors (providers.is_test),
  * Stripe test-mode payments (provider_earnings.livemode = false) and test-looking
  * parent emails (and vendor logins never used as a parent) are left out, so the numbers
- * measure real progress. A vendor who also books classes as a parent is counted. Pass
- * ?include_test=1 to see everything. Nothing is ever deleted.
+ * measure real progress. A vendor who also books classes as a parent is counted. Who counts as
+ * test, and which bookings count, is decided in lib/admin-test-rules.ts (with tests), the same
+ * place the Parents list uses. Pass ?include_test=1 to see everything. Nothing is ever deleted.
  */
 export async function GET(request: Request) {
   const auth = await requireAdmin(request);
@@ -49,14 +53,15 @@ export async function GET(request: Request) {
     await Promise.all([
       fetchAll<{ id: string; status: string; created_at: string }>((f, t) =>
         admin.from('providers').select('id, status, created_at').range(f, t)),
-      // is_test (marked in /admin → Parents) comes from migration 00207; before it is applied the
-      // read fails, so fall back to reading without it and nothing is marked.
+      // is_test (migration 00207) and is_real_override (00212) are marked in /admin → Parents; read
+      // whichever exist so the page keeps working before those migrations are applied.
       (async () => {
-        type P = { id: string; email: string; created_at: string; is_test?: boolean | null };
-        const withFlag = await fetchAll<P>((f, t) =>
-          admin.from('parent_profiles').select('id, email, created_at, is_test').range(f, t));
-        if (withFlag.length) return withFlag;
-        return fetchAll<P>((f, t) => admin.from('parent_profiles').select('id, email, created_at').range(f, t));
+        type P = { id: string; email: string; created_at: string; is_test?: boolean | null; is_real_override?: boolean | null };
+        let cols = 'id, email, created_at';
+        for (const extra of [', is_test, is_real_override', ', is_test']) {
+          if (!(await admin.from('parent_profiles').select(`${cols}${extra}`).range(0, 0)).error) { cols = `${cols}${extra}`; break; }
+        }
+        return fetchAll<P>((f, t) => admin.from('parent_profiles').select(cols).range(f, t) as unknown as PromiseLike<{ data: P[] | null; error: { message: string } | null }>);
       })(),
       fetchAll<{ id: string; provider_id: string; is_published: boolean }>((f, t) =>
         admin.from('activities').select('id, provider_id, is_published').range(f, t)),
@@ -66,13 +71,15 @@ export async function GET(request: Request) {
         admin.from('bookings').select(bookingCols).range(f, t) as unknown as PromiseLike<{ data: BookingRow[] | null; error: { message: string } | null }>),
       fetchAll<{ id: string; user_id: string; activity_id: string }>((f, t) =>
         admin.from('reviews').select('id, user_id, activity_id').range(f, t)),
-      // livemode may not exist before migration 00161: fall back to reading without it.
+      // livemode comes from migration 00161 and is_test (a single payment flagged as test) from 00212;
+      // read whichever exist.
       (async () => {
-        const cols = 'provider_id, gross_cents, commission_cents, stripe_fee_cents, net_cents, status, routed_to_connect, created_at';
-        const withMode = await fetchAll<Record<string, unknown>>((f, t) =>
-          admin.from('provider_earnings').select(`${cols}, livemode`).range(f, t));
-        if (withMode.length) return withMode;
-        return fetchAll<Record<string, unknown>>((f, t) => admin.from('provider_earnings').select(cols).range(f, t));
+        let cols = 'provider_id, gross_cents, commission_cents, stripe_fee_cents, net_cents, status, routed_to_connect, created_at';
+        for (const extra of [', livemode, is_test', ', livemode']) {
+          if (!(await admin.from('provider_earnings').select(`${cols}${extra}`).limit(1)).error) { cols = `${cols}${extra}`; break; }
+        }
+        return fetchAll<Record<string, unknown>>((f, t) =>
+          admin.from('provider_earnings').select(cols).range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>);
       })(),
       fetchAll<{ provider_id: string; plan: string; status: string }>((f, t) =>
         admin.from('subscriptions').select('provider_id, plan, status').range(f, t)),
@@ -82,15 +89,16 @@ export async function GET(request: Request) {
 
   // ---- what counts as live -------------------------------------------------
   const liveProvider = (id: string) => !testProviders.has(id);
-  const bookedUsers = new Set(bookings.filter((b) => b.status !== 'cancelled' && b.status !== 'waitlisted').map((b) => b.user_id));
-  const seatsByUser = new Map<string, (boolean | null)[]>();
-  for (const s of seatRows) seatsByUser.set(s.user_id, [...(seatsByUser.get(s.user_id) ?? []), s.provider?.is_test ?? null]);
-  const vendorTestAccounts = new Set<string>();
-  for (const [uid, flags] of seatsByUser) {
-    if (flags.every((f) => f === true) || !(kidParents.has(uid) || bookedUsers.has(uid))) vendorTestAccounts.add(uid);
-  }
+  const bookedUsers = new Set(bookings.filter(isParentBooking).map((b) => b.user_id));
+  const seatsByUser = new Map<string, { isTestVendor: boolean }[]>();
+  for (const s of seatRows) seatsByUser.set(s.user_id, [...(seatsByUser.get(s.user_id) ?? []), { isTestVendor: s.provider?.is_test === true }]);
+  // One shared rule (lib/admin-test-rules.ts) decides who counts as a parent; test accounts and
+  // vendor logins that were never used as a parent are left out.
   const testParents = new Set(
-    includeTest ? [] : parents.filter((p) => p.is_test || isTestEmail(p.email) || vendorTestAccounts.has(p.id)).map((p) => p.id)
+    includeTest ? [] : parents.filter((p) => !countsAsParent(classifyParent({
+      email: p.email, manualTest: p.is_test, forcedReal: p.is_real_override,
+      seats: seatsByUser.get(p.id), hasParentActivity: kidParents.has(p.id) || bookedUsers.has(p.id),
+    }).kind)).map((p) => p.id)
   );
   const liveParent = (id: string) => !testParents.has(id);
 
@@ -99,29 +107,20 @@ export async function GET(request: Request) {
   const providerOfActivity = new Map(activities.map((a) => [a.id, a.provider_id]));
   const liveActivities = activities.filter((a) => liveProvider(a.provider_id));
   const providerOfSession = new Map(sessions.map((s) => [s.id, providerOfActivity.get(s.activity_id) ?? null]));
-  // Only a booking cancelled AFTER it was confirmed or paid is a real cancellation. One cancelled
-  // while pending (an abandoned or expired checkout) or waitlisted was never a booking, so it is
-  // left out of every booking count and of the cancellation rate. The state it was cancelled from is recorded by
-  // a trigger (migration 00210). Before that, or for a row with no record, infer it: a priced
-  // booking with no payment and no package credit was pending.
-  const neverConfirmed = (b: {
-    status: string; payment_status: string; amount: number | null; package_purchase_id: string | null;
-    cancelled_from_status?: string | null;
-  }) => {
-    if (b.status !== 'cancelled') return false;
-    if (b.cancelled_from_status) return b.cancelled_from_status === 'pending' || b.cancelled_from_status === 'waitlisted';
-    return b.payment_status === 'none' && Number(b.amount ?? 0) > 0 && !b.package_purchase_id;
-  };
+  // A booking cancelled while pending or waitlisted was never a real booking, so it is left out of every
+  // booking count and of the cancellation rate (isNeverConfirmed, lib/admin-test-rules.ts).
   // Test parents and test vendors are filtered first; `excluded.bookings` reports only those.
   const bookingsAfterTestFilter = bookings.filter((b) => {
     const prov = providerOfSession.get(b.session_id);
     // A booking whose session no longer exists has no known owner, so it is counted.
     return liveParent(b.user_id) && (prov == null || liveProvider(prov));
   });
-  const liveBookings = bookingsAfterTestFilter.filter((b) => !neverConfirmed(b));
+  const liveBookings = bookingsAfterTestFilter.filter((b) => !isNeverConfirmed(b));
   const liveReviews = reviews.filter((r) => liveParent(r.user_id) && liveProvider(providerOfActivity.get(r.activity_id) ?? ''));
   const liveEarnings = earnings.filter(
-    (e) => liveProvider(String(e.provider_id)) && (includeTest || e.livemode !== false)
+    (e) => includeTest || isLiveEarning({
+      vendorIsTest: testProviders.has(String(e.provider_id)), livemode: e.livemode as boolean | null | undefined, flaggedTest: e.is_test as boolean | null | undefined,
+    })
   );
 
   // ---- daily series (Singapore calendar days) -------------------------------
@@ -182,14 +181,17 @@ export async function GET(request: Request) {
   // ---- growth --------------------------------------------------------------
   const since = (rows: { created_at: string }[], d: number) => rows.filter((r) => r.created_at >= iso(d * DAY)).length;
   const publishedByProvider = new Set(liveActivities.filter((a) => a.is_published).map((a) => a.provider_id));
+  // Manual roster entries (no parent account) are a vendor's own records, not a parent booking, so
+  // they count neither as "a parent who booked" nor as a vendor having been booked.
+  const parentBookings = liveBookings.filter((b) => !isManualBooking(b));
   const bookedProviders = new Set(
-    liveBookings.map((b) => providerOfSession.get(b.session_id)).filter((p): p is string => !!p)
+    parentBookings.map((b) => providerOfSession.get(b.session_id)).filter((p): p is string => !!p)
   );
   const growth = {
     newParents7: since(liveParents, 7),
     newParents30: since(liveParents, 30),
     newVendors30: since(liveProviders, 30),
-    parentsWhoBooked: new Set(liveBookings.map((b) => b.user_id)).size,
+    parentsWhoBooked: new Set(parentBookings.map((b) => b.user_id)).size,
     // A vendor that has gone live (active + a published class) and received a booking.
     activatedVendors: liveProviders.filter(
       (p) => p.status === 'active' && publishedByProvider.has(p.id) && bookedProviders.has(p.id)
@@ -215,8 +217,8 @@ export async function GET(request: Request) {
   // Every live booking falls in exactly one of these, so the three add up to "Bookings (all)":
   // manual = added by a vendor with no parent account (guest roster entry); paid = the parent
   // paid online; the rest are free classes, package credits and refunded bookings.
-  const manualBookings = liveBookings.filter((b) => !b.user_id);
-  const paidBookings = liveBookings.filter((b) => b.user_id && b.payment_status === 'paid');
+  const manualBookings = liveBookings.filter((b) => bookingBucket(b) === 'manual');
+  const paidBookings = liveBookings.filter((b) => bookingBucket(b) === 'paid');
   const health = {
     bookingSplit: {
       manual: manualBookings.length,

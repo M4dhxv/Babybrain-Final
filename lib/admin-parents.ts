@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fetchAll, isTestEmail } from '@/lib/admin-test-data';
+import { fetchAll } from '@/lib/admin-test-data';
+import { classifyParent, type AccountKind } from '@/lib/admin-test-rules';
 import { getStripe } from '@/lib/stripe';
 
 /**
@@ -14,15 +15,16 @@ import { getStripe } from '@/lib/stripe';
 
 export type Plan = 'free' | 'plus' | 'plus_past_due' | 'plus_canceled';
 
-/** One status per account, in this order of precedence: test > vendor login > vendor + parent > parent. */
-export type AccountKind = 'test' | 'vendor_login' | 'vendor_parent' | 'parent';
+export type { AccountKind };
+/** How an admin has overridden the automatic test rules for an account. */
+export type TestOverride = 'auto' | 'test' | 'real';
 
 export type AdminParent = {
   id: string; name: string; email: string; phone: string | null; area: string | null;
   children: { name: string; ageMonths: number }[];
   plan: Plan; bookings: number; upcoming: number;
-  /** Everything paid: class bookings plus Plus subscription invoices. */
-  spend: number; bookingSpend: number; planPaid: number; lastBookingAt: string | null;
+  /** Everything paid: class bookings, class packages bought, and Plus subscription invoices. */
+  spend: number; bookingSpend: number; packageSpend: number; planPaid: number; lastBookingAt: string | null;
   marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean; joinedAt: string;
   /** Areas they asked for at sign-up: central, east, north-east, north, west, sentosa. */
   regions: string[];
@@ -31,6 +33,8 @@ export type AdminParent = {
   /** Holds an active seat at a vendor (owner or staff), with the business names. */
   isVendor: boolean; vendorNames: string[];
   isTest: boolean;
+  /** automatic (the rules decide), forced test, or forced real parent. */
+  override: TestOverride;
   /** 'manual' = flagged by an admin, 'auto' = decided by the rules below. */
   testSource: 'manual' | 'auto' | null;
   testReason: string | null;
@@ -39,7 +43,7 @@ export type AdminParent = {
 type ParentRow = {
   id: string; full_name: string | null; email: string; phone: string | null; postal_code: string | null;
   onboarding_completed_at: string | null; marketing_consent_at: string | null;
-  marketing_consent_withdrawn_at: string | null; created_at: string; is_test?: boolean | null;
+  marketing_consent_withdrawn_at: string | null; created_at: string; is_test?: boolean | null; is_real_override?: boolean | null;
 };
 
 const TTL_MS = 30_000;
@@ -89,11 +93,13 @@ export async function loadParents(admin: SupabaseClient, fresh = false): Promise
 
 async function build(admin: SupabaseClient, now: number, fresh: boolean): Promise<AdminParent[]> {
   const cols = 'id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at';
-  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid] = await Promise.all([
-    // is_test comes from migration 00207; until it is applied, read without it.
+  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid, pkgEarnings, pkgBuyers] = await Promise.all([
+    // is_test comes from migration 00207 and is_real_override from 00212; read whichever exist.
     (async () => {
-      const withFlag = await admin.from('parent_profiles').select(`${cols}, is_test`).range(0, 0);
-      const select: string = withFlag.error ? cols : `${cols}, is_test`;
+      let select: string = cols;
+      for (const extra of [', is_test, is_real_override', ', is_test']) {
+        if (!(await admin.from('parent_profiles').select(`${cols}${extra}`).range(0, 0)).error) { select = `${cols}${extra}`; break; }
+      }
       return fetchAll<ParentRow>((f, t) => admin.from('parent_profiles').select(select as string).range(f, t) as unknown as PromiseLike<{ data: ParentRow[] | null; error: { message: string } | null }>);
     })(),
     fetchAll<{ parent_id: string; name: string; date_of_birth: string }>((f, t) =>
@@ -115,7 +121,26 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     fetchAll<{ booking_id: string | null }>((f, t) =>
       admin.from('provider_earnings').select('booking_id').eq('livemode', false).not('booking_id', 'is', null).range(f, t)),
     plusPaidByCustomer(fresh),
+    // Class packages bought: the money is recorded as a package earning (not on any booking), so
+    // Spend reads it from there. Refunded and Stripe test-mode purchases don't count.
+    // provider_earnings.is_test (migration 00212) flags a single payment as test; read it when it exists.
+    (async () => {
+      const hasFlag = !(await admin.from('provider_earnings').select('is_test').limit(1)).error;
+      const cols2 = `package_purchase_id, gross_cents, status, livemode${hasFlag ? ', is_test' : ''}`;
+      return fetchAll<{ package_purchase_id: string | null; gross_cents: number | null; status: string | null; livemode?: boolean | null; is_test?: boolean | null }>((f, t) =>
+        admin.from('provider_earnings').select(cols2).eq('source', 'package').range(f, t) as unknown as PromiseLike<{ data: { package_purchase_id: string | null; gross_cents: number | null; status: string | null; livemode?: boolean | null; is_test?: boolean | null }[] | null; error: { message: string } | null }>);
+    })(),
+    fetchAll<{ id: string; user_id: string }>((f, t) => admin.from('package_purchases').select('id, user_id').range(f, t)),
   ]);
+  const packageSpendBy = new Map<string, number>();
+  {
+    const buyer = new Map(pkgBuyers.map((r) => [r.id, r.user_id]));
+    for (const e of pkgEarnings) {
+      const uid = e.package_purchase_id ? buyer.get(e.package_purchase_id) : undefined;
+      if (!uid || e.status === 'refunded' || e.livemode === false || e.is_test) continue;
+      packageSpendBy.set(uid, (packageSpendBy.get(uid) ?? 0) + Number(e.gross_cents ?? 0) / 100);
+    }
+  }
   const testPaidIds = new Set(testPaid.map((r) => r.booking_id));
 
   const kidsBy = new Map<string, { name: string; ageMonths: number }[]>();
@@ -160,17 +185,11 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     const seatList = seatsBy.get(p.id) ?? [];
     const isVendor = seatList.length > 0;
     const hasParentActivity = (kidsBy.get(p.id)?.length ?? 0) > 0 || (a?.bookings ?? 0) > 0;
-    // Test = marked by an admin, a test-looking email, or works only for test vendors. A vendor
-    // login that was never used as a parent (no children, no bookings) is its own status, not
-    // "test". A vendor who also books as a parent is kept as "vendor + parent".
-    const autoReason = isTestEmail(p.email) ? 'Test-looking email'
-      : isVendor && seatList.every((v) => v.is_test) ? 'Works only for test vendors'
-      : null;
-    const auto = autoReason !== null;
-    const manual = !!p.is_test;
-    const kind: AccountKind = manual || auto ? 'test'
-      : isVendor ? (hasParentActivity ? 'vendor_parent' : 'vendor_login')
-      : 'parent';
+    // One shared rule decides test / vendor login / vendor + parent / parent (lib/admin-test-rules.ts).
+    const cls = classifyParent({
+      email: p.email, manualTest: p.is_test, forcedReal: p.is_real_override,
+      seats: seatList.map((v) => ({ isTestVendor: !!v.is_test })), hasParentActivity,
+    });
     return {
       id: p.id,
       name: p.full_name?.trim() || '',
@@ -182,19 +201,21 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       bookings: a?.bookings ?? 0,
       upcoming: a?.upcoming ?? 0,
       bookingSpend: Math.round((a?.spend ?? 0) * 100) / 100,
+      packageSpend: Math.round((packageSpendBy.get(p.id) ?? 0) * 100) / 100,
       planPaid: planPaidBy.get(p.id) ?? 0,
-      spend: Math.round(((a?.spend ?? 0) + (planPaidBy.get(p.id) ?? 0)) * 100) / 100,
+      spend: Math.round(((a?.spend ?? 0) + (packageSpendBy.get(p.id) ?? 0) + (planPaidBy.get(p.id) ?? 0)) * 100) / 100,
       lastBookingAt: a?.last ? new Date(a.last).toISOString() : null,
       marketing: p.marketing_consent_at ? 'consented' : p.marketing_consent_withdrawn_at ? 'withdrawn' : 'not_consented',
       onboarded: !!p.onboarding_completed_at,
       joinedAt: p.created_at,
       regions: regionsBy.get(p.id) ?? [],
-      kind,
-      isVendor,
+      kind: cls.kind,
+      isVendor: cls.isVendor,
       vendorNames: [...new Set(seatList.map((v) => v.business_name).filter((n): n is string => !!n))],
-      isTest: manual || auto,
-      testSource: manual ? 'manual' : auto ? 'auto' : null,
-      testReason: manual ? 'Marked by an admin' : autoReason,
+      isTest: cls.kind === 'test',
+      override: p.is_test ? 'test' : p.is_real_override ? 'real' : 'auto',
+      testSource: cls.testSource,
+      testReason: cls.testReason,
     };
   });
 }

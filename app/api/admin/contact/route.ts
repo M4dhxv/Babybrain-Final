@@ -10,7 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * unverified. `emailed` shows whether delivery actually succeeded.
  */
 export async function GET(request: Request) {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, ['admin', 'support']);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const admin = createAdminClient();

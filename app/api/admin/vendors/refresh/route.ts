@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { logAdminAction } from '@/lib/admin-audit';
 import { requireAdmin } from '@/lib/admin';
 import { runVendorRefresh } from '@/lib/vendor-refresh';
 
@@ -16,6 +19,9 @@ export async function POST(request: Request) {
 
   try {
     const summary = await runVendorRefresh('manual', auth.user.email ?? null);
+    await logAdminAction(createAdminClient() as unknown as SupabaseClient, { ...auth.user, role: auth.role }, {
+      action: 'sync.vendor_prices', entityType: 'sync', summary: 'Ran the vendor price refresh by hand',
+    });
     return NextResponse.json({ ok: true, ...summary });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Refresh failed';

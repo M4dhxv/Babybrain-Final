@@ -3,6 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { invalidateParents, loadParents } from '@/lib/admin-parents';
+import { logAdminAction } from '@/lib/admin-audit';
+import { OVERRIDE_LABEL, applyOverride, parseOverride } from '@/lib/admin-test-override';
 import { getStripe } from '@/lib/stripe';
 
 /**
@@ -17,7 +19,7 @@ type Params = { params: Promise<{ id: string }> };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request, { params }: Params) {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, ['admin', 'support']);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { id } = await params;
@@ -69,6 +71,7 @@ export async function GET(request: Request, { params }: Params) {
     testSource: row?.testSource ?? (p.is_test ? 'manual' : null),
     testReason: row?.testReason ?? null,
     kind: row?.kind ?? (p.is_test ? 'test' : 'parent'),
+    override: row?.override ?? (p.is_test ? 'test' : 'auto'),
     isVendor: row?.isVendor ?? false,
     vendorNames: row?.vendorNames ?? [],
   });
@@ -80,20 +83,17 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { id } = await params;
   if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
-  const body = (await request.json().catch(() => null)) as { is_test?: unknown } | null;
-  if (!body || typeof body.is_test !== 'boolean') {
-    return NextResponse.json({ error: 'Expected { is_test: boolean }.' }, { status: 400 });
-  }
+  const mode = parseOverride((await request.json().catch(() => null)) as { mode?: unknown; is_test?: unknown } | null);
+  if (!mode) return NextResponse.json({ error: "Expected { mode: 'auto' | 'test' | 'real' }." }, { status: 400 });
 
   const db = createAdminClient() as unknown as SupabaseClient;
-  const { data, error } = await db.from('parent_profiles').update({ is_test: body.is_test }).eq('id', id).select('id').maybeSingle();
-  if (error) {
-    const needsMigration = /is_test/.test(error.message);
-    return NextResponse.json({
-      error: needsMigration ? 'Marking test accounts needs migration 00207 applied to the database first.' : error.message,
-    }, { status: needsMigration ? 409 : 500 });
-  }
-  if (!data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+  const r = await applyOverride(db, [id], mode);
+  if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+  if (r.rows.length === 0) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
   invalidateParents();
-  return NextResponse.json({ ok: true, is_test: body.is_test });
+  await logAdminAction(db, { ...auth.user, role: auth.role }, {
+    action: `parent.override_${mode}`, entityType: 'parent', entityId: id,
+    summary: `${r.rows[0].email} ${OVERRIDE_LABEL[mode]}`,
+  });
+  return NextResponse.json({ ok: true, mode, is_test: mode === 'test' });
 }

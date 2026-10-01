@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { logAdminAction } from '@/lib/admin-audit';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
@@ -65,6 +67,10 @@ export async function POST(request: Request) {
 
   try {
     const result = await createProviderWithCatalogue(body);
+    const prov = (result as { provider?: { id?: string; business_name?: string } }).provider;
+    await logAdminAction(createAdminClient() as unknown as SupabaseClient, { ...auth.user, role: auth.role }, {
+      action: 'vendor.create', entityType: 'vendor', entityId: prov?.id, summary: `Created vendor ${prov?.business_name ?? body.business_name}`,
+    });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     // The helper raises readable messages (duplicate slug, unknown category,

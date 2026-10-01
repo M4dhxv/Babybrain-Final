@@ -4,7 +4,7 @@ import { getStreamServerClient, SUPPORT_USER_ID } from '@/lib/stream';
 
 /** Read a conversation's recent messages. */
 export async function GET(request: Request) {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, ['admin', 'support']);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const channelId = new URL(request.url).searchParams.get('channelId');
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
  * user↔vendor thread, a class group, or a support conversation from one place.
  */
 export async function POST(request: Request) {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin(request, ['admin', 'support']);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { channelId, text } = (await request.json()) as { channelId?: string; text?: string };

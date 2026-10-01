@@ -27,7 +27,8 @@
     "validate:booking-rules": "node scripts/validate-booking-rules.mjs",
     "validate:wix-booking-gates": "npx tsx scripts/validate-wix-booking-gates.mts",
     "validate:migrations": "node scripts/validate-migrations.mjs",
-    "validate:stripe-config": "node scripts/validate-stripe-config.mjs"
+    "validate:stripe-config": "node scripts/validate-stripe-config.mjs",
+    "test:admin": "node --test lib/admin-test-rules.test.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

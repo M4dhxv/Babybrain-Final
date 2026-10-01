@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/admin-audit';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -123,6 +124,10 @@ export async function PATCH(request: Request) {
       .eq('id', providerId);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     if (Object.keys(body).every((k) => k === 'provider_id' || k === 'is_test')) {
+      await logAdminAction(admin as unknown as SupabaseClient, { ...auth.user, role: auth.role }, {
+        action: body.is_test ? 'vendor.mark_test' : 'vendor.unmark_test', entityType: 'vendor', entityId: providerId,
+        summary: `${body.is_test ? 'Marked' : 'Unmarked'} vendor ${providerId} as a test account`,
+      });
       return NextResponse.json({ ok: true, applied: { is_test: Boolean(body.is_test) } });
     }
   }
@@ -147,5 +152,9 @@ export async function PATCH(request: Request) {
     .eq('provider_id', providerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
+  await logAdminAction(admin as unknown as SupabaseClient, { ...auth.user, role: auth.role }, {
+    action: 'commercials.update', entityType: 'vendor', entityId: providerId,
+    summary: `Changed commercial terms for vendor ${providerId}`, details: { applied: patch },
+  });
   return NextResponse.json({ ok: true, applied: patch });
 }

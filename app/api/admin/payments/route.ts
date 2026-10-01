@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getStripe } from '@/lib/stripe';
 import { fetchAll, testProviderIds } from '@/lib/admin-test-data';
+import { isLiveEarning } from '@/lib/admin-test-rules';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   // a non-numeric or negative value used to pass straight into .limit() with
   // nothing to catch it.
   const requested = Number(searchParams.get('limit') ?? 50);
-  const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 200) : 50;
+  const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 1000) : 50;
 
   const admin = createAdminClient();
   const stripe = getStripe();
@@ -37,15 +38,17 @@ export async function GET(request: Request) {
   const db = admin as unknown as SupabaseClient;
   const testProviders = includeTest ? new Set<string>() : await testProviderIds(db);
 
-  const cols = 'id, provider_id, source, gross_cents, commission_cents, stripe_fee_cents, net_cents, fee_payer, routed_to_connect, status, stripe_payment_intent, currency, created_at';
-  // `livemode` arrives with migration 00161; read without it until then.
-  const readEarnings = async () => {
-    const withMode = await fetchAll<Record<string, unknown>>((f, t) =>
-      db.from('provider_earnings').select(`${cols}, livemode`).order('created_at', { ascending: false }).range(f, t));
-    if (withMode.length) return withMode;
-    return fetchAll<Record<string, unknown>>((f, t) =>
-      db.from('provider_earnings').select(cols).order('created_at', { ascending: false }).range(f, t));
-  };
+  const baseCols = 'id, provider_id, source, booking_id, package_purchase_id, gross_cents, commission_cents, stripe_fee_cents, net_cents, fee_payer, routed_to_connect, status, stripe_payment_intent, currency, created_at';
+  // `livemode` arrives with migration 00161 and the per-payment test flag `is_test` with 00212;
+  // read whichever exist.
+  let cols = baseCols;
+  let testFlagAvailable = false;
+  for (const extra of [', livemode, is_test', ', livemode']) {
+    if (!(await db.from('provider_earnings').select(`${baseCols}${extra}`).limit(1)).error) { cols = `${baseCols}${extra}`; testFlagAvailable = extra.includes('is_test'); break; }
+  }
+  const readEarnings = () =>
+    fetchAll<Record<string, unknown>>((f, t) =>
+      db.from('provider_earnings').select(cols).order('created_at', { ascending: false }).range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>);
 
   const [rawEarnings, payoutsRes] = await Promise.all([
     readEarnings(),
@@ -61,12 +64,20 @@ export async function GET(request: Request) {
     ),
   ]);
 
+  // Why a payment is not live money, if it is not (shown as a chip when test data is included).
+  const testReasonOf = (r: Record<string, unknown>): 'vendor' | 'stripe_test' | 'flagged' | null =>
+    r.is_test ? 'flagged' : r.livemode === false ? 'stripe_test' : testProviderSet.has(String(r.provider_id)) ? 'vendor' : null;
+  const testProviderSet = includeTest ? await testProviderIds(db) : testProviders;
   const isLive = (r: Record<string, unknown>) =>
-    !testProviders.has(String(r.provider_id)) && (includeTest || r.livemode !== false);
+    includeTest || isLiveEarning({
+      vendorIsTest: testProviders.has(String(r.provider_id)), livemode: r.livemode as boolean | null | undefined, flaggedTest: r.is_test as boolean | null | undefined,
+    });
   const live = rawEarnings.filter(isLive) as unknown as Array<{
-    id: string; provider_id: string; source: string; gross_cents: number; commission_cents: number;
+    id: string; provider_id: string; source: string; booking_id: string | null; package_purchase_id: string | null;
+    gross_cents: number; commission_cents: number;
     stripe_fee_cents: number | null; net_cents: number; fee_payer: string; routed_to_connect: boolean;
     status: string; stripe_payment_intent: string | null; currency: string; created_at: string;
+    is_test?: boolean | null; livemode?: boolean | null;
   }>;
   const excludedSales = rawEarnings.length - live.length;
   const earningsRes = { data: live.slice(0, limit), error: null as { message: string } | null };
@@ -78,8 +89,30 @@ export async function GET(request: Request) {
     : { data: [] };
   const nameById = new Map((providerRows ?? []).map((p) => [p.id, p.business_name]));
 
+  // Who paid: the parent behind the booking or the package purchase, when there is one.
+  const bookingIds = (earningsRes.data ?? []).map((r) => r.booking_id).filter((x): x is string => !!x);
+  const packageIds = (earningsRes.data ?? []).map((r) => r.package_purchase_id).filter((x): x is string => !!x);
+  const [bookingRows, packageRows] = await Promise.all([
+    bookingIds.length ? db.from('bookings').select('id, user_id').in('id', bookingIds) : Promise.resolve({ data: [] as { id: string; user_id: string | null }[] }),
+    packageIds.length ? db.from('package_purchases').select('id, user_id').in('id', packageIds) : Promise.resolve({ data: [] as { id: string; user_id: string | null }[] }),
+  ]);
+  const payerIdOfBooking = new Map((bookingRows.data ?? []).map((b: { id: string; user_id: string | null }) => [b.id, b.user_id]));
+  const payerIdOfPackage = new Map((packageRows.data ?? []).map((b: { id: string; user_id: string | null }) => [b.id, b.user_id]));
+  const payerIds = [...new Set([...payerIdOfBooking.values(), ...payerIdOfPackage.values()].filter((x): x is string => !!x))];
+  const { data: payerRows } = payerIds.length
+    ? await db.from('parent_profiles').select('id, full_name, email').in('id', payerIds)
+    : { data: [] as { id: string; full_name: string | null; email: string }[] };
+  const payerById = new Map((payerRows ?? []).map((p: { id: string; full_name: string | null; email: string }) => [p.id, { id: p.id, name: p.full_name || p.email, email: p.email }]));
+  const payerOf = (r: { booking_id: string | null; package_purchase_id: string | null }) => {
+    const uid = (r.booking_id && payerIdOfBooking.get(r.booking_id)) || (r.package_purchase_id && payerIdOfPackage.get(r.package_purchase_id)) || null;
+    return uid ? payerById.get(uid) ?? null : null;
+  };
+
   const transactions = (earningsRes.data ?? []).map((r) => ({
     id: r.id,
+    payer: payerOf(r),
+    is_test: !!r.is_test,
+    test_reason: testReasonOf(r as unknown as Record<string, unknown>),
     provider_id: r.provider_id,
     business_name: nameById.get(r.provider_id) ?? '(unknown)',
     source: r.source,
@@ -122,5 +155,5 @@ export async function GET(request: Request) {
     : null;
   const platformPayoutsError = payoutsRes.ok ? null : payoutsRes.message;
 
-  return NextResponse.json({ transactions, totals, platformPayouts, platformPayoutsError, includeTest, excludedSales });
+  return NextResponse.json({ transactions, totals, platformPayouts, platformPayoutsError, includeTest, excludedSales, testFlagAvailable });
 }

@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { logAdminAction } from '@/lib/admin-audit';
 import { requireAdmin } from '@/lib/admin';
 import { getProviderDetail, updateProviderWithCatalogue } from '@/lib/admin-update-provider';
 
@@ -37,6 +40,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     const result = await updateProviderWithCatalogue(id, body);
+    const prov = (result as { provider?: { business_name?: string } }).provider;
+    await logAdminAction(createAdminClient() as unknown as SupabaseClient, { ...auth.user, role: auth.role }, {
+      action: 'vendor.update', entityType: 'vendor', entityId: id, summary: `Edited vendor ${prov?.business_name ?? id}`,
+    });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     // The helper raises readable messages (slug clash, unknown category,
