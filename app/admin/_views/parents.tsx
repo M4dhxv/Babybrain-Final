@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, peekCache } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, sgClock } from '../_lib/core';
 
 // ---- Parents: who signed up, what they hold and spend, filterable ----
 type ParentRowT = {
@@ -317,23 +317,6 @@ export default function ParentsView() {
   const refresh = () => { cacheRef.current.clear(); freshRef.current = true; setF((p) => ({ ...p })); };
 
   // ---- bulk selection (admins only; the server refuses anyone else) ----
-  // Support logins can read the list but not change test flags, so they get no checkboxes.
-  const canBulk = peekCache<{ role: string }>('/api/admin/me')?.role !== 'support';
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const toggleOne = (id: string) => setSelected((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  async function bulkMode(mode: 'auto' | 'test' | 'real') {
-    if (selected.size === 0) return;
-    setBulkBusy(true);
-    try {
-      const r = await adminFetch<{ updated: number }>('/api/admin/parents/bulk', { method: 'POST', body: JSON.stringify({ ids: [...selected], mode }) });
-      toast(`${r.updated} ${mode === 'test' ? 'marked as test' : mode === 'real' ? 'marked as real parents' : 'reset to automatic'}`);
-      setSelected(new Set());
-      refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'error');
-    } finally { setBulkBusy(false); }
-  }
   const closeDetail = useCallback(() => {
     setOpenId(null);
     const url = new URL(window.location.href);
@@ -463,15 +446,6 @@ export default function ParentsView() {
 
       {err && <p style={{ color: C.pink }}>{err}</p>}
       {!data && !err && <Skeleton rows={8} height={46} />}
-      {canBulk && selected.size > 0 && (
-        <div style={{ ...card(), marginBottom: 10, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderColor: C.blue }}>
-          <strong style={{ fontSize: 13 }}>{selected.size} selected</strong>
-          <button type="button" style={tabBtn(false)} disabled={bulkBusy} onClick={() => bulkMode('test')}>Mark as test</button>
-          <button type="button" style={tabBtn(false)} disabled={bulkBusy} onClick={() => bulkMode('real')}>Mark as real parent</button>
-          <button type="button" style={tabBtn(false)} disabled={bulkBusy} onClick={() => bulkMode('auto')}>Reset to automatic</button>
-          <button type="button" style={{ ...tabBtn(false), marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>Clear selection</button>
-        </div>
-      )}
       {data && (
         <div style={{ ...card(), padding: 0, overflowX: 'auto', position: 'relative', opacity: busy ? 0.75 : 1 }}>
           {busy && <div className="bb-skel" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: 0,
@@ -479,11 +453,6 @@ export default function ParentsView() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ color: C.muted, textAlign: 'left' }}>
-                {canBulk && <th style={{ ...th(), width: 28 }}>
-                  <input type="checkbox" aria-label="Select all on this page" style={{ width: 15, height: 15, margin: 0 }}
-                    checked={data.rows.length > 0 && data.rows.every((r) => selected.has(r.id))}
-                    onChange={(e) => setSelected((cur) => { const n = new Set(cur); data.rows.forEach((r) => (e.target.checked ? n.add(r.id) : n.delete(r.id))); return n; })} />
-                </th>}
                 {sortTh('name', 'Parent')}
                 <th style={th()}>Phone</th>
                 {sortTh('children', 'Children')}
@@ -505,11 +474,7 @@ export default function ParentsView() {
                 </td></tr>
               )}
               {data.rows.map((r) => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.border}`, background: selected.has(r.id) ? 'rgba(74,144,255,.08)' : undefined }}>
-                  {canBulk && <td style={td()}>
-                    <input type="checkbox" aria-label={`Select ${r.name || r.email}`} style={{ width: 15, height: 15, margin: 0 }}
-                      checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} />
-                  </td>}
+                <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
                   <td style={td()}>
                     <div style={{ fontWeight: 700 }}>
                       <button type="button" onClick={() => setOpenId(r.id)} title="View all details"
@@ -542,7 +507,10 @@ export default function ParentsView() {
                   {extra.region && <td style={td()}>{r.regions.length ? regionText(r.regions) : <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}
                   {extra.last && <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.lastBookingAt ? sgDay(r.lastBookingAt) : <span style={{ color: C.muted }}>—</span>}</td>}
-                  <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(r.joinedAt)}</td>
+                  <td style={{ ...td(), whiteSpace: 'nowrap' }}>
+                    {sgDay(r.joinedAt)}
+                    <div style={{ color: C.muted, fontSize: 12 }}>{sgClock(r.joinedAt)}</div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -174,3 +174,6 @@ export const sgdDollars = (v: number) => new Intl.NumberFormat('en-SG', { style:
 export const sgDay = (iso: string) => new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' });
 
 export const CATEGORY_ORDER = ['Account', 'Parent', 'Provider'] as const;
+
+/** Hour and minute in Singapore time, e.g. "9:48 pm". */
+export const sgClock = (iso: string) => new Date(iso).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', hour12: true });
