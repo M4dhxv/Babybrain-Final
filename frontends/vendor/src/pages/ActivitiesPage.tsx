@@ -101,6 +101,18 @@ const formatDuration = (mins: number | null | undefined): string => {
 };
 
 /** True if [aStart, aEnd) and [bStart, bEnd) share any time. */
+/** What to store in activity_sessions.price: null (inherit the activity's
+ *  price, migration 00074) when blank, when the activity is a Wix Event, or
+ *  when it equals the activity's own price; otherwise the session's override. */
+const sessionPriceOverride = (
+  raw: string,
+  activityPrice: number | string | null | undefined,
+  isWixEvent: boolean,
+): number | null => {
+  if (isWixEvent || raw.trim() === '') return null;
+  const n = Math.max(0, Number(raw));
+  return activityPrice != null && n === Number(activityPrice) ? null : n;
+};
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
 
 /** Matches ageLabel-adjacent formatting the parent app uses on the booking
@@ -840,8 +852,12 @@ export default function ActivitiesPage() {
           sessForm.location_id && sessForm.location_id !== (scheduleFor.location_id ?? '')
             ? sessForm.location_id
             : null,
-        // A Wix Event's price is Wix's — never override it per session.
-        price: scheduleIsWixEvent || sessForm.price === '' ? null : Math.max(0, Number(sessForm.price)),
+        // A Wix Event's price is Wix's — never override it per session. The
+        // field is pre-filled with the activity's price, so "left as-is" must
+        // store null (inherit), not a copy — otherwise changing the activity
+        // price later leaves these sessions on the old one (same idea as
+        // location_id above).
+        price: sessionPriceOverride(sessForm.price, scheduleFor.price, scheduleIsWixEvent),
         ...sessPolicyPayload(sessForm.policy),
       };
     });
@@ -984,8 +1000,9 @@ export default function ActivitiesPage() {
         sessEditForm.location_id && sessEditForm.location_id !== (scheduleFor.location_id ?? '')
           ? sessEditForm.location_id
           : null,
-      // A Wix Event's price is Wix's — never override it per session.
-      price: scheduleIsWixEvent || sessEditForm.price === '' ? null : Math.max(0, Number(sessEditForm.price)),
+      // Same price as the activity's -> store null (inherit), so a later
+      // activity price change carries this session with it.
+      price: sessionPriceOverride(sessEditForm.price, scheduleFor.price, scheduleIsWixEvent),
       ...sessPolicyPayload(sessEditForm.policy),
     }).eq('id', id);
     setSavingSessEdit(false);
