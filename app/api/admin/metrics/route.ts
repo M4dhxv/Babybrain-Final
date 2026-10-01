@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { fetchAll, isTestEmail, testProviderIds, vendorAccountIds } from '@/lib/admin-test-data';
+import { fetchAll, isTestEmail, testProviderIds } from '@/lib/admin-test-data';
 
 /**
  * Founder KPI snapshot, sourced straight from the Supabase database.
  *
  * By default this counts LIVE activity only: demo/QA vendors (providers.is_test),
  * Stripe test-mode payments (provider_earnings.livemode = false) and test-looking
- * parent emails are left out, so the numbers measure real progress. Pass
+ * parent emails (and vendor logins never used as a parent) are left out, so the numbers
+ * measure real progress. A vendor who also books classes as a parent is counted. Pass
  * ?include_test=1 to see everything. Nothing is ever deleted.
  */
 export async function GET(request: Request) {
@@ -22,9 +23,19 @@ export async function GET(request: Request) {
   const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
   const DAY = 864e5;
 
-  const [testProviders, vendorAccounts] = includeTest
-    ? [new Set<string>(), new Set<string>()]
-    : await Promise.all([testProviderIds(admin), vendorAccountIds(admin)]);
+  // Vendors can book classes too, so a vendor login is NOT excluded just for holding a seat. It
+  // is left out only if it has never been used as a parent (no children, no bookings) or works
+  // only for test vendors — see vendorTestAccounts below.
+  type SeatRow = { user_id: string; provider: { is_test: boolean | null } | null };
+  const [testProviders, seatRows, kidParents] = includeTest
+    ? [new Set<string>(), [] as SeatRow[], new Set<string>()]
+    : await Promise.all([
+        testProviderIds(admin),
+        fetchAll<SeatRow>((f, t) =>
+          admin.from('provider_members').select('user_id, provider:providers(is_test)').eq('status', 'active').range(f, t) as unknown as PromiseLike<{ data: SeatRow[] | null; error: { message: string } | null }>),
+        fetchAll<{ parent_id: string }>((f, t) => admin.from('children').select('parent_id').range(f, t))
+          .then((rows) => new Set(rows.map((r) => r.parent_id))),
+      ]);
 
   // cancelled_from_status comes from migration 00210; until it is applied, fall back to inferring it.
   const hasCancelOrigin = !(await admin.from('bookings').select('cancelled_from_status').limit(1)).error;
@@ -71,8 +82,15 @@ export async function GET(request: Request) {
 
   // ---- what counts as live -------------------------------------------------
   const liveProvider = (id: string) => !testProviders.has(id);
+  const bookedUsers = new Set(bookings.filter((b) => b.status !== 'cancelled' && b.status !== 'waitlisted').map((b) => b.user_id));
+  const seatsByUser = new Map<string, (boolean | null)[]>();
+  for (const s of seatRows) seatsByUser.set(s.user_id, [...(seatsByUser.get(s.user_id) ?? []), s.provider?.is_test ?? null]);
+  const vendorTestAccounts = new Set<string>();
+  for (const [uid, flags] of seatsByUser) {
+    if (flags.every((f) => f === true) || !(kidParents.has(uid) || bookedUsers.has(uid))) vendorTestAccounts.add(uid);
+  }
   const testParents = new Set(
-    includeTest ? [] : parents.filter((p) => p.is_test || isTestEmail(p.email) || vendorAccounts.has(p.id)).map((p) => p.id)
+    includeTest ? [] : parents.filter((p) => p.is_test || isTestEmail(p.email) || vendorTestAccounts.has(p.id)).map((p) => p.id)
   );
   const liveParent = (id: string) => !testParents.has(id);
 

@@ -299,6 +299,9 @@ function tabFromUrl(): Tab {
 
 const ADMIN_CSS = `
 @keyframes bb-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+.bb-cardbtn:hover, .bb-cardbtn:focus-visible { border-color: #4a90ff !important; outline: none; }
+.bb-cardlink { opacity: .0; transition: opacity .12s; }
+.bb-cardbtn:hover .bb-cardlink, .bb-cardbtn:focus-visible .bb-cardlink { opacity: 1; }
 @keyframes bb-spin { to { transform: rotate(360deg) } }
 @keyframes bb-toast-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 .bb-skel { border-radius: 8px; background: linear-gradient(90deg, #151d31 25%, #1c2740 37%, #151d31 63%); background-size: 400% 100%; animation: bb-shimmer 1.6s ease infinite; }
@@ -417,8 +420,20 @@ export default function AdminPage() {
     setTabState(t);
     setMenuOpen(false);
     const url = new URL(window.location.href);
+    url.search = '';              // a tab's filters don't leak into the next tab
     url.searchParams.set('tab', t);
     window.history.pushState(null, '', url);
+  }, []);
+  /** Open the Parents tab with these filters already applied (used by the Metrics cards). */
+  const openParents = useCallback((filters: Partial<ParentFilters>) => {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('tab', 'parents');
+    for (const [k, v] of Object.entries(filters)) if (v) url.searchParams.set(k, v);
+    window.history.pushState(null, '', url);
+    setTabState('parents');
+    setMenuOpen(false);
+    window.scrollTo(0, 0);
   }, []);
   const signOut = async () => { await supabase.auth.signOut(); setPhase('login'); };
 
@@ -487,7 +502,7 @@ export default function AdminPage() {
               style={{ ...primaryBtn(), marginTop: 16 }}>Sign out</button>
           </div>
         )}
-        {phase === 'ok' && tab === 'metrics' && <MetricsView />}
+        {phase === 'ok' && tab === 'metrics' && <MetricsView onOpenParents={openParents} />}
         {phase === 'ok' && tab === 'parents' && <ParentsView />}
         {phase === 'ok' && tab === 'messages' && <MessagesView />}
         {phase === 'ok' && tab === 'contact' && <ContactView />}
@@ -557,7 +572,7 @@ function TestDataBar({ includeTest, setIncludeTest, excluded }: {
 
 const pctText = (v: number | null) => (v == null ? '—' : `${Math.round(v * 1000) / 10}%`);
 
-function MetricsView() {
+function MetricsView({ onOpenParents }: { onOpenParents: (f: Partial<ParentFilters>) => void }) {
   const [m, setM] = useState<Metrics | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [includeTest, setIncludeTest] = useState(false);
@@ -573,18 +588,27 @@ function MetricsView() {
   if (err) return <p style={{ color: C.pink }}>{err}</p>;
   if (!m) return <CardsSkeleton />;
 
-  type Row = [string, number | string, string, string?];
+  // A row's optional 5th item makes the card a link to the Parents tab with those filters on.
+  type Row = [string, number | string, string, string?, Partial<ParentFilters>?];
+  const sgDay_ = (msAgo: number) => new Date(Date.now() - msAgo).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
   const section = (title: string, rows: Row[]) => (
     <div>
       <div style={{ fontWeight: 800, fontSize: 14, margin: '22px 0 10px' }}>{title}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-        {rows.map(([label, value, color, sub]) => (
-          <div key={label} style={card()}>
+        {rows.map(([label, value, color, sub, link]) => {
+          const inner = (<>
             <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
             <div style={{ fontSize: 28, fontWeight: 900, color, marginTop: 6 }}>{value}</div>
             {sub && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>}
-          </div>
-        ))}
+            {link && <div className="bb-cardlink" style={{ color: C.blue, fontSize: 12, fontWeight: 800, marginTop: 6 }}>View parents →</div>}
+          </>);
+          return link ? (
+            <button key={label} type="button" className="bb-cardbtn" onClick={() => onOpenParents(link)}
+              title="Open these parents in the Parents tab" style={{ ...card(), textAlign: 'left', cursor: 'pointer', font: 'inherit', color: C.text }}>
+              {inner}
+            </button>
+          ) : <div key={label} style={card()}>{inner}</div>;
+        })}
       </div>
     </div>
   );
@@ -601,8 +625,6 @@ function MetricsView() {
 
   return (
     <div>
-      <TestDataBar includeTest={includeTest} setIncludeTest={setIncludeTest} excluded={excludedText} />
-
       {section('Revenue and commission', [
         ['Gross sales', sgd(r.gross), C.text, `${r.sales} paid sale${r.sales === 1 ? '' : 's'}`],
         ['BabyBrain commission', sgd(r.commission), C.green, 'Before Stripe fees'],
@@ -615,10 +637,10 @@ function MetricsView() {
       ])}
 
       {section('Growth', [
-        ['Parents', m.totals.parents, C.blue],
-        ['New parents (7d)', m.growth.newParents7, C.blue],
-        ['New parents (30d)', m.growth.newParents30, C.blue],
-        ['Parents who booked', m.growth.parentsWhoBooked, C.pink, m.totals.parents ? `${pctText(m.growth.parentsWhoBooked / m.totals.parents)} of parents` : undefined],
+        ['Parents', m.totals.parents, C.blue, undefined, {}],
+        ['New parents (7d)', m.growth.newParents7, C.blue, undefined, { joined_from: sgDay_(7 * 864e5) }],
+        ['New parents (30d)', m.growth.newParents30, C.blue, undefined, { joined_from: sgDay_(30 * 864e5) }],
+        ['Parents who booked', m.growth.parentsWhoBooked, C.pink, m.totals.parents ? `${pctText(m.growth.parentsWhoBooked / m.totals.parents)} of parents` : undefined, { activity: 'booked' }],
         ['Vendors (active)', m.totals.activeProviders, C.green, `${m.totals.providers} in total`],
         ['New vendors (30d)', m.growth.newVendors30, C.blue],
         ['Activated vendors', m.growth.activatedVendors, C.green, 'Live class and a booking'],
@@ -640,7 +662,7 @@ function MetricsView() {
       ])}
 
       {section('Subscriptions', [
-        ['Plus subscribers', m.subscriptions.plusActive, C.green, `${m.subscriptions.plusPastDue} past due · ${m.subscriptions.plusCanceled} cancelled`],
+        ['Plus subscribers', m.subscriptions.plusActive, C.green, `${m.subscriptions.plusPastDue} past due · ${m.subscriptions.plusCanceled} cancelled`, { plan: 'plus' }],
         ['Vendors on Pro', m.subscriptions.vendorPro, C.green],
         ['Vendors on Premium', m.subscriptions.vendorPremium, C.green],
         ['Vendor plans at risk', m.subscriptions.vendorPastDue, C.pink, `${m.subscriptions.vendorCanceled} cancelled`],
@@ -658,13 +680,19 @@ function MetricsView() {
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 110, width: '100%', justifyContent: 'center' }}>
                 <div title={`${d.bookings} bookings`} style={{ width: 8, background: C.pink, borderRadius: 3,
                   height: `${(d.bookings / maxDaily) * 100}%`, minHeight: d.bookings ? 3 : 0 }} />
-                <div title={`${d.signups} signups`} style={{ width: 8, background: C.blue, borderRadius: 3,
-                  height: `${(d.signups / maxDaily) * 100}%`, minHeight: d.signups ? 3 : 0 }} />
+                <div title={d.signups ? `${d.signups} signups — click to view them` : '0 signups'}
+                  onClick={d.signups ? () => onOpenParents({ joined_from: d.date, joined_to: d.date }) : undefined}
+                  style={{ width: 8, background: C.blue, borderRadius: 3, cursor: d.signups ? 'pointer' : 'default',
+                    height: `${(d.signups / maxDaily) * 100}%`, minHeight: d.signups ? 3 : 0 }} />
               </div>
               <div style={{ color: C.muted, fontSize: 9 }}>{d.date.slice(5)}</div>
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{ marginTop: 22 }}>
+        <TestDataBar includeTest={includeTest} setIncludeTest={setIncludeTest} excluded={excludedText} />
       </div>
     </div>
   );
@@ -2630,6 +2658,15 @@ const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
   child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', test: 'hide', account: '', region: '',
 };
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'test'];
+/** Filters carried in the page link, e.g. /admin?tab=parents&plan=plus. */
+function filtersFromUrl(): ParentFilters {
+  const sp = new URLSearchParams(window.location.search);
+  if (sp.get('tab') !== 'parents') return NO_FILTERS;
+  const out = { ...NO_FILTERS };
+  (Object.keys(NO_FILTERS) as (keyof ParentFilters)[]).forEach((k) => { const v = sp.get(k); if (v) out[k] = v; });
+  return out;
+}
 const PLAN_BADGE: Record<ParentRowT['plan'], { label: string; tone: Tone }> = {
   free: { label: 'Free', tone: 'grey' }, plus: { label: 'Plus', tone: 'blue' },
   plus_past_due: { label: 'Plus · past due', tone: 'amber' }, plus_canceled: { label: 'Plus · canceled', tone: 'grey' },
@@ -2822,8 +2859,8 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
 }
 
 function ParentsView() {
-  const [f, setF] = useState<ParentFilters>(NO_FILTERS);
-  const [q, setQ] = useState('');           // what's typed; copied into f.q after a pause
+  const [f, setF] = useState<ParentFilters>(filtersFromUrl);
+  const [q, setQ] = useState(() => filtersFromUrl().q);   // what's typed; copied into f.q after a pause
   const [sort, setSort] = useState('joined');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -2831,7 +2868,7 @@ function ParentsView() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(() => { const u = filtersFromUrl(); return ADVANCED_FILTERS.some((k) => u[k] && u[k] !== NO_FILTERS[k]); });
   const [openId, setOpenId] = useState<string | null>(null);
   const cacheRef = useRef(new Map<string, ParentsPage>());
   const freshRef = useRef(false);
@@ -2841,6 +2878,17 @@ function ParentsView() {
     const t = setTimeout(() => { setF((p) => (p.q === q ? p : { ...p, q })); setPage(1); }, 300);
     return () => clearTimeout(t);
   }, [q]);
+
+  // Keep the filters in the page link (?tab=parents&plan=plus…) so a refresh, a shared link and the
+  // Metrics cards all land on the same view.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('tab') !== 'parents') return;
+    (Object.keys(NO_FILTERS) as (keyof ParentFilters)[]).forEach((k) => {
+      if (f[k] && f[k] !== NO_FILTERS[k]) url.searchParams.set(k, f[k]); else url.searchParams.delete(k);
+    });
+    window.history.replaceState(null, '', url);
+  }, [f]);
 
   const qs = useCallback((withPage: boolean) => {
     const sp = new URLSearchParams();
@@ -2928,7 +2976,7 @@ function ParentsView() {
           {sel('marketing', [['', 'Any'], ['consented', 'Consented'], ['withdrawn', 'Withdrawn'], ['not_consented', 'Not consented']])}
         </label>
         <label style={{ ...lab, width: 190 }}>Booking activity
-          {sel('activity', [['', 'Any'], ['never', 'Never booked'], ['once', 'Booked once'], ['repeat', 'Repeat (2+)'],
+          {sel('activity', [['', 'Any'], ['booked', 'Has booked'], ['never', 'Never booked'], ['once', 'Booked once'], ['repeat', 'Repeat (2+)'],
             ['recent30', 'Booked in last 30 days'], ['dormant60', 'No booking for 60+ days']])}
         </label>
         <button type="button" style={tabBtn(more)} onClick={() => setMore((m) => !m)}>

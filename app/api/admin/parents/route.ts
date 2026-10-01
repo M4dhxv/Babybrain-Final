@@ -64,7 +64,8 @@ export async function GET(request: Request) {
   if (to !== null) rows = rows.filter((r) => Date.parse(r.joinedAt) <= to);
 
   const activity = sp.get('activity');
-  if (activity === 'never') rows = rows.filter((r) => r.bookings === 0);
+  if (activity === 'booked') rows = rows.filter((r) => r.bookings > 0);
+  else if (activity === 'never') rows = rows.filter((r) => r.bookings === 0);
   else if (activity === 'once') rows = rows.filter((r) => r.bookings === 1);
   else if (activity === 'repeat') rows = rows.filter((r) => r.bookings >= 2);
   else if (activity === 'recent30') rows = rows.filter((r) => r.lastBookingAt && now - Date.parse(r.lastBookingAt) <= 30 * DAY);
