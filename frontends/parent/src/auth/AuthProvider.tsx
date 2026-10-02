@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
 import { clearPlanCache } from "../lib/planCache";
+import { reportDevice } from "../lib/device";
 import { goTo, appUrl } from "../lib/nav";
 import type { ParentProfile, Child } from "../lib/database.types";
 
@@ -197,6 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         if (data.session) {
           identifyUser(data.session.user.id, data.session.user.email);
+          reportDevice(data.session.user.id);
           // Don't hold `loading` (which gates routing) on the profile/children
           // lookup — knowing whether there's a session is enough to route. The
           // lookup runs in the background and flips `dataResolved` when done;
@@ -217,6 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         if (s) {
           identifyUser(s.user.id, s.user.email);
+          reportDevice(s.user.id);
           void resolveData();
         } else {
           resetUser();

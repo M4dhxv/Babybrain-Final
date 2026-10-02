@@ -19,6 +19,36 @@ export type { AccountKind };
 /** How an admin has overridden the automatic test rules for an account. */
 export type TestOverride = 'auto' | 'test' | 'real';
 
+export type DeviceOs = 'ios' | 'android' | 'macos' | 'windows' | 'chromeos' | 'linux' | 'other';
+/** Whether the parent opens BabyBrain as the installed app or in a browser. 'unknown' = not reported yet. */
+export type Surface = 'app' | 'web' | 'both' | 'unknown';
+export type ParentDevice = { os: DeviceOs; surface: Surface; lastSeenAt: string };
+
+export const DEVICE_LABEL: Record<DeviceOs, string> = {
+  ios: 'iPhone / iPad (iOS)', android: 'Android', macos: 'Mac', windows: 'Windows PC', chromeos: 'Chromebook', linux: 'Linux', other: 'Other',
+};
+
+const surfaceOf = (app: boolean, web: boolean): Surface => (app && web ? 'both' : app ? 'app' : web ? 'web' : 'unknown');
+
+/** Rows of parent_devices (migration 00215) -> what the admin shows for one parent. */
+export function summariseDevices(rows: { os: string; surface: string; last_seen_at: string }[]): { devices: ParentDevice[]; surface: Surface; lastSeenAt: string | null } {
+  const byOs = new Map<DeviceOs, { app: boolean; web: boolean; last: string }>();
+  let app = false, web = false, last: string | null = null;
+  for (const r of rows) {
+    const os = (r.os in DEVICE_LABEL ? r.os : 'other') as DeviceOs;
+    const cur = byOs.get(os) ?? { app: false, web: false, last: r.last_seen_at };
+    if (r.surface === 'app') { cur.app = true; app = true; }
+    if (r.surface === 'web') { cur.web = true; web = true; }
+    if (r.last_seen_at > cur.last) cur.last = r.last_seen_at;
+    byOs.set(os, cur);
+    if (!last || r.last_seen_at > last) last = r.last_seen_at;
+  }
+  const devices = [...byOs.entries()]
+    .map(([os, v]) => ({ os, surface: surfaceOf(v.app, v.web), lastSeenAt: v.last }))
+    .sort((x, y) => (x.lastSeenAt < y.lastSeenAt ? 1 : -1));
+  return { devices, surface: surfaceOf(app, web), lastSeenAt: last };
+}
+
 export type AdminParent = {
   id: string; name: string; email: string; phone: string | null; area: string | null;
   children: { name: string; ageMonths: number }[];
@@ -38,6 +68,11 @@ export type AdminParent = {
   /** 'manual' = flagged by an admin, 'auto' = decided by the rules below. */
   testSource: 'manual' | 'auto' | null;
   testReason: string | null;
+  /** Devices they have signed in from, most recent first. */
+  devices: ParentDevice[];
+  /** App (installed), web (browser), both, or unknown until they next open the app. */
+  surface: Surface;
+  lastSeenAt: string | null;
 };
 
 type ParentRow = {
@@ -93,7 +128,7 @@ export async function loadParents(admin: SupabaseClient, fresh = false): Promise
 
 async function build(admin: SupabaseClient, now: number, fresh: boolean): Promise<AdminParent[]> {
   const cols = 'id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at';
-  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid, pkgEarnings, pkgBuyers] = await Promise.all([
+  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid, pkgEarnings, pkgBuyers, deviceRows] = await Promise.all([
     // is_test comes from migration 00207 and is_real_override from 00212; read whichever exist.
     (async () => {
       let select: string = cols;
@@ -131,7 +166,16 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
         admin.from('provider_earnings').select(cols2).eq('source', 'package').range(f, t) as unknown as PromiseLike<{ data: { package_purchase_id: string | null; gross_cents: number | null; status: string | null; livemode?: boolean | null; is_test?: boolean | null }[] | null; error: { message: string } | null }>);
     })(),
     fetchAll<{ id: string; user_id: string }>((f, t) => admin.from('package_purchases').select('id, user_id').range(f, t)),
+    // Devices (migration 00215). Until it is applied the read fails and every parent just shows no device.
+    fetchAll<{ user_id: string; os: string; surface: string; last_seen_at: string }>((f, t) =>
+      admin.from('parent_devices').select('user_id, os, surface, last_seen_at').range(f, t)).catch(() => []),
   ]);
+  const devicesBy = new Map<string, { os: string; surface: string; last_seen_at: string }[]>();
+  for (const d of deviceRows) {
+    const list = devicesBy.get(d.user_id) ?? [];
+    list.push(d);
+    devicesBy.set(d.user_id, list);
+  }
   const packageSpendBy = new Map<string, number>();
   {
     const buyer = new Map(pkgBuyers.map((r) => [r.id, r.user_id]));
@@ -216,6 +260,7 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       override: p.is_test ? 'test' : p.is_real_override ? 'real' : 'auto',
       testSource: cls.testSource,
       testReason: cls.testReason,
+      ...(() => { const d = summariseDevices(devicesBy.get(p.id) ?? []); return { devices: d.devices, surface: d.surface, lastSeenAt: d.lastSeenAt }; })(),
     };
   });
 }

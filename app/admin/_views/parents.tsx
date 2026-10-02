@@ -12,19 +12,22 @@ type ParentRowT = {
   bookingSpend: number; packageSpend: number; planPaid: number;
   lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean;
   joinedAt: string; isTest: boolean; kind: AccountKind; isVendor: boolean; vendorNames: string[]; regions: string[];
+  devices: DeviceT[]; surface: SurfaceT; lastSeenAt: string | null;
 };
+type SurfaceT = 'app' | 'web' | 'both' | 'unknown';
+type DeviceT = { os: string; surface: SurfaceT; lastSeenAt: string };
 type AccountKind = 'test' | 'vendor_login' | 'vendor_parent' | 'parent';
 type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: number; pageSize: number };
 export type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; account: string; region: string;
+  onboarded: string; min_spend: string; area: string; account: string; region: string; device: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', device: '',
 };
-const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region'];
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'device'];
 /** The one badge an account carries. Parents carry none. */
 const KIND_BADGE: Record<AccountKind, { label: string; tone: Tone } | null> = {
   test: { label: 'Test', tone: 'amber' }, vendor_login: { label: 'Vendor login', tone: 'blue' },
@@ -68,6 +71,13 @@ function postalDistrict(code: string | null | undefined): string | null {
   const hit = POSTAL_DISTRICTS.find(([sectors]) => sectors.includes(sector));
   return hit ? `D${hit[1]} – ${hit[2]}` : null;
 }
+/** Device types a parent can be filtered by (the ids match lib/admin-parents.ts). */
+const DEVICE_LABELS: Record<string, string> = {
+  ios: 'iPhone / iPad (iOS)', android: 'Android', macos: 'Mac', windows: 'Windows PC', chromeos: 'Chromebook', linux: 'Linux', other: 'Other',
+};
+const DEVICE_OPTIONS = [...Object.entries(DEVICE_LABELS).map(([id, label]) => ({ id, label })), { id: 'none', label: 'No device recorded' }];
+const deviceText = (v: DeviceT[]) => v.map((x) => DEVICE_LABELS[x.os] ?? x.os).join(', ');
+const SURFACE_TEXT: Record<SurfaceT, string> = { app: 'App (installed)', web: 'Web (browser)', both: 'App and web', unknown: 'Not recorded yet' };
 const regionText = (v: string[]) => v.map((x) => REGION_LABELS[x] ?? x).join(', ');
 const childAge = (m: number) => (m < 0 ? 'unborn' : m < 24 ? `${m}m` : `${Math.floor(m / 12)}y`);
 
@@ -88,6 +98,7 @@ type ParentDetailT = {
   }[];
   isTest: boolean; override: 'auto' | 'test' | 'real'; testSource: 'manual' | 'auto' | null; testReason: string | null;
   kind: AccountKind; isVendor: boolean; vendorNames: string[];
+  devices: DeviceT[]; surface: SurfaceT; lastSeenAt: string | null;
 };
 
 /** Everything held on one parent, with the test-account checkbox. */
@@ -198,6 +209,14 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Onboarding', p.onboarding_completed_at ? <>Completed · {when(p.onboarding_completed_at)}</> : 'Not completed')}
             {d.isVendor && field('Vendor', d.vendorNames.join(', ') || 'Yes')}
             {field('Account type', KIND_BADGE[d.kind] ? <Badge tone={KIND_BADGE[d.kind]!.tone}>{KIND_BADGE[d.kind]!.label}</Badge> : 'Parent')}
+            {field('Device', d.devices.length
+              ? d.devices.map((x) => (
+                <div key={x.os}>{DEVICE_LABELS[x.os] ?? x.os}
+                  <span style={{ color: C.muted }}> · {x.surface === 'unknown' ? 'last seen' : `${SURFACE_TEXT[x.surface]}, last seen`} {when(x.lastSeenAt)}</span></div>))
+              : <span style={{ color: C.muted }}>None recorded yet</span>)}
+            {field('App or web', d.surface === 'unknown'
+              ? <span style={{ color: C.muted }}>Not recorded yet. It is picked up the next time they open BabyBrain.</span>
+              : <Badge tone={d.surface === 'web' ? 'grey' : 'blue'}>{SURFACE_TEXT[d.surface]}</Badge>)}
             {field('Account ID', <code style={{ fontSize: 12 }}>{id}</code>)}
           </>)}
 
@@ -312,7 +331,7 @@ export default function ParentsView() {
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('open'));
   const cacheRef = useRef(new Map<string, ParentsPage>());
   const freshRef = useRef(false);
-  const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false });
+  const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false, device: false });
 
   useEffect(() => {
     const t = setTimeout(() => { setF((p) => (p.q === q ? p : { ...p, q })); setPage(1); }, 300);
@@ -437,6 +456,10 @@ export default function ParentsView() {
               options={Object.entries(REGION_LABELS).map(([id, label]) => ({ id, label }))}
               selected={f.region.split(',').filter(Boolean)}
               onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width="fill" />
+            <MultiSelect label="Device" placeholder="Any device"
+              options={DEVICE_OPTIONS}
+              selected={f.device.split(',').filter(Boolean)}
+              onChange={(ids) => { setF((p) => ({ ...p, device: ids.join(',') })); setPage(1); }} width="fill" />
             <label style={lab}>Child age from (months)
               <input type="number" min={0} value={f.child_min} onChange={set('child_min')} style={input()} placeholder="e.g. 6" />
             </label>
@@ -461,7 +484,7 @@ export default function ParentsView() {
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: C.muted }}>Show extra columns:</span>
-            {([['area', 'Postal code'], ['region', 'Preferred region'], ['onboarded', 'Onboarded'], ['last', 'Last booking']] as const).map(([k, l]) => (
+            {([['area', 'Postal code'], ['region', 'Preferred region'], ['onboarded', 'Onboarded'], ['last', 'Last booking'], ['device', 'Device']] as const).map(([k, l]) => (
               <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))}
                   style={{ flex: 'none', width: 16, height: 16, margin: 0 }} />{l}
@@ -511,6 +534,7 @@ export default function ParentsView() {
                 {extra.area && <th style={th()}>Postal code</th>}
                 {extra.region && <th style={th()}>Preferred region</th>}
                 {extra.onboarded && <th style={th()}>Onboarded</th>}
+                {extra.device && <th style={th()}>Device</th>}
                 {extra.last && sortTh('last', 'Last booking')}
                 {sortTh('joined', 'Joined')}
               </tr>
@@ -554,6 +578,7 @@ export default function ParentsView() {
                   {extra.area && <td style={td()}>{r.area || <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.region && <td style={td()}>{r.regions.length ? regionText(r.regions) : <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}
+                  {extra.device && <td style={td()}>{r.devices.length ? <>{deviceText(r.devices)}{r.surface !== 'unknown' && <div style={{ color: C.muted, fontSize: 12 }}>{SURFACE_TEXT[r.surface]}</div>}</> : <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.last && <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.lastBookingAt ? sgDay(r.lastBookingAt) : <span style={{ color: C.muted }}>—</span>}</td>}
                   <td style={{ ...td(), whiteSpace: 'nowrap' }}>
                     {sgDay(r.joinedAt)}

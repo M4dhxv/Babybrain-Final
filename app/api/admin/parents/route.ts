@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { loadParents, type AdminParent } from '@/lib/admin-parents';
+import { DEVICE_LABEL, loadParents, type AdminParent } from '@/lib/admin-parents';
 
 /**
  * Admin → Parents. One row per parent_profiles row with the numbers the
@@ -54,6 +54,13 @@ export async function GET(request: Request) {
   // Comma-separated: a parent matches when any of their preferred regions is one of those chosen.
   const regions = (sp.get('region') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
   if (regions.length) rows = rows.filter((r) => r.regions.some((x) => regions.includes(x)));
+
+  // Comma-separated device types (ios, android, macos, windows, chromeos, linux, other, none): a parent
+  // matches when they have used any of them. 'none' = no device recorded yet.
+  const devices = (sp.get('device') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (devices.length) {
+    rows = rows.filter((r) => (r.devices.length === 0 ? devices.includes('none') : r.devices.some((d) => devices.includes(d.os))));
+  }
 
   const plan = sp.get('plan');
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);
@@ -112,11 +119,12 @@ export async function GET(request: Request) {
 
   if (sp.get('format') === 'csv') {
     const head = ['Name', 'Email', 'Phone', 'Postal code', 'Children', 'Plan', 'Bookings', 'Upcoming', 'Spend (SGD)',
-      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account'];
+      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account', 'Devices', 'App or web'];
     const body = rows.map((r) => [r.name, r.email, r.phone, r.area,
       r.children.map((c) => `${c.name} (${c.ageMonths < 24 ? `${c.ageMonths}m` : `${Math.floor(c.ageMonths / 12)}y`})`).join('; '),
       r.plan, r.bookings, r.upcoming, r.spend.toFixed(2), r.lastBookingAt?.slice(0, 10) ?? '', r.marketing,
-      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.kind, r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no'].map(csvCell).join(','));
+      r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.kind, r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no',
+      r.devices.map((d) => DEVICE_LABEL[d.os]).join('; '), r.surface].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="parents.csv"' },
     });

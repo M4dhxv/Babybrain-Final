@@ -78,6 +78,9 @@ export async function GET(request: Request, { params }: Params) {
     override: row?.override ?? (p.is_test ? 'test' : 'auto'),
     isVendor: row?.isVendor ?? false,
     vendorNames: row?.vendorNames ?? [],
+    devices: row?.devices ?? [],
+    surface: row?.surface ?? 'unknown',
+    lastSeenAt: row?.lastSeenAt ?? null,
   });
 }
 
