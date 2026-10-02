@@ -73,12 +73,16 @@ async function resolveWixServiceLocation(
 
   const { data: existing } = await admin
     .from('provider_locations')
-    .select('id')
+    .select('id, address, postal_code, wix_address_locked')
     .eq('provider_id', providerId)
     .eq('wix_location_id', loc.id)
     .maybeSingle();
   if (existing) {
     cache.set(loc.id, existing.id);
+    // An admin corrected this venue's address on purpose (00214): use theirs, not Wix's.
+    if (existing.wix_address_locked) {
+      return { locationId: existing.id, address: existing.address, postalCode: existing.postal_code };
+    }
     return { locationId: existing.id, address, postalCode };
   }
 
@@ -700,6 +704,12 @@ export async function syncWixServicesToActivities(
         ...(wixDescription ? { description: wixDescription } : {}),
         wix_missing_since: null,
       };
+      // An admin moved this class to another venue (00214); keep their location.
+      if ((existing.wix_locked_fields ?? []).includes('location')) {
+        delete patch.location_id;
+        delete patch.address;
+        delete patch.postal_code;
+      }
       for (const field of existing.wix_locked_fields ?? []) {
         if (VENDOR_OVERRIDABLE_WIX_FIELDS.has(field)) {
           delete patch[field];

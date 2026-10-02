@@ -128,6 +128,28 @@ export function refundOutcome(i: {
   return { status: 'not_refunded', via: null, note: 'Paid, but no make-up token or refund was found' };
 }
 
+/**
+ * What would happen if a live booking were cancelled, from the class's cancellation settings (a session can
+ * override its class). Shown in the admin so you can see the refund terms before anyone cancels. Null for a
+ * manual booking, which has no parent account behind it.
+ */
+export type RefundPolicy = { text: string; note: string | null };
+export function refundPolicy(i: {
+  payVia: 'amount' | 'credit' | 'token' | 'free' | 'unpaid' | 'manual';
+  allowCancellation: boolean | null; refundMode: 'refund' | 'none' | null; cutoffHours: number | null;
+}): RefundPolicy | null {
+  if (i.payVia === 'manual') return null;
+  if (i.allowCancellation === false) return { text: "Parents can't cancel this class", note: null };
+  const note = i.cutoffHours != null && i.cutoffHours > 0 ? `Parents can cancel up to ${i.cutoffHours} hour${i.cutoffHours === 1 ? '' : 's'} before the class` : null;
+  if (i.refundMode === 'none') return { text: 'Non-refundable', note };
+  switch (i.payVia) {
+    case 'credit': return { text: 'Credit returned to the package', note };
+    case 'token': return { text: 'Make-up token returned', note };
+    case 'amount': return { text: 'Make-up token issued', note };
+    default: return { text: 'Nothing to refund (nothing was paid)', note };
+  }
+}
+
 // ---- payments -----------------------------------------------------------------------------------
 
 export type EarningRuleInput = {

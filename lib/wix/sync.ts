@@ -114,10 +114,16 @@ async function resolveWixServiceLocation(
 
   const { data: existing } = await admin
     .from('provider_locations')
-    .select('id, name, address, postal_code')
+    .select('id, name, address, postal_code, wix_address_locked')
     .eq('provider_id', providerId)
     .eq('wix_location_id', loc.id)
     .maybeSingle();
+  if (existing?.wix_address_locked) {
+    // An admin corrected this venue's address on purpose (00214): keep theirs, for the venue and for
+    // the classes that copy it, instead of putting Wix's back.
+    cache.set(loc.id, existing.id);
+    return { locationId: existing.id, address: existing.address, postalCode: existing.postal_code };
+  }
   if (existing) {
     // The row was only ever created, never refreshed. A vendor who edits the
     // address in Wix kept the same wix_location_id, so activities.address
@@ -336,6 +342,13 @@ async function syncWixServicesToActivitiesImpl(
       // patch so this sync leaves it alone. Only ever the fields the portal
       // actually offers: a stray value can't be used to stop the reconciler
       // clearing wix_missing_since, or to freeze the service type.
+      // An admin moved this class to another venue (00214); location_id, address and postal_code
+      // stay as they set them.
+      if ((existing.wix_locked_fields ?? []).includes('location')) {
+        delete patch.location_id;
+        delete patch.address;
+        delete patch.postal_code;
+      }
       for (const field of existing.wix_locked_fields ?? []) {
         if (VENDOR_OVERRIDABLE_WIX_FIELDS.has(field)) {
           delete patch[field as keyof typeof patch];

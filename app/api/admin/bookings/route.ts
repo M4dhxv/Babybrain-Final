@@ -126,7 +126,7 @@ export async function GET(request: Request) {
     const body = rows.map((r) => [
       r.parent?.name ?? r.guestName ?? '', r.parent?.email ?? r.guestContact ?? '', r.vendorName ?? '', r.activityTitle ?? '',
       r.sessionAt ?? '', r.bookedAt, r.childCount, r.payVia, r.amount ?? '', r.credits || '', r.tokens || '', r.classPrice ?? '',
-      r.status, r.refund ? `${r.refund.status}${r.refund.via ? ` (${r.refund.via})` : ''}` : '', r.parent?.postal ?? '', r.isManual ? 'yes' : 'no',
+      r.status, r.refund ? `${r.refund.status}${r.refund.via ? ` (${r.refund.via})` : ''}` : r.policy ? `if cancelled: ${r.policy.text}` : '', r.parent?.postal ?? '', r.isManual ? 'yes' : 'no',
     ].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="bookings.csv"' },

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bookingBucket, classifyParent, countsAsParent, isLiveEarning, isManualBooking, isNeverConfirmed, isParentBooking, isTestEmail, refundOutcome,
+  bookingBucket, classifyParent, countsAsParent, isLiveEarning, isManualBooking, isNeverConfirmed, isParentBooking, isTestEmail, refundOutcome, refundPolicy,
   type BookingRuleInput,
 } from './admin-test-rules.ts';
 
@@ -151,4 +151,35 @@ test('refund: paid but nothing was issued is flagged as not refunded', () => {
   const r = refund({ paymentStatus: 'paid' });
   assert.equal(r?.status, 'not_refunded');
   assert.match(r?.note ?? '', /no make-up token/);
+});
+
+const policy = (o: Partial<Parameters<typeof refundPolicy>[0]> = {}) =>
+  refundPolicy({ payVia: 'amount', allowCancellation: true, refundMode: 'refund', cutoffHours: 24, ...o });
+
+test('refund policy: a manual booking has none', () => {
+  assert.equal(policy({ payVia: 'manual' }), null);
+});
+
+test('refund policy: what each payment type gets back if cancelled', () => {
+  assert.equal(policy({ payVia: 'credit' })?.text, 'Credit returned to the package');
+  assert.equal(policy({ payVia: 'token' })?.text, 'Make-up token returned');
+  assert.equal(policy({ payVia: 'amount' })?.text, 'Make-up token issued');
+  assert.match(policy({ payVia: 'free' })?.text ?? '', /Nothing to refund/);
+  assert.match(policy({ payVia: 'unpaid' })?.text ?? '', /Nothing to refund/);
+});
+
+test('refund policy: a class marked non-refundable says so, whatever was used', () => {
+  assert.equal(policy({ payVia: 'credit', refundMode: 'none' })?.text, 'Non-refundable');
+  assert.equal(policy({ payVia: 'amount', refundMode: 'none' })?.text, 'Non-refundable');
+});
+
+test("refund policy: a class parents can't cancel says that first", () => {
+  assert.equal(policy({ allowCancellation: false, refundMode: 'none' })?.text, "Parents can't cancel this class");
+});
+
+test('refund policy: the cutoff is shown when there is one', () => {
+  assert.match(policy({ cutoffHours: 24 })?.note ?? '', /up to 24 hours before/);
+  assert.match(policy({ cutoffHours: 1 })?.note ?? '', /up to 1 hour before/);
+  assert.equal(policy({ cutoffHours: null })?.note, null);
+  assert.equal(policy({ cutoffHours: 0 })?.note, null);
 });

@@ -17,6 +17,7 @@ type BookingRow = {
   payVia: PayVia; amount: number | null; credits: number; tokens: number; classPrice: number | null;
   venue: { name: string | null; address: string | null; postal: string | null } | null;
   refund: { status: 'completed' | 'not_refunded' | 'not_applicable'; via: 'credit' | 'token' | 'cash' | null; note: string | null } | null;
+  policy: { text: string; note: string | null } | null;
   details: {
     seatCount: number; paymentStatus: string; stripePaymentIntent: string | null;
     packageName: string | null; packageCreditsRemaining: number | null; packageCreditsTotal: number | null;
@@ -344,6 +345,10 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                                     {r.refund.via && <> — {r.refund.via === 'credit' ? 'Credit' : r.refund.via === 'token' ? 'Make-up token' : 'Money back'}</>}
                                     {r.refund.note && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{r.refund.note}</div>}
                                   </>)}
+                              {!r.refund && r.policy && field('Refund', <>
+                                <span style={{ color: C.muted }}>If cancelled: </span>{r.policy.text}
+                                {r.policy.note && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{r.policy.note}</div>}
+                              </>)}
                               {field('Policies accepted', r.details.policiesAccepted || dash)}
                               {field('Medical disclosure', r.details.hasMedicalDisclosure ? 'Given (text not shown here)' : 'None')}
                               {field('Booking id', <code style={{ fontSize: 12 }}>{r.id}</code>)}

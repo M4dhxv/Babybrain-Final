@@ -1048,6 +1048,8 @@ export type Database = {
           region: string | null;
           // Set when imported via Settings -> Locations "Fetch from Wix" (00066).
           wix_location_id: string | null;
+          // Admin edited a Wix-linked venue's address on purpose; the Wix sync keeps it (00214).
+          wix_address_locked: boolean;
         };
         Insert: {
           provider_id: string;
@@ -1059,6 +1061,7 @@ export type Database = {
           operating_hours?: Json;
           is_primary?: boolean;
           wix_location_id?: string | null;
+          wix_address_locked?: boolean;
         };
         Update: Partial<Database['public']['Tables']['provider_locations']['Insert']>;
         Relationships: [];

@@ -1004,7 +1004,7 @@ function EditVendorModal({
                   </div>
                   {l.wix_location_id && (
                     <div style={{ marginTop: 8, color: C.pink, fontSize: 12, fontWeight: 700 }}>
-                      Linked to this vendor&apos;s Wix site — Wix is the source of truth here, so an address changed in this editor is put back at the next Wix sync. Change it in Wix.
+                      Linked to this vendor&apos;s Wix site. An address you change here is kept (the Wix sync will not put Wix&apos;s back), but Wix itself still shows the old one.
                     </div>
                   )}
                 </div>

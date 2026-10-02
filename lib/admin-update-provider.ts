@@ -252,6 +252,7 @@ export async function updateProviderWithCatalogue(
     Boolean(input.overridePayoutGate);
 
   let regeocoded = false;
+  let businessMoved = false;
 
   // ---- the business ----
   const patch = input.provider ?? {};
@@ -288,6 +289,7 @@ export async function updateProviderWithCatalogue(
     const addrChanged =
       ('address' in patch && (patch.address ?? null) !== before.address) ||
       ('postal_code' in patch && (patch.postal_code ?? null) !== before.postal_code);
+    businessMoved = addrChanged;
     if (addrChanged) {
       const coords = await geocode([
         patch.postal_code ?? before.postal_code,
@@ -334,6 +336,18 @@ export async function updateProviderWithCatalogue(
   const { data: beforeLocs } = await db.from('provider_locations')
     .select('id, name, address, postal_code, wix_location_id').eq('provider_id', id);
   const beforeLoc = new Map((beforeLocs ?? []).map((x) => [x.id, x as { id: string; name: string; address: string | null; postal_code: string | null; wix_location_id: string | null }]));
+
+  /* A business address change reaches the classes that use the business address, not venues: a
+     venue is its own record. Say so when a venue still carries the old business address, because
+     that is the usual "I moved them and nothing changed" — the venue (and its classes) was never
+     edited. */
+  if (businessMoved) {
+    const stale = (beforeLocs ?? []).filter((v) => v.address && v.address === before.address
+      && !(input.locations ?? []).some((l) => l.id === v.id && l.address !== undefined && (l.address || null) !== v.address));
+    if (stale.length) {
+      warnings.push(`${stale.map((v) => `"${v.name}"`).join(', ')} still ${stale.length === 1 ? 'has' : 'have'} the old business address. A venue is edited on its own, so classes held there keep showing it until the venue's address is changed too.`);
+    }
+  }
   for (const l of input.locations ?? []) {
     if (l._delete && l.id) {
       const { error } = await db.from('provider_locations').delete().eq('id', l.id).eq('provider_id', id);
@@ -352,7 +366,18 @@ export async function updateProviderWithCatalogue(
     if (l.address !== undefined) row.address = l.address || null;
     if (l.postal_code !== undefined) row.postal_code = l.postal_code || null;
     if (l.is_primary !== undefined) row.is_primary = l.is_primary;
+    const was0 = l.id ? beforeLoc.get(l.id) : undefined;
+    const placeMoved = !!was0 && (
+      (l.address !== undefined && (l.address || null) !== was0.address) ||
+      (l.postal_code !== undefined && (l.postal_code || null) !== was0.postal_code));
     if (coords) { row.latitude = coords.lat; row.longitude = coords.lng; }
+    // The old pin belongs to the old place. Keeping it when the new address can't be placed leaves
+    // the map (and the area filter) showing the venue where it used to be; with no pin, search
+    // falls back to the business's own, and the warning above tells the admin.
+    else if (placeMoved) { row.latitude = null; row.longitude = null; }
+    // An admin correcting a venue that mirrors Wix is overruling Wix on purpose: stop the sync
+    // from putting Wix's address back.
+    if (placeMoved && was0?.wix_location_id) row.wix_address_locked = true;
 
     if (l.id) {
       const { error } = await db.from('provider_locations').update(row as never).eq('id', l.id).eq('provider_id', id);
@@ -368,7 +393,7 @@ export async function updateProviderWithCatalogue(
           .eq('location_id', l.id).eq('is_custom_location', false);
         if (count) warnings.push(`${count} class${count === 1 ? '' : 'es'} at "${label}" follow${count === 1 ? 's' : ''} this venue, so ${count === 1 ? 'it shows' : 'they show'} the new address.`);
         if (was.wix_location_id) {
-          warnings.push(`"${label}" is linked to Wix: the next Wix sync will put Wix's address back. Change the address in Wix for it to stick.`);
+          warnings.push(`"${label}" is linked to Wix. Your address is now locked here, so the Wix sync will not put Wix's back; Wix itself still shows the old one.`);
         }
       }
     } else {
@@ -391,10 +416,11 @@ export async function updateProviderWithCatalogue(
     // an actual unpublished->published flip from a resave of an already-live
     // class (which is always allowed regardless of payout status).
     const patchIds = acts.filter((a) => !a._delete).map((a) => a.id);
-    type CurrentActivity = { id: string; title: string; is_published: boolean; external_booking_url: string | null };
+    type CurrentActivity = { id: string; title: string; is_published: boolean; external_booking_url: string | null;
+                             location_id: string | null; wix_service_id: string | null; wix_locked_fields: string[] | null };
     const currentRows: CurrentActivity[] = patchIds.length
       ? ((await db.from('activities')
-          .select('id, title, is_published, external_booking_url')
+          .select('id, title, is_published, external_booking_url, location_id, wix_service_id, wix_locked_fields')
           .in('id', patchIds)).data as unknown as CurrentActivity[] | null) ?? []
       : [];
     const currentById = new Map(currentRows.map((r) => [r.id, r]));
@@ -425,11 +451,23 @@ export async function updateProviderWithCatalogue(
       if (a.description !== undefined) row.description = a.description || '';
       if (a.price !== undefined) row.price = a.price;
       if (a.is_published !== undefined) row.is_published = a.is_published;
-      if (a.image_urls !== undefined) row.image_urls = a.image_urls.map((u) => u.trim()).filter(Boolean);
+      if (a.image_urls !== undefined) {
+        row.image_urls = a.image_urls.map((u) => u.trim()).filter(Boolean);
+        // Parents only see a class's own photos when image_source is 'custom' (otherwise they get the
+        // provider's), so saving photos without flipping it made the change invisible.
+        row.image_source = (row.image_urls as string[]).length ? 'custom' : 'profile';
+      }
       if (a.external_booking_url !== undefined) row.external_booking_url = a.external_booking_url || null;
       if (a.requires_medical_disclosure !== undefined) row.requires_medical_disclosure = a.requires_medical_disclosure;
       if (a.bookings_paused !== undefined) row.bookings_paused = a.bookings_paused;
       if (a.location_id !== undefined) row.location_id = a.location_id || null;
+      // Moving a Wix-linked class to another venue is an admin decision the Wix sync would undo on
+      // its next run (it rewrites location, address and postal code from Wix) unless it is locked.
+      if (cur?.wix_service_id && a.location_id !== undefined && (a.location_id || null) !== cur.location_id
+          && !(cur.wix_locked_fields ?? []).includes('location')) {
+        row.wix_locked_fields = [...(cur.wix_locked_fields ?? []), 'location'];
+        warnings.push(`"${a.title ?? cur.title}" is linked to Wix. Its venue is now locked here, so the Wix sync will not move it back.`);
+      }
       if (a.is_custom_location !== undefined) row.is_custom_location = a.is_custom_location;
       if (a.custom_location_label !== undefined) row.custom_location_label = a.custom_location_label?.trim() || null;
       if (a.category_slug !== undefined) {

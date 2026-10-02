@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAll } from '@/lib/admin-test-data';
 import { loadParents } from '@/lib/admin-parents';
-import { isNeverConfirmed, refundOutcome, type RefundOutcome } from '@/lib/admin-test-rules';
+import { isNeverConfirmed, refundOutcome, refundPolicy, type RefundOutcome, type RefundPolicy } from '@/lib/admin-test-rules';
 
 /**
  * The admin Bookings list. One entry per booking as a parent sees it: a multi-child booking is
@@ -49,6 +49,8 @@ export type AdminBooking = {
   venue: { name: string | null; address: string | null; postal: string | null } | null;
   /** What a cancellation gave back; null unless the booking is cancelled. */
   refund: RefundOutcome | null;
+  /** What WOULD happen if it were cancelled, from the class's settings; null once cancelled or for a manual booking. */
+  policy: RefundPolicy | null;
   details: {
     seatCount: number; paymentStatus: string; stripePaymentIntent: string | null;
     packageName: string | null; packageCreditsRemaining: number | null; packageCreditsTotal: number | null;
@@ -104,14 +106,15 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
     loadParents(admin, fresh),
   ]);
 
-  type Session = { id: string; activity_id: string; starts_at: string; price: number | null; location_id: string | null };
-  type Activity = {
+  type Policy = { allow_cancellation: boolean | null; cancellation_cutoff_hours: number | null; cancellation_refund_mode: 'refund' | 'none' | null };
+  type Session = Policy & { id: string; activity_id: string; starts_at: string; price: number | null; location_id: string | null };
+  type Activity = Policy & {
     id: string; title: string; provider_id: string; price: number | null;
     location_id: string | null; address: string | null; postal_code: string | null;
     is_custom_location: boolean | null; custom_location_label: string | null;
   };
-  const sessions = await byIds<Session>(admin, 'activity_sessions', 'id, activity_id, starts_at, price, location_id', bookings.map((b) => b.session_id));
-  const activities = await byIds<Activity>(admin, 'activities', 'id, title, provider_id, price, location_id, address, postal_code, is_custom_location, custom_location_label', sessions.map((s) => s.activity_id));
+  const sessions = await byIds<Session>(admin, 'activity_sessions', 'id, activity_id, starts_at, price, location_id, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode', bookings.map((b) => b.session_id));
+  const activities = await byIds<Activity>(admin, 'activities', 'id, title, provider_id, price, location_id, address, postal_code, is_custom_location, custom_location_label, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode', sessions.map((s) => s.activity_id));
   const providerIds = [...activities.map((a) => a.provider_id), ...bookings.map((b) => b.provider_id ?? '')];
   const [providers, locations, children, purchases, tokens] = await Promise.all([
     byIds<{ id: string; business_name: string; is_test: boolean | null }>(admin, 'providers', 'id, business_name, is_test', providerIds),
@@ -197,6 +200,12 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
       tokens: tokenCount,
       classPrice,
       venue,
+      policy: status === 'cancelled' ? null : refundPolicy({
+        payVia,
+        allowCancellation: session?.allow_cancellation ?? activity?.allow_cancellation ?? null,
+        refundMode: session?.cancellation_refund_mode ?? activity?.cancellation_refund_mode ?? null,
+        cutoffHours: session?.cancellation_cutoff_hours ?? activity?.cancellation_cutoff_hours ?? null,
+      }),
       refund: refundOutcome({
         status, paymentStatus: first.payment_status, packagePurchaseId: seats.find((s) => s.package_purchase_id)?.package_purchase_id ?? null,
         hasCompensationToken: seats.some((s) => compensated.has(s.id)), cancelRefundMode: seats.map((s) => s.cancel_refund_mode).find(Boolean) ?? null,

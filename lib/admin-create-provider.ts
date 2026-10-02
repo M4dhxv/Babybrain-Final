@@ -329,6 +329,7 @@ export async function createProviderWithCatalogue(input: NewProvider): Promise<C
         address: input.address?.trim() || null,
         postal_code: input.postal_code?.trim() || null,
         image_urls: (a.image_urls ?? []).map((u) => u.trim()).filter(Boolean),
+        image_source: (a.image_urls ?? []).some((u) => u.trim()) ? ('custom' as const) : ('profile' as const),
         is_published: a.is_published ?? true,
         requires_medical_disclosure: a.requires_medical_disclosure ?? false,
         is_custom_location: a.is_custom_location ?? false,
