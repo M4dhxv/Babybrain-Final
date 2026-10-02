@@ -73,8 +73,24 @@ export function useProviderQuery<T>(
 
     (async () => {
       try {
-        const fresh = await fetcherRef.current();
+        // A cold load can lose a race with the token refresh and come back
+        // failed; that used to leave an empty page until a manual refresh.
+        // Retry quietly (loading stays true) before surfacing an error.
+        let fresh: T | undefined;
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            fresh = await fetcherRef.current();
+            lastErr = undefined;
+            break;
+          } catch (err) {
+            lastErr = err;
+            if (!alive || runId !== runIdRef.current) return;
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+          }
+        }
         if (!alive || runId !== runIdRef.current) return;
+        if (lastErr !== undefined) throw lastErr;
         cacheSet(key, fresh);
         setData(fresh);
         setError(undefined);

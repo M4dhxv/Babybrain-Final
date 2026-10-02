@@ -71,7 +71,37 @@ export function setCachedSubscription(userId: string, sub: CachedSubscription): 
 export function clearCachedSubscription(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('bb:vendor-provider');
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Last-known business (provider row + the user's role) per user id, so a hard
+ * refresh can render the portal and start the dashboard's data reads at once
+ * instead of waiting for session + membership lookups to finish first. Display
+ * seed only: the live lookup always overwrites it, RLS still governs every
+ * read, and it is cleared on sign-out with the subscription.
+ */
+const PROVIDER_KEY = 'bb:vendor-provider';
+
+export function getCachedProvider<P>(userId: string | undefined): { provider: P; role: string } | null {
+  if (!userId) return null;
+  try {
+    const raw = localStorage.getItem(PROVIDER_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as { userId?: string; at?: number; provider?: P; role?: string };
+    if (s.userId !== userId || !s.provider || !s.role) return null;
+    if (typeof s.at !== 'number' || Date.now() - s.at > MAX_AGE_MS) return null;
+    return { provider: s.provider, role: s.role };
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedProvider(userId: string, provider: unknown, role: string): void {
+  try {
+    localStorage.setItem(PROVIDER_KEY, JSON.stringify({ userId, at: Date.now(), provider, role }));
+  } catch { /* non-fatal */ }
 }

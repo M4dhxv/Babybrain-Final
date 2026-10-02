@@ -124,7 +124,7 @@ export default function DashboardPage() {
   // percentage. For a vendor with a long history that was, on its own, the
   // slowest query on the page and it only gets slower over time. A recent
   // sample of 200 is plenty to represent an attendance rate.
-  const { data, loading, refreshing } = useProviderQuery<DashboardData>(
+  const { data, loading, refreshing, error, refetch } = useProviderQuery<DashboardData>(
     provider ? `dashboard:${provider.id}` : null,
     async () => {
       const nowIso = new Date().toISOString();
@@ -145,6 +145,12 @@ export default function DashboardPage() {
         supabase.from('bookings').select('id').eq('provider_id', provider!.id).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       ]);
 
+      // A failed read comes back as `{ error }` with empty data, not a throw —
+      // swallowing it rendered (and cached) an empty dashboard that only a
+      // manual refresh fixed. Throwing hands it to the hook's retry instead.
+      const firstErr = ovRes.error ?? actsRes.error ?? recentRes.error;
+      if (firstErr) throw firstErr;
+
       const overview = (ovRes.data?.[0] as ProviderOverview) ?? null;
       const acts = actsRes.data;
       const locs = locsRes.data;
@@ -154,12 +160,32 @@ export default function DashboardPage() {
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
 
+      const sampleBks = sampleBksRes.data ?? [];
+
       // The RPC doesn't return a location, so resolve it from each booking's
       // session (falling back to the activity's own location) — no migration.
+      // Runs in this wave, not after it, so it adds no round trip.
       const recentIds = (recentRes.data ?? []).map((r) => r.booking_id);
-      const { data: recentLocRows } = recentIds.length
-        ? await supabase.from('bookings').select('id, activity_sessions(location_id)').in('id', recentIds)
-        : { data: [] as { id: string; activity_sessions: { location_id: string | null } | { location_id: string | null }[] | null }[] };
+      const [sessRes, attRes, recentLocRes] = await Promise.all([
+        ids.length
+          ? supabase
+              .from('activity_sessions')
+              .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
+              .in('activity_id', ids)
+              .neq('status', 'cancelled')
+              .gte('starts_at', nowIso)
+              .lte('starts_at', in90dIso)
+              .order('starts_at')
+              .limit(60)
+          : Promise.resolve({ data: [] as { id: string; activity_id: string; starts_at: string; capacity: number | null; location_id: string | null; wix_remaining_capacity: number | null; wix_slot_key: string | null }[] }),
+        sampleBks.length
+          ? supabase.from('attendance').select('status').in('booking_id', sampleBks.map((b) => b.id))
+          : Promise.resolve({ data: [] as { status: string }[] }),
+        recentIds.length
+          ? supabase.from('bookings').select('id, activity_sessions(location_id)').in('id', recentIds)
+          : Promise.resolve({ data: [] as { id: string; activity_sessions: { location_id: string | null } | { location_id: string | null }[] | null }[] }),
+      ]);
+      const recentLocRows = recentLocRes.data;
       const recentLocOf = new Map<string, string | null>((recentLocRows ?? []).map((b) => {
         const s = Array.isArray(b.activity_sessions) ? b.activity_sessions[0] : b.activity_sessions;
         return [b.id, s?.location_id ?? null];
@@ -180,24 +206,6 @@ export default function DashboardPage() {
         };
       });
 
-      const sampleBks = sampleBksRes.data ?? [];
-
-      const [sessRes, attRes] = await Promise.all([
-        ids.length
-          ? supabase
-              .from('activity_sessions')
-              .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
-              .in('activity_id', ids)
-              .neq('status', 'cancelled')
-              .gte('starts_at', nowIso)
-              .lte('starts_at', in90dIso)
-              .order('starts_at')
-              .limit(60)
-          : Promise.resolve({ data: [] as { id: string; activity_id: string; starts_at: string; capacity: number | null; location_id: string | null; wix_remaining_capacity: number | null; wix_slot_key: string | null }[] }),
-        sampleBks.length
-          ? supabase.from('attendance').select('status').in('booking_id', sampleBks.map((b) => b.id))
-          : Promise.resolve({ data: [] as { status: string }[] }),
-      ]);
 
       const sess = sessRes.data ?? [];
       const sessIds = sess.map((s) => s.id);
@@ -368,7 +376,15 @@ export default function DashboardPage() {
             this entirely — the cached figures are already on screen. */}
         {loading && <DashboardSkeleton />}
 
-        {!loading && <>
+        {!loading && !data && !!error && (
+          <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+            <div className="font-semibold text-gray-900">We couldn&rsquo;t load your dashboard</div>
+            <p className="mt-1 text-sm text-gray-500">The connection dropped while fetching it.</p>
+            <button onClick={refetch} className="mt-4 rounded-lg bg-[#FA4D8D] px-4 py-2 text-sm font-semibold text-white">Try again</button>
+          </div>
+        )}
+
+        {!loading && !(!data && !!error) && <>
         {/* Stats Cards */}
         <div className="grid grid-cols-2 gap-4 mb-6 sm:grid-cols-3 lg:grid-cols-5">
           {statsCards.map((stat, i) => (

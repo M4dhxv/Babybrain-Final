@@ -18,6 +18,7 @@ import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { cacheGet, cacheSet } from '@/lib/queryCache';
 import { apiGet, apiPost, apiDelete, ApiError } from '@/lib/api';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { useAuth } from '@/auth/AuthProvider';
@@ -112,6 +113,13 @@ type SessionOpt = {
   // listed while the Cancelled / All filter is on, so those bookings stay
   // reachable instead of vanishing with the session.
   cancelled?: boolean;
+};
+type PickerSnapshot = {
+  opts: SessionOpt[];
+  titles: Record<string, string>;
+  wixType: Record<string, string | null>;
+  requiresMedical: Record<string, boolean>;
+  sessionAct: Record<string, string>;
 };
 
 // A booking made directly on the vendor's own Wix site rather than through
@@ -513,6 +521,27 @@ export default function BookingsPage() {
   // Load this provider's upcoming sessions (RLS-scoped via activities join).
   useEffect(() => {
     if (!provider) return;
+    // Stale-while-revalidate: revisiting the tab paints the last session
+    // picker instantly (no full-page loader) while the live read below runs
+    // and replaces it. The live pass still owns the ?session= deep-link
+    // cleanup and the date-filter pinning.
+    const pickerKey = `bk-picker:${provider.id}`;
+    const warm = cacheGet<PickerSnapshot>(pickerKey);
+    if (warm) {
+      const { opts: wOpts, titles, wixType, requiresMedical, sessionAct } = warm.data;
+      const wDayStart = sgStartOfDayIso(sgTodayKey());
+      setActivityWixType(wixType);
+      setActivityRequiresMedical(requiresMedical);
+      setSessionActivity(sessionAct);
+      setActivityTitles(titles);
+      setSessions(wOpts);
+      const wRequested = searchParams.get('session');
+      const wPreselect = wRequested && wOpts.some((o) => o.id === wRequested) ? wRequested : '';
+      const wStashed = filterStash.sessionId && wOpts.some((o) => o.id === filterStash.sessionId) ? filterStash.sessionId : '';
+      const wFirst = wOpts.find((o) => o.starts_at >= wDayStart && !o.cancelled);
+      setSessionId((cur) => wPreselect || cur || wStashed || wFirst?.id || wOpts[wOpts.length - 1]?.id || '');
+      setLoading(false);
+    }
     (async () => {
       const { data: allActs } = await supabase
         .from('activities')
@@ -630,6 +659,13 @@ export default function BookingsPage() {
         }
       }
       setSessionActivity(Object.fromEntries(sess.map((s) => [s.id, s.activity_id])));
+      cacheSet(pickerKey, {
+        opts,
+        titles: Object.fromEntries(map),
+        wixType: Object.fromEntries((acts ?? []).map((a) => [a.id, a.wix_service_type])),
+        requiresMedical: Object.fromEntries((acts ?? []).map((a) => [a.id, !!a.requires_medical_disclosure])),
+        sessionAct: Object.fromEntries(sess.map((s) => [s.id, s.activity_id])),
+      });
       // Set together with the sessions (not earlier) so the date-filter fetch
       // below can't resolve first and then be overwritten by this.
       setActivityTitles(Object.fromEntries(map));
@@ -692,12 +728,29 @@ export default function BookingsPage() {
   // to it, leaving rosterLoading (sessionId !== rosterSessionId) stuck true
   // forever since nothing would trigger another load for that id again.
   const latestRosterRequestRef = useRef('');
+  const shownRosterRef = useRef('');
   async function loadRoster(id: string) {
     if (!id) return;
     latestRosterRequestRef.current = id;
+    // Stale-while-revalidate: a session opened before paints its last roster
+    // instantly, then the live read below replaces it. Only when switching TO
+    // a session — a reload of the one already on screen (after a mutation)
+    // must not flash older rows over fresher ones.
+    if (shownRosterRef.current !== id) {
+      const hit = cacheGet<{ rows: RosterRow[]; tokens: Record<string, string> }>(`bk-roster:${id}`);
+      if (hit) {
+        setRoster(hit.data.rows);
+        setTokenStatus(hit.data.tokens);
+        setRosterSessionId(id);
+        setSelected(0);
+        setAttDraft({});
+        shownRosterRef.current = id;
+      }
+    }
     const { data } = await supabase.rpc('provider_session_roster', { p_session_id: id });
     if (latestRosterRequestRef.current !== id) return; // superseded by a newer request
     const rows = (data as RosterRow[]) ?? [];
+    shownRosterRef.current = id;
     setRoster(rows);
     setRosterSessionId(id);
     setSelected(0);
@@ -712,8 +765,10 @@ export default function BookingsPage() {
       const map: Record<string, string> = {};
       (toks ?? []).forEach((t) => { if (t.origin_booking_id) map[t.origin_booking_id] = t.status; });
       setTokenStatus(map);
+      cacheSet(`bk-roster:${id}`, { rows, tokens: map });
     } else {
       setTokenStatus({});
+      cacheSet(`bk-roster:${id}`, { rows, tokens: {} });
     }
   }
   useEffect(() => { loadRoster(sessionId); /* eslint-disable-next-line */ }, [sessionId]);

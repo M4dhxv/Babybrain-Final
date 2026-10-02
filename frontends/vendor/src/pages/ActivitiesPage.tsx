@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { cacheGet, cacheSet } from '@/lib/queryCache';
 import { resizeImage } from '@/lib/resizeImage';
 import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
@@ -118,6 +119,13 @@ const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aS
 /** Matches ageLabel-adjacent formatting the parent app uses on the booking
  *  and confirmation pages ("6m – 2.5y"), reused verbatim by the preview. */
 type PreviewSession = { id: string; starts_at: string; ends_at: string; capacity: number | null; price: number | null; location_id: string | null };
+type ActivitiesSnapshot = {
+  activities: Activity[];
+  categories: ActivityCategory[];
+  locations: { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[];
+  sessionCounts: Record<string, number>;
+  bookingTotals: Record<string, number>;
+};
 type PreviewPolicy = { id: string; title: string; body: string; document_url: string | null; required: boolean };
 type PreviewPackage = { id: string; name: string; credits: number; price_cents: number };
 
@@ -1052,9 +1060,24 @@ export default function ActivitiesPage() {
     load();
   }
 
+  const hasLoadedRef = useRef(false);
   async function load() {
     if (!provider) return;
-    setLoading(true);
+    // Stale-while-revalidate: a revisit paints the last list instantly and the
+    // read below swaps in fresh data. A reload after an edit (list already on
+    // screen) no longer blanks to the loader either — only a cold first load does.
+    const cacheKey = `activities:${provider.id}`;
+    const warm = cacheGet<ActivitiesSnapshot>(cacheKey);
+    if (warm && !hasLoadedRef.current) {
+      setActivities(warm.data.activities);
+      setCategories(warm.data.categories);
+      setLocations(warm.data.locations);
+      setSessionCounts(warm.data.sessionCounts);
+      setBookingTotals(warm.data.bookingTotals);
+      setLoading(false);
+    } else if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     const [{ data: acts }, { data: cats }, { data: locs }] = await Promise.all([
       supabase.from('activities').select('*').eq('provider_id', provider.id).order('updated_at', { ascending: false }),
       supabase.from('activity_categories').select('*').order('sort_order'),
@@ -1062,7 +1085,8 @@ export default function ActivitiesPage() {
     ]);
     setActivities(acts ?? []);
     setCategories(cats ?? []);
-    setLocations((locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[]);
+    const locRows = (locs ?? []) as { id: string; name: string; address: string | null; postal_code: string | null; latitude: number | null; longitude: number | null }[];
+    setLocations(locRows);
 
 
     // Upcoming session counts + total booking counts per activity.
@@ -1091,10 +1115,13 @@ export default function ActivitiesPage() {
         });
       }
       setBookingTotals(totals);
+      cacheSet(cacheKey, { activities: acts ?? [], categories: cats ?? [], locations: locRows, sessionCounts: counts, bookingTotals: totals });
     } else {
       setSessionCounts({});
       setBookingTotals({});
+      cacheSet(cacheKey, { activities: acts ?? [], categories: cats ?? [], locations: locRows, sessionCounts: {}, bookingTotals: {} });
     }
+    hasLoadedRef.current = true;
     setLoading(false);
   }
 

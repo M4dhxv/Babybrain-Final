@@ -34,10 +34,25 @@ export interface CacheHit<T> {
 
 /** The cached value for `key`, or undefined if absent or older than HARD_CAP. */
 export function cacheGet<T>(key: string): CacheHit<T> | undefined {
-  const e = store.get(key);
+  let e = store.get(key);
+  if (!e && isPersisted(key)) {
+    // A hard refresh wipes the Map; the dashboard is the landing page, so its
+    // last result is kept in localStorage and hydrated here. Still always
+    // followed by a live refetch, so it is only ever shown a beat early.
+    try {
+      const raw = localStorage.getItem(PERSIST_PREFIX + key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Entry;
+        if (typeof parsed.ts === 'number' && Date.now() - parsed.ts <= PERSIST_CAP_MS) {
+          e = parsed;
+          store.set(key, parsed);
+        }
+      }
+    } catch { /* storage blocked or corrupt — behave as a miss */ }
+  }
   if (!e) return undefined;
   const age = Date.now() - e.ts;
-  if (age > HARD_CAP_MS) {
+  if (age > (isPersisted(key) ? PERSIST_CAP_MS : HARD_CAP_MS)) {
     store.delete(key);
     return undefined;
   }
@@ -45,12 +60,27 @@ export function cacheGet<T>(key: string): CacheHit<T> | undefined {
 }
 
 export function cacheSet(key: string, data: unknown): void {
-  store.set(key, { data, ts: Date.now() });
+  const entry = { data, ts: Date.now() };
+  store.set(key, entry);
+  if (isPersisted(key)) {
+    try { localStorage.setItem(PERSIST_PREFIX + key, JSON.stringify(entry)); } catch { /* quota / blocked — in-memory copy still works */ }
+  }
 }
+
+/** Keys that survive a hard refresh (display-only, always revalidated). */
+const PERSIST_PREFIX = 'bb:vq:';
+const PERSIST_CAP_MS = 6 * 60 * 60_000;
+const isPersisted = (key: string) => key.startsWith('dashboard:');
 
 /** Drop entries whose key starts with `prefix` (or everything when omitted).
  *  Called on sign-out so the next account on this browser starts clean. */
 export function cacheInvalidate(prefix?: string): void {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(PERSIST_PREFIX) && (prefix == null || k.slice(PERSIST_PREFIX.length).startsWith(prefix))) localStorage.removeItem(k);
+    }
+  } catch { /* ignore */ }
   if (prefix == null) {
     store.clear();
     return;

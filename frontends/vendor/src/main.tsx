@@ -11,6 +11,7 @@ import {
   hadRouteError,
 } from './components/RouteErrorBoundary'
 import { ChunkProgress } from './components/ChunkProgress'
+import { prefetchRoute } from './lib/prefetch'
 
 // A stale chunk can also blow up OUTSIDE React's render path — a deferred
 // prefetch, a dynamic import() in an event handler, Vite's own preloader. The
@@ -54,6 +55,16 @@ if ('requestIdleCallback' in window) {
 } else {
   setTimeout(startAnalytics, 2000)
 }
+
+// Start downloading the page the URL points at NOW. Its lazy chunk is otherwise
+// only requested once the auth gate lets the route render, i.e. strictly after
+// the session + business lookups — so on a cold load the download and the
+// lookups ran back to back instead of side by side.
+prefetchRoute(window.location.hash.replace(/^#/, '').split('?')[0] || '/')
+try {
+  // A returning vendor opening the bare URL is routed on to the dashboard.
+  if (localStorage.getItem('bb:vendor-provider')) prefetchRoute('/dashboard')
+} catch { /* storage blocked */ }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

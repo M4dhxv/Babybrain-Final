@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase, AUTH_STORAGE_KEY } from '@/lib/supabase';
 import { identifyUser, resetUser } from '@/lib/posthog';
 import type { Provider, ProviderRole, SubscriptionPlan } from '@/lib/database.types';
-import { getCachedSubscription, setCachedSubscription, clearCachedSubscription } from '@/lib/providerCache';
+import { getCachedSubscription, setCachedSubscription, clearCachedSubscription, getCachedProvider, setCachedProvider } from '@/lib/providerCache';
 import { cacheInvalidate } from '@/lib/queryCache';
 import { disconnectChat } from '@/lib/chat';
 
@@ -97,8 +97,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // full-screen boot loader. `getSession()` in the effect still confirms it.
   const initialSession = useMemo(readStoredSession, []);
   const [session, setSession] = useState<Session | null>(initialSession);
-  const [provider, setProvider] = useState<Provider | null>(null);
-  const [role, setRole] = useState<ProviderRole | null>(null);
+  const initialProvider = useMemo(() => getCachedProvider<Provider>(initialSession?.user.id), [initialSession]);
+  const [provider, setProvider] = useState<Provider | null>(initialProvider?.provider ?? null);
+  const [role, setRole] = useState<ProviderRole | null>((initialProvider?.role as ProviderRole | undefined) ?? null);
   // Seed the plan from the last-known value for THIS user, so the sidebar plan
   // card and the Pro/paid tab locks paint correct on the first frame instead of
   // flashing "free" while the provider lookup is in flight. The live query
@@ -164,7 +165,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       setSubscription(resolved);
       // Persist for the next cold load's first paint (see providerCache.ts).
-      if (userId) setCachedSubscription(userId, resolved);
+      if (userId) {
+        setCachedSubscription(userId, resolved);
+        setCachedProvider(userId, prov, member.role as string);
+      }
     } else {
       setProvider(null);
       setRole(null);
