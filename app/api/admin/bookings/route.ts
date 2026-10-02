@@ -122,11 +122,11 @@ export async function GET(request: Request) {
   rows.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
 
   if (sp.get('format') === 'csv') {
-    const head = ['Name', 'Email', 'Vendor', 'Activity', 'Class date', 'Booked on', 'Children', 'Paid via', 'Amount (SGD)', 'Credits', 'Make-up tokens', 'Class price', 'Status', 'Parent postal code', 'Manual booking'];
+    const head = ['Name', 'Email', 'Vendor', 'Activity', 'Class date', 'Booked on', 'Children', 'Paid via', 'Amount (SGD)', 'Credits', 'Make-up tokens', 'Class price', 'Status', 'Refund', 'Parent postal code', 'Manual booking'];
     const body = rows.map((r) => [
       r.parent?.name ?? r.guestName ?? '', r.parent?.email ?? r.guestContact ?? '', r.vendorName ?? '', r.activityTitle ?? '',
       r.sessionAt ?? '', r.bookedAt, r.childCount, r.payVia, r.amount ?? '', r.credits || '', r.tokens || '', r.classPrice ?? '',
-      r.status, r.parent?.postal ?? '', r.isManual ? 'yes' : 'no',
+      r.status, r.refund ? `${r.refund.status}${r.refund.via ? ` (${r.refund.via})` : ''}` : '', r.parent?.postal ?? '', r.isManual ? 'yes' : 'no',
     ].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="bookings.csv"' },

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAll } from '@/lib/admin-test-data';
 import { loadParents } from '@/lib/admin-parents';
-import { isNeverConfirmed } from '@/lib/admin-test-rules';
+import { isNeverConfirmed, refundOutcome, type RefundOutcome } from '@/lib/admin-test-rules';
 
 /**
  * The admin Bookings list. One entry per booking as a parent sees it: a multi-child booking is
@@ -47,6 +47,8 @@ export type AdminBooking = {
   /** The class's list price, whatever way it was paid. */
   classPrice: number | null;
   venue: { name: string | null; address: string | null; postal: string | null } | null;
+  /** What a cancellation gave back; null unless the booking is cancelled. */
+  refund: RefundOutcome | null;
   details: {
     seatCount: number; paymentStatus: string; stripePaymentIntent: string | null;
     packageName: string | null; packageCreditsRemaining: number | null; packageCreditsTotal: number | null;
@@ -103,17 +105,21 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
   ]);
 
   type Session = { id: string; activity_id: string; starts_at: string; price: number | null; location_id: string | null };
-  type Activity = { id: string; title: string; provider_id: string; price: number | null };
+  type Activity = {
+    id: string; title: string; provider_id: string; price: number | null;
+    location_id: string | null; address: string | null; postal_code: string | null;
+    is_custom_location: boolean | null; custom_location_label: string | null;
+  };
   const sessions = await byIds<Session>(admin, 'activity_sessions', 'id, activity_id, starts_at, price, location_id', bookings.map((b) => b.session_id));
-  const activities = await byIds<Activity>(admin, 'activities', 'id, title, provider_id, price', sessions.map((s) => s.activity_id));
+  const activities = await byIds<Activity>(admin, 'activities', 'id, title, provider_id, price, location_id, address, postal_code, is_custom_location, custom_location_label', sessions.map((s) => s.activity_id));
   const providerIds = [...activities.map((a) => a.provider_id), ...bookings.map((b) => b.provider_id ?? '')];
   const [providers, locations, children, purchases, tokens] = await Promise.all([
     byIds<{ id: string; business_name: string; is_test: boolean | null }>(admin, 'providers', 'id, business_name, is_test', providerIds),
-    byIds<{ id: string; name: string | null; address: string | null; postal_code: string | null }>(admin, 'provider_locations', 'id, name, address, postal_code', sessions.map((s) => s.location_id ?? '')),
+    byIds<{ id: string; name: string | null; address: string | null; postal_code: string | null }>(admin, 'provider_locations', 'id, name, address, postal_code', [...sessions.map((s) => s.location_id ?? ''), ...activities.map((a) => a.location_id ?? '')]),
     byIds<{ id: string; name: string }>(admin, 'children', 'id, name', bookings.map((b) => b.child_id ?? '')),
     byIds<{ id: string; package_id: string; credits_total: number; credits_remaining: number }>(admin, 'package_purchases', 'id, package_id, credits_total, credits_remaining', bookings.map((b) => b.package_purchase_id ?? '')),
-    fetchAll<{ redeemed_booking_id: string | null }>((f, t) =>
-      admin.from('make_up_tokens').select('redeemed_booking_id').not('redeemed_booking_id', 'is', null).range(f, t)),
+    fetchAll<{ origin_booking_id: string | null; redeemed_booking_id: string | null }>((f, t) =>
+      admin.from('make_up_tokens').select('origin_booking_id, redeemed_booking_id').range(f, t)),
   ]);
   const packages = await byIds<{ id: string; name: string }>(admin, 'packages', 'id, name', purchases.map((p) => p.package_id));
 
@@ -125,7 +131,9 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
   const purchaseBy = new Map(purchases.map((p) => [p.id, p]));
   const packageBy = new Map(packages.map((p) => [p.id, p.name]));
   const parentBy = new Map(parents.map((p) => [p.id, p]));
-  const redeemed = new Set(tokens.map((t) => t.redeemed_booking_id as string));
+  const redeemed = new Set(tokens.filter((t) => t.redeemed_booking_id).map((t) => t.redeemed_booking_id as string));
+  // Bookings that a make-up token was issued for when they were cancelled.
+  const compensated = new Set(tokens.filter((t) => t.origin_booking_id).map((t) => t.origin_booking_id as string));
 
   // One entry per booking group; a booking with no group is its own entry.
   const groups = new Map<string, BookingRow[]>();
@@ -142,7 +150,16 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
     const provider = providerBy.get(activity?.provider_id ?? first.provider_id ?? '');
     const parent = first.user_id ? parentBy.get(first.user_id) : undefined;
     const isManual = !first.user_id;
-    const loc = session?.location_id ? locationBy.get(session.location_id) : undefined;
+    // Where the class is held. Most venues are stored on the activity, not the session, so look in order:
+    // the session's own venue, the activity's venue, a private-session label (the customer's own address),
+    // and finally the address text saved on the activity.
+    const sessionLoc = session?.location_id ? locationBy.get(session.location_id) : undefined;
+    const activityLoc = activity?.location_id ? locationBy.get(activity.location_id) : undefined;
+    const loc = sessionLoc ?? activityLoc;
+    const venue: AdminBooking['venue'] = loc ? { name: loc.name, address: loc.address, postal: loc.postal_code }
+      : activity?.is_custom_location ? { name: activity.custom_location_label ?? 'Private session at a custom location', address: null, postal: null }
+      : activity?.address ? { name: null, address: activity.address, postal: activity.postal_code }
+      : null;
 
     const paidSeats = seats.filter((s) => s.payment_status === 'paid' && Number(s.amount ?? 0) > 0);
     const credits = seats.filter((s) => s.package_purchase_id).length;
@@ -179,7 +196,11 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
       credits: payVia === 'credit' || payVia === 'token' ? credits : 0,
       tokens: tokenCount,
       classPrice,
-      venue: loc ? { name: loc.name, address: loc.address, postal: loc.postal_code } : null,
+      venue,
+      refund: refundOutcome({
+        status, paymentStatus: first.payment_status, packagePurchaseId: seats.find((s) => s.package_purchase_id)?.package_purchase_id ?? null,
+        hasCompensationToken: seats.some((s) => compensated.has(s.id)), cancelRefundMode: seats.map((s) => s.cancel_refund_mode).find(Boolean) ?? null,
+      }),
       details: {
         seatCount: seats.length,
         paymentStatus: first.payment_status,

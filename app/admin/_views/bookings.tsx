@@ -16,6 +16,7 @@ type BookingRow = {
   sessionAt: string | null; bookedAt: string; status: string; childCount: number; childNames: string[];
   payVia: PayVia; amount: number | null; credits: number; tokens: number; classPrice: number | null;
   venue: { name: string | null; address: string | null; postal: string | null } | null;
+  refund: { status: 'completed' | 'not_refunded' | 'not_applicable'; via: 'credit' | 'token' | 'cash' | null; note: string | null } | null;
   details: {
     seatCount: number; paymentStatus: string; stripePaymentIntent: string | null;
     packageName: string | null; packageCreditsRemaining: number | null; packageCreditsTotal: number | null;
@@ -218,7 +219,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
             <label style={lab}>Parent postal code starts with
               <input value={f.postal} onChange={set('postal')} style={input()} placeholder="e.g. 52" />
             </label>
-            <MultiSelect label="Status" placeholder="Any status" options={STATUS_OPTIONS} selected={csvIds(f.status === 'active' ? 'confirmed,completed' : f.status)} onChange={setIds('status')} />
+            <MultiSelect label="Status" placeholder="Any status" options={STATUS_OPTIONS} selected={csvIds(f.status === 'active' ? 'confirmed,completed' : f.status)} onChange={setIds('status')}  width="fill" />
             <label style={lab}>Test data
               {sel('test', [['hide', 'Hide (default)'], ['show', 'Include'], ['only', 'Only test data']])}
             </label>
@@ -235,8 +236,8 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
       {f.hide_abandoned === '1' && (
         <div style={{ marginTop: 12 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 6px 5px 12px', borderRadius: 999, background: C.panel2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12, fontWeight: 700 }}>
-            Hiding bookings cancelled before payment (as Metrics counts)
-            <button type="button" aria-label="Show bookings cancelled before payment" title="Show them"
+            Hiding bookings cancelled before confirmation (as Metrics counts)
+            <button type="button" aria-label="Show bookings cancelled before confirmation" title="Show them"
               onClick={() => { setF((p) => ({ ...p, hide_abandoned: '' })); setPage(1); }}
               style={{ border: 0, borderRadius: 999, width: 20, height: 20, lineHeight: '20px', padding: 0, cursor: 'pointer', background: C.border, color: C.text, fontSize: 12, fontWeight: 800 }}>
               ✕
@@ -336,6 +337,13 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                               {field('Make-up tokens used', r.tokens ? r.tokens : dash)}
                               {field('Stripe payment', r.details.stripePaymentIntent ? <code style={{ fontSize: 12 }}>{r.details.stripePaymentIntent}</code> : dash)}
                               {r.status === 'cancelled' && field('Cancellation', [r.details.cancelReason, r.details.cancelRefundMode ? `refund: ${r.details.cancelRefundMode}` : null].filter(Boolean).join(' · ') || dash)}
+                              {r.refund && field('Refund', r.refund.status === 'not_applicable'
+                                ? <span style={{ color: C.muted }}>— {r.refund.note}</span>
+                                : <>
+                                    <Badge tone={r.refund.status === 'completed' ? 'green' : 'amber'}>{r.refund.status === 'completed' ? 'Completed' : 'Not refunded'}</Badge>
+                                    {r.refund.via && <> — {r.refund.via === 'credit' ? 'Credit' : r.refund.via === 'token' ? 'Make-up token' : 'Money back'}</>}
+                                    {r.refund.note && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{r.refund.note}</div>}
+                                  </>)}
                               {field('Policies accepted', r.details.policiesAccepted || dash)}
                               {field('Medical disclosure', r.details.hasMedicalDisclosure ? 'Given (text not shown here)' : 'None')}
                               {field('Booking id', <code style={{ fontSize: 12 }}>{r.id}</code>)}

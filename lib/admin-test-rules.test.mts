@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bookingBucket, classifyParent, countsAsParent, isLiveEarning, isManualBooking, isNeverConfirmed, isParentBooking, isTestEmail,
+  bookingBucket, classifyParent, countsAsParent, isLiveEarning, isManualBooking, isNeverConfirmed, isParentBooking, isTestEmail, refundOutcome,
   type BookingRuleInput,
 } from './admin-test-rules.ts';
 
@@ -110,4 +110,45 @@ test('live earnings leave out test vendors, Stripe test mode and flagged transac
   assert.equal(isLiveEarning({ vendorIsTest: true }), false);
   assert.equal(isLiveEarning({ vendorIsTest: false, livemode: false }), false);
   assert.equal(isLiveEarning({ vendorIsTest: false, flaggedTest: true }), false);
+});
+
+const refund = (o: Partial<Parameters<typeof refundOutcome>[0]> = {}) =>
+  refundOutcome({ status: 'cancelled', paymentStatus: 'none', packagePurchaseId: null, hasCompensationToken: false, cancelRefundMode: null, ...o });
+
+test('refund: only a cancelled booking has one', () => {
+  for (const status of ['confirmed', 'pending', 'completed', 'waitlisted']) assert.equal(refund({ status, paymentStatus: 'paid' }), null, status);
+});
+
+test('refund: a package booking gets its credit back', () => {
+  assert.deepEqual(refund({ packagePurchaseId: 'p1' }), { status: 'completed', via: 'credit', note: null });
+});
+
+test('refund: a cash booking gets a make-up token', () => {
+  assert.deepEqual(refund({ paymentStatus: 'paid', hasCompensationToken: true }), { status: 'completed', via: 'token', note: null });
+});
+
+test('refund: a package booking whose pack expired gets a make-up token instead', () => {
+  assert.equal(refund({ packagePurchaseId: 'p1', hasCompensationToken: true })?.via, 'token');
+});
+
+test('refund: cash refunded in Stripe counts as completed (cash)', () => {
+  assert.deepEqual(refund({ paymentStatus: 'refunded' }), { status: 'completed', via: 'cash', note: null });
+});
+
+test('refund: a vendor who withholds it means not refunded', () => {
+  const r = refund({ paymentStatus: 'paid', cancelRefundMode: 'none' });
+  assert.equal(r?.status, 'not_refunded');
+  assert.equal(r?.via, null);
+  assert.equal(refund({ packagePurchaseId: 'p1', cancelRefundMode: 'none' })?.status, 'not_refunded');
+});
+
+test('refund: nothing paid means nothing to refund', () => {
+  assert.equal(refund()?.status, 'not_applicable');
+  assert.equal(refund({ paymentStatus: 'none', cancelRefundMode: 'none' })?.status, 'not_applicable');
+});
+
+test('refund: paid but nothing was issued is flagged as not refunded', () => {
+  const r = refund({ paymentStatus: 'paid' });
+  assert.equal(r?.status, 'not_refunded');
+  assert.match(r?.note ?? '', /no make-up token/);
 });

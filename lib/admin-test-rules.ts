@@ -99,6 +99,35 @@ export type BookingBucket = 'manual' | 'paid' | 'other';
 export const bookingBucket = (b: BookingRuleInput): BookingBucket =>
   isManualBooking(b) ? 'manual' : b.payment_status === 'paid' ? 'paid' : 'other';
 
+// ---- refunds ------------------------------------------------------------------------------------
+
+export type RefundOutcome = {
+  /** completed = the parent was made whole; not_refunded = withheld or never issued; not_applicable = nothing was paid. */
+  status: 'completed' | 'not_refunded' | 'not_applicable';
+  /** What came back: a package credit, a make-up token, or the money (a cash refund). */
+  via: 'credit' | 'token' | 'cash' | null;
+  note: string | null;
+};
+
+/**
+ * What a cancellation gave back (see migrations 00080 and 00099). A booking paid with a package credit
+ * gets the credit back; a booking paid in cash gets a make-up token (or a cash refund, which marks the
+ * payment refunded); a free, unpaid or manual booking has nothing to give back. The vendor can withhold
+ * the refund ('none'). Returns null while the booking is not cancelled.
+ */
+export function refundOutcome(i: {
+  status: string; paymentStatus: string; packagePurchaseId: string | null; hasCompensationToken: boolean; cancelRefundMode: string | null;
+}): RefundOutcome | null {
+  if (i.status !== 'cancelled') return null;
+  const hadValue = i.paymentStatus === 'paid' || i.paymentStatus === 'refunded' || !!i.packagePurchaseId;
+  if (!hadValue) return { status: 'not_applicable', via: null, note: 'Nothing was paid, so nothing to refund' };
+  if (i.cancelRefundMode === 'none') return { status: 'not_refunded', via: null, note: 'Withheld: non-refundable if cancelled' };
+  if (i.paymentStatus === 'refunded') return { status: 'completed', via: 'cash', note: null };
+  if (i.hasCompensationToken) return { status: 'completed', via: 'token', note: null };
+  if (i.packagePurchaseId) return { status: 'completed', via: 'credit', note: null };
+  return { status: 'not_refunded', via: null, note: 'Paid, but no make-up token or refund was found' };
+}
+
 // ---- payments -----------------------------------------------------------------------------------
 
 export type EarningRuleInput = {

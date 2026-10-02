@@ -10,7 +10,9 @@ export type MultiOption = { id: string; label: string; sub?: string };
  * chosen. Closes on a click outside or Esc.
  */
 export function MultiSelect({ label, placeholder, options, selected, onChange, width = 200 }: {
-  label: string; placeholder: string; options: MultiOption[]; selected: string[]; onChange: (ids: string[]) => void; width?: number;
+  label: string; placeholder: string; options: MultiOption[]; selected: string[]; onChange: (ids: string[]) => void;
+  /** A fixed width in px, or 'fill' to take the width of the grid cell it sits in (use inside filter grids). */
+  width?: number | 'fill';
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -34,7 +36,7 @@ export function MultiSelect({ label, placeholder, options, selected, onChange, w
   const summary = selected.length === 0 ? placeholder : selected.length === 1 ? (names[0] ?? '1 selected') : `${selected.length} selected`;
 
   return (
-    <div ref={box} style={{ position: 'relative', width, display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 }}>
+    <div ref={box} style={{ position: 'relative', width: width === 'fill' ? '100%' : width, minWidth: 0, display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 }}>
       {label}
       <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)}
         style={{ ...input(), textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6,
@@ -44,7 +46,7 @@ export function MultiSelect({ label, placeholder, options, selected, onChange, w
       </button>
       {open && (
         <div role="listbox" aria-multiselectable="true"
-          style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: Math.max(width, 280), zIndex: 40, background: C.panel, border: `1px solid ${C.border}`,
+          style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, ...(width === 'fill' ? { minWidth: 260, width: '100%' } : { width: Math.max(width, 280) }), zIndex: 40, background: C.panel, border: `1px solid ${C.border}`,
             borderRadius: 12, boxShadow: '0 12px 30px rgba(0,0,0,.45)', overflow: 'hidden' }}>
           <div style={{ padding: 8, borderBottom: `1px solid ${C.border}` }}>
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" aria-label={`Search ${label}`} style={{ ...input(), padding: '7px 10px' }} />

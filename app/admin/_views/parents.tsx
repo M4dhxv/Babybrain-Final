@@ -77,6 +77,11 @@ type ParentDetailT = {
   preferences: { preferred_days: string[]; preferred_times: string[]; preferred_regions: string[] | null; budget_min: number | null; budget_max: number | null; interests: string[] } | null;
   subscription: { plan: string; billing_interval: string | null; status: string; current_period_end: string | null; cancel_at_period_end: boolean } | null;
   planPayments: { id: string; paidAt: string; amount: number; currency: string; description: string | null }[];
+  packages: {
+    id: string; credits_total: number; credits_remaining: number; status: 'active' | 'used' | 'expired';
+    created_at: string; expires_at: string | null; stripe_payment_intent: string | null;
+    package: { name: string; price_cents: number } | null; provider: { business_name: string } | null;
+  }[];
   bookings: {
     id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
     session: { starts_at: string; activity: { title: string } | null } | null;
@@ -123,6 +128,22 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
       <span style={{ color: C.muted, fontWeight: 700 }}>{label}</span><span style={{ wordBreak: 'break-word' }}>{value}</span>
     </div>
   );
+  // Sections that can be folded away (the long ones); a closed one keeps just its title row.
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const collapsible = (key: string, title: string, body: React.ReactNode) => {
+    const isClosed = folded.has(key);
+    return (
+      <div style={{ marginTop: 20 }}>
+        <button type="button" aria-expanded={!isClosed} onClick={() => setFolded((cur) => { const n = new Set(cur); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
+          style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'none', border: 'none', cursor: 'pointer',
+            color: C.text, font: 'inherit', fontWeight: 800, fontSize: 14, padding: '0 0 6px', marginBottom: isClosed ? 0 : 6, borderBottom: `1px solid ${C.border}`, textAlign: 'left' }}>
+          <span>{title}</span>
+          <span aria-hidden style={{ color: C.muted, fontSize: 12 }}>{isClosed ? '▾ Show' : '▴ Hide'}</span>
+        </button>
+        {!isClosed && body}
+      </div>
+    );
+  };
   const section = (title: string, body: React.ReactNode) => (
     <div style={{ marginTop: 20 }}>
       <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>{title}</div>
@@ -226,7 +247,32 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Interests', list(d.preferences.interests))}
           </> : <div style={{ color: C.muted, fontSize: 13 }}>None set.</div>)}
 
-          {section(`Bookings (${d.bookings.length}${d.bookings.length === 100 ? '+ , latest 100' : ''})`, d.bookings.length === 0
+          {collapsible('packages', `Packages (${d.packages.length})`, d.packages.length === 0
+            ? <div style={{ color: C.muted, fontSize: 13 }}>No packages bought.</div>
+            : <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead><tr style={{ color: C.muted, textAlign: 'left' }}>
+                  <th style={th()}>Package</th><th style={th()}>Credits left</th><th style={th()}>Status</th><th style={{ ...th(), textAlign: 'right' }}>Paid</th><th style={th()}>Bought</th><th style={th()}>Expires</th>
+                </tr></thead>
+                <tbody>
+                  {d.packages.map((pk) => (
+                    <tr key={pk.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                      <td style={td()}>
+                        {pk.package?.name ?? dash}
+                        {pk.provider?.business_name && <div style={{ color: C.muted, fontSize: 11 }}>{pk.provider.business_name}</div>}
+                      </td>
+                      <td style={{ ...td(), whiteSpace: 'nowrap' }}>{pk.credits_remaining} of {pk.credits_total}</td>
+                      <td style={td()}><Badge tone={pk.status === 'active' ? 'green' : pk.status === 'used' ? 'blue' : 'grey'}>{pk.status}</Badge></td>
+                      <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{pk.package ? sgdDollars(pk.package.price_cents / 100) : dash}</td>
+                      <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(pk.created_at)}</td>
+                      <td style={{ ...td(), whiteSpace: 'nowrap' }}>{pk.expires_at ? sgDay(pk.expires_at) : dash}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>)}
+
+          {collapsible('bookings', `Bookings (${d.bookings.length}${d.bookings.length === 100 ? '+ , latest 100' : ''})`, d.bookings.length === 0
             ? <div style={{ color: C.muted, fontSize: 13 }}>No bookings yet.</div>
             : <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -390,7 +436,7 @@ export default function ParentsView() {
             <MultiSelect label="Preferred region" placeholder="Any region"
               options={Object.entries(REGION_LABELS).map(([id, label]) => ({ id, label }))}
               selected={f.region.split(',').filter(Boolean)}
-              onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width={170} />
+              onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width="fill" />
             <label style={lab}>Child age from (months)
               <input type="number" min={0} value={f.child_min} onChange={set('child_min')} style={input()} placeholder="e.g. 6" />
             </label>

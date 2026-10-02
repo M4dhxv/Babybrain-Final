@@ -26,7 +26,7 @@ export async function GET(request: Request, { params }: Params) {
   if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
   const db = createAdminClient() as unknown as SupabaseClient;
 
-  const [profile, kids, prefs, sub, bookings, parentRows] = await Promise.all([
+  const [profile, kids, prefs, sub, bookings, packages, parentRows] = await Promise.all([
     db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
     db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
     db.from('user_preferences').select('preferred_days, preferred_times, preferred_regions, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
@@ -34,6 +34,9 @@ export async function GET(request: Request, { params }: Params) {
     db.from('bookings')
       .select('id, status, payment_status, amount, created_at, guest_name, child_id, session:activity_sessions(starts_at, activity:activities(title))')
       .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+    db.from('package_purchases')
+      .select('id, credits_total, credits_remaining, status, created_at, expires_at, stripe_payment_intent, package:packages(name, price_cents), provider:providers(business_name)')
+      .eq('user_id', id).order('created_at', { ascending: false }),
     loadParents(db),
   ]);
   if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
@@ -67,6 +70,7 @@ export async function GET(request: Request, { params }: Params) {
     subscription: sub.data ?? null,
     planPayments,
     bookings: bookings.data ?? [],
+    packages: packages.data ?? [],
     isTest: row?.isTest ?? !!p.is_test,
     testSource: row?.testSource ?? (p.is_test ? 'manual' : null),
     testReason: row?.testReason ?? null,
