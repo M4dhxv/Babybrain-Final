@@ -63,10 +63,10 @@ const STATUS_OPTIONS = [
 const STATUS_TONE: Record<string, Tone> = { confirmed: 'green', completed: 'green', pending: 'amber', waitlisted: 'amber', cancelled: 'grey' };
 const dash = <span style={{ color: C.muted }}>—</span>;
 
-/** The Amount column: money for a paid class, credits for a package, a count for make-up tokens. */
+/** The Amount column: money (SGD) for a paid class, credits ("2 c") for a package, a count for make-up tokens. */
 function amountText(r: BookingRow): React.ReactNode {
   if (r.payVia === 'amount' && r.amount != null) return sgdDollars(r.amount);
-  if (r.payVia === 'credit') return `${r.credits} credit${r.credits === 1 ? '' : 's'}`;
+  if (r.payVia === 'credit') return `${r.credits} c`;
   if (r.payVia === 'token') return `${r.tokens} token${r.tokens === 1 ? '' : 's'}`;
   return dash;
 }
@@ -274,7 +274,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                 {sortTh('booked', 'Booked on')}
                 {sortTh('children', 'Children')}
                 <th style={th()}>Paid via</th>
-                {sortTh('amount', 'Amount', true)}
+                {sortTh('amount', 'Amount (SGD/Credit)', true)}
                 <th style={{ ...th(), width: 44 }} aria-label="Details" />
               </tr>
             </thead>
