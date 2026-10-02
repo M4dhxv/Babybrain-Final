@@ -253,7 +253,8 @@ export default function MetricsView({ onOpenParents, onOpenBookings, onGoTab }: 
   // A row's optional 5th item makes the card a link: to the Parents tab, or to the Bookings tab, with those filters on.
   type CardLink = { to: 'parents'; filters: Partial<ParentFilters> } | { to: 'bookings'; filters: Record<string, string> };
   const P = (filters: Partial<ParentFilters>): CardLink => ({ to: 'parents', filters });
-  const B = (filters: Record<string, string>): CardLink => ({ to: 'bookings', filters: { hide_abandoned: '1', ...filters } });
+  // The Bookings list defaults to paid / credit / token only, so a card that counts every booking asks for all payment types (pay=all).
+  const B = (filters: Record<string, string>): CardLink => ({ to: 'bookings', filters: { hide_abandoned: '1', pay: 'all', ...filters } });
   type Row = [string, number | string, string, string?, CardLink?];
   const sgDay_ = (msAgo: number) => new Date(Date.now() - msAgo).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
   const section = (title: string, rows: Row[]) => (

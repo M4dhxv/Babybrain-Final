@@ -50,22 +50,37 @@ export function MultiSelect({ label, placeholder, options, selected, onChange, w
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" aria-label={`Search ${label}`} style={{ ...input(), padding: '7px 10px' }} />
           </div>
           <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-            {shown.map((o) => (
-              <label key={o.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 12px', cursor: 'pointer', color: C.text, fontWeight: 600, fontSize: 13,
-                background: chosen.has(o.id) ? 'rgba(74,144,255,.10)' : 'transparent' }}>
-                <input type="checkbox" checked={chosen.has(o.id)} style={{ width: 15, height: 15, margin: '2px 0 0' }}
-                  onChange={() => onChange(chosen.has(o.id) ? selected.filter((x) => x !== o.id) : [...selected, o.id])} />
-                <span style={{ minWidth: 0 }}>
-                  {o.label}
-                  {o.sub && <span style={{ display: 'block', color: C.muted, fontSize: 11, fontWeight: 600 }}>{o.sub}</span>}
-                </span>
-              </label>
-            ))}
+            {shown.map((o) => {
+              const on = chosen.has(o.id);
+              return (
+                <button key={o.id} type="button" role="option" aria-selected={on}
+                  onClick={() => onChange(on ? selected.filter((x) => x !== o.id) : [...selected, o.id])}
+                  style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left', padding: '9px 12px',
+                    border: 'none', cursor: 'pointer', font: 'inherit', color: C.text, fontWeight: 600, fontSize: 13,
+                    background: on ? 'rgba(125,180,255,.10)' : 'transparent' }}>
+                  <span style={{ minWidth: 0 }}>
+                    {o.label}
+                    {o.sub && <span style={{ display: 'block', color: C.muted, fontSize: 11, fontWeight: 600 }}>{o.sub}</span>}
+                  </span>
+                  {/* a light-blue tick on the right when chosen; nothing when not */}
+                  <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7db4ff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flex: 'none', visibility: on ? 'visible' : 'hidden' }}>
+                    <path d="M5 12.5l4.5 4.5L19 7.5" />
+                  </svg>
+                </button>
+              );
+            })}
             {shown.length === 0 && <div style={{ padding: '12px', color: C.muted, fontSize: 13 }}>No matches.</div>}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderTop: `1px solid ${C.border}` }}>
-            <button type="button" onClick={() => onChange([])} disabled={selected.length === 0}
-              style={{ background: 'none', border: 'none', color: selected.length ? C.blue : C.muted, fontWeight: 800, cursor: selected.length ? 'pointer' : 'default', fontSize: 12 }}>Clear</button>
+            <span style={{ display: 'flex', gap: 14 }}>
+              <button type="button" onClick={() => onChange([])} disabled={selected.length === 0}
+                style={{ background: 'none', border: 'none', color: selected.length ? C.blue : C.muted, fontWeight: 800, cursor: selected.length ? 'pointer' : 'default', fontSize: 12 }}>Clear</button>
+              {/* selects everything currently listed, so with a search typed it selects just the matches */}
+              <button type="button" onClick={() => onChange([...new Set([...selected, ...shown.map((o) => o.id)])])} disabled={shown.length === 0 || shown.every((o) => chosen.has(o.id))}
+                style={{ background: 'none', border: 'none', color: shown.length === 0 || shown.every((o) => chosen.has(o.id)) ? C.muted : C.blue, fontWeight: 800,
+                  cursor: shown.length === 0 || shown.every((o) => chosen.has(o.id)) ? 'default' : 'pointer', fontSize: 12 }}>Select all</button>
+            </span>
             <button type="button" onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: C.blue, fontWeight: 800, cursor: 'pointer', fontSize: 12 }}>Done</button>
           </div>
         </div>
