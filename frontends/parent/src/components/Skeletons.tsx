@@ -80,19 +80,60 @@ export function ActivityRowListSkeleton({ count = 6 }: { count?: number }) {
  *  keeps its shape instead of flashing a full-screen splash. */
 export function ExplorePageSkeleton() {
   return (
-    <div className="mx-auto max-w-[1180px] px-6 py-5" aria-busy="true" aria-label="Loading activities">
-      <div className="h-11 w-full animate-pulse rounded-full bg-[#F3EDF0]" />
-      <div className="mt-3 flex gap-2 overflow-hidden">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-8 w-24 shrink-0 animate-pulse rounded-full bg-[#F6F1F3]" />
-        ))}
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
-        <div className="hidden h-[320px] animate-pulse rounded-[16px] bg-[#F6F1F3] lg:block" />
-        <div className="space-y-5">
-          <div className="h-[260px] animate-pulse rounded-[16px] bg-[#F3EDF0] sm:h-[395px]" />
-          <ActivityRowListSkeleton count={4} />
+    <div
+      className="mx-auto max-w-[1180px] px-4 pt-5 pb-24 sm:px-6 sm:py-5"
+      aria-busy="true"
+      aria-label="Loading activities"
+    >
+      {/* Heading + description, with the skyline art's height on wide screens */}
+      <div className="mb-4 flex items-end justify-between">
+        <div>
+          <div className="h-8 w-64 animate-pulse rounded bg-[#F3EDF0] sm:h-9 sm:w-80" />
+          <div className="mt-2 h-5 w-56 animate-pulse rounded bg-[#F6F1F3] sm:w-72" />
         </div>
+        <div className="hidden h-24 w-40 animate-pulse rounded-[12px] bg-[#F6F1F3] md:block lg:h-28" />
+      </div>
+
+      {/* Mobile/tablet search, as on the real page */}
+      <div className="mb-4 py-2 lg:hidden">
+        <div className="h-11 w-full animate-pulse rounded-full bg-[#F3EDF0]" />
+      </div>
+
+      {/* Filter card: three chip rows, then the sort row (sm and up only) */}
+      <div className="hidden space-y-3 rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card sm:mb-4 sm:block">
+        {[5, 6, 4].map((n, r) => (
+          <div key={r}>
+            <div className="h-3 w-28 animate-pulse rounded bg-[#F6F1F3]" />
+            <div className="mt-2 flex gap-2 overflow-hidden">
+              {Array.from({ length: n }).map((_, i) => (
+                <div key={i} className="h-8 w-24 shrink-0 animate-pulse rounded-full bg-[#F3EDF0]" />
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#F4EFF0] pt-3">
+          <div>
+            <div className="mb-1 h-3 w-12 animate-pulse rounded bg-[#F6F1F3]" />
+            <div className="h-10 w-40 animate-pulse rounded-[10px] bg-[#F3EDF0]" />
+          </div>
+          <div className="h-10 w-32 animate-pulse rounded-[10px] bg-[#F6F1F3]" />
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        {/* Map card: title row + the 395px map */}
+        <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-3 shadow-card">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="h-7 w-40 animate-pulse rounded bg-[#F3EDF0]" />
+            <div className="h-3 w-24 animate-pulse rounded bg-[#F6F1F3]" />
+          </div>
+          <div className="h-[395px] w-full animate-pulse rounded-[12px] bg-[#F3EDF0]" />
+        </section>
+        {/* Count line + results, same grid as the real list */}
+        <section>
+          <div className="mb-3 h-4 w-36 animate-pulse rounded bg-[#F3EDF0]" />
+          <ActivityRowListSkeleton count={6} />
+        </section>
       </div>
     </div>
   );
@@ -205,57 +246,52 @@ export function ActivityDetailSkeleton() {
       aria-hidden="true"
       className="mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start"
     >
-      <section className="order-1 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
-        <div className="flex flex-col gap-3">
-          <div className="h-3 w-28 animate-pulse rounded bg-[#F6F1F3]" />
-          <div className="mt-2 h-7 w-4/5 animate-pulse rounded bg-[#F3EDF0]" />
-          <div className="h-3 w-1/2 animate-pulse rounded bg-[#F6F1F3]" />
-          <div className="mt-2 h-8 w-32 animate-pulse rounded-[9px] bg-[#FEEBF2]" />
-        </div>
-        <div>
-          <div className="h-[305px] w-full animate-pulse rounded-[18px] bg-[#F3EDF0]" />
-          <div className="mt-3 flex gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-11 w-[76px] animate-pulse rounded-[8px] bg-[#F6F1F3]" />
-            ))}
+      <section className="order-1 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
+        <div className="flex flex-col">
+          <div className="h-5 w-32 animate-pulse rounded bg-[#F6F1F3]" />
+          <div className="flex flex-1 flex-col justify-center gap-3 py-4">
+            <div className="h-8 w-4/5 animate-pulse rounded bg-[#F3EDF0]" />
+            <div className="h-4 w-1/2 animate-pulse rounded bg-[#F6F1F3]" />
+            <div className="mt-1 h-8 w-32 animate-pulse rounded-[9px] bg-[#FEEBF2]" />
           </div>
         </div>
+        <div className="h-[305px] w-full animate-pulse rounded-[18px] bg-[#F3EDF0]" />
       </section>
 
       <section className="order-2 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-1 lg:row-start-2">
-        <div className="h-4 w-24 animate-pulse rounded bg-[#F3EDF0]" />
-        <div className="mt-3 space-y-2">
-          <div className="h-3 w-full animate-pulse rounded bg-[#F6F1F3]" />
-          <div className="h-3 w-11/12 animate-pulse rounded bg-[#F6F1F3]" />
-          <div className="h-3 w-2/3 animate-pulse rounded bg-[#F6F1F3]" />
+        <div className="mb-4 h-6 w-20 animate-pulse rounded bg-[#F3EDF0]" />
+        <div className="space-y-2">
+          <div className="h-3.5 w-full animate-pulse rounded bg-[#F6F1F3]" />
+          <div className="h-3.5 w-11/12 animate-pulse rounded bg-[#F6F1F3]" />
+          <div className="h-3.5 w-2/3 animate-pulse rounded bg-[#F6F1F3]" />
         </div>
       </section>
 
-      <div className="order-4 grid gap-5 lg:order-none lg:col-start-1 lg:row-start-3">
+      <div className="order-4 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-3">
         <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-          <div className="h-5 w-40 animate-pulse rounded bg-[#F3EDF0]" />
-          <div className="mt-4 flex flex-wrap gap-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-9 w-32 animate-pulse rounded-[10px] bg-[#F6F1F3]" />
-            ))}
+          <div className="mb-3 h-6 w-44 animate-pulse rounded bg-[#F3EDF0]" />
+          <div className="space-y-2">
+            <div className="h-14 animate-pulse rounded-[10px] bg-[#F4EFF0]" />
+            <div className="h-14 animate-pulse rounded-[10px] bg-[#F4EFF0]" />
           </div>
         </section>
         <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-          <div className="h-5 w-28 animate-pulse rounded bg-[#F3EDF0]" />
-          <div className="mt-4 space-y-3">
-            <div className="h-3 w-full animate-pulse rounded bg-[#F6F1F3]" />
-            <div className="h-3 w-4/5 animate-pulse rounded bg-[#F6F1F3]" />
+          <div className="mb-3 h-6 w-28 animate-pulse rounded bg-[#F3EDF0]" />
+          <div className="space-y-3">
+            <div className="h-10 animate-pulse rounded-[10px] bg-[#F4EFF0]" />
+            <div className="h-10 animate-pulse rounded-[10px] bg-[#F4EFF0]" />
           </div>
         </section>
       </div>
 
       <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
-        <div className="h-8 w-24 animate-pulse rounded bg-[#F3EDF0]" />
+        <div className="h-[30px] w-24 animate-pulse rounded-[6px] bg-[#F3EDF0]" />
         <div className="mt-4 h-11 w-full animate-pulse rounded-[11px] bg-[#F3EDF0]" />
         <div className="mt-3 h-11 w-full animate-pulse rounded-[11px] bg-[#F6F1F3]" />
-        <div className="mt-4 space-y-2">
-          <div className="h-3 w-full animate-pulse rounded bg-[#F6F1F3]" />
-          <div className="h-3 w-2/3 animate-pulse rounded bg-[#F6F1F3]" />
+        <div className="mt-3 flex gap-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-9 flex-1 animate-pulse rounded-[10px] bg-[#F6F1F3]" />
+          ))}
         </div>
       </aside>
     </main>

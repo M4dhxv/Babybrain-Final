@@ -335,9 +335,9 @@ export function ExploreMap({
     }
 
     if (bounds.length) {
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15, animate: false });
     } else {
-      map.setView(SG_CENTER, 11);
+      map.setView(SG_CENTER, 11, { animate: false });
     }
   }, [pinsKey]);
 
