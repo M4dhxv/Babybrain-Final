@@ -43,6 +43,8 @@ export type ProviderDetail = {
   locations: {
     id: string; name: string; address: string | null; postal_code: string | null;
     region: string | null; is_primary: boolean; latitude: number | null; longitude: number | null;
+    /** Set when this venue is mirrored from the vendor's Wix site (Wix is then the source of truth). */
+    wix_location_id: string | null;
   }[];
   activities: {
     id: string; title: string; slug: string; category_slug: string | null; category_name: string | null;
@@ -81,7 +83,7 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
 
   const [locs, acts, cats] = await Promise.all([
     db.from('provider_locations')
-      .select('id, name, address, postal_code, region, is_primary, latitude, longitude')
+      .select('id, name, address, postal_code, region, is_primary, latitude, longitude, wix_location_id')
       .eq('provider_id', id).order('is_primary', { ascending: false }).order('name'),
     db.from('activities')
       .select('id, title, slug, category_id, age_min_months, age_max_months, price, is_published, ' +
@@ -310,19 +312,28 @@ export async function updateProviderWithCatalogue(
        a vendor that moves keeps its classes filed under the old area, so the
        business shows as East while its classes still answer to Central. */
     if (addrChanged) {
-      const { error: aErr } = await db
-        .from('activities')
-        .update({
-          address: (patch.address ?? before.address) || null,
-          postal_code: (patch.postal_code ?? before.postal_code) || null,
-        } as never)
-        .eq('provider_id', id);
+      /* Only classes that were FOLLOWING the business address move with it: no venue of their own,
+         not held at a customer's address, and still carrying the old business address. A class
+         tied to a venue follows that venue instead (a database trigger keeps it in step, 00213),
+         and a class with its own address keeps it. This used to overwrite every class's address
+         with the business address, which pulled venue-based classes away from their venue. */
+      const moved = {
+        address: (patch.address ?? before.address) || null,
+        postal_code: (patch.postal_code ?? before.postal_code) || null,
+        ...(row.latitude !== undefined ? { latitude: row.latitude, longitude: row.longitude } : {}),
+      };
+      const base = db.from('activities').update(moved as never).eq('provider_id', id).is('location_id', null).eq('is_custom_location', false);
+      const byAddress = before.address == null ? base.is('address', null) : base.eq('address', before.address);
+      const { error: aErr } = await (before.postal_code == null ? byAddress.is('postal_code', null) : byAddress.eq('postal_code', before.postal_code));
       if (aErr) warnings.push(`Classes kept the old address — ${aErr.message}`);
     }
   }
 
   // ---- venues ----
   let locationsChanged = 0;
+  const { data: beforeLocs } = await db.from('provider_locations')
+    .select('id, name, address, postal_code, wix_location_id').eq('provider_id', id);
+  const beforeLoc = new Map((beforeLocs ?? []).map((x) => [x.id, x as { id: string; name: string; address: string | null; postal_code: string | null; wix_location_id: string | null }]));
   for (const l of input.locations ?? []) {
     if (l._delete && l.id) {
       const { error } = await db.from('provider_locations').delete().eq('id', l.id).eq('provider_id', id);
@@ -346,6 +357,20 @@ export async function updateProviderWithCatalogue(
     if (l.id) {
       const { error } = await db.from('provider_locations').update(row as never).eq('id', l.id).eq('provider_id', id);
       if (error) throw new Error(`Could not save a venue: ${error.message}`);
+      // Tell the admin what an address change reaches, and when it will not stick.
+      const was = beforeLoc.get(l.id);
+      const addressMoved = was && (
+        (l.address !== undefined && (l.address || null) !== was.address) ||
+        (l.postal_code !== undefined && (l.postal_code || null) !== was.postal_code));
+      if (was && addressMoved) {
+        const label = l.name || was.name || 'This venue';
+        const { count } = await db.from('activities').select('id', { count: 'exact', head: true })
+          .eq('location_id', l.id).eq('is_custom_location', false);
+        if (count) warnings.push(`${count} class${count === 1 ? '' : 'es'} at "${label}" follow${count === 1 ? 's' : ''} this venue, so ${count === 1 ? 'it shows' : 'they show'} the new address.`);
+        if (was.wix_location_id) {
+          warnings.push(`"${label}" is linked to Wix: the next Wix sync will put Wix's address back. Change the address in Wix for it to stick.`);
+        }
+      }
     } else {
       const { error } = await db.from('provider_locations')
         .insert({ ...row, provider_id: id, name: l.name || before.business_name } as never);

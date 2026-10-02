@@ -147,6 +147,8 @@ type CreatedVendor = {
 type EditLocation = {
   id: string; name: string; address: string | null; postal_code: string | null;
   region: string | null; is_primary: boolean; latitude: number | null; longitude: number | null;
+  /** Set when this venue is mirrored from the vendor's Wix site. */
+  wix_location_id?: string | null;
 };
 type EditSession = {
   id: string; starts_at: string; ends_at: string; capacity: number | null;
@@ -1000,6 +1002,11 @@ function EditVendorModal({
                       {gone ? 'Undo' : 'Remove'}
                     </button>
                   </div>
+                  {l.wix_location_id && (
+                    <div style={{ marginTop: 8, color: C.pink, fontSize: 12, fontWeight: 700 }}>
+                      Linked to this vendor&apos;s Wix site — Wix is the source of truth here, so an address changed in this editor is put back at the next Wix sync. Change it in Wix.
+                    </div>
+                  )}
                 </div>
               );
             })}
