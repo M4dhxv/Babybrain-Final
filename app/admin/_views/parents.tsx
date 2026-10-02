@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MultiSelect } from '../_lib/multiselect';
 import { Badge, C, Skeleton, adminFetch, card, input, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, sgClock } from '../_lib/core';
 
 // ---- Parents: who signed up, what they hold and spend, filterable ----
@@ -386,9 +387,10 @@ export default function ParentsView() {
             <label style={lab}>Has children
               {sel('has_children', [['', 'Any'], ['yes', 'Yes'], ['no', 'No'], ])}
             </label>
-            <label style={lab}>Preferred region
-              {sel('region', [['', 'Any'], ...Object.entries(REGION_LABELS) as [string, string][]])}
-            </label>
+            <MultiSelect label="Preferred region" placeholder="Any region"
+              options={Object.entries(REGION_LABELS).map(([id, label]) => ({ id, label }))}
+              selected={f.region.split(',').filter(Boolean)}
+              onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width={170} />
             <label style={lab}>Child age from (months)
               <input type="number" min={0} value={f.child_min} onChange={set('child_min')} style={input()} placeholder="e.g. 6" />
             </label>

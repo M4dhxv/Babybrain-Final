@@ -96,9 +96,14 @@ export async function GET(request: Request) {
   }
   const postal = (sp.get('postal') ?? '').trim();
   if (postal) rows = rows.filter((r) => (r.parent?.postal ?? '').startsWith(postal));
-  const status = sp.get('status');
-  if (status === 'active') rows = rows.filter((r) => r.status === 'confirmed' || r.status === 'completed');
-  else if (status && ['confirmed', 'completed', 'pending', 'waitlisted', 'cancelled'].includes(status)) rows = rows.filter((r) => r.status === status);
+  // Comma-separated, any of the statuses below (`active` = confirmed + completed is still accepted from older links).
+  const STATUSES = ['confirmed', 'completed', 'pending', 'waitlisted', 'cancelled'];
+  const wanted = new Set<string>();
+  for (const s of (sp.get('status') ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    if (s === 'active') { wanted.add('confirmed'); wanted.add('completed'); }
+    else if (STATUSES.includes(s)) wanted.add(s);
+  }
+  if (wanted.size > 0) rows = rows.filter((r) => wanted.has(r.status));
 
   // ---- sort ----
   const dir = sp.get('dir') === 'asc' ? 1 : -1;

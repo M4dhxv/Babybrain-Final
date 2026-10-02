@@ -21,7 +21,7 @@ const NAME_COLORS = ["#ffc1d6", "#ffc1d6", "#ffb77a", "#ffd77a", "#a8e59a", "#a7
 export function BootSplash({ label = "Loading" }: { label?: string }) {
   return (
     <div role="status" aria-label={label} className="flex flex-col items-center justify-center gap-3.5 py-16">
-      <div className="relative flex h-[92px] w-[92px] items-center justify-center">
+      <div className="relative flex h-[116px] w-[116px] items-center justify-center">
         <div className="bb-splash-orbit absolute inset-0">
           {ORBIT_DOTS.map((d, i) => (
             <i
@@ -34,7 +34,7 @@ export function BootSplash({ label = "Loading" }: { label?: string }) {
                 marginTop: -d.size / 2,
                 marginLeft: -d.size / 2,
                 background: d.color,
-                transform: `rotate(${d.angle}deg) translateY(-38px)`,
+                transform: `rotate(${d.angle}deg) translateY(-52px)`,
               }}
             />
           ))}

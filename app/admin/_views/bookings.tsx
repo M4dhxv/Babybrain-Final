@@ -31,20 +31,33 @@ type Filters = {
   q: string; vendor: string; activity: string; pay: string; date_by: string; from: string; to: string;
   price_min: string; price_max: string; postal: string; status: string; test: string; hide_abandoned: string;
 };
-const NO_FILTERS: Filters = { q: '', vendor: '', activity: '', pay: '', date_by: 'class', from: '', to: '', price_min: '', price_max: '', postal: '', status: '', test: 'hide', hide_abandoned: '' };
-const ADVANCED: (keyof Filters)[] = ['price_min', 'price_max', 'postal', 'status', 'test', 'hide_abandoned'];
+/** Out of the box the list shows bookings paid for or covered by a credit or token; manual roster entries are opt-in. */
+const DEFAULT_PAY = 'amount,credit,token';
+const NO_FILTERS: Filters = { q: '', vendor: '', activity: '', pay: DEFAULT_PAY, date_by: 'class', from: '', to: '', price_min: '', price_max: '', postal: '', status: '', test: 'hide', hide_abandoned: '' };
+// hide_abandoned has no control of its own: Metrics links switch it on and a chip under the filters shows it.
+const ADVANCED: (keyof Filters)[] = ['price_min', 'price_max', 'postal', 'status', 'test'];
 
 function filtersFromUrl(): Filters {
   const sp = new URLSearchParams(window.location.search);
   if (sp.get('tab') !== 'bookings') return NO_FILTERS;
   const out = { ...NO_FILTERS };
   (Object.keys(NO_FILTERS) as (keyof Filters)[]).forEach((k) => { const v = sp.get(k); if (v) out[k] = v; });
+  // In the link, no `pay` means the default selection and `pay=all` means every payment type.
+  if (sp.get('pay') === 'all') out.pay = '';
   return out;
 }
 
 const PAY_LABEL: Record<PayVia, string> = {
-  amount: 'Amount', credit: 'Credit', token: 'Make-up token', free: 'Free', unpaid: 'Not paid', manual: '—',
+  amount: 'Amount', credit: 'Credit', token: 'Make-up token', free: 'Free', unpaid: 'Abandoned pay', manual: '—',
 };
+const PAY_OPTIONS = [
+  { id: 'amount', label: 'Amount paid' }, { id: 'credit', label: 'Credit' }, { id: 'token', label: 'Make-up token' },
+  { id: 'free', label: 'Free' }, { id: 'unpaid', label: 'Abandoned pay' }, { id: 'manual', label: 'Manual booking' },
+];
+const STATUS_OPTIONS = [
+  { id: 'confirmed', label: 'Confirmed' }, { id: 'completed', label: 'Completed' }, { id: 'pending', label: 'Pending' },
+  { id: 'waitlisted', label: 'Waitlisted' }, { id: 'cancelled', label: 'Cancelled' },
+];
 const STATUS_TONE: Record<string, Tone> = { confirmed: 'green', completed: 'green', pending: 'amber', waitlisted: 'amber', cancelled: 'grey' };
 const dash = <span style={{ color: C.muted }}>—</span>;
 
@@ -79,7 +92,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
 
   const qs = useCallback((withPage: boolean) => {
     const sp = new URLSearchParams();
-    (Object.keys(f) as (keyof Filters)[]).forEach((k) => { if (f[k]) sp.set(k, f[k]); });
+    (Object.keys(f) as (keyof Filters)[]).forEach((k) => { if (f[k]) sp.set(k, f[k]); });   // no pay = every payment type
     sp.set('sort', sort); sp.set('dir', dir);
     if (withPage) sp.set('page', String(page));
     return sp;
@@ -90,7 +103,9 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
     const url = new URL(window.location.href);
     if (url.searchParams.get('tab') !== 'bookings') return;
     (Object.keys(NO_FILTERS) as (keyof Filters)[]).forEach((k) => {
-      if (f[k] && f[k] !== NO_FILTERS[k]) url.searchParams.set(k, f[k]); else url.searchParams.delete(k);
+      if (k === 'pay') {
+        if (f.pay === DEFAULT_PAY) url.searchParams.delete('pay'); else url.searchParams.set('pay', f.pay || 'all');
+      } else if (f[k] && f[k] !== NO_FILTERS[k]) url.searchParams.set(k, f[k]); else url.searchParams.delete(k);
     });
     window.history.replaceState(null, '', url);
   }, [f]);
@@ -119,14 +134,14 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
 
   const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { setF((p) => ({ ...p, [k]: e.target.value })); setPage(1); };
   const csvIds = (s: string) => s.split(',').filter(Boolean);
-  const setIds = (k: 'vendor' | 'activity') => (ids: string[]) => { setF((p) => ({ ...p, [k]: ids.join(',') })); setPage(1); };
+  const setIds = (k: 'vendor' | 'activity' | 'pay' | 'status') => (ids: string[]) => { setF((p) => ({ ...p, [k]: ids.join(',') })); setPage(1); };
   const sortBy = (k: string) => {
     if (sort === k) setDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSort(k); setDir(k === 'name' || k === 'vendor' || k === 'activity' ? 'asc' : 'desc'); }
     setPage(1);
   };
   const reset = () => { setF(NO_FILTERS); setQ(''); setPage(1); };
   const refresh = () => { cacheRef.current.clear(); freshRef.current = true; setF((p) => ({ ...p })); };
-  const active = (Object.keys(f) as (keyof Filters)[]).filter((k) => f[k] && f[k] !== NO_FILTERS[k] && k !== 'q').length;
+  const active = (Object.keys(f) as (keyof Filters)[]).filter((k) => f[k] && f[k] !== NO_FILTERS[k] && k !== 'q' && k !== 'hide_abandoned').length;
 
   async function exportCsv() {
     setExporting(true);
@@ -178,9 +193,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
         </label>
         <MultiSelect label="Vendor" placeholder="All vendors" options={vendorOptions} selected={csvIds(f.vendor)} onChange={setIds('vendor')} width={190} />
         <MultiSelect label="Activity" placeholder="All activities" options={activityOptions} selected={csvIds(f.activity)} onChange={setIds('activity')} width={190} />
-        <label style={{ ...lab, width: 150 }}>Payment type
-          {sel('pay', [['', 'Any'], ['amount', 'Amount paid'], ['credit', 'Credit'], ['token', 'Make-up token'], ['free', 'Free'], ['unpaid', 'Not paid'], ['free,credit,token,unpaid', 'Free, credit or token'], ['manual', 'Manual booking']])}
-        </label>
+        <MultiSelect label="Payment type" placeholder="All types" options={PAY_OPTIONS} selected={csvIds(f.pay)} onChange={setIds('pay')} width={190} />
         <label style={{ ...lab, width: 130 }}>Date by
           {sel('date_by', [['class', 'Class date'], ['booked', 'Booked on']])}
         </label>
@@ -205,12 +218,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
             <label style={lab}>Parent postal code starts with
               <input value={f.postal} onChange={set('postal')} style={input()} placeholder="e.g. 52" />
             </label>
-            <label style={lab}>Status
-              {sel('status', [['', 'Any'], ['active', 'Active (confirmed / completed)'], ['confirmed', 'Confirmed'], ['completed', 'Completed'], ['pending', 'Pending'], ['waitlisted', 'Waitlisted'], ['cancelled', 'Cancelled']])}
-            </label>
-            <label style={lab}>Cancelled before payment
-              {sel('hide_abandoned', [['', 'Show'], ['1', 'Hide (as Metrics counts)']])}
-            </label>
+            <MultiSelect label="Status" placeholder="Any status" options={STATUS_OPTIONS} selected={csvIds(f.status === 'active' ? 'confirmed,completed' : f.status)} onChange={setIds('status')} />
             <label style={lab}>Test data
               {sel('test', [['hide', 'Hide (default)'], ['show', 'Include'], ['only', 'Only test data']])}
             </label>
@@ -221,6 +229,19 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" style={tabBtn(false)} onClick={reset}>Clear all filters</button>
           </div>
+        </div>
+      )}
+
+      {f.hide_abandoned === '1' && (
+        <div style={{ marginTop: 12 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 6px 5px 12px', borderRadius: 999, background: C.panel2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12, fontWeight: 700 }}>
+            Hiding bookings cancelled before payment (as Metrics counts)
+            <button type="button" aria-label="Show bookings cancelled before payment" title="Show them"
+              onClick={() => { setF((p) => ({ ...p, hide_abandoned: '' })); setPage(1); }}
+              style={{ border: 0, borderRadius: 999, width: 20, height: 20, lineHeight: '20px', padding: 0, cursor: 'pointer', background: C.border, color: C.text, fontSize: 12, fontWeight: 800 }}>
+              ✕
+            </button>
+          </span>
         </div>
       )}
 
@@ -283,7 +304,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                         {sgDay(r.bookedAt)}<div style={{ color: C.muted, fontSize: 12 }}>{sgClock(r.bookedAt)}</div>
                       </td>
                       <td style={td()}>{r.isManual && r.childCount === 1 && !r.childNames.length ? dash : r.childCount}</td>
-                      <td style={td()}>{r.payVia === 'manual' ? dash : r.payVia === 'unpaid' ? <Badge tone="amber">Not paid</Badge> : PAY_LABEL[r.payVia]}</td>
+                      <td style={td()}>{r.payVia === 'manual' ? dash : r.payVia === 'unpaid' ? <Badge tone="amber">Abandoned pay</Badge> : PAY_LABEL[r.payVia]}</td>
                       <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{amountText(r)}</td>
                       <td style={td()}>
                         <button type="button" onClick={() => setOpenRow(open ? null : r.id)} aria-expanded={open} aria-label={open ? 'Hide booking details' : 'Show booking details'}

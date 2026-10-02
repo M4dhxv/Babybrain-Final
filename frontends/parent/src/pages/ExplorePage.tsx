@@ -1122,14 +1122,14 @@ export default function ExplorePage() {
                             }
                           }}
                           disabled={loadingMore}
-                          className="mt-1 inline-flex items-center gap-2 rounded-full bg-baby-cta pl-6 pr-2 py-2 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                          className="mt-1 inline-flex items-center gap-2 rounded-full border-2 border-[#FA4D8D] bg-white pl-6 pr-2 py-2 text-sm font-black text-[#FA4D8D] transition-colors hover:bg-[#FFF5F8] disabled:opacity-60"
                         >
                           {loadingMore ? (
                             "Loading…"
                           ) : (
                             <>
                               Load more
-                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-baby-cta">
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#FA4D8D] text-white">
                                 <svg
                                   aria-hidden="true"
                                   viewBox="0 0 24 24"

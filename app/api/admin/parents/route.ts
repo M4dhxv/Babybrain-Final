@@ -51,8 +51,9 @@ export async function GET(request: Request) {
   const q = (sp.get('q') ?? '').trim().toLowerCase();
   if (q) rows = rows.filter((r) => [r.name, r.email, r.phone ?? '', r.area ?? ''].some((v) => v.toLowerCase().includes(q)));
 
-  const region = sp.get('region');
-  if (region) rows = rows.filter((r) => r.regions.includes(region));
+  // Comma-separated: a parent matches when any of their preferred regions is one of those chosen.
+  const regions = (sp.get('region') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (regions.length) rows = rows.filter((r) => r.regions.some((x) => regions.includes(x)));
 
   const plan = sp.get('plan');
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);

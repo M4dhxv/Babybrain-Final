@@ -35,8 +35,8 @@ export function isPackOnSale(p: { starts_at: string | null; available_until: str
 /** Expiry pill text for a pack — the vendor sets one or the other, never both
  *  (checked in the same order as the vendor portal's PackagesPage.tsx summary). */
 export function packExpiryText(p: { validity_days: number | null; expiry_date: string | null }) {
-  if (p.validity_days) return `${p.validity_days} day${p.validity_days === 1 ? "" : "s"} after purchase`;
-  if (p.expiry_date) return `on ${sgDay(p.expiry_date)}`;
+  if (p.validity_days) return `Expires in ${p.validity_days} day${p.validity_days === 1 ? "" : "s"}`;
+  if (p.expiry_date) return `Expires on ${sgDay(p.expiry_date)}`;
   return "No expiry";
 }
 
