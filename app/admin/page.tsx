@@ -20,6 +20,7 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   flows: () => import('./_views/flows'),
   marketing: () => import('./_views/marketing'),
   audit: () => import('./_views/audit'),
+  bookings: () => import('./_views/bookings'),
 };
 // The read endpoints each tab loads first, fetched in the background when its sidebar item is hovered.
 const WARM_DATA: Record<string, string[]> = {
@@ -48,15 +49,17 @@ const VendorsView = dynamic(() => import('./_views/vendors').then((m) => m.Vendo
 const CommercialsView = dynamic(() => import('./_views/commercials'), { ssr: false, loading: viewLoading });
 const PaymentsView = dynamic(() => import('./_views/payments'), { ssr: false, loading: viewLoading });
 const FlowsView = dynamic(() => import('./_views/flows'), { ssr: false, loading: viewLoading });
+const BookingsView = dynamic(() => import('./_views/bookings'), { ssr: false, loading: viewLoading });
 const AuditView = dynamic(() => import('./_views/audit'), { ssr: false, loading: viewLoading });
 const MarketingView = dynamic(() => import('./_views/marketing'), { ssr: false, loading: viewLoading });
 
 // ---- navigation: grouped sidebar, tab kept in the URL (?tab=) ----
-type Tab = 'metrics' | 'audit' | 'parents' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
+type Tab = 'metrics' | 'audit' | 'parents' | 'bookings' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
 const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string }[] }[] = [
   { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: 'grid' }] },
   { label: 'People', items: [
     { id: 'parents', label: 'Parents', icon: 'user' },
+    { id: 'bookings', label: 'Bookings', icon: 'calendar' },
     { id: 'addVendor', label: 'Vendors', icon: 'plus' },
     { id: 'vendors', label: 'Vendor data', icon: 'list' },
     { id: 'marketing', label: 'Marketing', icon: 'mail' },
@@ -83,6 +86,7 @@ const ICON_PATHS: Record<string, string> = {
   chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z',
   bolt: 'M13 2L3 14h9l-1 8 10-12h-9z',
+  calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
   shield: 'M12 3l8 3v6c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V6z',
   out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
@@ -154,6 +158,17 @@ export default function AdminPage() {
     for (const [k, v] of Object.entries(filters)) if (v) url.searchParams.set(k, v);
     window.history.pushState(null, '', url);
     setTabState('parents');
+    setMenuOpen(false);
+    window.scrollTo(0, 0);
+  }, []);
+  /** Open the Bookings tab with these filters already applied (used by the Metrics booking cards). */
+  const openBookings = useCallback((filters: Record<string, string>) => {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('tab', 'bookings');
+    for (const [k, v] of Object.entries(filters)) if (v) url.searchParams.set(k, v);
+    window.history.pushState(null, '', url);
+    setTabState('bookings');
     setMenuOpen(false);
     window.scrollTo(0, 0);
   }, []);
@@ -298,7 +313,7 @@ export default function AdminPage() {
               style={{ ...primaryBtn(), marginTop: 16 }}>Sign out</button>
           </div>
         )}
-        {viewOk('metrics') && <MetricsView key={refreshKey} onOpenParents={openParents} onGoTab={(t) => setTab(t as Tab)} />}
+        {viewOk('metrics') && <MetricsView key={refreshKey} onOpenParents={openParents} onOpenBookings={openBookings} onGoTab={(t) => setTab(t as Tab)} />}
         {viewOk('parents') && <ParentsView key={refreshKey} />}
         {viewOk('messages') && <MessagesView key={refreshKey} />}
         {viewOk('contact') && <ContactView key={refreshKey} />}
@@ -308,6 +323,7 @@ export default function AdminPage() {
         {viewOk('payments') && <PaymentsView key={refreshKey} />}
         {viewOk('flows') && <FlowsView key={refreshKey} />}
         {viewOk('marketing') && <MarketingView key={refreshKey} />}
+        {viewOk('bookings') && <BookingsView key={refreshKey} onOpenParents={openParents} />}
         {viewOk('audit') && <AuditView key={refreshKey} />}
       </main>
       </div>

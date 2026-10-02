@@ -53,7 +53,9 @@ function niceMax(v: number): number {
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00+08:00`).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Singapore' });
 const money = (cents: number) => new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD', maximumFractionDigits: 0 }).format(cents / 100);
 
-function ActivityChart({ daily, onOpenParents }: { daily: DailyPoint[]; onOpenParents: (f: Partial<ParentFilters>) => void }) {
+type OpenBookings = (f: Record<string, string>) => void;
+
+function ActivityChart({ daily, onOpenParents, onOpenBookings }: { daily: DailyPoint[]; onOpenParents: (f: Partial<ParentFilters>) => void; onOpenBookings: OpenBookings }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>(14);
   const [on, setOn] = useState<Record<SeriesKey, boolean>>({ bookings: true, manual: false, signups: true, sales: true });
   const [hover, setHover] = useState<number | null>(null);
@@ -171,6 +173,18 @@ function ActivityChart({ daily, onOpenParents }: { daily: DailyPoint[]; onOpenPa
             <span style={{ color: C.muted }}> · {pts[pinned].bookings} bookings · {pts[pinned].manual} manual · {pts[pinned].signups} signups · {money(pts[pinned].sales)} sales</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {pts[pinned].bookings > 0 && (
+              <button type="button" style={{ ...tabBtn(false), padding: '4px 12px', fontSize: 12 }}
+                onClick={() => onOpenBookings({ date_by: 'booked', from: pts[pinned].date, to: pts[pinned].date, pay: 'amount,credit,token,free,unpaid', hide_abandoned: '1' })}>
+                View {pts[pinned].bookings} booking{pts[pinned].bookings === 1 ? '' : 's'} →
+              </button>
+            )}
+            {pts[pinned].manual > 0 && (
+              <button type="button" style={{ ...tabBtn(false), padding: '4px 12px', fontSize: 12 }}
+                onClick={() => onOpenBookings({ date_by: 'booked', from: pts[pinned].date, to: pts[pinned].date, pay: 'manual', hide_abandoned: '1' })}>
+                View {pts[pinned].manual} manual →
+              </button>
+            )}
             {pts[pinned].signups > 0 && (
               <button type="button" style={{ ...tabBtn(false), padding: '4px 12px', fontSize: 12 }}
                 onClick={() => onOpenParents({ joined_from: pts[pinned].date, joined_to: pts[pinned].date })}>
@@ -219,7 +233,7 @@ function AttentionCard({ onOpenParents, onGoTab }: { onOpenParents: (f: Partial<
   );
 }
 
-export default function MetricsView({ onOpenParents, onGoTab }: { onOpenParents: (f: Partial<ParentFilters>) => void; onGoTab: (tab: string) => void }) {
+export default function MetricsView({ onOpenParents, onOpenBookings, onGoTab }: { onOpenParents: (f: Partial<ParentFilters>) => void; onOpenBookings: OpenBookings; onGoTab: (tab: string) => void }) {
   const [m, setM] = useState<Metrics | null>(() => peekCache<Metrics>('/api/admin/metrics') ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [includeTest, setIncludeTest] = useState(false);
@@ -236,7 +250,11 @@ export default function MetricsView({ onOpenParents, onGoTab }: { onOpenParents:
   if (!m) return <CardsSkeleton />;
 
   // A row's optional 5th item makes the card a link to the Parents tab with those filters on.
-  type Row = [string, number | string, string, string?, Partial<ParentFilters>?];
+  // A row's optional 5th item makes the card a link: to the Parents tab, or to the Bookings tab, with those filters on.
+  type CardLink = { to: 'parents'; filters: Partial<ParentFilters> } | { to: 'bookings'; filters: Record<string, string> };
+  const P = (filters: Partial<ParentFilters>): CardLink => ({ to: 'parents', filters });
+  const B = (filters: Record<string, string>): CardLink => ({ to: 'bookings', filters: { hide_abandoned: '1', ...filters } });
+  type Row = [string, number | string, string, string?, CardLink?];
   const sgDay_ = (msAgo: number) => new Date(Date.now() - msAgo).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
   const section = (title: string, rows: Row[]) => (
     <div>
@@ -247,11 +265,11 @@ export default function MetricsView({ onOpenParents, onGoTab }: { onOpenParents:
             <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
             <div style={{ fontSize: 28, fontWeight: 900, color, marginTop: 6 }}>{value}</div>
             {sub && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>}
-            {link && <div className="bb-cardlink" style={{ color: C.blue, fontSize: 12, fontWeight: 800, marginTop: 6 }}>View parents →</div>}
+            {link && <div className="bb-cardlink" style={{ color: C.blue, fontSize: 12, fontWeight: 800, marginTop: 6 }}>{link.to === 'bookings' ? 'View bookings →' : 'View parents →'}</div>}
           </>);
           return link ? (
-            <button key={label} type="button" className="bb-cardbtn" onClick={() => onOpenParents(link)}
-              title="Open these parents in the Parents tab" style={{ ...card(), textAlign: 'left', cursor: 'pointer', font: 'inherit', color: C.text }}>
+            <button key={label} type="button" className="bb-cardbtn" onClick={() => (link.to === 'bookings' ? onOpenBookings(link.filters) : onOpenParents(link.filters))}
+              title={link.to === 'bookings' ? 'Open these bookings in the Bookings tab' : 'Open these parents in the Parents tab'} style={{ ...card(), textAlign: 'left', cursor: 'pointer', font: 'inherit', color: C.text }}>
               {inner}
             </button>
           ) : <div key={label} style={card()}>{inner}</div>;
@@ -285,38 +303,38 @@ export default function MetricsView({ onOpenParents, onGoTab }: { onOpenParents:
       ])}
 
       {section('Growth', [
-        ['Parents', m.totals.parents, C.blue, undefined, {}],
-        ['New parents (7d)', m.growth.newParents7, C.blue, undefined, { joined_from: sgDay_(7 * 864e5) }],
-        ['New parents (30d)', m.growth.newParents30, C.blue, undefined, { joined_from: sgDay_(30 * 864e5) }],
-        ['Parents who booked', m.growth.parentsWhoBooked, C.pink, m.totals.parents ? `${pctText(m.growth.parentsWhoBooked / m.totals.parents)} of parents` : undefined, { activity: 'booked' }],
+        ['Parents', m.totals.parents, C.blue, undefined, P({})],
+        ['New parents (7d)', m.growth.newParents7, C.blue, undefined, P({ joined_from: sgDay_(7 * 864e5) })],
+        ['New parents (30d)', m.growth.newParents30, C.blue, undefined, P({ joined_from: sgDay_(30 * 864e5) })],
+        ['Parents who booked', m.growth.parentsWhoBooked, C.pink, m.totals.parents ? `${pctText(m.growth.parentsWhoBooked / m.totals.parents)} of parents` : undefined, P({ activity: 'booked' })],
         ['Vendors (active)', m.totals.activeProviders, C.green, `${m.totals.providers} in total`],
         ['New vendors (30d)', m.growth.newVendors30, C.blue],
         ['Activated vendors', m.growth.activatedVendors, C.green, 'Live class and a booking'],
       ])}
 
       {section('Booking health', [
-        ['Bookings today', m.bookings.today, C.pink],
-        ['Bookings (7d)', m.bookings.last7, C.pink],
-        ['Bookings (30d)', m.health.bookings30, C.pink],
-        ['Bookings (all)', m.totals.bookings, C.muted],
-        ['Manual bookings', m.health.bookingSplit.manual, C.blue, 'Added by vendors, no parent account'],
-        ['Paid bookings', m.health.bookingSplit.paid, C.green, `${sgdDollars(m.health.bookingSplit.paidAmount)} paid online`],
-        ['Free / package', m.health.bookingSplit.other, C.muted, 'Free classes and package credits'],
-        ['Cancellation rate (30d)', pctText(m.health.cancellationRate), C.text, `${m.health.cancelled30} cancelled`],
+        ['Bookings today', m.bookings.today, C.pink, undefined, B({ date_by: 'booked', from: sgDay_(0), to: sgDay_(0) })],
+        ['Bookings (7d)', m.bookings.last7, C.pink, undefined, B({ date_by: 'booked', from: sgDay_(6 * 864e5), to: sgDay_(0) })],
+        ['Bookings (30d)', m.health.bookings30, C.pink, undefined, B({ date_by: 'booked', from: sgDay_(30 * 864e5), to: sgDay_(0) })],
+        ['Bookings (all)', m.totals.bookings, C.muted, undefined, B({})],
+        ['Manual bookings', m.health.bookingSplit.manual, C.blue, 'Added by vendors, no parent account', B({ pay: 'manual' })],
+        ['Paid bookings', m.health.bookingSplit.paid, C.green, `${sgdDollars(m.health.bookingSplit.paidAmount)} paid online`, B({ pay: 'amount' })],
+        ['Free / package', m.health.bookingSplit.other, C.muted, 'Free classes and package credits', B({ pay: 'free,credit,token,unpaid' })],
+        ['Cancellation rate (30d)', pctText(m.health.cancellationRate), C.text, `${m.health.cancelled30} cancelled`, B({ status: 'cancelled', date_by: 'booked', from: sgDay_(30 * 864e5), to: sgDay_(0) })],
         ['Upcoming fill rate', pctText(m.health.upcomingFillRate), C.green, `${m.health.upcomingSessions} sessions with a capacity`],
-        ['On waitlists', m.health.waitlisted, C.muted],
+        ['On waitlists', m.health.waitlisted, C.muted, undefined, B({ status: 'waitlisted' })],
         ['Activities', m.totals.activities, C.muted],
         ['Reviews', m.totals.reviews, C.muted],
       ])}
 
       {section('Subscriptions', [
-        ['Plus subscribers', m.subscriptions.plusActive, C.green, `${m.subscriptions.plusPastDue} past due · ${m.subscriptions.plusCanceled} cancelled`, { plan: 'plus' }],
+        ['Plus subscribers', m.subscriptions.plusActive, C.green, `${m.subscriptions.plusPastDue} past due · ${m.subscriptions.plusCanceled} cancelled`, P({ plan: 'plus' })],
         ['Vendors on Pro', m.subscriptions.vendorPro, C.green],
         ['Vendors on Premium', m.subscriptions.vendorPremium, C.green],
         ['Vendor plans at risk', m.subscriptions.vendorPastDue, C.pink, `${m.subscriptions.vendorCanceled} cancelled`],
       ])}
 
-      <ActivityChart daily={m.daily} onOpenParents={onOpenParents} />
+      <ActivityChart daily={m.daily} onOpenParents={onOpenParents} onOpenBookings={onOpenBookings} />
 
       <div style={{ marginTop: 22 }}>
         <TestDataBar includeTest={includeTest} setIncludeTest={setIncludeTest} excluded={excludedText} />
