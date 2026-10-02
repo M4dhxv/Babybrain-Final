@@ -53,7 +53,7 @@ type UpcomingSession = {
   overflow: number;
 };
 type RecentBooking = {
-  id: string; child: string; activity: string; time: string; status: string;
+  id: string; child: string; activity: string; location: string | null; time: string; status: string;
   isRepeat: boolean; packageName: string | null;
 };
 
@@ -154,15 +154,31 @@ export default function DashboardPage() {
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
       const ids = [...titleOf.keys()];
 
-      const recent: RecentBooking[] = (recentRes.data ?? []).map((r) => ({
+      // The RPC doesn't return a location, so resolve it from each booking's
+      // session (falling back to the activity's own location) — no migration.
+      const recentIds = (recentRes.data ?? []).map((r) => r.booking_id);
+      const { data: recentLocRows } = recentIds.length
+        ? await supabase.from('bookings').select('id, activity_sessions(location_id)').in('id', recentIds)
+        : { data: [] as { id: string; activity_sessions: { location_id: string | null } | { location_id: string | null }[] | null }[] };
+      const recentLocOf = new Map<string, string | null>((recentLocRows ?? []).map((b) => {
+        const s = Array.isArray(b.activity_sessions) ? b.activity_sessions[0] : b.activity_sessions;
+        return [b.id, s?.location_id ?? null];
+      }));
+      const activityIdByTitle = new Map((acts ?? []).map((a) => [a.title, a.id]));
+
+      const recent: RecentBooking[] = (recentRes.data ?? []).map((r) => {
+        const locId = recentLocOf.get(r.booking_id) ?? activityLocationOf.get(activityIdByTitle.get(r.activity_title) ?? '') ?? null;
+        return {
         id: r.booking_id,
         child: r.child_name,
         activity: r.activity_title,
+        location: locId ? locationNameOf.get(locId) ?? null : null,
         time: sgWhen(r.starts_at),
         status: r.status,
         isRepeat: r.is_repeat,
         packageName: r.package_name,
-      }));
+        };
+      });
 
       const sampleBks = sampleBksRes.data ?? [];
 
@@ -447,8 +463,18 @@ export default function DashboardPage() {
                     {booking.child.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{booking.child}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium text-gray-900 truncate">{booking.child}</span>
+                      <span className={cn(
+                        'shrink-0 inline-block px-2 py-0.5 text-[11px] rounded-full capitalize',
+                        booking.status === 'confirmed' || booking.status === 'completed' ? 'bg-green-300 text-green-800'
+                          : booking.status === 'waitlisted' ? 'bg-blue-300 text-blue-800' : 'bg-yellow-300 text-yellow-800'
+                      )}>
+                        {booking.status}
+                      </span>
+                    </div>
                     <div className="text-xs text-gray-500 truncate">{booking.activity}{booking.time ? ` · ${booking.time}` : ''}</div>
+                    {booking.location && <div className="text-xs text-gray-500 truncate">{booking.location}</div>}
                     {/* QA: "'confirmed' doesn't add much value... is it possible
                         to tag whether a booking is 'New' or 'Repeat' or what
                         type of package it was booked with". New/Repeat is
@@ -467,15 +493,6 @@ export default function DashboardPage() {
                       </span>
                       <span className="text-[10px] text-gray-400">{booking.packageName ?? 'Single session'}</span>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span className={cn(
-                      'inline-block px-2 py-0.5 text-xs rounded-full mt-1 capitalize',
-                      booking.status === 'confirmed' || booking.status === 'completed' ? 'bg-green-300 text-green-800'
-                        : booking.status === 'waitlisted' ? 'bg-blue-300 text-blue-800' : 'bg-yellow-300 text-yellow-800'
-                    )}>
-                      {booking.status}
-                    </span>
                   </div>
                 </div>
               ))}
