@@ -307,9 +307,10 @@ export default function OnboardingPage() {
       }
     }
 
-    // Fresh sign-in plus brand-new children — reboot so every hook picks up
-    // the new auth and profile state from scratch.
-    goTo("/matches", { hard: true });
+    // Fresh sign-in plus brand-new children. AuthProvider reloads the profile and
+    // children on the sign-in event, and per-user hooks key on the user id, so a
+    // client-side hop picks it all up without re-downloading the bundle.
+    goTo("/matches", { replace: true });
   }
 
   if (confirmSent) {

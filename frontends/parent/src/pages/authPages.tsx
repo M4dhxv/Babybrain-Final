@@ -24,8 +24,12 @@ export function LoginPage() {
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
     const next = getParam("next");
-    // Reboot into the signed-in app so every hook starts from the new session.
-    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile", { hard: true });
+    // Client-side hop, not a reload: AuthProvider already holds the new session
+    // (onAuthStateChange fires before signIn resolves) and every per-user hook is
+    // keyed on the user id, so the destination mounts straight into the
+    // signed-in app. A hard reload here re-downloaded and re-parsed the whole
+    // bundle — several seconds on a phone — for nothing.
+    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile", { replace: true });
   }
   return (
     <PageShell active="/login">
@@ -164,7 +168,7 @@ export function ResetPasswordPage() {
     setBusy(false);
     if (error) return setError(error);
     setDone(true);
-    setTimeout(() => goTo("/profile", { hard: true }), 1500);
+    setTimeout(() => goTo("/profile", { replace: true }), 1500);
   }
 
   return (

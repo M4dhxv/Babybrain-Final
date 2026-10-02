@@ -32,3 +32,40 @@ export function warmDashboard(): void {
     warming = false;
   });
 }
+
+let warmingActivity = false;
+
+/** Warm the activity page's chunk so the first listing opened isn't a chunk fetch + skeleton. */
+export function warmActivity(): void {
+  if (warmingActivity) return;
+  warmingActivity = true;
+  import("../pages/ActivityDetailPage").catch(() => {
+    warmingActivity = false;
+  });
+}
+
+/**
+ * Start an activity page's data requests the moment a parent shows intent —
+ * pointer over a card (desktop), finger down on it (phone), keyboard focus — so
+ * the listing and its live availability are usually already in flight (or
+ * landed) by the time the page mounts. One delegated listener covers every card
+ * on Home, Matches and Explore. See `prefetchActivity` in lib/data.ts.
+ */
+export function installActivityPrefetch(): void {
+  const seen = new Set<string>();
+  const onIntent = (e: Event) => {
+    const a = (e.target as HTMLElement | null)?.closest?.("a");
+    const href = a?.getAttribute("href");
+    if (!href || !/^\/(app\/)?activity\?/.test(href)) return;
+    const slug = new URLSearchParams(href.split("?")[1]).get("slug");
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    warmActivity();
+    void import("./data").then((m) => m.prefetchActivity(slug));
+    // Allow a later re-prefetch (the shared cache decides if it's still fresh).
+    window.setTimeout(() => seen.delete(slug), 30_000);
+  };
+  document.addEventListener("pointerover", onIntent, { passive: true });
+  document.addEventListener("touchstart", onIntent, { passive: true });
+  document.addEventListener("focusin", onIntent);
+}

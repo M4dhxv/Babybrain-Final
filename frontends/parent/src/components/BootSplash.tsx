@@ -1,3 +1,5 @@
+import { SPLASH_LOGO } from "../lib/splashLogo";
+
 const ORBIT_DOTS = [
   { color: "#ffc1d6", size: 8, angle: 0 },
   { color: "#ffd77a", size: 7, angle: 72 },
@@ -20,7 +22,7 @@ export function BootSplash({ label = "Loading" }: { label?: string }) {
   return (
     <div role="status" aria-label={label} className="flex flex-col items-center justify-center gap-3.5 py-16">
       <div className="relative flex h-[92px] w-[92px] items-center justify-center">
-        <div className="bb-splash-orbit absolute inset-0 opacity-0">
+        <div className="bb-splash-orbit absolute inset-0">
           {ORBIT_DOTS.map((d, i) => (
             <i
               key={i}
@@ -38,12 +40,14 @@ export function BootSplash({ label = "Loading" }: { label?: string }) {
           ))}
         </div>
         <img
-          src={`${import.meta.env.BASE_URL}assets/brand/icon-192.png`}
+          src={SPLASH_LOGO}
+          width={64}
+          height={64}
           alt=""
-          className="bb-splash-icon relative z-10 h-14 w-14 rounded-2xl object-cover opacity-0"
+          className="bb-splash-icon relative z-10 h-16 w-16 object-contain"
         />
       </div>
-      <div className="bb-splash-name flex text-[15px] font-extrabold tracking-tight opacity-0">
+      <div className="flex text-[15px] font-extrabold tracking-tight">
         {"BabyBrain".split("").map((ch, i) => (
           <i key={i} style={{ color: NAME_COLORS[i], fontStyle: "normal" }}>{ch}</i>
         ))}

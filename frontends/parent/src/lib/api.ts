@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { resilientGet } from "./net";
 
 /**
  * Calls a Next.js backend route (chat token / enquiry / booking), attaching
@@ -45,7 +46,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
  */
 export async function apiGetPublic<T = unknown>(path: string): Promise<T> {
   const base = (import.meta.env.VITE_API_BASE as string) || "";
-  const res = await fetch(`${base}${path}`);
+  const res = await resilientGet(`${base}${path}`);
   if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? res.statusText);
   return res.json() as Promise<T>;
 }

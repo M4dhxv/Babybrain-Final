@@ -4,10 +4,10 @@ import { apiGet, apiGetPublic } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
-import { cacheGet, cacheSet, cacheInvalidate } from "./queryCache";
+import { cacheGet, cacheSet, cacheInvalidate, cacheFetch } from "./queryCache";
 import { goTo } from "./nav";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
-import { isMultiDay, sgShortRange } from "./schedule";
+import { isMultiDay, sgShortRange, sgDay } from "./schedule";
 import {
   formatAgeRange,
   type Activity as ActivityRow,
@@ -30,6 +30,29 @@ export function isPackOnSale(p: { starts_at: string | null; available_until: str
   if (p.starts_at && new Date(p.starts_at) > now) return false;
   if (p.available_until && new Date(p.available_until) <= now) return false;
   return true;
+}
+
+/** Expiry pill text for a pack — the vendor sets one or the other, never both
+ *  (checked in the same order as the vendor portal's PackagesPage.tsx summary). */
+export function packExpiryText(p: { validity_days: number | null; expiry_date: string | null }) {
+  if (p.validity_days) return `${p.validity_days} day${p.validity_days === 1 ? "" : "s"} after purchase`;
+  if (p.expiry_date) return `on ${sgDay(p.expiry_date)}`;
+  return "No expiry";
+}
+
+/** Whether to flag `p` "Best value" among the packs on offer. A vendor's own
+ *  pick (packages.best_value) wins outright; otherwise it's the pack(s) at the
+ *  lowest per-class price, and only if that beats the single-class price. */
+export function isPackBestValue(
+  packs: { credits: number; price_cents: number; best_value: boolean }[],
+  p: { credits: number; price_cents: number; best_value: boolean },
+  singlePrice: number | null,
+) {
+  if (packs.some((x) => x.best_value)) return p.best_value;
+  const per = (x: { credits: number; price_cents: number }) => x.price_cents / 100 / x.credits;
+  const valid = packs.filter((x) => x.credits > 0);
+  if (singlePrice == null || p.credits <= 0 || valid.length === 0) return false;
+  return per(p) < singlePrice && Math.abs(per(p) - Math.min(...valid.map(per))) < 0.005;
 }
 
 /** The signed-in parent's plan. It can only be learned from the Stripe
@@ -214,11 +237,65 @@ const EMPTY_DETAIL: ActivityDetail = {
 // e.g. bouncing from the listing to Explore and back.
 const DETAIL_FRESH_MS = 20_000;
 
+/** Past this age a cached listing's *sessions* are not trusted on sight: the
+ *  hero, description, provider and reviews show instantly, but availability
+ *  (which changes by the minute, and may have come back from a previous launch)
+ *  goes back to its own skeleton until the refresh lands. */
+const SESSIONS_TRUST_MS = 10 * 60_000;
+
+function fromCache(hit: { data: ActivityDetail; age: number }): ActivityDetail {
+  if (hit.age < SESSIONS_TRUST_MS) return { ...hit.data, loading: false };
+  return { ...hit.data, sessions: [], eventSoldOut: false, courseSpan: null, loading: false, sessionsLoading: true };
+}
+
+const CORE_FRESH_MS = 30_000;
+
+/** The activity row + provider, shared by the page and by link-intent prefetch. */
+function fetchActivityCore(slug: string) {
+  return cacheFetch(`act-core:${slug}`, CORE_FRESH_MS, () =>
+    // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
+    // unpublished mock row with no linked provider — by direct link, and it
+    // rendered a listing page with none of the contact buttons.
+    supabase
+      .from("activities")
+      .select("*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
+      .eq("slug", slug)
+      .eq("is_published", true)
+      .maybeSingle()
+      .then(({ data }) => data)
+  );
+}
+
+type WixSlotsResponse = { slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null };
+
+/** Live Wix availability. The server's own edge cache is only ~30s, so an
+ *  activity nobody opened for a while pays a full Wix round-trip — which is why
+ *  this is also fired on link intent (prefetchActivity), well before the page
+ *  mounts. Without `days` the route defaults to 7, which hid every appointment
+ *  whose first bookable slot is 8+ days out; 60 is the route's own ceiling. */
+function fetchWixSlots(activityId: string) {
+  return cacheFetch(`wix-slots:${activityId}`, CORE_FRESH_MS, () =>
+    apiGetPublic<WixSlotsResponse>(`/api/wix/slots?activityId=${activityId}&days=60`)
+  );
+}
+
+/** Start an activity page's network work early — on hover / touch / focus of a
+ *  link to it — so by the time the page mounts the answer is usually already
+ *  here. Shares cacheFetch keys with the page itself, so it is never a second
+ *  request, only an earlier first one. Safe to call repeatedly. */
+export function prefetchActivity(slug: string): void {
+  fetchActivityCore(slug)
+    .then((act) => {
+      if (act?.wix_service_id) void fetchWixSlots(act.id).catch(() => {});
+    })
+    .catch(() => {});
+}
+
 export function useActivityDetail(slug: string | null): ActivityDetail {
   const detailKey = slug ? "detail:" + slug : null;
   const seed = detailKey ? cacheGet<ActivityDetail>(detailKey) : undefined;
   const [state, setState] = useState<ActivityDetail>(
-    seed ? { ...seed.data, loading: false } : EMPTY_DETAIL
+    seed ? fromCache(seed) : EMPTY_DETAIL
   );
 
   useEffect(() => {
@@ -232,22 +309,14 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     // a client-side hop straight from one listing to another.
     const cached = cacheGet<ActivityDetail>(detailKey);
     if (cached) {
-      setState({ ...cached.data, loading: false });
+      setState(fromCache(cached));
       if (cached.age < DETAIL_FRESH_MS) return; // fresh enough — no network at all
     } else {
       setState((s) => ({ ...s, loading: true }));
     }
     let cancelled = false;
     (async () => {
-      // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
-      // unpublished mock row with no linked provider — by direct link, and it
-      // rendered a listing page with none of the contact buttons.
-      const { data: act } = await supabase
-        .from("activities")
-        .select("*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
-        .eq("slug", slug)
-        .eq("is_published", true)
-        .maybeSingle();
+      const act = await fetchActivityCore(slug).catch(() => null);
       if (!act) {
         if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, eventSoldOut: false, loading: false, sessionsLoading: false, reviewsLoading: false });
         return;
@@ -275,13 +344,7 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
       let wixCourseSpan: { start: string; end: string } | null = null;
       const sessionsPromise: Promise<ActivitySession[]> = act.wix_service_id
         ? Promise.all([
-            apiGetPublic<{ slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null }>(
-              // Without `days` the route defaults to 7, which hid every
-              // appointment whose first bookable slot is 8+ days out and
-              // truncated classes at the furthest-booking window. 60 is the
-              // route's own ceiling (same as the vendor portal uses for courses).
-              `/api/wix/slots?activityId=${act.id}&days=60`
-            )
+            fetchWixSlots(act.id)
               .then((r) => {
                 wixCourseSpan = r.course ?? null;
                 return r.slots.map((s) => ({

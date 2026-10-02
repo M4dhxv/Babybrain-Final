@@ -16,12 +16,28 @@
 //
 // Bump CACHE when this file's own strategy changes (not on every app
 // deploy — the hashed-asset cache-first rule handles that automatically).
-const CACHE = "bb-shell-v1";
+const CACHE = "bb-shell-v2";
+// How long a launch waits on the network for the HTML before using the cached
+// shell. Without a ceiling, an app resumed on a flaky/dead connection (the
+// radio is often still waking) sat on a blank/black WebView until the OS gave
+// up on the socket. The cached shell paints our own splash at once, and the
+// app then fetches live data; a stale shell is repaired by the hashed-asset
+// preload-error reload in main.tsx.
+const NAV_TIMEOUT_MS = 3000;
 const SHELL_URLS = [
   "/app/",
   "/app/manifest.webmanifest",
   "/app/assets/brand/icon-192.png",
+  "/app/assets/brand/splash-logo.png",
 ];
+
+// Navigations that return the parent SPA's index.html (production serves it from
+// bare paths via a Next rewrite; dev and the install scope use /app/). Anything
+// else (/vendor, /api, /auth) must never overwrite the cached shell.
+const PARENT_ROUTES = /^\/(app(\/|$)|$|login|forgot-password|reset-password|pricing|payment|book|booked|about|onboarding|matches|explore|activity|profile|edit-profile|contact|terms|privacy)/;
+function isParentRoute(pathname) {
+  return PARENT_ROUTES.test(pathname);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -51,7 +67,26 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() => caches.match("/app/").then((hit) => hit || caches.match(request))),
+      (async () => {
+        const cached = () => caches.match("/app/").then((hit) => hit || caches.match(request));
+        const network = fetch(request).then((res) => {
+          // Keep the shell fresh for the next launch.
+          if (res.ok && isParentRoute(url.pathname)) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put("/app/", copy)).catch(() => {});
+          }
+          return res;
+        });
+        const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
+        try {
+          const first = await Promise.race([network, timeout]);
+          if (first) return first;
+          // Slow network: serve the shell now if we have one, else keep waiting.
+          return (await cached()) || network;
+        } catch {
+          return (await cached()) || Response.error();
+        }
+      })(),
     );
     return;
   }

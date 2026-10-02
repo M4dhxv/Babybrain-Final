@@ -19,19 +19,9 @@ import { apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
-import { useActivityDetail, isPackOnSale } from "../lib/data";
+import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
-
-/** How long a pack's credits stay valid once bought — shown as the info icon's
- *  tooltip in booking step 5, before the parent commits to buying. The vendor
- *  sets one or the other, never both; checked in the same order as the
- *  vendor portal's own PackagesPage.tsx summary. */
-function packValidityText(p: { validity_days: number | null; expiry_date: string | null }) {
-  if (p.validity_days) return `Credits valid for ${p.validity_days} day${p.validity_days === 1 ? "" : "s"} after purchase`;
-  if (p.expiry_date) return `Credits valid until ${sgDay(p.expiry_date)}`;
-  return undefined;
-}
 
 /** One selectable row in the booking flow's "Choose your package" step. */
 /** A row in booking step 4 — name and price on the left, the action on the
@@ -43,7 +33,8 @@ function PackageOption({
   title,
   price,
   badge,
-  infoTooltip,
+  expiry,
+  infoNote,
   action,
 }: {
   selected: boolean;
@@ -51,11 +42,14 @@ function PackageOption({
   title: string;
   price: string;
   badge?: string;
-  /** Shown as a hover/tap info icon beside the title — e.g. how long the pack's credits stay valid once bought. */
-  infoTooltip?: string;
+  /** Violet pill beside the badge — when the pack's credits expire. */
+  expiry?: string;
+  /** Shown under the title when the circular "i" button is toggled. */
+  infoNote?: string;
   /** Shown on the right for packs you can buy outright. */
   action?: { label: string; onClick: () => void };
 }) {
+  const [noteOpen, setNoteOpen] = useState(false);
   return (
     <div
       onClick={onSelect}
@@ -76,26 +70,24 @@ function PackageOption({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-black">{title}</span>
           {badge && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#FFD77A]">{badge}</span>}
-          {infoTooltip && (
-            <svg
-              onClick={(e) => e.stopPropagation()}
-              aria-label={infoTooltip}
-              role="img"
-              className="h-3.5 w-3.5 flex-shrink-0 text-[#9AA2BD]"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {expiry && <span className="rounded-full bg-palette-purpleSoft px-2 py-0.5 text-[10px] font-bold text-palette-purpleInk">{expiry}</span>}
+        </div>
+        <div className="mt-0.5 flex items-center gap-2">
+          <span className="text-sm font-semibold text-[#59658d]">{price}</span>
+          {infoNote && (
+            <button
+              type="button"
+              aria-label="More info"
+              aria-expanded={noteOpen}
+              onClick={(e) => { e.stopPropagation(); setNoteOpen((v) => !v); }}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border border-[#9AA2BD] p-0 font-serif text-[9px] font-bold not-italic leading-none text-[#9AA2BD] hover:border-baby-pink hover:text-baby-pink"
             >
-              <title>{infoTooltip}</title>
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 11v5.5M12 8v.01" />
-            </svg>
+              i
+            </button>
           )}
         </div>
-        <span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{price}</span>
+        {infoNote && noteOpen && <p role="note" className="mt-1.5 text-xs font-semibold text-[#59658d]">{infoNote}</p>}
       </div>
       {action && (
         selected ? (
@@ -563,11 +555,6 @@ export default function BookingPage() {
      doesn't also see the "cheapest" one highlighted for a reason they never
      asked for. A provider who's never touched the new checkbox keeps
      today's auto behaviour unchanged. */
-  const anyManualBestValue = packs.some((p) => p.best_value);
-  const bestPackPerClassPrice =
-    !anyManualBestValue && packs.length > 0
-      ? Math.min(...packs.filter((p) => p.credits > 0).map((p) => p.price_cents / 100 / p.credits))
-      : null;
   /* Sessions can carry their own venue and price (migration 00074), so the
      venue/price on this page can shift as the parent picks a different date
      or time. Flag it up front, but only for classes that actually have that
@@ -1451,21 +1438,10 @@ export default function BookingPage() {
                               selected={payWith === `pack:${p.id}`}
                               onSelect={() => setPayWith(`pack:${p.id}`)}
                               title={p.name}
-                              price={`$${(p.price_cents / 100).toFixed(0)}`}
-                              infoTooltip={packValidityText(p)}
-                              badge={
-                                anyManualBestValue
-                                  ? p.best_value
-                                    ? "Best value"
-                                    : undefined
-                                  : price != null &&
-                                      p.credits > 0 &&
-                                      p.price_cents / 100 / p.credits < price &&
-                                      bestPackPerClassPrice != null &&
-                                      Math.abs(p.price_cents / 100 / p.credits - bestPackPerClassPrice) < 0.005
-                                    ? "Best value"
-                                    : undefined
-                              }
+                              price={`${p.credits} ${p.credits === 1 ? "session" : "sessions"} · $${(p.price_cents / 100).toFixed(0)}`}
+                              expiry={packExpiryText(p)}
+                              infoNote="Please note each session needs to be booked"
+                              badge={isPackBestValue(packs, p, price) ? "Best value" : undefined}
                               action={{ label: "Select", onClick: () => setPayWith(`pack:${p.id}`) }}
                             />
                           ))}

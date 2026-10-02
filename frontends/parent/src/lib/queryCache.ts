@@ -23,6 +23,66 @@ const store = new Map<string, Entry>();
  *  resolves). Past this it's treated as absent. */
 const HARD_CAP_MS = 10 * 60_000;
 
+/* ---- Survives a restart (public, non-personal reads only) -------------------
+ *
+ * The in-memory store dies with the page, so the first open of an activity
+ * after the app had been closed (or the OS had discarded it) always started
+ * from nothing: skeleton until every request in the waterfall landed — the
+ * "10+ seconds after a while". Listings, map pins and activity pages are the
+ * same for every visitor, so they're mirrored to localStorage and come back
+ * instantly on the next launch, then revalidate in the background exactly as
+ * a warm in-memory hit does. Anything user-specific (profile:, recs, plan) is
+ * never written. */
+const PERSIST_PREFIXES = ["detail:", "activities:", "pins:", "facets:", "act-core:"];
+const PERSIST_KEY = "bb-qc-v1";
+/** How stale a persisted value may be and still be shown while it refreshes. */
+const PERSIST_MAX_AGE_MS = 6 * 60 * 60_000;
+/** Keep well inside localStorage's ~5 MB so we never crowd out the auth session. */
+const PERSIST_MAX_BYTES = 1_200_000;
+
+const isPersisted = (key: string) => PERSIST_PREFIXES.some((p) => key.startsWith(p));
+const maxAge = (key: string) => (isPersisted(key) ? PERSIST_MAX_AGE_MS : HARD_CAP_MS);
+
+try {
+  const raw = typeof localStorage !== "undefined" ? localStorage.getItem(PERSIST_KEY) : null;
+  if (raw) {
+    const saved = JSON.parse(raw) as Record<string, Entry>;
+    const now = Date.now();
+    for (const [k, e] of Object.entries(saved)) {
+      if (isPersisted(k) && e && typeof e.ts === "number" && now - e.ts <= PERSIST_MAX_AGE_MS) store.set(k, e);
+    }
+  }
+} catch {
+  /* storage blocked or corrupt — start empty */
+}
+
+let persistTimer: number | undefined;
+function schedulePersist() {
+  if (typeof window === "undefined") return;
+  window.clearTimeout(persistTimer);
+  persistTimer = window.setTimeout(() => {
+    const write = () => {
+      try {
+        // Newest first, until the byte budget is spent.
+        const entries = [...store.entries()].filter(([k]) => isPersisted(k)).sort((a, b) => b[1].ts - a[1].ts);
+        const out: Record<string, Entry> = {};
+        let bytes = 0;
+        for (const [k, e] of entries) {
+          const size = JSON.stringify(e).length + k.length;
+          if (bytes + size > PERSIST_MAX_BYTES) continue;
+          bytes += size;
+          out[k] = e;
+        }
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(out));
+      } catch {
+        /* quota or blocked storage — the in-memory cache still works */
+      }
+    };
+    if ("requestIdleCallback" in window) (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(write);
+    else write();
+  }, 1500);
+}
+
 export interface CacheHit<T> {
   data: T;
   /** Milliseconds since this entry was written. */
@@ -34,7 +94,7 @@ export function cacheGet<T>(key: string): CacheHit<T> | undefined {
   const e = store.get(key);
   if (!e) return undefined;
   const age = Date.now() - e.ts;
-  if (age > HARD_CAP_MS) {
+  if (age > maxAge(key)) {
     store.delete(key);
     return undefined;
   }
@@ -43,17 +103,20 @@ export function cacheGet<T>(key: string): CacheHit<T> | undefined {
 
 export function cacheSet(key: string, data: unknown): void {
   store.set(key, { data, ts: Date.now() });
+  if (isPersisted(key)) schedulePersist();
 }
 
 /** Drop entries whose key starts with `prefix` (or everything when omitted). */
 export function cacheInvalidate(prefix?: string): void {
   if (prefix == null) {
     store.clear();
+    schedulePersist();
     return;
   }
   for (const k of [...store.keys()]) {
     if (k.startsWith(prefix)) store.delete(k);
   }
+  if (PERSIST_PREFIXES.some((p) => p.startsWith(prefix) || prefix.startsWith(p))) schedulePersist();
 }
 
 // Requests for the same key that are still in flight when a second caller

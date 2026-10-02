@@ -8,14 +8,14 @@ import {
   wixThumbUrl,
 } from "../components/ui";
 import { ActivityDetailSkeleton } from "../components/Skeletons";
-import { useActivityDetail, useFavorite, usePlan, isPackOnSale } from "../lib/data";
+import { useActivityDetail, useFavorite, usePlan, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cacheFetch } from "../lib/queryCache";
 import { goTo, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref } from "../lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
-import { formatDuration } from "../lib/database.types";
+import { formatAgeRange, formatDuration } from "../lib/database.types";
 import { EnquiryChat } from "../components/EnquiryChat";
 import { ClassGroupChat } from "../components/ClassGroupChat";
 import { useAuth } from "../auth/AuthProvider";
@@ -470,7 +470,8 @@ export default function ActivityDetailPage() {
   const [hasBooking, setHasBooking] = useState(false);
   /** Shown when a free-plan parent taps "Save to favourites". */
   const [favUpgrade, setFavUpgrade] = useState(false);
-  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean }[]>([]);
+  const [packNoteId, setPackNoteId] = useState<string | null>(null);
+  const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean; validity_days: number | null; expiry_date: string | null }[]>([]);
   /** The pack tapped here; carried to the booking page as ?pack=, same idea as pickedSessionId below. */
   const [pickedPackId, setPickedPackId] = useState<string | null>(null);
   /** Index of the photo open in the lightbox, or null when it's closed. */
@@ -525,10 +526,10 @@ export default function ActivityDetailPage() {
     cacheFetch(`provider-packages:${providerId}`, 300_000, () =>
       supabase
         .from("packages")
-        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value")
+        .select("id, name, credits, price_cents, activity_ids, starts_at, available_until, best_value, validity_days, expiry_date")
         .eq("provider_id", providerId)
         .eq("active", true)
-        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean }>)
+        .then(({ data }) => (data ?? []) as unknown as Array<{ id: string; name: string; credits: number; price_cents: number; activity_ids: string[] | null; starts_at: string | null; available_until: string | null; best_value: boolean; validity_days: number | null; expiry_date: string | null }>)
     ).then((rows) => {
       // Packs are for classes only — never offered on a Wix Event, COURSE or
       // APPOINTMENT (same rule as the booking page's packagesNotOffered).
@@ -778,8 +779,24 @@ export default function ActivityDetailPage() {
                         className={`flex items-center justify-between gap-3 rounded-[12px] border p-4 ${selected ? "border-[#A7D8F8] bg-[#EDF7FD]" : "border-[#EBE3E5]"}`}
                       >
                         <div>
-                          <h3 className="font-black">{p.name}</h3>
-                          <p className="text-sm font-semibold text-[#59658d]">{p.credits} {p.credits === 1 ? "session" : "sessions"} · ${(p.price_cents / 100).toFixed(0)}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-black">{p.name}</h3>
+                            {isPackBestValue(packs, p, nextPrice) && <span className="rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[10px] font-bold text-[#FFD77A]">Best value</span>}
+                            <span className="rounded-full bg-palette-purpleSoft px-2 py-0.5 text-[10px] font-bold text-palette-purpleInk">{packExpiryText(p)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-[#59658d]">{p.credits} {p.credits === 1 ? "session" : "sessions"} · ${(p.price_cents / 100).toFixed(0)}</p>
+                            <button
+                              type="button"
+                              aria-label="More info"
+                              aria-expanded={packNoteId === p.id}
+                              onClick={() => setPackNoteId((v) => (v === p.id ? null : p.id))}
+                              className="inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border border-[#9AA2BD] p-0 font-serif text-[9px] font-bold not-italic leading-none text-[#9AA2BD] hover:border-baby-pink hover:text-baby-pink"
+                            >
+                              i
+                            </button>
+                          </div>
+                          {packNoteId === p.id && <p role="note" className="mt-1.5 text-xs font-semibold text-[#59658d]">Please note each session needs to be booked</p>}
                         </div>
                         {/* Picking a pack here no longer buys it — that used
                             to skip choosing a class/time and the provider's
@@ -995,16 +1012,16 @@ export default function ActivityDetailPage() {
               )}
               {next && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next available session"}</strong>
+                  <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next session"}</strong>
                   <span className="text-right">
                     {activity.wix_service_type === "COURSE" && courseRunRange ? courseRunRange : sgDateTime(next.starts_at)}
                   </span>
                 </p>
               )}
-              {next?.capacity != null && (
+              {activity.age_min_months != null && activity.age_max_months != null && (
                 <p className="flex items-start justify-between gap-3">
-                  <strong className="shrink-0">Spaces available</strong>
-                  <span className="text-right text-[#A7D8F8]">{next.capacity > 0 ? `${next.capacity} spots` : "Sold out"}</span>
+                  <strong className="shrink-0">Age</strong>
+                  <span className="text-right">{formatAgeRange(activity.age_min_months, activity.age_max_months)}</span>
                 </p>
               )}
               {/* A weekly course's sessions have no single "duration" worth showing, but a

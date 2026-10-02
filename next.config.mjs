@@ -9,9 +9,18 @@
 // their own caching and are untouched.
 const NO_STORE = [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }];
 
+// Vite fingerprints every JS/CSS/font chunk it emits (name-<hash>.ext) directly under
+// /app/assets/, so one URL can never serve different bytes — safe to cache for a year without
+// revalidating. Files in /public (brand icons live in assets/brand/) are copied verbatim, have no
+// hash, and are deliberately not matched (images are excluded, and the pattern is one path segment). Without this Next serves them with
+// max-age=0, so every cold launch paid a conditional request per chunk.
+const HASHED_ASSET = String.raw`/app/assets/:file([^/]+\.(?:js|css|woff2))`;
+const IMMUTABLE = [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }];
+
 const nextConfig = {
   async headers() {
     return [
+      { source: HASHED_ASSET, headers: IMMUTABLE },
       { source: '/vendor', headers: NO_STORE },
       { source: '/vendor/', headers: NO_STORE },
       { source: '/', headers: NO_STORE },

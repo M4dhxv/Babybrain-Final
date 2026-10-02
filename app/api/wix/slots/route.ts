@@ -114,7 +114,11 @@ export async function GET(request: Request) {
         // of one each — a short, deliberate staleness trade for load. Booking
         // still re-verifies live availability at checkout, so this never
         // affects correctness, only how quickly a change shows up here.
-        { headers: { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=30' } }
+        // stale-while-revalidate is long on purpose: an activity nobody opened
+        // for a few minutes is served instantly from the edge (and refreshed
+        // behind the response) instead of making the next parent wait out a
+        // full live Wix round-trip — the cold "10s+" activity page.
+        { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=300' } }
       );
     }
 
@@ -130,7 +134,7 @@ export async function GET(request: Request) {
           }))
           .filter((slot) => !pausedKeys.has(slot.id.slice(4))),
       },
-      { headers: { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=30' } }
+      { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=300' } }
     );
   } catch (e) {
     console.error('Wix availability fetch failed', e);

@@ -6,6 +6,8 @@ import { FavoritesProvider } from "./lib/favorites";
 import { PendingPlusGate } from "./components/PendingPlusGate";
 import { initPostHog } from "./lib/posthog";
 import { installLinkInterception } from "./lib/nav";
+import { installResumeRepaint } from "./lib/resume";
+import { installActivityPrefetch } from "./lib/prefetch";
 import {
   RouteErrorBoundary,
   isChunkLoadError,
@@ -53,6 +55,12 @@ if ("requestIdleCallback" in window) {
 // are left to the browser. In dev it also applies the `/app/` base the Vite
 // server needs. See lib/nav.ts.
 installLinkInterception();
+
+// Repaint when the app is brought back from the background (the "freezes to black" fix).
+installResumeRepaint();
+
+// Start an activity page's data fetch on hover / touch of its card, before the click lands.
+installActivityPrefetch();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
