@@ -167,8 +167,8 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
   const sel = (k: keyof Filters, opts: [string, string][]) => (
     <select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
   );
-  const sortTh = (k: string, label: string, right?: boolean) => (
-    <th style={{ ...th(), textAlign: right ? 'right' : 'left', cursor: 'pointer', userSelect: 'none' }}
+  const sortTh = (k: string, label: string, align: 'left' | 'center' | 'right' = 'left') => (
+    <th style={{ ...th(), textAlign: align, cursor: 'pointer', userSelect: 'none' }}
       aria-sort={sort === k ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} onClick={() => sortBy(k)}>
       {label}{sort === k ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}
     </th>
@@ -272,9 +272,9 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                 {sortTh('activity', 'Activity')}
                 {sortTh('class', 'Class date and time')}
                 {sortTh('booked', 'Booked on')}
-                {sortTh('children', 'Children')}
+                {sortTh('children', 'Children', 'center')}
                 <th style={th()}>Paid via</th>
-                {sortTh('amount', 'Amount (SGD/Credit)', true)}
+                {sortTh('amount', 'Amount (SGD/Credit)', 'center')}
                 <th style={{ ...th(), width: 44 }} aria-label="Details" />
               </tr>
             </thead>
@@ -305,9 +305,9 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
                       <td style={{ ...td(), whiteSpace: 'nowrap' }}>
                         {sgDay(r.bookedAt)}<div style={{ color: C.muted, fontSize: 12 }}>{sgClock(r.bookedAt)}</div>
                       </td>
-                      <td style={td()}>{r.isManual && r.childCount === 1 && !r.childNames.length ? dash : r.childCount}</td>
+                      <td style={{ ...td(), textAlign: 'center' }}>{r.isManual && r.childCount === 1 && !r.childNames.length ? dash : r.childCount}</td>
                       <td style={td()}>{r.payVia === 'manual' ? dash : r.payVia === 'unpaid' ? <Badge tone="amber">Abandoned pay</Badge> : PAY_LABEL[r.payVia]}</td>
-                      <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{amountText(r)}</td>
+                      <td style={{ ...td(), textAlign: 'center', whiteSpace: 'nowrap' }}>{amountText(r)}</td>
                       <td style={td()}>
                         <button type="button" onClick={() => setOpenRow(open ? null : r.id)} aria-expanded={open} aria-label={open ? 'Hide booking details' : 'Show booking details'}
                           style={{ ...tabBtn(open), padding: '2px 9px', fontSize: 14, lineHeight: '20px' }}>{open ? '▴' : '▾'}</button>
