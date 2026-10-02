@@ -86,7 +86,9 @@ function App() {
   // Explore is the page most visitors open next, so fetch it once the current page has settled
   // (idle, never competing with it) — opening it is then instant rather than a chunk fetch.
   useEffect(() => {
-    if (pathname === "/explore") return;
+    // Not on the auth pages: a visitor there is about to submit a form, and the
+    // map-heavy Explore chunk would compete with that request for bandwidth.
+    if (pathname === "/explore" || pathname === "/login" || pathname === "/forgot-password" || pathname === "/reset-password") return;
     const ric = "requestIdleCallback" in window
       ? (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback
       : null;

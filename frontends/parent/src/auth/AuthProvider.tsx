@@ -144,11 +144,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    *  answer — reporting it as "no profile, no children" is what showed signed-in
    *  parents the logged-out and "tell us about your child" screens on refresh. */
   async function load(): Promise<boolean> {
+    // getSession, not getUser: getUser is a network round trip to the auth
+    // server that ran BEFORE the two queries below, on every page load and every
+    // login. The session is already local (and refreshed if due), and RLS
+    // enforces access server-side regardless, so the user id is all we need.
     const {
-      data: { user },
+      data: { session: current },
       error: userErr,
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession();
     if (userErr) return false;
+    const user = current?.user;
     if (!user) {
       setProfile(null);
       setKids([]);

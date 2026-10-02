@@ -8,6 +8,7 @@ import { initPostHog } from "./lib/posthog";
 import { installLinkInterception } from "./lib/nav";
 import { installResumeRepaint } from "./lib/resume";
 import { installActivityPrefetch } from "./lib/prefetch";
+import { routePath } from "./lib/nav";
 import {
   RouteErrorBoundary,
   isChunkLoadError,
@@ -61,6 +62,13 @@ installResumeRepaint();
 
 // Start an activity page's data fetch on hover / touch of its card, before the click lands.
 installActivityPrefetch();
+
+// The login/sign-up pages are lazy chunks that React would only request after the
+// whole entry bundle has run and rendered. Start the download now so it overlaps
+// the rest of boot instead of following it.
+if (["/login", "/forgot-password", "/reset-password"].includes(routePath())) {
+  void import("./pages/authPages");
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

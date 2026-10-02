@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { ResendConfirmation } from "../components/ResendConfirmation";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam } from "../lib/nav";
+import { warmDashboard } from "../lib/prefetch";
 import { PASSWORD_RULES, passwordError } from "../lib/validation";
 
 export function LoginPage() {
@@ -14,6 +15,9 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   // Supabase's wording for "signed up but never clicked the link".
   const unconfirmed = !!error && /not confirmed/i.test(error);
+  // Nearly everyone lands on Profile right after signing in. Fetch its chunks
+  // now, while they type, so the post-login hop isn't a download + skeleton.
+  useEffect(() => { warmDashboard(); }, []);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
