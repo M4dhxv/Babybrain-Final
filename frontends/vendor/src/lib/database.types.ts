@@ -978,6 +978,38 @@ export type Database = {
           wix_booking_id: string | null;
         }[];
       };
+      provider_bookings_table: {
+        Args: { p_provider: string; p_from: string; p_limit?: number };
+        Returns: {
+          group_key: string;
+          session_id: string;
+          starts_at: string;
+          activity_id: string;
+          activity_title: string;
+          wix_service_type: string | null;
+          location: string | null;
+          user_id: string | null;
+          parent_name: string | null;
+          parent_contact: string | null;
+          is_manual: boolean;
+          booked_at: string;
+          /** One entry per seat of the booking group (00216). */
+          children: {
+            booking_id: string;
+            name: string;
+            age_months: number | null;
+            status: BookingStatus;
+            waitlist_position: number | null;
+            child_id: string | null;
+            has_medical: boolean;
+            medical_disclosure: string | null;
+            info_response: string | null;
+            policies_accepted: number;
+            attendance_status: 'present' | 'absent' | 'late' | null;
+            paid_via: 'credit' | 'token' | 'cash' | 'refunded' | 'free' | 'none' | null;
+          }[];
+        }[];
+      };
       provider_trial_conversion: {
         Args: { p_provider: string; p_days?: number };
         Returns: {

@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams} from 'react-router-dom';
 import {
   CalendarDays, Search, UserPlus, MessageSquare, Shield, CalendarCheck,
   Clock, Baby, Info, Check, X, Save, Gift, FileCheck, User as UserIcon,
-  Pencil, Trash2, XCircle, Download, ListFilter,
+  Pencil, Trash2, XCircle, Download, ListFilter, Table2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -25,6 +25,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import BookingsTable from '@/components/BookingsTable';
 
 /**
  * The class roster table's column tracks. Header and body rows are separate grids, so the
@@ -194,12 +195,33 @@ const describeChatError = (e: unknown, fallback: string): string => {
   return fallback;
 };
 
+function ViewToggle({ view, onChange }: { view: 'roster' | 'table'; onChange: (v: 'roster' | 'table') => void }) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white text-sm font-medium">
+      <button
+        onClick={() => onChange('roster')}
+        className={cn('flex items-center gap-2 px-3 py-2', view === 'roster' ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-50')}
+      >
+        <CalendarDays className="h-4 w-4" /> Roster view
+      </button>
+      <button
+        onClick={() => onChange('table')}
+        className={cn('flex items-center gap-2 border-l border-gray-200 px-3 py-2', view === 'table' ? 'bg-pink-50 text-[#C90044]' : 'text-gray-600 hover:bg-gray-50')}
+      >
+        <Table2 className="h-4 w-4" /> Tabular view
+      </button>
+    </div>
+  );
+}
+
 export default function BookingsPage() {
   const { provider, role, session } = useAuth();
   const canManage = role === 'owner' || role === 'manager';
   const navigate = useNavigate();
   // Read once, on mount, before the deep-link params below are consumed.
   const filterStash = useMemo(readBookingsFilterStash, []);
+  // Roster view (one session at a time) or the all-bookings table.
+  const [view, setView] = useState<'roster' | 'table'>('roster');
   const [issuing, setIssuing] = useState(false);
   const [issuedFor, setIssuedFor] = useState<string | null>(null);
   /* QA 24/08: "Can't currently adjust expiry on a make up token — need to be
@@ -1226,9 +1248,23 @@ export default function BookingsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
           <p className="text-sm text-gray-500 mt-1">Manage bookings for your sessions.</p>
         </div>
+        <div className="hidden shrink-0 sm:flex">
+          <ViewToggle view={view} onChange={setView} />
+        </div>
+      </div>
+      <div className="flex justify-center px-4 pb-4 sm:hidden">
+        <ViewToggle view={view} onChange={setView} />
       </div>
 
-      <div className="px-4 pb-8 sm:px-8">
+      {view === 'table' && provider && (
+        <div className="px-4 pb-8 sm:px-8">
+          <BookingsTable providerId={provider.id} canManage={canManage} />
+        </div>
+      )}
+
+      {/* The Roster view stays mounted (just hidden) so its session, filters and
+          roster survive a trip to the table and back. */}
+      <div className={cn('px-4 pb-8 sm:px-8', view === 'table' && 'hidden')}>
         {/* Session Selector (real sessions). One pill: on mobile it stacks so
             the date filter sits on its own row below the session box (it used
             to be crammed alongside and overflow); on desktop it's the same
@@ -1458,32 +1494,34 @@ export default function BookingsPage() {
                 </div>
               )}
             </div>
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+            <div className="mt-4 flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
               {/* Describes whichever list is actually shown above (booked on
                   Bookings/Attendance, waitlisted on Waitlist) — this used to
                   always read `booked.length`, so it kept saying "N bookings"
                   even on the Waitlist tab. */}
-              <span className="text-sm text-gray-500">
-                {listSource.length}{' '}
-                {activeTab === 'Waitlist' ? 'on waitlist'
-                  : activeTab === 'Bookings' && statusFilter === 'cancelled' ? 'cancelled'
-                  : 'bookings'}
+              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-gray-500">
+                <span className="whitespace-nowrap">
+                  {listSource.length}{' '}
+                  {activeTab === 'Waitlist' ? 'on waitlist'
+                    : activeTab === 'Bookings' && statusFilter === 'cancelled' ? 'cancelled'
+                    : 'bookings'}
+                </span>
                 {spacesLeft != null && (
                   <>
-                    <span className="text-gray-300"> · </span>
+                    <span className="text-gray-300">·</span>
                     <span className={cn(
-                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      'whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium',
                       spacesLeft === 0 ? 'bg-red-100 text-red-600'
                         : spacesLeft <= 3 ? 'bg-amber-100 text-amber-700'
                         : 'bg-green-100 text-green-700'
                     )}>
                       {spacesLeft === 0 ? 'Full' : `${spacesLeft} ${spacesLeft === 1 ? 'space' : 'spaces'} left`}
                     </span>
-                    <span className="text-gray-400"> of {wixCap}</span>
+                    <span className="whitespace-nowrap text-gray-400">of {wixCap}</span>
                   </>
                 )}
                 {wixClassOverflow > 0 && (
-                  <span className="text-gray-400"> · {wixClassOverflow} held beyond Wix capacity</span>
+                  <span className="text-gray-400">· {wixClassOverflow} held beyond Wix capacity</span>
                 )}
               </span>
               {/* One shared chat with every parent holding a seat on this slot
@@ -1495,7 +1533,7 @@ export default function BookingsPage() {
                 <button
                   onClick={messageAllParents}
                   disabled={messagingAll}
-                  className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[#FA4D8D] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#FA4D8D] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
                 >
                   <MessageSquare className="w-3.5 h-3.5" /> {messagingAll ? 'Opening chat…' : 'Message parents'}
                 </button>
