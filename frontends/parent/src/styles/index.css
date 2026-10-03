@@ -57,16 +57,32 @@
   }
 }
 
-/* Leaflet ships its own chrome on the Explore map: the attribution links come
-   in at #0078A8 and it draws a small flag icon in #4C7BE1/#FFD500. All three
-   are the last off-palette colours on the page, and none of them are ours, so
-   pull the links onto the palette blue ink and drop the flag (Leaflet supports
-   hiding it; the OpenStreetMap/CARTO credits themselves stay). */
-.leaflet-container .leaflet-control-attribution a {
-  color: #A7D8F8;
+/* Explore map (MapLibre). Its stock chrome is restyled to the site: palette
+   ink on the attribution links, a rounded card for the pin popups in the page
+   font, and its own "use two fingers" message hidden, because ExploreMap.tsx
+   shows the branded one instead. */
+.maplibregl-map,
+.maplibregl-popup-content {
+  /* The library's own stylesheet loads after this one and sets Helvetica. */
+  font-family: Nunito, ui-sans-serif, system-ui, sans-serif !important;
 }
-.leaflet-attribution-flag {
+.maplibregl-ctrl-attrib a {
+  color: #0E6FAE;
+}
+.maplibregl-cooperative-gesture-screen {
   display: none !important;
+}
+.maplibregl-popup-content {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(17, 26, 76, 0.16);
+}
+.maplibregl-popup-close-button {
+  font-size: 18px;
+  padding: 2px 8px;
+  color: #59658d;
 }
 
 @layer utilities {

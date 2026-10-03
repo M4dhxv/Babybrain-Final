@@ -44,7 +44,7 @@ import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { downloadScheduleIcs, opensCalendarFromLink, scheduleFileUrl } from "../lib/ics";
 import SubscribeCalendar from "../components/SubscribeCalendar";
-import { canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdf, withinRange } from "../lib/schedule-pdf";
+import { buildSchedulePdfFile, canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdfFile, withinRange } from "../lib/schedule-pdf";
 import {
   usePlan,
   useRecommendations,
@@ -450,21 +450,12 @@ const toEntries = (items: BookingItem[]): ScheduleEntryLite[] =>
 /** "Export Schedule": a PDF of the chosen range. Lives in the Filter panel. */
 function ExportScheduleBox({ items, parentName, isPlus }: { items: BookingItem[]; parentName?: string; isPlus: boolean }) {
   const entries = toEntries(items);
-  const [busy, setBusy] = useState(false);
   // Fetch the PDF library ahead of the tap: the download must start while the
   // tap's user-gesture is still live, which Safari does not allow after a slow
   // chunk load.
   useEffect(() => {
     if (isPlus) void import("jspdf");
   }, [isPlus]);
-  const run = async (job: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await job();
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <ScheduleBox
       title="Export Schedule"
@@ -475,23 +466,76 @@ function ExportScheduleBox({ items, parentName, isPlus }: { items: BookingItem[]
       lockedCopy="Saving your schedule as a PDF is a Plus feature."
       entries={entries}
       actions={(range, _sel, disabled) => (
+        <SchedulePdfActions entries={entries} parentName={parentName} from={range.from} to={range.to} disabled={disabled} />
+      )}
+    />
+  );
+}
+
+/** "Save as PDF" and, on phones, "Share" for the range picked above. */
+function SchedulePdfActions({
+  entries,
+  parentName,
+  from,
+  to,
+  disabled,
+}: {
+  entries: ScheduleEntryLite[];
+  parentName?: string;
+  from: string | null;
+  to: string | null;
+  disabled: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const shareable = canShareSchedulePdf();
+  // The share sheet only opens if `navigator.share` is called directly in the
+  // tap, with nothing awaited first. So the PDF for the current range is built
+  // here, ahead of time, and the tap just hands over the finished file.
+  const key = `${from ?? ""}|${to ?? ""}|${entries.length}|${entries.map((e) => e.startsAt).join(",")}`;
+  const [ready, setReady] = useState<{ key: string; file: File } | null>(null);
+  useEffect(() => {
+    if (!shareable || disabled) return;
+    let cancelled = false;
+    buildSchedulePdfFile(entries, parentName, { from, to })
+      .then((file) => { if (!cancelled) setReady({ key, file }); })
+      .catch(() => { /* Share stays in "Preparing" and Save as PDF still works */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, shareable, disabled, parentName]);
+  const file = ready?.key === key ? ready.file : null;
+
+  return (
+    <>
         <div className="flex gap-2">
           <Button
             type="button"
             disabled={disabled || busy}
-            onClick={() => run(() => downloadSchedulePdf(entries, parentName, range))}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await downloadSchedulePdf(entries, parentName, { from, to });
+              } finally {
+                setBusy(false);
+              }
+            }}
             className="flex-1 justify-center"
           >
             <Icon name="open" className="h-4 w-4" /> {busy ? "Preparing..." : "Save as PDF"}
           </Button>
           {/* Phones only (no share sheet on most desktops): send the PDF
               straight to WhatsApp, Mail, AirDrop or Files. */}
-          {canShareSchedulePdf() && (
+          {shareable && (
             <Button
               type="button"
               variant="outline"
-              disabled={disabled || busy}
-              onClick={() => run(() => shareSchedulePdf(entries, parentName, range))}
+              disabled={disabled || !file}
+              onClick={() => {
+                if (!file) return;
+                setShareError(null);
+                // Called synchronously in the tap: see the note above.
+                void shareSchedulePdfFile(file).then(setShareError);
+              }}
               className="flex-1 justify-center"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -501,8 +545,12 @@ function ExportScheduleBox({ items, parentName, isPlus }: { items: BookingItem[]
             </Button>
           )}
         </div>
-      )}
-    />
+        {shareError && (
+          <p className="mt-2 text-xs font-bold text-[#C90044]">
+            Sharing couldn&apos;t open on this device ({shareError}), so the PDF was saved to your downloads instead.
+          </p>
+        )}
+    </>
   );
 }
 

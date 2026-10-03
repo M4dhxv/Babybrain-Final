@@ -13,7 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "jspdf": "^4.2.1",
-    "leaflet": "^1.9.4",
+    "maplibre-gl": "^5.24.0",
     "posthog-js": "^1.396.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -21,7 +21,6 @@
     "stream-chat-react": "^12.16.0"
   },
   "devDependencies": {
-    "@types/leaflet": "^1.9.21",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",

@@ -32,7 +32,7 @@ function useDebouncedValue<T>(value: T, delay: number): T {
   return debounced;
 }
 
-// leaflet (the Explore map only) stays out of the entry bundle — loaded the
+// maplibre-gl (the Explore map only) stays out of the entry bundle — loaded the
 // first time the map is shown.
 const ExploreMap = lazyRoute(
   () => import("../components/ExploreMap").then((m) => ({ default: m.ExploreMap })),

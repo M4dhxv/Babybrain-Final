@@ -8,7 +8,7 @@
  *  than a document. Nothing leaves the device. QA 03/10.
  */
 
-import { canShareFile, share } from "./share";
+import { canShareFile } from "./share";
 
 export interface ScheduleEntry {
   title: string;
@@ -154,13 +154,29 @@ export function canShareSchedulePdf(): boolean {
   return canShareFile(new File([], PDF_NAME, { type: "application/pdf" }));
 }
 
-/** Hands the PDF to the phone's share sheet (WhatsApp, Mail, AirDrop, Save to
- *  Files). Falls back to a plain download if the sheet cannot take it. */
-export async function shareSchedulePdf(entries: ScheduleEntry[], parentName?: string, range?: DateRange) {
+/** The schedule as a ready-made PDF file, for the share sheet. Built ahead of
+ *  the tap (see ExportScheduleBox): `navigator.share` must be called while the
+ *  tap is still "live", and building the PDF first (a chunk load plus the
+ *  render) can outlast that on a phone, after which the browser refuses to
+ *  open the sheet at all. */
+export async function buildSchedulePdfFile(entries: ScheduleEntry[], parentName?: string, range?: DateRange): Promise<File> {
   const blob = await buildSchedulePdf(entries, parentName, range);
-  const file = new File([blob], PDF_NAME, { type: "application/pdf" });
-  if (canShareFile(file) && (await share({ files: [file], title: "BabyBrain schedule" }))) return;
-  saveBlob(blob);
+  return new File([blob], PDF_NAME, { type: "application/pdf", lastModified: Date.now() });
+}
+
+/** Opens the phone's share sheet (WhatsApp, Mail, AirDrop, Save to Files) for
+ *  an already-built file. Call it straight from the tap handler, with nothing
+ *  awaited before it. Returns null on success or when the parent just closed
+ *  the sheet; otherwise the browser's reason, after saving the file instead. */
+export async function shareSchedulePdfFile(file: File): Promise<string | null> {
+  try {
+    await navigator.share({ files: [file] });
+    return null;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return null;
+    saveBlob(file);
+    return e instanceof Error ? e.name : "unknown error";
+  }
 }
 
 export async function downloadSchedulePdf(entries: ScheduleEntry[], parentName?: string, range?: DateRange) {

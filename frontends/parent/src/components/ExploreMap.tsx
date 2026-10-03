@@ -1,47 +1,125 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { LiveActivity } from "../lib/useActivities";
 import { formatDuration, regionLabel } from "../lib/database.types";
 
-// Singapore centre, and the area the map may be panned over.
-const SG_CENTER: [number, number] = [1.3521, 103.8198];
+// MapLibre zoom levels count 512px tiles, so each is one lower than the
+// Leaflet / raster level showing the same area (Leaflet 11 = MapLibre 10).
+
+// Singapore centre [lng, lat], and the area the map may be panned over.
+const SG_CENTER: [number, number] = [103.8198, 1.3521];
+const SG_ZOOM = 10;
 /**
  * Deliberately the island box (lat 1.15-1.48, lng 103.55-104.15) plus a
- * margin, rather than the box itself.
- *
- * `maxBounds` hard-clamps *every* pan Leaflet makes — including the automatic
- * one that brings a popup into view. Held to the tight box, the map at zoom 11
- * is already against its limit, so that pan was refused: a popup opening near
- * the top of the map stayed overhanging and its first entries were sliced off
- * by the map's edge, title and all. Verified by removing maxBounds entirely,
- * at which point the same popup landed fully inside the map.
- *
- * The margin is roughly one popup's worth of latitude at zoom 11 (~0.2°, about
- * 280px) so that pan has somewhere to go, which still keeps the map on
- * Singapore rather than letting it drift off into open sea.
+ * margin, rather than the box itself: held to the tight box, the whole-island
+ * view is already against its limit and a popup opening near an edge has
+ * nowhere to sit. The margin still keeps the map on Singapore rather than
+ * letting it drift off into open sea.
  */
-const SG_MAX_BOUNDS: L.LatLngBoundsExpression = [
-  [0.95, 103.4],
-  [1.68, 104.3],
+const SG_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [103.4, 0.95],
+  [104.3, 1.68],
 ];
 
-// Brand-pink teardrop pin (a DivIcon avoids Leaflet's bundler-broken PNG icons).
-const pinIcon = L.divIcon({
-  className: "",
-  html:
-    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FFC1D6;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 22],
-  popupAnchor: [0, -20],
-});
+/** OpenFreeMap's "positron" vector style: free, no API key, OpenStreetMap data.
+ *  Vector tiles are drawn on the device, so labels and lines stay sharp at any
+ *  zoom and on any screen, and zooming past the deepest tile (14) redraws the
+ *  same shapes larger. There is no "Map data not available" placeholder tile to
+ *  run into, which the old raster source served past zoom 16. */
+const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+
+type Style = maplibregl.StyleSpecification;
+
+/** Shown for the moment before the real style arrives, so the map is never an
+ *  empty box: the site's own cream, which is also the land colour below. */
+const BLANK_STYLE: Style = {
+  version: 8,
+  sources: {},
+  layers: [{ id: "background", type: "background", paint: { "background-color": "#FAF6F1" } }],
+};
+
+/** If OpenFreeMap cannot be reached at all, fall back to the previous raster
+ *  map rather than leaving the pins on a blank card. `maxzoom: 16` is the
+ *  deepest level this source really has (17+ is its "Map data not available"
+ *  placeholder), so it is never asked for more; MapLibre stretches level 16
+ *  when the parent zooms further. */
+const FALLBACK_STYLE: Style = {
+  version: 8,
+  sources: {
+    esri: {
+      type: "raster",
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"],
+      tileSize: 256,
+      maxzoom: 16,
+      attribution:
+        'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    },
+    esriLabels: {
+      type: "raster",
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"],
+      tileSize: 256,
+      maxzoom: 16,
+    },
+  },
+  layers: [
+    { id: "background", type: "background", paint: { "background-color": "#FAF6F1" } },
+    { id: "esri", type: "raster", source: "esri" },
+    { id: "esriLabels", type: "raster", source: "esriLabels" },
+  ],
+};
+
+/** Recolour the stock grey style onto the site palette. Keyed on each layer's
+ *  type and data layer rather than its id, so an upstream rename of a layer
+ *  leaves it in its stock grey instead of breaking the map. */
+function brandStyle(style: Style): Style {
+  // Two sets of dotted lines are dropped, because across an island this small
+  // they read as a web of stray lines over the pins (QA's "extra lines"):
+  // the district boundaries, and the dashes drawn on top of each rail line
+  // (the plain rail line underneath stays, a shade quieter).
+  const dotted = (layer: Style["layers"][number]) =>
+    layer.type === "line" &&
+    ((layer["source-layer"] === "boundary" && !!layer.paint && "line-dasharray" in layer.paint) ||
+      /^railway.*dashline$/.test(layer.id));
+  const kept = style.layers.filter((layer) => !dotted(layer));
+  const layers = kept.map((layer) => {
+    const src = "source-layer" in layer ? layer["source-layer"] : undefined;
+    const paint: Record<string, unknown> = { ...((layer.paint as Record<string, unknown>) ?? {}) };
+    if (layer.type === "background") paint["background-color"] = "#FAF6F1";
+    else if (layer.type === "fill" && src === "water") paint["fill-color"] = "#A7D8F8";
+    else if (layer.type === "line" && src === "waterway") paint["line-color"] = "#A7D8F8";
+    else if (layer.type === "fill" && (src === "park" || src === "landcover")) paint["fill-color"] = "#DFF3D9";
+    else if (layer.type === "line" && layer.id.startsWith("railway")) paint["line-color"] = "#E6DEE0";
+    else if (layer.type === "fill" && src === "landuse") paint["fill-color"] = "#F6F1EC";
+    else if (layer.type === "fill" && src === "building") {
+      paint["fill-color"] = "#F1EBEC";
+      paint["fill-outline-color"] = "#E6DEE0";
+    } else if (layer.type === "symbol") {
+      // Place names in the site's ink; road and water names a step quieter.
+      paint["text-color"] = src === "place" ? "#3f4b78" : src === "water_name" || src === "waterway" ? "#4E86B0" : "#6D748A";
+      paint["text-halo-color"] = "rgba(255,252,248,0.9)";
+    }
+    return { ...layer, paint } as typeof layer;
+  });
+  return { ...style, layers };
+}
+
+// Brand-pink teardrop pin.
+function pinElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "bb-map-pin";
+  el.innerHTML =
+    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FA4D8D;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>';
+  el.style.cursor = "pointer";
+  return el;
+}
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 /** Interactive Explore map: one pin per provider location, its popup lists the
- *  activities at that spot. Tiles are Esri's Light Gray Canvas, which needs no
- *  API key — see the tile-layer comment below for why CARTO Positron had to go.
+ *  activities at that spot. Drawn by MapLibre from OpenFreeMap vector tiles,
+ *  recoloured to the site palette (see STYLE_URL and brandStyle above).
  *
  *  `regions` is the Explore page's area filter. It has to reach the map,
  *  because the list filter keeps an activity when ANY of its provider's venues
@@ -57,8 +135,8 @@ export function ExploreMap({
   regions?: string[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const layerRef = useRef<L.LayerGroup | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
   const [showHint, setShowHint] = useState(false);
 
   // Create the map once.
@@ -66,89 +144,46 @@ export function ExploreMap({
     if (mapRef.current || !containerRef.current) return;
     const el = containerRef.current;
     // On touch screens one finger belongs to the page (scrolling); the map only
-    // moves with two. Leaflet's pinch handler also pans by the fingers' midpoint,
-    // so disabling one-finger drag leaves two-finger pan + zoom intact, and its
-    // CSS drops to `touch-action: pan-x pan-y` so the browser scrolls the page.
+    // moves with two. MapLibre's cooperative gestures do exactly that, and leave
+    // `touch-action: pan-x pan-y` on the canvas so the browser scrolls the page.
+    // Its own "use two fingers" message is hidden in index.css in favour of the
+    // branded hint below. A mouse keeps plain click-and-drag.
     const touchOnly = window.matchMedia("(pointer: coarse)").matches;
-    const map = L.map(el, {
-      dragging: !touchOnly,
+    const map = new maplibregl.Map({
+      container: el,
+      style: BLANK_STYLE,
       center: SG_CENTER,
-      zoom: 11,
-      minZoom: 10,
-      maxZoom: 16,
+      zoom: SG_ZOOM,
+      minZoom: 9,
+      // Street level. Vector tiles redraw sharply this far in; see STYLE_URL.
+      maxZoom: 17,
       maxBounds: SG_MAX_BOUNDS,
-      scrollWheelZoom: false,
-      attributionControl: true,
+      cooperativeGestures: touchOnly,
+      // A flat, north-up map: no tilting or spinning it by accident.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      attributionControl: { compact: true },
     });
-    // Back to Esri's Light Gray Canvas — not CARTO Positron (moved behind an
-    // API key and now stamps "API KEY REQUIRED" across every unkeyed tile,
-    // still HTTP 200 with a valid PNG so nothing throws), and not World Topo
-    // Map either: Topo Map does carry real land/water colour, but it's a
-    // full topographic reference map — building outlines, every minor street,
-    // contour and admin-boundary line, dozens of overlapping street-name
-    // labels shrunk to fit. Fine full-screen, unusable crammed into a 395px
-    // widget: QA's "extra lines" and "text unclear when zoomed" were exactly
-    // this. Canvas is purpose-built for a small embedded map instead —
-    // decluttered road set and label placement at every zoom, so this also
-    // fixes the blur (Canvas is well-hinted at each native zoom; Topo Map's
-    // dense small text wasn't).
-    //
-    // The tradeoff: Canvas's land is perfectly neutral grey — R=G=B exactly,
-    // confirmed by sampling actual tile pixels — so there's no hue there for
-    // any filter to bring out, and a hue-rotate large enough to invent one
-    // (this app's first attempt) rotates every pixel by the same amount
-    // regardless of its source colour, landing land and water on the same
-    // green-cyan smear since they only differed by lightness to begin with.
-    // Water, though, does carry a genuine (very faint) blue cast in the
-    // source tile — see the saturate-only filter below, which amplifies only
-    // that real difference rather than inventing one. Land stays clean and
-    // near-white rather than green; that's the ceiling this tile source has.
-    //
-    // Split into base + labels because this style serves place names as a
-    // separate transparent overlay.
-    //
-    // maxNativeZoom/maxZoom both stop at 16, matched to the map's own
-    // `maxZoom` above — this used to read 18/19 (Leaflet upscaling the last
-    // real tile past 18 rather than going blank), but confirmed by sampling
-    // actual tiles over Singapore, both Canvas layers stop carrying real
-    // detail past zoom 16 here: 17 and 18 serve the exact same
-    // "Map data not available" placeholder everywhere tested, from dense
-    // Orchard Road to the quieter East Coast — so upscaling had nothing real
-    // left to upscale from 17 onward, just that placeholder blown up and
-    // blurred. Capping all three at 16 keeps the map at the deepest zoom this
-    // tile source actually has, instead of pinch-zooming into a dead end.
-    const esri = (service: string, opts: L.TileLayerOptions = {}) =>
-      L.tileLayer(
-        `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${service}/MapServer/tile/{z}/{y}/{x}`,
-        { maxNativeZoom: 16, maxZoom: 16, ...opts }
-      );
-    esri("World_Light_Gray_Base", {
-      // Every data provider Esri requires is still credited; "Esri" simply
-      // isn't repeated twice. The map is only 395px tall, so on a phone the
-      // longer form wrapped onto a second line and ate a visible slice of it.
-      attribution:
-        'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-    }).addTo(map);
-    esri("World_Light_Gray_Reference").addTo(map);
-    // saturate() amplifies whatever colour is already there rather than
-    // inventing any — neutral (0-saturation) land is mathematically
-    // untouched by any multiplier, while water's faint inherent tint (it
-    // actually leans indigo, not pure blue, before amplifying) becomes a
-    // visible pale blue. The small hue-rotate alongside only fine-tunes that
-    // now-amplified water colour off indigo and towards blue; on a still-
-    // neutral pixel a hue-rotate of any size is a no-op (rotating zero
-    // chroma yields zero chroma), so land stays exactly as neutral as
-    // saturate() left it — this is safe in a way the very first attempt's
-    // sepia()-then-hue-rotate wasn't, because sepia() is what manufactured a
-    // rotatable hue out of land's true neutral in the first place. Scoped to
-    // the tile pane only — markers, popups and the zoom control live in
-    // their own Leaflet panes.
-    const tilePane = map.getPane("tilePane");
-    if (tilePane) {
-      tilePane.style.filter = "saturate(500%) hue-rotate(-35deg)";
-    }
-    layerRef.current = L.layerGroup().addTo(map);
+    // The wheel scrolls the page, not the map (zoom with the buttons or a pinch).
+    map.scrollZoom.disable();
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
     mapRef.current = map;
+
+    let cancelled = false;
+    fetch(STYLE_URL)
+      .then((r) => {
+        if (!r.ok) throw new Error(`style ${r.status}`);
+        return r.json() as Promise<Style>;
+      })
+      .then((style) => {
+        if (!cancelled) map.setStyle(brandStyle(style));
+      })
+      .catch(() => {
+        if (!cancelled) map.setStyle(FALLBACK_STYLE);
+      });
 
     // Show the hint when a single finger actually tries to drag the map (taps on
     // pins and controls are left alone), and clear it as soon as a second lands.
@@ -164,7 +199,7 @@ export function ExploreMap({
         return;
       }
       const t = e.target as HTMLElement;
-      armed = !t.closest(".leaflet-control, .leaflet-popup, .leaflet-marker-icon");
+      armed = !t.closest(".maplibregl-ctrl, .maplibregl-popup, .bb-map-pin");
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
     };
@@ -180,12 +215,13 @@ export function ExploreMap({
       el.addEventListener("touchmove", onMove, { passive: true });
     }
     return () => {
+      cancelled = true;
       window.clearTimeout(hideTimer);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
+      markersRef.current = [];
       map.remove();
       mapRef.current = null;
-      layerRef.current = null;
     };
   }, []);
 
@@ -263,13 +299,13 @@ export function ExploreMap({
   // Re-plot pins and re-fit the view — only when the pin content actually changes.
   useEffect(() => {
     const map = mapRef.current;
-    const layer = layerRef.current;
-    if (!map || !layer) return;
-    layer.clearLayers();
+    if (!map) return;
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
 
-    const bounds: [number, number][] = [];
+    const bounds = new maplibregl.LngLatBounds();
     for (const g of pinsRef.current) {
-      bounds.push([g.lat, g.lng]);
+      bounds.extend([g.lng, g.lat]);
       // QA: "You shouldn't have to click on pop out before seeing price",
       // "Can't see duration on activity pop outs", and the location should read
       // as an area rather than a postcode. Each row now carries price, duration
@@ -316,28 +352,29 @@ export function ExploreMap({
           return heading + list.map(row).join("");
         })
         .join("");
+      // The cap keeps the popup shorter than the 395px map — eight activities
+      // with long titles would otherwise run to roughly 600px. Nothing is
+      // hidden: anything past the cap is a scroll away inside the popup.
       const html =
-        `<div style="min-width:150px;font-family:inherit">` +
+        `<div style="min-width:150px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;font-family:inherit">` +
         body +
         (g.items.length > 8 ? `<div style="color:#68718f;font-size:12px">+${g.items.length - 8} more</div>` : "") +
         `</div>`;
-      // Caps the popup so it can never be taller than the 395px map — eight
-      // activities with long titles would otherwise run to roughly 600px,
-      // which no amount of panning can fit. Works together with the margin on
-      // SG_MAX_BOUNDS: this keeps the popup small enough to fit, that lets
-      // Leaflet pan it fully into view.
-      //
-      // Leaflet's own `maxHeight` rather than CSS overflow, because it also
-      // stops scroll events inside the popup being swallowed by the map
-      // underneath, which plain `overflow-y: auto` would not. Nothing is
-      // hidden — anything past the cap is a scroll away.
-      L.marker([g.lat, g.lng], { icon: pinIcon }).bindPopup(html, { maxHeight: 240 }).addTo(layer);
+      // focusAfterOpen off: it focused the first link, drawing a focus ring
+      // on it as though the parent had tabbed there.
+      const popup = new maplibregl.Popup({ offset: 22, maxWidth: "260px", focusAfterOpen: false }).setHTML(html);
+      markersRef.current.push(
+        new maplibregl.Marker({ element: pinElement(), anchor: "bottom" })
+          .setLngLat([g.lng, g.lat])
+          .setPopup(popup)
+          .addTo(map)
+      );
     }
 
-    if (bounds.length) {
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15, animate: false });
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 30, maxZoom: 14, animate: false });
     } else {
-      map.setView(SG_CENTER, 11, { animate: false });
+      map.jumpTo({ center: SG_CENTER, zoom: SG_ZOOM });
     }
   }, [pinsKey]);
 
