@@ -128,11 +128,11 @@ function ContactForm() {
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-sm font-black">Your name</label>
-          <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sarah Tan" />
+          <input className={input} autoComplete="name" autoCapitalize="words" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sarah Tan" />
         </div>
         <div>
           <label className="mb-1 block text-sm font-black">Email address</label>
-          <input type="email" className={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
+          <input type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
         </div>
       </div>
       <div className="mt-3">

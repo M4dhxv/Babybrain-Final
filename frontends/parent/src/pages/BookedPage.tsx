@@ -9,6 +9,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { usePlan } from "../lib/data";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { wixThumbUrl } from "../components/ui";
+import { canShare, mapsUrl, share } from "../lib/share";
 
 export default function BookedPage() {
   const { session } = useAuth();
@@ -93,7 +94,8 @@ export default function BookedPage() {
                 <div>
                   <h3 className="text-xl font-black">{title}</h3>
                   {when && <div className="mt-5 space-y-3 font-semibold text-[#4a5685]"><p><Icon name="calendar" className="mr-2 inline h-5 w-5 text-baby-lilac" />{when}</p></div>}
-                  {venue && <p className="mt-3 font-semibold text-[#4a5685]"><Icon name="pin" className="mr-2 inline h-5 w-5 text-baby-lilac" />{venue}</p>}
+                  {/* Tap for directions: Apple Maps on iPhone, Google Maps elsewhere. */}
+                  {venue && <p className="mt-3 font-semibold text-[#4a5685]"><Icon name="pin" className="mr-2 inline h-5 w-5 text-baby-lilac" /><a href={mapsUrl(venue)} target="_blank" rel="noopener noreferrer" className="underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta">{venue}</a></p>}
                 </div>
               </div>
               {detail?.description?.trim() && (
@@ -135,6 +137,27 @@ export default function BookedPage() {
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Activity</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
+              {/* Phones only: pass the booking on to a partner or helper through
+                  the share sheet (WhatsApp, iMessage, AirDrop). */}
+              {canShare() && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="mt-3 w-full"
+                  onClick={() =>
+                    void share({
+                      title,
+                      text: [waitlisted ? `On the waitlist: ${title}` : `Booked: ${title}`, when, venue].filter(Boolean).join("\n"),
+                      ...(slug ? { url: `${window.location.origin}/activity?slug=${encodeURIComponent(slug)}` } : {}),
+                    })
+                  }
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" />
+                  </svg>
+                  Share booking
+                </Button>
+              )}
               {start && (
                 <AddToCalendar event={{ id: `${start}-${title}`, title, startsAt: start, endsAt: end || null, venue }} />
               )}

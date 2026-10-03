@@ -64,7 +64,7 @@ function ChildDraftFields({
       <div className="space-y-3">
         <div>
           <label className="mb-1 block text-sm font-black">Child's name</label>
-          <input className={input} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} placeholder="e.g. Emma" />
+          <input className={input} autoComplete="off" autoCapitalize="words" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} placeholder="e.g. Emma" />
         </div>
         <div>
           <label className="mb-1 block text-sm font-black">Date of birth</label>
@@ -366,11 +366,11 @@ export default function OnboardingPage() {
           <h1 className="text-[26px] font-black">Let's get to know <span className="text-baby-pink">you</span></h1>
           <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
           <div className="mt-5 space-y-3">
-            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
-            <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
+            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
+            <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
             <div>
               <label className="mb-1 block text-sm font-black">Password</label>
-              <input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+              <input type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
               <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
                 {PASSWORD_RULES.map((rule) => {
                   const met = rule.test(password);
@@ -382,12 +382,12 @@ export default function OnboardingPage() {
                 })}
               </ul>
             </div>
-            <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
+            <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
+              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
               <div>
                 <label className="mb-1 block text-sm font-black">Postcode</label>
-                <input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
+                <input className={input} inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
                 <p className="mt-1 text-xs font-semibold text-[#6D748D]">Used to show what's near you.</p>
               </div>
             </div>

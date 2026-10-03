@@ -1,3 +1,4 @@
+import { mapsUrl } from "../lib/share";
 import { memo, useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -1007,7 +1008,21 @@ export default function ActivityDetailPage() {
               {nextVenueAddress && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Location</strong>
-                  <span className="text-right">{nextVenueAddress}</span>
+                  {/* A real address opens directions (Apple Maps on iPhone,
+                      Google Maps elsewhere); a "your own home" label has nowhere
+                      to point, so it stays plain text. */}
+                  {activity.is_custom_location && !nextVenue ? (
+                    <span className="text-right">{nextVenueAddress}</span>
+                  ) : (
+                    <a
+                      href={mapsUrl(nextVenueAddress)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-right underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta"
+                    >
+                      {nextVenueAddress}
+                    </a>
+                  )}
                 </p>
               )}
               {next && (

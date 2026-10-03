@@ -152,10 +152,10 @@ export default function EditProfilePage() {
         <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
           <h2 className="font-black">Your details</h2>
           <div className="mt-3 space-y-3">
-            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
+            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
-              <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} inputMode="numeric" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} /></div>
+              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
+              <div><label className="mb-1 block text-sm font-black">Postcode</label><input className={input} inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} /></div>
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-[#6D748A]">Email</p>

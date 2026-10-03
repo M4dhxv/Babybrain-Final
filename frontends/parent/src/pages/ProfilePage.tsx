@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { staffLabel } from "../lib/staffLabel";
 import {
   Suspense,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -43,7 +44,7 @@ import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { downloadScheduleIcs, opensCalendarFromLink, scheduleFileUrl } from "../lib/ics";
 import SubscribeCalendar from "../components/SubscribeCalendar";
-import { downloadSchedulePdf, withinRange } from "../lib/schedule-pdf";
+import { canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdf, withinRange } from "../lib/schedule-pdf";
 import {
   usePlan,
   useRecommendations,
@@ -311,21 +312,34 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["settings", "Settings", "gear", false],
 ];
 
-/** Pick a date range, then export those bookings as a printable PDF or an
- *  .ics calendar file.
- *
- *  The exports used to take everything at once, which is unhelpful once a
- *  parent has a term's worth of classes — QA asked to "choose a range before
- *  download". Presets cover the common cases; the two date fields (which carry
- *  their own calendar pop-out) handle anything else. */
-function ExportScheduleDialog({
-  items,
-  parentName,
-  onClose,
+type ScheduleEntryLite = { title: string; startsAt: string; endsAt?: string | null; venue?: string; status?: string };
+
+/** One of the two boxes on the Bookings tab ("Export Schedule" and "Add to
+ *  calendar"). Both share this frame so they look and behave alike: a title,
+ *  a short explanation, date presets, From / To fields (each with its own
+ *  calendar pop-out) and a live count. What differs is the accent colour (pink
+ *  for the PDF, purple for the calendar) and the buttons passed as `actions`.
+ *  On Free the controls are replaced by an upgrade prompt. */
+function ScheduleBox({
+  title,
+  intro,
+  tone,
+  icon,
+  locked,
+  lockedCopy,
+  entries,
+  actions,
+  collapsible = false,
 }: {
-  items: BookingItem[];
-  parentName?: string;
-  onClose: () => void;
+  title: string;
+  intro: string;
+  tone: "pink" | "purple";
+  icon: string;
+  locked: boolean;
+  lockedCopy: string;
+  entries: ScheduleEntryLite[];
+  actions: (range: { from: string | null; to: string | null }, selected: ScheduleEntryLite[], disabled: boolean) => React.ReactNode;
+  collapsible?: boolean;
 }) {
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const addDays = (n: number) => {
@@ -335,17 +349,7 @@ function ExportScheduleDialog({
   };
   const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(addDays(30));
-
-  // The dialog is taller than a phone screen once Subscribe is open. Without
-  // this the page behind it took the scroll: lock it while the dialog is up,
-  // and the card below scrolls on its own (see its max-h / overflow-y-auto).
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  const [open, setOpen] = useState(!collapsible);
 
   const presets: [string, string, string][] = [
     ["Next 7 days", iso(new Date()), addDays(7)],
@@ -353,123 +357,224 @@ function ExportScheduleDialog({
     ["Next 3 months", iso(new Date()), addDays(90)],
     ["Everything", "", ""],
   ];
-
-  const entries = items
-    .filter((b) => b.startsAt && b.status !== "cancelled")
-    .map((b) => ({
-      title: b.title,
-      startsAt: b.startsAt!,
-      endsAt: b.endsAt,
-      venue: b.venue,
-      status: b.status,
-    }));
   const selected = withinRange(entries, { from: from || null, to: to || null });
-  const invalid = from && to && from > to;
+  const invalid = !!(from && to && from > to);
 
-  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
+  const t =
+    tone === "pink"
+      ? { border: "border-palette-pinkMuted", bg: "bg-palette-pinkTint", text: "text-baby-cta", chipOn: "border-[#FA4D8D] bg-[#FA4D8D] text-white", chipHover: "hover:border-[#FA4D8D]" }
+      : { border: "border-palette-purple", bg: "bg-palette-purpleTint", text: "text-palette-purpleInk", chipOn: "border-[#7D4AC5] bg-[#7D4AC5] text-white", chipHover: "hover:border-[#7D4AC5]" };
+  const input = `h-11 w-full rounded-[10px] border ${t.border} bg-white px-3 text-sm font-semibold`;
+
+  const head = (
+    <div className="flex items-start gap-3">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white ${t.text}`}>
+        <Icon name={locked ? "lock" : icon} className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-base font-black">{title}</h3>
+        <p className="mt-0.5 text-xs font-semibold text-[#59658d]">{locked ? lockedCopy : intro}</p>
+      </div>
+      {collapsible && !locked && (
+        <Icon name="chevron" className={`mt-2 h-4 w-4 shrink-0 text-[#6D748A] transition ${open ? "rotate-90" : ""}`} />
+      )}
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overscroll-contain bg-black/40 p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label="Export schedule"
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-[420px] overflow-y-auto overscroll-contain rounded-[16px] bg-white p-5 shadow-soft"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-black">Export your schedule</h2>
-            <p className="mt-1 text-sm font-semibold text-[#59658d]">
-              Export a date range as a PDF or a one-off calendar copy, or keep your calendar up to date automatically.
+    <div className={`rounded-[14px] border ${t.border} ${t.bg} p-4`}>
+      {collapsible && !locked ? (
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="w-full text-left">
+          {head}
+        </button>
+      ) : (
+        head
+      )}
+      {locked ? (
+        <a
+          href="/pricing"
+          className={`mt-3 block rounded-[10px] border ${t.border} bg-white px-3 py-2.5 text-center text-sm font-black ${t.text}`}
+        >
+          Upgrade to Plus &rarr;
+        </a>
+      ) : (
+        open && (
+          <>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {presets.map(([label, f, tt]) => {
+                const on = from === f && to === tt;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => { setFrom(f); setTo(tt); }}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                      on ? t.chipOn : `border-[#EBE3E5] bg-white text-[#59658d] ${t.chipHover}`
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-black">From</span>
+                <DateInput value={from} onChange={setFrom} className={input} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-black">To</span>
+                <DateInput value={to} onChange={setTo} className={input} />
+              </label>
+            </div>
+            <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#C90044]" : "text-[#59658d]"}`}>
+              {invalid
+                ? "The end date is before the start date."
+                : `${selected.length} ${selected.length === 1 ? "session" : "sessions"} in this range`}
             </p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-1 text-[#6D748A] hover:bg-[#FAF7F7]">
-            <Icon name="close" className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {presets.map(([label, f, t]) => {
-            const on = from === f && to === t;
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => { setFrom(f); setTo(t); }}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                  on ? "bg-baby-pink text-white" : "border border-[#EBE3E5] text-[#59658d] hover:border-baby-pink"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-black">From</span>
-            <DateInput value={from} onChange={setFrom} className={input} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-black">To</span>
-            <DateInput value={to} onChange={setTo} className={input} />
-          </label>
-        </div>
-
-        <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#FFC1D6]" : "text-[#59658d]"}`}>
-          {invalid
-            ? "The end date is before the start date."
-            : `${selected.length} ${selected.length === 1 ? "session" : "sessions"} in this range`}
-        </p>
-
-        <div className="mt-4 flex gap-3">
-          <Button
-            type="button"
-            disabled={!!invalid || selected.length === 0}
-            onClick={() => {
-              downloadSchedulePdf(entries, parentName, { from: from || null, to: to || null });
-              onClose();
-            }}
-            className="flex-1 justify-center"
-          >
-            <Icon name="open" className="h-4 w-4" /> Save as PDF
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!!invalid || selected.length === 0}
-            onClick={() => {
-              const events = selected.map((e, i) => ({
-                id: `${i}-${e.startsAt}`,
-                title: e.title,
-                startsAt: e.startsAt,
-                endsAt: e.endsAt ?? null,
-                venue: e.venue,
-              }));
-              // iPhone / iPad / Mac / Android: a real link that returns a
-              // calendar file opens the calendar app's "Add all" directly. A
-              // Blob download (below) is unreliable on iOS, so it is only the
-              // fallback — desktop browsers, or a range too big for a link.
-              const link = opensCalendarFromLink() ? scheduleFileUrl(events) : null;
-              if (link) window.location.assign(link);
-              else downloadScheduleIcs(events);
-              onClose();
-            }}
-            className="flex-1 justify-center"
-          >
-            <Icon name="calendar" className="h-4 w-4" /> Add to calendar
-          </Button>
-        </div>
-
-        <p className="mt-5 border-t border-[#EBE3E5] pt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">
-          Or keep your calendar up to date automatically
-        </p>
-        <div className="mt-3">
-          <SubscribeCalendar />
-        </div>
-      </div>
+            <div className="mt-3">
+              {actions({ from: from || null, to: to || null }, selected, invalid || selected.length === 0)}
+            </div>
+          </>
+        )
+      )}
     </div>
+  );
+}
+
+const toEntries = (items: BookingItem[]): ScheduleEntryLite[] =>
+  items
+    .filter((b) => b.startsAt && b.status !== "cancelled")
+    .map((b) => ({ title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue, status: b.status }));
+
+/** "Export Schedule": a PDF of the chosen range. Lives in the Filter panel. */
+function ExportScheduleBox({ items, parentName, isPlus }: { items: BookingItem[]; parentName?: string; isPlus: boolean }) {
+  const entries = toEntries(items);
+  const [busy, setBusy] = useState(false);
+  // Fetch the PDF library ahead of the tap: the download must start while the
+  // tap's user-gesture is still live, which Safari does not allow after a slow
+  // chunk load.
+  useEffect(() => {
+    if (isPlus) void import("jspdf");
+  }, [isPlus]);
+  const run = async (job: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await job();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <ScheduleBox
+      title="Export Schedule"
+      intro="Save the sessions in a date range as a PDF you can print or share with grandparents and helpers."
+      tone="pink"
+      icon="open"
+      locked={!isPlus}
+      lockedCopy="Saving your schedule as a PDF is a Plus feature."
+      entries={entries}
+      actions={(range, _sel, disabled) => (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            disabled={disabled || busy}
+            onClick={() => run(() => downloadSchedulePdf(entries, parentName, range))}
+            className="flex-1 justify-center"
+          >
+            <Icon name="open" className="h-4 w-4" /> {busy ? "Preparing..." : "Save as PDF"}
+          </Button>
+          {/* Phones only (no share sheet on most desktops): send the PDF
+              straight to WhatsApp, Mail, AirDrop or Files. */}
+          {canShareSchedulePdf() && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled || busy}
+              onClick={() => run(() => shareSchedulePdf(entries, parentName, range))}
+              className="flex-1 justify-center"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" />
+              </svg>
+              Share
+            </Button>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
+/** "Add to calendar": a one-off copy (Add) or a live feed (Subscribe). Shown
+ *  even with no upcoming bookings so a parent can still subscribe; Add is
+ *  frozen until there is a session in the range. */
+function AddToCalendarBox({ items, isPlus }: { items: BookingItem[]; isPlus: boolean }) {
+  const entries = toEntries(items);
+  const [subscribing, setSubscribing] = useState(false);
+  const purpleSolid = "min-h-[44px] flex-1 rounded-full border border-transparent bg-[#7D4AC5] px-4 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+  const purpleGhost = "min-h-[44px] flex-1 rounded-full border border-[#7D4AC5] bg-white px-4 py-2.5 text-sm font-bold text-[#7D4AC5] hover:bg-palette-purpleTint";
+  return (
+    <ScheduleBox
+      title="Add to calendar"
+      intro="Put your sessions in your phone or computer calendar, either once or kept up to date automatically."
+      tone="purple"
+      icon="calendar"
+      locked={!isPlus}
+      lockedCopy="Adding your schedule to a calendar is a Plus feature."
+      entries={entries}
+      collapsible
+      actions={(_range, selected, disabled) => (
+        <>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                const events = selected.map((e, i) => ({
+                  id: `${i}-${e.startsAt}`,
+                  title: e.title,
+                  startsAt: e.startsAt,
+                  endsAt: e.endsAt ?? null,
+                  venue: e.venue,
+                }));
+                // iPhone / iPad / Mac / Android: a real link that returns a
+                // calendar file opens the calendar app's "Add all" directly. A
+                // Blob download is unreliable on iOS, so it is only the
+                // fallback: desktop browsers, or a range too big for a link.
+                const link = opensCalendarFromLink() ? scheduleFileUrl(events) : null;
+                if (link) window.location.assign(link);
+                else downloadScheduleIcs(events);
+              }}
+              className={purpleSolid}
+            >
+              Add
+            </button>
+            <button type="button" onClick={() => setSubscribing((v) => !v)} aria-expanded={subscribing} className={purpleGhost}>
+              Subscribe
+            </button>
+          </div>
+          <ul className="mt-3 space-y-1.5 text-xs font-semibold text-[#59658d]">
+            <li>
+              <b className="text-[#7D4AC5]">Add</b> copies the sessions in the dates above into your calendar once. It won&apos;t change if a session is moved or cancelled.
+              {entries.length === 0 && " Available once you have an upcoming booking."}
+            </li>
+            <li>
+              <b className="text-[#7D4AC5]">Subscribe</b> links your calendar to your BabyBrain schedule. It covers all your bookings, including future ones, and updates by itself when a session moves or is cancelled.
+            </li>
+          </ul>
+          <p className="mt-2 text-xs font-semibold text-[#59658d]">
+            <b>Add on your device:</b> iPhone, iPad and Mac open Calendar to confirm. Android opens your calendar app.
+            Windows, Linux and Chromebook download a .ics file: open it, or import it into Google Calendar or Outlook.
+          </p>
+          {subscribing && (
+            <div className="mt-4 border-t border-palette-purple pt-4">
+              <SubscribeCalendar startOpen purple />
+            </div>
+          )}
+        </>
+      )}
+    />
   );
 }
 
@@ -526,7 +631,7 @@ function ChildSelect({
         value={value ?? "all"}
         onChange={(v) => onChange(v === "all" ? null : v)}
         aria-label={label}
-        className={`h-10 px-3 text-sm font-bold text-[#4a5685]${className ? " min-w-0 flex-1" : ""}`}
+        className={`h-11 px-3 text-sm font-bold text-[#4a5685]${className ? " min-w-0 flex-1" : ""}`}
       >
         <Opt value="all">All children (split out)</Opt>
         {kids.map((k) => (
@@ -571,7 +676,7 @@ function BookingsFilterButton({
       onClick={onToggle}
       aria-expanded={open}
       aria-label="Filter and sort bookings"
-      className={`relative flex h-10 shrink-0 items-center gap-2 rounded-[10px] border bg-white px-3 text-sm font-bold text-[#4a5685] ${open ? "border-[#FA4D8D]" : "border-[#EBE3E5]"}`}
+      className={`relative flex h-11 shrink-0 items-center gap-2 rounded-[10px] border bg-white px-3 text-sm font-bold text-[#4a5685] ${open ? "border-[#FA4D8D]" : "border-[#EBE3E5]"}`}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
         <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
@@ -1258,7 +1363,18 @@ export default function ProfilePage() {
   // then rolls back. On the other tabs it stays closed until the edge handle
   // (› / ‹) or a tap on the dimmed page opens it. At lg the Tailwind `lg:`
   // classes drop the fixed positioning and it's a static sidebar again.
-  const [menuOpen, setMenuOpen] = useState(false);
+  //
+  // The open / closed state lives in a ref and a `data-menu` attribute on <main>
+  // (the drawer, scrim and handle restyle from it with `group-data-[menu=open]`),
+  // not in React state. This page is huge: a state flip re-rendered all of it
+  // before the 300ms slide could start, so the drawer lagged on open and close.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const menuOpenRef = useRef(false);
+  const setMenuOpen = useCallback((next: boolean | ((v: boolean) => boolean)) => {
+    const v = typeof next === "function" ? next(menuOpenRef.current) : next;
+    menuOpenRef.current = v;
+    mainRef.current?.setAttribute("data-menu", v ? "open" : "closed");
+  }, []);
   // Once the parent has used the menu to go to another tab, coming back to
   // Overview is a menu navigation, not a fresh visit, so no reveal.
   const leftOverview = useRef(false);
@@ -1417,7 +1533,7 @@ export default function ProfilePage() {
       if (document.querySelector("div.fixed.inset-0")) return;
       sx = e.touches[0].clientX;
       sy = e.touches[0].clientY;
-      if (menuOpen) mode = "close";
+      if (menuOpenRef.current) mode = "close";
       else if (sx <= EDGE && !scrolledSideways(e.target)) mode = "open";
     };
     const onMove = (e: TouchEvent) => {
@@ -1442,7 +1558,7 @@ export default function ProfilePage() {
       document.removeEventListener("touchend", reset);
       document.removeEventListener("touchcancel", reset);
     };
-  }, [menuOpen, handleAdjusting]);
+  }, [handleAdjusting]);
 
   // Goes through the /api/customer/bookings backend route (service role)
   // instead of querying `bookings` directly from the browser — a direct
@@ -2011,7 +2127,7 @@ export default function ProfilePage() {
           switching tabs shows the content straight away instead of burying it
           under the promo blocks. On desktop both sidebar cards stack on the
           left with the content beside them. */}
-      <main className="mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
+      <main ref={mainRef} data-menu="closed" className="group mx-auto flex max-w-[1122px] flex-col gap-5 px-4 py-5 sm:px-6 lg:grid lg:grid-cols-[235px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
         {/* Tap-away scrim: covers the ~50% of the page the open drawer leaves
             visible, and closes the drawer when tapped. Mobile only. */}
         {/* Always mounted so it can fade with the drawer instead of popping in
@@ -2019,12 +2135,9 @@ export default function ProfilePage() {
         <button
           type="button"
           aria-label="Close menu"
-          aria-hidden={!menuOpen}
-          tabIndex={menuOpen ? 0 : -1}
+          tabIndex={-1}
           onClick={() => setMenuOpen(false)}
-          className={`fixed inset-0 z-40 bg-black/30 transition-opacity duration-300 ease-out lg:hidden ${
-            menuOpen ? "opacity-100" : "pointer-events-none opacity-0"
-          }`}
+          className="pointer-events-none fixed inset-0 z-40 bg-black/30 opacity-0 transition-opacity duration-300 ease-out group-data-[menu=open]:pointer-events-auto group-data-[menu=open]:opacity-100 lg:hidden"
         />
         {/* Edge toggle: a pink arrow on the left edge — pointing right (›) to
             open, folding into pointing left (‹) once the drawer is open. No
@@ -2036,9 +2149,7 @@ export default function ProfilePage() {
           aria-label={
             handleAdjusting
               ? "Drag up or down to reposition, release to set"
-              : menuOpen
-                ? "Close menu"
-                : "Open menu"
+              : "Open or close menu"
           }
           onPointerDown={handlePressStart}
           onPointerMove={handlePressMove}
@@ -2051,29 +2162,28 @@ export default function ProfilePage() {
             // Slides with `transform` (like the drawer), not `left`: animating
             // `left` re-runs layout and paint on the main thread every frame, so
             // the handle stuttered and drifted out of step with the drawer.
-            transform: `translate(${menuOpen ? "calc(62vw - 44px)" : "0px"}, -50%)${handleAdjusting ? " scale(1.15)" : ""}`,
+            // The open-state slide is the CSS var below; only the scale and
+            // the vertical centring are React-driven.
+            transform: `translate(var(--bb-handle-x, 0px), -50%)${handleAdjusting ? " scale(1.15)" : ""}`,
           }}
           // touch-none is unconditional: it has to be set before the gesture
           // starts, or the browser has already claimed the touch as a scroll.
-          className="fixed left-0 z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] transition-transform duration-300 ease-out will-change-transform lg:hidden"
+          className="fixed left-0 z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] transition-transform duration-300 ease-out will-change-transform [--bb-handle-x:0px] group-data-[menu=open]:[--bb-handle-x:calc(62vw-44px)] lg:hidden"
         >
           <span className="relative -ml-2 block [filter:drop-shadow(0_0_3px_#fff)_drop-shadow(0_0_1px_#fff)]">
-            {menuOpen ? (
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" />
-              </svg>
-            ) : (
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 5l7 7-7 7" />
-              </svg>
-            )}
-            {!menuOpen && (unreadMessages > 0 || unreadNotifications > 0) && (
-              <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-baby-cta" />
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="hidden group-data-[menu=open]:block">
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="block group-data-[menu=open]:hidden">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+            {(unreadMessages > 0 || unreadNotifications > 0) && (
+              <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-baby-cta group-data-[menu=open]:hidden" />
             )}
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out will-change-transform lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out will-change-transform lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 -translate-x-full group-data-[menu=open]:translate-x-0`}
         >
           {/* The scroll boundary on desktop: max-height + overflow live here,
               on the same box as its own rounded corners (12px, matching the
@@ -2337,7 +2447,7 @@ export default function ProfilePage() {
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Sessions still to come. Once a session time has passed it moves to Past activities.</p>
               <div className="mb-4 flex items-center gap-2">
                 <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} className="min-w-0 flex-1" />
-                {bookingsLoaded && upcomingBookings.length > 1 && (
+                {bookingsLoaded && (
                   <BookingsFilterButton
                     open={bookingFilterOpen}
                     onToggle={() => setBookingFilterOpen((v) => !v)}
@@ -2345,15 +2455,25 @@ export default function ProfilePage() {
                   />
                 )}
               </div>
-              {bookingsLoaded && upcomingBookings.length > 1 && bookingFilterOpen && (
-                <BookingsFilterPanel
-                  sort={bookingSort}
-                  onSort={setBookingSort}
-                  status={bookingStatus}
-                  onStatus={setBookingStatus}
-                  counts={bookingStatusCounts}
-                  total={upcomingBookings.length}
-                />
+              {bookingsLoaded && bookingFilterOpen && (
+                <div className="mb-4 space-y-3">
+                  {upcomingBookings.length > 1 && (
+                    <BookingsFilterPanel
+                      sort={bookingSort}
+                      onSort={setBookingSort}
+                      status={bookingStatus}
+                      onStatus={setBookingStatus}
+                      counts={bookingStatusCounts}
+                      total={upcomingBookings.length}
+                    />
+                  )}
+                  {planKnown && <ExportScheduleBox items={upcomingBookings} isPlus={isPlus} />}
+                </div>
+              )}
+              {bookingsLoaded && planKnown && (
+                <div className="mb-4">
+                  <AddToCalendarBox items={upcomingBookings} isPlus={isPlus} />
+                </div>
               )}
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
@@ -2362,15 +2482,15 @@ export default function ProfilePage() {
                   {groupByChild(shownUpcoming, children).map((g) => (
                     <section key={g.key}>
                       <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
-                      <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} isPlus={isPlus} />
+                      <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} />
                     </section>
                   ))}
                   {shownUpcoming.length === 0 && (
-                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
+                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} />
                   )}
                 </div>
               ) : (
-                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
+                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} />
               )}
             </div>
           )}
@@ -3220,12 +3340,11 @@ function PartyPlaces({
   );
 }
 
-function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void; isPlus?: boolean }) {
+function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void }) {
   // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
   const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Arrived here from a notification's "view this booking" link — scroll to
@@ -3404,36 +3523,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = true }: { items: Bo
   }
 
   if (items.length === 0) return <EmptyPanel icon="calendar" copy={emptyCopy} cta="Browse activities" href="/explore" />;
-  // Non-cancelled classes with a scheduled time can be exported as one calendar.
-  const exportable = items.filter((b) => b.startsAt && b.status !== "cancelled");
   return (
     <div className="mt-4 space-y-3">
-      {exportable.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2">
-          {/* Calendar sync and the exportable schedule are Plus features. */}
-          {isPlus ? (
-            <button
-              type="button"
-              onClick={() => setExporting(true)}
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#FED7E4] px-3 py-1.5 text-xs font-bold text-[#FFC1D6] hover:bg-[#FFF5F8]"
-              title="Pick a date range, then save as PDF or add to your calendar"
-            >
-              <Icon name="calendar" className="h-3.5 w-3.5" /> Export schedule
-            </button>
-          ) : (
-            <a
-              href="/pricing"
-              className="flex items-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-xs font-bold text-[#6D7486] hover:border-baby-pink hover:text-[#FFC1D6]"
-              title="Calendar sync and PDF export are Plus features"
-            >
-              <Icon name="lock" className="h-3.5 w-3.5" /> Calendar &amp; PDF export — Plus
-            </a>
-          )}
-        </div>
-      )}
-      {exporting && (
-        <ExportScheduleDialog items={exportable} onClose={() => setExporting(false)} />
-      )}
       {items.map((b) => {
         const cancelWhy = cancelBlockReason(b);
         const reschedWhy = reschedBlockReason(b);

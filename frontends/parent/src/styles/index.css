@@ -38,6 +38,22 @@
 
   #root {
     min-height: 100vh;
+    /* iOS Safari's toolbar slides in and out; `dvh` tracks the visible height
+       so the page neither leaves a gap nor hides under it. The line above is
+       the fallback for browsers without `dvh`. */
+    min-height: 100dvh;
+  }
+}
+
+/* iPhone / iPad only (`-webkit-touch-callout` exists nowhere else): Safari
+   zooms the whole page in when a focused field's text is under 16px, and does
+   not zoom back out. Most fields here are 13-14px, so hold them at 16px on iOS.
+   Other browsers keep the designed sizes. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
 

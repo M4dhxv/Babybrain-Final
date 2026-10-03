@@ -297,8 +297,16 @@ export function useActivities(params: ActivityQuery = {}) {
       const rows = (data ?? []) as SearchActivitiesRow[];
       const mapped = rows.map(toLiveActivity);
       const t = rows[0]?.total_count ?? 0;
-      cacheSet(key, { rows: mapped, total: t });
-      setActivities(mapped);
+      // A background refresh only re-reads the first page. If the parent had
+      // already loaded more ("Load more"), keep those further rows rather than
+      // collapsing the list back to one page on return from an activity.
+      const have = new Set(mapped.map((r) => r.id));
+      const kept = cached && cached.data.rows.length > mapped.length
+        ? cached.data.rows.slice(mapped.length).filter((r) => !have.has(r.id))
+        : [];
+      const merged = kept.length ? [...mapped, ...kept] : mapped;
+      cacheSet(key, { rows: merged, total: t });
+      setActivities(merged);
       setTotal(t);
       setLoading(false);
     })();

@@ -50,14 +50,14 @@ export function LoginPage() {
           <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-black">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
                 <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" enterKeyHint="go" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
@@ -106,7 +106,7 @@ export function ForgotPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="send" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Sending…" : "Send reset link"}</Button>
               </form>
@@ -206,7 +206,7 @@ export function ResetPasswordPage() {
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-black">New password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" enterKeyHint="next" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                   {/* The same live checklist the sign-up form shows, so the
                       rules are visible before the form is submitted. */}
                   <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
@@ -222,7 +222,7 @@ export function ResetPasswordPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-black">Confirm password</label>
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" enterKeyHint="done" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
                 </div>
                 <Button type="submit" className="w-full justify-center">{busy ? "Saving…" : "Update password"}</Button>
               </form>

@@ -1267,6 +1267,8 @@ export default function BookingPage() {
                               key={i}
                               value={guestNames[i] ?? ""}
                               maxLength={80}
+                              autoComplete="off"
+                              autoCapitalize="words"
                               onChange={(e) => setGuestNames((xs) => { const n = [...xs]; n[i] = e.target.value; return n; })}
                               placeholder="Guest child"
                               className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"

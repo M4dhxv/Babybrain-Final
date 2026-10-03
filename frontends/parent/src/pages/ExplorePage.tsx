@@ -53,6 +53,8 @@ const PRICE_MAX = 200; // slider ceiling; at the ceiling the price filter is "An
 const timeLabel = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? "am" : "pm"}`;
 
 const LEAD_KEY = "bb_lead_captured";
+/** How many rows each search had revealed ("Load more"), per search key. */
+const revealMemory = new Map<string, number>();
 
 
 /** One-time email-capture modal shown when a visitor starts exploring. Skipped
@@ -560,15 +562,21 @@ export default function ExplorePage() {
   // batch. Keeps the button responsive to a click without a round trip every
   // time, and matches the goal of not hard-fetching on every tap.
   const REVEAL_STEP = 20;
-  const [revealCount, setRevealCount] = useState(REVEAL_STEP);
-  // A new search (any filter, region, sort, etc.) resets which of its
-  // (different) rows are revealed — reusing the same key shape the hook
-  // itself caches on, so this fires exactly when the hook's own fetch does.
+  // Remembered per search (module-level, so it outlives this page unmounting):
+  // opening an activity and coming back must not collapse the rows the parent
+  // had already loaded. A different search (any filter, region, sort, etc.)
+  // has its own count, starting from REVEAL_STEP — keyed the same way the hook
+  // itself caches on.
   const filterKey = JSON.stringify(filterParams);
-  useEffect(() => {
-    setRevealCount(REVEAL_STEP);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey]);
+  const [reveal, setReveal] = useState({ key: filterKey, n: revealMemory.get(filterKey) ?? REVEAL_STEP });
+  const revealCount = reveal.key === filterKey ? reveal.n : (revealMemory.get(filterKey) ?? REVEAL_STEP);
+  const setRevealCount = (update: (n: number) => number) =>
+    setReveal((prev) => {
+      const base = prev.key === filterKey ? prev.n : (revealMemory.get(filterKey) ?? REVEAL_STEP);
+      const n = update(base);
+      revealMemory.set(filterKey, n);
+      return { key: filterKey, n };
+    });
 
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
@@ -1084,10 +1092,10 @@ export default function ExplorePage() {
                           fetched page sits in `activities` already, ready for
                           the next click to reveal instantly with no fetch. */}
                       {shown.slice(0, revealCount).map((activity, i) => (
-                        // Each row eases in (same 260ms reveal as the activity page),
-                        // staggered 30ms apart for the first screenful so the list
+                        // Each row eases in (a touch quicker than the activity page's 260ms reveal),
+                        // staggered 12ms apart for the first screenful so the list
                         // cascades instead of popping in; later rows share the last delay.
-                        <div key={activity.id} className="bb-reveal" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+                        <div key={activity.id} className="bb-reveal" style={{ animationDelay: `${Math.min(i, 6) * 12}ms`, animationDuration: "200ms" }}>
                           <ActivityRow activity={activity} />
                         </div>
                       ))}

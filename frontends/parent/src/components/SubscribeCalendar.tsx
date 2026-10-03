@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui";
 import { apiGet, apiPost } from "../lib/api";
 import { googleSubscribeUrl, isAndroidDevice } from "../lib/ics";
@@ -9,7 +9,7 @@ type Feed = { url: string; webcalUrl: string };
  * Subscribe a calendar to the parent's private schedule feed
  * (/api/public/calendar-feed/<token>.ics), so rescheduled or cancelled bookings
  * update there on their own instead of needing another export. Used by the
- * "Export your schedule" dialog and the booking confirmation page.
+ * "Add to calendar" box on the Bookings tab and the booking confirmation page.
  *
  * Collapsed to one button until opened; the link is only fetched (and created,
  * the first time) on open. The feed covers all of the parent's confirmed
@@ -22,8 +22,18 @@ type Feed = { url: string; webcalUrl: string };
  *     calendar, so Android gets "Add to Google Calendar" instead: the feed is
  *     added to the Google account and shows in the phone's Calendar app.
  */
-export default function SubscribeCalendar({ intro }: { intro?: string }) {
-  const [open, setOpen] = useState(false);
+export default function SubscribeCalendar({
+  intro,
+  startOpen = false,
+  purple = false,
+}: {
+  intro?: string;
+  /** Open (and fetch the link) straight away, for a parent that already tapped Subscribe. */
+  startOpen?: boolean;
+  /** Purple buttons, for the "Add to calendar" box on the Bookings tab. */
+  purple?: boolean;
+}) {
+  const [open, setOpen] = useState(startOpen);
   const [feed, setFeed] = useState<Feed | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,6 +54,14 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
     }
     setBusy(false);
   }
+
+  useEffect(() => {
+    if (startOpen) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const solid = "rounded-full border border-transparent bg-[#7D4AC5] px-6 py-3 text-[15px] font-bold text-white hover:brightness-110";
+  const ghost = "rounded-full border border-[#7D4AC5] bg-white px-6 py-3 text-[15px] font-bold text-[#7D4AC5] hover:bg-palette-purpleTint";
 
   function openPanel() {
     setOpen(true);
@@ -93,10 +111,18 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
             className="mt-3 h-10 w-full rounded-[10px] border border-[#FED7E4] bg-[#FAF7F7] px-3 text-xs font-semibold text-[#59658d]"
           />
           <div className="mt-2 flex gap-2">
-            <Button type="button" onClick={copy} className="flex-1 justify-center">
-              {copied ? "Copied" : "Copy link"}
-            </Button>
-            {!android && (
+            {purple ? (
+              <button type="button" onClick={copy} className={`${solid} flex-1`}>{copied ? "Copied" : "Copy link"}</button>
+            ) : (
+              <Button type="button" onClick={copy} className="flex-1 justify-center">
+                {copied ? "Copied" : "Copy link"}
+              </Button>
+            )}
+            {!android && (purple ? (
+              <button type="button" onClick={() => window.location.assign(feed.webcalUrl)} className={`${ghost} flex-1`}>
+                Open in calendar app
+              </button>
+            ) : (
               <Button
                 type="button"
                 variant="outline"
@@ -105,16 +131,26 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
               >
                 Open in calendar app
               </Button>
-            )}
+            ))}
           </div>
-          <Button
-            type="button"
-            variant={android ? "primary" : "outline"}
-            onClick={() => window.open(googleSubscribeUrl(feed.webcalUrl), "_blank", "noopener")}
-            className="mt-2 w-full justify-center"
-          >
-            Add to Google Calendar
-          </Button>
+          {purple ? (
+            <button
+              type="button"
+              onClick={() => window.open(googleSubscribeUrl(feed.webcalUrl), "_blank", "noopener")}
+              className={`${android ? solid : ghost} mt-2 w-full`}
+            >
+              Add to Google Calendar
+            </button>
+          ) : (
+            <Button
+              type="button"
+              variant={android ? "primary" : "outline"}
+              onClick={() => window.open(googleSubscribeUrl(feed.webcalUrl), "_blank", "noopener")}
+              className="mt-2 w-full justify-center"
+            >
+              Add to Google Calendar
+            </Button>
+          )}
           <ul className="mt-3 list-disc space-y-1 pl-4 text-xs font-semibold text-[#59658d]">
             <li>
               <b>Android:</b> tap Add to Google Calendar and confirm. It is added to your Google account, so it also
