@@ -104,13 +104,12 @@ function brandStyle(style: Style): Style {
   return { ...style, layers };
 }
 
-// Light baby-pink teardrop pin (the palette pink), white-edged with a soft
-// shadow so it still lifts off the pale map.
+// Brand-pink teardrop pin (the CTA pink), white-edged with a soft shadow.
 function pinElement(): HTMLElement {
   const el = document.createElement("div");
   el.className = "bb-map-pin";
   el.innerHTML =
-    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FFC1D6;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>';
+    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FA4D8D;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>';
   el.style.cursor = "pointer";
   return el;
 }
@@ -138,6 +137,11 @@ export function ExploreMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
+  // Where the map was before a pin was opened, so closing its card can zoom
+  // back out to it. Null while no pin is open.
+  const viewBeforePinRef = useRef<{ center: maplibregl.LngLat; zoom: number } | null>(null);
+  const zoomOutTimerRef = useRef<number | undefined>(undefined);
+  const replottingRef = useRef(false);
   const [showHint, setShowHint] = useState(false);
 
   // Create the map once.
@@ -189,6 +193,15 @@ export function ExploreMap({
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
     mapRef.current = map;
+    // A tap on the map itself (not a pin, not a card) closes the open card.
+    map.on("click", (e) => {
+      const target = e.originalEvent.target as HTMLElement | null;
+      if (target?.closest(".bb-map-pin, .maplibregl-popup")) return;
+      for (const m of markersRef.current) {
+        const open = m.getPopup();
+        if (open?.isOpen()) open.remove();
+      }
+    });
 
     let cancelled = false;
     fetch(STYLE_URL)
@@ -235,6 +248,7 @@ export function ExploreMap({
     return () => {
       cancelled = true;
       window.clearTimeout(hideTimer);
+      window.clearTimeout(zoomOutTimerRef.current);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       markersRef.current = [];
@@ -318,8 +332,14 @@ export function ExploreMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // Removing a marker closes its card, which would otherwise count as the
+    // parent closing it and zoom the map out mid-replot.
+    replottingRef.current = true;
+    window.clearTimeout(zoomOutTimerRef.current);
+    viewBeforePinRef.current = null;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
+    replottingRef.current = false;
 
     const bounds = new maplibregl.LngLatBounds();
     for (const g of pinsRef.current) {
@@ -380,7 +400,51 @@ export function ExploreMap({
         `</div>`;
       // focusAfterOpen off: it focused the first link, drawing a focus ring
       // on it as though the parent had tabbed there.
-      const popup = new maplibregl.Popup({ offset: 22, maxWidth: "260px", focusAfterOpen: false }).setHTML(html);
+      const popup = new maplibregl.Popup({
+        offset: 22,
+        maxWidth: "260px",
+        focusAfterOpen: false,
+        // Closing on a map tap is handled once, for the whole map, in the
+        // creation effect. The built-in version also fires for a tap on
+        // ANOTHER pin, and closed that pin's card in the same tap that opened
+        // it: the second pin never opened and the map zoomed back out.
+        closeOnClick: false,
+        // Always above the pin. Left to choose for itself, the card re-picks
+        // its side on every frame of the zoom below as the pin crosses the
+        // map, and flickers between them. The zoom parks the pin below centre,
+        // so there is always room above it.
+        anchor: "bottom",
+      }).setHTML(html);
+      // Opening a pin zooms in on it, with the pin held below centre so its
+      // card (which opens upwards) has room. Closing the card, by its cross or
+      // a tap on the map, zooms back out to where the parent was.
+      popup.on("open", () => {
+        window.clearTimeout(zoomOutTimerRef.current);
+        // One card at a time: opening this one closes whichever was open.
+        for (const m of markersRef.current) {
+          const other = m.getPopup();
+          if (other && other !== popup && other.isOpen()) other.remove();
+        }
+        if (!viewBeforePinRef.current) {
+          viewBeforePinRef.current = { center: map.getCenter(), zoom: map.getZoom() };
+        }
+        map.easeTo({ center: [g.lng, g.lat], zoom: Math.max(map.getZoom(), 14), offset: [0, 110], duration: 650 });
+      });
+      popup.on("close", () => {
+        if (replottingRef.current) return;
+        // Deferred a beat, then only if no card is open by then: tapping
+        // another pin opens that card and closes this one in the same tap (in
+        // either order), and that is a move between pins, not a close. The
+        // map should carry on to the new pin rather than zoom out.
+        window.clearTimeout(zoomOutTimerRef.current);
+        zoomOutTimerRef.current = window.setTimeout(() => {
+          if (mapRef.current !== map) return;
+          if (markersRef.current.some((m) => m.getPopup()?.isOpen())) return;
+          const before = viewBeforePinRef.current;
+          viewBeforePinRef.current = null;
+          if (before) map.easeTo({ center: before.center, zoom: before.zoom, duration: 650 });
+        }, 80);
+      });
       markersRef.current.push(
         new maplibregl.Marker({ element: pinElement(), anchor: "bottom" })
           .setLngLat([g.lng, g.lat])

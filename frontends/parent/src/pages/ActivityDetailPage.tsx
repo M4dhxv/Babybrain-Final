@@ -12,7 +12,7 @@ import { ActivityDetailSkeleton } from "../components/Skeletons";
 import { useActivityDetail, useFavorite, usePlan, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cacheFetch } from "../lib/queryCache";
-import { goTo, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref } from "../lib/nav";
+import { goTo, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref, requestExploreRestore } from "../lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
@@ -571,7 +571,7 @@ export default function ActivityDetailPage() {
       <PageShell active="/explore">
         <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
           <p className="text-xl font-black">Activity not found.</p>
-          <a href={exploreReturnHref()} className="font-bold text-baby-pink">← Back to results</a>
+          <a href={exploreReturnHref()} onClick={requestExploreRestore} className="font-bold text-baby-pink">← Back to results</a>
         </main>
       </PageShell>
     );
@@ -694,7 +694,7 @@ export default function ActivityDetailPage() {
       <main className="bb-reveal mx-auto flex max-w-[1180px] flex-col gap-5 px-6 py-5 lg:grid lg:grid-cols-[1fr_295px] lg:items-start">
         <section className="order-1 grid min-w-0 grid-cols-1 gap-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:grid-cols-[285px_1fr]">
           <div className="flex flex-col">
-            <a href={exploreReturnHref()} className="font-bold text-baby-lilac">← Back to results</a>
+            <a href={exploreReturnHref()} onClick={requestExploreRestore} className="font-bold text-baby-lilac">← Back to results</a>
             <div className="flex flex-1 flex-col justify-center">
               <h1 className="text-[29px] font-black">{activity.title}</h1>
               {activity.provider_name &&

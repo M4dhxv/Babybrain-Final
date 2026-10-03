@@ -46,8 +46,9 @@ export async function GET(request: Request) {
   type BookingRow = {
     id: string; user_id: string; session_id: string; status: string; payment_status: string; amount: number | null;
     package_purchase_id: string | null; cancelled_from_status?: string | null; created_at: string;
+    booking_group_id: string | null;
   };
-  const bookingCols: string = `id, user_id, session_id, status, payment_status, amount, package_purchase_id, created_at${hasCancelOrigin ? ', cancelled_from_status' : ''}`;
+  const bookingCols: string = `id, user_id, session_id, status, payment_status, amount, package_purchase_id, created_at, booking_group_id${hasCancelOrigin ? ', cancelled_from_status' : ''}`;
 
   const [providers, parents, activities, sessions, bookings, reviews, earnings, vendorSubs, plusSubs] =
     await Promise.all([
@@ -116,6 +117,32 @@ export async function GET(request: Request) {
     return liveParent(b.user_id) && (prov == null || liveProvider(prov));
   });
   const liveBookings = bookingsAfterTestFilter.filter((b) => !isNeverConfirmed(b));
+  // `liveBookings` is one row per SEAT: a parent booking two children is two rows sharing a
+  // booking_group_id. Every "how many bookings" figure counts the booking instead, the same way the
+  // Bookings list does (lib/admin-bookings.ts): one entry per group, booked at its earliest seat,
+  // cancelled only when every seat is, and left out only when every seat was never confirmed.
+  // Seats are still what fill a class, so the fill rate below stays on `liveBookings`.
+  const seatsByBooking = new Map<string, BookingRow[]>();
+  for (const b of bookingsAfterTestFilter) {
+    const key = b.booking_group_id ?? b.id;
+    const seats = seatsByBooking.get(key);
+    if (seats) seats.push(b);
+    else seatsByBooking.set(key, [b]);
+  }
+  const liveEntries = [...seatsByBooking.values()]
+    .filter((seats) => !seats.every((s) => isNeverConfirmed(s)))
+    .map((seats) => {
+      const held = seats.filter((s) => s.status !== 'cancelled');
+      return {
+        user_id: seats[0].user_id,
+        created_at: seats.reduce((m, s) => (s.created_at < m ? s.created_at : m), seats[0].created_at),
+        status: held.length === 0 ? 'cancelled' : held[0].status,
+        // Paid if any seat was paid for; the amount is the whole booking's.
+        payment_status: seats.some((s) => s.payment_status === 'paid') ? 'paid' : seats[0].payment_status,
+        amount: seats.reduce((t, s) => t + (s.payment_status === 'paid' ? Number(s.amount ?? 0) : 0), 0),
+        package_purchase_id: seats.find((s) => s.package_purchase_id)?.package_purchase_id ?? null,
+      };
+    });
   const liveReviews = reviews.filter((r) => liveParent(r.user_id) && liveProvider(providerOfActivity.get(r.activity_id) ?? ''));
   const liveEarnings = earnings.filter(
     (e) => includeTest || isLiveEarning({
@@ -136,11 +163,11 @@ export async function GET(request: Request) {
     }
     return m;
   };
-  const bBookings = bucket(liveBookings);
+  const bBookings = bucket(liveEntries);
   const bSignups = bucket(liveParents);
   // For the chart: bookings made by parents vs added by vendors (no parent account), and gross sales taken.
-  const bParent = bucket(liveBookings.filter((b) => b.user_id));
-  const bManual = bucket(liveBookings.filter((b) => !b.user_id));
+  const bParent = bucket(liveEntries.filter((b) => b.user_id));
+  const bManual = bucket(liveEntries.filter((b) => !b.user_id));
   const salesByDay = new Map<string, number>();
   for (const e of liveEarnings) {
     if (e.status === 'refunded') continue;
@@ -199,7 +226,7 @@ export async function GET(request: Request) {
   };
 
   // ---- booking health -------------------------------------------------------
-  const all30 = liveBookings.filter((b) => b.created_at >= iso(30 * DAY));
+  const all30 = liveEntries.filter((b) => b.created_at >= iso(30 * DAY));
   const b30 = all30;
   const cancelled30 = b30.filter((b) => b.status === 'cancelled').length;
   const held = new Map<string, number>();
@@ -217,19 +244,19 @@ export async function GET(request: Request) {
   // Every live booking falls in exactly one of these, so the three add up to "Bookings (all)":
   // manual = added by a vendor with no parent account (guest roster entry); paid = the parent
   // paid online; the rest are free classes, package credits and refunded bookings.
-  const manualBookings = liveBookings.filter((b) => bookingBucket(b) === 'manual');
-  const paidBookings = liveBookings.filter((b) => bookingBucket(b) === 'paid');
+  const manualBookings = liveEntries.filter((b) => bookingBucket(b) === 'manual');
+  const paidBookings = liveEntries.filter((b) => bookingBucket(b) === 'paid');
   const health = {
     bookingSplit: {
       manual: manualBookings.length,
       paid: paidBookings.length,
       paidAmount: paidBookings.reduce((t, b) => t + Number(b.amount ?? 0), 0),
-      other: liveBookings.length - manualBookings.length - paidBookings.length,
+      other: liveEntries.length - manualBookings.length - paidBookings.length,
     },
     bookings30: all30.length,
     cancelled30,
     cancellationRate: b30.length ? cancelled30 / b30.length : null,
-    waitlisted: liveBookings.filter((b) => b.status === 'waitlisted').length,
+    waitlisted: liveEntries.filter((b) => b.status === 'waitlisted').length,
     upcomingFillRate: capacity ? filled / capacity : null,
     upcomingSessions: upcoming.length,
   };
@@ -261,7 +288,7 @@ export async function GET(request: Request) {
       parents: liveParents.length,
       providers: liveProviders.length,
       activeProviders: liveProviders.filter((p) => p.status === 'active').length,
-      bookings: liveBookings.length,
+      bookings: liveEntries.length,
       plusSubscribers: subscriptions.plusActive,
       growthSubscribers: subscriptions.vendorPro,
       reviews: liveReviews.length,

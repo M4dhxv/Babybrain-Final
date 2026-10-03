@@ -183,11 +183,69 @@ export function exploreReturnHref(): string {
   }
 }
 
+const EXPLORE_SCROLL_KEY = "bb:exploreScroll";
+const EXPLORE_RESTORE_KEY = "bb:exploreRestore";
+
+/** Notes how far down Explore the parent was, for the search they had open.
+ *  Called as they leave it (see goTo), before the scroll-to-top that every
+ *  fresh page gets would overwrite the answer. */
+function saveExploreScroll() {
+  try {
+    sessionStorage.setItem(
+      EXPLORE_SCROLL_KEY,
+      JSON.stringify({ search: window.location.search, y: Math.round(window.scrollY) })
+    );
+  } catch {
+    // Storage disabled: Explore just opens at the top, as it always did.
+  }
+}
+
+/** Asks the next Explore page to reopen where the parent left it. Set by the
+ *  activity page's "Back to results" link and by the browser's own back
+ *  button or swipe; a plain visit to Explore (the header link) is not a
+ *  return, and starts at the top. */
+export function requestExploreRestore() {
+  try {
+    sessionStorage.setItem(EXPLORE_RESTORE_KEY, "1");
+  } catch {
+    // see saveExploreScroll
+  }
+}
+
+/** For Explore, on mount: the scroll position to return to, or null. Only
+ *  when a return was asked for (see requestExploreRestore) and the search is
+ *  the one the position was saved under: a different set of results has
+ *  nothing at that offset worth returning to. Reading does not use the
+ *  request up (so it is safe to call during render); clearExploreRestore does. */
+export function peekExploreRestore(): number | null {
+  try {
+    if (sessionStorage.getItem(EXPLORE_RESTORE_KEY) !== "1") return null;
+    const saved = JSON.parse(sessionStorage.getItem(EXPLORE_SCROLL_KEY) ?? "null") as { search: string; y: number } | null;
+    return saved && saved.search === window.location.search && saved.y > 0 ? saved.y : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearExploreRestore() {
+  try {
+    sessionStorage.removeItem(EXPLORE_RESTORE_KEY);
+  } catch {
+    // see saveExploreScroll
+  }
+}
+
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
 if (typeof window !== "undefined") {
-  window.addEventListener("popstate", emit);
+  window.addEventListener("popstate", () => {
+    // Back / forward onto Explore: the browser tries to restore the scroll
+    // itself, but before the results exist to scroll to, so it lands at the
+    // top. Have Explore do it once its rows are back.
+    if (routePath() === "/explore") requestExploreRestore();
+    emit();
+  });
 }
 
 /**
@@ -209,6 +267,7 @@ export function goTo(
     window.location.href = url;
     return;
   }
+  if (routePath() === "/explore") saveExploreScroll();
   if (opts?.replace) window.history.replaceState({}, "", url);
   else window.history.pushState({}, "", url);
   // A fresh page starts at the top; back/forward let the browser decide.

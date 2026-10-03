@@ -15,7 +15,7 @@ import { AGE_BANDS, categories } from "../data/content";
 import { useActivities, useActivityPins, useFacetCounts } from "../lib/useActivities";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
-import { goTo, getParam, rememberExploreUrl } from "../lib/nav";
+import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore } from "../lib/nav";
 import { lazyRoute } from "../lib/lazyRoute";
 import { Chip, REGION_FILTERS } from "./prefChips";
 
@@ -618,6 +618,35 @@ export default function ExplorePage() {
     setCategories([]); setAges([]); setRegions([]);
     setDateFrom(""); setDateTo(""); setPickingDate(false); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
   }
+
+  // Returning from an activity ("Back to results", or the browser's back):
+  // reopen at the row the parent left from, not the top. The position is read
+  // once on mount, then applied as soon as the page is tall enough to scroll
+  // that far, i.e. once the remembered rows (see revealMemory) have rendered.
+  // Gives up quietly after 3s, and at once if the parent starts scrolling.
+  const [restoreY] = useState(() => peekExploreRestore());
+  useEffect(() => {
+    clearExploreRestore();
+    if (restoreY == null) return;
+    let tries = 0;
+    const stop = () => {
+      window.clearInterval(timer);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchstart", stop);
+    };
+    const timer = window.setInterval(() => {
+      const reachable = document.documentElement.scrollHeight - window.innerHeight;
+      if (reachable >= restoreY) {
+        window.scrollTo(0, restoreY);
+        stop();
+      } else if (++tries > 30) {
+        stop();
+      }
+    }, 100);
+    window.addEventListener("wheel", stop, { passive: true });
+    window.addEventListener("touchstart", stop, { passive: true });
+    return stop;
+  }, [restoreY]);
 
   // Keeps the address bar (and, via rememberExploreUrl, the "back to
   // results" link on the activity page) in step with every filter — plain
