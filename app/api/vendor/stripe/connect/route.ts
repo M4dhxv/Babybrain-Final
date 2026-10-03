@@ -56,10 +56,13 @@ function accountSeed(provider: {
   website: string | null;
   contact_phone: string | null;
 }): Stripe.AccountCreateParams {
+  // Stripe rejects an email with surrounding whitespace ("Invalid email
+  // address"), and contact_email is free text from forms and imports.
+  const email = provider.contact_email?.trim() || undefined;
   return {
     type: 'express',
     country: 'SG',
-    email: provider.contact_email ?? undefined,
+    email,
     // business_type is deliberately NOT set: it used to be pinned to
     // 'company', which forced sole proprietors and individual instructors
     // down a company verification path (tax ID, directors, owners) they
@@ -68,7 +71,7 @@ function accountSeed(provider: {
     business_profile: {
       name: provider.business_name ?? undefined,
       url: normalizeWebsite(provider.website),
-      support_email: provider.contact_email ?? undefined,
+      support_email: email,
       support_phone: provider.contact_phone ?? undefined,
     },
     // Vendor "autopay": once onboarding + verification finish, payouts go
