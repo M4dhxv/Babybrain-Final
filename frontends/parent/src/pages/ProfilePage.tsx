@@ -42,8 +42,8 @@ import { apiGet, apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
-import { downloadScheduleIcs, opensCalendarFromLink, scheduleFileUrl } from "../lib/ics";
-import SubscribeCalendar from "../components/SubscribeCalendar";
+import { calendarFileUrl, downloadBookingIcs, googleCalendarUrl, isAndroidDevice, isAppleDevice, outlookCalendarUrl } from "../lib/ics";
+import SyncCalendar from "../components/SyncCalendar";
 import { buildSchedulePdfFile, canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdfFile, withinRange } from "../lib/schedule-pdf";
 import {
   usePlan,
@@ -314,32 +314,15 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
 
 type ScheduleEntryLite = { title: string; startsAt: string; endsAt?: string | null; venue?: string; status?: string };
 
-/** One of the two boxes on the Bookings tab ("Export Schedule" and "Add to
- *  calendar"). Both share this frame so they look and behave alike: a title,
- *  a short explanation, date presets, From / To fields (each with its own
- *  calendar pop-out) and a live count. What differs is the accent colour (pink
- *  for the PDF, purple for the calendar) and the buttons passed as `actions`.
- *  On Free the controls are replaced by an upgrade prompt. */
-function ScheduleBox({
-  title,
-  intro,
-  tone,
-  icon,
-  locked,
-  lockedCopy,
+/** Date range for the schedule export: presets, From / To fields (each with
+ *  its own calendar pop-out) and a live count of the sessions inside it. The
+ *  buttons that act on the range are passed in as `actions`. */
+function ScheduleRangePicker({
   entries,
   actions,
-  collapsible = false,
 }: {
-  title: string;
-  intro: string;
-  tone: "pink" | "purple";
-  icon: string;
-  locked: boolean;
-  lockedCopy: string;
   entries: ScheduleEntryLite[];
-  actions: (range: { from: string | null; to: string | null }, selected: ScheduleEntryLite[], disabled: boolean) => React.ReactNode;
-  collapsible?: boolean;
+  actions: (range: { from: string | null; to: string | null }, selected: ScheduleEntryLite[], disabled: boolean) => ReactNode;
 }) {
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const addDays = (n: number) => {
@@ -349,7 +332,6 @@ function ScheduleBox({
   };
   const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(addDays(30));
-  const [open, setOpen] = useState(!collapsible);
 
   const presets: [string, string, string][] = [
     ["Next 7 days", iso(new Date()), addDays(7)],
@@ -359,86 +341,46 @@ function ScheduleBox({
   ];
   const selected = withinRange(entries, { from: from || null, to: to || null });
   const invalid = !!(from && to && from > to);
-
-  const t =
-    tone === "pink"
-      ? { border: "border-palette-pinkMuted", bg: "bg-palette-pinkTint", text: "text-baby-cta", chipOn: "border-[#FA4D8D] bg-[#FA4D8D] text-white", chipHover: "hover:border-[#FA4D8D]" }
-      : { border: "border-palette-purple", bg: "bg-palette-purpleTint", text: "text-palette-purpleInk", chipOn: "border-[#7D4AC5] bg-[#7D4AC5] text-white", chipHover: "hover:border-[#7D4AC5]" };
-  const input = `h-11 w-full rounded-[10px] border ${t.border} bg-white px-3 text-sm font-semibold`;
-
-  const head = (
-    <div className="flex items-start gap-3">
-      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white ${t.text}`}>
-        <Icon name={locked ? "lock" : icon} className="h-4 w-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <h3 className="text-base font-black">{title}</h3>
-        <p className="mt-0.5 text-xs font-semibold text-[#59658d]">{locked ? lockedCopy : intro}</p>
-      </div>
-      {collapsible && !locked && (
-        <Icon name="chevron" className={`mt-2 h-4 w-4 shrink-0 text-[#6D748A] transition ${open ? "rotate-90" : ""}`} />
-      )}
-    </div>
-  );
+  const input = "h-11 w-full rounded-[10px] border border-palette-pinkMuted bg-white px-3 text-sm font-semibold";
 
   return (
-    <div className={`rounded-[14px] border ${t.border} ${t.bg} p-4`}>
-      {collapsible && !locked ? (
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="w-full text-left">
-          {head}
-        </button>
-      ) : (
-        head
-      )}
-      {locked ? (
-        <a
-          href="/pricing"
-          className={`mt-3 block rounded-[10px] border ${t.border} bg-white px-3 py-2.5 text-center text-sm font-black ${t.text}`}
-        >
-          Upgrade to Plus &rarr;
-        </a>
-      ) : (
-        open && (
-          <>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {presets.map(([label, f, tt]) => {
-                const on = from === f && to === tt;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => { setFrom(f); setTo(tt); }}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-                      on ? t.chipOn : `border-[#EBE3E5] bg-white text-[#59658d] ${t.chipHover}`
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-black">From</span>
-                <DateInput value={from} onChange={setFrom} className={input} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-black">To</span>
-                <DateInput value={to} onChange={setTo} className={input} />
-              </label>
-            </div>
-            <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#C90044]" : "text-[#59658d]"}`}>
-              {invalid
-                ? "The end date is before the start date."
-                : `${selected.length} ${selected.length === 1 ? "session" : "sessions"} in this range`}
-            </p>
-            <div className="mt-3">
-              {actions({ from: from || null, to: to || null }, selected, invalid || selected.length === 0)}
-            </div>
-          </>
-        )
-      )}
-    </div>
+    <>
+      <div className="flex flex-wrap gap-2">
+        {presets.map(([label, f, tt]) => {
+          const on = from === f && to === tt;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => { setFrom(f); setTo(tt); }}
+              className={`min-h-[36px] rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                on ? "border-[#FA4D8D] bg-[#FA4D8D] text-white" : "border-[#EBE3E5] bg-white text-[#59658d] hover:border-[#FA4D8D]"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="mb-1 block text-xs font-black">From</span>
+          <DateInput value={from} onChange={setFrom} className={input} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-black">To</span>
+          <DateInput value={to} onChange={setTo} className={input} />
+        </label>
+      </div>
+      <p className={`mt-3 text-sm font-bold ${invalid ? "text-[#C90044]" : "text-[#59658d]"}`}>
+        {invalid
+          ? "The end date is before the start date."
+          : `${selected.length} ${selected.length === 1 ? "session" : "sessions"} in this range`}
+      </p>
+      <div className="mt-3">
+        {actions({ from: from || null, to: to || null }, selected, invalid || selected.length === 0)}
+      </div>
+    </>
   );
 }
 
@@ -446,31 +388,6 @@ const toEntries = (items: BookingItem[]): ScheduleEntryLite[] =>
   items
     .filter((b) => b.startsAt && b.status !== "cancelled")
     .map((b) => ({ title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue, status: b.status }));
-
-/** "Export Schedule": a PDF of the chosen range. Lives in the Filter panel. */
-function ExportScheduleBox({ items, parentName, isPlus }: { items: BookingItem[]; parentName?: string; isPlus: boolean }) {
-  const entries = toEntries(items);
-  // Fetch the PDF library ahead of the tap: the download must start while the
-  // tap's user-gesture is still live, which Safari does not allow after a slow
-  // chunk load.
-  useEffect(() => {
-    if (isPlus) void import("jspdf");
-  }, [isPlus]);
-  return (
-    <ScheduleBox
-      title="Export Schedule"
-      intro="Save the sessions in a date range as a PDF you can print or share with grandparents and helpers."
-      tone="pink"
-      icon="open"
-      locked={!isPlus}
-      lockedCopy="Saving your schedule as a PDF is a Plus feature."
-      entries={entries}
-      actions={(range, _sel, disabled) => (
-        <SchedulePdfActions entries={entries} parentName={parentName} from={range.from} to={range.to} disabled={disabled} />
-      )}
-    />
-  );
-}
 
 /** "Save as PDF" and, on phones, "Share" for the range picked above. */
 function SchedulePdfActions({
@@ -489,6 +406,12 @@ function SchedulePdfActions({
   const [busy, setBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const shareable = canShareSchedulePdf();
+  // Fetch the PDF library ahead of the tap: the download must start while the
+  // tap's user-gesture is still live, which Safari does not allow after a slow
+  // chunk load.
+  useEffect(() => {
+    void import("jspdf");
+  }, []);
   // The share sheet only opens if `navigator.share` is called directly in the
   // tap, with nothing awaited first. So the PDF for the current range is built
   // here, ahead of time, and the tap just hands over the finished file.
@@ -554,75 +477,184 @@ function SchedulePdfActions({
   );
 }
 
-/** "Add to calendar": a one-off copy (Add) or a live feed (Subscribe). Shown
- *  even with no upcoming bookings so a parent can still subscribe; Add is
- *  frozen until there is a session in the range. */
-function AddToCalendarBox({ items, isPlus }: { items: BookingItem[]; isPlus: boolean }) {
-  const entries = toEntries(items);
-  const [subscribing, setSubscribing] = useState(false);
-  const purpleSolid = "min-h-[44px] flex-1 rounded-full border border-transparent bg-[#7D4AC5] px-4 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
-  const purpleGhost = "min-h-[44px] flex-1 rounded-full border border-[#7D4AC5] bg-white px-4 py-2.5 text-sm font-bold text-[#7D4AC5] hover:bg-palette-purpleTint";
-  return (
-    <ScheduleBox
-      title="Add to calendar"
-      intro="Put your sessions in your phone or computer calendar, either once or kept up to date automatically."
-      tone="purple"
-      icon="calendar"
-      locked={!isPlus}
-      lockedCopy="Adding your schedule to a calendar is a Plus feature."
-      entries={entries}
-      collapsible
-      actions={(_range, selected, disabled) => (
-        <>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                const events = selected.map((e, i) => ({
-                  id: `${i}-${e.startsAt}`,
-                  title: e.title,
-                  startsAt: e.startsAt,
-                  endsAt: e.endsAt ?? null,
-                  venue: e.venue,
-                }));
-                // iPhone / iPad / Mac / Android: a real link that returns a
-                // calendar file opens the calendar app's "Add all" directly. A
-                // Blob download is unreliable on iOS, so it is only the
-                // fallback: desktop browsers, or a range too big for a link.
-                const link = opensCalendarFromLink() ? scheduleFileUrl(events) : null;
-                if (link) window.location.assign(link);
-                else downloadScheduleIcs(events);
-              }}
-              className={purpleSolid}
-            >
-              Add
-            </button>
-            <button type="button" onClick={() => setSubscribing((v) => !v)} aria-expanded={subscribing} className={purpleGhost}>
-              Subscribe
-            </button>
+/** Shared frame for the Bookings tab's pop-ups (Export schedule, Sync to
+ *  calendar, Add to calendar): a dimmed backdrop that closes on tap, a white
+ *  card that scrolls on its own, and the page behind locked while it is up. */
+function BookingsDialog({
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center overscroll-contain bg-black/40 p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={title}
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-[420px] overflow-y-auto overscroll-contain rounded-[16px] bg-white p-5 shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black">{title}</h2>
+            {subtitle && <p className="mt-1 text-sm font-semibold text-[#59658d]">{subtitle}</p>}
           </div>
-          <ul className="mt-3 space-y-1.5 text-xs font-semibold text-[#59658d]">
-            <li>
-              <b className="text-[#7D4AC5]">Add</b> copies the sessions in the dates above into your calendar once. It won&apos;t change if a session is moved or cancelled.
-              {entries.length === 0 && " Available once you have an upcoming booking."}
-            </li>
-            <li>
-              <b className="text-[#7D4AC5]">Subscribe</b> links your calendar to your BabyBrain schedule. It covers all your bookings, including future ones, and updates by itself when a session moves or is cancelled.
-            </li>
-          </ul>
-          <p className="mt-2 text-xs font-semibold text-[#59658d]">
-            <b>Add on your device:</b> iPhone, iPad and Mac open Calendar to confirm. Android opens your calendar app.
-            Windows, Linux and Chromebook download a .ics file: open it, or import it into Google Calendar or Outlook.
-          </p>
-          {subscribing && (
-            <div className="mt-4 border-t border-palette-purple pt-4">
-              <SubscribeCalendar startOpen purple />
-            </div>
-          )}
-        </>
+          <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-1.5 text-[#6D748A] hover:bg-[#FAF7F7]">
+            <Icon name="close" className="h-5 w-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** The two buttons at the top right of the Bookings tab. "Export schedule"
+ *  opens the date-range PDF export; "Sync to calendar" opens the subscribe
+ *  options. Both are Plus features: on Free each shows a lock and leads to
+ *  pricing. Holds its own open state so opening a dialog re-renders only this. */
+function BookingsToolbar({ items, parentName, isPlus }: { items: BookingItem[]; parentName?: string; isPlus: boolean }) {
+  const [open, setOpen] = useState<"export" | "sync" | null>(null);
+  const pill = "flex min-h-[40px] items-center gap-1.5 rounded-[10px] border bg-white px-3 text-xs font-bold";
+  if (!isPlus) {
+    const locked = `${pill} border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486] hover:border-baby-pink`;
+    return (
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <a href="/pricing" className={locked} title="Exporting your schedule as a PDF is a Plus feature">
+          <Icon name="lock" className="h-3.5 w-3.5" /> Export schedule
+        </a>
+        <a href="/pricing" className={locked} title="Syncing your calendar is a Plus feature">
+          <Icon name="lock" className="h-3.5 w-3.5" /> Sync to calendar
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen("export")}
+        className={`${pill} border-palette-pinkMuted text-baby-cta hover:bg-palette-pinkTint`}
+        title="Pick a date range, then save or share it as a PDF"
+      >
+        <Icon name="open" className="h-3.5 w-3.5" /> Export schedule
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen("sync")}
+        className={`${pill} border-palette-purple text-palette-purpleInk hover:bg-palette-purpleTint`}
+        title="Keep your calendar up to date automatically"
+      >
+        <Icon name="calendar" className="h-3.5 w-3.5" /> Sync to calendar
+      </button>
+      {open === "export" && (
+        <BookingsDialog
+          title="Export schedule"
+          subtitle="Pick a date range, then save it as a PDF you can print or share with grandparents and helpers."
+          onClose={() => setOpen(null)}
+        >
+          <ScheduleRangePicker
+            entries={toEntries(items)}
+            actions={(range, _sel, disabled) => (
+              <SchedulePdfActions entries={toEntries(items)} parentName={parentName} from={range.from} to={range.to} disabled={disabled} />
+            )}
+          />
+        </BookingsDialog>
       )}
-    />
+      {open === "sync" && (
+        <BookingsDialog
+          title="Sync to calendar"
+          subtitle="Keeps your calendar up to date - changes and cancellations are automatically reflected"
+          onClose={() => setOpen(null)}
+        >
+          <SyncCalendar />
+        </BookingsDialog>
+      )}
+    </div>
+  );
+}
+
+/** "Add to calendar" for one booking: a choice of calendar, since no single
+ *  route works on every device.
+ *   - Apple Calendar: a real link that returns a calendar file; iPhone, iPad
+ *     and Mac open "Add to Calendar" for it (a file download is unreliable on
+ *     iOS).
+ *   - Google Calendar / Outlook: web links that work on any phone or computer.
+ *   - Download file: the .ics, for Windows Calendar and other desktop apps.
+ *  The device's own calendar is listed first. */
+function AddBookingToCalendarDialog({ b, onClose }: { b: BookingItem; onClose: () => void }) {
+  const event = { id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt ?? null, venue: b.venue };
+  const options: { key: string; label: string; note: string; run: () => void }[] = [
+    {
+      key: "apple",
+      label: "Apple Calendar",
+      note: "iPhone, iPad, Mac",
+      // Same tab: iOS shows its own "Add to Calendar" sheet for the response.
+      run: () => window.location.assign(calendarFileUrl(event)),
+    },
+    {
+      key: "google",
+      label: "Google Calendar",
+      note: "Android phones, or any browser",
+      run: () => window.open(googleCalendarUrl(event), "_blank", "noopener"),
+    },
+    {
+      key: "outlook",
+      label: "Outlook",
+      note: "Windows, Outlook.com",
+      run: () => window.open(outlookCalendarUrl(event), "_blank", "noopener"),
+    },
+    {
+      key: "file",
+      label: "Download file (.ics)",
+      note: "Windows Calendar, other apps",
+      run: () => downloadBookingIcs(event),
+    },
+  ];
+  const first = isAppleDevice() ? "apple" : isAndroidDevice() ? "google" : /Windows/i.test(navigator.userAgent) ? "outlook" : "google";
+  const ordered = [...options].sort((x, y) => Number(y.key === first) - Number(x.key === first));
+  return (
+    <BookingsDialog title="Add to calendar" subtitle={[b.title, b.when].filter(Boolean).join(" · ")} onClose={onClose}>
+      <div className="space-y-2">
+        {ordered.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => {
+              o.run();
+              onClose();
+            }}
+            className={`flex min-h-[48px] w-full items-center justify-between gap-3 rounded-[12px] border px-4 py-2 text-left ${
+              o.key === first
+                ? "border-transparent bg-[#7D4AC5] text-white hover:brightness-110"
+                : "border-palette-purple bg-white text-palette-purpleInk hover:bg-palette-purpleTint"
+            }`}
+          >
+            <span className="text-sm font-black">{o.label}</span>
+            <span className={`text-xs font-semibold ${o.key === first ? "text-white/85" : "text-[#59658d]"}`}>{o.note}</span>
+          </button>
+        ))}
+      </div>
+      <ul className="mt-4 list-disc space-y-1.5 border-t border-[#EBE3E5] pt-3 pl-4 text-xs font-semibold text-[#59658d]">
+        <li>This adds a one-off copy of this booking. It won&apos;t change if the session is moved or cancelled.</li>
+        <li>To keep your calendar up to date automatically, use Sync to calendar at the top of this page.</li>
+        <li>Google Calendar and Outlook open in a new tab and ask you to save the event.</li>
+        <li>Times are saved in Singapore time and shown in your calendar&apos;s own time zone.</li>
+      </ul>
+    </BookingsDialog>
   );
 }
 
@@ -2495,7 +2527,7 @@ export default function ProfilePage() {
               <p className="mb-4 text-sm font-semibold text-[#59658d]">Sessions still to come. Once a session time has passed it moves to Past activities.</p>
               <div className="mb-4 flex items-center gap-2">
                 <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} className="min-w-0 flex-1" />
-                {bookingsLoaded && (
+                {bookingsLoaded && upcomingBookings.length > 1 && (
                   <BookingsFilterButton
                     open={bookingFilterOpen}
                     onToggle={() => setBookingFilterOpen((v) => !v)}
@@ -2503,25 +2535,21 @@ export default function ProfilePage() {
                   />
                 )}
               </div>
-              {bookingsLoaded && bookingFilterOpen && (
-                <div className="mb-4 space-y-3">
-                  {upcomingBookings.length > 1 && (
-                    <BookingsFilterPanel
-                      sort={bookingSort}
-                      onSort={setBookingSort}
-                      status={bookingStatus}
-                      onStatus={setBookingStatus}
-                      counts={bookingStatusCounts}
-                      total={upcomingBookings.length}
-                    />
-                  )}
-                  {planKnown && <ExportScheduleBox items={upcomingBookings} isPlus={isPlus} />}
-                </div>
+              {bookingsLoaded && upcomingBookings.length > 1 && bookingFilterOpen && (
+                <BookingsFilterPanel
+                  sort={bookingSort}
+                  onSort={setBookingSort}
+                  status={bookingStatus}
+                  onStatus={setBookingStatus}
+                  counts={bookingStatusCounts}
+                  total={upcomingBookings.length}
+                />
               )}
+              {/* Top right, above every booking: the schedule PDF and the live
+                  calendar sync. Shown even with no bookings, so a parent can
+                  set up sync before their first one. */}
               {bookingsLoaded && planKnown && (
-                <div className="mb-4">
-                  <AddToCalendarBox items={upcomingBookings} isPlus={isPlus} />
-                </div>
+                <BookingsToolbar items={upcomingBookings} parentName={parentName} isPlus={isPlus} />
               )}
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
@@ -2530,15 +2558,15 @@ export default function ProfilePage() {
                   {groupByChild(shownUpcoming, children).map((g) => (
                     <section key={g.key}>
                       <h2 className="mb-3 border-b border-[#F4EFF0] pb-2 text-[19px] font-black">{g.name}</h2>
-                      <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} />
+                      <BookingList items={g.items} emptyCopy="" onChanged={loadBookings} isPlus={isPlus} />
                     </section>
                   ))}
                   {shownUpcoming.length === 0 && (
-                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} />
+                    <BookingList items={[]} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
                   )}
                 </div>
               ) : (
-                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} />
+                <BookingList items={shownUpcoming} emptyCopy={bookingsNarrowed ? "No bookings match this status." : "You haven't booked any upcoming sessions yet."} onChanged={loadBookings} isPlus={isPlus} />
               )}
             </div>
           )}
@@ -3388,11 +3416,14 @@ function PartyPlaces({
   );
 }
 
-function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void }) {
+function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void; isPlus?: boolean }) {
   // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
   const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
+  // "Add to calendar" for one booking (Plus). Only an upcoming, confirmed
+  // booking can be added: a waitlisted or unpaid one isn't a session yet.
+  const [calFor, setCalFor] = useState<BookingItem | null>(null);
   const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Arrived here from a notification's "view this booking" link — scroll to
@@ -3649,6 +3680,36 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
             )}
             {upcoming(b) && (
               <div className="mt-2 flex flex-col gap-2 border-t border-[#FAF7F7] pt-2 sm:flex-row sm:justify-end">
+                {!isPlus ? (
+                  <a
+                    href="/pricing"
+                    title="Adding bookings to your calendar is a Plus feature"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-2.5 text-sm font-bold text-[#6D7486] hover:border-baby-pink sm:w-auto sm:py-1.5 sm:text-xs"
+                  >
+                    <Icon name="lock" className="h-3.5 w-3.5" /> Add to calendar
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      b.status === "confirmed"
+                        ? setCalFor(b)
+                        : setNotice(
+                            b.status === "waitlisted"
+                              ? "You're on the waitlist for this session. You can add it to your calendar once your place is confirmed."
+                              : "This booking isn't confirmed yet. You can add it to your calendar once it is."
+                          )
+                    }
+                    title={b.status === "confirmed" ? "Add this booking to your calendar" : "Available once this booking is confirmed"}
+                    className={`flex w-full items-center justify-center gap-1.5 rounded-[9px] px-3 py-2.5 text-sm font-bold sm:w-auto sm:py-1.5 sm:text-xs ${
+                      b.status === "confirmed"
+                        ? "border border-palette-purple text-palette-purpleInk hover:bg-palette-purpleTint"
+                        : "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
+                    }`}
+                  >
+                    <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busyId === b.id}
@@ -3692,6 +3753,8 @@ function BookingList({ items, emptyCopy, onChanged }: { items: BookingItem[]; em
           </div>
         );
       })}
+
+      {calFor && <AddBookingToCalendarDialog b={calFor} onClose={() => setCalFor(null)} />}
 
       {/* Explanatory pop-up for unavailable actions / errors */}
       {notice && (

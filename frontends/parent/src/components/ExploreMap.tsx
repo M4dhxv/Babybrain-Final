@@ -104,12 +104,13 @@ function brandStyle(style: Style): Style {
   return { ...style, layers };
 }
 
-// Brand-pink teardrop pin.
+// Light baby-pink teardrop pin (the palette pink), white-edged with a soft
+// shadow so it still lifts off the pale map.
 function pinElement(): HTMLElement {
   const el = document.createElement("div");
   el.className = "bb-map-pin";
   el.innerHTML =
-    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FA4D8D;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>';
+    '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#FFC1D6;border:2px solid #fff;box-shadow:0 1px 4px rgba(17,26,76,.35);transform:rotate(-45deg)"></div>';
   el.style.cursor = "pointer";
   return el;
 }
@@ -163,8 +164,25 @@ export function ExploreMap({
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
-      attributionControl: { compact: true },
+      attributionControl: false,
     });
+    // The data credits sit behind the small "i" button, closed until tapped.
+    // MapLibre opens a compact credit line on load by default, which covered a
+    // strip of this short map; the credits are still one tap away.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    // It opens itself the first time the style brings in credits to show, so
+    // close it once, right after that (this listener runs after the control's
+    // own). Once only: after that the button is the parent's to toggle.
+    const credits = el.querySelector(".maplibregl-ctrl-attrib");
+    const closeCredits = () => {
+      if (!credits?.classList.contains("maplibregl-compact")) return;
+      credits.classList.remove("maplibregl-compact-show");
+      credits.removeAttribute("open");
+      map.off("styledata", closeCredits);
+      map.off("sourcedata", closeCredits);
+    };
+    map.on("styledata", closeCredits);
+    map.on("sourcedata", closeCredits);
     // The wheel scrolls the page, not the map (zoom with the buttons or a pinch).
     map.scrollZoom.disable();
     map.touchZoomRotate.disableRotation();

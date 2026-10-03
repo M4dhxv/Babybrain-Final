@@ -175,7 +175,7 @@ export async function shareSchedulePdfFile(file: File): Promise<string | null> {
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") return null;
     saveBlob(file);
-    return e instanceof Error ? e.name : "unknown error";
+    return e instanceof Error ? `${e.name}: ${e.message}` : "unknown error";
   }
 }
 

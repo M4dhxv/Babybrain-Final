@@ -13,8 +13,11 @@ const AGE_BAND_COPY = [
 export default function HomePage() {
   return (
     <PageShell active="/" auth="public">
+      {/* Each section eases in with the same short rise as the Explore and
+          activity pages (see .bb-reveal in styles/index.css), the first few a
+          beat apart so the page settles from the top down. */}
       <main>
-        <section className="mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
+        <section className="bb-reveal mx-auto grid max-w-[1120px] items-center gap-8 px-6 pb-4 pt-6 lg:grid-cols-[1fr_1.1fr]">
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#FED7E4] px-4 py-2.5 text-[13px] font-bold text-baby-cta">
               <Icon name="heart" className="h-4 w-4" /> Made by a parent, for parents.
@@ -49,7 +52,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-4 md:grid-cols-3">
+        <section className="bb-reveal mx-auto grid max-w-[1120px] gap-4 px-6 py-4 md:grid-cols-3" style={{ animationDelay: "40ms" }}>
           {[
             ["search", "Find activities", "Selected to meet a range of kid's needs."],
             ["shield", "Trusted providers", "We partner with verified providers."],
@@ -67,7 +70,7 @@ export default function HomePage() {
           ))}
         </section>
 
-        <section id="how-it-works" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3">
+        <section id="how-it-works" className="bb-reveal mx-auto max-w-[1120px] scroll-mt-24 px-6 py-3" style={{ animationDelay: "80ms" }}>
           <div className="rounded-[22px] border border-[#EBE3E5] bg-white/80 p-5 shadow-card">
             <h2 className="text-center text-[26px] font-black text-baby-orange">
               How it works <Icon name="spark" className="inline h-5 w-5 text-baby-pink" />
@@ -122,7 +125,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-[1120px] px-6 py-4">
+        <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "120ms" }}>
           <SectionTitle>Explore activities by age</SectionTitle>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
             {/* Drawn from AGE_BANDS so these tiles can't drift out of step with
@@ -141,7 +144,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-[1120px] px-6 py-4">
+        <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "160ms" }}>
           <SectionTitle>Explore activities by type</SectionTitle>
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {categories.map(([icon, label, , slug]) => (
@@ -150,7 +153,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-[1120px] px-6 py-4">
+        <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "160ms" }}>
           <SectionTitle
             action={<a href="/explore" className="font-bold text-baby-pink">View all activities ›</a>}
           >
@@ -159,7 +162,7 @@ export default function HomePage() {
           <MiniActivityGrid />
         </section>
 
-        <section className="mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3">
+        <section className="bb-reveal mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3" style={{ animationDelay: "160ms" }}>
           {["Joanne", "Marcus", "Sarah"].map((name, index) => (
             <article key={name} className="flex gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
               <AnimalAvatar seed={name} kind="parent" className="h-11 w-11" />
@@ -179,7 +182,7 @@ export default function HomePage() {
           ))}
         </section>
 
-        <section className="mx-auto max-w-[1120px] px-6 py-4">
+        <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "160ms" }}>
           <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#E9E1F5] bg-gradient-to-r from-[#FEEBF2] via-white to-[#F4F0FA] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
             <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="h-28 object-contain object-left" />
             <div>
