@@ -82,10 +82,10 @@ const EMPTY_FILTERS: Record<FilterKey, string[]> = { status: [], activity: [], s
 const DEFAULT_SORT: SortSpec[] = [{ key: 'slot', dir: 'asc' }];
 
 const SORT_LABEL: Record<SortKey, string> = {
-  slot: 'Slot date', parent: 'Parent name', activity: 'Activity', booked: 'Booking date', location: 'Location', status: 'Status',
+  slot: 'Date', parent: 'Parent name', activity: 'Activity', booked: 'Booking date', location: 'Location', status: 'Status',
 };
 const GROUP_LABEL: Record<GroupKey, string> = {
-  activity: 'Activity', slot: 'Slot date', location: 'Location', status: 'Status', source: 'Source',
+  activity: 'Activity', slot: 'Date', location: 'Location', status: 'Status', source: 'Source',
 };
 
 const parentName = (g: TableRow) => g.parent_name || g.children[0]?.name || 'Guest';
@@ -263,9 +263,9 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
   const setFilter = (key: FilterKey, v: string[]) => setFilters((p) => ({ ...p, [key]: v }));
   const toggleIn = (key: FilterKey, v: string) => setFilter(key, filters[key].includes(v) ? filters[key].filter((x) => x !== v) : [...filters[key], v]);
   const sortIsDefault = sorts.length === 1 && sorts[0].key === 'slot' && sorts[0].dir === 'asc';
-  // What the "More filters" button counts: everything inside the panel, not the two inline filters.
+  // What the "More filters" button counts: everything inside the panel, not the inline filters.
   const moreCount =
-    filters.activity.length + filters.location.length + filters.date.length + (from ? 1 : 0) + (to ? 1 : 0) +
+    filters.activity.length + filters.location.length + (from ? 1 : 0) + (to ? 1 : 0) +
     groupBy.length + (sortIsDefault ? 0 : sorts.length);
   const toggleSort = (key: SortKey) =>
     setSorts((p) => (p.some((s) => s.key === key) ? p.filter((s) => s.key !== key) : [...p, { key, dir: 'asc' }]));
@@ -278,7 +278,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
   const resetAll = () => {
     setFilters(EMPTY_FILTERS); setSearch(''); setFrom(''); setTo(''); setSorts(DEFAULT_SORT); setGroupBy([]); setCollapsed(new Set());
   };
-  const anyActive = moreCount > 0 || filters.status.length > 0 || filters.source.length > 0 || !!search;
+  const anyActive = moreCount > 0 || filters.date.length > 0 || filters.status.length > 0 || filters.source.length > 0 || !!search;
 
   const open = rows.find((r) => r.group_key === openKey) ?? null;
   const colSpan = 6;
@@ -287,7 +287,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
     <div ref={rootRef}>
       {/* A fixed grid, not a wrapping flex row, so no control changes position when
           the panel below opens or the More filters label gains a count. */}
-      <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_13rem_12rem_11rem]">
+      <div className="grid items-center gap-3 sm:grid-cols-2 lg:grid-cols-[15rem_12rem_11rem_13rem_11rem]">
         <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
@@ -307,6 +307,11 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
         <div className="min-w-0">
           <MultiSelectField values={filters.source} onChange={(v) => setFilter('source', v)} allLabel="All sources" placeholder="All sources" aria-label="Source" className="w-full">
             {['BabyBrain', 'Wix', 'Manual'].map((v) => <Opt key={v} value={v}>{v}</Opt>)}
+          </MultiSelectField>
+        </div>
+        <div className="min-w-0">
+          <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel="Today onward" placeholder="Today onward" aria-label="Quick date range" className="w-full">
+            {DATE_OPTS.map((o) => <Opt key={o.value} value={o.value}>{o.label}</Opt>)}
           </MultiSelectField>
         </div>
         <button
@@ -337,16 +342,11 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
                 {options.location.map((v) => <Opt key={v} value={v}>{v}</Opt>)}
               </MultiSelectField>
             </MoreField>
-            <MoreField label="Quick date range">
-              <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel="Today onward" placeholder="Today onward" aria-label="Quick date range" className="w-full">
-                {DATE_OPTS.map((o) => <Opt key={o.value} value={o.value}>{o.label}</Opt>)}
-              </MultiSelectField>
+            <MoreField label="Date from">
+              <DatePicker value={from} onChange={setFrom} min={sgKeyShift(today, -PAST_DAYS)} max={to || undefined} aria-label="Date from" className="w-full px-3 py-2" />
             </MoreField>
-            <MoreField label="Slot from">
-              <DatePicker value={from} onChange={setFrom} min={sgKeyShift(today, -PAST_DAYS)} max={to || undefined} aria-label="Slot from" className="w-full px-3 py-2" />
-            </MoreField>
-            <MoreField label="Slot to">
-              <DatePicker value={to} onChange={setTo} min={from || sgKeyShift(today, -PAST_DAYS)} aria-label="Slot to" className="w-full px-3 py-2" />
+            <MoreField label="Date to">
+              <DatePicker value={to} onChange={setTo} min={from || sgKeyShift(today, -PAST_DAYS)} aria-label="Date to" className="w-full px-3 py-2" />
             </MoreField>
           </div>
 
@@ -433,7 +433,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
             onClick={() => { setFrom(''); setTo(''); }}
             className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-gray-700 hover:bg-gray-50"
           >
-            <span className="text-gray-400">Slot:</span>{from || 'any'} to {to || 'any'} ×
+            <span className="text-gray-400">Date:</span>{from || 'any'} to {to || 'any'} ×
           </button>
         )}
         {groupBy.length > 0 && <span className="ml-1 text-gray-500">Grouped by {groupBy.map((k) => GROUP_LABEL[k]).join(' › ')}</span>}
@@ -454,7 +454,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
                 <th className="px-3 py-2.5">Parent</th>
                 <th className="px-3 py-2.5">Children and status</th>
                 <th className="px-3 py-2.5">Activity</th>
-                <th className="px-3 py-2.5">Slot</th>
+                <th className="px-3 py-2.5">Date</th>
                 <th className="px-3 py-2.5">Location</th>
                 <th className="px-3 py-2.5">Booked on</th>
               </tr>
