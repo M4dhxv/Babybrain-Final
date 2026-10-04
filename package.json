@@ -25,6 +25,8 @@
     "validate:parent-plan": "node scripts/validate-parent-plan.mjs",
     "validate:claim-flow": "node scripts/validate-claim-flow.mjs",
     "validate:booking-rules": "node scripts/validate-booking-rules.mjs",
+    "validate:wix-events": "npx tsx scripts/validate-wix-events-logic.mts && npx tsx scripts/validate-wix-events-flow.mts",
+    "preship:wix-events": "node scripts/preship-wix-events.mjs",
     "validate:wix-booking-gates": "npx tsx scripts/validate-wix-booking-gates.mts",
     "validate:migrations": "node scripts/validate-migrations.mjs",
     "validate:stripe-config": "node scripts/validate-stripe-config.mjs",

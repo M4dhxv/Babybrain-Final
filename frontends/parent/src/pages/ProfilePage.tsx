@@ -110,6 +110,10 @@ type CustomerBookingRow = {
   paid_with: "token" | "credit" | "cash" | "free";
   refund_mode: "refund" | "none";
   can_claim?: boolean;
+  // Wix Events: the ticket this seat holds (number + the QR target scanned at the door).
+  event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
+  // Wix Events: the order / RSVP behind this seat, and whether the event is online.
+  event_access?: { orderId: string | null; rsvpId: string | null; online: boolean } | null;
 };
 
 type BookingItem = {
@@ -141,6 +145,10 @@ type BookingItem = {
   // rows to check out.
   canClaim: boolean;
   claimIds: string[];
+  // Wix Events tickets for this booking, one per seat (empty for everything else).
+  tickets: { orderId: string; ticketNumber: string; checkInUrl: string | null }[];
+  // An ONLINE Wix event: how to fetch the join link (an order for tickets, an RSVP otherwise).
+  joinOnline: { orderId: string | null; rsvpId: string | null } | null;
   // A Wix ticketed event — parents can't cancel or reschedule these online.
   isEvent: boolean;
   // A Wix COURSE — one enrolment covers the whole run, so there's no single
@@ -595,6 +603,88 @@ function BookingsToolbar({ items, parentName, isPlus }: { items: BookingItem[]; 
  *   - Google Calendar / Outlook: web links that work on any phone or computer.
  *   - Download file: the .ics, for Windows Calendar and other desktop apps.
  *  The device's own calendar is listed first. */
+/** A Wix Events ticket: the QR the organiser scans at the door, and a PDF /
+ *  Apple Wallet link. Wix's PDF and wallet links expire within a day, so they
+ *  are fetched fresh from the organiser's Wix when the parent asks (the QR
+ *  target is permanent and is stored). */
+function EventTicketDialog({ b, onClose }: { b: BookingItem; onClose: () => void }) {
+  const [qr, setQr] = useState<Record<string, string>>({});
+  const [links, setLinks] = useState<Record<string, { pdfUrl: string | null; walletPassUrl: string | null }>>({});
+  const [linksState, setLinksState] = useState<"idle" | "loading" | "error">("idle");
+
+  useEffect(() => {
+    let cancelled = false;
+    void import("qrcode").then(async (QR) => {
+      const next: Record<string, string> = {};
+      for (const t of b.tickets) {
+        if (!t.checkInUrl) continue;
+        next[t.ticketNumber] = await QR.toDataURL(t.checkInUrl, { margin: 1, width: 360 });
+      }
+      if (!cancelled) setQr(next);
+    });
+    return () => { cancelled = true; };
+  }, [b.tickets]);
+
+  async function loadLinks() {
+    setLinksState("loading");
+    try {
+      const r = await apiGet<{ tickets: { ticketNumber: string; pdfUrl: string | null; walletPassUrl: string | null }[] }>(
+        `/api/wix/events/ticket?orderId=${encodeURIComponent(b.tickets[0].orderId)}`
+      );
+      setLinks(Object.fromEntries(r.tickets.map((t) => [t.ticketNumber, { pdfUrl: t.pdfUrl, walletPassUrl: t.walletPassUrl }])));
+      setLinksState("idle");
+    } catch {
+      setLinksState("error");
+    }
+  }
+
+  return (
+    <BookingsDialog title={b.tickets.length > 1 ? "Your tickets" : "Your ticket"} subtitle={[b.title, b.when].filter(Boolean).join(" · ")} onClose={onClose}>
+      <div className="space-y-4">
+        {b.tickets.map((t, i) => (
+          <div key={t.ticketNumber} className="rounded-xl border border-[#EBE3E5] p-3 text-center">
+            {b.tickets.length > 1 && <p className="mb-1 text-xs font-bold text-[#6D7486]">Ticket {i + 1} of {b.tickets.length}</p>}
+            {qr[t.ticketNumber] ? (
+              <img src={qr[t.ticketNumber]} alt={`QR code for ticket ${t.ticketNumber}`} className="mx-auto h-48 w-48" />
+            ) : (
+              <div className="mx-auto flex h-48 w-48 items-center justify-center text-xs font-semibold text-[#6D7486]">
+                {t.checkInUrl ? "Preparing…" : "No QR code for this ticket"}
+              </div>
+            )}
+            <p className="mt-1 text-sm font-black tracking-wide text-[#2E3558]">{t.ticketNumber}</p>
+            {links[t.ticketNumber] && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                {links[t.ticketNumber].pdfUrl && (
+                  <a href={links[t.ticketNumber].pdfUrl!} target="_blank" rel="noopener" className="rounded-[9px] border border-palette-purple px-3 py-1.5 text-xs font-bold text-palette-purpleInk">
+                    Download PDF
+                  </a>
+                )}
+                {links[t.ticketNumber].walletPassUrl && (
+                  <a href={links[t.ticketNumber].walletPassUrl!} target="_blank" rel="noopener" className="rounded-[9px] border border-palette-purple px-3 py-1.5 text-xs font-bold text-palette-purpleInk">
+                    Add to Apple Wallet
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        <p className="text-xs font-semibold text-[#6D7486]">Show this QR code at the door. The organiser scans it to check you in.</p>
+        {Object.keys(links).length === 0 && (
+          <button
+            type="button"
+            onClick={() => void loadLinks()}
+            disabled={linksState === "loading"}
+            className="w-full rounded-[9px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-2.5 text-sm font-bold text-[#2E3558] disabled:opacity-60"
+          >
+            {linksState === "loading" ? "Getting your download links…" : "Get PDF / Apple Wallet"}
+          </button>
+        )}
+        {linksState === "error" && <p className="text-xs font-semibold text-palette-pinkInk">Couldn't reach the organiser just now — try again in a moment.</p>}
+      </div>
+    </BookingsDialog>
+  );
+}
+
 function AddBookingToCalendarDialog({ b, onClose }: { b: BookingItem; onClose: () => void }) {
   const event = { id: b.id, title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt ?? null, venue: b.venue };
   const options: { key: string; label: string; note: string; run: () => void }[] = [
@@ -803,8 +893,8 @@ function BookingsFilterPanel({
       </div>
       <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by booking time</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={chip(sort === "bookedNew")} onClick={() => onSort("bookedNew")}>New first</button>
-        <button type="button" className={chip(sort === "bookedOld")} onClick={() => onSort("bookedOld")}>Old first</button>
+        <button type="button" className={chip(sort === "bookedNew")} onClick={() => onSort("bookedNew")}>Newest first</button>
+        <button type="button" className={chip(sort === "bookedOld")} onClick={() => onSort("bookedOld")}>Oldest first</button>
       </div>
       <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Status</p>
       <div className="flex flex-wrap gap-2">
@@ -1418,6 +1508,11 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!session) return;
     const uid = session.user.id;
+    // This page is one ~1,650-line component, so any state change re-renders
+    // all of it (a long task a tap can land behind: the menu "lags"). A poll
+    // that found nothing new used to swap in a fresh array every 20s, which is
+    // exactly such a change; now an identical answer keeps the old array and
+    // React skips the render. A failed poll is not "no notifications" either.
     const reload = () =>
       cacheFetch(`profile:notifications:${uid}`, 0, () =>
         supabase
@@ -1425,9 +1520,25 @@ export default function ProfilePage() {
           .select("id, type, title, body, read_at, created_at, data")
           .order("created_at", { ascending: false })
           .limit(100)
-          .then(({ data }) => data ?? [])
-      ).then((data) => setNotifications(data as unknown as NotifItem[]));
-    const interval = setInterval(reload, 20_000);
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data ?? [];
+          })
+      )
+        .then((data) => {
+          const next = data as unknown as NotifItem[];
+          setNotifications((prev) =>
+            prev.length === next.length && prev.every((n, i) => n.id === next[i].id && n.read_at === next[i].read_at)
+              ? prev
+              : next
+          );
+        })
+        .catch(() => {});
+    // Nothing to refresh for a page nobody is looking at; coming back to the
+    // tab reloads (onVisible below).
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") reload();
+    }, 20_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") reload();
     };
@@ -1468,15 +1579,32 @@ export default function ProfilePage() {
     }
     if (leftOverview.current) return;
     let rollBack: ReturnType<typeof setTimeout>;
-    // Open on a short delay so the closed state paints once and the slide-in
-    // animates; the 4s hold is chained off the open (not anchored to mount),
-    // so a slow first render still gets the full reveal.
-    const slideIn = setTimeout(() => {
+    // Open once the closed state has actually painted and the main thread has
+    // a quiet moment, not on a fixed 60ms timer: on a slow first render that
+    // timer fired in the middle of the page's own rendering, so the slide-in
+    // started late and jumped. Two frames guarantees the closed paint; the
+    // idle callback (500ms cap) waits out the initial render burst. The 4s
+    // hold is chained off the open, so a slow start still gets the full reveal.
+    let cancelled = false;
+    let raf1 = 0;
+    let raf2 = 0;
+    let idle = 0;
+    const open = () => {
+      if (cancelled) return;
       setMenuOpen(true);
       rollBack = setTimeout(() => setMenuOpen(false), 4000);
-    }, 60);
+    };
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if ("requestIdleCallback" in window) idle = (window as unknown as { requestIdleCallback: (cb: () => void, o: { timeout: number }) => number }).requestIdleCallback(open, { timeout: 500 });
+        else open();
+      });
+    });
     return () => {
-      clearTimeout(slideIn);
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      if (idle && "cancelIdleCallback" in window) (window as unknown as { cancelIdleCallback: (h: number) => void }).cancelIdleCallback(idle);
       clearTimeout(rollBack);
     };
   }, [tab]);
@@ -1758,6 +1886,8 @@ export default function ProfilePage() {
               // spot free to pay for.
               canClaim: ordered.some((x) => x.can_claim === true),
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
+              tickets: ordered.flatMap((x) => (x.event_ticket ? [x.event_ticket] : [])),
+              joinOnline: ordered.find((x) => x.event_access?.online)?.event_access ?? null,
               isEvent: act?.wix_service_type === "EVENT",
               isCourse: courseBooking,
               isWixLinked: act?.wix_service_id != null,
@@ -3424,6 +3554,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // "Add to calendar" for one booking (Plus). Only an upcoming, confirmed
   // booking can be added: a waitlisted or unpaid one isn't a session yet.
   const [calFor, setCalFor] = useState<BookingItem | null>(null);
+  const [ticketFor, setTicketFor] = useState<BookingItem | null>(null);
   const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Arrived here from a notification's "view this booking" link — scroll to
@@ -3485,6 +3616,28 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // Pay for a still-waitlisted booking that now has a seat free (00100).
   // Checks out the existing booking rows — the webhook confirms them. If the
   // class filled between the page loading and this click, the route says so.
+  /** An online Wix event's join link is per guest on Wix, so it's fetched when asked for. The tab is
+   *  opened first (inside the click) so the browser doesn't treat the later navigation as a popup. */
+  async function joinOnlineEvent(b: BookingItem) {
+    if (!b.joinOnline) return;
+    const tab = window.open("", "_blank");
+    try {
+      const q = b.joinOnline.orderId ? `orderId=${encodeURIComponent(b.joinOnline.orderId)}` : `rsvpId=${encodeURIComponent(b.joinOnline.rsvpId ?? "")}`;
+      const r = await apiGet<{ online: { link: string; password: string | null } | null }>(`/api/wix/events/ticket?${q}`);
+      if (!r.online?.link) {
+        tab?.close();
+        setNotice("The organiser hasn't shared a link to join yet — check back closer to the time.");
+        return;
+      }
+      if (r.online.password) setNotice(`Meeting password: ${r.online.password}`);
+      if (tab) tab.location.href = r.online.link;
+      else window.location.assign(r.online.link);
+    } catch {
+      tab?.close();
+      setNotice("Couldn't get the link to join just now — try again in a moment.");
+    }
+  }
+
   async function payToClaim(b: BookingItem) {
     if (!b.claimIds.length) return;
     setBusyId(b.id);
@@ -3680,6 +3833,24 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
             )}
             {upcoming(b) && (
               <div className="mt-2 flex flex-col gap-2 border-t border-[#FAF7F7] pt-2 sm:flex-row sm:justify-end">
+                {b.status === "confirmed" && b.joinOnline && (b.joinOnline.orderId || b.joinOnline.rsvpId) && (
+                  <button
+                    type="button"
+                    onClick={() => void joinOnlineEvent(b)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-palette-purple px-3 py-2.5 text-sm font-bold text-palette-purpleInk hover:bg-palette-purpleTint sm:w-auto sm:py-1.5 sm:text-xs"
+                  >
+                    Join online
+                  </button>
+                )}
+                {b.status === "confirmed" && b.tickets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTicketFor(b)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[9px] bg-baby-cta px-3 py-2.5 text-sm font-bold text-white hover:opacity-90 sm:w-auto sm:py-1.5 sm:text-xs"
+                  >
+                    {b.tickets.length > 1 ? "Show tickets" : "Show ticket"}
+                  </button>
+                )}
                 {!isPlus ? (
                   <a
                     href="/pricing"
@@ -3755,6 +3926,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       })}
 
       {calFor && <AddBookingToCalendarDialog b={calFor} onClose={() => setCalFor(null)} />}
+      {ticketFor && <EventTicketDialog b={ticketFor} onClose={() => setTicketFor(null)} />}
 
       {/* Explanatory pop-up for unavailable actions / errors */}
       {notice && (

@@ -179,6 +179,40 @@ async function chargeFacts(paymentIntentId: string): Promise<ChargeFacts> {
   }
 }
 
+/**
+ * Turn what the app knows about a sale, plus what Stripe says about the charge, into the ledger
+ * figures. Shared by {@link recordSale} (first write) and {@link healEarningsFromStripe} (a later
+ * correction) so the two can never disagree about how a sale is split. Pure.
+ */
+export function deriveEarning(
+  fallbackGrossCents: number,
+  facts: ChargeFacts,
+  terms: Terms,
+  source: 'booking' | 'package'
+) {
+  const gross = facts.grossCents ?? fallbackGrossCents;
+  const effectiveTerms =
+    source === 'package' && !terms.commissionOnPackages ? { ...terms, commissionRate: 0, commissionFlatCents: 0 } : terms;
+  const split = computeSplit(gross, effectiveTerms);
+  // A transfer id is the only proof the money actually reached the vendor's own Stripe account.
+  // Without one, BabyBrain is holding their share.
+  const routedToConnect = Boolean(facts.transferId);
+  // Prefer the application fee Stripe actually took over the one we intended — they only diverge if
+  // terms changed between checkout and payment, and the ledger should show what really happened.
+  const appliedFee = facts.applicationFeeCents ?? split.applicationFeeCents;
+  // Of that fee, the part that isn't recovering Stripe's cost is what BabyBrain keeps.
+  const commissionCents = Math.max(0, appliedFee - split.feeRecoveryCents);
+  return {
+    gross,
+    effectiveTerms,
+    routedToConnect,
+    appliedFee,
+    commissionCents,
+    netCents: gross - appliedFee,
+    status: (routedToConnect ? 'pending' : 'platform_owed') as 'pending' | 'platform_owed',
+  };
+}
+
 export interface SaleInput {
   providerId: string;
   source: 'booking' | 'package';
@@ -216,24 +250,11 @@ export async function recordSale(
       : ({ grossCents: null, applicationFeeCents: null, stripeFeeCents: null, transferId: null, currency: null, livemode: null } as ChargeFacts);
 
     const terms = await getTerms(admin, input.providerId);
-    const gross = facts.grossCents ?? input.grossCents;
-    const effectiveTerms =
-      input.source === 'package' && !terms.commissionOnPackages
-        ? { ...terms, commissionRate: 0, commissionFlatCents: 0 }
-        : terms;
-    const split = computeSplit(gross, effectiveTerms);
-
-    // A transfer id is the only proof the money actually reached the vendor's
-    // own Stripe account. Without one, BabyBrain is holding their share.
-    const routedToConnect = Boolean(facts.transferId);
-
-    // Prefer the application fee Stripe actually took over the one we intended
-    // — they only diverge if terms changed between checkout and payment, and
-    // the vendor's ledger should show what really happened.
-    const appliedFee = facts.applicationFeeCents ?? split.applicationFeeCents;
-    // Of that fee, the part that isn't recovering Stripe's cost is what
-    // BabyBrain keeps.
-    const commissionCents = Math.max(0, appliedFee - split.feeRecoveryCents);
+    const d = deriveEarning(input.grossCents, facts, terms, input.source);
+    const effectiveTerms = d.effectiveTerms;
+    const gross = d.gross;
+    const commissionCents = d.commissionCents;
+    const routedToConnect = d.routedToConnect;
 
     await admin.from('provider_earnings').insert({
       provider_id: input.providerId,
@@ -244,14 +265,14 @@ export async function recordSale(
       gross_cents: gross,
       commission_cents: commissionCents,
       stripe_fee_cents: facts.stripeFeeCents,
-      net_cents: gross - appliedFee,
+      net_cents: d.netCents,
       commission_rate: effectiveTerms.commissionRate,
       commission_flat_cents: effectiveTerms.commissionFlatCents,
       fee_payer: effectiveTerms.feePayer,
       routed_to_connect: routedToConnect,
       stripe_payment_intent: input.paymentIntentId,
       stripe_transfer_id: facts.transferId,
-      status: routedToConnect ? 'pending' : 'platform_owed',
+      status: d.status,
       // Only written for test-mode payments: live rows rely on the column default (true),
       // so recording a live sale never depends on migration 00161 having been applied.
       ...(facts.livemode === false ? { livemode: false } : {}),
@@ -259,4 +280,66 @@ export async function recordSale(
   } catch {
     // Swallowed on purpose — see the doc comment.
   }
+}
+
+
+/**
+ * Corrects ledger rows that were written WITHOUT Stripe's facts.
+ *
+ * {@link recordSale} reads the charge from Stripe and, if that read fails (a Stripe blip, a key not
+ * available to the code that ran it), deliberately still records the sale from the app's own
+ * figures — better than losing it. The cost is a row with no transfer id and no Stripe fee that
+ * says `platform_owed` ("BabyBrain holds the vendor's share") even when Stripe already paid the
+ * vendor straight away. Nothing ever revisited it. This re-reads the charge for such recent rows
+ * and fixes whatever Stripe now tells us. It only touches rows still `platform_owed` with no
+ * transfer and no fee, never a row that has moved on (in transit, paid out, refunded), and does
+ * nothing unless Stripe answers.
+ */
+export async function healEarningsFromStripe(admin: SupabaseClient<Database>, limit = 20): Promise<number> {
+  const { data: rows } = await admin
+    .from('provider_earnings')
+    .select('id, provider_id, source, gross_cents, commission_cents, net_cents, routed_to_connect, stripe_payment_intent, status')
+    .not('stripe_payment_intent', 'is', null)
+    .is('stripe_transfer_id', null)
+    .is('stripe_fee_cents', null)
+    .eq('status', 'platform_owed')
+    .gt('created_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+    .limit(limit);
+
+  let healed = 0;
+  for (const row of rows ?? []) {
+    try {
+      const facts = await chargeFacts(row.stripe_payment_intent as string);
+      if (facts.grossCents == null) continue; // Stripe still can't tell us — leave it
+      const terms = await getTerms(admin, row.provider_id);
+      const d = deriveEarning(row.gross_cents, facts, terms, row.source as 'booking' | 'package');
+      const unchanged =
+        d.gross === row.gross_cents &&
+        d.commissionCents === row.commission_cents &&
+        d.netCents === row.net_cents &&
+        d.routedToConnect === row.routed_to_connect &&
+        facts.stripeFeeCents == null &&
+        facts.transferId == null &&
+        facts.livemode !== false;
+      if (unchanged) continue;
+      const { error } = await admin
+        .from('provider_earnings')
+        .update({
+          gross_cents: d.gross,
+          commission_cents: d.commissionCents,
+          net_cents: d.netCents,
+          stripe_fee_cents: facts.stripeFeeCents,
+          routed_to_connect: d.routedToConnect,
+          stripe_transfer_id: facts.transferId,
+          status: d.status,
+          ...(facts.livemode === false ? { livemode: false } : {}),
+        } as Database['public']['Tables']['provider_earnings']['Update'])
+        .eq('id', row.id)
+        .eq('status', 'platform_owed');
+      if (!error) healed++;
+    } catch (e) {
+      console.error('[healEarningsFromStripe] could not correct', row.id, e);
+    }
+  }
+  return healed;
 }

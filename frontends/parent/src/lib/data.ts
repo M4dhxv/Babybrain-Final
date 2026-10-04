@@ -378,6 +378,8 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
                   allow_rescheduling: null,
                   reschedule_cutoff_hours: null,
                   booking_cutoff_minutes: null,
+                  wix_event_id: null,
+                  wix_day: null,
                 }));
               })
               .catch((e) => {
@@ -398,22 +400,31 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
         : fetchUpcomingSessions(act.id);
 
       // Wix Event: does any bookable ticket remain? A type counts as sold out
-      // when Wix says so (sold_out) or its unsold count has hit zero. Every
-      // non-hidden type gone -> the event as a whole is sold out. Non-events
-      // resolve `false` without a query.
-      const eventSoldOutPromise: Promise<boolean> = act.wix_event_id
-        ? Promise.resolve(
-            supabase
+      // when Wix says so (sold_out) or its unsold count has hit zero. A date is
+      // sold out when every non-hidden type of ITS Wix event is gone, and the
+      // activity is sold out when every upcoming date is (a recurring series has
+      // a date per Wix event; a single event has one). Non-events resolve
+      // `false` without a query.
+      const isWixEventActivity = !!(act.wix_event_id || act.wix_series_id);
+      const eventSoldOutPromise: Promise<boolean> = isWixEventActivity
+        ? sessionsPromise.then(async (sessions) => {
+            const eventIds = act.wix_series_id
+              ? [...new Set(sessions.map((s) => s.wix_event_id).filter((x): x is string => !!x))]
+              : act.wix_event_id
+                ? [act.wix_event_id]
+                : [];
+            if (!eventIds.length) return false;
+            const { data } = await supabase
               .from("event_ticket_types")
-              .select("sold_out, capacity_remaining, hidden")
-              .eq("event_id", act.wix_event_id)
-              .eq("hidden", false)
-          ).then(({ data }) => {
-            const types = data ?? [];
-            return (
-              types.length > 0 &&
-              types.every((t) => t.sold_out || t.capacity_remaining === 0)
-            );
+              .select("event_id, sold_out, capacity_remaining, hidden")
+              .in("event_id", eventIds)
+              .eq("hidden", false);
+            const byEvent = new Map<string, { sold_out: boolean; capacity_remaining: number | null }[]>();
+            for (const t of data ?? []) byEvent.set(t.event_id, [...(byEvent.get(t.event_id) ?? []), t]);
+            return eventIds.every((id) => {
+              const types = byEvent.get(id) ?? [];
+              return types.length > 0 && types.every((t) => t.sold_out || t.capacity_remaining === 0);
+            });
           })
         : Promise.resolve(false);
 

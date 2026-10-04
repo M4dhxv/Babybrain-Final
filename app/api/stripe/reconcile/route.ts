@@ -140,8 +140,16 @@ export async function POST(request: Request) {
     if (!owned) {
       return NextResponse.json({ error: 'Not your checkout session' }, { status: 403 });
     }
-    await finalizeWixEventTicketCheckout(admin, session);
-    return NextResponse.json({ applied: true, kind });
+    const outcome = await finalizeWixEventTicketCheckout(admin, session);
+    // `confirmed` lets the return page say so honestly: true = the organiser's Wix has the order,
+    // false = paid but not confirmed yet (we are retrying), null = another caller is on it right now.
+    const confirmed =
+      outcome?.status === 'fulfilled' || outcome?.status === 'already'
+        ? true
+        : outcome?.status === 'failed'
+          ? false
+          : null;
+    return NextResponse.json({ applied: true, kind, confirmed });
   }
 
   if (kind === 'booking' && session.metadata?.booking_id) {

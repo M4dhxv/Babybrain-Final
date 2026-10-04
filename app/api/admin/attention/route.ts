@@ -49,6 +49,33 @@ export async function GET(request: Request) {
   }
 
   if (auth.role === 'admin') {
+    const stuckEventOrders = await count(
+      db.from('event_ticket_orders').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('payment_status', 'paid')
+    );
+    // The 10-minute Wix Events job (migration 00219) stamps every event activity it checks. If the newest
+    // stamp is old while event activities exist, the job has stopped (cron off, route erroring, secret
+    // changed) and nothing else would say so.
+    const { data: lastCheck } = await db
+      .from('activities')
+      .select('wix_event_checked_at')
+      .or('wix_event_id.not.is.null,wix_series_id.not.is.null')
+      .is('wix_removed_at', null)
+      .order('wix_event_checked_at', { ascending: false, nullsFirst: false })
+      .limit(1);
+    const lastCheckedAt = (lastCheck as { wix_event_checked_at: string | null }[] | null)?.[0]?.wix_event_checked_at ?? null;
+    if (lastCheck && lastCheck.length > 0 && (!lastCheckedAt || Date.now() - Date.parse(lastCheckedAt) > 60 * 60_000)) {
+      items.push({ id: 'wix-events-job-stale', severity: 'warn', tab: 'vendors',
+        title: 'Wix Events aren\'t being re-checked',
+        detail: lastCheckedAt
+          ? `The background check (every 10 minutes) last ran ${Math.round((Date.now() - Date.parse(lastCheckedAt)) / 60_000)} minutes ago. Paid tickets Wix refused won't be retried and cancellations on Wix won't reach parents until it runs again.`
+          : 'The background check has never run since Wix Events were connected.' });
+    }
+    if (stuckEventOrders > 0) {
+      items.push({ id: 'event-orders-stuck', severity: 'warn', tab: 'payments',
+        title: `${plural(stuckEventOrders, 'paid event ticket')} not on the vendor's Wix`,
+        detail: 'The parent was charged but Wix refused the order, so they have no ticket. Retry or refund it in the Payments tab.' });
+    }
+
     const [pastDue, owedRows] = await Promise.all([
       count(db.from('customer_subscriptions').select('user_id', { count: 'exact', head: true }).eq('plan', 'plus').eq('status', 'past_due')),
       (async () => {

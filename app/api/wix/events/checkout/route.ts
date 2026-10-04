@@ -9,8 +9,20 @@ import {
   WixApiError,
   computeWixCheckoutTotal,
   createWixTicketReservation,
+  fetchWixEvent,
+  fetchWixTicketDefinitions,
   getProviderWixCredentials,
 } from '@/lib/wix/client';
+import { resolveWixContact } from '@/lib/wix/sync';
+import { describeDays, resolveDaySelection } from '@/lib/wix/event-day-booking';
+import {
+  describeWixAnswerProblems,
+  resolveWixEventGuestForm,
+  sanitiseWixFormAnswers,
+  validateWixFormAnswers,
+  wixFormMissingParentMessage,
+} from '@/lib/wix/event-form';
+import { evaluateWixEvent, evaluateWixTicket, parentBlockerMessage } from '@/lib/wix/event-eligibility';
 
 /**
  * Parent pays for a Wix Events ticket. Mirrors /api/wix/bookings/checkout's
@@ -40,10 +52,14 @@ export async function POST(request: Request) {
     eventId?: string;
     ticketTypeId?: string;
     quantity?: number;
+    /** Multi-day events: the days chosen (YYYY-MM-DD); `quantity` is then the number of children. */
+    days?: string[];
     childId?: string | null;
     medicalDisclosure?: string;
     policiesAccepted?: string[];
     infoResponse?: string;
+    /** Answers to the event's own registration questions, by Wix input name. */
+    formAnswers?: unknown;
   };
   const { eventId, ticketTypeId } = body;
   if (!eventId || !ticketTypeId) {
@@ -90,8 +106,71 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
   }
 
+  // Wix refuses an order its event won't take — registration closed or paused,
+  // members only, sales not open, a form field we can't fill — and by then the
+  // parent has paid. A reservation does NOT catch any of that (it only fails
+  // for a missing event or ticket), so the live event and ticket type are
+  // checked here, while nothing has been charged or held. Wix being
+  // unreachable falls through to the reservation below rather than blocking.
+  const [liveEvent, liveTickets] = await Promise.all([
+    fetchWixEvent(creds, event.wix_event_id).catch(() => undefined),
+    fetchWixTicketDefinitions(creds, event.wix_event_id, { seating: true }).catch(() => undefined),
+  ]);
+  if (liveEvent === null) {
+    return NextResponse.json({ error: 'This event is no longer available.' }, { status: 404 });
+  }
+  const eventBlockers = liveEvent ? evaluateWixEvent(liveEvent) : [];
+  const liveTicket = liveTickets?.find((t) => t.id === ticketType.wix_ticket_definition_id);
+  if (liveTickets && !liveTicket) {
+    return NextResponse.json({ error: 'That ticket type is no longer available' }, { status: 409 });
+  }
+  const blockers = [...eventBlockers, ...(liveTicket ? evaluateWixTicket(liveTicket) : [])];
+  if (blockers.length) {
+    return NextResponse.json({ error: parentBlockerMessage(blockers), code: blockers[0].code }, { status: 409 });
+  }
+
+  // The parent's answers to the event's own questions, checked against the live
+  // form (mandatory ones answered, dropdown / radio / checkbox values within the
+  // fixed options Wix allows) while nothing has been charged.
+  const answers = liveEvent ? sanitiseWixFormAnswers(liveEvent.formInputs, body.formAnswers) : {};
+  if (liveEvent) {
+    const problems = validateWixFormAnswers(liveEvent.formInputs, answers, { fallbackAnswer: !!body.infoResponse?.trim() });
+    if (problems.length) {
+      return NextResponse.json({ error: describeWixAnswerProblems(problems), fields: problems.map((p) => p.name) }, { status: 422 });
+    }
+  }
+  const guestForm = await resolveWixEventGuestForm(admin, creds, event.wix_event_id, {
+    contact: await resolveWixContact(admin, user.id),
+    childId: body.childId ?? null,
+    infoResponse: body.infoResponse ?? null,
+    answers,
+    inputs: liveEvent ? liveEvent.formInputs : undefined,
+  });
+  if (guestForm.missing.length) {
+    console.error('[wix events checkout] form needs fields we cannot fill', event.wix_event_id, guestForm.missing.map((m) => m.label || m.name));
+    return NextResponse.json({ error: wixFormMissingParentMessage(guestForm.missing, true) }, { status: 409 });
+  }
+
+  const wixOrderCap = liveEvent?.registration?.ticketLimitPerOrder ?? 20;
   const cap = ticketType.limit_per_checkout && ticketType.limit_per_checkout > 0 ? ticketType.limit_per_checkout : 20;
-  const quantity = Math.min(Math.max(Math.trunc(body.quantity ?? 1), 1), Math.min(cap, 20));
+  const orderLimit = Math.min(cap, wixOrderCap, 20);
+  let quantity = Math.min(Math.max(Math.trunc(body.quantity ?? 1), 1), orderLimit);
+
+  // A multi-day event (a camp that runs 9-12 for five days) is booked by day: the parent picks days, and the
+  // tickets follow from the ticket type (a single-day ticket is one per child per day; an N-day package
+  // covers exactly N days). Nothing here applies to an ordinary event.
+  const daySel = await resolveDaySelection(admin, {
+    localEventId: event.id,
+    ticketName: ticketType.name,
+    partySize: Math.min(Math.max(Math.trunc(body.quantity ?? 1), 1), 6),
+    days: body.days,
+    ticketLimitPerOrder: orderLimit,
+  });
+  if (daySel.multiDay && 'error' in daySel) {
+    return NextResponse.json({ error: daySel.error }, { status: 422 });
+  }
+  const dayPlan = daySel.multiDay && 'plan' in daySel ? daySel : null;
+  if (dayPlan) quantity = dayPlan.plan.tickets;
 
   // The live, authoritative availability check — Wix's own reservation
   // system is the only source of truth for remaining capacity (no local
@@ -139,10 +218,13 @@ export async function POST(request: Request) {
       status: 'pending',
       payment_status: 'none',
       amount: charge.value,
+      selected_days: dayPlan?.days ?? [],
+      party_size: dayPlan?.plan.partySize ?? null,
       wix_reservation_id: reservation.id,
       medical_disclosure: body.medicalDisclosure?.trim() || null,
       policies_accepted: body.policiesAccepted ?? [],
       info_response: body.infoResponse?.trim() || null,
+      form_response: answers,
     })
     .select('id')
     .single();
@@ -170,7 +252,7 @@ export async function POST(request: Request) {
         price_data: {
           currency: charge.currency.toLowerCase(),
           unit_amount: Math.round(charge.value * 100),
-          product_data: { name: `${title} — ${ticketType.name} × ${quantity}` },
+          product_data: { name: `${title} — ${ticketType.name} × ${quantity}${dayPlan ? ` (${describeDays(dayPlan.days)})` : ''}` },
         },
         quantity: 1,
       },
@@ -181,6 +263,8 @@ export async function POST(request: Request) {
     // tightens the window as much as Stripe allows; finalizeWixEventTicketCheckout
     // covers the remaining gap with a fresh-reservation retry.
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+    // Also on the PaymentIntent, so the order is traceable from the Stripe dashboard's payment page.
+    payment_intent_data: { metadata: { kind: 'wix_event_ticket', order_id: pending.id } },
     metadata: {
       kind: 'wix_event_ticket',
       order_id: pending.id,
@@ -228,6 +312,7 @@ export async function POST(request: Request) {
     const split = computeSplit(Math.round(charge.value * 100), terms);
     connect = {
       payment_intent_data: {
+        ...params.payment_intent_data,
         application_fee_amount: split.applicationFeeCents,
         transfer_data: { destination: provider.stripe_account_id },
       },

@@ -642,6 +642,14 @@ export default function ActivityDetailPage() {
   // "sold out" here — a full slot still routes to Book.
   const soldOut =
     eventSoldOut || (activity.wix_service_type === "COURSE" && sessions.length === 0);
+  // A Wix event the organiser's own settings keep closed (registration closed or
+  // paused, members only, sales not open, ...) — worked out in the background
+  // from the live event (lib/wix/event-eligibility), so the parent hears it
+  // here rather than after entering their details.
+  const eventBlockedMessage =
+    activity.wix_service_type === "EVENT" && (activity.wix_event_blockers?.length ?? 0) > 0
+      ? activity.wix_event_blockers[0].parentMessage
+      : null;
 
   // Messaging needs an integrated provider on Growth-and-above, and a Plus
   // subscription on the parent's side. Signed-out visitors still get a live
@@ -910,6 +918,10 @@ export default function ActivityDetailPage() {
               >
                 <Icon name="calendar" className="h-4 w-4" /> Checking availability…
               </button>
+            ) : eventBlockedMessage ? (
+              <div className="bb-reveal mt-4 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-4 py-3 text-center text-sm font-bold text-[#6D7486]">
+                <Icon name="calendar" className="mr-1.5 inline h-4 w-4" /> {eventBlockedMessage}
+              </div>
             ) : soldOut ? (
               <button
                 type="button"

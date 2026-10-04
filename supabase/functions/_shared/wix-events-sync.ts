@@ -26,6 +26,11 @@ export interface WixEventsSyncResult {
   eventsAppNotInstalled: boolean;
 }
 
+// A recurring Wix event (a series) is ONE activity with a session per date, owned by the Vercel reconcile
+// job (lib/wix/events-series.ts + events-reconcile.ts, migration 00221). Series activities deliberately
+// have wix_event_id NULL, and everything below is keyed on activities.wix_event_id, so this sync never
+// touches them. Do not "fix" that by looking activities up another way: this file's one-session-per-event
+// collapse would delete a series' other dates.
 const DAYS_AHEAD = 365;
 
 function isMissingEventsApp(e: unknown): boolean {

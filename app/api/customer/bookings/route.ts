@@ -28,6 +28,78 @@ async function autoCompensatedFor(admin: Admin, ids: string[]) {
   return new Set((data ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id));
 }
 
+/** The ticket each seat of a Wix Events order holds (number + permanent QR
+ *  target), keyed by booking id. A seat is one `bookings` row per ticket, and
+ *  neither side can address the other individually, so they pair by sorted
+ *  order — the same rule the reconcile job uses for check-ins. */
+async function eventTicketsFor(
+  admin: Admin,
+  userId: string,
+  rows: Array<{ id: string; wix_booking_id: string | null; wix_ticket_type_id: string | null }>
+) {
+  const out = new Map<string, { orderId: string; ticketNumber: string; checkInUrl: string | null }>();
+  const orderNumbers = [...new Set(rows.filter((r) => r.wix_ticket_type_id && r.wix_booking_id).map((r) => r.wix_booking_id as string))];
+  if (!orderNumbers.length) return out;
+  const { data: orders } = await admin
+    .from('event_ticket_orders')
+    .select('id, wix_order_number, tickets')
+    .eq('user_id', userId)
+    .in('wix_order_number', orderNumbers);
+  for (const order of orders ?? []) {
+    const tickets = [...(order.tickets ?? [])].sort((a, b) => a.ticketNumber.localeCompare(b.ticketNumber));
+    const seatIds = rows.filter((r) => r.wix_booking_id === order.wix_order_number).map((r) => r.id).sort();
+    // Usually one place per ticket. A day-by-day package ticket (a "3 Day Package") covers several places,
+    // one per day, so places per ticket = places / tickets.
+    const perTicket = tickets.length ? Math.max(1, Math.round(seatIds.length / tickets.length)) : 1;
+    seatIds.forEach((seatId, i) => {
+      const t = tickets[Math.min(Math.floor(i / perTicket), tickets.length - 1)];
+      if (t) out.set(seatId, { orderId: order.id, ticketNumber: t.ticketNumber, checkInUrl: t.checkInUrl });
+    });
+  }
+  return out;
+}
+
+/** For a Wix Events seat: which order / RSVP it belongs to and whether the event is
+ *  online (its join link is fetched on demand, per guest, from /api/wix/events/ticket). */
+async function eventAccessFor(
+  admin: Admin,
+  userId: string,
+  rows: Array<{
+    id: string;
+    wix_booking_id: string | null;
+    wix_ticket_type_id: string | null;
+    activity_sessions: { wix_event_id: string | null } | null;
+  }>
+) {
+  const out = new Map<string, { orderId: string | null; rsvpId: string | null; online: boolean }>();
+  const eventRows = rows.filter((r) => r.wix_booking_id && r.activity_sessions?.wix_event_id);
+  if (!eventRows.length) return out;
+
+  const ticketNumbers = [...new Set(eventRows.filter((r) => r.wix_ticket_type_id).map((r) => r.wix_booking_id as string))];
+  const rsvpIds = [...new Set(eventRows.filter((r) => !r.wix_ticket_type_id).map((r) => r.wix_booking_id as string))];
+  const localEventIds = [...new Set(eventRows.map((r) => r.activity_sessions!.wix_event_id as string))];
+  const [{ data: orders }, { data: rsvps }, { data: events }] = await Promise.all([
+    ticketNumbers.length
+      ? admin.from('event_ticket_orders').select('id, wix_order_number').eq('user_id', userId).in('wix_order_number', ticketNumbers)
+      : Promise.resolve({ data: [] as { id: string; wix_order_number: string | null }[] }),
+    rsvpIds.length
+      ? admin.from('event_rsvps').select('id, wix_rsvp_id').eq('user_id', userId).in('wix_rsvp_id', rsvpIds)
+      : Promise.resolve({ data: [] as { id: string; wix_rsvp_id: string | null }[] }),
+    admin.from('wix_events').select('id, location_type').in('id', localEventIds),
+  ]);
+  const orderByNumber = new Map((orders ?? []).map((o) => [o.wix_order_number, o.id]));
+  const rsvpByWixId = new Map((rsvps ?? []).map((r) => [r.wix_rsvp_id, r.id]));
+  const onlineEvents = new Set((events ?? []).filter((e) => e.location_type === 'ONLINE').map((e) => e.id));
+  for (const r of eventRows) {
+    out.set(r.id, {
+      orderId: r.wix_ticket_type_id ? orderByNumber.get(r.wix_booking_id) ?? null : null,
+      rsvpId: r.wix_ticket_type_id ? null : rsvpByWixId.get(r.wix_booking_id) ?? null,
+      online: onlineEvents.has(r.activity_sessions!.wix_event_id as string),
+    });
+  }
+  return out;
+}
+
 /** Which of the caller's *waitlisted* bookings can be paid for right now to
  *  claim a seat — a paid class, this booking still unsettled, the session
  *  has a free seat, and it's near enough the front of the queue to be in
@@ -91,7 +163,7 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
 }
 
 const BOOKING_COLUMNS =
-  'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, children(name), activity_sessions(starts_at, ends_at, activity_id, teacher_name, studio, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))';
+  'id, status, created_at, child_id, guest_name, booking_group_id, package_purchase_id, payment_status, cancel_refund_mode, session_id, wix_booking_id, wix_ticket_type_id, children(name), activity_sessions(wix_event_id, starts_at, ends_at, activity_id, teacher_name, studio, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, provider_locations(name, address), activities(title, slug, image_urls, address, allow_cancellation, allow_rescheduling, cancellation_cutoff_hours, cancellation_refund_mode, reschedule_cutoff_hours, wix_removed_at, wix_missing_since, wix_service_type, wix_service_id))';
 
 // A booking whose session started this long ago is treated as settled
 // history rather than something that still needs a fresh read every visit —
@@ -198,10 +270,12 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, claimable] = await Promise.all([
+  const [redeemedByToken, autoCompensated, claimable, eventTickets, eventAccess] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
     scope === 'active' ? claimableSeats(admin, rows) : Promise.resolve(new Set<string>()),
+    eventTicketsFor(admin, user.id, rows),
+    eventAccessFor(admin, user.id, rows),
   ]);
 
   const bookings = rows.map((r) => {
@@ -243,6 +317,10 @@ export async function GET(request: Request) {
             : 'free',
       // What this class gives back on cancellation.
       refund_mode: refundMode,
+      // Wix Events: the ticket this seat holds (what's scanned at the door).
+      event_ticket: eventTickets.get(r.id) ?? null,
+      // Wix Events: which order / RSVP this seat is, and whether the event is online.
+      event_access: eventAccess.get(r.id) ?? null,
       // A waitlisted booking with a seat waiting for it — show "Pay now".
       can_claim: claimable.has(r.id),
       // How a cancelled booking was made good (00080/00081) — the permanent

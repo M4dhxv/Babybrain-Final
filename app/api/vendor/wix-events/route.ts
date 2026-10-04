@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { getProviderWixCredentials, fetchWixEvents, WixApiError } from '@/lib/wix/client';
+import { groupEventsForPicker } from '@/lib/wix/events-series';
 
 /**
  * Lists the events on a vendor's connected Wix account, each flagged with
@@ -34,7 +35,12 @@ export async function GET(request: Request) {
       // Events" button wouldn't have picked up.
       fetchWixEvents(creds, 365),
       admin.from('wix_events').select('id, wix_event_id').eq('provider_id', providerId),
-      admin.from('activities').select('wix_event_id').eq('provider_id', providerId).not('wix_event_id', 'is', null),
+      admin
+        .from('activities')
+        .select('wix_event_id, wix_series_id')
+        .eq('provider_id', providerId)
+        .is('wix_removed_at', null)
+        .or('wix_event_id.not.is.null,wix_series_id.not.is.null'),
     ]);
 
     // activities.wix_event_id is the LOCAL wix_events.id, not Wix's own
@@ -42,16 +48,24 @@ export async function GET(request: Request) {
     // eventRows rather than a PostgREST relationship embed, to not depend
     // on the schema cache having that FK indexed.
     const localIdToWixId = new Map((eventRows ?? []).map((r) => [r.id, r.wix_event_id]));
-    const importedIds = new Set(
+    const importedWixIds = new Set(
       (linkedActivities ?? []).map((a) => localIdToWixId.get(a.wix_event_id as string)).filter(Boolean)
     );
+    const importedSeries = new Set((linkedActivities ?? []).map((a) => a.wix_series_id).filter(Boolean));
 
-    const list = events.map((e) => ({
-      id: e.id,
-      name: e.title,
+    // A recurring event is a series of separate Wix events; the vendor sees (and imports) it
+    // as ONE row, which becomes one activity with a session per date.
+    const groups = groupEventsForPicker(events);
+    const list = groups.map((g) => ({
+      id: g.id,
+      name: g.name,
       type: 'EVENT',
-      startDate: e.startDate,
-      alreadyImported: importedIds.has(e.id),
+      startDate: g.startDate,
+      occurrences: g.occurrences,
+      // A multi-day event (split into one session per day) is imported under a key of its own: `md:<event id>`.
+      alreadyImported: g.seriesId
+        ? importedSeries.has(g.seriesId) || g.memberIds.some((id) => importedWixIds.has(id))
+        : importedWixIds.has(g.id) || importedSeries.has(`md:${g.id}`),
     }));
 
     return NextResponse.json({ events: list, eventsAppNotInstalled: false });

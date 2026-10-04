@@ -65,7 +65,7 @@ function slugify(s: string): string {
  *  events sharing a not-yet-seen address within the same run still only
  *  create it once and never both claim `is_primary` — the whole point of
  *  keeping this loop serial (see the caller's own comment on that). */
-async function resolveEventLocation(
+export async function resolveEventLocation(
   admin: SupabaseClient<Database>,
   providerId: string,
   event: WixEvent,

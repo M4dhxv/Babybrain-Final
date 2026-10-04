@@ -223,6 +223,12 @@ export type Database = {
           wix_resource_id: string | null;
           wix_service_type: string | null;
           wix_event_id: string | null;
+          // Why this Wix event can't take a booking right now; empty = bookable.
+          wix_event_blockers: { code: string; vendorMessage: string; parentMessage: string }[];
+          // Recurring series: one activity, a session per date (00221).
+          wix_series_id: string | null;
+          // TICKETING | RSVP | EXTERNAL | NONE — picks the booking flow.
+          wix_registration_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -289,6 +295,8 @@ export type Database = {
           allow_rescheduling: boolean | null;
           reschedule_cutoff_hours: number | null;
           booking_cutoff_minutes: number | null;
+          wix_event_id: string | null;
+          wix_day: string | null;
         };
         Insert: {
           id?: string;
@@ -544,6 +552,15 @@ export type Database = {
           is_published: boolean;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
+          // The questions a parent is asked, why this date can't take a booking, and its kind (00221).
+          form_questions: { name: string; label: string; mandatory: boolean; controlType?: string; inputType?: string; options?: string[]; multi?: boolean }[];
+          booking_blockers: { code: string; vendorMessage: string; parentMessage: string }[];
+          registration_type: string;
+          registration_status: string | null;
+          external_url: string | null;
+          rsvp_limit: number | null;
+          rsvp_waitlist: boolean;
+          rsvp_allows_guests: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -1003,6 +1020,10 @@ export type Database = {
           cancellation_cutoff_hours: number | null; cancellation_refund_mode: 'refund' | 'none' | null;
           allow_rescheduling: boolean | null; reschedule_cutoff_hours: number | null;
           booking_cutoff_minutes: number | null;
+          // Wix Events: the (local) wix_events row this date is.
+          wix_event_id: string | null;
+          // Multi-day events: the calendar day this session is.
+          wix_day: string | null;
         }[];
       };
       my_booking_activities: {

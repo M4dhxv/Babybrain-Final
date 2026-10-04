@@ -119,6 +119,8 @@ export default function PaymentsView() {
         </p>
       </div>
 
+      <StuckEventOrders />
+
       <TestDataBar
         includeTest={includeTest}
         setIncludeTest={setIncludeTest}
@@ -249,3 +251,88 @@ export default function PaymentsView() {
   );
 }
 
+
+interface StuckEventOrder {
+  id: string;
+  createdAt: string;
+  amount: number | null;
+  attempts: number;
+  lastAttemptAt: string | null;
+  error: string | null;
+  paymentIntent: string | null;
+  eventTitle: string | null;
+  businessName: string | null;
+  parent: { name: string | null; email: string | null };
+}
+
+/**
+ * Wix Events tickets a parent has PAID for that never reached the vendor's Wix.
+ * Shows Wix's actual error and lets an admin retry (after fixing the cause on the
+ * vendor's Wix) or refund. Renders nothing when there are none.
+ */
+function StuckEventOrders() {
+  const [orders, setOrders] = useState<StuckEventOrder[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await adminFetch<{ orders: StuckEventOrder[] }>('/api/admin/event-orders');
+      setOrders(r.orders);
+    } catch {
+      setOrders([]);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function act(o: StuckEventOrder, action: 'retry' | 'refund') {
+    if (action === 'refund' && !window.confirm(`Refund ${o.amount != null ? `$${o.amount.toFixed(2)} ` : ''}to ${o.parent.email ?? 'this parent'} in full? This can't be undone.`)) return;
+    setBusy(o.id + action);
+    try {
+      const r = await adminFetch<{ message?: string }>(`/api/admin/event-orders/${o.id}`, { method: 'POST', body: JSON.stringify({ action }) });
+      toast(r.message ?? 'Done');
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally { setBusy(null); }
+  }
+
+  if (!orders || orders.length === 0) return null;
+  const when = (iso: string) => new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' });
+  return (
+    <div style={{ ...card(), borderColor: C.pink }}>
+      <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4, color: C.pink }}>
+        {orders.length} paid event ticket{orders.length === 1 ? '' : 's'} not on the vendor&apos;s Wix
+      </div>
+      <p style={{ color: C.muted, fontSize: 13, margin: '0 0 12px', lineHeight: 1.6 }}>
+        The parent has been charged but Wix refused the order, so they have no ticket. BabyBrain retries on its own for a
+        while; if Wix&apos;s message below needs a change on the vendor&apos;s Wix, make it and press Retry — or refund.
+      </p>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {orders.map((o) => (
+          <div key={o.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: 800 }}>
+                {o.eventTitle ?? 'Event'} <span style={{ color: C.muted, fontWeight: 600 }}>· {o.businessName ?? 'vendor'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={tabBtn(false)} disabled={busy !== null} onClick={() => void act(o, 'retry')}>
+                  {busy === o.id + 'retry' ? 'Retrying…' : 'Retry'}
+                </button>
+                <button style={{ ...tabBtn(false), color: C.pink }} disabled={busy !== null} onClick={() => void act(o, 'refund')}>
+                  {busy === o.id + 'refund' ? 'Refunding…' : 'Refund'}
+                </button>
+              </div>
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
+              {o.parent.name ?? 'Parent'} &lt;{o.parent.email ?? 'no email'}&gt; · {o.amount != null ? `$${o.amount.toFixed(2)}` : '—'} · paid {when(o.createdAt)} ·{' '}
+              {o.attempts} attempt{o.attempts === 1 ? '' : 's'}{o.lastAttemptAt ? `, last ${when(o.lastAttemptAt)}` : ''}
+            </div>
+            <div style={{ fontSize: 12, marginTop: 6, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-word' }}>
+              {o.error ?? 'No attempt recorded yet.'}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

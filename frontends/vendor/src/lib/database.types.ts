@@ -235,6 +235,12 @@ export type Database = {
           wix_price: number | null;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
+          wix_form_extra_fields: string[];
+          // Why this Wix event can't take a booking right now (what to change in Wix); empty = bookable.
+          wix_event_blockers: { code: string; vendorMessage: string; parentMessage: string }[];
+          // Recurring Wix series: one activity, a session per date (00221); registration kind picks the booking flow.
+          wix_series_id: string | null;
+          wix_registration_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -279,6 +285,10 @@ export type Database = {
           wix_service_id?: string | null;
           wix_resource_id?: string | null;
           wix_service_type?: string | null;
+          wix_form_extra_fields?: string[];
+          wix_event_blockers?: { code: string; vendorMessage: string; parentMessage: string }[];
+          wix_series_id?: string | null;
+          wix_registration_type?: string | null;
           wix_event_id?: string | null;
           wix_locked_fields?: string[];
           wix_price?: number | null;

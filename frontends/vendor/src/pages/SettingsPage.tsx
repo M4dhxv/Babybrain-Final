@@ -953,9 +953,12 @@ type WixServiceOption = {
 };
 
 type WixEventOption = {
+  // A Wix event id, or `series:<id>` for a recurring series (one activity, a session per date).
   id: string;
   name: string;
   startDate: string;
+  // How many upcoming dates a recurring series has (1 for a standalone event).
+  occurrences?: number;
   alreadyImported: boolean;
 };
 
@@ -1803,6 +1806,7 @@ function WixIntegrationManager({
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-gray-800 truncate">{e.name}</div>
                           <div className="text-xs text-gray-400">
+                            {(e.occurrences ?? 1) > 1 ? `${e.occurrences} dates · next ` : ''}
                             {new Date(e.startDate).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })}
                           </div>
                         </div>

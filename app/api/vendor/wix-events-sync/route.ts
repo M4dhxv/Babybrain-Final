@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { getProviderWixCredentials } from '@/lib/wix/client';
+import { refreshWixEventHealth } from '@/lib/wix/events-reconcile';
 import { syncProviderWixEvents } from '@/lib/wix/events-sync';
 
 /**
@@ -31,6 +32,9 @@ export async function POST(request: Request) {
 
   try {
     const sync = await syncProviderWixEvents(admin, providerId, creds);
+    // Work out which events can actually take a booking (and what the vendor must fix
+    // in Wix first) now, not on the next background tick. Best effort.
+    await refreshWixEventHealth(admin, providerId, creds).catch((e) => console.error('refreshWixEventHealth failed', e));
     return NextResponse.json({ ok: true, sync });
   } catch (e) {
     console.error('Wix events sync failed', e);

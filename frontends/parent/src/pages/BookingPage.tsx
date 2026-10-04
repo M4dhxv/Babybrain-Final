@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { staffLabel } from "../lib/staffLabel";
 import {
   ActivityCard,
@@ -118,8 +118,82 @@ function PackageOption({
   );
 }
 
+/** One of the event's own registration questions (from the vendor's Wix form). A dropdown / radio /
+ *  checkbox control has fixed options and Wix rejects anything else, so those are choices, never free text. */
+type EventQuestion = {
+  name: string;
+  label: string;
+  mandatory: boolean;
+  controlType?: string;
+  inputType?: string;
+  options?: string[];
+  multi?: boolean;
+};
+type FormAnswers = Record<string, string | string[]>;
+
+function EventQuestionField({ q, value, onChange }: { q: EventQuestion; value: string | string[] | undefined; onChange: (v: string | string[]) => void }) {
+  const inputCls = "mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold";
+  const picked = Array.isArray(value) ? value : value ? [value] : [];
+  return (
+    <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+      <p className="font-black">
+        {q.label || q.name} {q.mandatory && <span className="text-baby-pink">*</span>}
+      </p>
+      {q.options && q.options.length > 0 ? (
+        q.multi ? (
+          <div className="mt-2 space-y-2">
+            {q.options.map((o) => (
+              <label key={o} className="flex items-center gap-2 text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={picked.includes(o)}
+                  onChange={(e) => onChange(e.target.checked ? [...picked, o] : picked.filter((x) => x !== o))}
+                />
+                {o}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <select value={picked[0] ?? ""} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+            <option value="">Choose…</option>
+            {q.options.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        )
+      ) : q.inputType === "DATE" || q.controlType === "DATE" ? (
+        <input type="date" value={picked[0] ?? ""} onChange={(e) => onChange(e.target.value)} className={inputCls} />
+      ) : q.inputType === "NUMBER" ? (
+        <input type="number" value={picked[0] ?? ""} onChange={(e) => onChange(e.target.value)} className={inputCls} />
+      ) : (
+        <input type="text" value={picked[0] ?? ""} onChange={(e) => onChange(e.target.value)} className={inputCls} placeholder="Your answer" />
+      )}
+    </div>
+  );
+}
+
+/** How many days one ticket of this type covers, read from its name ("Single Day", "3 Day Package");
+ *  null when the name doesn't say. Mirrors lib/wix/event-days.ts on the server, which is the authority. */
+function ticketDaysCovered(name: string): number | null {
+  const n = name.toLowerCase();
+  const digits = n.match(/(\d+)\s*[- ]?\s*days?\b/);
+  if (digits) return Math.max(1, Number(digits[1]));
+  const words: Record<string, number> = { one: 1, single: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const word = n.match(/\b(one|single|two|three|four|five|six|seven|eight|nine|ten)\s*[- ]?\s*days?\b/);
+  if (word) return words[word[1]];
+  if (/\b(day pass|per day|daily)\b/.test(n)) return 1;
+  return null;
+}
+
 export default function BookingPage() {
-  const { activity, sessions, courseSpan, eventSoldOut, loading, sessionsLoading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions: fetchedSessions, courseSpan, eventSoldOut, loading, sessionsLoading } = useActivityDetail(getParam("slug"));
+  // Earliest first, whatever order the sessions arrive in (Wix slots and the
+  // vendor's own slots come from different sources): the date list, the times
+  // within a date, and the pre-selected default all follow this.
+  const sessions = useMemo(
+    () => [...fetchedSessions].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at)),
+    [fetchedSessions]
+  );
   // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
   // two independent requests (different Wix thumbnail sizes), so each gets
   // its own broken-image state. Hooks, so they have to run unconditionally —
@@ -222,6 +296,26 @@ export default function BookingPage() {
   type EventTicketType = { id: string; name: string; price_cents: number; currency: string; is_free: boolean; limit_per_checkout: number | null; hidden: boolean; fee_type: string | null; fee_rate_percent: number | null; sold_out: boolean };
   const [ticketTypes, setTicketTypes] = useState<EventTicketType[]>([]);
   const [ticketTypeId, setTicketTypeId] = useState<string | null>(null);
+  // Wix Events: a recurring series is one activity with a session per date, and each date is its own
+  // Wix event (its own ticket types and form). The date picked decides which event this booking is for;
+  // a single event has just the one.
+  const eventId = isEvent
+    ? sessions.find((x) => x.id === sessionId)?.wix_event_id ?? activity?.wix_event_id ?? null
+    : null;
+  // An RSVP-type Wix event: free, no tickets — its own endpoint, and extra guests instead of ticket quantity.
+  const isRsvpEvent = isEvent && activity?.wix_registration_type === "RSVP";
+  type EventInfo = {
+    registration_type: string;
+    form_questions: EventQuestion[];
+    booking_blockers: { code: string; parentMessage: string }[];
+    rsvp_allows_guests: boolean;
+  };
+  const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
+  const [formAnswers, setFormAnswers] = useState<FormAnswers>({});
+  // A multi-day Wix event (one camp, 9-12 each day) is one session per day: the parent picks the days.
+  const [pickedDays, setPickedDays] = useState<string[]>([]);
+  const daySessions = sessions.filter((x) => x.wix_day);
+  const isMultiDay = isEvent && daySessions.length > 0;
 
   useEffect(() => {
     if (!activity?.provider_id) return;
@@ -399,6 +493,14 @@ export default function BookingPage() {
   // (/api/wix/slots only returns occurrences that still have room). Blocks
   // the pay button and swaps the CTA copy; never set for native / Wix CLASS.
   const soldOut = isEvent ? eventSoldOut : isCourse ? sessions.length === 0 : false;
+  // The organiser's own Wix settings keep this event closed (see event-eligibility).
+  const eventBlockedMessage = !isEvent
+    ? null
+    : eventInfo
+      ? eventInfo.booking_blockers?.[0]?.parentMessage ?? null
+      : (activity?.wix_event_blockers?.length ?? 0) > 0
+        ? activity!.wix_event_blockers[0].parentMessage
+        : null;
 
   useEffect(() => {
     if (!preselectPending || loading) return;
@@ -412,6 +514,7 @@ export default function BookingPage() {
     if (want && wantOpen) {
       setDateKey(sgDay(want.starts_at));
       setSessionId(want.id);
+      if (want.wix_day) setPickedDays([want.wix_day]);
     }
     setPreselectPending(false);
   }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes]);
@@ -429,19 +532,39 @@ export default function BookingPage() {
   // a course is enrolled as a whole — so auto-select the (any) underlying
   // session so the booking can proceed straight to child/payment.
   useEffect(() => {
+    // A course is enrolled whole, and a single-date event has nothing to choose, so the (any) session
+    // is picked for them. A recurring series shows its dates; the first is pre-selected.
     if ((isEvent || isCourse) && sessions.length > 0 && !sessionId) setSessionId(sessions[0].id);
   }, [isEvent, isCourse, sessions, sessionId]);
 
+  // The picked date's ticket types and the event's own questions. Changing date resets both: the ticket
+  // types, the answers and the blockers all belong to that date's Wix event.
   useEffect(() => {
-    if (!isEvent || !activity?.wix_event_id) { setTicketTypes([]); return; }
-    supabase
-      .from("event_ticket_types")
-      .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent, sold_out")
-      .eq("event_id", activity.wix_event_id)
-      .eq("hidden", false)
-      .order("price_cents")
-      .then(({ data }) => setTicketTypes((data ?? []) as EventTicketType[]));
-  }, [isEvent, activity?.wix_event_id]);
+    setTicketTypes([]);
+    setTicketTypeId(null);
+    setFormAnswers({});
+    setEventInfo(null);
+    if (!isEvent || !eventId) return;
+    let cancelled = false;
+    void Promise.all([
+      supabase
+        .from("event_ticket_types")
+        .select("id, name, price_cents, currency, is_free, limit_per_checkout, hidden, fee_type, fee_rate_percent, sold_out")
+        .eq("event_id", eventId)
+        .eq("hidden", false)
+        .order("price_cents"),
+      supabase
+        .from("wix_events")
+        .select("registration_type, form_questions, booking_blockers, rsvp_allows_guests")
+        .eq("id", eventId)
+        .maybeSingle(),
+    ]).then(([types, info]) => {
+      if (cancelled) return;
+      setTicketTypes((types.data ?? []) as EventTicketType[]);
+      setEventInfo((info.data ?? null) as EventInfo | null);
+    });
+    return () => { cancelled = true; };
+  }, [isEvent, eventId]);
 
   useEffect(() => {
     if (ticketTypes.length === 0 || ticketTypeId) return;
@@ -539,7 +662,12 @@ export default function BookingPage() {
     ? selectedTicketType != null ? ticketPriceCents(selectedTicketType) / 100 : null
     : sessionPrice != null ? sessionPrice
     : activity?.price != null ? Number(activity.price) : null;
-  const total = price != null ? price * count : null;
+  // A multi-day event: a single-day ticket is one per child per day; a package covers its days with one ticket
+  // per child. (The server recomputes this from the same rule.)
+  const daysPicked = isMultiDay ? pickedDays.filter((d) => daySessions.some((x) => x.wix_day === d)) : [];
+  const coversDays = isMultiDay && selectedTicketType ? ticketDaysCovered(selectedTicketType.name) : null;
+  const ticketCount = isMultiDay && coversDays === 1 ? count * Math.max(daysPicked.length, 1) : count;
+  const total = price != null ? price * ticketCount : null;
   /* "Best value" used to mean "cheaper per class than paying single-class
      price" — which tags *every* pack that clears that (usually low) bar, not
      the actual best one. A 5-session pack at $50/class and a 10-session pack
@@ -565,10 +693,18 @@ export default function BookingPage() {
     sessions.length > 1 &&
     (new Set(sessions.map((s) => s.location_id ?? "_")).size > 1 ||
       new Set(sessions.map((s) => (s.price == null ? "_" : String(s.price)))).size > 1);
+  useEffect(() => {
+    if (!isMultiDay || !coversDays || coversDays < 2) return;
+    // A 5-day package for a 5-day event: nothing to choose.
+    if (coversDays === daySessions.length) setPickedDays(daySessions.map((x) => x.wix_day as string));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMultiDay, coversDays, daySessions.length]);
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
     ? Math.min(selectedTicketType.limit_per_checkout, 20)
     : 6;
-  const maxChildren = isEvent ? ticketQuantityCap : isCourse && courseSpots != null ? Math.max(1, Math.min(6, courseSpots)) : 6;
+  const maxChildren = isRsvpEvent
+    ? eventInfo?.rsvp_allows_guests ? 6 : 1
+    : isEvent ? (isMultiDay && selectedTicketType?.is_free ? 1 : ticketQuantityCap) : isCourse && courseSpots != null ? Math.max(1, Math.min(6, courseSpots)) : 6;
   // Spots can drop while the page is open (the slots list refreshes) — never
   // leave the party larger than what's left.
   useEffect(() => { setCount((c) => Math.min(c, maxChildren)); }, [maxChildren]);
@@ -590,14 +726,40 @@ export default function BookingPage() {
       setErr(dataResolved ? "Add your child's profile before booking." : "Still loading your profile — try again in a moment.");
       return;
     }
-    if (isEvent && !ticketTypeId) {
+    // The event's own questions (from the vendor's Wix form): every mandatory one answered.
+    if (isEvent && eventInfo) {
+      const unanswered = eventInfo.form_questions.find((q) => {
+        if (!q.mandatory) return false;
+        const a = formAnswers[q.name];
+        return a == null || (Array.isArray(a) ? a.length === 0 : !a.trim());
+      });
+      if (unanswered) {
+        setErr(`Please answer “${unanswered.label || unanswered.name}”.`);
+        return;
+      }
+    }
+    if (isMultiDay) {
+      if (daysPicked.length === 0) {
+        setErr("Please choose which days you're booking.");
+        return;
+      }
+      if (coversDays && coversDays > 1 && daysPicked.length !== coversDays) {
+        setErr(`${selectedTicketType?.name ?? "This ticket"} covers ${coversDays} days — please choose exactly ${coversDays}.`);
+        return;
+      }
+    }
+    if (isEvent && !isRsvpEvent && !ticketTypeId) {
       setErr("Please choose a ticket type first.");
       return;
     }
     // No BabyBrain waitlist for Wix Events / COURSEs (00107) — a stale click
     // on a sold-out event (or a sold-out ticket type within one) stops here
     // rather than 409-ing against Wix.
-    if (soldOut || (isEvent && selectedTicketType?.sold_out)) {
+    if (eventBlockedMessage) {
+      setErr(eventBlockedMessage);
+      return;
+    }
+    if (soldOut || (isEvent && !isRsvpEvent && selectedTicketType?.sold_out)) {
       setErr(isEvent ? "This ticket is sold out." : "This course is currently full.");
       return;
     }
@@ -624,10 +786,13 @@ export default function BookingPage() {
       // the real Wix order isn't created until that payment is confirmed
       // (lib/wix/finalize-event-checkout.ts).
       const eventBody = {
-        eventId: activity?.wix_event_id,
+        // The picked date's own Wix event (a series has one per date).
+        eventId,
         ticketTypeId,
         quantity: count,
         childId: bookChildId,
+        ...(Object.keys(formAnswers).length ? { formAnswers } : {}),
+        ...(isMultiDay ? { days: daysPicked } : {}),
         // The event form reuses the class booking form's "Provider terms"
         // section — the disclosure, the ticked waivers and the answer to the
         // vendor's info request all need to survive the trip to the roster.
@@ -635,14 +800,37 @@ export default function BookingPage() {
         ...(acceptedPolicies.length ? { policiesAccepted: acceptedPolicies } : {}),
         ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
       };
-      if (selectedTicketType?.is_free) {
+      if (isRsvpEvent) {
+        // RSVP-type event: no tickets or payment — the RSVP is made on Wix and recorded here at once.
+        try {
+          const data = await apiPost<{ status: string }>("/api/wix/events/register", {
+            eventId,
+            childId: bookChildId,
+            count,
+            guestNames: guestNames.slice(0, Math.max(0, count - 1)),
+            ...(Object.keys(formAnswers).length ? { formAnswers } : {}),
+            ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
+            ...(acceptedPolicies.length ? { policiesAccepted: acceptedPolicies } : {}),
+            ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+          });
+          status = data.status;
+        } catch (e) {
+          setBusy(false);
+          console.error(e);
+          setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not RSVP — please try again.");
+          return;
+        }
+        setBusy(false);
+      } else if (selectedTicketType?.is_free) {
         try {
           const data = await apiPost<{ status: string }>("/api/wix/events/rsvp", eventBody);
           status = data.status;
         } catch (e) {
           setBusy(false);
           console.error(e);
-          setErr("Could not reserve this ticket — please try again.");
+          // The server's reason is the useful one here: registration closed or paused, members only,
+          // a question still to answer (see app/api/wix/events/rsvp + lib/wix/event-eligibility).
+          setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not reserve this ticket — please try again.");
           return;
         }
         setBusy(false);
@@ -656,7 +844,7 @@ export default function BookingPage() {
         } catch (e) {
           setBusy(false);
           console.error(e);
-          setErr("Could not start payment — please try again.");
+          setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not start payment — please try again.");
           return;
         }
         setBusy(false);
@@ -987,7 +1175,7 @@ export default function BookingPage() {
   // Greys the Pay button out as a hint that something's still missing —
   // it stays tappable in that state (see the button below) so a tap
   // explains exactly what, rather than silently doing nothing.
-  const bookingIncomplete = !sessionId || consentProblem() != null;
+  const bookingIncomplete = !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
 
   /** Status of this child's existing booking on the chosen session, if any. */
   const existingBookingStatus = sessionId ? existingBookings.get(`${sessionId}:${bookChildId ?? ""}`) : undefined;
@@ -1044,11 +1232,13 @@ export default function BookingPage() {
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
   const payLabel = !auth
     ? "Log in to book"
+    : isRsvpEvent
+      ? "RSVP"
     : isEvent
       ? selectedTicketType?.is_free
         ? "Reserve free ticket"
         : total != null
-          ? `Get ${count > 1 ? `${count} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
+          ? `Get ${ticketCount > 1 ? `${ticketCount} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
           : "Get ticket"
       : redeemToken
         ? "Confirm with make-up token"
@@ -1149,12 +1339,49 @@ export default function BookingPage() {
                         </div>
                       </section>
                     )}
-                    {!isEvent && !isCourse && dates.length === 0 && (
+                    {isMultiDay && (
+                      <section>
+                        <h3 className="mb-1 text-xl font-black">Choose your days</h3>
+                        <p className="mb-4 text-sm font-semibold text-[#59658d]">
+                          {coversDays && coversDays > 1
+                            ? `${selectedTicketType?.name} covers ${coversDays} days${coversDays === daySessions.length ? " — all of them." : ` — choose ${coversDays}.`}`
+                            : "Book one day or several — pick every day you'd like."}
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                          {daySessions.map((d) => {
+                            const on = daysPicked.includes(d.wix_day as string);
+                            const locked = !!coversDays && coversDays > 1 && coversDays === daySessions.length;
+                            return (
+                              <button
+                                key={d.id}
+                                type="button"
+                                disabled={locked}
+                                onClick={() => {
+                                  setSessionId(d.id);
+                                  setPickedDays((prev) => (prev.includes(d.wix_day as string) ? prev.filter((x) => x !== d.wix_day) : [...prev, d.wix_day as string]));
+                                }}
+                                className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${on ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"} ${locked ? "cursor-default" : ""}`}
+                                aria-pressed={on}
+                              >
+                                <span className="block whitespace-nowrap">{sgDay(d.starts_at)}</span>
+                                <span className="mt-1 block text-xs font-semibold text-[#697390]">{sgTime(d.starts_at)} – {sgTime(d.ends_at)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {coversDays !== 1 && !(coversDays && coversDays > 1) && daySessions.length > 1 && (
+                          <button type="button" onClick={() => setPickedDays(daySessions.map((x) => x.wix_day as string))} className="mt-3 text-sm font-black text-baby-cta underline">
+                            Select all {daySessions.length} days
+                          </button>
+                        )}
+                      </section>
+                    )}
+                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length === 0 && (
                       <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
                         Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
                       </p>
                     )}
-                    {!isEvent && !isCourse && dates.length > 0 && (
+                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
                       <>
                         <section>
                           <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
@@ -1166,7 +1393,7 @@ export default function BookingPage() {
                             {dates.map((d) => {
                               const [weekday, dayMonth] = d.split(", ");
                               return (
-                                <button key={d} onClick={() => { setDateKey(d); setSessionId(null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
+                                <button key={d} onClick={() => { setDateKey(d); setSessionId(isEvent && byDate[d].length === 1 ? byDate[d][0].id : null); }} className={`rounded-[10px] border px-3 py-4 text-sm font-bold ${d === dateKey ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
                                   <span className="block whitespace-nowrap">{weekday},</span>
                                   <span className="block whitespace-nowrap">{dayMonth}</span>
                                   <span className="mt-2 block text-xs font-semibold text-[#697390]">{byDate[d].length} {byDate[d].length === 1 ? "time" : "times"}</span>
@@ -1199,7 +1426,7 @@ export default function BookingPage() {
                         "date/time" is nothing to choose. Only shown when
                         there's more than one type; a single type is
                         auto-selected silently. */}
-                    {isEvent && ticketTypes.length > 1 && (
+                    {isEvent && !isRsvpEvent && ticketTypes.length > 1 && (
                       <section>
                         <h3 className="mb-4 text-xl font-black">Choose your ticket</h3>
                         <div className="space-y-3">
@@ -1211,6 +1438,21 @@ export default function BookingPage() {
                               title={t.name}
                               price={t.is_free ? "Free" : `${t.currency} ${(ticketPriceCents(t) / 100).toFixed(2)}`}
                               badge={t.sold_out ? "Sold out" : undefined}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    {isEvent && eventInfo && eventInfo.form_questions.length > 0 && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">A few questions from the organiser</h3>
+                        <div className="space-y-3">
+                          {eventInfo.form_questions.map((q) => (
+                            <EventQuestionField
+                              key={q.name}
+                              q={q}
+                              value={formAnswers[q.name]}
+                              onChange={(v) => setFormAnswers((prev) => ({ ...prev, [q.name]: v }))}
                             />
                           ))}
                         </div>
@@ -1248,14 +1490,14 @@ export default function BookingPage() {
                       </p>
                     )}
                     <section>
-                      <h3 className="mb-2 text-xl font-black">{isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
+                      <h3 className="mb-2 text-xl font-black">{isMultiDay ? "Number of children" : isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
                         <button type="button" onClick={() => setCount((c) => Math.min(maxChildren, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
-                    {!isEvent && !isCourse && count > 1 && (
+                    {(!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
                       <section>
                         <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="mb-3 text-sm font-semibold text-[#59658d]">
@@ -1494,6 +1736,10 @@ export default function BookingPage() {
             /* 1.1: the vendor has paused bookings for this activity */
             <div className="rounded-[12px] bg-amber-50 p-4 text-center font-bold text-palette-yellow">
               <Icon name="bell" className="mr-2 inline h-5 w-5" /> Bookings for this activity are temporarily paused by the provider. Please check back later or enquire with them directly.
+            </div>
+          ) : eventBlockedMessage ? (
+            <div className="rounded-[12px] bg-[#FAF7F7] p-4 text-center font-bold text-[#6D7486]">
+              <Icon name="calendar" className="mr-2 inline h-5 w-5" /> {eventBlockedMessage}
             </div>
           ) : soldOut ? (
             /* Wix Event / Wix COURSE with nothing left to book — no waitlist

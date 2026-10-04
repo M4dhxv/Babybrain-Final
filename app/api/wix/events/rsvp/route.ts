@@ -1,18 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { WixApiError, checkoutWixEventOrder, confirmWixEventOrder, createWixTicketReservation, getProviderWixCredentials } from '@/lib/wix/client';
+import {
+  WixApiError,
+  checkoutWixEventOrder,
+  confirmWixEventOrder,
+  createWixTicketReservation,
+  fetchWixEvent,
+  fetchWixTicketDefinitions,
+  getProviderWixCredentials,
+  wixApplicationErrorCode,
+} from '@/lib/wix/client';
+import { evaluateWixEvent, evaluateWixTicket, parentBlockerMessage } from '@/lib/wix/event-eligibility';
 import { resolveWixContact } from '@/lib/wix/sync';
-import { mirrorEventTicketAsBookings } from '@/lib/wix/finalize-event-checkout';
+import { resolveDaySelection } from '@/lib/wix/event-day-booking';
+import {
+  describeWixAnswerProblems,
+  resolveWixEventGuestForm,
+  sanitiseWixFormAnswers,
+  validateWixFormAnswers,
+  wixFormMissingParentMessage,
+} from '@/lib/wix/event-form';
+import { issuedTicketsForOrder, mirrorEventTicketAsBookings, storableTickets } from '@/lib/wix/finalize-event-checkout';
 
-function wixErrorCode(e: unknown): string | null {
-  if (!(e instanceof WixApiError)) return null;
-  try {
-    return (JSON.parse(e.body)?.details?.applicationError?.code as string | undefined) ?? null;
-  } catch {
-    return null;
-  }
-}
+const wixErrorCode = wixApplicationErrorCode;
 
 /**
  * Parent RSVPs to a free Wix Events ticket — no payment, so the reservation
@@ -34,9 +45,12 @@ export async function POST(request: Request) {
     eventId?: string;
     ticketTypeId?: string;
     childId?: string | null;
+    /** Multi-day events: the days chosen (YYYY-MM-DD). */
+    days?: string[];
     medicalDisclosure?: string;
     policiesAccepted?: string[];
     infoResponse?: string;
+    formAnswers?: unknown;
   };
   const { eventId, ticketTypeId } = body;
   if (!eventId || !ticketTypeId) {
@@ -49,7 +63,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: ticketType } = await admin
     .from('event_ticket_types')
-    .select('id, event_id, wix_ticket_definition_id, is_free, hidden, sold_out')
+    .select('id, event_id, wix_ticket_definition_id, name, is_free, hidden, sold_out')
     .eq('id', ticketTypeId)
     .maybeSingle();
   if (!ticketType || ticketType.event_id !== eventId || ticketType.hidden) {
@@ -79,9 +93,62 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This business has not connected a Wix account' }, { status: 409 });
   }
 
+  // Same pre-flight as events/checkout: stop before holding a seat when Wix
+  // would refuse the order (registration closed / paused, members only, sales
+  // not open, a form field we can't fill).
+  const [liveEvent, liveTickets] = await Promise.all([
+    fetchWixEvent(creds, event.wix_event_id).catch(() => undefined),
+    fetchWixTicketDefinitions(creds, event.wix_event_id, { seating: true }).catch(() => undefined),
+  ]);
+  if (liveEvent === null) {
+    return NextResponse.json({ error: 'This event is no longer available.' }, { status: 404 });
+  }
+  const liveTicket = liveTickets?.find((t) => t.id === ticketType.wix_ticket_definition_id);
+  if (liveTickets && !liveTicket) {
+    return NextResponse.json({ error: 'That ticket type is no longer available' }, { status: 409 });
+  }
+  const blockers = [...(liveEvent ? evaluateWixEvent(liveEvent) : []), ...(liveTicket ? evaluateWixTicket(liveTicket) : [])];
+  if (blockers.length) {
+    return NextResponse.json({ error: parentBlockerMessage(blockers), code: blockers[0].code }, { status: 409 });
+  }
+
+  const contact = await resolveWixContact(admin, user.id);
+  const answers = liveEvent ? sanitiseWixFormAnswers(liveEvent.formInputs, body.formAnswers) : {};
+  if (liveEvent) {
+    const problems = validateWixFormAnswers(liveEvent.formInputs, answers, { fallbackAnswer: !!body.infoResponse?.trim() });
+    if (problems.length) {
+      return NextResponse.json({ error: describeWixAnswerProblems(problems), fields: problems.map((p) => p.name) }, { status: 422 });
+    }
+  }
+  const guestForm = await resolveWixEventGuestForm(admin, creds, event.wix_event_id, {
+    contact,
+    childId: body.childId ?? null,
+    infoResponse: body.infoResponse ?? null,
+    answers,
+    inputs: liveEvent ? liveEvent.formInputs : undefined,
+  });
+  if (guestForm.missing.length) {
+    console.error('[wix events rsvp] form needs fields we cannot fill', event.wix_event_id, guestForm.missing.map((m) => m.label || m.name));
+    return NextResponse.json({ error: wixFormMissingParentMessage(guestForm.missing, false) }, { status: 409 });
+  }
+
+  // A multi-day event is booked by day (see lib/wix/event-days.ts): a free single-day ticket is one per day.
+  const daySel = await resolveDaySelection(admin, {
+    localEventId: event.id,
+    ticketName: ticketType.name,
+    partySize: 1,
+    days: body.days,
+    ticketLimitPerOrder: liveEvent?.registration?.ticketLimitPerOrder ?? 20,
+  });
+  if (daySel.multiDay && 'error' in daySel) {
+    return NextResponse.json({ error: daySel.error }, { status: 422 });
+  }
+  const dayPlan = daySel.multiDay && 'plan' in daySel ? daySel : null;
+  const quantity = dayPlan ? dayPlan.plan.tickets : 1;
+
   let reservation;
   try {
-    reservation = await createWixTicketReservation(creds, ticketType.wix_ticket_definition_id, 1);
+    reservation = await createWixTicketReservation(creds, ticketType.wix_ticket_definition_id, quantity);
   } catch (e) {
     if (e instanceof WixApiError && (e.status === 404 || e.status === 400)) {
       return NextResponse.json({ error: 'That ticket type is no longer available' }, { status: 409 });
@@ -90,10 +157,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not reach Wix — try again' }, { status: 502 });
   }
 
-  const contact = await resolveWixContact(admin, user.id);
   let checkout;
   try {
-    checkout = await checkoutWixEventOrder(creds, { eventId: event.wix_event_id, reservationId: reservation.id, guest: contact });
+    checkout = await checkoutWixEventOrder(creds, { eventId: event.wix_event_id, reservationId: reservation.id, guest: { ...contact, formInputs: guestForm.inputValues } });
     // FREE tickets are expected to come back already confirmed; anything
     // else (confirmed live: even markAsPaid doesn't reliably do this — see
     // checkoutWixEventOrder) needs an explicit Confirm Order call.
@@ -117,15 +183,21 @@ export async function POST(request: Request) {
       child_id: body.childId ?? null,
       event_id: event.id,
       ticket_type_id: ticketType.id,
-      quantity: 1,
+      quantity,
+      selected_days: dayPlan?.days ?? [],
+      party_size: dayPlan?.plan.partySize ?? null,
       status: 'confirmed',
       payment_status: 'none',
       amount: 0,
       wix_reservation_id: reservation.id,
       wix_order_number: checkout.orderNumber,
+      wix_order_status: checkout.status,
+      wix_synced_at: new Date().toISOString(),
+      tickets: storableTickets(await issuedTicketsForOrder(creds, event.wix_event_id, checkout.orderNumber)),
       medical_disclosure: body.medicalDisclosure?.trim() || null,
       policies_accepted: body.policiesAccepted ?? [],
       info_response: body.infoResponse?.trim() || null,
+      form_response: answers,
     })
     .select('id, status')
     .single();
@@ -143,7 +215,9 @@ export async function POST(request: Request) {
     ticketTypeId: ticketType.id,
     userId: user.id,
     childId: body.childId ?? null,
-    quantity: 1,
+    quantity,
+    days: dayPlan?.days ?? [],
+    partySize: dayPlan?.plan.partySize ?? null,
     totalAmount: 0,
     stripePaymentIntent: null,
     wixOrderNumber: checkout.orderNumber,

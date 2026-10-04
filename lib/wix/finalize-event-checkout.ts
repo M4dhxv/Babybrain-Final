@@ -2,158 +2,296 @@ import type Stripe from 'stripe';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { recordSale } from '@/lib/commercials';
+import { sendOpsAlert, sendWixOrderFailureAlert } from '@/lib/payment-alert';
 import {
   WixApiError,
   checkoutWixEventOrder,
   confirmWixEventOrder,
   createWixTicketReservation,
+  fetchWixEvent,
+  fetchWixOrders,
   getProviderWixCredentials,
+  wixApplicationErrorCode,
   type WixCheckoutResult,
+  type WixCredentials,
+  type WixIssuedTicket,
 } from './client';
 import { resolveWixContact } from './sync';
+import { resolveWixEventGuestForm } from './event-form';
+import { notifyEventTicketPending } from './event-notify';
+import { placePlan } from './event-days';
 
-function wixErrorCode(e: unknown): string | null {
-  if (!(e instanceof WixApiError)) return null;
+const wixErrorCode = wixApplicationErrorCode;
+
+/** One line a person can act on: Wix's own error code when it gave one. */
+export function describeFulfilmentError(e: unknown): string {
+  if (e instanceof WixApiError) {
+    const code = wixErrorCode(e);
+    let description = '';
+    try {
+      description = (JSON.parse(e.body)?.message as string | undefined) ?? '';
+    } catch {
+      description = e.body.slice(0, 120);
+    }
+    return [code ?? `HTTP ${e.status}`, description && description !== code ? description : '', e.path].filter(Boolean).join(' — ');
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** After this many failed attempts only a person can resolve the order. */
+export const MAX_FULFILMENT_ATTEMPTS = 6;
+/** Minutes to wait after attempt N (1-based) before the automatic retry. */
+export const FULFILMENT_RETRY_BACKOFF_MINUTES = [10, 30, 120, 360, 1440];
+/** Two callers working the same order within this window are treated as a race, not a retry. Long enough
+ *  for a slow run (up to four Wix calls, each bounded at 20s) to finish, so a parent-return arriving
+ *  late can't start a second attempt while the first is still creating the Wix order. Cron retries are
+ *  10+ minutes apart, so this costs them nothing. */
+export const CLAIM_WINDOW_MS = 180_000;
+
+export type FulfilmentOutcome =
+  | { status: 'fulfilled'; orderNumber: string; adopted: boolean }
+  | { status: 'already'; orderNumber: string | null }
+  /** Another caller is working this order right now. */
+  | { status: 'busy' }
+  /** Refunded, cancelled, unpaid or gone — nothing to fulfil. */
+  | { status: 'not_payable' }
+  | { status: 'failed'; error: string; attempts: number };
+
+/** The issued tickets of one order, read back from Wix when the checkout /
+ *  confirm response did not carry them (a FREE order comes back without). */
+export async function issuedTicketsForOrder(
+  creds: WixCredentials,
+  eventId: string,
+  orderNumber: string,
+  known: WixIssuedTicket[] = []
+): Promise<WixIssuedTicket[]> {
+  if (known.length) return known;
   try {
-    return (JSON.parse(e.body)?.details?.applicationError?.code as string | undefined) ?? null;
-  } catch {
-    return null;
+    const orders = await fetchWixOrders(creds, { eventIds: [eventId], searchPhrase: orderNumber, maxOrders: 50 });
+    return orders.find((o) => o.orderNumber === orderNumber)?.tickets ?? [];
+  } catch (e) {
+    console.error('[wix events] could not read the issued tickets back', orderNumber, e);
+    return [];
   }
 }
 
+/** Only what must outlive the page: the number and the permanent QR target.
+ *  The signed PDF / wallet links expire within a day, so they are fetched
+ *  fresh on request instead (app/api/wix/events/ticket). */
+export const storableTickets = (tickets: WixIssuedTicket[]) =>
+  tickets.map((t) => ({ ticketNumber: t.ticketNumber, checkInUrl: t.checkInUrl }));
+
 /**
- * Finalizes a paid Wix Events ticket once Stripe confirms payment — the
- * mirror of finalizeWixBookingCheckout for the Events flow. Called from both
- * the webhook (`checkout.session.completed`) and /api/stripe/reconcile.
+ * Turns a PAID Stripe checkout for a Wix Events ticket into a real Wix order,
+ * a BabyBrain booking per seat, and an earnings entry. Every entry point —
+ * Stripe's webhook, the parent's return from Stripe, the background retry and
+ * an admin's Retry button — runs this one function, so the rules live in one
+ * place:
+ *
+ *  - Idempotent. An order that already has a Wix order number is done.
+ *  - Race-safe. A claim on the row (attempt counter + timestamp) means the
+ *    webhook and the parent-return call, or a cron tick and an admin click,
+ *    cannot both create a Wix order for one payment.
+ *  - Retry-safe. Retries make a *fresh* reservation (the original has long
+ *    expired) — but first look in the vendor's Wix for an order this very
+ *    buyer already has for this event, and adopt it rather than selling the
+ *    seat twice.
+ *  - Never silent. A failure records Wix's actual error on the order, and a
+ *    person is emailed on the first failure and again when retries run out.
  *
  * Confirmed live against a real event that `options.markAsPaid` on Checkout
- * does NOT reliably move an order to PAID (see checkoutWixEventOrder) — so
- * this always follows up with a real Confirm Order call for anything that
- * doesn't come back FREE/PAID immediately.
+ * does NOT reliably move an order to PAID (see checkoutWixEventOrder), so a
+ * Confirm Order call always follows for anything not FREE/PAID.
  *
- * The trickiest part: a Wix ticket reservation expires in as little as 20
- * minutes (event-configured), but Stripe Checkout Sessions can't be made to
- * expire in under 30 (Stripe's own floor) — see
- * app/api/wix/events/checkout's `expires_at`. So a slow payer can come back
- * from Stripe with money already collected and a reservation that's already
- * gone. This handles that by creating one fresh reservation and retrying
- * once; only if that also fails (genuinely sold out in the interim) does it
- * fall back to the same "paid but not confirmed, needs a human" state
- * Bookings already uses for its own sold-out race.
- *
- * Idempotent: safe to call twice for the same checkout (webhook + reconcile
- * racing, or a retried webhook delivery).
+ * A Wix reservation holds for as little as 20 minutes but Stripe Checkout
+ * can't be made to expire sooner than 30, so a slow payer can return with
+ * money taken and the hold gone — the fresh-reservation path covers that.
  */
-export async function finalizeWixEventTicketCheckout(
+export async function fulfilPaidWixEventOrder(
   admin: SupabaseClient<Database>,
-  session: Pick<Stripe.Checkout.Session, 'metadata' | 'payment_intent'>
-): Promise<void> {
-  const orderId = session.metadata?.order_id;
-  const wixEventId = session.metadata?.wix_event_id;
-  const reservationId = session.metadata?.wix_reservation_id;
-  if (!orderId || !wixEventId || !reservationId) return;
-
+  orderId: string,
+  opts: {
+    source: 'webhook' | 'retry';
+    /** The reservation made at checkout. Only the first webhook attempt can still use it. */
+    reservationId?: string | null;
+    paymentIntent?: string | null;
+  }
+): Promise<FulfilmentOutcome> {
   const { data: row } = await admin
     .from('event_ticket_orders')
-    .select('id, user_id, child_id, event_id, ticket_type_id, quantity, amount, payment_status, medical_disclosure, policies_accepted, info_response')
+    .select(
+      'id, user_id, child_id, event_id, ticket_type_id, quantity, amount, status, payment_status, wix_order_number, stripe_payment_intent, created_at, fulfilment_attempts, medical_disclosure, policies_accepted, info_response, form_response, selected_days, party_size'
+    )
     .eq('id', orderId)
     .maybeSingle();
-  if (!row) return;
-  if (row.payment_status === 'paid') return; // already finalized
+  if (!row) return { status: 'not_payable' };
+  if (row.wix_order_number) return { status: 'already', orderNumber: row.wix_order_number };
+  if (row.payment_status === 'refunded' || row.status === 'cancelled') return { status: 'not_payable' };
+  // A retry only makes sense for money already collected. The webhook / return
+  // from Stripe is itself the proof of payment, so those may proceed from 'none'.
+  if (opts.source === 'retry' && row.payment_status !== 'paid') return { status: 'not_payable' };
+
+  const attempts = row.fulfilment_attempts + 1;
+  const paymentIntent = opts.paymentIntent ?? row.stripe_payment_intent ?? null;
+
+  const claimCutoff = new Date(Date.now() - CLAIM_WINDOW_MS).toISOString();
+  const { data: claimed } = await admin
+    .from('event_ticket_orders')
+    .update({
+      fulfilment_attempts: attempts,
+      fulfilment_last_attempt_at: new Date().toISOString(),
+      ...(paymentIntent ? { stripe_payment_intent: paymentIntent } : {}),
+    })
+    .eq('id', row.id)
+    .is('wix_order_number', null)
+    .or(`fulfilment_last_attempt_at.is.null,fulfilment_last_attempt_at.lt.${claimCutoff}`)
+    .select('id')
+    .maybeSingle();
+  if (!claimed) return { status: 'busy' };
 
   const { data: event } = await admin
     .from('wix_events')
-    .select('provider_id')
+    .select('provider_id, title, wix_event_id')
     .eq('id', row.event_id)
     .maybeSingle();
-  if (!event?.provider_id) {
-    console.error('[finalizeWixEventTicketCheckout] event has no provider', row.event_id);
-    return;
-  }
-
   const { data: ticketType } = await admin
     .from('event_ticket_types')
     .select('wix_ticket_definition_id')
     .eq('id', row.ticket_type_id)
     .maybeSingle();
-  if (!ticketType) {
-    console.error('[finalizeWixEventTicketCheckout] ticket type missing', row.ticket_type_id);
-    return;
-  }
+  const creds = event?.provider_id ? await getProviderWixCredentials(admin, event.provider_id) : null;
 
-  const creds = await getProviderWixCredentials(admin, event.provider_id);
-  if (!creds) {
-    console.error('[finalizeWixEventTicketCheckout] provider Wix credentials missing', event.provider_id);
-    return;
-  }
+  const fail = async (e: unknown, extra = ''): Promise<FulfilmentOutcome> => {
+    const error = (describeFulfilmentError(e) + extra).slice(0, 500);
+    console.error('[fulfilPaidWixEventOrder] could not create the Wix order', row.id, error);
+    await admin
+      .from('event_ticket_orders')
+      .update({ payment_status: 'paid', stripe_payment_intent: paymentIntent, fulfilment_error: error })
+      .eq('id', row.id);
+    const gaveUp = attempts >= MAX_FULFILMENT_ATTEMPTS;
+    // Tell the parent once, on the first failure: they have paid and have no ticket yet.
+    if (attempts === 1) {
+      const { data: org } = event?.provider_id
+        ? await admin.from('providers').select('business_name').eq('id', event.provider_id).maybeSingle()
+        : { data: null };
+      await notifyEventTicketPending(admin, {
+        userId: row.user_id,
+        eventTitle: event?.title ?? null,
+        providerName: org?.business_name ?? null,
+        orderId: row.id,
+      });
+    }
+    // Alert on the first failure (so a human knows today) and when retries run out.
+    if (attempts === 1 || gaveUp) {
+      const { data: buyer } = await admin.from('parent_profiles').select('email').eq('id', row.user_id).maybeSingle();
+      await sendWixOrderFailureAlert({
+        kind: 'event ticket',
+        orderId: row.id,
+        eventTitle: event?.title ?? null,
+        providerId: event?.provider_id ?? 'unknown',
+        customerEmail: buyer?.email ?? null,
+        amount: row.amount,
+        paymentIntent,
+        reason: error,
+        attempts,
+        gaveUp,
+      });
+    }
+    return { status: 'failed', error, attempts };
+  };
+
+  if (!event?.provider_id) return fail(new Error('the event has no provider'));
+  if (!ticketType) return fail(new Error('the ticket type is gone'));
+  if (!creds) return fail(new Error('the provider has no Wix credentials'));
 
   const contact = await resolveWixContact(admin, row.user_id);
-  const paymentIntent =
-    typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+  // The event's live form + registration: the form is what Wix validates the
+  // order against, and `guestsAssignedSeparately` means one form per ticket.
+  const liveEvent = await fetchWixEvent(creds, event.wix_event_id).catch(() => null);
+  const guestForm = await resolveWixEventGuestForm(admin, creds, event.wix_event_id, {
+    contact,
+    childId: row.child_id,
+    infoResponse: row.info_response,
+    answers: row.form_response,
+    inputs: liveEvent ? liveEvent.formInputs : undefined,
+  });
+  const guest = {
+    ...contact,
+    formInputs: guestForm.inputValues,
+    guestCount: liveEvent?.registration?.guestsAssignedSeparately ? row.quantity : 1,
+  };
 
-  async function checkoutAndConfirm(resId: string): Promise<WixCheckoutResult & { tickets?: unknown[] }> {
-    const checkout = await checkoutWixEventOrder(creds!, { eventId: wixEventId!, reservationId: resId, guest: contact });
-    if (checkout.status === 'PAID' || checkout.status === 'FREE') return checkout;
+  async function checkoutAndConfirm(resId: string): Promise<WixCheckoutResult & { tickets: WixIssuedTicket[] }> {
+    const checkout = await checkoutWixEventOrder(creds!, { eventId: event!.wix_event_id, reservationId: resId, guest });
+    if (checkout.status === 'PAID' || checkout.status === 'FREE') return { ...checkout, tickets: [] };
     try {
-      const confirmed = await confirmWixEventOrder(creds!, wixEventId!, checkout.orderNumber);
+      const confirmed = await confirmWixEventOrder(creds!, event!.wix_event_id, checkout.orderNumber);
       return { ...checkout, status: confirmed.status, tickets: confirmed.tickets };
     } catch (e) {
-      // ORDER_ACTION_NOT_AVAILABLE (428) means the order is no longer in a
-      // confirmable state — either something else already confirmed it
-      // (webhook + reconcile racing), or it was cancelled/expired between
-      // checkout and confirm. Either way, checkout()'s own order/status is
-      // the best info left; the caller decides what to do with it.
-      if (wixErrorCode(e) === 'ORDER_ACTION_NOT_AVAILABLE') return checkout;
+      // ORDER_ACTION_NOT_AVAILABLE (428): already confirmed by a racing caller,
+      // or cancelled/expired between checkout and confirm. checkout()'s own
+      // result is the best info left.
+      if (wixErrorCode(e) === 'ORDER_ACTION_NOT_AVAILABLE') return { ...checkout, tickets: [] };
       throw e;
     }
   }
 
-  let result: (WixCheckoutResult & { tickets?: unknown[] }) | null = null;
-  let markPaidNotConfirmed = false;
+  let result: (WixCheckoutResult & { tickets: WixIssuedTicket[] }) | null = null;
+  let adopted = false;
 
-  try {
-    result = await checkoutAndConfirm(reservationId);
-  } catch (e) {
-    const code = wixErrorCode(e);
-    if (code === 'RESERVATION_OCCUPIED') {
-      // This exact reservationId already produced an order via another
-      // caller (webhook + reconcile racing each other). Nothing more to do
-      // here — whichever caller won will have marked this row paid, or is
-      // about to. Bail out without touching anything.
-      return;
+  // Strategy A — the first webhook delivery can still use the reservation made at checkout.
+  if (opts.source === 'webhook' && opts.reservationId && attempts === 1) {
+    try {
+      result = await checkoutAndConfirm(opts.reservationId);
+    } catch (e) {
+      const code = wixErrorCode(e);
+      // This reservation already produced an order via another caller (webhook
+      // + parent-return racing): whoever won will finish the row.
+      if (code === 'RESERVATION_OCCUPIED') return { status: 'busy' };
+      if (!(code === 'RESERVATION_NOT_FOUND' || (e instanceof WixApiError && e.status === 404))) return fail(e);
+      // The hold lapsed while the parent was on Stripe — fall through to a fresh one.
     }
-    if (code === 'RESERVATION_NOT_FOUND' || e instanceof WixApiError && e.status === 404) {
-      // Stripe collected the money, but the ~20-30 min Wix hold lapsed
-      // before checkout finished. Stripe already confirmed payment, so it's
-      // reasonable to try once more for a fresh hold on the same ticket
-      // type/quantity rather than immediately giving up.
-      try {
+  }
+
+  // Strategy B — a fresh reservation, after checking Wix didn't already take this order.
+  if (!result) {
+    try {
+      const existing = await findAdoptableWixOrder(admin, creds, row, event.wix_event_id, contact.email);
+      if (existing) {
+        adopted = true;
+        let status = existing.status;
+        let tickets: WixIssuedTicket[] = existing.tickets;
+        if (status !== 'PAID' && status !== 'FREE') {
+          try {
+            const confirmed = await confirmWixEventOrder(creds, event.wix_event_id, existing.orderNumber);
+            status = confirmed.status;
+            tickets = confirmed.tickets.length ? confirmed.tickets : tickets;
+          } catch (e) {
+            if (wixErrorCode(e) !== 'ORDER_ACTION_NOT_AVAILABLE') throw e;
+          }
+        }
+        result = {
+          orderNumber: existing.orderNumber,
+          status,
+          ticketsQuantity: existing.ticketsQuantity,
+          totalPrice: existing.totalPrice,
+          tickets,
+        };
+      } else {
         const fresh = await createWixTicketReservation(creds, ticketType.wix_ticket_definition_id, row.quantity);
         result = await checkoutAndConfirm(fresh.id);
-      } catch (e2) {
-        console.error(
-          '[finalizeWixEventTicketCheckout] paid but the ticket type sold out before a retry could claim it — needs a manual refund',
-          row.id, wixEventId, e2
-        );
-        markPaidNotConfirmed = true;
       }
-    } else {
-      console.error('[finalizeWixEventTicketCheckout] paid but could not create the Wix order — needs a manual refund', row.id, wixEventId, e);
-      markPaidNotConfirmed = true;
+    } catch (e) {
+      return fail(
+        e,
+        guestForm.missing.length
+          ? ` — mandatory form field(s) with no value: ${guestForm.missing.map((m) => m.label || m.name).join(', ')}`
+          : ''
+      );
     }
   }
 
-  if (markPaidNotConfirmed || !result) {
-    // Same rule as finalizeWixBookingCheckout: never silently leave a paid
-    // row 'pending' forever, and never auto-refund a real money movement —
-    // surface it for support to refund and follow up with the parent.
-    await admin
-      .from('event_ticket_orders')
-      .update({ payment_status: 'paid', stripe_payment_intent: paymentIntent })
-      .eq('id', row.id);
-    return;
-  }
-
+  const tickets = await issuedTicketsForOrder(creds, event.wix_event_id, result.orderNumber, result.tickets);
   await admin
     .from('event_ticket_orders')
     .update({
@@ -161,6 +299,10 @@ export async function finalizeWixEventTicketCheckout(
       payment_status: 'paid',
       stripe_payment_intent: paymentIntent,
       wix_order_number: result.orderNumber,
+      wix_order_status: result.status,
+      wix_synced_at: new Date().toISOString(),
+      tickets: storableTickets(tickets),
+      fulfilment_error: null,
     })
     .eq('id', row.id);
 
@@ -171,6 +313,8 @@ export async function finalizeWixEventTicketCheckout(
     userId: row.user_id,
     childId: row.child_id,
     quantity: row.quantity,
+    days: row.selected_days,
+    partySize: row.party_size,
     totalAmount: row.amount,
     stripePaymentIntent: paymentIntent,
     wixOrderNumber: result.orderNumber,
@@ -180,11 +324,24 @@ export async function finalizeWixEventTicketCheckout(
     infoResponse: row.info_response,
   });
 
-  // A ticket sale is a sale: the vendor's Earnings ledger has to show it,
-  // same as a class booking, or a payout has nothing to reconcile against.
-  // `amount` on the order is the whole order total (every ticket in the
-  // checkout), which is exactly what Stripe charged. Idempotent on the
-  // payment intent, so webhook + reconcile racing is safe.
+  // The ticket exists on Wix but no booking row was written (the mirrored
+  // activity/session wasn't found): the parent would hold a ticket that never
+  // appears in My Bookings or on the vendor's roster. The reconcile job repairs
+  // this on its next pass; tell a person now so it isn't discovered by a complaint.
+  if (!mirrored.firstBookingId) {
+    await sendOpsAlert(`Wix event ticket issued but no booking recorded — ${event.title ?? 'event'}`, [
+      'The Wix order was created, but BabyBrain could not write the booking (no mirrored activity or session for the event).',
+      'The parent has a ticket that does not show in My Bookings. The reconcile job will retry; if it persists, check the event’s activity.',
+      '',
+      `Order   : ${row.id}  (Wix ${result.orderNumber})`,
+      `Payment : ${paymentIntent ?? '—'}`,
+    ]);
+  }
+
+  // A ticket sale is a sale: the vendor's Earnings ledger has to show it, same
+  // as a class booking, or a payout has nothing to reconcile against. `amount`
+  // is the whole order total, exactly what Stripe charged. Idempotent on the
+  // payment intent, so any racing caller is safe.
   await recordSale(admin, {
     providerId: event.provider_id,
     source: 'booking',
@@ -192,6 +349,123 @@ export async function finalizeWixEventTicketCheckout(
     grossCents: Math.round(Number(row.amount ?? 0) * 100),
     paymentIntentId: paymentIntent,
   });
+
+  // The parent was charged `amount`; Wix says the order costs `totalPrice`. A
+  // difference (tax, a price edited since the page loaded) is not fatal — the
+  // ticket is issued — but it means vendor and parent disagree about the price.
+  if (result.totalPrice && row.amount != null && Math.abs(result.totalPrice.value - Number(row.amount)) > 0.011) {
+    await sendOpsAlert(`Wix event order total differs from what the parent paid — ${event.title ?? 'event'}`, [
+      'A ticket was issued, but the order total on the vendor’s Wix differs from the amount charged on Stripe.',
+      '',
+      `Event    : ${event.title ?? '—'}`,
+      `Order    : ${row.id}  (Wix ${result.orderNumber})`,
+      `Charged  : ${Number(row.amount).toFixed(2)}`,
+      `Wix says : ${result.totalPrice.value.toFixed(2)} ${result.totalPrice.currency}`,
+      `Payment  : ${paymentIntent ?? '—'}`,
+    ]);
+  }
+
+  return { status: 'fulfilled', orderNumber: result.orderNumber, adopted };
+}
+
+/** An order this buyer already has on the vendor's Wix for this event, made
+ *  since this BabyBrain order was placed and not claimed by another local
+ *  order — what a retry adopts instead of selling the seat a second time. */
+async function findAdoptableWixOrder(
+  admin: SupabaseClient<Database>,
+  creds: WixCredentials,
+  row: { event_id: string; quantity: number; created_at: string },
+  wixEventId: string,
+  email: string
+) {
+  if (!email) return null;
+  const orders = await fetchWixOrders(creds, { eventIds: [wixEventId], searchPhrase: email, maxOrders: 400 });
+  const { data: taken } = await admin
+    .from('event_ticket_orders')
+    .select('wix_order_number')
+    .eq('event_id', row.event_id)
+    .not('wix_order_number', 'is', null);
+  const used = new Set((taken ?? []).map((t) => t.wix_order_number));
+  const since = new Date(row.created_at).getTime() - 5 * 60_000;
+  return (
+    orders.find(
+      (o) =>
+        !used.has(o.orderNumber) &&
+        !['CANCELED', 'DECLINED', 'VOIDED'].includes(o.status) &&
+        o.ticketsQuantity === row.quantity &&
+        (o.email ?? '').toLowerCase() === email.toLowerCase() &&
+        !!o.created &&
+        Date.parse(o.created) >= since
+    ) ?? null
+  );
+}
+
+/**
+ * Stripe confirmed payment for a Wix Events ticket — called from the webhook
+ * (`checkout.session.completed`) and /api/stripe/reconcile. See
+ * {@link fulfilPaidWixEventOrder} for the rules.
+ */
+export async function finalizeWixEventTicketCheckout(
+  admin: SupabaseClient<Database>,
+  session: Pick<Stripe.Checkout.Session, 'metadata' | 'payment_intent'>
+): Promise<FulfilmentOutcome | null> {
+  const orderId = session.metadata?.order_id;
+  if (!orderId) return null;
+  const paymentIntent =
+    typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+  return fulfilPaidWixEventOrder(admin, orderId, {
+    source: 'webhook',
+    reservationId: session.metadata?.wix_reservation_id ?? null,
+    paymentIntent,
+  });
+}
+
+/**
+ * The `activity_sessions` row a Wix event's bookings hang off. The date's own session
+ * first: a recurring series is one activity with a session per date, each stamped with its
+ * Wix event (activity_sessions.wix_event_id, 00221). Older single-event activities are found
+ * through activities.wix_event_id instead. Null (and logged) when neither exists.
+ */
+export async function findEventSessionId(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  localEventId: string
+): Promise<string | null> {
+  const { data: stamped } = await admin
+    .from('activity_sessions')
+    .select('id')
+    .eq('wix_event_id', localEventId)
+    .neq('status', 'cancelled')
+    .order('starts_at', { ascending: true })
+    .limit(1);
+  if (stamped?.[0]) return stamped[0].id;
+
+  const { data: activity } = await admin
+    .from('activities')
+    .select('id')
+    .eq('provider_id', providerId)
+    .eq('wix_event_id', localEventId)
+    .maybeSingle();
+  if (!activity) {
+    console.error('[findEventSessionId] no mirrored activity found — the booking list will miss this purchase', localEventId);
+    return null;
+  }
+  // A Wix event has exactly one occurrence, so its activity carries exactly one session — but
+  // `.maybeSingle()` resolves to an *error* the moment two rows match, and this activity has
+  // duplicated its session row for real before now (see syncEventActivityMirror's own note, and
+  // scripts/dedupe-wix-event-sessions.mjs). That turned a paid ticket into one that never
+  // appeared in My Bookings at all. Take the earliest row instead.
+  const { data: sessions } = await admin
+    .from('activity_sessions')
+    .select('id')
+    .eq('activity_id', activity.id)
+    .order('starts_at', { ascending: true })
+    .limit(1);
+  if (!sessions?.[0]) {
+    console.error('[findEventSessionId] mirrored activity has no session row', activity.id);
+    return null;
+  }
+  return sessions[0].id;
 }
 
 /**
@@ -221,6 +495,9 @@ export async function mirrorEventTicketAsBookings(
     userId: string;
     childId: string | null;
     quantity: number;
+    /** Multi-day events: the days booked (YYYY-MM-DD) and the number of children - a place is seated for each child on each day. */
+    days?: string[] | null;
+    partySize?: number | null;
     totalAmount: number | null;
     stripePaymentIntent: string | null;
     wixOrderNumber: string;
@@ -234,41 +511,46 @@ export async function mirrorEventTicketAsBookings(
     infoResponse?: string | null;
   }
 ): Promise<{ firstBookingId: string | null }> {
-  const { data: activity } = await admin
-    .from('activities')
+  // Idempotent on the Wix order: a retry, or a webhook racing a return from
+  // Stripe, must never write a second set of seats for the same order.
+  const { data: already } = await admin
+    .from('bookings')
     .select('id')
-    .eq('provider_id', params.providerId)
-    .eq('wix_event_id', params.localEventId)
-    .maybeSingle();
-  if (!activity) {
-    console.error('[mirrorEventTicketAsBookings] no mirrored activity found — booking list will miss this purchase', params.localEventId);
-    return { firstBookingId: null };
-  }
-  // A Wix event has exactly one occurrence, so its activity carries exactly
-  // one session — but `.maybeSingle()` resolves to an *error* the moment two
-  // rows match, and this activity has duplicated its session row for real
-  // before now (see syncEventActivityMirror's own note, and
-  // scripts/dedupe-wix-event-sessions.mjs). That turned a paid ticket into
-  // one that never appeared in My Bookings at all. Take the earliest row
-  // instead: worst case the ticket lands on the right activity's first
-  // occurrence, which is still the event.
-  const { data: eventSessions } = await admin
-    .from('activity_sessions')
-    .select('id')
-    .eq('activity_id', activity.id)
-    .order('starts_at', { ascending: true })
+    .eq('user_id', params.userId)
+    .eq('wix_booking_id', params.wixOrderNumber)
     .limit(1);
-  const eventSession = eventSessions?.[0];
-  if (!eventSession) {
-    console.error('[mirrorEventTicketAsBookings] mirrored activity has no session row', activity.id);
-    return { firstBookingId: null };
+  if (already?.length) return { firstBookingId: already[0].id };
+
+  // A day-by-day booking is seated on the session of each day chosen - one place per child per day - so the
+  // vendor's roster for a given day lists exactly who is coming that day. Otherwise it is one place per ticket
+  // on the event's single session.
+  let placeSessions: string[];
+  if (params.days?.length) {
+    const { data: daySessions } = await admin
+      .from('activity_sessions')
+      .select('id, wix_day')
+      .eq('wix_event_id', params.localEventId)
+      .in('wix_day', params.days)
+      .neq('status', 'cancelled');
+    const idByDay = new Map((daySessions ?? []).map((d) => [d.wix_day as string, d.id]));
+    placeSessions = placePlan(params.partySize ?? params.quantity, params.days)
+      .map((p) => idByDay.get(p.day))
+      .filter((id): id is string => !!id);
+    if (placeSessions.length === 0) {
+      console.error('[mirrorEventTicketAsBookings] none of the booked days has a session', params.localEventId, params.days);
+      return { firstBookingId: null };
+    }
+  } else {
+    const eventSessionId = await findEventSessionId(admin, params.providerId, params.localEventId);
+    if (!eventSessionId) return { firstBookingId: null };
+    placeSessions = Array.from({ length: params.quantity }, () => eventSessionId);
   }
 
-  const perSeat = params.totalAmount != null ? params.totalAmount / params.quantity : null;
-  const rows = Array.from({ length: params.quantity }, () => ({
+  const perSeat = params.totalAmount != null ? params.totalAmount / placeSessions.length : null;
+  const rows = placeSessions.map((sessionId) => ({
     user_id: params.userId,
     child_id: params.childId,
-    session_id: eventSession.id,
+    session_id: sessionId,
     status: 'confirmed' as const,
     payment_status: params.paymentStatus,
     amount: perSeat,

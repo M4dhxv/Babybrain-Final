@@ -479,7 +479,8 @@ export default function ActivitiesPage() {
   // letting a vendor edit something that cannot stick — and, worse, letting
   // a parent see a price or capacity Wix will not honour at booking.
   const wixKind = editingActivity?.wix_service_type ?? null;
-  const isWixLinked = !!(editingActivity?.wix_service_id || editingActivity?.wix_event_id);
+  // A recurring-series event activity has neither id (its dates carry the events) but is Wix-owned all the same.
+  const isWixLinked = !!(editingActivity?.wix_service_id || editingActivity?.wix_event_id || editingActivity?.wix_series_id);
   const isWixEvent = wixKind === 'EVENT';
   // A Wix ticketed event or course is enrolled/reserved inside Wix's own
   // ticketing, not through BabyBrain — there is nothing here to cancel, so
@@ -536,7 +537,7 @@ export default function ActivitiesPage() {
   // that no longer matches. A hand-added session here is either swept or
   // becomes a slot Wix will refuse to book, so the whole schedule is
   // read-only for them.
-  const scheduleIsWix = !!(scheduleFor?.wix_service_id || scheduleFor?.wix_event_id);
+  const scheduleIsWix = !!(scheduleFor?.wix_service_id || scheduleFor?.wix_event_id || scheduleFor?.wix_series_id);
   /* QA 21/08: location and price move to the schedule, so the same class at
      three venues (or three prices) is ONE activity. Blank inherits the
      activity's own value. */
@@ -2510,6 +2511,21 @@ export default function ActivitiesPage() {
                 </div>
                 <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} />
               </div>
+              {(editingActivity?.wix_event_blockers?.length ?? 0) > 0 && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+                  <p className="font-semibold">Parents can't book this event right now:</p>
+                  {editingActivity!.wix_event_blockers.map((b) => (
+                    <p key={b.code}>• {b.vendorMessage}</p>
+                  ))}
+                </div>
+              )}
+              {(editingActivity?.wix_form_extra_fields?.length ?? 0) > 0 && (
+                <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  Parents are already asked your Wix registration form's own questions on the booking page
+                  ({editingActivity!.wix_form_extra_fields.map((f) => `“${f}”`).join(', ')}) and their answers go straight to Wix — you
+                  don't need to ask for them here. Use this only for something that isn't on your Wix form.
+                </p>
+              )}
               {form.info_request_enabled && (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">What are you asking for?</label>

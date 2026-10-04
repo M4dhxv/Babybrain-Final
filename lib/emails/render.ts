@@ -264,6 +264,24 @@ const T: Record<string, Template> = {
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
+  // A paid Wix Events ticket the organiser's Wix has not accepted yet (lib/wix/finalize-event-checkout).
+  // The parent has been charged and has no ticket, so tell them - briefly and without alarm.
+  event_ticket_pending: (d, ctx) =>
+    wrap(ctx, 'Your payment went through - we are confirming your place 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Thank you - your payment for ${bold(str(d, 'activity_name') ?? 'your event')} went through. We are just finishing confirming your place with ${bold(str(d, 'provider_name') ?? 'the organiser')}, which has not completed yet.`) +
+      p('There is nothing you need to do. As soon as it is confirmed you will get your booking confirmation, and your ticket will appear under Bookings. If we are unable to confirm your place, we will let you know and refund you.') +
+      p('If you have any questions, just reply to this email.') +
+      sign),
+
+  // An admin refunded a Wix Events ticket in full.
+  event_ticket_refunded: (d, ctx) =>
+    wrap(ctx, 'We have refunded your payment 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`We have refunded your payment${str(d, 'amount') ? ` of ${bold(str(d, 'amount') as string)}` : ''} for ${bold(str(d, 'activity_name') ?? 'your event')}. It can take a few days to appear on your statement, depending on your bank.`) +
+      p('We are sorry it did not work out this time. If you have any questions, just reply to this email.') +
+      sign),
+
   // Fired right after a package_purchases row is created (Stripe webhook /
   // /api/stripe/reconcile, lib/notify-package-purchased.ts). Free-tier
   // parents can't see Packages on /profile (PlusLock), so this is their only

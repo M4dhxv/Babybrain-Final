@@ -55,7 +55,7 @@ function wixHeaders(creds: WixCredentials): Record<string, string> {
   };
 }
 
-async function wixFetchOnce<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
+async function wixFetchOnce<T>(creds: WixCredentials, path: string, body: unknown, method: 'POST' | 'GET' = 'POST'): Promise<T> {
   // Bound every call so one hung Wix endpoint can't burn the whole function
   // budget and leave the client with a bare "Failed to fetch" when the
   // platform kills the process. Surfaces as a WixApiError the callers already
@@ -65,9 +65,9 @@ async function wixFetchOnce<T>(creds: WixCredentials, path: string, body: unknow
   let res: Response;
   try {
     res = await fetch(`${WIX_API_BASE}${path}`, {
-      method: 'POST',
+      method,
       headers: wixHeaders(creds),
-      body: JSON.stringify(body),
+      body: method === 'GET' ? undefined : JSON.stringify(body),
       signal: abort.signal,
     });
   } catch (e) {
@@ -94,13 +94,13 @@ async function wixFetchOnce<T>(creds: WixCredentials, path: string, body: unknow
 // attempt above, and a caller like /api/wix/slots already chains 2-3 of
 // these calls inside one 60s route budget; a broader retry policy there
 // risks the route missing its deadline instead of failing fast.
-async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown): Promise<T> {
+async function wixFetch<T>(creds: WixCredentials, path: string, body: unknown, method: 'POST' | 'GET' = 'POST'): Promise<T> {
   try {
-    return await wixFetchOnce<T>(creds, path, body);
+    return await wixFetchOnce<T>(creds, path, body, method);
   } catch (e) {
     if (e instanceof WixApiError && e.status === 429) {
       await new Promise((r) => setTimeout(r, 400));
-      return wixFetchOnce<T>(creds, path, body);
+      return wixFetchOnce<T>(creds, path, body, method);
     }
     throw e;
   }
@@ -1228,6 +1228,37 @@ export interface WixEvent {
   };
   mainImageUrl: string | null;
   description: string;
+  /** Registration settings — null only if Wix omitted the block. */
+  registration: WixEventRegistration | null;
+  /** The registration form's inputs, as the event query returns them. */
+  formInputs: WixEventFormInput[];
+  /** Recurring events are separate events sharing one `seriesId`. */
+  recurrence: { status: string | null; seriesId: string | null };
+}
+
+export interface WixEventRegistration {
+  /** What registration is *now*: TICKETING | RSVP | EXTERNAL | NONE. */
+  type: string | null;
+  /** Fixed at creation: TICKETING | RSVP. */
+  initialType: string | null;
+  /** OPEN_TICKETS | OPEN_RSVP | CLOSED_AUTOMATICALLY | CLOSED_MANUALLY | SCHEDULED_RSVP | OPEN_EXTERNAL … */
+  status: string | null;
+  paused: boolean;
+  disabled: boolean;
+  /** VISITOR_OR_MEMBER | MEMBER (members-only events can't be booked by an API guest). */
+  allowedGuestTypes: string | null;
+  /** True when every ticket needs its own guest form. */
+  guestsAssignedSeparately: boolean;
+  reservationMinutes: number | null;
+  ticketLimitPerOrder: number | null;
+  soldOut: boolean;
+  /** Tax Wix adds on top at checkout (INCLUDED needs nothing; ADDED / ADDED_AT_CHECKOUT changes the total). */
+  taxType: string | null;
+  taxRate: string | null;
+  /** RSVP events: max guests, waitlist, window. */
+  rsvp: { limit: number | null; waitlistEnabled: boolean; startDate: string | null; endDate: string | null; responseType: string | null } | null;
+  /** EXTERNAL events: where registration actually happens. */
+  externalUrl: string | null;
 }
 
 /** Wix Events & Tickets — a separate Wix app/API from Bookings (everything
@@ -1258,7 +1289,7 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
     title: string;
     slug: string;
     status: string;
-    dateAndTimeSettings?: { startDate?: string; endDate?: string; timeZoneId?: string };
+    dateAndTimeSettings?: { startDate?: string; endDate?: string; timeZoneId?: string; recurrenceStatus?: string; recurringEvents?: { categoryId?: string } };
     location?: {
       name?: string;
       type?: string;
@@ -1268,6 +1299,8 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
     mainImage?: { url?: string };
     shortDescription?: string;
     detailedDescription?: string;
+    registration?: RawWixEventRegistration;
+    form?: { controls?: RawFormControl[] };
   }
 
   const START_FIELD = 'dateAndTimeSettings.startDate';
@@ -1330,7 +1363,126 @@ export async function fetchWixEvents(creds: WixCredentials, days = 90): Promise<
       },
       mainImageUrl: e.mainImage?.url ?? null,
       description: e.detailedDescription?.trim() || e.shortDescription?.trim() || '',
+      ...mapWixEventExtras(e),
     }));
+}
+
+interface RawWixEventRegistration {
+  type?: string;
+  initialType?: string;
+  status?: string;
+  registrationPaused?: boolean;
+  registrationDisabled?: boolean;
+  allowedGuestTypes?: string;
+  tickets?: {
+    guestsAssignedSeparately?: boolean;
+    reservationDurationInMinutes?: number;
+    ticketLimitPerOrder?: number;
+    soldOut?: boolean;
+    taxSettings?: { type?: string; rate?: string };
+  };
+  rsvp?: { limit?: number; waitlistEnabled?: boolean; startDate?: string; endDate?: string; responseType?: string };
+  external?: { url?: string };
+}
+
+/** The registration / form / recurrence half of a raw Wix event, shared by the
+ *  bulk query and the single-event GET so both describe an event identically. */
+function mapWixEventExtras(e: {
+  registration?: RawWixEventRegistration;
+  form?: { controls?: RawFormControl[] };
+  dateAndTimeSettings?: { recurrenceStatus?: string; recurringEvents?: { categoryId?: string } };
+}): Pick<WixEvent, 'registration' | 'formInputs' | 'recurrence'> {
+  const r = e.registration;
+  return {
+    registration: r
+      ? {
+          type: r.type ?? null,
+          initialType: r.initialType ?? null,
+          status: r.status ?? null,
+          paused: !!r.registrationPaused,
+          disabled: !!r.registrationDisabled,
+          allowedGuestTypes: r.allowedGuestTypes ?? null,
+          guestsAssignedSeparately: !!r.tickets?.guestsAssignedSeparately,
+          reservationMinutes: r.tickets?.reservationDurationInMinutes ?? null,
+          ticketLimitPerOrder: r.tickets?.ticketLimitPerOrder ?? null,
+          soldOut: !!r.tickets?.soldOut,
+          taxType: r.tickets?.taxSettings?.type ?? null,
+          taxRate: r.tickets?.taxSettings?.rate ?? null,
+          rsvp: r.rsvp
+            ? {
+                limit: r.rsvp.limit ?? null,
+                waitlistEnabled: !!r.rsvp.waitlistEnabled,
+                startDate: r.rsvp.startDate ?? null,
+                endDate: r.rsvp.endDate ?? null,
+                responseType: r.rsvp.responseType ?? null,
+              }
+            : null,
+          externalUrl: r.external?.url ?? null,
+        }
+      : null,
+    formInputs: parseWixFormControls(e.form?.controls),
+    recurrence: {
+      status: e.dateAndTimeSettings?.recurrenceStatus ?? null,
+      seriesId: e.dateAndTimeSettings?.recurringEvents?.categoryId ?? null,
+    },
+  };
+}
+
+/** One event by id, with the registration and form blocks. `null` when Wix
+ *  no longer has it (404) — a deleted event is not an error to callers. */
+export async function fetchWixEvent(creds: WixCredentials, eventId: string): Promise<WixEvent | null> {
+  interface RawEvent {
+    id: string;
+    title: string;
+    slug: string;
+    status: string;
+    dateAndTimeSettings?: { startDate?: string; endDate?: string; timeZoneId?: string; recurrenceStatus?: string; recurringEvents?: { categoryId?: string } };
+    location?: {
+      name?: string;
+      type?: string;
+      locationTbd?: boolean;
+      address?: { city?: string; postalCode?: string; formattedAddress?: string };
+    };
+    mainImage?: { url?: string };
+    shortDescription?: string;
+    detailedDescription?: string;
+    registration?: RawWixEventRegistration;
+    form?: { controls?: RawFormControl[] };
+  }
+  let data: { event?: RawEvent };
+  try {
+    data = await wixFetch<{ event?: RawEvent }>(
+      creds,
+      `/events/v3/events/${eventId}?fields=REGISTRATION&fields=FORM&fields=DETAILS`,
+      undefined,
+      'GET'
+    );
+  } catch (e) {
+    if (e instanceof WixApiError && e.status === 404) return null;
+    throw e;
+  }
+  const e = data.event;
+  if (!e) return null;
+  return {
+    id: e.id,
+    title: e.title,
+    slug: e.slug,
+    status: e.status,
+    startDate: e.dateAndTimeSettings?.startDate ?? '',
+    endDate: e.dateAndTimeSettings?.endDate ?? '',
+    timeZoneId: e.dateAndTimeSettings?.timeZoneId,
+    location: {
+      name: e.location?.name ?? null,
+      type: e.location?.type ?? null,
+      city: e.location?.address?.city ?? null,
+      postalCode: e.location?.address?.postalCode ?? null,
+      formattedAddress: e.location?.address?.formattedAddress ?? null,
+      locationTbd: e.location?.locationTbd ?? false,
+    },
+    mainImageUrl: e.mainImage?.url ?? null,
+    description: e.detailedDescription?.trim() || e.shortDescription?.trim() || '',
+    ...mapWixEventExtras(e),
+  };
 }
 
 export interface WixTicketDefinition {
@@ -1354,6 +1506,10 @@ export interface WixTicketDefinition {
   /** null = unlimited. */
   unsoldCount: number | null;
   soldOut: boolean;
+  /** STANDARD | DONATION — a donation ticket has no fixed price (the guest names it). */
+  pricingType: string | null;
+  /** The event has a seating plan: a reservation needs a chosen seat, which BabyBrain can't offer. */
+  hasSeating: boolean;
   /** FEE_ADDED_AT_CHECKOUT means the real charge is higher than `priceValue`
    *  alone — see computeWixCheckoutTotal. The definition never carries the
    *  actual fee *rate*, only this type; the rate is only known once a real
@@ -1369,7 +1525,10 @@ export interface WixTicketDefinition {
  *  response entirely rather than returning nulls. */
 export async function fetchWixTicketDefinitions(
   creds: WixCredentials,
-  eventId: string
+  eventId: string,
+  /** `seating: true` also reads each ticket's seating plan — only the pre-payment check needs that, so the
+   *  periodic sync keeps its original, smaller request. */
+  opts: { seating?: boolean } = {}
 ): Promise<WixTicketDefinition[]> {
   interface RawTicketDefinition {
     id: string;
@@ -1378,10 +1537,11 @@ export async function fetchWixTicketDefinitions(
     hidden?: boolean;
     limitPerCheckout?: number;
     initialLimit?: number;
-    pricingMethod?: { fixedPrice?: { value: string; currency: string }; free?: boolean };
+    pricingMethod?: { fixedPrice?: { value: string; currency: string }; free?: boolean; pricingType?: string };
     salePeriod?: { startDate?: string; endDate?: string };
     saleStatus?: string;
     salesDetails?: { unsoldCount?: number | null; soldOut?: boolean };
+    seatingDetails?: { places?: unknown[] };
     feeType?: string;
   }
   const data = await wixFetch<{ ticketDefinitions?: RawTicketDefinition[] }>(
@@ -1389,7 +1549,7 @@ export async function fetchWixTicketDefinitions(
     '/events/v3/ticket-definitions/query',
     {
       query: { filter: { eventId }, paging: { limit: 100 } },
-      fields: ['SALES_DETAILS'],
+      fields: opts.seating ? ['SALES_DETAILS', 'SEATING_DETAILS'] : ['SALES_DETAILS'],
     }
   );
   return (data.ticketDefinitions ?? []).map((t) => ({
@@ -1407,6 +1567,8 @@ export async function fetchWixTicketDefinitions(
     initialLimit: t.initialLimit ?? null,
     unsoldCount: t.salesDetails?.unsoldCount ?? null,
     soldOut: t.salesDetails?.soldOut ?? false,
+    pricingType: t.pricingMethod?.pricingType ?? null,
+    hasSeating: (t.seatingDetails?.places?.length ?? 0) > 0,
     feeType: t.feeType ?? null,
   }));
 }
@@ -1547,12 +1709,77 @@ export interface WixCheckoutGuest {
   firstName: string;
   lastName: string;
   email: string;
+  /** The event's own registration form, already filled (see lib/wix/event-form.ts).
+   *  Absent = the three default fields, which only satisfies a form that asks
+   *  for nothing else — a vendor's mandatory custom field gets the checkout
+   *  refused with INVALID_FORM_RESPONSE. */
+  formInputs?: { inputName: string; value?: string; values?: string[] }[];
+  /** Events that assign every ticket to its own guest need one form per ticket. Default 1. */
+  guestCount?: number;
+}
+
+export interface WixEventFormInput {
+  /** Wix's slot id: firstName / lastName / email / phone-xxxx … */
+  name: string;
+  /** What the vendor called it — a system slot can be relabelled ("Child name"). */
+  label: string;
+  mandatory: boolean;
+  /** The control it belongs to (NAME, INPUT, DROPDOWN, RADIO_BUTTON, CHECKBOX, DATE, ADDRESS, GUEST_CONTROL …). */
+  controlType?: string;
+  /** TEXT, NUMBER, DATE, ARRAY … — as Wix reports it. */
+  inputType?: string;
+  /** Predefined answers for dropdown / radio / checkbox controls; a value outside
+   *  these is rejected with INVALID_FORM_RESPONSE. */
+  options?: string[];
+  /** True when the input takes several values (checkbox groups, guest names). */
+  multi?: boolean;
+}
+
+interface RawFormControl {
+  type?: string;
+  deleted?: boolean;
+  inputs?: { name: string; label?: string; mandatory?: boolean; type?: string; options?: string[]; array?: boolean }[];
+}
+
+/** Flattens a Wix registration form's controls into their inputs, dropping
+ *  deleted controls. Shared by the single-event GET and the bulk query, which
+ *  both return the same `form` shape. */
+export function parseWixFormControls(controls: RawFormControl[] | undefined): WixEventFormInput[] {
+  return (controls ?? [])
+    .filter((c) => !c.deleted)
+    .flatMap((c) =>
+      (c.inputs ?? []).map((i) => ({
+        name: i.name,
+        label: i.label ?? '',
+        mandatory: !!i.mandatory,
+        controlType: c.type,
+        inputType: i.type,
+        options: i.options && i.options.length ? i.options : undefined,
+        multi: !!i.array,
+      }))
+    );
+}
+
+/** The registration form a guest fills in for one event — every non-deleted
+ *  input of its published form, flattened. Throws on a Wix error (callers
+ *  decide whether that blocks anything). */
+export async function fetchWixEventForm(creds: WixCredentials, eventId: string): Promise<WixEventFormInput[]> {
+  const data = await wixFetch<{ form?: { controls?: RawFormControl[] } }>(
+    creds,
+    `/events/v1/events/${eventId}/form`,
+    undefined,
+    'GET'
+  );
+  return parseWixFormControls(data.form?.controls);
 }
 
 export interface WixCheckoutResult {
   orderNumber: string;
   status: string; // FREE | INITIATED | PAID | ...
   ticketsQuantity: number;
+  /** What Wix says the order costs — compared against what Stripe charged so a
+   *  mismatch (tax, a changed price) is noticed rather than silently absorbed. */
+  totalPrice: { value: number; currency: string } | null;
 }
 
 /** Converts a reservation into an order. Confirmed live that
@@ -1567,7 +1794,14 @@ export async function checkoutWixEventOrder(
   creds: WixCredentials,
   params: { eventId: string; reservationId: string; guest: WixCheckoutGuest }
 ): Promise<WixCheckoutResult> {
-  const data = await wixFetch<{ order: { orderNumber: string; status: string; ticketsQuantity: number } }>(
+  const data = await wixFetch<{
+    order: {
+      orderNumber: string;
+      status: string;
+      ticketsQuantity: number;
+      totalPrice?: { value?: string; amount?: string; currency?: string };
+    };
+  }>(
     creds,
     '/events/v1/checkout',
     {
@@ -1578,31 +1812,62 @@ export async function checkoutWixEventOrder(
         lastName: params.guest.lastName,
         email: params.guest.email,
       },
-      guests: [
-        {
-          form: {
-            inputValues: [
-              { inputName: 'firstName', value: params.guest.firstName },
-              { inputName: 'lastName', value: params.guest.lastName },
-              { inputName: 'email', value: params.guest.email },
-            ],
-          },
+      guests: Array.from({ length: Math.min(Math.max(params.guest.guestCount ?? 1, 1), 50) }, () => ({
+        form: {
+          inputValues: params.guest.formInputs ?? [
+            { inputName: 'firstName', value: params.guest.firstName },
+            { inputName: 'lastName', value: params.guest.lastName },
+            { inputName: 'email', value: params.guest.email },
+          ],
         },
-      ],
+      })),
       options: { silent: true },
     }
   );
+  const total = data.order.totalPrice;
+  const totalValue = Number(total?.value ?? total?.amount);
   return {
     orderNumber: data.order.orderNumber,
     status: data.order.status,
     ticketsQuantity: data.order.ticketsQuantity,
+    totalPrice:
+      total && Number.isFinite(totalValue) ? { value: totalValue, currency: total.currency ?? 'SGD' } : null,
   };
+}
+
+/** One issued ticket — what a parent presents at the door. */
+export interface WixIssuedTicket {
+  ticketNumber: string;
+  /** The URL behind the ticket's QR code; Wix's check-in app scans it. */
+  checkInUrl: string | null;
+  pdfUrl: string | null;
+  walletPassUrl: string | null;
 }
 
 export interface WixConfirmedOrder {
   orderNumber: string;
   status: string;
-  tickets: { ticketNumber: string; checkInUrl: string | null }[];
+  tickets: WixIssuedTicket[];
+  /** One PDF with every ticket in the order. */
+  ticketsPdf: string | null;
+}
+
+interface RawWixTicket {
+  ticketNumber: string;
+  checkInUrl?: string;
+  ticketPdfUrl?: string;
+  walletPassUrl?: string;
+  canceled?: boolean;
+  checkIn?: { created?: string };
+}
+
+export function mapWixTickets(tickets: RawWixTicket[] | undefined): WixIssuedTicket[] {
+  return (tickets ?? []).map((t) => ({
+    ticketNumber: t.ticketNumber,
+    checkInUrl: t.checkInUrl ?? null,
+    pdfUrl: t.ticketPdfUrl ?? null,
+    walletPassUrl: t.walletPassUrl ?? null,
+  }));
 }
 
 /** Moves an INITIATED/PENDING/OFFLINE_PENDING order to PAID — the real
@@ -1618,12 +1883,175 @@ export async function confirmWixEventOrder(
   orderNumber: string
 ): Promise<WixConfirmedOrder> {
   const data = await wixFetch<{
-    orders: { orderNumber: string; status: string; tickets?: { ticketNumber: string; checkInUrl?: string }[] }[];
+    orders: { orderNumber: string; status: string; ticketsPdf?: string; tickets?: RawWixTicket[] }[];
   }>(creds, `/events/v1/events/${eventId}/orders/confirm`, { orderNumber: [orderNumber] });
   const order = data.orders[0];
   return {
     orderNumber: order.orderNumber,
     status: order.status,
-    tickets: (order.tickets ?? []).map((t) => ({ ticketNumber: t.ticketNumber, checkInUrl: t.checkInUrl ?? null })),
+    tickets: mapWixTickets(order.tickets),
+    ticketsPdf: order.ticketsPdf ?? null,
   };
+}
+
+/** An order as the vendor's Wix account currently holds it. */
+export interface WixOrderSnapshot {
+  orderNumber: string;
+  eventId: string;
+  /** FREE | PAID | PENDING | OFFLINE_PENDING | INITIATED | CANCELED | DECLINED | AUTHORIZED | VOIDED | PARTIALLY_PAID */
+  status: string;
+  email: string | null;
+  created: string | null;
+  ticketsQuantity: number;
+  totalPrice: { value: number; currency: string } | null;
+  archived: boolean;
+  ticketsPdf: string | null;
+  tickets: (WixIssuedTicket & { checkedInAt: string | null; canceled: boolean })[];
+}
+
+/** Orders for the given events (up to 100 ids per call), paged 400 at a time
+ *  — the one place the vendor's own changes (cancel, refund, check-in, sales
+ *  made directly in Wix) become visible, since webhooks need an installed Wix
+ *  app and we hold only the vendor's API key. `searchPhrase` narrows to one
+ *  buyer's email / name / order number. */
+export async function fetchWixOrders(
+  creds: WixCredentials,
+  params: { eventIds: string[]; searchPhrase?: string; maxOrders?: number }
+): Promise<WixOrderSnapshot[]> {
+  interface RawOrder {
+    orderNumber: string;
+    eventId: string;
+    status: string;
+    email?: string;
+    created?: string;
+    ticketsQuantity?: number;
+    totalPrice?: { value?: string; amount?: string; currency?: string };
+    archived?: boolean;
+    ticketsPdf?: string;
+    tickets?: RawWixTicket[];
+  }
+  const PAGE = 400;
+  const cap = params.maxOrders ?? 2000;
+  const out: WixOrderSnapshot[] = [];
+  for (let offset = 0; offset < cap; offset += PAGE) {
+    const qs = new URLSearchParams();
+    for (const id of params.eventIds) qs.append('eventId', id);
+    for (const f of ['DETAILS', 'TICKETS']) qs.append('fieldset', f);
+    qs.set('limit', String(PAGE));
+    qs.set('offset', String(offset));
+    qs.set('sort', 'created:asc');
+    if (params.searchPhrase) qs.set('searchPhrase', params.searchPhrase);
+    const data = await wixFetch<{ orders?: RawOrder[] }>(creds, `/events/v1/orders?${qs.toString()}`, undefined, 'GET');
+    const page = data.orders ?? [];
+    for (const o of page) {
+      const value = Number(o.totalPrice?.value ?? o.totalPrice?.amount);
+      out.push({
+        orderNumber: o.orderNumber,
+        eventId: o.eventId,
+        status: o.status,
+        email: o.email ?? null,
+        created: o.created ?? null,
+        ticketsQuantity: o.ticketsQuantity ?? 0,
+        totalPrice: Number.isFinite(value) ? { value, currency: o.totalPrice?.currency ?? 'SGD' } : null,
+        archived: !!o.archived,
+        ticketsPdf: o.ticketsPdf ?? null,
+        tickets: (o.tickets ?? []).map((t) => ({
+          ...mapWixTickets([t])[0],
+          checkedInAt: t.checkIn?.created ?? null,
+          canceled: !!t.canceled,
+        })),
+      });
+    }
+    if (page.length < PAGE) break;
+  }
+  return out;
+}
+
+/** Wix's own application error code from a failed call (`INVALID_FORM_RESPONSE`,
+ *  `RSVPS_CLOSED`, `GUEST_LIMIT_EXCEEDED` …), or null. */
+export function wixApplicationErrorCode(e: unknown): string | null {
+  if (!(e instanceof WixApiError)) return null;
+  try {
+    return (JSON.parse(e.body)?.details?.applicationError?.code as string | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface WixRsvpResult {
+  rsvpId: string;
+  /** YES | NO | WAITLIST */
+  status: string;
+}
+
+/**
+ * Creates an RSVP on a Wix RSVP-type event (free, no tickets). Always asks for
+ * YES: Wix events have no BabyBrain waitlist (00107), so a full event is
+ * refused by the caller rather than silently parked on Wix's own waitlist.
+ * `guestCount` / `guestNames` are only valid when the form has a guests control.
+ */
+export async function createWixRsvp(
+  creds: WixCredentials,
+  params: {
+    eventId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    inputValues: { inputName: string; value?: string; values?: string[] }[];
+    guestCount: number;
+    guestNames: string[];
+  }
+): Promise<WixRsvpResult> {
+  const data = await wixFetch<{ rsvp: { id: string; status: string } }>(creds, '/events/v2/rsvps', {
+    rsvp: {
+      eventId: params.eventId,
+      firstName: params.firstName,
+      lastName: params.lastName,
+      email: params.email,
+      status: 'YES',
+      form: { inputValues: params.inputValues },
+      ...(params.guestCount > 0
+        ? { additionalGuestDetails: { guestCount: params.guestCount, guestNames: params.guestNames } }
+        : {}),
+      // BabyBrain confirms the booking itself; Wix's own email would come from the organiser's domain.
+      disableNotifications: true,
+    },
+  });
+  return { rsvpId: data.rsvp.id, status: data.rsvp.status };
+}
+
+/** RSVPs on the given events (page of 100) — used to notice a vendor removing or
+ *  changing one in Wix. Throws on a Wix error (an API key without the RSVP scope
+ *  is the usual one); callers treat that as "can't tell", never as "gone". */
+export async function fetchWixRsvps(
+  creds: WixCredentials,
+  eventIds: string[]
+): Promise<{ id: string; eventId: string; status: string }[]> {
+  const out: { id: string; eventId: string; status: string }[] = [];
+  for (let offset = 0; offset < 2000; offset += 100) {
+    const data = await wixFetch<{ rsvps?: { id: string; eventId: string; status: string }[] }>(creds, '/events/v2/rsvps/query', {
+      query: { filter: { eventId: { $in: eventIds } }, paging: { limit: 100, offset } },
+    });
+    const page = data.rsvps ?? [];
+    out.push(...page.map((r) => ({ id: r.id, eventId: r.eventId, status: r.status })));
+    if (page.length < 100) break;
+  }
+  return out;
+}
+
+/** The link (and password) an attendee of an ONLINE Wix event uses to join. It is
+ *  per guest on Wix, so it is read on demand rather than stored. */
+export async function fetchWixOnlineLogin(
+  creds: WixCredentials,
+  key: { orderNumber: string } | { rsvpId: string }
+): Promise<{ link: string; password: string | null } | null> {
+  const filter = 'orderNumber' in key ? { orderNumber: key.orderNumber } : { rsvpId: key.rsvpId };
+  const data = await wixFetch<{
+    guests?: { guestDetails?: { onlineConferencingLogin?: { link?: string; password?: string } } }[];
+  }>(creds, '/events/v2/guests/query', { query: { filter, cursorPaging: { limit: 20 } }, fields: ['GUEST_DETAILS'] });
+  for (const g of data.guests ?? []) {
+    const login = g.guestDetails?.onlineConferencingLogin;
+    if (login?.link) return { link: login.link, password: login.password ?? null };
+  }
+  return null;
 }

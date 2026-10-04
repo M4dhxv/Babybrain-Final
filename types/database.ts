@@ -25,6 +25,17 @@ export type PreferredDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 export type PreferredTime = 'morning' | 'afternoon' | 'evening';
 export type Gender = 'male' | 'female' | 'other' | 'unspecified';
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'waitlisted';
+/** One question a parent is asked on a Wix event's booking page. */
+export interface WixFormQuestion {
+  name: string;
+  label: string;
+  mandatory: boolean;
+  controlType?: string;
+  inputType?: string;
+  options?: string[];
+  multi?: boolean;
+}
+
 export type PaymentStatus = 'none' | 'paid' | 'refunded';
 export type ProviderRole = 'owner' | 'manager' | 'staff';
 export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
@@ -239,6 +250,11 @@ export type Database = {
           wix_price: number | null;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
+          wix_form_extra_fields: string[];
+          wix_event_blockers: { code: string; vendorMessage: string; parentMessage: string }[];
+          wix_event_checked_at: string | null;
+          wix_series_id: string | null;
+          wix_registration_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -284,6 +300,11 @@ export type Database = {
           wix_service_id?: string | null;
           wix_resource_id?: string | null;
           wix_service_type?: 'APPOINTMENT' | 'CLASS' | 'COURSE' | 'EVENT' | null;
+          wix_form_extra_fields?: string[];
+          wix_event_blockers?: { code: string; vendorMessage: string; parentMessage: string }[];
+          wix_event_checked_at?: string | null;
+          wix_series_id?: string | null;
+          wix_registration_type?: string | null;
           wix_event_id?: string | null;
           wix_locked_fields?: string[];
           wix_price?: number | null;
@@ -336,6 +357,10 @@ export type Database = {
           // Per-session override of activities.booking_cutoff_minutes
           // (migration 00137) — null means "inherit the activity default".
           booking_cutoff_minutes: number | null;
+          // Wix Events: which (local) wix_events row this date is (00221).
+          wix_event_id: string | null;
+          // Multi-day events: the calendar day this session is (YYYY-MM-DD); null otherwise.
+          wix_day: string | null;
         };
         Insert: {
           id?: string;
@@ -357,6 +382,8 @@ export type Database = {
           allow_rescheduling?: boolean | null;
           reschedule_cutoff_hours?: number | null;
           booking_cutoff_minutes?: number | null;
+          wix_event_id?: string | null;
+          wix_day?: string | null;
         };
         Update: {
           starts_at?: string;
@@ -377,6 +404,10 @@ export type Database = {
           allow_rescheduling?: boolean | null;
           reschedule_cutoff_hours?: number | null;
           booking_cutoff_minutes?: number | null;
+          // A series activity's dates are re-pointed and re-stamped by lib/wix/events-series.
+          activity_id?: string;
+          wix_event_id?: string | null;
+          wix_day?: string | null;
         };
               Relationships: [
           {
@@ -831,6 +862,17 @@ export type Database = {
           is_published: boolean;
           wix_removed_at: string | null;
           wix_missing_since: string | null;
+          form_questions: WixFormQuestion[];
+          // Recurring series / registration kind (00221).
+          wix_series_id: string | null;
+          recurrence_status: string | null;
+          registration_type: string;
+          registration_status: string | null;
+          external_url: string | null;
+          rsvp_limit: number | null;
+          rsvp_waitlist: boolean;
+          rsvp_allows_guests: boolean;
+          booking_blockers: { code: string; vendorMessage: string; parentMessage: string }[];
           created_at: string;
           updated_at: string;
         };
@@ -853,6 +895,16 @@ export type Database = {
           is_published?: boolean;
           wix_removed_at?: string | null;
           wix_missing_since?: string | null;
+          form_questions?: WixFormQuestion[];
+          wix_series_id?: string | null;
+          recurrence_status?: string | null;
+          registration_type?: string;
+          registration_status?: string | null;
+          external_url?: string | null;
+          rsvp_limit?: number | null;
+          rsvp_waitlist?: boolean;
+          rsvp_allows_guests?: boolean;
+          booking_blockers?: { code: string; vendorMessage: string; parentMessage: string }[];
         };
         Update: Partial<Database['public']['Tables']['wix_events']['Insert']>;
         Relationships: [
@@ -916,6 +968,47 @@ export type Database = {
           },
         ];
       };
+      event_rsvps: {
+        Row: {
+          id: string;
+          user_id: string;
+          child_id: string | null;
+          event_id: string;
+          status: 'yes' | 'waitlist' | 'cancelled';
+          guest_count: number;
+          guest_names: string[];
+          wix_rsvp_id: string | null;
+          medical_disclosure: string | null;
+          policies_accepted: string[];
+          info_response: string | null;
+          form_response: Record<string, string | string[]>;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          child_id?: string | null;
+          event_id: string;
+          status?: 'yes' | 'waitlist' | 'cancelled';
+          guest_count?: number;
+          guest_names?: string[];
+          wix_rsvp_id?: string | null;
+          medical_disclosure?: string | null;
+          policies_accepted?: string[];
+          info_response?: string | null;
+          form_response?: Record<string, string | string[]>;
+        };
+        Update: Partial<Database['public']['Tables']['event_rsvps']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'event_rsvps_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'wix_events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       event_ticket_orders: {
         Row: {
           id: string;
@@ -933,6 +1026,17 @@ export type Database = {
           medical_disclosure: string | null;
           policies_accepted: string[];
           info_response: string | null;
+          form_response: Record<string, string | string[]>;
+          selected_days: string[];
+          party_size: number | null;
+          fulfilment_error: string | null;
+          fulfilment_attempts: number;
+          fulfilment_last_attempt_at: string | null;
+          tickets: { ticketNumber: string; checkInUrl: string | null }[];
+          wix_order_status: string | null;
+          wix_synced_at: string | null;
+          refunded_at: string | null;
+          stripe_refund_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -951,6 +1055,12 @@ export type Database = {
           medical_disclosure?: string | null;
           policies_accepted?: string[];
           info_response?: string | null;
+          wix_order_status?: string | null;
+          wix_synced_at?: string | null;
+          tickets?: { ticketNumber: string; checkInUrl: string | null }[];
+          form_response?: Record<string, string | string[]>;
+          selected_days?: string[];
+          party_size?: number | null;
         };
         Update: {
           status?: 'pending' | 'confirmed' | 'cancelled';
@@ -959,6 +1069,14 @@ export type Database = {
           stripe_payment_intent?: string | null;
           wix_reservation_id?: string | null;
           wix_order_number?: string | null;
+          fulfilment_error?: string | null;
+          fulfilment_attempts?: number;
+          fulfilment_last_attempt_at?: string | null;
+          tickets?: { ticketNumber: string; checkInUrl: string | null }[];
+          wix_order_status?: string | null;
+          wix_synced_at?: string | null;
+          refunded_at?: string | null;
+          stripe_refund_id?: string | null;
         };
         Relationships: [
           {

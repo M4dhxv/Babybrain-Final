@@ -57,10 +57,16 @@ export default function BookedPage() {
 
   // Paid bookings come back through Stripe; apply the payment immediately
   // rather than waiting on the webhook.
+  // A Wix event ticket is only real once the organiser's Wix has accepted the order. When it hasn't
+  // yet (their Wix refused it and we are retrying) the parent has paid but holds no ticket, so say so
+  // instead of "Your session is booked!". `confirmed` is false only in that case.
+  const [unconfirmed, setUnconfirmed] = useState(false);
   useEffect(() => {
     const checkoutSession = getParam("session_id");
     if (checkoutSession) {
-      apiPost("/api/stripe/reconcile", { session_id: checkoutSession }).catch(() => {});
+      apiPost<{ confirmed?: boolean | null }>("/api/stripe/reconcile", { session_id: checkoutSession })
+        .then((r) => { if (r?.confirmed === false) setUnconfirmed(true); })
+        .catch(() => {});
     }
   }, []);
   return (
@@ -69,7 +75,7 @@ export default function BookedPage() {
         <div className="mb-6 flex gap-3 text-sm font-bold"><a href="/">Home</a><span>›</span><a href="/explore">Activities</a><span>›</span><span>Session details</span><span>›</span><span className="text-baby-pink">Book</span></div>
         <section className="grid items-center gap-5 rounded-[18px] border border-[#EBE3E5] bg-gradient-to-r from-[#FEEBF2] to-white p-8 md:grid-cols-[120px_1fr_220px]">
           <span className="grid h-20 w-20 place-items-center rounded-full bg-baby-pink text-white"><Icon name="check" className="h-12 w-12" /></span>
-          <div><h1 className="text-[36px] font-black">{waitlisted ? "You're on the waitlist!" : "Your session is booked!"}</h1><p className="mt-2 text-lg font-semibold">{waitlisted ? "This session is full — we'll email you the moment a spot opens up so you can book it. Joining the waitlist is free." : "We can't wait to see your little one there."}</p>{!waitlisted && wlLeft > 0 && <p className="mt-2 font-semibold text-palette-orangeStrong">{wlLeft === 1 ? "One place didn't fit and is on the waitlist" : `${wlLeft} places didn't fit and are on the waitlist`} — we'll email you if a spot opens so you can book {wlLeft === 1 ? "it" : "them"}. You haven't been charged for {wlLeft === 1 ? "it" : "them"}.</p>}</div>
+          <div><h1 className="text-[36px] font-black">{unconfirmed ? "We've got your payment!" : waitlisted ? "You're on the waitlist!" : "Your session is booked!"}</h1><p className="mt-2 text-lg font-semibold">{unconfirmed ? "We're just finishing confirming your place with the organiser. There's nothing you need to do — we'll email you as soon as it's confirmed, and your ticket will appear under Bookings. If we can't confirm your place, we'll let you know and refund you." : waitlisted ? "This session is full — we'll email you the moment a spot opens up so you can book it. Joining the waitlist is free." : "We can't wait to see your little one there."}</p>{!waitlisted && wlLeft > 0 && <p className="mt-2 font-semibold text-palette-orangeStrong">{wlLeft === 1 ? "One place didn't fit and is on the waitlist" : `${wlLeft} places didn't fit and are on the waitlist`} — we'll email you if a spot opens so you can book {wlLeft === 1 ? "it" : "them"}. You haven't been charged for {wlLeft === 1 ? "it" : "them"}.</p>}</div>
           {/* The full stacked logo (mascot + wordmark), not the confetti mascot
               crop lifted from the mockup — same call as the Book page header,
               which already dropped the confetti. */}
