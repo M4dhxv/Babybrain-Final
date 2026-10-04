@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cacheGet, cacheSet } from "./queryCache";
-import { withRetry } from "./retry";
+import { withRetry, withCooldown } from "./retry";
 import { catalogRpc, reportCatalogFailure } from "./catalog";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
@@ -338,7 +338,7 @@ export function useActivities(params: ActivityQuery = {}) {
     setFailedKey(null);
 
     const run = async () => {
-      const { data, error: rpcError } = await withRetry(
+      const { data, error: rpcError } = await withCooldown(
         (signal) =>
           catalogRpc("search_activities", { ...args, p_limit: params.limit ?? DEFAULT_PAGE_SIZE, p_offset: 0 }, signal),
         { signal: ctl.signal },
@@ -420,7 +420,7 @@ export function useActivities(params: ActivityQuery = {}) {
  * `search_activities` also wraps), so it shares the exact filter semantics
  * without a second copy of them.
  */
-export function useActivityPins(params: ActivityQuery = {}) {
+export function useActivityPins(params: ActivityQuery = {}, enabled = true) {
   // Filters only: sort and page size don't change which pins exist, so they
   // stay out of the key (changing the sort used to refetch every pin).
   const args = filterArgs(params);
@@ -436,12 +436,14 @@ export function useActivityPins(params: ActivityQuery = {}) {
   const error = failedKey === key;
 
   useEffect(() => {
+    // The caller already holds every match (see ExplorePage): nothing to fetch.
+    if (!enabled) return;
     const ctl = new AbortController();
     const cached = cacheGet<LiveActivity[]>(key);
     if (cached && cached.age < FRESH_MS && attempt === 0) return;
     setFailedKey(null);
     const run = async () => {
-      const { data, error: rpcError } = await withRetry(
+      const { data, error: rpcError } = await withCooldown(
         (signal) => catalogRpc("matching_activities", args, signal),
         { signal: ctl.signal },
       );
@@ -461,8 +463,9 @@ export function useActivityPins(params: ActivityQuery = {}) {
       ctl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, attempt]);
+  }, [key, attempt, enabled]);
 
+  if (!enabled) return { activities: [] as LiveActivity[], loading: false, error: false, reload };
   return { activities: rows ?? [], loading: !rows && !error, error, reload };
 }
 

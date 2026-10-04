@@ -76,6 +76,48 @@ function validate(fn: string, raw: unknown): Record<string, unknown> | null {
   return out;
 }
 
+type Upstream = { ok: true; text: string } | { ok: false; detail: string };
+
+/** Identical queries already running on this instance. */
+const inflight = new Map<string, Promise<Upstream>>();
+
+/** The last good answer per query on this instance, for when the database
+ *  fails. Bounded so a stream of unusual searches can't grow it forever. */
+const lastGood = new Map<string, { text: string; at: number }>();
+const MAX_REMEMBERED = 300;
+const STALE_ON_ERROR_MS = 30 * 60_000;
+
+function rememberGood(key: string, text: string) {
+  lastGood.delete(key);
+  lastGood.set(key, { text, at: Date.now() });
+  if (lastGood.size > MAX_REMEMBERED) lastGood.delete(lastGood.keys().next().value as string);
+}
+
+async function fetchUpstream(base: string, key: string, fn: string, args: Record<string, unknown>): Promise<Upstream> {
+  try {
+    const res = await fetch(`${base}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(8000),
+      cache: 'no-store',
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      // PostgREST's own error code (e.g. 57014 = statement timeout) is safe to
+      // pass on and is what tells us overload from a bad request.
+      let code = '';
+      try { code = (JSON.parse(text) as { code?: string }).code ?? ''; } catch { /* not JSON */ }
+      return { ok: false, detail: `database ${res.status}${code ? ` ${code}` : ''}` };
+    }
+    // A well-formed answer is always an array; anything else is not cached.
+    if (!Array.isArray(JSON.parse(text))) return { ok: false, detail: 'unexpected answer' };
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error && e.name === 'TimeoutError' ? 'database did not answer in 8s' : 'could not reach database' };
+  }
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ fn: string }> }) {
   const { fn } = await params;
   if (!FNS.has(fn)) return NextResponse.json({ error: 'Unknown query' }, { status: 404 });
@@ -93,24 +135,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ fn: 
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!base || !key) return NextResponse.json({ error: 'Not configured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
 
-  let text: string;
-  try {
-    const res = await fetch(`${base}/rest/v1/rpc/${fn}`, {
-      method: 'POST',
-      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args),
-      signal: AbortSignal.timeout(8000),
-      cache: 'no-store',
-    });
-    text = await res.text();
-    if (!res.ok) throw new Error(`upstream ${res.status}`);
-    // A well-formed answer is always an array; anything else is not cached.
-    if (!Array.isArray(JSON.parse(text))) throw new Error('unexpected shape');
-  } catch {
+  const cacheKey = `${fn}:${JSON.stringify(args, Object.keys(args).sort())}`;
+
+  // One database call per distinct query per instance at a time: a burst of
+  // identical requests (many parents opening the same filter, or one parent's
+  // retries) waits on the call already in flight instead of adding to it.
+  let call = inflight.get(cacheKey);
+  if (!call) {
+    call = fetchUpstream(base, key, fn, args).finally(() => inflight.delete(cacheKey));
+    inflight.set(cacheKey, call);
+  }
+  const result = await call;
+
+  if (result.ok) {
+    rememberGood(cacheKey, result.text);
+  } else {
+    // The database failed. If this instance has served this exact query
+    // before, hand that back rather than an error wall: a slightly old list is
+    // far better for a parent than "couldn't load". Marked stale and cached
+    // only briefly so the real answer replaces it as soon as the database is
+    // back. Nothing else (errors included) is ever cached.
+    const old = lastGood.get(cacheKey);
+    if (old && Date.now() - old.at < STALE_ON_ERROR_MS) {
+      return new Response(old.text, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, s-maxage=5', 'X-Catalogue-Stale': '1' },
+      });
+    }
     // `upstream: true` tells the SPA the database itself failed, so it must
     // not retry the same query directly and pile onto a struggling database.
-    return NextResponse.json({ error: 'Catalogue unavailable', upstream: true }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      { error: 'Catalogue unavailable', upstream: true, detail: result.detail },
+      { status: 502, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
+  const text = result.text;
 
   // Fresh for 45s, then served stale for up to 2 more minutes while one
   // request refreshes it. A listing edit can therefore take a minute or two

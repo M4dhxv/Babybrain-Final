@@ -43,7 +43,57 @@ export function describeError(e: unknown): string {
  *  can read it out and we can tell a blocked request from a slow database. */
 export let lastCatalogFailure: string | null = null;
 
+/** At most this many catalogue requests in flight from one browser. The
+ *  database is small and falls over at about ten at once, so a parent's burst
+ *  of taps (three queries each) queues here instead of arriving together. */
+const MAX_IN_FLIGHT = 2;
+let active = 0;
+const waiters: Array<() => void> = [];
+
+function acquire(signal: AbortSignal): Promise<boolean> {
+  if (active < MAX_IN_FLIGHT) {
+    active++;
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const turn = () => {
+      active++;
+      resolve(true);
+    };
+    waiters.push(turn);
+    signal.addEventListener(
+      "abort",
+      () => {
+        const i = waiters.indexOf(turn);
+        if (i >= 0) {
+          waiters.splice(i, 1);
+          resolve(false); // gave up waiting: the query was superseded
+        }
+      },
+      { once: true },
+    );
+  });
+}
+
+function release() {
+  active--;
+  waiters.shift()?.();
+}
+
 export async function catalogRpc(
+  fn: CatalogFn,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<{ data: unknown[] | null; error: unknown }> {
+  if (!(await acquire(signal))) return { data: null, error: new DOMException("Aborted", "AbortError") };
+  try {
+    return await catalogRpcNow(fn, args, signal);
+  } finally {
+    release();
+  }
+}
+
+async function catalogRpcNow(
   fn: CatalogFn,
   args: Record<string, unknown>,
   signal: AbortSignal,
@@ -59,7 +109,7 @@ export async function catalogRpc(
     } else if (res.status === 502) {
       const body = await res.json().catch(() => null);
       if (body?.upstream) {
-        lastCatalogFailure = `${fn}: api 502 (database unavailable)`;
+        lastCatalogFailure = `${fn}: api 502 (${body.detail ?? "database unavailable"})`;
         return { data: null, error: new Error("Catalogue unavailable") };
       }
       apiNote = "api 502";

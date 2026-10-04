@@ -48,3 +48,25 @@ export async function withRetry<T extends { error: unknown }>(
   }
   return last;
 }
+
+export const isTimeout = (e: unknown) => (e as { name?: string } | null)?.name === "TimeoutError";
+
+/** `withRetry`, plus one more try after a short cool-down when the failure was
+ *  fast (a 502, a dropped connection) rather than a timeout. An overloaded
+ *  database often recovers within seconds; retrying instantly just joins the
+ *  queue, retrying after a pause usually lands. A timeout is not retried again:
+ *  waiting longer on a database that already said nothing helps nobody. */
+export async function withCooldown<T extends { error: unknown }>(
+  run: (signal: AbortSignal) => PromiseLike<T>,
+  opts: RetryOptions & { cooldownMs?: number } = {},
+): Promise<T> {
+  const first = await withRetry(run, opts);
+  const { signal, cooldownMs = 3000 } = opts;
+  if (!first.error || signal?.aborted || isTimeout(first.error)) return first;
+  await new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, cooldownMs);
+    signal?.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+  if (signal?.aborted) return first;
+  return withRetry(run, opts);
+}

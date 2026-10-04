@@ -562,7 +562,19 @@ export default function ExplorePage() {
   };
   const { activities, total, loading, loadingMore, hasMore, loadMore, error: loadError, reload } = useActivities(filterParams);
   // The map needs every matching pin, not just the loaded cards.
-  const { activities: pinActivities, loading: pinsLoading, error: pinsError, reload: reloadPins } = useActivityPins(filterParams);
+  // When the list already holds every match (the usual case: one page is 50),
+  // those same rows are the map pins, so the separate pins query, the heaviest
+  // of the three, never runs. It starts only once the list has answered and
+  // only if there are more matches than the list holds.
+  const listHasEverything = !loading && !loadError && activities.length >= total;
+  const pinsNeeded = !loading && !loadError && activities.length < total;
+  const pinsQuery = useActivityPins(filterParams, pinsNeeded);
+  const pinActivities = listHasEverything ? activities : pinsQuery.activities;
+  const pinsLoading = loading || (pinsNeeded && pinsQuery.loading);
+  // If the list itself failed there is nothing to pin; its own banner (and
+  // Try again) already says so, and retrying it retries the map too.
+  const pinsError = loadError || (pinsNeeded && pinsQuery.error);
+  const reloadPins = loadError ? reload : pinsQuery.reload;
   const facetCounts = useFacetCounts(filterParams, !!mobileSheet);
   // "Load more" reveals REVEAL_STEP more of the already-fetched rows per
   // click first, with no network call — only once the whole loaded PAGE is
