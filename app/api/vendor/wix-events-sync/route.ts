@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { getProviderWixCredentials } from '@/lib/wix/client';
-import { refreshWixEventHealth } from '@/lib/wix/events-reconcile';
+import { reconcileProviderNow, refreshWixEventHealth } from '@/lib/wix/events-reconcile';
 import { syncProviderWixEvents } from '@/lib/wix/events-sync';
 
 /**
@@ -12,7 +12,11 @@ import { syncProviderWixEvents } from '@/lib/wix/events-sync';
  * "Import specific events" picker (GET /api/vendor/wix-events) to choose.
  * A vendor connected for Bookings only gets `eventsAppNotInstalled: true`
  * back rather than an error (see syncProviderWixEvents) since that app is a
- * separate, optional install. Body: { provider_id }
+ * separate, optional install. Body: { provider_id, full? }
+ *
+ * `full: true` is the Schedule page's "Sync with Wix": it also runs the whole per-vendor reconcile (series
+ * and dates, orders read back from Wix, retries of stuck paid orders) so the vendor sees what changed on
+ * Wix, and what a parent just booked, now instead of at the next 10-minute tick.
  */
 // Wix syncs make many sequential Wix API + DB round-trips; the default
 // ~10s function budget is not enough on a first import and the client just
@@ -20,7 +24,7 @@ import { syncProviderWixEvents } from '@/lib/wix/events-sync';
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const { provider_id: providerId } = (await request.json().catch(() => ({}))) as { provider_id?: string };
+  const { provider_id: providerId, full } = (await request.json().catch(() => ({}))) as { provider_id?: string; full?: boolean };
   if (!providerId) return NextResponse.json({ error: 'provider_id required' }, { status: 400 });
 
   const auth = await requireProviderRole(request, providerId, 'manager');
@@ -34,6 +38,10 @@ export async function POST(request: Request) {
     const sync = await syncProviderWixEvents(admin, providerId, creds);
     // Work out which events can actually take a booking (and what the vendor must fix
     // in Wix first) now, not on the next background tick. Best effort.
+    if (full) {
+      const reconcile = await reconcileProviderNow(admin, providerId, creds);
+      return NextResponse.json({ ok: true, sync, reconcile });
+    }
     await refreshWixEventHealth(admin, providerId, creds).catch((e) => console.error('refreshWixEventHealth failed', e));
     return NextResponse.json({ ok: true, sync });
   } catch (e) {

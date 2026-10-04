@@ -10,7 +10,7 @@
  */
 import { FakeDb } from './lib/fake-supabase.mts';
 import { fulfilPaidWixEventOrder } from '../lib/wix/finalize-event-checkout';
-import { emptySummary, reconcileOrders, reconcileRsvps, refreshProviderEvents } from '../lib/wix/events-reconcile';
+import { emptySummary, reconcileOrders, reconcileProviderNow, reconcileRsvps, refreshProviderEvents } from '../lib/wix/events-reconcile';
 import { createWixRsvp } from '../lib/wix/client';
 import { unlinkWixSeries } from '../lib/wix/events-series';
 
@@ -303,6 +303,15 @@ try {
     const second = emptySummary();
     await refreshProviderEvents(db as never, P, { accessToken: 'k', siteId: 's' }, second);
     check(second.seriesConverted === 0 && second.seriesMerged === 0 && second.datesAdded === 0 && db.all('activity_sessions').length === 4, 'a second run changes nothing (idempotent)');
+
+    // The vendor's "Sync with Wix" runs the whole per-provider reconcile on demand
+    const manual = await reconcileProviderNow(db as never, P, { accessToken: 'k', siteId: 's' });
+    check(manual.providers === 1 && manual.errors.length === 0 && manual.datesAdded === 0 && db.all('activity_sessions').length === 4, "a vendor's Sync with Wix reconciles just them, and changes nothing when nothing changed");
+    wix.events.set('WEV5', { title: 'The Crest', start: '2099-11-03T08:30:00Z', seriesId: 'SERIES-1', regStatus: 'OPEN_TICKETS', controls: FakeWix.controls([]) });
+    db.seed('wix_events', [{ id: 'LE5', provider_id: P, wix_event_id: 'WEV5', title: 'The Crest', start_date: '2099-11-03T08:30:00Z', end_date: '2099-11-03T09:30:00Z' }]);
+    db.seed('event_ticket_types', [{ id: 'TT5', event_id: 'LE5', wix_ticket_definition_id: 'DEF5', price_cents: 4500, hidden: false, sale_status: 'SALE_STARTED', is_free: false, capacity_total: 15, fee_type: 'FEE_ADDED_AT_CHECKOUT', fee_rate_percent: 2.5 }]);
+    const afterNew = await reconcileProviderNow(db as never, P, { accessToken: 'k', siteId: 's' });
+    check(afterNew.datesAdded === 1 && db.all('activity_sessions').length === 5, 'a date added on Wix shows up straight away after Sync with Wix');
 
     // Wix closes registration for one date -> blocked on that date only; the series stays bookable
     wix.events.get('WEV1')!.regStatus = 'CLOSED_MANUALLY';

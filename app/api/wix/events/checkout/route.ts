@@ -15,6 +15,7 @@ import {
 } from '@/lib/wix/client';
 import { resolveWixContact } from '@/lib/wix/sync';
 import { describeDays, resolveDaySelection } from '@/lib/wix/event-day-booking';
+import { findEventActivitySlug } from '@/lib/wix/finalize-event-checkout';
 import {
   describeWixAnswerProblems,
   resolveWixEventGuestForm,
@@ -244,6 +245,18 @@ export async function POST(request: Request) {
   const origin = appOrigin(request);
   const title = event.title ?? 'Event ticket';
 
+  // The confirmation page links back to the activity and offers "Message the provider". `event.slug` is
+  // Wix's own event slug and matches no activity, so use the activity's, and pass the provider along so
+  // the chat opens even when the activity page itself can't be shown (unpublished, retired).
+  const [activitySlug, { data: provider }] = await Promise.all([
+    findEventActivitySlug(admin, event.provider_id, event.id),
+    admin
+      .from('providers')
+      .select('business_name, stripe_account_id, payouts_enabled')
+      .eq('id', event.provider_id)
+      .maybeSingle(),
+  ]);
+
   const params = {
     mode: 'payment' as const,
     payment_method_types: ['paynow', 'card', 'grabpay'] as import('stripe').default.Checkout.SessionCreateParams.PaymentMethodType[],
@@ -281,7 +294,9 @@ export async function POST(request: Request) {
       `${origin}/booked?` +
       new URLSearchParams({
         title,
-        slug: event.slug ?? '',
+        slug: activitySlug ?? '',
+        provider: event.provider_id,
+        pname: provider?.business_name ?? '',
         status: 'confirmed',
         paid: '1',
         when: event.start_date ? sgDateTime(event.start_date) : '',
@@ -299,11 +314,6 @@ export async function POST(request: Request) {
   };
 
   let connect = {};
-  const { data: provider } = await admin
-    .from('providers')
-    .select('stripe_account_id, payouts_enabled')
-    .eq('id', event.provider_id)
-    .maybeSingle();
   if (provider?.stripe_account_id && provider.payouts_enabled) {
     // The vendor's full negotiated terms, same as every other paid path —
     // commission_rate alone silently dropped any flat per-sale fee and the

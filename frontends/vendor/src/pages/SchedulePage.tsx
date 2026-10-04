@@ -7,7 +7,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronDown, MapPin, CalendarRange, RefreshCw, Users, User as UserIcon, CalendarX2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
@@ -15,7 +15,12 @@ import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import DayDetailDialog, { type OriginRect } from '@/components/DayDetailDialog';
 
-type ScheduleActivity = { id: string; title: string; location_id: string | null; wix_service_id: string | null; wix_service_type: string | null };
+type ScheduleActivity = {
+  id: string; title: string; location_id: string | null;
+  wix_service_id: string | null; wix_service_type: string | null;
+  /** Wix Events: one event, or a recurring series folded into one activity. */
+  wix_event_id: string | null; wix_series_id: string | null;
+};
 type ScheduleLocation = { id: string; name: string };
 const NO_ACTIVITIES: ScheduleActivity[] = [];
 const NO_LOCATIONS: ScheduleLocation[] = [];
@@ -86,6 +91,8 @@ export default function SchedulePage() {
 
   const [wixError, setWixError] = useState<string | null>(null);
   const [wixSyncedAt, setWixSyncedAt] = useState<Date | null>(null);
+  const [syncingEvents, setSyncingEvents] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // This provider's activities + locations — near-static for a session, so
   // stale-while-revalidate cached: revisiting Schedule paints the filters
@@ -97,7 +104,7 @@ export default function SchedulePage() {
     provider ? `schedule-refs:${provider.id}` : null,
     async () => {
       const [{ data: acts }, { data: locs }] = await Promise.all([
-        supabase.from('activities').select('id, title, location_id, wix_service_id, wix_service_type').eq('provider_id', provider!.id),
+        supabase.from('activities').select('id, title, location_id, wix_service_id, wix_service_type, wix_event_id, wix_series_id').eq('provider_id', provider!.id),
         supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
       ]);
       return { activities: (acts ?? []) as ScheduleActivity[], locations: (locs ?? []) as ScheduleLocation[] };
@@ -107,6 +114,10 @@ export default function SchedulePage() {
   const locations = refData?.locations ?? NO_LOCATIONS;
 
   const wixLinkedIds = useMemo(() => activities.filter((a) => a.wix_service_id).map((a) => a.id), [activities]);
+  // A vendor on Wix Events only (no Wix Bookings services) has nothing in `wixLinkedIds`, but still needs a way
+  // to pull what changed on Wix - and what a parent just booked - without waiting for the background job.
+  const hasWixEvents = useMemo(() => activities.some((a) => a.wix_event_id || a.wix_series_id), [activities]);
+  const canSyncWix = wixLinkedIds.length > 0 || hasWixEvents;
 
   // "week" is a rolling 7-day window from cursor, not the Mon-Sun calendar
   // week containing it — on a Friday/Saturday/Sunday, the calendar-week
@@ -293,6 +304,26 @@ export default function SchedulePage() {
   // and there's nothing to show yet. A background revalidate never sets this.
   const busy = refLoading || loading;
 
+  /** "Sync with Wix": for Wix Events, run the full per-vendor sync first (dates, series, orders read back from
+   *  Wix); then reload the sessions, which also re-reads live Wix Bookings availability and the booked counts. */
+  async function syncWix() {
+    if (!provider) return;
+    setSyncError(null);
+    if (hasWixEvents) {
+      setSyncingEvents(true);
+      try {
+        await apiPost('/api/vendor/wix-events-sync', { provider_id: provider.id, full: true });
+        setWixSyncedAt(new Date());
+      } catch (e) {
+        setSyncError(e instanceof Error && e.message ? `Could not sync Wix events: ${e.message}` : 'Could not sync Wix events. Please try again.');
+      }
+      setSyncingEvents(false);
+    }
+    refetchSessions();
+  }
+  const syncDisabled = loading || sessionsRefreshing || syncingEvents;
+  const syncSpinning = loading || sessionsRefreshing || syncingEvents;
+
   return (
     <div className="relative">
       {(refsRefreshing || sessionsRefreshing) && <RefreshBar />}
@@ -301,42 +332,42 @@ export default function SchedulePage() {
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
           <p className="text-sm text-gray-500 mt-1">
             Every upcoming session{provider?.wix_site_id ? ' — site bookings and live Wix availability, together' : ', all in one place'}.
-            {wixLinkedIds.length > 0 && wixSyncedAt && (
+            {canSyncWix && wixSyncedAt && (
               <> Wix last synced {wixSyncedAt.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' })}.</>
             )}
           </p>
         </div>
-        {wixLinkedIds.length > 0 && (
+        {canSyncWix && (
           <button
-            onClick={() => refetchSessions()}
-            disabled={loading || sessionsRefreshing}
+            onClick={() => void syncWix()}
+            disabled={syncDisabled}
             className="hidden items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:inline-flex"
           >
-            <RefreshCw className={cn('h-4 w-4', (loading || sessionsRefreshing) && 'animate-spin')} />
-            Refresh Wix
+            <RefreshCw className={cn('h-4 w-4', syncSpinning && 'animate-spin')} />
+            {syncingEvents ? 'Syncing…' : 'Sync with Wix'}
           </button>
         )}
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {wixError && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{wixError}</div>
+        {(wixError || syncError) && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{syncError ?? wixError}</div>
         )}
 
         {/* Controls. Mobile stacks them one per row, centred, in the order
-            Refresh Wix → activities → locations → week/month → date nav →
+            Sync with Wix → activities → locations → week/month → date nav →
             date range. Desktop keeps the original single-row layout via
             sm:order overrides. */}
         <div className="mb-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          {/* Refresh Wix — mobile only; desktop keeps it in the page header */}
-          {wixLinkedIds.length > 0 && (
+          {/* Sync with Wix — mobile only; desktop keeps it in the page header */}
+          {canSyncWix && (
             <button
-              onClick={() => refetchSessions()}
-              disabled={loading || sessionsRefreshing}
+              onClick={() => void syncWix()}
+              disabled={syncDisabled}
               className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:hidden"
             >
-              <RefreshCw className={cn('h-4 w-4', (loading || sessionsRefreshing) && 'animate-spin')} />
-              Refresh Wix
+              <RefreshCw className={cn('h-4 w-4', syncSpinning && 'animate-spin')} />
+              {syncingEvents ? 'Syncing…' : 'Sync with Wix'}
             </button>
           )}
 

@@ -469,6 +469,36 @@ export async function findEventSessionId(
 }
 
 /**
+ * The slug of the BabyBrain activity a Wix event's bookings belong to. NOT `wix_events.slug`: that is the
+ * event's own Wix slug ("the-crest-2026-10-20-16-30") and matches no activity, so a confirmation link built
+ * from it lands on "Activity not found". Looks through the stamped session first (a recurring or multi-day
+ * event lives on a series activity), then the one-activity-per-event link. Null when neither exists.
+ */
+export async function findEventActivitySlug(
+  admin: SupabaseClient<Database>,
+  providerId: string,
+  localEventId: string
+): Promise<string | null> {
+  const { data: stamped } = await admin
+    .from('activity_sessions')
+    .select('activities(slug)')
+    .eq('wix_event_id', localEventId)
+    .neq('status', 'cancelled')
+    .order('starts_at', { ascending: true })
+    .limit(1);
+  const viaSession = (stamped?.[0] as { activities?: { slug?: string | null } | null } | undefined)?.activities?.slug;
+  if (viaSession) return viaSession;
+
+  const { data: activity } = await admin
+    .from('activities')
+    .select('slug')
+    .eq('provider_id', providerId)
+    .eq('wix_event_id', localEventId)
+    .limit(1);
+  return activity?.[0]?.slug ?? null;
+}
+
+/**
  * Writes one `bookings` row per ticket purchased — display-only, the
  * authoritative record stays `event_ticket_orders` above. Exists purely so
  * "My Bookings" and the vendor roster, which both read `bookings`, show a

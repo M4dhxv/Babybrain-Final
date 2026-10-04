@@ -997,6 +997,9 @@ export default function BookingPage() {
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
+      // So the confirmation page can open the provider chat without the activity page.
+      provider: activity?.provider_id ?? "",
+      pname: activity?.provider_name ?? "",
       when: isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "",
       status: status ?? "pending",
       start: (isCourse ? courseStart : selected?.starts_at) ?? "",
@@ -1082,6 +1085,9 @@ export default function BookingPage() {
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
+      // So the confirmation page can open the provider chat without the activity page.
+      provider: activity?.provider_id ?? "",
+      pname: activity?.provider_name ?? "",
       when: isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "",
       status,
       start: (isCourse ? courseStart : selected?.starts_at) ?? "",

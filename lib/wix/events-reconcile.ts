@@ -157,6 +157,18 @@ export async function runWixEventsReconcile(): Promise<WixEventsReconcileSummary
   return summary;
 }
 
+/**
+ * One vendor's full reconcile, on demand — the same work as the 10-minute job (events, recurring series,
+ * per-date health, orders read back from Wix, RSVPs, stuck-order retries) for just them. Behind the
+ * vendor's "Sync with Wix" on the Schedule page, so they never have to wait for the next tick to see
+ * what changed on Wix (or what a parent just booked).
+ */
+export async function reconcileProviderNow(admin: Admin, providerId: string, creds: WixCredentials): Promise<WixEventsReconcileSummary> {
+  const summary = emptySummary();
+  if (await reconcileProvider(admin, providerId, creds, summary, Date.now())) summary.providers = 1;
+  return summary;
+}
+
 async function reconcileProvider(
   admin: Admin,
   providerId: string,

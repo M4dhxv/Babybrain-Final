@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { PageShell, Button, Icon, Footer } from "../components/ui";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
@@ -10,6 +10,9 @@ import { usePlan } from "../lib/data";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { wixThumbUrl } from "../components/ui";
 import { canShare, mapsUrl, share } from "../lib/share";
+
+// The chat pulls in the whole Stream client, so it loads only when the parent taps the button.
+const EnquiryChat = lazy(() => import("../components/EnquiryChat").then((m) => ({ default: m.EnquiryChat })));
 
 export default function BookedPage() {
   const { session } = useAuth();
@@ -23,6 +26,10 @@ export default function BookedPage() {
   // Who's taking it and where in the building (QA 24/08).
   const staff = getParam("staff") || "";
   const slug = getParam("slug") || "";
+  // The provider rides in the link so "Message the provider" never depends on the activity page: an
+  // unpublished or retired activity 404s for a parent, but the chat only needs the provider.
+  const linkProviderId = getParam("provider") || "";
+  const linkProviderName = getParam("pname") || "";
   const waitlisted = status === "waitlisted";
   // A party that straddled the session's capacity (00104): the seats that fit
   // are confirmed/paid, this many are still on the waitlist.
@@ -39,7 +46,8 @@ export default function BookedPage() {
     image_urls: string[] | null;
     image_source: string | null;
     cover_image_url: string | null;
-    providers: { logo_url: string | null; cover_image_url: string | null; gallery_urls: string[] | null } | null;
+    provider_id: string | null;
+    providers: { business_name: string | null; logo_url: string | null; cover_image_url: string | null; gallery_urls: string[] | null } | null;
     what_to_bring: string | null;
     confirmation_message: string | null;
   } | null>(null);
@@ -48,7 +56,7 @@ export default function BookedPage() {
     let cancelled = false;
     supabase
       .from("activities")
-      .select("description, image_urls, image_source, cover_image_url, what_to_bring, confirmation_message, providers(logo_url, cover_image_url, gallery_urls)")
+      .select("description, image_urls, image_source, cover_image_url, what_to_bring, confirmation_message, provider_id, providers(business_name, logo_url, cover_image_url, gallery_urls)")
       .eq("slug", slug)
       .maybeSingle()
       .then(({ data }) => { if (!cancelled) setDetail((data as unknown as typeof detail) ?? null); });
@@ -61,6 +69,12 @@ export default function BookedPage() {
   // yet (their Wix refused it and we are retrying) the parent has paid but holds no ticket, so say so
   // instead of "Your session is booked!". `confirmed` is false only in that case.
   const [unconfirmed, setUnconfirmed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const providerId = linkProviderId || detail?.provider_id || "";
+  const providerName = linkProviderName || detail?.providers?.business_name || "the provider";
+  // Same rule as the activity page: messaging is a Plus feature. While the plan is still loading the
+  // button stays usable rather than flashing a lock.
+  const chatLocked = !!session && planKnown && !isPlus;
   useEffect(() => {
     const checkoutSession = getParam("session_id");
     if (checkoutSession) {
@@ -188,13 +202,31 @@ export default function BookedPage() {
             <article className="rounded-[16px] bg-[#F4F0FA] p-6">
               <h2 className="text-xl font-black text-baby-lilac">Need help?</h2>
               <p className="mt-3 font-semibold">Questions about this session? Message the provider directly.</p>
-              <Button
-                href={slug ? `/activity?slug=${encodeURIComponent(slug)}#enquire` : "/contact"}
-                variant="outline"
-                className="mt-4 w-full"
-              >
-                <Icon name="mail" className="h-4 w-4" /> Message the provider
-              </Button>
+              {providerId && session && !chatLocked ? (
+                <Button variant="outline" type="button" className="mt-4 w-full" onClick={() => setChatOpen(true)}>
+                  <Icon name="mail" className="h-4 w-4" /> Message the provider
+                </Button>
+              ) : providerId && chatLocked ? (
+                <>
+                  <Button href="/pricing" variant="outline" className="mt-4 w-full">
+                    <Icon name="mail" className="h-4 w-4" /> Message the provider <Icon name="lock" className="h-3.5 w-3.5" />
+                  </Button>
+                  <p className="mt-2 text-center text-xs font-semibold text-[#59658d]">Messaging providers is a BabyBrain Plus feature.</p>
+                </>
+              ) : providerId ? (
+                <Button href="/login" variant="outline" className="mt-4 w-full">
+                  <Icon name="mail" className="h-4 w-4" /> Log in to message the provider
+                </Button>
+              ) : (
+                <Button href={slug ? `/activity?slug=${encodeURIComponent(slug)}` : "/contact"} variant="outline" className="mt-4 w-full">
+                  <Icon name="mail" className="h-4 w-4" /> {slug ? "View the activity to message the provider" : "Contact BabyBrain support"}
+                </Button>
+              )}
+              {chatOpen && providerId && (
+                <Suspense fallback={null}>
+                  <EnquiryChat providerId={providerId} providerName={providerName} onClose={() => setChatOpen(false)} />
+                </Suspense>
+              )}
               <a href="/contact" className="mt-3 block text-center text-sm font-black text-baby-lilac hover:underline">
                 Contact BabyBrain support →
               </a>
