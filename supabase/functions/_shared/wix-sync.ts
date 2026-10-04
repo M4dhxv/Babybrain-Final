@@ -656,7 +656,8 @@ export async function syncWixServicesToActivities(
 
   const { data: linkedRows } = await admin
     .from('activities')
-    .select('id, wix_service_id, wix_missing_since, wix_locked_fields')
+    // The patch columns ride along so an unchanged listing can skip its UPDATE.
+    .select('id, wix_service_id, wix_missing_since, wix_locked_fields, title, wix_service_type, wix_resource_id, location_id, address, postal_code, price, default_capacity, image_urls, description, wix_price')
     .eq('provider_id', providerId)
     .not('wix_service_id', 'is', null);
   const linkedByServiceId = new Map(
@@ -716,10 +717,21 @@ export async function syncWixServicesToActivities(
         }
       }
       patch.wix_price = price;
-      await admin
-        .from('activities')
-        .update(patch)
-        .eq('id', existing.id);
+      // Every 15-minute run used to rewrite every linked listing, changed or
+      // not: each no-op UPDATE still fires six triggers and bumps updated_at,
+      // and across a catalogue that is tens of thousands of writes a day that
+      // parents' searches share a database with. Only write what differs; any
+      // doubt (a type mismatch, a column we didn't read) compares unequal and
+      // so still writes.
+      const unchanged = Object.entries(patch).every(
+        ([k, v]) => JSON.stringify((existing as Record<string, unknown>)[k] ?? null) === JSON.stringify(v ?? null)
+      );
+      if (!unchanged) {
+        await admin
+          .from('activities')
+          .update(patch)
+          .eq('id', existing.id);
+      }
       if (existing.wix_missing_since) result.revived++;
       result.updated++;
       activitiesForAvailabilitySync.push({

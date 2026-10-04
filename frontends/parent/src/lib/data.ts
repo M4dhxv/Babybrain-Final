@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { apiGet, apiGetPublic } from "./api";
 import { getPlanCache, setPlanCache, clearPlanCache, type Plan } from "./planCache";
 import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
 import { cacheGet, cacheSet, cacheInvalidate, cacheFetch } from "./queryCache";
+import { withRetry } from "./retry";
 import { goTo } from "./nav";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
 import { isMultiDay, sgShortRange, sgDay } from "./schedule";
@@ -252,18 +253,24 @@ const CORE_FRESH_MS = 30_000;
 
 /** The activity row + provider, shared by the page and by link-intent prefetch. */
 function fetchActivityCore(slug: string) {
-  return cacheFetch(`act-core:${slug}`, CORE_FRESH_MS, () =>
+  return cacheFetch(`act-core:${slug}`, CORE_FRESH_MS, async () => {
     // Only published listings. QA reached "Storytime Stretch: Kids Yoga" — an
     // unpublished mock row with no linked provider — by direct link, and it
     // rendered a listing page with none of the contact buttons.
-    supabase
-      .from("activities")
-      .select("*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
-      .eq("slug", slug)
-      .eq("is_published", true)
-      .maybeSingle()
-      .then(({ data }) => data)
-  );
+    const { data, error } = await withRetry((signal) =>
+      supabase
+        .from("activities")
+        .select("*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(whatsapp, contact_phone, contact_email, business_name, website, address, description, logo_url, cover_image_url, gallery_urls)")
+        .eq("slug", slug)
+        .eq("is_published", true)
+        .abortSignal(signal)
+        .maybeSingle()
+    );
+    // A failed request must reject (so cacheFetch does not store it as "not
+    // found"); only a clean empty answer means the listing doesn't exist.
+    if (error) throw error;
+    return data;
+  });
 }
 
 type WixSlotsResponse = { slots: { id: string; starts_at: string; ends_at: string; capacity: number }[]; course?: { start: string; end: string } | null };
@@ -291,14 +298,18 @@ export function prefetchActivity(slug: string): void {
     .catch(() => {});
 }
 
-export function useActivityDetail(slug: string | null): ActivityDetail {
+export function useActivityDetail(slug: string | null): ActivityDetail & { error: boolean; reload: () => void } {
   const detailKey = slug ? "detail:" + slug : null;
   const seed = detailKey ? cacheGet<ActivityDetail>(detailKey) : undefined;
   const [state, setState] = useState<ActivityDetail>(
     seed ? fromCache(seed) : EMPTY_DETAIL
   );
+  // The request itself failed (as opposed to the listing not existing).
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setError(false);
     if (!slug || !detailKey) {
       setState((s) => ({ ...s, loading: false }));
       return;
@@ -310,13 +321,22 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     const cached = cacheGet<ActivityDetail>(detailKey);
     if (cached) {
       setState(fromCache(cached));
-      if (cached.age < DETAIL_FRESH_MS) return; // fresh enough — no network at all
+      if (cached.age < DETAIL_FRESH_MS && attempt === 0) return; // fresh enough — no network at all
     } else {
       setState((s) => ({ ...s, loading: true }));
     }
     let cancelled = false;
     (async () => {
-      const act = await fetchActivityCore(slug).catch(() => null);
+      let failed = false;
+      const act = await fetchActivityCore(slug).catch(() => { failed = true; return null; });
+      if (failed) {
+        // Keep any cached listing on screen; otherwise show the retry state.
+        if (!cancelled) {
+          setError(!cached);
+          setState((s) => ({ ...s, loading: false }));
+        }
+        return;
+      }
       if (!act) {
         if (!cancelled) setState({ activity: null, sessions: [], reviews: [], courseSpan: null, eventSoldOut: false, loading: false, sessionsLoading: false, reviewsLoading: false });
         return;
@@ -511,9 +531,13 @@ export function useActivityDetail(slug: string | null): ActivityDetail {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
-  return state;
+  const reload = useCallback(() => {
+    setState((s) => ({ ...s, loading: true }));
+    setAttempt((n) => n + 1);
+  }, []);
+  return { ...state, error, reload };
 }
 
 /** Favourite-provider toggle for the signed-in parent. */

@@ -545,16 +545,23 @@ export default function ExplorePage() {
     dateTo: dateTo || null,
     timeMin: debouncedTimeActive ? debouncedMinH : null,
     timeMax: debouncedTimeActive ? debouncedMaxH : null,
+    // Ordering happens in Postgres across the whole result set; ordering only
+    // the rows loaded so far gave the wrong "top" once there are more
+    // activities than one page.
     sort:
       sort === "distance" ? "distance" as const
+      : sort === "soonest" ? "soonest" as const
       : sort === "price_asc" ? "price_asc" as const
       : sort === "price_desc" ? "price_desc" as const
       : "popular" as const,
+    lat: sort === "distance" ? here?.lat ?? null : null,
+    lng: sort === "distance" ? here?.lng ?? null : null,
+    regionOrder: sort === "distance" && here && herePickedArea ? regionsByProximity(herePickedArea) : null,
     limit: PAGE,
   };
-  const { activities, total, loading, loadingMore, hasMore, loadMore } = useActivities(filterParams);
+  const { activities, total, loading, loadingMore, hasMore, loadMore, error: loadError, reload } = useActivities(filterParams);
   // The map needs every matching pin, not just the loaded cards.
-  const { activities: pinActivities, loading: pinsLoading } = useActivityPins(filterParams);
+  const { activities: pinActivities, loading: pinsLoading, error: pinsError, reload: reloadPins } = useActivityPins(filterParams);
   const facetCounts = useFacetCounts(filterParams, !!mobileSheet);
   // "Load more" reveals REVEAL_STEP more of the already-fetched rows per
   // click first, with no network call — only once the whole loaded PAGE is
@@ -1071,7 +1078,9 @@ export default function ExplorePage() {
           <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-3 shadow-card">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-black text-baby-green">Explore on map</h2>
-              {pinsLoading ? (
+              {pinsError ? (
+                <button type="button" onClick={reloadPins} className="text-xs font-black text-baby-cta">Map didn't load · Try again</button>
+              ) : pinsLoading ? (
                 <span className="flex items-center gap-1.5 text-xs font-bold text-[#68718f]">
                   <Spinner className="h-3.5 w-3.5" /> Updating…
                 </span>
@@ -1080,7 +1089,9 @@ export default function ExplorePage() {
               )}
             </div>
             <div className="relative overflow-hidden rounded-[12px]">
-              {pinsLoading ? (
+              {pinsError ? (
+                <div className="flex h-[395px] w-full items-center justify-center bg-[#F3EDF0] text-sm font-bold text-[#68718f]">Couldn't load the map pins.</div>
+              ) : pinsLoading ? (
                 <div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />
               ) : (
                 <Suspense
@@ -1094,7 +1105,13 @@ export default function ExplorePage() {
             </div>
           </section>
           <section>
-            {!loading && total === 0 ? (
+            {loadError && !loading && (
+              <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-bold text-black">
+                <span>Couldn't load activities. Please check your connection.</span>
+                <button type="button" onClick={reload} className="shrink-0 rounded-[10px] bg-[#FA4D8D] px-4 py-2 text-sm font-black text-white">Try again</button>
+              </div>
+            )}
+            {loadError && !loading && total === 0 ? null : !loading && total === 0 ? (
               <div className="rounded-[12px] bg-[#FFF5F8] p-5 text-center font-bold text-black">
                 <p>No activities match these filters — try widening your search.</p>
                 <p className="mt-3">

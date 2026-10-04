@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { cacheGet, cacheSet } from "./queryCache";
+import { withRetry } from "./retry";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
@@ -87,6 +88,13 @@ export interface ActivityQuery {
   timeMin?: number | null;
   timeMax?: number | null;
   sort?: SortOption;
+  /** Where the parent is, for sort "distance" - ranked in Postgres across the
+   *  whole result set, not just the rows loaded so far. */
+  lat?: number | null;
+  lng?: number | null;
+  /** Areas nearest-first, used when `lat`/`lng` is only an area's centre (the
+   *  "pick your area" fallback): the whole nearest area ranks before the next. */
+  regionOrder?: string[] | null;
   limit?: number;
   /** Rows fetched per `loadMore()` call — separate from `limit` (the first
    *  page's size), for a caller that reveals its own rows client-side a few
@@ -248,55 +256,87 @@ const DEFAULT_PAGE_SIZE = 24;
  *  once per batch, not once per click. */
 const LOAD_MORE_PAGE_SIZE = DEFAULT_PAGE_SIZE;
 
+/** Everything that decides which rows come back, in the order they come back. */
+function searchArgs(params: ActivityQuery) {
+  return {
+    ...filterArgs(params),
+    p_sort: params.sort ?? "popular",
+    p_lat: params.lat ?? null,
+    p_lng: params.lng ?? null,
+    // Only sent when set: a database that hasn't had migration 00220 yet
+    // rejects an argument it doesn't know, even a null one.
+    ...(params.regionOrder?.length ? { p_region_order: params.regionOrder } : {}),
+  };
+}
+
+type Page = { rows: LiveActivity[]; total: number };
+
 /**
  * Fetches one page of published activities via the `search_activities` RPC —
- * filtering, sorting and pagination all happen in Postgres now (migration
- * 00166), so this only ever holds what's actually on screen: the loaded
- * pages, not the whole catalog. `total` is the full matching count (for "N
- * activities found" and whether there's more to load); `loadMore` fetches
- * the next page and appends it. Results are cached (see queryCache) so
- * returning to Explore is instant — only the first page is cached, so
- * "Show more" always goes live.
+ * filtering, sorting and pagination all happen in Postgres (migrations 00166,
+ * 00219), so this only ever holds what's actually on screen: the loaded pages,
+ * not the whole catalog. `total` is the full matching count (for "N
+ * activities found" and whether there's more to load); `loadMore` fetches the
+ * next page and appends it. Results are cached (see queryCache) so returning
+ * to Explore is instant — only the first page is cached, so "Show more"
+ * always goes live.
+ *
+ * Correctness rules this hook holds to:
+ *  - The rows and the count always belong to the *current* query. They are
+ *    stored against the query's key and read back only when it matches, so a
+ *    filter change can never show the previous filter's rows or count (the
+ *    old "21 found, nothing listed" / "everything listed, then zero").
+ *  - A failed or timed-out request is an `error`, never "no results", and is
+ *    never cached. Slow requests are cut off and retried, so `loading` always
+ *    ends.
+ *  - A superseded request is aborted, so quick filter changes don't pile up
+ *    work in the database, and a late answer can't overwrite a newer one.
  */
 export function useActivities(params: ActivityQuery = {}) {
-  const key = "activities:" + JSON.stringify(params);
-  const seed = cacheGet<{ rows: LiveActivity[]; total: number }>(key);
-  const [activities, setActivities] = useState<LiveActivity[]>(seed?.data.rows ?? []);
-  const [total, setTotal] = useState(seed?.data.total ?? 0);
-  const [loading, setLoading] = useState(!seed);
+  const args = searchArgs(params);
+  const key = "activities:" + JSON.stringify({ ...args, limit: params.limit ?? DEFAULT_PAGE_SIZE });
+  const cachedNow = cacheGet<Page>(key);
+
+  // `fetched` is only ever trusted when it was fetched for this exact key.
+  const [fetched, setFetched] = useState<{ key: string; page: Page } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const view: Page | null = fetched?.key === key ? fetched.page : cachedNow?.data ?? null;
+  const activities = view?.rows ?? [];
+  const total = view?.total ?? 0;
+  const error = failedKey === key;
+  const loading = !view && !error;
+
+  const latest = useRef({ key, view });
+  latest.current = { key, view };
 
   useEffect(() => {
-    let cancelled = false;
-    const cached = cacheGet<{ rows: LiveActivity[]; total: number }>(key);
-    if (cached) {
-      setActivities(cached.data.rows);
-      setTotal(cached.data.total);
-      setLoading(false);
-      if (cached.age < FRESH_MS) return; // fresh enough — no network at all
-      // else: fall through and revalidate quietly, keeping the cached rows on
-      // screen (no skeleton, no partial-data flash).
-    } else {
-      // No cache for this exact filter combo (a brand new filter, most
-      // often) — used to zero `activities`/`total` here, which flashed
-      // "Show 0 results" for the second or so before the RPC answered.
-      // Leave them as whatever the previous filter left behind; callers key
-      // their loading UI (a spinner) off `loading` instead of inferring it
-      // from a suspiciously-zero count.
-      setLoading(true);
-    }
+    const ctl = new AbortController();
+    const cached = cacheGet<Page>(key);
+    if (cached && cached.age < FRESH_MS && attempt === 0) return; // fresh enough — no network at all
+    // else: revalidate quietly, keeping any cached rows for *this* key on screen.
+    setFailedKey(null);
 
     (async () => {
-      const { data } = await supabase.rpc("search_activities", {
-        ...filterArgs(params),
-        p_sort: params.sort ?? "popular",
-        p_limit: params.limit ?? DEFAULT_PAGE_SIZE,
-        p_offset: 0,
-      });
-      if (cancelled) return;
+      const { data, error: rpcError } = await withRetry(
+        (signal) =>
+          supabase
+            .rpc("search_activities", { ...args, p_limit: params.limit ?? DEFAULT_PAGE_SIZE, p_offset: 0 })
+            .abortSignal(signal),
+        { signal: ctl.signal },
+      );
+      if (ctl.signal.aborted) return;
+      if (rpcError) {
+        setFailedKey(key);
+        return;
+      }
       const rows = (data ?? []) as SearchActivitiesRow[];
       const mapped = rows.map(toLiveActivity);
-      const t = rows[0]?.total_count ?? 0;
+      // total_count rides on every row; it can never be below what we hold.
+      const t = Math.max(Number(rows[0]?.total_count ?? 0), mapped.length);
       // A background refresh only re-reads the first page. If the parent had
       // already loaded more ("Load more"), keep those further rows rather than
       // collapsing the list back to one page on return from an activity.
@@ -305,37 +345,53 @@ export function useActivities(params: ActivityQuery = {}) {
         ? cached.data.rows.slice(mapped.length).filter((r) => !have.has(r.id))
         : [];
       const merged = kept.length ? [...mapped, ...kept] : mapped;
-      cacheSet(key, { rows: merged, total: t });
-      setActivities(merged);
-      setTotal(t);
-      setLoading(false);
+      const page = { rows: merged, total: Math.max(t, merged.length) };
+      cacheSet(key, page);
+      setFetched({ key, page });
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, attempt]);
+
+  const loadingMoreRef = useRef(false);
+  const loadMore = useCallback(async () => {
+    const { key: forKey, view: current } = latest.current;
+    if (loadingMoreRef.current || !current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const { data, error: rpcError } = await withRetry((signal) =>
+      supabase
+        .rpc("search_activities", {
+          ...args,
+          p_limit: params.loadMoreLimit ?? LOAD_MORE_PAGE_SIZE,
+          p_offset: current.rows.length,
+        })
+        .abortSignal(signal)
+    );
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    // The parent changed filters while this was in flight: it belongs to a
+    // query that's no longer on screen.
+    if (latest.current.key !== forKey) return;
+    if (rpcError) {
+      setFailedKey(forKey);
+      return;
+    }
+    setFailedKey(null);
+    const batch = (data ?? []) as SearchActivitiesRow[];
+    const more = batch.map(toLiveActivity);
+    const have = new Set(current.rows.map((r) => r.id));
+    const rows = [...current.rows, ...more.filter((r) => !have.has(r.id))];
+    // An empty batch means the catalogue shrank since the count was taken:
+    // trust what came back so "Load more" can't keep offering nothing.
+    const rawTotal = Number(batch[0]?.total_count ?? current.total);
+    const page = { rows, total: more.length === 0 ? rows.length : Math.max(rawTotal, rows.length) };
+    cacheSet(forKey, page);
+    setFetched({ key: forKey, page });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  const loadMore = useCallback(async () => {
-    setLoadingMore(true);
-    const { data } = await supabase.rpc("search_activities", {
-      ...filterArgs(params),
-      p_sort: params.sort ?? "popular",
-      p_limit: params.loadMoreLimit ?? LOAD_MORE_PAGE_SIZE,
-      p_offset: activities.length,
-    });
-    const rows = (data ?? []) as SearchActivitiesRow[];
-    const more = rows.map(toLiveActivity);
-    setActivities((prev) => {
-      const next = [...prev, ...more];
-      cacheSet(key, { rows: next, total: rows[0]?.total_count ?? total });
-      return next;
-    });
-    setLoadingMore(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, activities.length]);
-
-  return { activities, total, loading, loadingMore, hasMore: activities.length < total, loadMore };
+  return { activities, total, loading, loadingMore, hasMore: activities.length < total, loadMore, error, reload };
 }
 
 /**
@@ -346,37 +402,44 @@ export function useActivities(params: ActivityQuery = {}) {
  * without a second copy of them.
  */
 export function useActivityPins(params: ActivityQuery = {}) {
-  const key = "pins:" + JSON.stringify(params);
-  const seed = cacheGet<LiveActivity[]>(key);
-  const [activities, setActivities] = useState<LiveActivity[]>(seed?.data ?? []);
-  const [loading, setLoading] = useState(!seed);
+  // Filters only: sort and page size don't change which pins exist, so they
+  // stay out of the key (changing the sort used to refetch every pin).
+  const args = filterArgs(params);
+  const key = "pins:" + JSON.stringify(args);
+  const cachedNow = cacheGet<LiveActivity[]>(key);
+  const [fetched, setFetched] = useState<{ key: string; rows: LiveActivity[] } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  // Pins from another filter are never shown for this one.
+  const rows = fetched?.key === key ? fetched.rows : cachedNow?.data ?? null;
+  const error = failedKey === key;
 
   useEffect(() => {
-    let cancelled = false;
+    const ctl = new AbortController();
     const cached = cacheGet<LiveActivity[]>(key);
-    if (cached) {
-      setActivities(cached.data);
-      setLoading(false);
-      if (cached.age < FRESH_MS) return;
-    } else {
-      setLoading(true);
-    }
+    if (cached && cached.age < FRESH_MS && attempt === 0) return;
+    setFailedKey(null);
     (async () => {
-      const { data } = await supabase.rpc("matching_activities", filterArgs(params));
-      if (cancelled) return;
-      const rows = (data ?? []) as SearchRow[];
-      const mapped = rows.map(toLiveActivity);
+      const { data, error: rpcError } = await withRetry(
+        (signal) => supabase.rpc("matching_activities", args).abortSignal(signal),
+        { signal: ctl.signal },
+      );
+      if (ctl.signal.aborted) return;
+      if (rpcError) {
+        setFailedKey(key); // never cached
+        return;
+      }
+      const mapped = ((data ?? []) as SearchRow[]).map(toLiveActivity);
       cacheSet(key, mapped);
-      setActivities(mapped);
-      setLoading(false);
+      setFetched({ key, rows: mapped });
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, attempt]);
 
-  return { activities, loading };
+  return { activities: rows ?? [], loading: !rows && !error, error, reload };
 }
 
 export interface FacetCounts {
@@ -392,31 +455,30 @@ export interface FacetCounts {
  * fetched while `enabled` (a sheet is actually open), same gating as before.
  */
 export function useFacetCounts(params: ActivityQuery, enabled: boolean): FacetCounts | null {
-  const [counts, setCounts] = useState<FacetCounts | null>(null);
-  const key = enabled ? "facets:" + JSON.stringify(params) : null;
+  const [result, setResult] = useState<{ key: string; counts: FacetCounts } | null>(null);
+  const key = enabled ? "facets:" + JSON.stringify(filterArgs(params)) : null;
 
   useEffect(() => {
-    if (!key) {
-      setCounts(null);
-      return;
-    }
-    let cancelled = false;
+    if (!key) return;
+    const ctl = new AbortController();
     (async () => {
-      const { data } = await supabase.rpc("search_activity_facets", filterArgs(params));
-      if (cancelled) return;
+      const { data, error: rpcError } = await withRetry(
+        (signal) => supabase.rpc("search_activity_facets", filterArgs(params)).abortSignal(signal),
+        { signal: ctl.signal },
+      );
+      if (ctl.signal.aborted || rpcError) return;
       const rows = (data ?? []) as { facet: string; key: string; cnt: number }[];
       const next: FacetCounts = { type: {}, age: {}, area: {} };
       for (const row of rows) {
         const bucket = row.facet === "type" ? next.type : row.facet === "age" ? next.age : next.area;
         bucket[row.key] = Number(row.cnt);
       }
-      setCounts(next);
+      setResult({ key, counts: next });
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return counts;
+  // Counts computed for other filters would mislabel these options.
+  return key && result?.key === key ? result.counts : null;
 }

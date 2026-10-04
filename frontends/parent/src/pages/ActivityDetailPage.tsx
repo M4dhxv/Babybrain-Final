@@ -461,7 +461,7 @@ function ContactLink({
 
 
 export default function ActivityDetailPage() {
-  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading } = useActivityDetail(getParam("slug"));
+  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading, error: loadError, reload: reloadDetail } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const { isPlus } = usePlan();
@@ -563,6 +563,18 @@ export default function ActivityDetailPage() {
     return (
       <PageShell active="/explore">
         <ActivityDetailSkeleton />
+      </PageShell>
+    );
+  }
+  if (!activity && loadError) {
+    return (
+      <PageShell active="/explore">
+        <main className="mx-auto max-w-[1180px] px-6 py-16 text-center">
+          <p className="text-xl font-black">Couldn't load this activity.</p>
+          <p className="mt-2 text-sm font-bold text-black/60">Please check your connection and try again.</p>
+          <button type="button" onClick={reloadDetail} className="mt-4 rounded-[10px] bg-[#FA4D8D] px-5 py-2.5 text-sm font-black text-white">Try again</button>
+          <div className="mt-4"><a href={exploreReturnHref()} onClick={requestExploreRestore} className="font-bold text-baby-pink">← Back to results</a></div>
+        </main>
       </PageShell>
     );
   }

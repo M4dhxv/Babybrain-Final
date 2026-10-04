@@ -37,7 +37,26 @@ type WixProviderSyncOutcome = {
   error?: string;
 };
 
+// A run still going after this is stuck, not slow (normal runs take ~5s, the
+// worst seen in two weeks ~35s). Past it we record the failure ourselves
+// instead of waiting for the 10-minute orphan sweep, and release the next run.
+const RUN_DEADLINE_MS = 120_000;
+// Another run began within this window and hasn't finished: starting a second
+// one only doubles the writes against a database that is probably the reason
+// the first is slow.
+const OVERLAP_WINDOW_MS = 10 * 60_000;
+
 async function runWixScheduledSync(admin: SupabaseClient) {
+  const { data: running } = await admin
+    .from('wix_sync_runs')
+    .select('id')
+    .eq('status', 'running')
+    .gt('started_at', new Date(Date.now() - OVERLAP_WINDOW_MS).toISOString())
+    .limit(1);
+  if (running && running.length > 0) {
+    return { ok: true, skipped: 'previous run still in progress' };
+  }
+
   const { data: run } = await admin
     .from('wix_sync_runs')
     .insert({ trigger: 'cron', triggered_by: null })
@@ -62,7 +81,11 @@ async function runWixScheduledSync(admin: SupabaseClient) {
     let eventsUpdated = 0;
     let failed = 0;
 
-    await Promise.all(
+    let deadlineTimer: number | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      deadlineTimer = setTimeout(() => reject(new Error(`sync exceeded ${RUN_DEADLINE_MS / 1000}s`)), RUN_DEADLINE_MS);
+    });
+    await Promise.race([deadline, Promise.all(
       (credRows ?? []).map(async (row: any) => {
         const creds = { accessToken: row.wix_api_key, siteId: row.wix_site_id };
         const outcome: WixProviderSyncOutcome = {
@@ -97,7 +120,7 @@ async function runWixScheduledSync(admin: SupabaseClient) {
         }
         results.push(outcome);
       })
-    );
+    )]).finally(() => clearTimeout(deadlineTimer));
 
     if (runId) {
       await admin

@@ -34,7 +34,7 @@ const HARD_CAP_MS = 10 * 60_000;
  * a warm in-memory hit does. Anything user-specific (profile:, recs, plan) is
  * never written. */
 const PERSIST_PREFIXES = ["detail:", "activities:", "pins:", "facets:", "act-core:"];
-const PERSIST_KEY = "bb-qc-v1";
+const PERSIST_KEY = "bb-qc-v2";
 /** How stale a persisted value may be and still be shown while it refreshes. */
 const PERSIST_MAX_AGE_MS = 6 * 60 * 60_000;
 /** Keep well inside localStorage's ~5 MB so we never crowd out the auth session. */
@@ -42,6 +42,13 @@ const PERSIST_MAX_BYTES = 1_200_000;
 
 const isPersisted = (key: string) => PERSIST_PREFIXES.some((p) => key.startsWith(p));
 const maxAge = (key: string) => (isPersisted(key) ? PERSIST_MAX_AGE_MS : HARD_CAP_MS);
+
+// v1 may hold listings cached from failed requests (empty results); drop it.
+try {
+  if (typeof localStorage !== "undefined") localStorage.removeItem("bb-qc-v1");
+} catch {
+  /* storage blocked */
+}
 
 try {
   const raw = typeof localStorage !== "undefined" ? localStorage.getItem(PERSIST_KEY) : null;

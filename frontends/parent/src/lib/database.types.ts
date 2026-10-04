@@ -35,7 +35,7 @@ export type VendorCategory =
   | 'baby-toddler-classes' | 'playspaces' | 'camps-holiday'
   | 'community-events' | 'mum-bub-exercise' | 'other';
 export type EmailStatus = 'pending' | 'sent' | 'skipped' | 'failed';
-export type SortOption = 'popular' | 'rating' | 'distance' | 'price_asc' | 'price_desc';
+export type SortOption = 'popular' | 'rating' | 'distance' | 'soonest' | 'price_asc' | 'price_desc';
 
 export type Database = {
   public: {
@@ -1141,6 +1141,7 @@ export type Database = {
           p_lng?: number | null;
           p_radius_km?: number | null;
           p_sort?: SortOption;
+          p_region_order?: string[] | null;
           p_limit?: number;
           p_offset?: number;
           p_categories?: string[] | null;
