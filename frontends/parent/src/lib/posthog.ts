@@ -47,3 +47,9 @@ export async function resetUser() {
   await initPostHog();
   client?.reset();
 }
+
+/** Best-effort custom event (e.g. a load failure worth knowing about). */
+export async function captureEvent(name: string, props?: Record<string, unknown>) {
+  await initPostHog();
+  client?.capture(name, props);
+}

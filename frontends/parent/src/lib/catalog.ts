@@ -31,28 +31,67 @@ function canonical(args: Record<string, unknown>): string {
   return JSON.stringify(out);
 }
 
+/** One short line saying what went wrong, for the on-screen "Details" and for
+ *  analytics. Never contains user data: only error names, codes and statuses. */
+export function describeError(e: unknown): string {
+  if (!e) return "unknown";
+  const o = e as { name?: string; code?: string | number; status?: number; message?: string };
+  return [o.name, o.code, o.status, (o.message ?? "").replace(/\s+/g, " ").slice(0, 90)].filter(Boolean).join(" ") || "unknown";
+}
+
+/** The most recent catalogue failure, shown under the error banner so a parent
+ *  can read it out and we can tell a blocked request from a slow database. */
+export let lastCatalogFailure: string | null = null;
+
 export async function catalogRpc(
   fn: CatalogFn,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<{ data: unknown[] | null; error: unknown }> {
+  let apiNote = "";
   try {
     const res = await fetch(`${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}`, { signal });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) return { data, error: null };
+      apiNote = "api returned a non-list";
       // 200 with something else (a dev server's HTML shell): not our endpoint.
     } else if (res.status === 502) {
       const body = await res.json().catch(() => null);
-      if (body?.upstream) return { data: null, error: new Error("Catalogue unavailable") };
-    } else if (res.status === 400) {
-      // We sent something the endpoint rejects; the SQL function may still
-      // accept it, so fall through rather than fail the parent's search.
+      if (body?.upstream) {
+        lastCatalogFailure = `${fn}: api 502 (database unavailable)`;
+        return { data: null, error: new Error("Catalogue unavailable") };
+      }
+      apiNote = "api 502";
+    } else {
+      // 400 = we sent something the endpoint rejects (the SQL function may
+      // still accept it); 404 = route not deployed; others = edge trouble.
+      apiNote = `api ${res.status}`;
     }
   } catch (e) {
-    if (signal.aborted) return { data: null, error: e };
-    // network error or unparsable body: fall back below
+    if (signal.aborted) {
+      lastCatalogFailure = `${fn}: no answer in time (${describeError(e)})`;
+      return { data: null, error: e };
+    }
+    apiNote = `api ${describeError(e)}`; // network error or unparsable body
   }
   const { data, error } = await supabase.rpc(fn, args as never).abortSignal(signal);
+  if (error) lastCatalogFailure = `${fn}: ${apiNote ? apiNote + " -> " : ""}direct ${describeError(error)}`;
   return { data: (data as unknown[] | null) ?? null, error };
+}
+
+/** Tell analytics a load failed (best effort; a blocker may swallow it). */
+export function reportCatalogFailure(where: string, error: unknown) {
+  const detail = lastCatalogFailure ?? describeError(error);
+  const nav = navigator as Navigator & { connection?: { effectiveType?: string; saveData?: boolean } };
+  void import("./posthog").then((m) =>
+    m.captureEvent("explore_load_failed", {
+      where,
+      detail,
+      online: navigator.onLine,
+      network: nav.connection?.effectiveType,
+      save_data: nav.connection?.saveData,
+      standalone: window.matchMedia?.("(display-mode: standalone)").matches,
+    }),
+  );
 }

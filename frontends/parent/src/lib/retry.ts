@@ -39,6 +39,7 @@ export async function withRetry<T extends { error: unknown }>(
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     }
+    if (timedOut) last = { ...last, error: Object.assign(new Error(`no answer within ${timeoutMs / 1000}s`), { name: "TimeoutError" }) };
     // A request that timed out is not retried: the database is already too busy
     // to answer, and a second copy of the same query only adds to the pile.
     // Fast failures (a 5xx, a dropped connection) are worth one more try.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cacheGet, cacheSet } from "./queryCache";
 import { withRetry } from "./retry";
-import { catalogRpc } from "./catalog";
+import { catalogRpc, reportCatalogFailure } from "./catalog";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
@@ -345,6 +345,7 @@ export function useActivities(params: ActivityQuery = {}) {
       );
       if (ctl.signal.aborted) return;
       if (rpcError) {
+        reportCatalogFailure("list", rpcError);
         setFailedKey(key);
         return;
       }
@@ -391,6 +392,7 @@ export function useActivities(params: ActivityQuery = {}) {
     // query that's no longer on screen.
     if (latest.current.key !== forKey) return;
     if (rpcError) {
+      reportCatalogFailure("load-more", rpcError);
       setFailedKey(forKey);
       return;
     }
@@ -445,6 +447,7 @@ export function useActivityPins(params: ActivityQuery = {}) {
       );
       if (ctl.signal.aborted) return;
       if (rpcError) {
+        reportCatalogFailure("pins", rpcError);
         setFailedKey(key); // never cached
         return;
       }

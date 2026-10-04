@@ -18,6 +18,7 @@ import { supabase } from "../lib/supabase";
 import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore } from "../lib/nav";
 import { lazyRoute } from "../lib/lazyRoute";
 import { Chip, REGION_FILTERS } from "./prefChips";
+import { lastCatalogFailure } from "../lib/catalog";
 
 /** Trails `value` by `delay`ms of no further change — for gating an
  *  expensive derived computation (a filter/sort recompute here) behind a
@@ -1109,7 +1110,14 @@ export default function ExplorePage() {
           <section>
             {loadError && !loading && (
               <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-bold text-black">
-                <span>Couldn't load activities. Please check your connection.</span>
+                <span>
+                  Couldn't load activities. Please check your connection.
+                  {/* What actually failed, so a report from a phone says more than "it broke". */}
+                  <span className="mt-1 block break-words text-[11px] font-semibold text-black/45">
+                    Details: {lastCatalogFailure ?? "unknown"}
+                    {typeof navigator !== "undefined" && !navigator.onLine ? " · offline" : ""}
+                  </span>
+                </span>
                 <button type="button" onClick={reload} className="shrink-0 rounded-[10px] bg-[#FA4D8D] px-4 py-2 text-sm font-black text-white">Try again</button>
               </div>
             )}
