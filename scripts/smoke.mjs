@@ -139,8 +139,9 @@ await check("cached Explore endpoint matches the database", async () => {
     return "not deployed yet";
   }
   if (!first.ok) throw new Error(`HTTP ${first.status}`);
-  const cc = first.headers.get("cache-control") || "";
-  if (!/s-maxage=\d+/.test(cc)) throw new Error(`not edge-cacheable (cache-control: "${cc}")`);
+  // Vercel strips s-maxage from the header it shows clients (it just says
+  // "public"), so cacheability is proven below by the second request's
+  // x-vercel-cache instead.
   const viaEdge = await first.json();
   const direct = await rpc("search_activities", args);
   if (JSON.stringify(viaEdge) !== JSON.stringify(direct)) {
@@ -152,7 +153,7 @@ await check("cached Explore endpoint matches the database", async () => {
   }
   const second = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   const hit = second.headers.get("x-vercel-cache");
-  if (hit && !["HIT", "STALE", "REVALIDATED"].includes(hit)) notes.push(`second identical request was ${hit}, not served from the edge cache`);
+  if (hit && !["HIT", "STALE", "REVALIDATED"].includes(hit)) throw new Error(`second identical request was ${hit}, not served from the edge cache`);
   return `${viaEdge.length} rows, second request ${hit ?? "no cache header"}`;
 });
 
