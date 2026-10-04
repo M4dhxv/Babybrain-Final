@@ -128,6 +128,34 @@ await check("a live activity opens by slug", async () => {
   return slug;
 });
 
+await check("cached Explore endpoint matches the database", async () => {
+  const args = { p_limit: 50, p_offset: 0, p_sort: "popular" };
+  const url = `${SITE}/api/explore/search_activities?a=${encodeURIComponent(JSON.stringify(args))}`;
+  const first = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (first.status === 404) {
+    // Not deployed to this site yet (older build): Explore falls back to
+    // querying the database directly, so this is a note, not an outage.
+    notes.push("/api/explore is not deployed on this site yet (Explore is using direct database calls)");
+    return "not deployed yet";
+  }
+  if (!first.ok) throw new Error(`HTTP ${first.status}`);
+  const cc = first.headers.get("cache-control") || "";
+  if (!/s-maxage=\d+/.test(cc)) throw new Error(`not edge-cacheable (cache-control: "${cc}")`);
+  const viaEdge = await first.json();
+  const direct = await rpc("search_activities", args);
+  if (JSON.stringify(viaEdge) !== JSON.stringify(direct)) {
+    // A listing may legitimately change within the cache window, so compare
+    // the part that must never differ: the same activities are on offer.
+    const ids = (r) => r.map((x) => x.id).sort().join();
+    if (ids(viaEdge) !== ids(direct) || (viaEdge[0]?.total_count ?? 0) !== (direct[0]?.total_count ?? 0))
+      throw new Error("endpoint and database disagree on which activities exist");
+  }
+  const second = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  const hit = second.headers.get("x-vercel-cache");
+  if (hit && !["HIT", "STALE", "REVALIDATED"].includes(hit)) notes.push(`second identical request was ${hit}, not served from the edge cache`);
+  return `${viaEdge.length} rows, second request ${hit ?? "no cache header"}`;
+});
+
 await check("map pins answer", async () => {
   const { value, ms } = await timed(() => rpc("matching_activities", {}));
   if (!Array.isArray(value) || value.length === 0) throw new Error("returned no pins");

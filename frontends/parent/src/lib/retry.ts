@@ -19,7 +19,7 @@ export interface RetryOptions {
 
 export async function withRetry<T extends { error: unknown }>(
   run: (signal: AbortSignal) => PromiseLike<T>,
-  { attempts = 3, timeoutMs = 5000, budgetMs = 10_000, signal }: RetryOptions = {},
+  { attempts = 2, timeoutMs = 8000, budgetMs = 10_000, signal }: RetryOptions = {},
 ): Promise<T> {
   const start = Date.now();
   let last = { error: new Error("not run") } as T;
@@ -28,7 +28,8 @@ export async function withRetry<T extends { error: unknown }>(
     const ctl = new AbortController();
     const onAbort = () => ctl.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
     try {
       last = await run(ctl.signal);
       if (!last.error) return last;
@@ -38,8 +39,11 @@ export async function withRetry<T extends { error: unknown }>(
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     }
-    if (signal?.aborted || Date.now() - start >= budgetMs) return last;
-    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * 2 ** i * (0.5 + Math.random())));
+    // A request that timed out is not retried: the database is already too busy
+    // to answer, and a second copy of the same query only adds to the pile.
+    // Fast failures (a 5xx, a dropped connection) are worth one more try.
+    if (timedOut || signal?.aborted || Date.now() - start >= budgetMs) return last;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 700 * 2 ** i * (0.5 + Math.random())));
   }
   return last;
 }

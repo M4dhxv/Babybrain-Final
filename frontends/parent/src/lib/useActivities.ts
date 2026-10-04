@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "./supabase";
 import { cacheGet, cacheSet } from "./queryCache";
 import { withRetry } from "./retry";
+import { catalogRpc } from "./catalog";
 import { formatAgeRange, type SgRegion, type SortOption } from "./database.types";
 import type { Activity } from "../data/content";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
@@ -248,6 +248,17 @@ function filterArgs(params: ActivityQuery) {
  *  but refreshes them in the background. */
 const FRESH_MS = 60_000;
 
+/** A burst of filter changes (dragging the age slider, tapping chips) should
+ *  cost the database one query, not one per tap: aborting in the browser does
+ *  not stop Postgres running a query it already started. The first load of
+ *  the page is never delayed. */
+const SETTLE_MS = 250;
+/** The class list is what a parent came for; the map pins and per-option
+ *  counts wait behind it so the three queries don't all hit the database in
+ *  the same instant. */
+const PINS_AFTER_MS = 500;
+const FACETS_AFTER_MS = 300;
+
 const DEFAULT_PAGE_SIZE = 24;
 /** Rows pulled per background fetch once the caller has revealed everything
  *  already in memory — a real network round trip, so it's sized like a page
@@ -261,8 +272,9 @@ function searchArgs(params: ActivityQuery) {
   return {
     ...filterArgs(params),
     p_sort: params.sort ?? "popular",
-    p_lat: params.lat ?? null,
-    p_lng: params.lng ?? null,
+    // ~1 km grid: parents a street apart share one cached answer.
+    p_lat: params.lat != null ? Math.round(params.lat * 100) / 100 : null,
+    p_lng: params.lng != null ? Math.round(params.lng * 100) / 100 : null,
     // Only sent when set: a database that hasn't had migration 00220 yet
     // rejects an argument it doesn't know, even a null one.
     ...(params.regionOrder?.length ? { p_region_order: params.regionOrder } : {}),
@@ -313,19 +325,22 @@ export function useActivities(params: ActivityQuery = {}) {
   const latest = useRef({ key, view });
   latest.current = { key, view };
 
+  // Only the page's very first run goes out at once; every later change
+  // (including one that follows a cache hit) waits for taps to settle.
+  const firstRun = useRef(true);
   useEffect(() => {
     const ctl = new AbortController();
+    const immediate = firstRun.current;
+    firstRun.current = false;
     const cached = cacheGet<Page>(key);
     if (cached && cached.age < FRESH_MS && attempt === 0) return; // fresh enough — no network at all
     // else: revalidate quietly, keeping any cached rows for *this* key on screen.
     setFailedKey(null);
 
-    (async () => {
+    const run = async () => {
       const { data, error: rpcError } = await withRetry(
         (signal) =>
-          supabase
-            .rpc("search_activities", { ...args, p_limit: params.limit ?? DEFAULT_PAGE_SIZE, p_offset: 0 })
-            .abortSignal(signal),
+          catalogRpc("search_activities", { ...args, p_limit: params.limit ?? DEFAULT_PAGE_SIZE, p_offset: 0 }, signal),
         { signal: ctl.signal },
       );
       if (ctl.signal.aborted) return;
@@ -348,8 +363,12 @@ export function useActivities(params: ActivityQuery = {}) {
       const page = { rows: merged, total: Math.max(t, merged.length) };
       cacheSet(key, page);
       setFetched({ key, page });
-    })();
-    return () => ctl.abort();
+    };
+    const timer = setTimeout(run, immediate || attempt > 0 ? 0 : SETTLE_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, attempt]);
 
@@ -360,13 +379,11 @@ export function useActivities(params: ActivityQuery = {}) {
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const { data, error: rpcError } = await withRetry((signal) =>
-      supabase
-        .rpc("search_activities", {
-          ...args,
-          p_limit: params.loadMoreLimit ?? LOAD_MORE_PAGE_SIZE,
-          p_offset: current.rows.length,
-        })
-        .abortSignal(signal)
+      catalogRpc(
+        "search_activities",
+        { ...args, p_limit: params.loadMoreLimit ?? LOAD_MORE_PAGE_SIZE, p_offset: current.rows.length },
+        signal,
+      )
     );
     loadingMoreRef.current = false;
     setLoadingMore(false);
@@ -421,9 +438,9 @@ export function useActivityPins(params: ActivityQuery = {}) {
     const cached = cacheGet<LiveActivity[]>(key);
     if (cached && cached.age < FRESH_MS && attempt === 0) return;
     setFailedKey(null);
-    (async () => {
+    const run = async () => {
       const { data, error: rpcError } = await withRetry(
-        (signal) => supabase.rpc("matching_activities", args).abortSignal(signal),
+        (signal) => catalogRpc("matching_activities", args, signal),
         { signal: ctl.signal },
       );
       if (ctl.signal.aborted) return;
@@ -434,8 +451,12 @@ export function useActivityPins(params: ActivityQuery = {}) {
       const mapped = ((data ?? []) as SearchRow[]).map(toLiveActivity);
       cacheSet(key, mapped);
       setFetched({ key, rows: mapped });
-    })();
-    return () => ctl.abort();
+    };
+    const timer = setTimeout(run, PINS_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, attempt]);
 
@@ -461,9 +482,9 @@ export function useFacetCounts(params: ActivityQuery, enabled: boolean): FacetCo
   useEffect(() => {
     if (!key) return;
     const ctl = new AbortController();
-    (async () => {
+    const run = async () => {
       const { data, error: rpcError } = await withRetry(
-        (signal) => supabase.rpc("search_activity_facets", filterArgs(params)).abortSignal(signal),
+        (signal) => catalogRpc("search_activity_facets", filterArgs(params), signal),
         { signal: ctl.signal },
       );
       if (ctl.signal.aborted || rpcError) return;
@@ -474,8 +495,12 @@ export function useFacetCounts(params: ActivityQuery, enabled: boolean): FacetCo
         bucket[row.key] = Number(row.cnt);
       }
       setResult({ key, counts: next });
-    })();
-    return () => ctl.abort();
+    };
+    const timer = setTimeout(run, FACETS_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 

@@ -964,7 +964,7 @@ export default function ExplorePage() {
 
               <button
                 type="button"
-                onClick={() => setMobileSheet(null)}
+                onClick={() => (loadError ? reload() : setMobileSheet(null))}
                 disabled={loading}
                 className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] text-sm font-black text-white shadow-pink disabled:opacity-70"
               >
@@ -972,6 +972,8 @@ export default function ExplorePage() {
                   <>
                     <Spinner className="h-4 w-4" /> Counting results…
                   </>
+                ) : loadError ? (
+                  "Couldn't load · Try again"
                 ) : (
                   `Show ${total} results`
                 )}

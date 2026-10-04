@@ -1,0 +1,39 @@
+# Tells us the parent site is broken before a parent does.
+#
+#  - Every 10 minutes: runs scripts/smoke.mjs against production (Explore loads,
+#    search and a Type filter agree, a live activity opens, map pins answer).
+#  - After every push to main: waits for Vercel to finish deploying, then runs
+#    the same check, so a bad deploy shows up as a red run within minutes.
+#
+# A failed run emails the repo's Actions notification recipients. Nothing here
+# needs secrets: it uses the public site URL and the public anon key the app
+# already ships. Override the site with the SITE_URL repository variable.
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: uptime-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Wait for the deploy to finish
+        if: github.event_name == 'push'
+        run: sleep 360
+      - name: Smoke test production
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: node scripts/smoke.mjs
