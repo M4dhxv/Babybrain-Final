@@ -451,12 +451,14 @@ async function refreshSeriesActivity(admin: Admin, plan: SeriesPlan, ctx: Series
 
   const { data: current } = await admin
     .from('activities')
-    .select('address, location_id')
+    .select('address, postal_code, location_id')
     .eq('id', plan.canonicalActivityId)
     .maybeSingle();
   const ev = next.event;
   let locationId = current?.location_id ?? null;
-  if (ev.location.formattedAddress && ev.location.formattedAddress !== current?.address) {
+  // Also when the activity has no postal code: Wix can send an address with none (The Crest), and the address
+  // never changes afterwards, so without this its venue would never be completed (see resolveEventLocation).
+  if (ev.location.formattedAddress && (ev.location.formattedAddress !== current?.address || !current?.postal_code)) {
     const { data: locs } = await admin.from('provider_locations').select(LOCATION_ENTRY_COLUMNS).eq('provider_id', ctx.providerId);
     const cache = new Map<string, LocationEntry>();
     for (const l of locs ?? []) if (l.address) cache.set(l.address, l);

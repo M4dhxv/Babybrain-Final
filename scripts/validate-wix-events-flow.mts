@@ -26,6 +26,8 @@ class FakeWix {
   orders: WixOrder[] = [];
   rsvps: { id: string; eventId: string; status: string }[] = [];
   lastRsvpBody: unknown = null;
+  /** Wix sends some events' addresses with no postal code (The Crest). */
+  omitPostal = false;
   /** Wix events by id (what GET/QUERY return). */
   events = new Map<string, { title: string; start: string; end?: string; seriesId: string | null; regStatus: string; controls: Control[] }>();
   private n = 0;
@@ -47,7 +49,7 @@ class FakeWix {
     return {
       id, title: e.title, slug: 'slug-' + id, status: 'UPCOMING',
       dateAndTimeSettings: { startDate: e.start, endDate: e.end ?? e.start, timeZoneId: 'Asia/Singapore', recurrenceStatus: e.seriesId ? 'RECURRING' : 'ONE_TIME', recurringEvents: e.seriesId ? { categoryId: e.seriesId } : undefined },
-      location: { type: 'VENUE', address: { formattedAddress: '103 Prince Charles Cres', postalCode: '159016', city: 'Singapore' } },
+      location: { type: 'VENUE', address: { formattedAddress: '103 Prince Charles Cres', ...(this.omitPostal ? {} : { postalCode: '159016' }), city: 'Singapore' } },
       mainImage: { url: 'http://img/' + id }, shortDescription: 'A class',
       registration: { type: 'TICKETING', initialType: 'TICKETING', status: e.regStatus, tickets: { reservationDurationInMinutes: 20, ticketLimitPerOrder: 50, guestsAssignedSeparately: false } },
       form: { controls: e.controls },
@@ -552,6 +554,43 @@ try {
     const c4 = new Map<string, LocationEntry>();
     await resolveEventLocation(db2 as never, P, ev('12 Wix Given Rd, Singapore', '123456'), c4, { count: 2 }, found);
     check(db2.all('provider_locations').some((l) => l.address === '12 Wix Given Rd, Singapore' && l.postal_code === '123456'), "Wix's own postal code is used when it sends one");
+  }
+
+  // 13 ------------------------------------------------------------ a series activity whose venue Wix gave no postal code
+  {
+    for (const oneMapUp of [true, false]) {
+      const { db, wix } = world(); wix.omitPostal = true;
+      db.tables.set('wix_events', []); db.tables.set('activities', []); db.tables.set('activity_sessions', []); db.tables.set('bookings', []); db.tables.set('event_ticket_orders', []);
+      db.seed('provider_locations', [{ id: 'VC', provider_id: P, name: 'The Crest', address: '103 Prince Charles Cres', postal_code: null, latitude: null, longitude: null, wix_address_locked: false }]);
+      wix.events.clear();
+      const dates = ['2099-10-06', '2099-10-13'];
+      dates.forEach((d, i) => {
+        wix.events.set('WEV' + (i + 1), { title: 'The Crest', start: `${d}T08:30:00Z`, seriesId: 'SERIES-1', regStatus: 'OPEN_TICKETS', controls: FakeWix.controls([]) });
+        db.seed('wix_events', [{ id: 'LE' + (i + 1), provider_id: P, wix_event_id: 'WEV' + (i + 1), title: 'The Crest', start_date: `${d}T08:30:00Z`, end_date: `${d}T09:30:00Z` }]);
+        db.seed('event_ticket_types', [{ id: 'TT' + (i + 1), event_id: 'LE' + (i + 1), wix_ticket_definition_id: 'DEF' + (i + 1), price_cents: 4500, hidden: false, sale_status: 'SALE_STARTED', is_free: false, capacity_total: 15, fee_type: 'FEE_ADDED_AT_CHECKOUT', fee_rate_percent: 2.5 }]);
+        db.seed('activities', [{ id: 'C' + (i + 1), provider_id: P, wix_event_id: 'LE' + (i + 1), title: 'The Crest', slug: 'crest-' + (i + 1), wix_service_type: 'EVENT', location_id: 'VC', address: '103 Prince Charles Cres', postal_code: null, created_at: `2026-10-0${i + 1}T00:00:00Z` }]);
+        db.seed('activity_sessions', [{ id: 'SC' + (i + 1), activity_id: 'C' + (i + 1), starts_at: `${d}T08:30:00Z`, ends_at: `${d}T09:30:00Z` }]);
+      });
+      // Wix itself is faked; OneMap is stubbed to answer (or be down).
+      globalThis.fetch = ((i: RequestInfo | URL, n?: RequestInit) => {
+        if (String(i).includes('onemap.gov.sg')) {
+          return oneMapUp
+            ? Promise.resolve(new Response(JSON.stringify({ found: 1, results: [{ BLK_NO: '103', ROAD_NAME: 'PRINCE CHARLES CRESCENT', POSTAL: '159018', LATITUDE: '1.2927', LONGITUDE: '103.8198' }] }), { status: 200 }))
+            : Promise.reject(new Error('offline'));
+        }
+        return wix.handler(i, n);
+      }) as typeof fetch;
+      await refreshProviderEvents(db as never, P, { accessToken: 'k', siteId: 's' }, emptySummary());
+      const series = db.all('activities').find((a) => a.wix_series_id === 'SERIES-1')!;
+      const venue = db.all('provider_locations').find((l) => l.id === 'VC')!;
+      if (oneMapUp) {
+        check(venue.postal_code === '159018' && venue.latitude === 1.2927, 'series: the venue Wix gave no postal code is completed on the reconcile (this is what left The Crest without an area)');
+        check(series.postal_code === '159018', 'and the series activity carries the postal code');
+      } else {
+        check(venue.postal_code === null && series.postal_code === null, 'series: with the lookup unavailable nothing is guessed and nothing breaks');
+      }
+    }
+    globalThis.fetch = realFetch;
   }
 } finally {
   globalThis.fetch = realFetch;
