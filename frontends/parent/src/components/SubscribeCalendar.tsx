@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "./ui";
 import { apiGet, apiPost } from "../lib/api";
-import { googleSubscribeUrl, isAndroidDevice } from "../lib/ics";
+import { googleSubscribeUrl, isAndroidDevice, isAppleDevice, isNonSafariIos } from "../lib/ics";
 
 type Feed = { url: string; webcalUrl: string };
 
@@ -29,6 +29,9 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const android = isAndroidDevice();
+  const apple = isAppleDevice();
+  // Chrome, Firefox and in-app browsers on iPhone cannot hand a webcal:// link to the Calendar app.
+  const iosOtherBrowser = isNonSafariIos();
 
   async function load(rotate = false) {
     setErr(null);
@@ -68,14 +71,14 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
         onClick={openPanel}
         className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2.5 text-sm font-black text-baby-cta hover:bg-[#FEF1F6]"
       >
-        Keep my calendar up to date (subscribe)
+        Sync to calendar
       </button>
     );
   }
 
   return (
     <div>
-      <h3 className="text-sm font-black">Subscribe to your schedule</h3>
+      <h3 className="text-sm font-black">Sync to calendar</h3>
       <p className="mt-1 text-xs font-semibold text-[#59658d]">
         {intro ??
           "Your calendar re-reads this link by itself, so rescheduled or cancelled bookings update there."}{" "}
@@ -97,14 +100,14 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
               {copied ? "Copied" : "Copy link"}
             </Button>
             {!android && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => window.location.assign(feed.webcalUrl)}
-                className="flex-1 justify-center"
+              // A real link, not a script redirect: iOS hands a tapped webcal:// link to Calendar ("Subscribe"),
+              // but is unreliable about one set from window.location.
+              <a
+                href={feed.webcalUrl}
+                className="flex h-10 flex-1 items-center justify-center rounded-[10px] border border-[#FED7E4] px-3 text-sm font-black text-baby-cta hover:bg-[#FEF1F6]"
               >
                 Open in calendar app
-              </Button>
+              </a>
             )}
           </div>
           <Button
@@ -127,6 +130,14 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
             </li>
             <li>
               <b>Apple (iPhone / Mac):</b> tap Open in calendar app, then Subscribe.
+              {apple && (
+                <>
+                  {" "}
+                  {iosOtherBrowser && <b>This browser can&rsquo;t open the Calendar app, so use Safari, or: </b>}
+                  If nothing happens, tap Copy link, then on your iPhone open Settings &gt; Calendar &gt; Accounts &gt; Add
+                  Account &gt; Other &gt; Add Subscribed Calendar, paste the link and tap Next, then Save.
+                </>
+              )}
             </li>
             <li>
               <b>Outlook:</b> Add calendar, Subscribe from web, and paste the link.

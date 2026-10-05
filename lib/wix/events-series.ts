@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { ticketPriceWithFeeCents, type WixEvent } from './client';
-import { resolveEventLocation } from './events-sync';
+import { LOCATION_ENTRY_COLUMNS, resolveEventLocation, type LocationEntry } from './events-sync';
 import { splitMultiDay } from './event-days';
 
 /**
@@ -457,9 +457,9 @@ async function refreshSeriesActivity(admin: Admin, plan: SeriesPlan, ctx: Series
   const ev = next.event;
   let locationId = current?.location_id ?? null;
   if (ev.location.formattedAddress && ev.location.formattedAddress !== current?.address) {
-    const { data: locs } = await admin.from('provider_locations').select('id, address').eq('provider_id', ctx.providerId);
-    const cache = new Map<string, string>();
-    for (const l of locs ?? []) if (l.address) cache.set(l.address, l.id);
+    const { data: locs } = await admin.from('provider_locations').select(LOCATION_ENTRY_COLUMNS).eq('provider_id', ctx.providerId);
+    const cache = new Map<string, LocationEntry>();
+    for (const l of locs ?? []) if (l.address) cache.set(l.address, l);
     locationId = (await resolveEventLocation(admin, ctx.providerId, ev, cache, { count: (locs ?? []).length })) ?? locationId;
   }
 

@@ -15,7 +15,7 @@ import { evaluateWixEvent, evaluateWixTicket, parentBlockerMessage } from '@/lib
 import { resolveWixContact } from '@/lib/wix/sync';
 import { resolveDaySelection } from '@/lib/wix/event-day-booking';
 import {
-  describeWixAnswerProblems,
+  wixFormProblemBody,
   resolveWixEventGuestForm,
   sanitiseWixFormAnswers,
   validateWixFormAnswers,
@@ -117,7 +117,7 @@ export async function POST(request: Request) {
   if (liveEvent) {
     const problems = validateWixFormAnswers(liveEvent.formInputs, answers, { fallbackAnswer: !!body.infoResponse?.trim() });
     if (problems.length) {
-      return NextResponse.json({ error: describeWixAnswerProblems(problems), fields: problems.map((p) => p.name) }, { status: 422 });
+      return NextResponse.json(wixFormProblemBody(liveEvent.formInputs, problems), { status: 422 });
     }
   }
   const guestForm = await resolveWixEventGuestForm(admin, creds, event.wix_event_id, {

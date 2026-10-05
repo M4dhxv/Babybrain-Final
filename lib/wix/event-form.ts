@@ -31,11 +31,65 @@ export type WixFormFieldKind =
   | 'parentFull'
   | 'extra';
 
-const CHILD = /\b(child|children|kid|kids|baby|babies|toddler|infant|son|daughter|participant|attendee)\b|child'?s/i;
-const AGE = /\b(age|aged|old|birth|birthday|dob|born)\b/i;
-const NAME = /\bname\b/i;
 const OTHER_PERSON =
   /\b(emergency|alternat\w*|other|second|2nd|spouse|partner|husband|wife|father|mother|dad|mum|mom|guardian|grand\w*|friend|doctor|nanny|helper|maid|carer|caregiver)\b/i;
+
+// Auto-filling a question we shouldn't have is worse than asking one we could have answered: the parent
+// never sees the wrong answer, and Wix accepts it. So a label is only auto-filled when EVERY word in it is
+// one of these — "Child's age", "Name of your child", nothing more. "Any old injuries?", "Is your baby over 6
+// months old?" and "Name of your child's school" each carry a word that isn't here, so the parent is asked.
+const CHILD_WORDS = new Set(['child', 'kid', 'baby', 'toddler', 'infant', 'son', 'daughter', 'participant', 'attendee']);
+const AGE_UNITS = new Set(['year', 'years', 'yr', 'yrs', 'month', 'months']);
+const FILLER = new Set(['your', 'my', 'the', 'a', 'of', 'please', 'enter', 'and', 'in']);
+const NAME_QUALIFIERS = new Set(['full', 'first', 'last', 'given']);
+const PARENT_WORDS = new Set(['parent', 'parents', 'guest']);
+const HOW_OLD_IS_CHILD = /^how old (is|are|will) (your |the |my )?(child|kid|baby|toddler|son|daughter|participant|attendee)( be)?\s*\??$/i;
+
+/** The label as plain lower-case words: "Child's name & age" → ["child", "name", "age"]. */
+function labelWords(label: string): string[] {
+  return label
+    .toLowerCase()
+    .replace(/['’]s\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+}
+
+/** A label that is nothing but the child's name and/or age — or null when it says anything more. */
+function plainChildField(label: string): 'childName' | 'childAge' | 'childNameAndAge' | null {
+  if (HOW_OLD_IS_CHILD.test(label.trim())) return 'childAge';
+  const words = labelWords(label);
+  if (!words.length) return null;
+  const hasChild = words.some((w) => CHILD_WORDS.has(w));
+  const allowed = (w: string) =>
+    CHILD_WORDS.has(w) || w === 'name' || w === 'age' || AGE_UNITS.has(w) || NAME_QUALIFIERS.has(w) || FILLER.has(w);
+  if (words.some((w) => !allowed(w))) return null;
+  const asksName = words.includes('name');
+  const asksAge = words.includes('age');
+  if (!hasChild) {
+    // "Age" on its own is still the child's (nothing else on a kids' booking has an age) — but "Your age" is not.
+    if (asksAge && !asksName && !words.some((w) => w === 'your' || w === 'my')) return 'childAge';
+    return null;
+  }
+  if (asksName && asksAge) return 'childNameAndAge';
+  if (asksAge) return 'childAge';
+  if (asksName) return 'childName';
+  return null;
+}
+
+/** A label that is nothing but the parent's own name ("Your name", "Parent name", "First name", "Surname"…). */
+function plainParentName(label: string): { first: boolean; last: boolean } | null {
+  const words = labelWords(label);
+  const ok = (w: string) =>
+    w === 'name' || w === 'surname' || w === 'family' || NAME_QUALIFIERS.has(w) || PARENT_WORDS.has(w) || FILLER.has(w);
+  if (!words.length || words.some((w) => !ok(w))) return null;
+  if (!words.some((w) => w === 'name' || w === 'surname' || w === 'family')) return null;
+  return {
+    first: words.some((w) => w === 'first' || w === 'given'),
+    last: words.some((w) => w === 'last' || w === 'surname' || w === 'family'),
+  };
+}
 
 /** What a single form input is asking for. The input's `name` is Wix's own
  *  slot id (firstName/lastName/email/phone-xxxx); the *label* is what the
@@ -51,26 +105,20 @@ export function classifyWixFormInput(input: Pick<WixEventFormInput, 'name' | 'la
   if (/e-?mail/i.test(both)) return aboutSomeoneElse ? 'extra' : 'email';
   if (/phone|mobile|whatsapp|contact (no|number)|tel\b/i.test(both)) return aboutSomeoneElse ? 'extra' : 'phone';
 
-  if (CHILD.test(label)) {
-    const asksAge = AGE.test(label);
-    const asksName = NAME.test(label);
-    if (asksAge && asksName) return 'childNameAndAge';
-    if (asksAge) return 'childAge';
-    if (asksName) return 'childName';
-  }
-  // "Age" / "Date of birth" on its own, with no child wording, is still the
-  // child's: nothing else on a kids' booking has an age.
-  if (AGE.test(label) && !NAME.test(label)) return 'childAge';
+  const child = plainChildField(label);
+  if (child) return child;
 
   if (name === 'firstName' || name === 'lastName') {
-    // An untouched system name slot ("First name", "Last name", or blank).
-    if (/last|sur|family/i.test(label) || (!label && name === 'lastName')) return 'parentLast';
-    if (/first|given/i.test(label) || (!label && name === 'firstName')) return 'parentFirst';
-    // A relabelled slot that is neither child nor age ("Your name")…
-    if (NAME.test(label)) return name === 'firstName' ? 'parentFirst' : 'parentLast';
-    return 'extra';
+    // An untouched system name slot: blank, or plainly "First name" / "Last name" / "Your name".
+    if (!label) return name === 'lastName' ? 'parentLast' : 'parentFirst';
+    const parent = plainParentName(label);
+    if (!parent) return 'extra'; // relabelled into some other question ("Name of your child's school")
+    if (parent.last) return 'parentLast';
+    if (parent.first) return 'parentFirst';
+    return name === 'firstName' ? 'parentFirst' : 'parentLast';
   }
-  if (/^(full )?name$/i.test(label) || /your name|parent'?s? name|guest name/i.test(label)) return 'parentFull';
+  const parent = plainParentName(label);
+  if (parent && !parent.first && !parent.last) return 'parentFull';
   return 'extra';
 }
 
@@ -96,6 +144,53 @@ export function questionsForParent(inputs: WixEventFormInput[]): WixEventFormInp
 /** Does this RSVP form let a guest bring others? */
 export function formAllowsAdditionalGuests(inputs: WixEventFormInput[]): boolean {
   return inputs.some((i) => i.controlType === 'GUEST_CONTROL');
+}
+
+/** How BabyBrain handles one input of the vendor's Wix form, in the vendor's words —
+ *  so they can see which fields are filled for the parent, which are asked on the
+ *  booking page, and spot a field whose wording sends it the wrong way. */
+export interface WixFormFieldHandling {
+  name: string;
+  label: string;
+  mandatory: boolean;
+  /** `filled`: BabyBrain answers it from the account / child profile. `asked`: the parent
+   *  answers it on the booking page. `guests`: covered by the guests chosen on the booking page. */
+  handling: 'filled' | 'asked' | 'guests';
+  note: string;
+  options?: string[];
+  multi?: boolean;
+}
+
+const FILLED_NOTE: Record<Exclude<WixFormFieldKind, 'extra'>, string> = {
+  email: 'Filled in from the parent’s account email.',
+  phone: 'Filled in from the phone number on the parent’s profile. A parent with no number is asked to add one before booking.',
+  childName: 'Filled in with the child’s name from their BabyBrain profile.',
+  childAge: 'Filled in with the child’s age from their BabyBrain profile (for example “3 years”).',
+  childNameAndAge: 'Filled in with the child’s name and age from their BabyBrain profile.',
+  parentFirst: 'Filled in with the parent’s first name.',
+  parentLast: 'Filled in with the parent’s last name.',
+  parentFull: 'Filled in with the parent’s full name.',
+};
+
+/** One row per input of the event's Wix form, saying how a booking answers it. Mirrors
+ *  {@link buildWixEventGuestForm} and {@link questionsForParent} — keep them in step. */
+export function describeWixFormHandling(inputs: WixEventFormInput[]): WixFormFieldHandling[] {
+  return inputs.map((i) => {
+    const base = { name: i.name, label: i.label || i.name, mandatory: i.mandatory };
+    if (i.controlType === 'GUEST_CONTROL') {
+      return { ...base, handling: 'guests' as const, note: 'Covered by the number of people a parent books for on the booking page.' };
+    }
+    const kind = classifyWixFormInput(i);
+    if (kind !== 'extra') return { ...base, handling: 'filled' as const, note: FILLED_NOTE[kind] };
+    const choice = i.options?.length ? (i.multi ? ' They can tick several of your options.' : ' They pick one of your options.') : '';
+    return {
+      ...base,
+      handling: 'asked' as const,
+      note: `${i.mandatory ? 'Parents must answer this on the booking page.' : 'Parents are asked this on the booking page (optional).'}${choice}`,
+      options: i.options,
+      multi: i.multi,
+    };
+  });
 }
 
 /** Labels of the *mandatory* questions the parent must answer — what the vendor
@@ -170,6 +265,60 @@ export function describeWixAnswerProblems(problems: WixAnswerProblem[]): string 
   if (missing.length) parts.push(`Please answer ${missing.join(', ')}.`);
   if (option.length) parts.push(`Please choose one of the listed options for ${option.join(', ')}.`);
   return parts.join(' ');
+}
+
+/** The 422 body for answers that don't fit the event's live form. It carries the live questions: the
+ *  booking page shows a copy refreshed every few minutes, so when the vendor has just added a question
+ *  (or changed a dropdown's options) the page would otherwise tell the parent to answer something it
+ *  has no box for. With these it redraws the form and the parent can carry on. */
+export function wixFormProblemBody(inputs: WixEventFormInput[], problems: WixAnswerProblem[]) {
+  return {
+    error: describeWixAnswerProblems(problems),
+    fields: problems.map((p) => p.name),
+    questions: questionsForParent(inputs),
+  };
+}
+
+/** A question's wording reduced to what identifies it: "Does your child have any allergies?" and
+ *  "does your child have any allergies" are the same question. */
+export function questionLabelKey(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** What a parent answered on an earlier booking: their answers (by that event's Wix input names) and
+ *  that event's questions, which say what each input name was asking. */
+export interface PastFormAnswers {
+  answers: unknown;
+  questions: Pick<WixEventFormInput, 'name' | 'label'>[];
+}
+
+const BIRTH_DATE = /\b(birth|birthday|dob|born)\b/i;
+
+/** Answers to carry over from earlier bookings for the same child, to prefill this event's questions.
+ *  Wix input names differ from one event's form to the next, so a question is matched by its wording.
+ *  Only things that stay true from event to event: a typed answer to the same question (allergies, a
+ *  school, an emergency contact, a date of birth). Dropdown / checkbox / radio choices are specific to
+ *  one event (which day, which add-on), and a date picked for one event is not another's — never carried
+ *  over. `history` is newest first; the newest answer wins. */
+export function rememberedAnswers(current: WixEventFormInput[], history: PastFormAnswers[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const q of questionsForParent(current)) {
+    if (q.options?.length || q.multi) continue;
+    const isDate = q.inputType === 'DATE' || q.controlType === 'DATE';
+    if (isDate && !BIRTH_DATE.test(q.label)) continue;
+    const key = questionLabelKey(q.label || '');
+    if (!key) continue;
+    for (const past of history) {
+      const given = past.answers && typeof past.answers === 'object' ? (past.answers as Record<string, unknown>) : {};
+      const asked = past.questions.find((p) => questionLabelKey(p.label || '') === key);
+      const value = asked ? given[asked.name] : undefined;
+      if (typeof value === 'string' && value.trim()) {
+        out[q.name] = value.trim().slice(0, MAX_ANSWER_LENGTH);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 /** What a parent sees when {@link buildWixEventGuestForm} left a mandatory

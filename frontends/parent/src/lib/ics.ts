@@ -107,6 +107,14 @@ export function scheduleFileUrl(events: IcsEvent[]): string | null {
   return `${base}/api/public/calendar?d=${d}`;
 }
 
+/** An iPhone / iPad browser other than Safari (Chrome, Firefox, Edge, or an in-app browser such as Instagram or
+ *  WhatsApp). They cannot pass a webcal:// link on to the Calendar app. */
+export function isNonSafariIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) && /CriOS|FxiOS|EdgiOS|OPiOS|FBAN|FBAV|Instagram|Line\/|WhatsApp|Snapchat|MicroMessenger|GSA\//.test(ua);
+}
+
 /** Android (phones and tablets). There is no native "subscribe to this link" on
  *  Android and browsers cannot write to the device calendar, so Android users
  *  subscribe through their Google account instead (see googleSubscribeUrl). */

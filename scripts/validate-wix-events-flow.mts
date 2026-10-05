@@ -13,6 +13,8 @@ import { fulfilPaidWixEventOrder } from '../lib/wix/finalize-event-checkout';
 import { emptySummary, reconcileOrders, reconcileProviderNow, reconcileRsvps, refreshProviderEvents } from '../lib/wix/events-reconcile';
 import { createWixRsvp } from '../lib/wix/client';
 import { unlinkWixSeries } from '../lib/wix/events-series';
+import { loadRememberedAnswers } from '../lib/wix/previous-answers';
+import { resolveEventLocation, type LocationEntry } from '../lib/wix/events-sync';
 
 // ------------------------------------------------------------------ fake Wix
 type Control = { type: string; name: string; deleted?: boolean; inputs: { name: string; label: string; mandatory: boolean; type?: string; options?: string[]; array?: boolean }[] };
@@ -479,6 +481,77 @@ try {
     const s4 = emptySummary();
     await reconcileOrders(db as never, P, creds, world2, s4);
     check(db.all('attendance').length === 0, "a ticket-level Wix check-in does not guess which day's place to mark");
+  }
+
+  // 9 ------------------------------------------------------------- prefill from earlier bookings
+  {
+    const db = new FakeDb();
+    const Q = (name: string, label: string, extra: Record<string, unknown> = {}) => ({ name, label, mandatory: true, ...extra });
+    db.seed('wix_events', [
+      { id: 'NEW', form_questions: [Q('n1', 'Does your child have any allergies?'), Q('n2', 'T-shirt size', { options: ['S', 'M'], controlType: 'DROPDOWN' })] },
+      { id: 'OLD1', form_questions: [Q('o1', 'Does your child have any allergies')] },
+      { id: 'OLD2', form_questions: [Q('p1', 'Any allergies?'), Q('p2', 'Does your child have any allergies?')] },
+      { id: 'PLAIN', form_questions: [Q('x1', 'T-shirt size', { options: ['S', 'M'], controlType: 'DROPDOWN' })] },
+    ]);
+    db.seed('event_ticket_orders', [
+      { id: 'a', user_id: 'U1', child_id: 'C1', event_id: 'OLD1', form_response: { o1: 'Peanuts' }, created_at: '2026-08-01T00:00:00Z' },
+      { id: 'b', user_id: 'U1', child_id: 'C2', event_id: 'OLD1', form_response: { o1: 'Shellfish' }, created_at: '2026-09-20T00:00:00Z' },
+      { id: 'c', user_id: 'U2', child_id: 'C1', event_id: 'OLD1', form_response: { o1: 'Dairy' }, created_at: '2026-09-25T00:00:00Z' },
+      { id: 'd', user_id: 'U1', child_id: 'C1', event_id: 'OLD1', form_response: {}, created_at: '2026-09-30T00:00:00Z' },
+    ]);
+    db.seed('event_rsvps', [{ id: 'r', user_id: 'U1', child_id: 'C1', event_id: 'OLD2', form_response: { p2: 'Eggs' }, created_at: '2026-09-10T00:00:00Z' }]);
+
+    const got = await loadRememberedAnswers(db as never, { userId: 'U1', eventId: 'NEW', childId: 'C1' });
+    check(got.n1 === 'Eggs', 'the newest answer for the same child (an RSVP) fills the allergy question, matched by its wording');
+    check(!('n2' in got), 'a dropdown choice is not carried');
+    const other = await loadRememberedAnswers(db as never, { userId: 'U1', eventId: 'NEW', childId: 'C2' });
+    check(other.n1 === 'Shellfish', "another child gets only their own answers, never the sibling's");
+    const stranger = await loadRememberedAnswers(db as never, { userId: 'U3', eventId: 'NEW', childId: 'C1' });
+    check(Object.keys(stranger).length === 0, "another parent's answers are never used, even for the same child id");
+    const none = await loadRememberedAnswers(db as never, { userId: 'U1', eventId: 'PLAIN', childId: 'C1' });
+    check(Object.keys(none).length === 0, 'an event with only choice questions has nothing to carry');
+    const unknown = await loadRememberedAnswers(db as never, { userId: 'U1', eventId: 'MISSING', childId: 'C1' });
+    check(Object.keys(unknown).length === 0, 'an unknown event has nothing to carry');
+  }
+
+  // 10 ------------------------------------------------------------ a venue Wix sent without a postal code
+  {
+    const db = new FakeDb();
+    db.seed('provider_locations', [
+      { id: 'V1', provider_id: P, name: 'Tanglin Park', address: '1 Ridley Park, Singapore 248464', postal_code: '248464', latitude: null, longitude: null, wix_address_locked: false },
+      { id: 'V2', provider_id: P, name: 'The Crest', address: '103 Prince Charles Cres, Singapore', postal_code: null, latitude: null, longitude: null, wix_address_locked: false },
+      { id: 'V3', provider_id: P, name: 'Locked', address: '5 Locked Lane, Singapore', postal_code: null, latitude: null, longitude: null, wix_address_locked: true },
+    ]);
+    const cacheOf = () => new Map<string, LocationEntry>(db.all('provider_locations').map((l) => [l.address as string, { id: l.id as string, postal_code: l.postal_code as string | null, latitude: l.latitude as number | null, wix_address_locked: !!l.wix_address_locked }]));
+    const ev = (address: string, postalCode: string | null = null) => ({ location: { type: 'VENUE', locationTbd: false, formattedAddress: address, name: null, city: 'Singapore', postalCode } }) as never;
+    let lookups = 0;
+    const found = async () => { lookups++; return { postalCode: '159018', latitude: 1.2927, longitude: 103.8198 }; };
+    const none = async () => { lookups++; return null; };
+    const cache = cacheOf();
+    const e1 = ev('103 Prince Charles Cres, Singapore');
+    const id = await resolveEventLocation(db as never, P, e1, cache, { count: 3 }, found);
+    const v2 = () => db.all('provider_locations').find((l) => l.id === 'V2')!;
+    check(id === 'V2' && v2().postal_code === '159018' && v2().latitude === 1.2927, 'an existing venue with no postal code is completed from its address (postal code and pin)');
+    check((e1 as { location: { postalCode: string } }).location.postalCode === '159018', "and the event carries it, so the activity rows written from it don't blank it");
+    await resolveEventLocation(db as never, P, ev('103 Prince Charles Cres, Singapore'), cache, { count: 3 }, found);
+    check(lookups === 1, 'the address is looked up once per run, not per event');
+    const lockedId = await resolveEventLocation(db as never, P, ev('5 Locked Lane, Singapore'), cacheOf(), { count: 3 }, found);
+    check(lockedId === 'V3' && db.all('provider_locations').find((l) => l.id === 'V3')!.postal_code === null, "a venue an admin corrected by hand is never touched, and isn't looked up");
+    const before = lookups;
+    await resolveEventLocation(db as never, P, ev('1 Ridley Park, Singapore 248464'), cacheOf(), { count: 3 }, found);
+    check(lookups === before && db.all('provider_locations').find((l) => l.id === 'V1')!.postal_code === '248464', 'a venue that already has a postal code is not looked up');
+    const db2 = new FakeDb();
+    db2.seed('provider_locations', [{ id: 'W1', provider_id: P, name: 'X', address: '9 Nowhere Rd, Singapore', postal_code: null, latitude: null, longitude: null, wix_address_locked: false }]);
+    const c2 = new Map<string, LocationEntry>([['9 Nowhere Rd, Singapore', { id: 'W1', postal_code: null, latitude: null, wix_address_locked: false }]]);
+    const e2 = ev('9 Nowhere Rd, Singapore');
+    check((await resolveEventLocation(db2 as never, P, e2, c2, { count: 1 }, none)) === 'W1' && db2.all('provider_locations')[0].postal_code === null, 'when the address cannot be matched for certain, the venue is left as it was');
+    const c3 = new Map<string, LocationEntry>();
+    const newId = await resolveEventLocation(db2 as never, P, ev('103 Prince Charles Cres, Singapore'), c3, { count: 1 }, found);
+    const created = db2.all('provider_locations').find((l) => l.id === newId)!;
+    check(created.postal_code === '159018' && created.latitude === 1.2927, 'a new venue is created with the postal code and pin already filled');
+    const c4 = new Map<string, LocationEntry>();
+    await resolveEventLocation(db2 as never, P, ev('12 Wix Given Rd, Singapore', '123456'), c4, { count: 2 }, found);
+    check(db2.all('provider_locations').some((l) => l.address === '12 Wix Given Rd, Singapore' && l.postal_code === '123456'), "Wix's own postal code is used when it sends one");
   }
 } finally {
   globalThis.fetch = realFetch;

@@ -18,13 +18,18 @@ import {
   buildWixEventGuestForm,
   classifyWixFormInput,
   describeWixAnswerProblems,
+  describeWixFormHandling,
   formAllowsAdditionalGuests,
   mandatoryQuestionLabels,
   questionsForParent,
+  rememberedAnswers,
   sanitiseWixFormAnswers,
   validateWixFormAnswers,
   wixChildAgeText,
+  wixFormProblemBody,
 } from '../lib/wix/event-form';
+import { pruneAnswers } from '../frontends/parent/src/lib/eventForm';
+import { pickAddressHit } from '../lib/geocode';
 import {
   groupEventsForPicker,
   planSeries,
@@ -96,6 +101,31 @@ check(classifyWixFormInput(input('p2', 'Emergency contact phone')) === 'extra', 
 check(classifyWixFormInput(input('p3', "Second parent's email")) === 'extra', 'another person\'s email is asked, not filled');
 check(classifyWixFormInput(input('p4', 'Mobile number')) === 'phone' && classifyWixFormInput(input('e', 'Email address')) === 'email', 'the parent\'s own phone / email are still filled');
 
+// A label is auto-filled only when it is plainly the child's name / age; anything with extra words is ASKED, because
+// a wrong auto-filled answer is invisible to the parent and accepted by Wix.
+const kindOf = (label: string, name = 'c1') => classifyWixFormInput(input(name, label));
+check(kindOf('Does your child have any allergies?') === 'extra', 'an allergy question is asked');
+check(kindOf("Child's allergies / dietary requirements") === 'extra', 'allergies / dietary requirements is asked');
+check(kindOf('Does your child have any old injuries or medical conditions?') === 'extra', '"old injuries" is not the child\'s age');
+check(kindOf('Is your baby over 6 months old?') === 'extra', 'a yes/no question about age is asked, not answered with the age');
+check(kindOf("Name of your child's school or nursery") === 'extra', "the child's school is not the child's name");
+check(kindOf("Child's nickname") === 'extra' && kindOf("Child's T-shirt size") === 'extra', 'other child details are asked');
+check(kindOf("Name of your other child") === 'extra' && kindOf("Sibling's age") === 'extra', "another child's details are asked");
+check(kindOf("Child's date of birth") === 'extra' && kindOf('Date of birth') === 'extra', 'a date of birth is asked (we only know the age text, which a date field would refuse)');
+check(kindOf('Your age') === 'extra', "\"Your age\" is not the child's");
+check(kindOf('Age') === 'childAge' && kindOf('Age of child') === 'childAge' && kindOf('Child age (in years)') === 'childAge', 'a plain age field is still filled');
+check(kindOf('How old is your child?') === 'childAge', '"How old is your child?" is the age');
+check(kindOf('Name of your child') === 'childName' && kindOf("Child's full name") === 'childName' && kindOf('Participant name') === 'childName', 'a plain child name is still filled');
+check(kindOf('Child name and age') === 'childNameAndAge', '"Child name and age" is still one combined field');
+check(kindOf("Children's names") === 'extra', 'several children are asked, not filled with one');
+check(kindOf("Name of your child's school", 'firstName') === 'extra', 'a name slot relabelled into another question is asked, not filled with the parent\'s name');
+check(kindOf('Name of the other parent', 'lastName') === 'extra', "another person's name in a name slot is asked");
+check(kindOf('Your name', 'firstName') === 'parentFirst' && kindOf('First name', 'firstName') === 'parentFirst' && kindOf('Surname', 'lastName') === 'parentLast', "the parent's own name slots are still filled");
+check(kindOf('Full name') === 'parentFull' && kindOf('Name') === 'parentFull', 'a plain name field is the parent\'s');
+check(kindOf('', 'firstName') === 'parentFirst' && kindOf('', 'lastName') === 'parentLast', 'untouched blank name slots are the parent\'s');
+check(kindOf('Name of the venue') === 'extra', 'a name that is not a person\'s is asked');
+
+
 const dietary = input('diet', 'Dietary needs', true);
 const day = input('day', 'Which day?', true, { controlType: 'DROPDOWN', options: ['Mon', 'Tue'] });
 const extras = input('extras', 'Add-ons', false, { controlType: 'CHECKBOX', multi: true, options: ['Lunch', 'Shirt'] });
@@ -104,6 +134,16 @@ const form = [input('firstName', 'First name'), input('lastName', 'Last name'), 
 check(questionsForParent(form).map((q) => q.name).join() === 'diet,day,extras', 'questions asked: everything we cannot fill, minus the guests control');
 check(formAllowsAdditionalGuests(form), 'a guests control means extra guests are allowed');
 check(mandatoryQuestionLabels(form).join() === 'Dietary needs,Which day?', 'mandatory questions listed for the vendor');
+
+const handling = describeWixFormHandling([...crest, dietary, day, extras, guests]);
+const handlingOf = (n: string) => handling.find((h) => h.name === n)!;
+check(handling.length === 8, 'one row per form input');
+check(handlingOf('firstName').handling === 'filled' && /child’s name/.test(handlingOf('firstName').note), 'a relabelled name slot is shown as the child\'s name');
+check(handlingOf('diet').handling === 'asked' && /must answer/.test(handlingOf('diet').note), 'a mandatory question is shown as required');
+check(handlingOf('extras').handling === 'asked' && /optional/.test(handlingOf('extras').note) && /several/.test(handlingOf('extras').note), 'an optional multi-choice question says so');
+check(handlingOf('day').options?.join() === 'Mon,Tue', 'the options of a dropdown are carried across');
+check(handlingOf('additionalGuests').handling === 'guests', 'the guests control is its own row');
+check(handling.filter((h) => h.handling === 'asked').map((h) => h.name).join() === questionsForParent([...crest, dietary, day, extras, guests]).map((q) => q.name).join(), 'the vendor table lists exactly the questions parents are asked');
 
 const clean = sanitiseWixFormAnswers(form, { diet: '  no nuts ', day: 'Tue', extras: ['Lunch', 'Shirt'], rubbish: 'x', firstName: 'Mallory' });
 check(clean.diet === 'no nuts' && clean.day === 'Tue', 'answers trimmed');
@@ -115,6 +155,50 @@ check(validateWixFormAnswers(form, { diet: 'x', day: 'Sat' })[0]?.problem === 'o
 check(validateWixFormAnswers(form, { day: 'Tue' }, { fallbackAnswer: true }).length === 0, 'the activity-level answer stands in for one unanswered mandatory question');
 check(validateWixFormAnswers(form, {}, { fallbackAnswer: true }).length === 2, 'but it cannot cover two or more unanswered questions');
 check(/Please answer/.test(describeWixAnswerProblems(validateWixFormAnswers(form, {}))), 'a readable message for the parent');
+
+// A refusal carries the LIVE questions, so a booking page with an out-of-date copy can redraw its form
+// (the organiser added "diet" / changed the day options since the page loaded) instead of leaving the parent stuck.
+const refusal = wixFormProblemBody(form, validateWixFormAnswers(form, {}));
+check(refusal.fields.join() === 'diet,day' && /Please answer/.test(refusal.error), 'the refusal names what is missing');
+check(refusal.questions.map((q) => q.name).join() === 'diet,day,extras', 'and carries every live question the parent is asked (not the ones we fill ourselves)');
+const kept = pruneAnswers(refusal.questions, { diet: 'x', day: 'Sat', extras: ['Lunch', 'Gone'], gone: 'y' });
+check(kept.diet === 'x' && !('day' in kept) && !('extras' in kept) && !('gone' in kept), 'a redrawn form drops answers whose question or option no longer exists (they would show blank yet still be sent)');
+check(JSON.stringify(pruneAnswers(refusal.questions, { day: 'Tue', extras: ['Lunch'] })) === JSON.stringify({ day: 'Tue', extras: ['Lunch'] }), 'and keeps the ones that still fit');
+
+// Prefilling from earlier bookings: matched by wording (input names differ between events), typed answers only.
+const allergyQ = input('new-1', 'Does your child have any allergies?', true);
+const schoolQ = input('new-2', 'School / nursery', false);
+const birthQ = input('new-3', 'Date of birth', true, { inputType: 'DATE', controlType: 'DATE' });
+const startQ = input('new-4', 'Preferred start date', false, { inputType: 'DATE', controlType: 'DATE' });
+const sizeQ = input('new-5', 'T-shirt size', true, { controlType: 'DROPDOWN', options: ['S', 'M'] });
+const nowForm = [input('firstName', 'First name'), input('email', 'Email'), allergyQ, schoolQ, birthQ, startQ, sizeQ];
+const earlier = { answers: { a1: ' Peanuts ', s1: 'Little Stars', b1: '2025-09-07', d1: '2026-01-05', z1: 'M', email: 'x@y.test' }, questions: [
+  { name: 'a1', label: 'Does your child have any allergies' }, { name: 's1', label: 'school/nursery' }, { name: 'b1', label: 'Date of birth' },
+  { name: 'd1', label: 'Preferred start date' }, { name: 'z1', label: 'T-shirt size' }, { name: 'email', label: 'Email' } ] };
+const carried = rememberedAnswers(nowForm, [earlier]);
+check(carried['new-1'] === 'Peanuts', 'an allergy answer carries over to the same question worded slightly differently');
+check(carried['new-2'] === 'Little Stars', 'a school carries over');
+check(carried['new-3'] === '2025-09-07', 'a date of birth carries over');
+check(!('new-4' in carried), 'a date picked for one event does not');
+check(!('new-5' in carried), 'a dropdown choice is specific to one event and does not');
+check(!('firstName' in carried) && !('email' in carried), 'fields we fill ourselves are not part of it');
+const newer = { answers: { x: 'Dairy' }, questions: [{ name: 'x', label: 'Does your child have any allergies?' }] };
+check(rememberedAnswers(nowForm, [newer, earlier])['new-1'] === 'Dairy', 'the newest answer wins');
+const blank = { answers: { x: '  ' }, questions: [{ name: 'x', label: 'Does your child have any allergies?' }] };
+check(rememberedAnswers(nowForm, [blank, earlier])['new-1'] === 'Peanuts', 'a blank answer is skipped for the last real one');
+const arr = { answers: { x: ['a', 'b'] }, questions: [{ name: 'x', label: 'Does your child have any allergies?' }] };
+check(!('new-1' in rememberedAnswers(nowForm, [arr])), 'a multi-value answer is never carried');
+check(Object.keys(rememberedAnswers(nowForm, [])).length === 0 && Object.keys(rememberedAnswers(nowForm, [{ answers: null, questions: [] }])).length === 0, 'no history, nothing to carry');
+check(!('new-1' in rememberedAnswers(nowForm, [{ answers: { x: 'Peanuts' }, questions: [{ name: 'x', label: 'Does your child eat peanuts?' }] }])), 'a different question is not matched');
+
+// A venue Wix sent without a postal code is looked up by its address — but only a CERTAIN match is used.
+const crestHit = { BLK_NO: '103', ROAD_NAME: 'PRINCE CHARLES CRESCENT', POSTAL: '159018', LATITUDE: '1.292754716342545', LONGITUDE: '103.8198559062187' };
+check(pickAddressHit('103 Prince Charles Cres', 1, [crestHit])?.postalCode === '159018', 'one OneMap match is taken (The Crest -> 159018)');
+check(pickAddressHit('103 Prince Charles Cres', 3, [crestHit, { ...crestHit, POSTAL: '159999' }, crestHit])?.postalCode === '159018', 'several matches: the first is taken when its block and road are the address');
+check(pickAddressHit('10 Prince Charles Cres', 3, [crestHit, crestHit, crestHit]) === null, 'several matches, a different block number: not guessed');
+check(pickAddressHit('103 Orchard Road', 2, [crestHit, crestHit]) === null, 'several matches, a different road: not guessed');
+check(pickAddressHit('Tanglin', 5, [crestHit]) === null && pickAddressHit('Tanglin', 0, []) === null, 'an area name or no match gives nothing');
+check(pickAddressHit('103 Prince Charles Cres', 1, [{ ...crestHit, POSTAL: 'NIL' }]) === null, 'a hit without a real postal code is refused');
 
 const built = buildWixEventGuestForm(form, { contact, child: null, infoResponse: null, answers: clean });
 const byName = Object.fromEntries(built.inputValues.map((v) => [v.inputName, v]));

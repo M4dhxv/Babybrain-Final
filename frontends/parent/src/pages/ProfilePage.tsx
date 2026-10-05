@@ -815,7 +815,8 @@ function ChildSelect({
 /** latest / soonest sort by the session's own date; bookedNew / bookedOld sort
  *  by when the booking was made. */
 type BookingSort = "latest" | "soonest" | "bookedNew" | "bookedOld";
-const DEFAULT_BOOKING_SORT: BookingSort = "latest";
+// Upcoming bookings open with the one happening next at the top.
+const DEFAULT_BOOKING_SORT: BookingSort = "soonest";
 const BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
   waitlisted: "Waitlisted",
@@ -1262,7 +1263,10 @@ function ChildClasses({ child, bookings, recs }: { child: Child; bookings: Booki
     const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
     return !!cutoff && new Date(cutoff).getTime() >= now && b.status !== "cancelled";
   };
-  const upcoming = bookings.filter(isUpcoming);
+  // Soonest first (no start time last); the list arrives newest-booked first, which is not the order a parent plans in.
+  const upcoming = bookings
+    .filter(isUpcoming)
+    .sort((a, b) => new Date(a.startsAt ?? "9999").getTime() - new Date(b.startsAt ?? "9999").getTime());
   const past = bookings.filter((b) => !isUpcoming(b));
   const suggestions = recs.filter((r) => r.activity);
 

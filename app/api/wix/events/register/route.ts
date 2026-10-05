@@ -12,7 +12,7 @@ import {
 } from '@/lib/wix/client';
 import { evaluateWixEvent, parentBlockerMessage } from '@/lib/wix/event-eligibility';
 import {
-  describeWixAnswerProblems,
+  wixFormProblemBody,
   formAllowsAdditionalGuests,
   resolveWixEventGuestForm,
   sanitiseWixFormAnswers,
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
   if (live) {
     const problems = validateWixFormAnswers(live.formInputs, answers, { fallbackAnswer: !!body.infoResponse?.trim() });
     if (problems.length) {
-      return NextResponse.json({ error: describeWixAnswerProblems(problems), fields: problems.map((p) => p.name) }, { status: 422 });
+      return NextResponse.json(wixFormProblemBody(live.formInputs, problems), { status: 422 });
     }
   }
   const guestForm = await resolveWixEventGuestForm(admin, creds, event.wix_event_id, {

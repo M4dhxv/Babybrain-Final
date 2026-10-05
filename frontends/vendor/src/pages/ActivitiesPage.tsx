@@ -62,6 +62,7 @@ import { ImageCropDialog } from '@/components/ImageCropDialog';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
+import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
 
@@ -1629,6 +1630,12 @@ export default function ActivitiesPage() {
     load();
   }
 
+  // An activity with no area (its venue has no postal code) is published fine but cannot be found by the area
+  // filter and cannot be placed on the map, so say so while the vendor can still do something about it.
+  const NO_AREA_WARNING =
+    'Published, but parents can\x27t find this by area yet: its venue has no postal code. Add one to the address in Wix (or to the venue under Locations), then sync.';
+  const lacksArea = (a: Activity) => !a.region && !a.is_custom_location && (!!a.wix_event_id || !!a.wix_series_id || !!a.wix_service_id);
+
   async function togglePublish(a: Activity) {
     // Locked while Wix has lost track of this service (wrong/changed
     // account, or deleted on Wix) — reconnecting the right account, or the
@@ -1648,6 +1655,7 @@ export default function ActivitiesPage() {
     setActivities((prev) => prev.map((x) => (x.id === a.id ? { ...x, is_published, archived_at: null } : x)));
     const { error } = await supabase.from('activities').update({ is_published, archived_at: null }).eq('id', a.id);
     if (error) load();
+    else if (is_published && lacksArea(a)) toast.warning(NO_AREA_WARNING, { duration: 10000 });
   }
 
   const inputCls = 'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300';
@@ -2519,12 +2527,21 @@ export default function ActivitiesPage() {
                   ))}
                 </div>
               )}
+              {editingActivity && lacksArea(editingActivity) && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  This activity has no area: its venue has no postal code, so parents can't find it with the area filter and it can't be placed
+                  on the map. Add a postal code to the address in Wix, then sync.
+                </p>
+              )}
               {(editingActivity?.wix_form_extra_fields?.length ?? 0) > 0 && (
                 <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                   Parents are already asked your Wix registration form's own questions on the booking page
                   ({editingActivity!.wix_form_extra_fields.map((f) => `“${f}”`).join(', ')}) and their answers go straight to Wix — you
                   don't need to ask for them here. Use this only for something that isn't on your Wix form.
                 </p>
+              )}
+              {isWixEvent && editingActivity && provider && (
+                <WixFormHandling providerId={provider.id} activityId={editingActivity.id} />
               )}
               {form.info_request_enabled && (
                 <div>

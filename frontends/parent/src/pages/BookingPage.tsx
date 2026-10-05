@@ -15,7 +15,8 @@ import { BookingPageSkeleton } from "../components/Skeletons";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
-import { apiPost } from "../lib/api";
+import { ApiError, apiGet, apiPost } from "../lib/api";
+import { pruneAnswers, type FormAnswers } from "../lib/eventForm";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
@@ -129,9 +130,7 @@ type EventQuestion = {
   options?: string[];
   multi?: boolean;
 };
-type FormAnswers = Record<string, string | string[]>;
-
-function EventQuestionField({ q, value, onChange }: { q: EventQuestion; value: string | string[] | undefined; onChange: (v: string | string[]) => void }) {
+function EventQuestionField({ q, value, remembered, onChange }: { q: EventQuestion; value: string | string[] | undefined; remembered?: boolean; onChange: (v: string | string[]) => void }) {
   const inputCls = "mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold";
   const picked = Array.isArray(value) ? value : value ? [value] : [];
   return (
@@ -139,6 +138,9 @@ function EventQuestionField({ q, value, onChange }: { q: EventQuestion; value: s
       <p className="font-black">
         {q.label || q.name} {q.mandatory && <span className="text-baby-pink">*</span>}
       </p>
+      {remembered && (
+        <p className="mt-1 text-xs font-semibold text-[#7A6B72]">Filled in from your earlier booking for this child — please check it’s still right.</p>
+      )}
       {q.options && q.options.length > 0 ? (
         q.multi ? (
           <div className="mt-2 space-y-2">
@@ -312,6 +314,11 @@ export default function BookingPage() {
   };
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
   const [formAnswers, setFormAnswers] = useState<FormAnswers>({});
+  // Answers filled in from the parent's earlier bookings for this child (see /api/wix/events/previous-answers).
+  // Kept apart from what they typed so the form can say where a value came from, and so switching child can
+  // take back the previous child's untouched values.
+  const [remembered, setRemembered] = useState<Record<string, string>>({});
+  const rememberedRef = useRef<Record<string, string>>({});
   // A multi-day Wix event (one camp, 9-12 each day) is one session per day: the parent picks the days.
   const [pickedDays, setPickedDays] = useState<string[]>([]);
   const daySessions = sessions.filter((x) => x.wix_day);
@@ -543,6 +550,8 @@ export default function BookingPage() {
     setTicketTypes([]);
     setTicketTypeId(null);
     setFormAnswers({});
+    setRemembered({});
+    rememberedRef.current = {};
     setEventInfo(null);
     if (!isEvent || !eventId) return;
     let cancelled = false;
@@ -592,6 +601,44 @@ export default function BookingPage() {
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const bookChildId = childId ?? kids[0]?.id ?? null;
   const bookChild = kids.find((k) => k.id === bookChildId) ?? null;
+
+  // Prefill the event's own questions from what this parent already told other organisers about this child
+  // (allergies, school…). Best effort: no answer, or a failed call, just leaves the questions blank.
+  const hasEventQuestions = (eventInfo?.form_questions.length ?? 0) > 0;
+  useEffect(() => {
+    if (!isEvent || !eventId || !bookChildId || !hasEventQuestions) return;
+    let cancelled = false;
+    apiGet<{ answers?: Record<string, string> }>(
+      `/api/wix/events/previous-answers?eventId=${encodeURIComponent(eventId)}&childId=${encodeURIComponent(bookChildId)}`
+    )
+      .then(({ answers = {} }) => {
+        if (cancelled) return;
+        const before = rememberedRef.current;
+        rememberedRef.current = answers;
+        setRemembered(answers);
+        setFormAnswers((prev) => {
+          const next = { ...prev };
+          // Take back the previous child's values the parent hasn't touched, then fill what is still empty.
+          for (const [k, v] of Object.entries(before)) if (next[k] === v) delete next[k];
+          for (const [k, v] of Object.entries(answers)) if (next[k] == null) next[k] = v;
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isEvent, eventId, bookChildId, hasEventQuestions]);
+
+  // The server refused the answers against the event's LIVE form (the organiser changed it since this page
+  // took its copy): redraw the questions from the ones it sent back so the parent can answer what it asks.
+  function applyLiveQuestions(e: unknown) {
+    if (!(e instanceof ApiError) || e.status !== 422) return;
+    const live = (e.body as { questions?: EventQuestion[] } | null)?.questions;
+    if (!Array.isArray(live)) return;
+    setEventInfo((prev) => (prev ? { ...prev, form_questions: live } : prev));
+    setFormAnswers((prev) => pruneAnswers(live, prev));
+  }
   // Flag (not block outright) when the selected child falls outside the
   // class's stated age range — parents sometimes book ahead for a sibling or
   // a class that's a deliberate stretch, so this is a confirm-to-override
@@ -817,6 +864,7 @@ export default function BookingPage() {
         } catch (e) {
           setBusy(false);
           console.error(e);
+          applyLiveQuestions(e);
           setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not RSVP — please try again.");
           return;
         }
@@ -830,6 +878,7 @@ export default function BookingPage() {
           console.error(e);
           // The server's reason is the useful one here: registration closed or paused, members only,
           // a question still to answer (see app/api/wix/events/rsvp + lib/wix/event-eligibility).
+          applyLiveQuestions(e);
           setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not reserve this ticket — please try again.");
           return;
         }
@@ -844,6 +893,7 @@ export default function BookingPage() {
         } catch (e) {
           setBusy(false);
           console.error(e);
+          applyLiveQuestions(e);
           setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not start payment — please try again.");
           return;
         }
@@ -1458,6 +1508,7 @@ export default function BookingPage() {
                               key={q.name}
                               q={q}
                               value={formAnswers[q.name]}
+                              remembered={remembered[q.name] !== undefined && formAnswers[q.name] === remembered[q.name]}
                               onChange={(v) => setFormAnswers((prev) => ({ ...prev, [q.name]: v }))}
                             />
                           ))}

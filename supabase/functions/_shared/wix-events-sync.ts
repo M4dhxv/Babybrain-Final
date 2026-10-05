@@ -8,6 +8,7 @@ import {
   type WixCredentials,
   type WixEvent,
 } from './wix-client.ts';
+import { geocodeAddress, type AddressGeocode } from './geocode.ts';
 
 /**
  * Deno port of syncProviderWixEvents from lib/wix/events-sync.ts. Ported
@@ -42,22 +43,59 @@ function slugify(s: string): string {
 }
 
 /** `cache`/`countRef` are prefetched once by the caller across the whole
- *  run (address -> id, and the provider's total location count) instead of
- *  a per-event SELECT + COUNT — see the identical rewrite and its full
- *  reasoning in lib/wix/events-sync.ts. */
+ *  run (address -> venue, and the provider's total location count) instead of
+ *  a per-event SELECT + COUNT — see lib/wix/events-sync.ts, which this mirrors
+ *  (including completing a venue's missing postal code from its address). */
 async function resolveEventLocation(
   admin: SupabaseClient,
   providerId: string,
   event: WixEvent,
-  cache: Map<string, string>,
-  countRef: { count: number }
+  cache: Map<string, LocationEntry>,
+  countRef: { count: number },
+  geocode: (address: string) => Promise<AddressGeocode | null> = geocodeAddress
 ): Promise<string | null> {
   if (event.location.locationTbd || event.location.type === 'ONLINE' || !event.location.formattedAddress) {
     return null;
   }
   const address = event.location.formattedAddress;
-  const cached = cache.get(address);
-  if (cached) return cached;
+  const hit = cache.get(address);
+
+  // Wix does not always send a postal code with an event's address (The Crest came as "103 Prince Charles
+  // Cres, Singapore"). Without one the venue has no area and no map pin, and the search used to borrow the
+  // provider's other venue for it. Look the address up instead — once per address per run — and only trust a
+  // match that is certain (see pickAddressHit). A venue an admin has corrected by hand is left alone.
+  let postal = event.location.postalCode ?? hit?.postal_code ?? null;
+  let geo: AddressGeocode | null = null;
+  if (!postal && !hit?.wix_address_locked) {
+    const memo = geocodeMemo.get(cache) ?? new Map<string, Promise<AddressGeocode | null>>();
+    geocodeMemo.set(cache, memo);
+    const lookup = memo.get(address) ?? geocode(address);
+    memo.set(address, lookup);
+    geo = await lookup;
+    if (geo) postal = geo.postalCode;
+  }
+  // The activity rows written from this event take event.location.postalCode: give them what we found, or
+  // they would write the missing one back over the venue's.
+  if (postal && !event.location.postalCode) event.location.postalCode = postal;
+
+  if (hit) {
+    // Repair a venue that has no postal code yet. Updating it re-derives its area and carries the postal
+    // code and pin to every activity on it (provider_locations triggers).
+    if (!hit.postal_code && postal && !hit.wix_address_locked) {
+      const patch: { postal_code: string; latitude?: number; longitude?: number } = { postal_code: postal };
+      if (geo && hit.latitude == null) {
+        patch.latitude = geo.latitude;
+        patch.longitude = geo.longitude;
+      }
+      const { error } = await admin.from('provider_locations').update(patch).eq('id', hit.id);
+      if (error) console.error('Could not complete a venue postal code', hit.id, error);
+      else {
+        hit.postal_code = postal;
+        if (patch.latitude != null) hit.latitude = patch.latitude;
+      }
+    }
+    return hit.id;
+  }
 
   const { data: created } = await admin
     .from('provider_locations')
@@ -65,22 +103,33 @@ async function resolveEventLocation(
       provider_id: providerId,
       name: event.location.name || event.location.city || 'Event location',
       address,
-      postal_code: event.location.postalCode,
+      postal_code: postal,
+      ...(geo ? { latitude: geo.latitude, longitude: geo.longitude } : {}),
       is_primary: countRef.count === 0,
     })
     .select('id')
     .single();
   if (created) {
-    cache.set(address, created.id);
+    cache.set(address, { id: created.id, postal_code: postal, latitude: geo?.latitude ?? null, wix_address_locked: false });
     countRef.count++;
   }
   return created?.id ?? null;
 }
 
+/** A provider's existing venue, as resolveEventLocation needs it (keyed by address in its cache). */
+interface LocationEntry {
+  id: string;
+  postal_code: string | null;
+  latitude: number | null;
+  wix_address_locked: boolean;
+}
+const LOCATION_ENTRY_COLUMNS = 'id, address, postal_code, latitude, wix_address_locked';
+const geocodeMemo = new WeakMap<object, Map<string, Promise<AddressGeocode | null>>>();
+
 /** Everything this used to SELECT per event, gathered once by the caller —
  *  see EventMirrorContext in lib/wix/events-sync.ts for the full reasoning. */
 interface EventMirrorContext {
-  locationCache: Map<string, string>;
+  locationCache: Map<string, LocationEntry>;
   locationCountRef: { count: number };
   ticketTypesByEventId: Map<string, any[]>;
   existingActivityIdByLocalEventId: Map<string, string>;
@@ -363,9 +412,9 @@ export async function syncProviderWixEvents(
   const localEventIdsToMirror = eventsToMirror.map(({ localEventId }) => localEventId);
 
   if (localEventIdsToMirror.length) {
-    const { data: existingLocationRows } = await admin.from('provider_locations').select('id, address').eq('provider_id', providerId);
-    const locationCache = new Map<string, string>();
-    for (const l of existingLocationRows ?? []) if (l.address) locationCache.set(l.address, l.id);
+    const { data: existingLocationRows } = await admin.from('provider_locations').select(LOCATION_ENTRY_COLUMNS).eq('provider_id', providerId);
+    const locationCache = new Map<string, LocationEntry>();
+    for (const l of existingLocationRows ?? []) if (l.address) locationCache.set(l.address, l as LocationEntry);
     const locationCountRef = { count: (existingLocationRows ?? []).length };
 
     const { data: existingMirrorRows } = await admin

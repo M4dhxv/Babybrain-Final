@@ -193,7 +193,7 @@ export default function BookedPage() {
                       href="/pricing"
                       className="block rounded-[10px] bg-[#FEF4EB] px-3 py-2.5 text-center text-sm font-black text-[#C2691F] hover:bg-[#FDECD9]"
                     >
-                      Keep your calendar up to date automatically with Plus &rarr;
+                      Sync to calendar with Plus &rarr;
                     </a>
                   )}
                 </div>
