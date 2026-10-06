@@ -232,16 +232,26 @@ const T: Record<string, Template> = {
       p('We hope your family enjoys the activity!') +
       sign),
 
-  waitlist_available: (d, ctx) =>
-    wrap(ctx, 'A spot has become available - book now! 👶🧠',
+  // A vendor "Promote" links to the parent's bookings (that's where the Pay now
+  // for the offered seat lives, 00100); add ?highlight= so that exact booking
+  // flashes instead of the parent hunting through the list. Other offers link
+  // straight to the /book page and are left alone.
+  waitlist_available: (d, ctx) => {
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const bookingId = str(d, 'booking_id');
+    const href = bookingId && url.startsWith('/profile?tab=bookings') && !url.includes('highlight=')
+      ? `${url}&highlight=${encodeURIComponent(bookingId)}`
+      : url;
+    return wrap(ctx, 'A spot has become available - book now! 👶🧠',
       p(greet(ctx.recipientName)) +
       p('A spot has come available for the following activity which you joined the waitlist for:') +
       details(d, false) +
-      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'Book now')}, before someone else does!`) +
+      p(`${link(ctx, href, 'Book now')}, before someone else does!`) +
       p('Everyone on the waitlist has been told, and the first to book gets the spot. Being on the waitlist is free — you haven’t been charged anything.') +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p(`We hope you secure the spot and enjoy the activity with your family! If it is no longer available, remember you can ${link(ctx, '/explore', 'explore other activities here')}.`) +
-      sign),
+      sign);
+  },
 
   waitlist_confirmed: (d, ctx) =>
     wrap(ctx, 'You’re off the waitlist — you’re in! 👶🧠',
@@ -257,12 +267,18 @@ const T: Record<string, Template> = {
   // gated on cancelled_by is not null) — the only cancellation that emails the
   // parent; their own cancel keeps an in-app notice but sends no email. Names
   // the child (child_name) when the seat had one.
-  class_cancelled: (d, ctx) =>
-    wrap(ctx, 'Unfortunately your class has been cancelled 👶🧠',
+  class_cancelled: (d, ctx) => {
+    // Cancelled bookings live under Past activities, which also shows how it
+    // was made good (refund withheld / make-up token / package credit).
+    const bookingId = str(d, 'booking_id');
+    const href = bookingId ? `/profile?tab=past&highlight=${encodeURIComponent(bookingId)}` : '/profile?tab=past';
+    return wrap(ctx, 'Unfortunately your class has been cancelled 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your class')} has been cancelled${str(d, 'child_name') ? ` for ${bold(str(d, 'child_name') as string)}` : ''}. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
+      p(`You can see the details in ${link(ctx, href, 'your past activities')}.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
-      sign),
+      sign);
+  },
 
   // A paid Wix Events ticket the organiser's Wix has not accepted yet (lib/wix/finalize-event-checkout).
   // The parent has been charged and has no ticket, so tell them - briefly and without alarm.

@@ -108,36 +108,69 @@ async function buildSchedulePdf(entries: ScheduleEntry[], parentName?: string, r
     doc.setFontSize(11).text("No upcoming sessions.", M, y);
   }
 
-  let lastDay = "";
-  for (const e of sorted) {
-    const day = sgLong(e.startsAt);
-    const time = `${sgClock(e.startsAt)}${e.endsAt ? ` - ${sgClock(e.endsAt)}` : ""}`;
-    const titleLines: string[] = doc.setFont("helvetica", "bold").setFontSize(11).splitTextToSize(e.title, 100);
-    const meta = [e.venue, e.child ? `For ${e.child}` : ""].filter(Boolean) as string[];
-    const metaLines: string[] = meta.flatMap((m) => doc.setFont("helvetica", "normal").setFontSize(9).splitTextToSize(m, 100));
-    const boxH = 6 + titleLines.length * 5 + metaLines.length * 4;
+  // One section per child, so two children's sessions are never interleaved
+  // and every card sits under the name it belongs to. A schedule with a single
+  // child (or none named) stays one list, with "For <name>" on each card.
+  const childNames = [...new Set(sorted.map((e) => e.child).filter((c): c is string => !!c))];
+  const sections: { name: string | null; entries: ScheduleEntry[] }[] =
+    childNames.length > 1
+      ? childNames.map((name) => ({ name, entries: sorted.filter((e) => e.child === name) }))
+      : [{ name: null, entries: sorted }];
+  const loose = childNames.length > 1 ? sorted.filter((e) => !e.child) : [];
+  if (loose.length) sections.push({ name: "Not assigned to a child", entries: loose });
 
-    if (day !== lastDay) {
-      need(10 + boxH);
+  let firstSection = true;
+  for (const section of sections) {
+    if (section.name) {
+      // Child banner: a navy band so it is clearly a bigger heading than the
+      // pink day headers beneath it.
+      need(14 + 18);
+      if (!firstSection) y += 4;
+      doc.setFillColor(...NAVY).roundedRect(M, y, R - M, 9, 2, 2, "F");
+      doc.setFont("helvetica", "bold").setFontSize(12).setTextColor(255, 255, 255);
+      doc.text(section.name, M + 4, y + 6.3);
+      const n = section.entries.length;
+      doc.setFont("helvetica", "normal").setFontSize(9);
+      doc.text(`${n} ${n === 1 ? "session" : "sessions"}`, R - 4, y + 6.1, { align: "right" });
+      y += 9 + 6;
+    }
+    firstSection = false;
+
+    let lastDay = "";
+    for (const e of section.entries) {
+      const day = sgLong(e.startsAt);
+      const time = `${sgClock(e.startsAt)}${e.endsAt ? ` - ${sgClock(e.endsAt)}` : ""}`;
+      const titleLines: string[] = doc.setFont("helvetica", "bold").setFontSize(11).splitTextToSize(e.title, 100);
+      const meta = [e.venue, !section.name && e.child ? `For ${e.child}` : ""].filter(Boolean) as string[];
+      const metaLines: string[] = meta.flatMap((m) => doc.setFont("helvetica", "normal").setFontSize(9).splitTextToSize(m, 100));
+      const boxH = 6 + titleLines.length * 5 + metaLines.length * 4;
+
+      if (day !== lastDay) {
+        // Same gap above every day header (none at the very top of a section),
+        // so the headers line up evenly down the page.
+        const gapAbove = lastDay ? 5 : 0;
+        need(gapAbove + 6 + boxH);
+        y += gapAbove;
+        doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(...PINK);
+        doc.text(day.toUpperCase(), M, y + 3);
+        y += 6;
+        lastDay = day;
+      } else {
+        need(boxH + 2);
+      }
+
+      doc.setDrawColor(...LINE).setLineWidth(0.3).roundedRect(M, y, R - M, boxH, 2, 2);
       doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(...PINK);
-      doc.text(day.toUpperCase(), M, y);
-      y += 5;
-      lastDay = day;
-    } else {
-      need(boxH + 2);
+      doc.text(time, M + 4, y + 6);
+      doc.setFont("helvetica", "bold").setFontSize(11).setTextColor(...NAVY);
+      doc.text(titleLines, M + 48, y + 6);
+      doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(...GREY);
+      doc.text(metaLines, M + 48, y + 6 + titleLines.length * 5 - 1);
+      if (e.status) {
+        doc.setFontSize(9).text(e.status.charAt(0).toUpperCase() + e.status.slice(1), R - 4, y + 6, { align: "right" });
+      }
+      y += boxH + 3;
     }
-
-    doc.setDrawColor(...LINE).setLineWidth(0.3).roundedRect(M, y, R - M, boxH, 2, 2);
-    doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(...PINK);
-    doc.text(time, M + 4, y + 6);
-    doc.setFont("helvetica", "bold").setFontSize(11).setTextColor(...NAVY);
-    doc.text(titleLines, M + 48, y + 6);
-    doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(...GREY);
-    doc.text(metaLines, M + 48, y + 6 + titleLines.length * 5 - 1);
-    if (e.status) {
-      doc.setFontSize(9).text(e.status.charAt(0).toUpperCase() + e.status.slice(1), R - 4, y + 6, { align: "right" });
-    }
-    y += boxH + 3;
   }
 
   need(14);

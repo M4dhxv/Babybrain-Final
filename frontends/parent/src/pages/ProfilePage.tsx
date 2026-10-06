@@ -217,7 +217,8 @@ function notificationTarget(n: NotifItem, isPlus: boolean): string | null {
 
   if (packageId) return `/profile?tab=packages&highlight=${encodeURIComponent(packageId)}`;
   if (tokenId) return `/profile?tab=makeup&highlight=${encodeURIComponent(tokenId)}`;
-  if (bookingId) return `/profile?tab=bookings&highlight=${encodeURIComponent(bookingId)}`;
+  // A cancelled booking lives under Past activities, not Bookings.
+  if (bookingId) return `/profile?tab=${n.type.includes("cancel") ? "past" : "bookings"}&highlight=${encodeURIComponent(bookingId)}`;
   return url;
 }
 
@@ -320,7 +321,7 @@ const PROFILE_TABS: [string, string, string, boolean][] = [
   ["settings", "Settings", "gear", false],
 ];
 
-type ScheduleEntryLite = { title: string; startsAt: string; endsAt?: string | null; venue?: string; status?: string };
+type ScheduleEntryLite = { title: string; startsAt: string; endsAt?: string | null; venue?: string; status?: string; child?: string };
 
 /** Date range for the schedule export: presets, From / To fields (each with
  *  its own calendar pop-out) and a live count of the sessions inside it. The
@@ -392,10 +393,17 @@ function ScheduleRangePicker({
   );
 }
 
+/** One entry per child on the booking, named, so the PDF can keep each child's
+ *  sessions apart. A multi-child booking (one card, several seats) lists under
+ *  each child it covers. */
 const toEntries = (items: BookingItem[]): ScheduleEntryLite[] =>
   items
     .filter((b) => b.startsAt && b.status !== "cancelled")
-    .map((b) => ({ title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue, status: b.status }));
+    .flatMap((b) => {
+      const base = { title: b.title, startsAt: b.startsAt!, endsAt: b.endsAt, venue: b.venue, status: b.status };
+      const names = b.places.filter((p) => p.status !== "cancelled").map((p) => p.name);
+      return names.length > 0 ? names.map((child) => ({ ...base, child })) : [base];
+    });
 
 /** "Save as PDF" and, on phones, "Share" for the range picked above. */
 function SchedulePdfActions({
@@ -824,6 +832,25 @@ const BOOKING_STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+/** How a cancelled booking was made good (refund withheld, make-up token or
+ *  package credit). Shown on the card wherever a cancelled booking appears, so
+ *  it follows the booking into Past activities. */
+function CancelledNote({ b }: { b: BookingItem }) {
+  if (!b.compensation) return null;
+  return (
+    <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
+      <Icon name={b.compensation === "none" ? "bell" : "gift"} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
+      <span>
+        {b.compensation === "none"
+          ? "Payment for this activity is non-refundable, if cancelled — no credit or make-up token was issued."
+          : b.compensation === "token"
+          ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another session — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
+          : `${b.places.length > 1 ? `${b.places.length} session credits have` : "1 session credit has"} been returned to your package.`}
+      </span>
+    </div>
+  );
+}
+
 /** How many of the two Bookings controls differ from their defaults — shown as
  *  a count on the Filter button so a narrowed list is never a surprise. */
 const bookingFilterCount = (sort: BookingSort, status: string) =>
@@ -889,8 +916,9 @@ function BookingsFilterPanel({
     <div className="mb-4 rounded-[14px] border border-[#EBE3E5] bg-white p-4">
       <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by class date</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
+        {/* The default (Earliest first) sits on the left. */}
         <button type="button" className={chip(sort === "soonest")} onClick={() => onSort("soonest")}>Earliest first</button>
+        <button type="button" className={chip(sort === "latest")} onClick={() => onSort("latest")}>Latest first</button>
       </div>
       <p className="mb-2 mt-4 text-xs font-black uppercase tracking-wide text-[#6D748D]">Sort by booking time</p>
       <div className="flex flex-wrap gap-2">
@@ -2247,7 +2275,8 @@ export default function ProfilePage() {
   // decides which of the two past lists a booking lands in.
   const now = Date.now();
   const isPast = (b: BookingItem) => {
-    if (b.status === "cancelled") return false;
+    // A cancelled booking is no longer coming up, so it lives under Past.
+    if (b.status === "cancelled") return true;
     const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
     return !!cutoff && new Date(cutoff).getTime() < now;
   };
@@ -3338,22 +3367,29 @@ function PastActivitiesTab({
   const statusOf = (b: BookingItem) => marks[b.id] ?? (b.status === "completed" ? "present" : null);
 
   function Row({ b }: { b: BookingItem }) {
-    const state = statusOf(b);
+    const cancelled = b.status === "cancelled";
+    const state = cancelled ? null : statusOf(b);
+    // A notification may point at any seat of a multi-child booking.
+    const hid = b.allIds.find((i) => i === getParam("highlight")) ?? b.id;
+    const highlighted = useRowHighlight(hid);
     return (
-      <div className="rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card">
+      <div id={`row-${hid}`} className={`rounded-[12px] border border-[#EBE3E5] bg-white p-3 shadow-card ${highlighted ? HIGHLIGHT_RING : ""}`}>
         <div className="flex items-center gap-4">
           <img src={b.image} onError={fallbackToPlaceholder} alt="" width={56} height={56} loading="lazy" decoding="async" className="h-14 w-14 flex-shrink-0 rounded-[10px] object-cover" />
           <div className="min-w-0 flex-1">
             <a href={b.slug && !b.removed ? `/activity?slug=${b.slug}` : "/explore"} className="block truncate font-black hover:text-baby-pink">{b.title}</a>
             {b.when && <p className="text-sm font-semibold text-[#59658d]">{b.when}</p>}
           </div>
+          {cancelled && (
+            <span className="shrink-0 rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">Cancelled</span>
+          )}
           {state && (
             <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${state === "present" ? "bg-[#F1FBEF] text-palette-green" : "bg-[#FEF9EB] text-[#FFD77A]"}`}>
               {state === "present" ? "Attended" : "Not attended"}
             </span>
           )}
         </div>
-        <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
+        {!cancelled && <div className="mt-2 flex justify-end gap-2 border-t border-[#FAF7F7] pt-2">
           <button
             type="button"
             disabled={busyId === b.id}
@@ -3370,16 +3406,19 @@ function PastActivitiesTab({
           >
             We missed it
           </button>
-        </div>
+        </div>}
+        {cancelled && <CancelledNote b={b} />}
       </div>
     );
   }
 
   /** The three attendance sections for one list of classes. */
   function Sections({ list }: { list: BookingItem[] }) {
-    const attended = list.filter((b) => statusOf(b) === "present");
-    const notAttended = list.filter((b) => statusOf(b) === "absent");
-    const unmarked = list.filter((b) => statusOf(b) === null);
+    const cancelledList = list.filter((b) => b.status === "cancelled");
+    const live = list.filter((b) => b.status !== "cancelled");
+    const attended = live.filter((b) => statusOf(b) === "present");
+    const notAttended = live.filter((b) => statusOf(b) === "absent");
+    const unmarked = live.filter((b) => statusOf(b) === null);
     return (
       <div className="mt-4 space-y-6">
         {unmarked.length > 0 && (
@@ -3400,6 +3439,12 @@ function PastActivitiesTab({
             ? <p className="rounded-[12px] bg-[#FFF5F8] p-4 text-sm font-semibold text-[#68718f]">Nothing missed — nice work.</p>
             : <div className="space-y-3">{notAttended.map((b) => <Row key={b.id} b={b} />)}</div>}
         </section>
+        {cancelledList.length > 0 && (
+          <section>
+            <h2 className="mb-2 text-sm font-black text-[#46527d]">Cancelled ({cancelledList.length})</h2>
+            <div className="space-y-3">{cancelledList.map((b) => <Row key={b.id} b={b} />)}</div>
+          </section>
+        )}
       </div>
     );
   }
@@ -3913,18 +3958,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 </button>
               </div>
             )}
-            {b.status === "cancelled" && b.compensation && (
-              <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
-                <Icon name={b.compensation === "none" ? "bell" : "gift"} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFC1D6]" />
-                <span>
-                  {b.compensation === "none"
-                    ? "Payment for this activity is non-refundable, if cancelled — no credit or make-up token was issued."
-                    : b.compensation === "token"
-                    ? `Replaced with ${b.places.length > 1 ? `${b.places.length} make-up tokens` : "a make-up token"} you can use on another session — ${b.places.length > 1 ? "they don't" : "it doesn't"} expire.`
-                    : `${b.places.length > 1 ? `${b.places.length} session credits have` : "1 session credit has"} been returned to your package.`}
-                </span>
-              </div>
-            )}
+            {b.status === "cancelled" && <CancelledNote b={b} />}
           </div>
         );
       })}
