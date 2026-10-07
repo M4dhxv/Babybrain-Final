@@ -143,6 +143,10 @@ export function ExploreMap({
   const zoomOutTimerRef = useRef<number | undefined>(undefined);
   const replottingRef = useRef(false);
   const [showHint, setShowHint] = useState(false);
+  // A calm placeholder covers the map until its real style and tiles have all
+  // arrived, so parents never watch it fill in patch by patch (pins floating on
+  // a blank box, tiles popping in one at a time). It then fades out.
+  const [ready, setReady] = useState(false);
 
   // Create the map once.
   useEffect(() => {
@@ -204,16 +208,28 @@ export function ExploreMap({
     });
 
     let cancelled = false;
+    // Reveal once the real style is on AND MapLibre reports it has drawn
+    // everything it was asked for ("idle"). The blank placeholder style also
+    // goes idle at once, hence the styleSet guard. A time limit reveals the map
+    // anyway if a slow tile server would otherwise hold the cover up.
+    let styleSet = false;
+    const reveal = () => { if (!cancelled) setReady(true); };
+    map.on("idle", () => { if (styleSet) reveal(); });
+    const revealLimit = window.setTimeout(reveal, 6000);
     fetch(STYLE_URL)
       .then((r) => {
         if (!r.ok) throw new Error(`style ${r.status}`);
         return r.json() as Promise<Style>;
       })
       .then((style) => {
-        if (!cancelled) map.setStyle(brandStyle(style));
+        if (cancelled) return;
+        styleSet = true;
+        map.setStyle(brandStyle(style));
       })
       .catch(() => {
-        if (!cancelled) map.setStyle(FALLBACK_STYLE);
+        if (cancelled) return;
+        styleSet = true;
+        map.setStyle(FALLBACK_STYLE);
       });
 
     // Show the hint when a single finger actually tries to drag the map (taps on
@@ -247,6 +263,7 @@ export function ExploreMap({
     }
     return () => {
       cancelled = true;
+      window.clearTimeout(revealLimit);
       window.clearTimeout(hideTimer);
       window.clearTimeout(zoomOutTimerRef.current);
       el.removeEventListener("touchstart", onStart);
@@ -463,6 +480,21 @@ export function ExploreMap({
   return (
     <div className="relative h-[395px] w-full" style={{ zIndex: 0 }}>
       <div ref={containerRef} className="h-full w-full" />
+      {/* Loading cover: the site's cream with soft pulsing street blocks. Fades
+          out (and stops catching taps) once the map is ready; a bare, instant
+          swap for reduced motion. */}
+      <div
+        aria-hidden="true"
+        data-testid="map-cover"
+        className={`pointer-events-none absolute inset-0 z-[500] bg-[#F1EBE3] transition-opacity duration-500 ease-out motion-reduce:transition-none ${
+          ready ? "opacity-0" : "opacity-100"
+        }`}
+      >
+        <div className="absolute left-[8%] top-[14%] h-7 w-[38%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" />
+        <div className="absolute left-[8%] top-[34%] h-6 w-[78%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "150ms" }} />
+        <div className="absolute left-[8%] top-[52%] h-6 w-[58%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "300ms" }} />
+        <div className="absolute left-[8%] top-[70%] h-6 w-[68%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "450ms" }} />
+      </div>
       <div
         aria-hidden={!showHint}
         className={`pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center bg-white/55 transition-opacity duration-200 ${
