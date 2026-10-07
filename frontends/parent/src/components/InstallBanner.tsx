@@ -79,7 +79,7 @@ export function InstallBanner({ pathname }: { pathname: string }) {
         type="button"
         onClick={close}
         aria-label="Close"
-        className="absolute right-2.5 top-2.5 p-1.5 text-[#59658d] hover:text-baby-ink"
+        className="bb-tap absolute right-2.5 top-2.5 p-1.5 text-[#59658d] hover:text-baby-ink"
       >
         <Icon name="close" className="h-5 w-5" strokeWidth={3.2} />
       </button>

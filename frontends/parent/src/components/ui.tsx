@@ -205,9 +205,9 @@ export function SaveHeart({
             if (!ok) setShowUpgrade(true);
           });
         }}
-        className={`grid place-items-center rounded-full shadow-soft transition ${
-          fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"
-        } ${className}`}
+        className={`bb-tap grid place-items-center rounded-full shadow-soft transition ${
+          /(absolute|fixed|sticky)/.test(className) ? "" : "relative"
+        } ${fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"} ${className}`}
       >
         <Icon name="heart" className="h-4.5 w-4.5" />
       </button>
@@ -1049,7 +1049,7 @@ export const ActivityCard = memo(function ActivityCard({
             <a href={href} className="text-sm font-extrabold text-palette-blue after:absolute after:inset-0 after:content-['']">
               View details
             </a>
-            <a href={href} aria-label="Open activity" className="text-palette-blue">
+            <a href={href} aria-label="Open activity" className="bb-tap relative inline-flex text-palette-blue">
               <Icon name="open" className="h-5 w-5" />
             </a>
           </div>

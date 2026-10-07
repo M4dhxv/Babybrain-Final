@@ -277,3 +277,17 @@
     scrollbar-color: #F4C0D1 transparent;
   }
 }
+
+/* Tap-target helper: keeps a small control looking the same but gives it a
+   finger-sized (44px) hit area, centred on it. The element must already be
+   positioned (add `relative` unless it is absolute/fixed/sticky). */
+.bb-tap::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+

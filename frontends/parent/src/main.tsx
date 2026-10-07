@@ -7,6 +7,7 @@ import { PendingPlusGate } from "./components/PendingPlusGate";
 import { initPostHog } from "./lib/posthog";
 import { installLinkInterception } from "./lib/nav";
 import { installResumeRepaint } from "./lib/resume";
+import { installLabelLinking } from "./lib/labels";
 import { installActivityPrefetch } from "./lib/prefetch";
 import { routePath } from "./lib/nav";
 import {
@@ -56,6 +57,7 @@ if ("requestIdleCallback" in window) {
 // are left to the browser. In dev it also applies the `/app/` base the Vite
 // server needs. See lib/nav.ts.
 installLinkInterception();
+installLabelLinking();
 
 // Repaint when the app is brought back from the background (the "freezes to black" fix).
 installResumeRepaint();

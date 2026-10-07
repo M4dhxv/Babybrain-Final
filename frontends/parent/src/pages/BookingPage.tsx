@@ -82,7 +82,7 @@ function PackageOption({
               aria-expanded={noteOpen}
               onClick={(e) => { e.stopPropagation(); setNoteOpen((v) => !v); }}
               onKeyDown={(e) => e.stopPropagation()}
-              className="inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border border-[#9AA2BD] p-0 font-serif text-[9px] font-bold not-italic leading-none text-[#9AA2BD] hover:border-baby-pink hover:text-baby-pink"
+              className="bb-tap relative inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border border-[#9AA2BD] p-0 font-serif text-[9px] font-bold not-italic leading-none text-[#9AA2BD] hover:border-baby-pink hover:text-baby-pink"
             >
               i
             </button>

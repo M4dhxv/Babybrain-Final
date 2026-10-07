@@ -96,7 +96,7 @@ function EmailCapturePopup() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={dismiss}>
       <div className="w-full max-w-md rounded-[20px] bg-white p-7 shadow-soft" onClick={(e) => e.stopPropagation()}>
-        <button type="button" onClick={dismiss} aria-label="Close" className="float-right -mr-1 -mt-1 text-[#6D7488] hover:text-[#3a4468]">
+        <button type="button" onClick={dismiss} aria-label="Close" className="bb-tap relative float-right -mr-1 -mt-1 text-[#6D7488] hover:text-[#3a4468]">
           <Icon name="close" className="h-5 w-5" />
         </button>
         {done ? (
@@ -117,13 +117,14 @@ function EmailCapturePopup() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
+                aria-label="Email address"
                 autoFocus
                 className="h-12 w-full rounded-[12px] border border-[#EBE3E5] px-4 font-semibold shadow-card focus:border-baby-pink focus:outline-none"
               />
               {error && <p className="text-sm font-semibold text-baby-pink">{error}</p>}
               <Button type="submit" className="w-full" disabled={busy}>{busy ? "Saving…" : "Get started"}</Button>
             </form>
-            <button type="button" onClick={dismiss} className="mt-3 w-full text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
+            <button type="button" onClick={dismiss} className="mt-1 w-full py-3.5 text-center text-xs font-bold text-[#6E748D] hover:text-[#59658d]">Maybe later</button>
           </>
         )}
       </div>

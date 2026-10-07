@@ -405,7 +405,7 @@ export function SessionSchedule({
                   type="button"
                   aria-label={side === "left" ? "Earlier dates" : "More dates"}
                   onClick={() => strip?.scrollBy({ left: (side === "left" ? -1 : 1) * strip.clientWidth * 0.7, behavior: "smooth" })}
-                  className={`p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta text-baby-cta hover:scale-110`}
+                  className={`bb-tap relative p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta text-baby-cta hover:scale-110`}
                 >
                   <svg viewBox="0 0 24 24" className={`h-5 w-5 ${side === "left" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M4 12h16M14 6l6 6-6 6" />

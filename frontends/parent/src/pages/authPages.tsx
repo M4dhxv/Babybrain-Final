@@ -55,14 +55,14 @@ export function LoginPage() {
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-black">Password</label>
-                <a href="/forgot-password" className="text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
+                <a href="/forgot-password" className="bb-tap relative inline-block text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" enterKeyHint="go" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
           <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">
-            New here? <a href="/onboarding" className="font-black text-baby-pink">Create a profile</a>
+            New here? <a href="/onboarding" className="bb-tap relative inline-block font-black text-baby-pink">Create a profile</a>
           </p>
         </div>
       </main>
