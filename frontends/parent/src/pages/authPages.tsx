@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { PageShell, Button } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { ResendConfirmation } from "../components/ResendConfirmation";
+import { PasswordInput } from "../components/PasswordInput";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
@@ -57,7 +58,7 @@ export function LoginPage() {
                 <label className="block text-sm font-black">Password</label>
                 <a href="/forgot-password" className="bb-tap relative inline-block text-xs font-bold text-baby-pink hover:underline">Forgot password?</a>
               </div>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" enterKeyHint="go" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" enterKeyHint="go" className="h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 font-semibold" />
             </div>
             <Button type="submit" className="w-full justify-center">{busy ? "Signing in…" : "Log in"}</Button>
           </form>
