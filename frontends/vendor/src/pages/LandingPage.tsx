@@ -113,7 +113,12 @@ export default function LandingPage() {
             <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-3 relative">
               <Shield className="w-4 h-4 text-[#FA4D8D]" />
               <span className="text-sm font-bold text-[#FA4D8D]">Join 75+ trusted providers</span>
-              <Sparkles className="absolute -left-1 -top-3 h-5 w-5 text-yellow-500 sm:-left-6 sm:-top-2 sm:h-4 sm:w-4 sm:text-yellow-400" />
+              <Sparkles
+                className="absolute -left-1 -top-3 h-6 w-6 sm:-left-6 sm:-top-2 sm:h-5 sm:w-5"
+                // Bright, filled yellow with a soft glow (an outline-only stroke in the stock yellow read as a dull olive on phones).
+                style={{ color: '#FFC400', fill: '#FFE14D', filter: 'drop-shadow(0 0 5px rgba(255, 214, 64, 0.95))' }}
+                aria-hidden="true"
+              />
               <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />
             </div>
 
