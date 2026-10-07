@@ -13,6 +13,8 @@ type ParentRowT = {
   lastBookingAt: string | null; marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean;
   joinedAt: string; isTest: boolean; kind: AccountKind; isVendor: boolean; vendorNames: string[]; regions: string[];
   devices: DeviceT[]; surface: SurfaceT; lastSeenAt: string | null;
+  lastActiveAt: string | null;
+  signupSource: string | null; signupMedium: string | null; signupCampaign: string | null; signupReferrer: string | null;
 };
 type SurfaceT = 'app' | 'web' | 'both' | 'unknown';
 type DeviceT = { os: string; surface: SurfaceT; lastSeenAt: string };
@@ -21,14 +23,23 @@ type ParentsPage = { rows: ParentRowT[]; total: number; page: number; pages: num
 export type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; account: string; region: string; device: string;
+  onboarded: string; min_spend: string; area: string; account: string; region: string; device: string; source: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', device: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', device: '', source: '',
 };
-const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'device'];
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'device', 'source'];
 /** The one badge an account carries. Parents carry none. */
+/** "today", "3 days ago", "5 weeks ago" - how long ago something happened. */
+const agoText = (iso: string) => {
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 864e5);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 90) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+};
 const KIND_BADGE: Record<AccountKind, { label: string; tone: Tone } | null> = {
   test: { label: 'Test', tone: 'amber' }, vendor_login: { label: 'Vendor login', tone: 'blue' },
   vendor_parent: { label: 'Vendor + parent', tone: 'blue' }, parent: null,
@@ -331,7 +342,7 @@ export default function ParentsView() {
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('open'));
   const cacheRef = useRef(new Map<string, ParentsPage>());
   const freshRef = useRef(false);
-  const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false, device: false });
+  const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false, device: false, active: false, since: false, source: false });
 
   useEffect(() => {
     const t = setTimeout(() => { setF((p) => (p.q === q ? p : { ...p, q })); setPage(1); }, 300);
@@ -481,10 +492,13 @@ export default function ParentsView() {
             <label style={lab}>Postal code starts with
               <input value={f.area} onChange={set('area')} style={input()} placeholder="e.g. 52" />
             </label>
+            <label style={lab}>Signup source contains
+              <input value={f.source} onChange={set('source')} style={input()} placeholder="e.g. instagram, or unknown" />
+            </label>
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: C.muted }}>Show extra columns:</span>
-            {([['area', 'Postal code'], ['region', 'Preferred region'], ['onboarded', 'Onboarded'], ['last', 'Last booking'], ['device', 'Device']] as const).map(([k, l]) => (
+            {([['area', 'Postal code'], ['region', 'Preferred region'], ['onboarded', 'Onboarded'], ['last', 'Last booking'], ['device', 'Device'], ['active', 'Last active'], ['since', 'Days since joined'], ['source', 'Signup source']] as const).map(([k, l]) => (
               <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={extra[k]} onChange={(e) => setExtra((p) => ({ ...p, [k]: e.target.checked }))}
                   style={{ flex: 'none', width: 16, height: 16, margin: 0 }} />{l}
@@ -536,12 +550,15 @@ export default function ParentsView() {
                 {extra.onboarded && <th style={th()}>Onboarded</th>}
                 {extra.device && <th style={th()}>Device</th>}
                 {extra.last && sortTh('last', 'Last booking')}
+                {extra.active && sortTh('active', 'Last active')}
+                {extra.since && sortTh('joined', 'Days since joined')}
+                {extra.source && sortTh('source', 'Signup source')}
                 {sortTh('joined', 'Joined')}
               </tr>
             </thead>
             <tbody>
               {data.rows.length === 0 && (
-                <tr><td colSpan={12} style={{ ...td(), color: C.muted, textAlign: 'center', padding: 28 }}>
+                <tr><td colSpan={16} style={{ ...td(), color: C.muted, textAlign: 'center', padding: 28 }}>
                   No parents match these filters.
                 </td></tr>
               )}
@@ -580,6 +597,22 @@ export default function ParentsView() {
                   {extra.onboarded && <td style={td()}>{r.onboarded ? 'Yes' : 'No'}</td>}
                   {extra.device && <td style={td()}>{r.devices.length ? <>{deviceText(r.devices)}{r.surface !== 'unknown' && <div style={{ color: C.muted, fontSize: 12 }}>{SURFACE_TEXT[r.surface]}</div>}</> : <span style={{ color: C.muted }}>—</span>}</td>}
                   {extra.last && <td style={{ ...td(), whiteSpace: 'nowrap' }}>{r.lastBookingAt ? sgDay(r.lastBookingAt) : <span style={{ color: C.muted }}>—</span>}</td>}
+                  {extra.active && (
+                    <td style={{ ...td(), whiteSpace: 'nowrap' }} title={r.lastActiveAt ? new Date(r.lastActiveAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' }) : 'No visit or booking on record yet'}>
+                      {r.lastActiveAt ? <>{agoText(r.lastActiveAt)}<div style={{ color: C.muted, fontSize: 12 }}>{sgDay(r.lastActiveAt)}</div></> : <span style={{ color: C.muted }}>—</span>}
+                    </td>
+                  )}
+                  {extra.since && (
+                    <td style={{ ...td(), whiteSpace: 'nowrap' }}>
+                      {Math.max(0, Math.floor((Date.now() - Date.parse(r.joinedAt)) / 864e5))}
+                      {r.bookings === 0 && <div style={{ color: C.muted, fontSize: 12 }}>no booking yet</div>}
+                    </td>
+                  )}
+                  {extra.source && (
+                    <td style={td()} title={[r.signupMedium && `medium: ${r.signupMedium}`, r.signupCampaign && `campaign: ${r.signupCampaign}`, r.signupReferrer && `referrer: ${r.signupReferrer}`].filter(Boolean).join(' · ') || undefined}>
+                      {r.signupSource ? <>{r.signupSource}{(r.signupMedium || r.signupCampaign) && <div style={{ color: C.muted, fontSize: 12 }}>{[r.signupMedium, r.signupCampaign].filter(Boolean).join(' · ')}</div>}</> : <span style={{ color: C.muted }}>unknown</span>}
+                    </td>
+                  )}
                   <td style={{ ...td(), whiteSpace: 'nowrap' }}>
                     {sgDay(r.joinedAt)}
                     <div style={{ color: C.muted, fontSize: 12 }}>{sgClock(r.joinedAt)}</div>

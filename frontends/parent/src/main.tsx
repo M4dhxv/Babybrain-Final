@@ -8,6 +8,7 @@ import { initPostHog } from "./lib/posthog";
 import { installLinkInterception } from "./lib/nav";
 import { installResumeRepaint } from "./lib/resume";
 import { installLabelLinking } from "./lib/labels";
+import { captureAttribution } from "./lib/attribution";
 import { installActivityPrefetch } from "./lib/prefetch";
 import { routePath } from "./lib/nav";
 import {
@@ -57,9 +58,10 @@ if ("requestIdleCallback" in window) {
 // are left to the browser. In dev it also applies the `/app/` base the Vite
 // server needs. See lib/nav.ts.
 installLinkInterception();
-installLabelLinking();
 
 // Repaint when the app is brought back from the background (the "freezes to black" fix).
+captureAttribution();
+installLabelLinking();
 installResumeRepaint();
 
 // Start an activity page's data fetch on hover / touch of its card, before the click lands.

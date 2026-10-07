@@ -99,6 +99,11 @@ export async function GET(request: Request) {
   const area = (sp.get('area') ?? '').trim();
   if (area) rows = rows.filter((r) => (r.area ?? '').startsWith(area));
 
+  // Signup source: text found in the source, medium, campaign or referrer. "unknown" = none recorded.
+  const source = (sp.get('source') ?? '').trim().toLowerCase();
+  if (source === 'unknown') rows = rows.filter((r) => !r.signupSource);
+  else if (source) rows = rows.filter((r) => [r.signupSource, r.signupMedium, r.signupCampaign, r.signupReferrer].some((v) => (v ?? '').toLowerCase().includes(source)));
+
   // ---- sort ----------------------------------------------------------------
   const dir = sp.get('dir') === 'asc' ? 1 : -1;
   const key = sp.get('sort') ?? 'joined';
@@ -109,6 +114,8 @@ export async function GET(request: Request) {
       case 'bookings': return r.bookings;
       case 'spend': return r.spend;
       case 'last': return r.lastBookingAt ? Date.parse(r.lastBookingAt) : 0;
+      case 'active': return r.lastActiveAt ? Date.parse(r.lastActiveAt) : 0;
+      case 'source': return (r.signupSource ?? '~').toLowerCase();
       default: return Date.parse(r.joinedAt);
     }
   };
@@ -119,12 +126,15 @@ export async function GET(request: Request) {
 
   if (sp.get('format') === 'csv') {
     const head = ['Name', 'Email', 'Phone', 'Postal code', 'Children', 'Plan', 'Bookings', 'Upcoming', 'Spend (SGD)',
-      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account', 'Devices', 'App or web'];
+      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account', 'Devices', 'App or web',
+      'Last active', 'Days since joined', 'Signup source', 'Signup medium', 'Signup campaign', 'Signup referrer'];
     const body = rows.map((r) => [r.name, r.email, r.phone, r.area,
       r.children.map((c) => `${c.name} (${c.ageMonths < 24 ? `${c.ageMonths}m` : `${Math.floor(c.ageMonths / 12)}y`})`).join('; '),
       r.plan, r.bookings, r.upcoming, r.spend.toFixed(2), r.lastBookingAt?.slice(0, 10) ?? '', r.marketing,
       r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.kind, r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no',
-      r.devices.map((d) => DEVICE_LABEL[d.os]).join('; '), r.surface].map(csvCell).join(','));
+      r.devices.map((d) => DEVICE_LABEL[d.os]).join('; '), r.surface,
+      r.lastActiveAt?.slice(0, 10) ?? '', Math.floor((now - Date.parse(r.joinedAt)) / DAY),
+      r.signupSource ?? '', r.signupMedium ?? '', r.signupCampaign ?? '', r.signupReferrer ?? ''].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
       headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="parents.csv"' },
     });

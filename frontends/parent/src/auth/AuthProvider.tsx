@@ -5,6 +5,7 @@ import { identifyUser, resetUser } from "../lib/posthog";
 import { clearPlanCache } from "../lib/planCache";
 import { reportDevice } from "../lib/device";
 import { goTo, appUrl } from "../lib/nav";
+import { getAttribution } from "../lib/attribution";
 import type { ParentProfile, Child } from "../lib/database.types";
 
 interface AuthState {
@@ -287,6 +288,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: {
             full_name: fullName,
             ...(onboarding ? { onboarding } : {}),
+            // First campaign link / referrer this visitor arrived through, for Admin -> Parents.
+            ...(getAttribution() ? { attribution: getAttribution() } : {}),
             ...(intent ? { intended_plan: intent.plan, intended_billing: intent.billing } : {}),
           },
           // Send the confirmation link through our own callback so a

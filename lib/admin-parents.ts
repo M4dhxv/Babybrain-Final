@@ -73,12 +73,17 @@ export type AdminParent = {
   /** App (installed), web (browser), both, or unknown until they next open the app. */
   surface: Surface;
   lastSeenAt: string | null;
+  /** Latest sign of life: the later of the last app/web visit and the last booking. Null if neither is on record. */
+  lastActiveAt: string | null;
+  /** First-touch campaign/referrer recorded at sign-up (migration 00226). All null for parents who joined before it. */
+  signupSource: string | null; signupMedium: string | null; signupCampaign: string | null; signupReferrer: string | null;
 };
 
 type ParentRow = {
   id: string; full_name: string | null; email: string; phone: string | null; postal_code: string | null;
   onboarding_completed_at: string | null; marketing_consent_at: string | null;
   marketing_consent_withdrawn_at: string | null; created_at: string; is_test?: boolean | null; is_real_override?: boolean | null;
+  signup_source?: string | null; signup_medium?: string | null; signup_campaign?: string | null; signup_referrer?: string | null;
 };
 
 const TTL_MS = 30_000;
@@ -132,7 +137,9 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     // is_test comes from migration 00207 and is_real_override from 00212; read whichever exist.
     (async () => {
       let select: string = cols;
-      for (const extra of [', is_test, is_real_override', ', is_test']) {
+      // signup_* come from migration 00226; the list still loads (without them) until it is applied.
+      const SIGNUP = ', signup_source, signup_medium, signup_campaign, signup_referrer';
+      for (const extra of [`, is_test, is_real_override${SIGNUP}`, ', is_test, is_real_override', ', is_test']) {
         if (!(await admin.from('parent_profiles').select(`${cols}${extra}`).range(0, 0)).error) { select = `${cols}${extra}`; break; }
       }
       return fetchAll<ParentRow>((f, t) => admin.from('parent_profiles').select(select as string).range(f, t) as unknown as PromiseLike<{ data: ParentRow[] | null; error: { message: string } | null }>);
@@ -260,7 +267,16 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       override: p.is_test ? 'test' : p.is_real_override ? 'real' : 'auto',
       testSource: cls.testSource,
       testReason: cls.testReason,
-      ...(() => { const d = summariseDevices(devicesBy.get(p.id) ?? []); return { devices: d.devices, surface: d.surface, lastSeenAt: d.lastSeenAt }; })(),
+      ...(() => {
+        const d = summariseDevices(devicesBy.get(p.id) ?? []);
+        const booked = a?.last ? new Date(a.last).toISOString() : null;
+        const lastActiveAt = d.lastSeenAt && booked ? (d.lastSeenAt > booked ? d.lastSeenAt : booked) : d.lastSeenAt ?? booked;
+        return { devices: d.devices, surface: d.surface, lastSeenAt: d.lastSeenAt, lastActiveAt };
+      })(),
+      signupSource: p.signup_source ?? null,
+      signupMedium: p.signup_medium ?? null,
+      signupCampaign: p.signup_campaign ?? null,
+      signupReferrer: p.signup_referrer ?? null,
     };
   });
 }
