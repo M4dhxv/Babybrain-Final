@@ -121,6 +121,29 @@
 .bb-reveal {
   animation: bb-reveal 260ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
+/* Coming back to a page (see markBackNavigation in lib/nav.ts): hold still instead of easing up again. */
+/* Zero duration, NOT `animation: none`: removing the flag a moment later would switch the animation back on
+   and replay the rise on rows that were already on screen (a second "refresh"). With the name unchanged, an
+   animation whose time has already passed simply stays finished. */
+html[data-nav="back"] .bb-reveal {
+  animation-duration: 0s;
+  animation-delay: 0s;
+}
+/* The one soft arrival when the page comes back already scrolled to where the parent left it.
+   Opacity ONLY, on purpose: a `transform` on <main> (even a 1px rise) turns it into the containing
+   block for every `position: fixed` descendant while it runs, so Explore's fixed filter bar was
+   laid out at the bottom of the whole page and then snapped to the screen edge when the animation
+   ended - the "settling" jerk. */
+@keyframes bb-return-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.bb-return-in {
+  animation: bb-return-in 260ms ease-out backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bb-return-in { animation: bb-reveal-fade 120ms linear backwards; }
+}
 @media (prefers-reduced-motion: reduce) {
   .bb-reveal { animation: bb-reveal-fade 120ms linear backwards; }
 }

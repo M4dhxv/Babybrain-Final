@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityRow,
   Button,
@@ -15,7 +15,7 @@ import { AGE_BANDS, categories } from "../data/content";
 import { useActivities, useActivityPins, useFacetCounts, EXPLORE_PAGE_SIZE } from "../lib/useActivities";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
-import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore } from "../lib/nav";
+import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore, markBackNavigation } from "../lib/nav";
 import { lazyRoute } from "../lib/lazyRoute";
 import { Chip, REGION_FILTERS } from "./prefChips";
 import { lastCatalogFailure } from "../lib/catalog";
@@ -646,28 +646,72 @@ export default function ExplorePage() {
   // that far, i.e. once the remembered rows (see revealMemory) have rendered.
   // Gives up quietly after 3s, and at once if the parent starts scrolling.
   const [restoreY] = useState(() => peekExploreRestore());
-  useEffect(() => {
+  // The per-row rise-in belongs to a first visit. On a return the class is never put on at all (so it can
+  // not switch on and replay later): the page arrives once, via `bb-return-in` on <main>.
+  const riseClass = restoreY == null ? "bb-reveal" : "";
+  // The first attempt runs before the browser paints: with the list already in memory (the usual case when
+  // coming back) the page appears at the right place at once, with no visible scroll at all. Only if the
+  // rows aren't there yet does it keep trying, once per frame rather than every 100ms, so the correction
+  // lands as soon as the page is tall enough instead of a visible jump a moment later. While returning,
+  // the rise-in animation is held still (markBackNavigation), because rows easing up as the position is
+  // restored is what read as a shake.
+  const stopRestore = useRef<(() => void) | null>(null);
+  const pendingRestore = useRef<number | null>(null);
+  // True once the page has come back already at the parent's position: it then arrives with one soft rise.
+  const [returnedIn, setReturnedIn] = useState(false);
+  useLayoutEffect(() => {
     clearExploreRestore();
     if (restoreY == null) return;
+    markBackNavigation();
+    // The browser also tries to restore the scroll on a back navigation, before the rows exist, and then
+    // this corrects it: a double jump. Leave it to this page while this history entry is the one shown.
+    const prevMode = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    const reachableNow = () => document.documentElement.scrollHeight - window.innerHeight >= restoreY;
+    let raf = 0;
     let tries = 0;
     const stop = () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(raf);
       window.removeEventListener("wheel", stop);
       window.removeEventListener("touchstart", stop);
+      stopRestore.current = null;
+      pendingRestore.current = null;
     };
-    const timer = window.setInterval(() => {
-      const reachable = document.documentElement.scrollHeight - window.innerHeight;
-      if (reachable >= restoreY) {
+    const step = () => {
+      if (reachableNow()) {
         window.scrollTo(0, restoreY);
         stop();
-      } else if (++tries > 30) {
-        stop();
+      } else if (++tries > 180) {
+        stop(); // ~3s of frames
+      } else {
+        raf = window.requestAnimationFrame(step);
       }
-    }, 100);
-    window.addEventListener("wheel", stop, { passive: true });
-    window.addEventListener("touchstart", stop, { passive: true });
-    return stop;
+    };
+    if (reachableNow()) {
+      window.scrollTo(0, restoreY);
+      setReturnedIn(true);
+    } else {
+      stopRestore.current = stop;
+      pendingRestore.current = restoreY;
+      raf = window.requestAnimationFrame(step);
+      window.addEventListener("wheel", stop, { passive: true });
+      window.addEventListener("touchstart", stop, { passive: true });
+    }
+    return () => {
+      stop();
+      window.history.scrollRestoration = prevMode;
+    };
   }, [restoreY]);
+  // While a restore is still waiting for the rows, try again at every commit, before paint: the moment the
+  // rows are in the DOM the position is put back, so they are never painted at the top first.
+  useLayoutEffect(() => {
+    const y = pendingRestore.current;
+    if (y == null) return;
+    if (document.documentElement.scrollHeight - window.innerHeight >= y) {
+      window.scrollTo(0, y);
+      stopRestore.current?.();
+    }
+  });
 
   // Keeps the address bar (and, via rememberExploreUrl, the "back to
   // results" link on the activity page) in step with every filter — plain
@@ -745,7 +789,7 @@ export default function ExplorePage() {
   return (
     <PageShell active="/explore">
       <EmailCapturePopup />
-      <main className="mx-auto max-w-[1180px] px-4 pt-5 pb-24 sm:px-6 sm:py-5">
+      <main className={`mx-auto max-w-[1180px] px-4 pt-5 pb-24 sm:px-6 sm:py-5${returnedIn ? " bb-return-in" : ""}`}>
         <div className="mb-4 flex items-end justify-between">
           <div>
             <h1 className="text-[28px] font-black text-baby-green sm:text-[34px]">Explore activities <Icon name="search" className="inline h-6 w-6 text-baby-green" /></h1>
@@ -1113,7 +1157,7 @@ export default function ExplorePage() {
                 <Suspense
                   fallback={<div className="h-[395px] w-full animate-pulse bg-[#F3EDF0]" aria-hidden="true" />}
                 >
-                  <div className="bb-reveal">
+                  <div className={riseClass}>
                     <ExploreMap activities={pinActivities} regions={regions} />
                   </div>
                 </Suspense>
@@ -1150,7 +1194,7 @@ export default function ExplorePage() {
                 <div className="mb-3 flex items-center justify-between">
                   {loading
                     ? <div role="status" aria-label="Loading activities" className="h-4 w-36 animate-pulse rounded bg-[#F3EDF0]" />
-                    : <p className="bb-reveal text-sm font-black">{`${total} ${total === 1 ? "activity" : "activities"} found`}</p>}
+                    : <p className={`${riseClass} text-sm font-black`}>{`${total} ${total === 1 ? "activity" : "activities"} found`}</p>}
                 </div>
                 {loading ? (
                   <ActivityRowListSkeleton count={6} />
@@ -1164,7 +1208,7 @@ export default function ExplorePage() {
                         // Each row eases in (a touch quicker than the activity page's 260ms reveal),
                         // staggered 12ms apart for the first screenful so the list
                         // cascades instead of popping in; later rows share the last delay.
-                        <div key={activity.id} className="bb-reveal" style={{ animationDelay: `${Math.min(i, 6) * 12}ms`, animationDuration: "200ms" }}>
+                        <div key={activity.id} className={riseClass} style={{ animationDelay: `${Math.min(i, 6) * 12}ms`, animationDuration: "200ms" }}>
                           <ActivityRow activity={activity} />
                         </div>
                       ))}

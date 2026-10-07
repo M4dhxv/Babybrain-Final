@@ -480,20 +480,20 @@ export function ExploreMap({
   return (
     <div className="relative h-[395px] w-full" style={{ zIndex: 0 }}>
       <div ref={containerRef} className="h-full w-full" />
-      {/* Loading cover: the site's cream with soft pulsing street blocks. Fades
+      {/* Loading cover: soft sage green (#E2E9D9) with slightly deeper pulsing street blocks. Fades
           out (and stops catching taps) once the map is ready; a bare, instant
           swap for reduced motion. */}
       <div
         aria-hidden="true"
         data-testid="map-cover"
-        className={`pointer-events-none absolute inset-0 z-[500] bg-[#F1EBE3] transition-opacity duration-500 ease-out motion-reduce:transition-none ${
+        className={`pointer-events-none absolute inset-0 z-[500] bg-[#E2E9D9] transition-opacity duration-500 ease-out motion-reduce:transition-none ${
           ready ? "opacity-0" : "opacity-100"
         }`}
       >
-        <div className="absolute left-[8%] top-[14%] h-7 w-[38%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" />
-        <div className="absolute left-[8%] top-[34%] h-6 w-[78%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "150ms" }} />
-        <div className="absolute left-[8%] top-[52%] h-6 w-[58%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "300ms" }} />
-        <div className="absolute left-[8%] top-[70%] h-6 w-[68%] animate-pulse rounded-lg bg-[#E8E0D6] motion-reduce:animate-none" style={{ animationDelay: "450ms" }} />
+        <div className="absolute left-[8%] top-[14%] h-7 w-[38%] animate-pulse rounded-lg bg-[#D3DCC8] motion-reduce:animate-none" />
+        <div className="absolute left-[8%] top-[34%] h-6 w-[78%] animate-pulse rounded-lg bg-[#D3DCC8] motion-reduce:animate-none" style={{ animationDelay: "150ms" }} />
+        <div className="absolute left-[8%] top-[52%] h-6 w-[58%] animate-pulse rounded-lg bg-[#D3DCC8] motion-reduce:animate-none" style={{ animationDelay: "300ms" }} />
+        <div className="absolute left-[8%] top-[70%] h-6 w-[68%] animate-pulse rounded-lg bg-[#D3DCC8] motion-reduce:animate-none" style={{ animationDelay: "450ms" }} />
       </div>
       <div
         aria-hidden={!showHint}

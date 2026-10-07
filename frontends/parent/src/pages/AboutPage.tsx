@@ -4,7 +4,7 @@ export default function AboutPage() {
   return (
     <PageShell active="/about" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
-        <section className="relative grid items-center gap-8 md:grid-cols-[1fr_520px]">
+        <section className="bb-reveal relative grid items-center gap-8 md:grid-cols-[1fr_520px]">
           <div className="relative z-10">
             <h1 className="text-[54px] font-black leading-tight text-baby-lilac">About</h1>
             <p className="mt-5 text-2xl font-black leading-tight">BabyBrain helps parents to discover &amp; book amazing activities for their little ones.</p>
@@ -23,7 +23,7 @@ export default function AboutPage() {
           />
         </section>
 
-        <section className="relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#FEEBF2] to-[#FFF5F8] p-8 md:grid-cols-[300px_1fr]">
+        <section className="bb-reveal relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#FEEBF2] to-[#FFF5F8] p-8 md:grid-cols-[300px_1fr]" style={{ animationDelay: "40ms" }}>
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.jpg`}
             alt="Katie Crowson, founder of BabyBrain"
@@ -41,7 +41,7 @@ export default function AboutPage() {
           </div>
         </section>
         {/* No tinted panel here — the mission sits straight on the page. */}
-        <section className="mt-5 grid items-center gap-6 px-2 py-8 md:grid-cols-[1fr_320px]">
+        <section className="bb-reveal mt-5 grid items-center gap-6 px-2 py-8 md:grid-cols-[1fr_320px]" style={{ animationDelay: "80ms" }}>
           <div>
             <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our mission</h2>
             <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>

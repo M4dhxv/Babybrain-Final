@@ -206,7 +206,7 @@ export function SaveHeart({
           });
         }}
         className={`bb-tap grid place-items-center rounded-full shadow-soft transition ${
-          /(absolute|fixed|sticky)/.test(className) ? "" : "relative"
+          /(^| )(absolute|fixed|sticky)( |$)/.test(className) ? "" : "relative"
         } ${fav.saved ? "bg-baby-pink text-white" : "bg-white text-baby-pink"} ${className}`}
       >
         <Icon name="heart" className="h-4.5 w-4.5" />

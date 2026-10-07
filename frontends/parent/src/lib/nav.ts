@@ -235,6 +235,23 @@ export function clearExploreRestore() {
   }
 }
 
+/** Coming BACK to a page (browser back/forward, or "Back to results") should not replay the page's rise-in
+ *  animation: the content is already familiar, and rows easing up while the scroll position is being put
+ *  back reads as a jerk. This flags the document for a moment so `.bb-reveal` (see styles/index.css) holds
+ *  still. It clears itself, and on the next forward navigation. */
+let backTimer: number | undefined;
+export function markBackNavigation(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.nav = "back";
+  window.clearTimeout(backTimer);
+  backTimer = window.setTimeout(() => { delete document.documentElement.dataset.nav; }, 1500);
+}
+function clearBackNavigation(): void {
+  if (typeof document === "undefined") return;
+  window.clearTimeout(backTimer);
+  delete document.documentElement.dataset.nav;
+}
+
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
@@ -244,6 +261,7 @@ if (typeof window !== "undefined") {
     // itself, but before the results exist to scroll to, so it lands at the
     // top. Have Explore do it once its rows are back.
     if (routePath() === "/explore") requestExploreRestore();
+    markBackNavigation();
     emit();
   });
 }
@@ -268,6 +286,7 @@ export function goTo(
     return;
   }
   if (routePath() === "/explore") saveExploreScroll();
+  clearBackNavigation();
   if (opts?.replace) window.history.replaceState({}, "", url);
   else window.history.pushState({}, "", url);
   // A fresh page starts at the top; back/forward let the browser decide.

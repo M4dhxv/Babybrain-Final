@@ -167,7 +167,7 @@ export default function ContactPage() {
   return (
     <PageShell active="/contact">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
-        <section className="grid items-center gap-7 md:grid-cols-[1fr_420px]">
+        <section className="bb-reveal grid items-center gap-7 md:grid-cols-[1fr_420px]">
           <div>
             {/* Blue, not pink. The eyebrow is 18px bold — just under the
                 large-text threshold — so it takes the readable blue ink;
@@ -185,7 +185,7 @@ export default function ContactPage() {
           </div>
         </section>
 
-        <section className="mt-8">
+        <section className="bb-reveal mt-8" style={{ animationDelay: "40ms" }}>
           <SectionTitle emoji="👇🏻">Get in touch</SectionTitle>
           {/* QA 21/08: "can we remove the message us options to save credits for
               the users messaging vendors and each other" — the in-app support
@@ -207,7 +207,7 @@ export default function ContactPage() {
           </div>
         </section>
 
-        <section id="faq" className="mt-9 scroll-mt-24">
+        <section id="faq" className="bb-reveal mt-9 scroll-mt-24" style={{ animationDelay: "80ms" }}>
           <SectionTitle emoji="ℹ️">Frequently asked questions</SectionTitle>
           <div className="space-y-5">
             {FAQ_GROUPS.map(({ group, items }) => (
@@ -226,7 +226,7 @@ export default function ContactPage() {
           </div>
         </section>
 
-        <section id="contact-form" className="mt-9 scroll-mt-24">
+        <section id="contact-form" className="bb-reveal mt-9 scroll-mt-24" style={{ animationDelay: "120ms" }}>
           <ContactForm />
         </section>
       </main>
