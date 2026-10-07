@@ -70,7 +70,7 @@ const statTiles = [
 // taller ratio (still uniform across all four cards) purely to avoid
 // clipping; sm+ keeps the approved 253:159 shape.
 const CARD_CLASS =
-  'sticky top-[var(--bb-top)] min-h-[150px] w-full origin-top scale-[var(--bb-s,1)] opacity-[var(--bb-o,1)] sm:absolute sm:min-h-0 sm:w-[55%] sm:scale-100 sm:opacity-100 sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_-10px_24px_-12px_rgba(15,23,42,0.30)] sm:shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
+  'absolute left-0 top-[var(--bb-y,0px)] min-h-[150px] w-full origin-top opacity-[var(--bb-o,1)] [transform:translateY(var(--bb-ty,0px))_scale(var(--bb-s,1))_perspective(600px)_rotateX(var(--bb-rx,0deg))] sm:min-h-0 sm:w-[55%] sm:opacity-100 sm:[transform:none] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_-10px_24px_-12px_rgba(15,23,42,0.30)] sm:shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
 // Left/top steps are sized so the last card's far edge lands at the
 // container's edge — the cascade fills the box instead of leaving a dead
 // margin on the right/bottom. The vertical step has two competing limits
@@ -81,7 +81,7 @@ const CARD_CLASS =
 // enough that 3 steps + one card's height doesn't exceed the container.
 // Card height (via the aspect-ratio) and the container's own height both
 // change per breakpoint, so each needs its own calibrated step.
-// Below sm the cards are a full-width sticky stack (see useStackDepth); positions only apply from sm up.
+// Below sm the cards are an overlapped pile driven by useTiltFlatten; positions only apply from sm up.
 const POSITIONS = [
   'sm:left-0 sm:top-0',
   'sm:left-[15%] sm:top-[15.5%] lg:top-[16%]',
@@ -89,61 +89,90 @@ const POSITIONS = [
   'sm:left-[45%] sm:top-[46.5%] lg:top-[48%]',
 ];
 
-/** Mobile "sticky stack": below sm the cards are a vertical stack where each
- *  card sticks near the top (a little lower than the one before) while the next
- *  slides up over it, so every card gets its full moment on screen. As later
- *  cards cover it, an older card shrinks and dims, driven by scroll. Progress
- *  is written to --bb-s / --bb-o on each [data-stack-card]; index.css applies
- *  it below sm only. Unset = cards shown normally. */
-function useStackDepth(container: React.RefObject<HTMLDivElement | null>) {
+/** Mobile "tilt and flatten" (below sm): the four cards sit as an overlapped
+ *  pile, each showing the same preview height (70% of the Bookings card). As the pile scrolls up into view,
+ *  each card leans back and faded, then snaps upright in turn, top card first.
+ *  Driven by scroll position (reverses on the way back); written as CSS
+ *  variables the card classes read, so from sm up none of it applies. Reduced
+ *  motion gets a plain, fully separated stack. */
+const SHOWN = 0.72; // share of the first (Bookings) card that stays visible; every covered card shows that same height
+const GAP = 12; // gap between cards in the reduced-motion (flat) layout
+
+function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
-    const root = container.current;
-    if (!root) return;
+    const el = root.current;
+    if (!el) return;
     const narrow = window.matchMedia('(max-width: 639px)');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     let raf = 0;
     const update = () => {
       raf = 0;
-      const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-stack-card]'));
-      if (!narrow.matches || reduced.matches) {
-        cards.forEach((c) => { c.style.removeProperty('--bb-s'); c.style.removeProperty('--bb-o'); });
+      const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-stack-card]'));
+      if (!narrow.matches) {
+        el.style.removeProperty('--bb-stack');
+        cards.forEach((c) => ['--bb-y', '--bb-rx', '--bb-o'].forEach((v) => c.style.removeProperty(v)));
         return;
       }
-      const tops = cards.map((c) => c.getBoundingClientRect().top);
+      const hs = cards.map((c) => c.offsetHeight);
+      const n = cards.length;
+      if (reduced.matches) {
+        let y = 0;
+        cards.forEach((c, i) => {
+          c.style.setProperty('--bb-y', `${y}px`);
+          c.style.setProperty('--bb-rx', '0deg');
+          c.style.setProperty('--bb-o', '1');
+          y += hs[i] + GAP;
+        });
+        el.style.setProperty('--bb-stack', `${y - GAP}px`);
+        return;
+      }
+      // Every covered card shows the same height, taken from the first (Bookings) card, so the previews line up.
+      const shown = Math.round(hs[0] * SHOWN);
+      const ys = cards.map((_, i) => i * shown);
+      el.style.setProperty('--bb-stack', `${ys[n - 1] + hs[n - 1]}px`);
+      const vh = window.innerHeight;
+      const p = Math.min(1, Math.max(0, (vh - el.getBoundingClientRect().top) / (vh * 0.9)));
       cards.forEach((c, i) => {
-        const h = c.offsetHeight;
-        let covered = 0;
-        for (let j = i + 1; j < cards.length; j++) {
-          covered += Math.min(1, Math.max(0, (tops[i] + h - tops[j]) / h));
-        }
-        c.style.setProperty('--bb-s', String(1 - 0.05 * covered));
-        c.style.setProperty('--bb-o', String(Math.max(0.45, 1 - 0.18 * covered)));
+        const t = Math.min(1, Math.max(0, (p - i * 0.16) / 0.4));
+        const e = 1 - Math.pow(1 - t, 3);
+        c.style.setProperty('--bb-y', `${ys[i]}px`);
+        c.style.setProperty('--bb-rx', `${-(1 - e) * 58}deg`);
+        c.style.setProperty('--bb-o', String(0.35 + 0.65 * e));
       });
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(update); };
     update();
-    window.addEventListener('scroll', schedule, { passive: true });
+    // Capture phase on document so a scroll in ANY scroller (window, or an
+    // inner overflow container) reaches us — a plain window listener misses the latter.
+    document.addEventListener('scroll', schedule, { capture: true, passive: true });
     window.addEventListener('resize', schedule);
+    // Belt and braces: while the pile is anywhere near the screen, also refresh as it crosses visibility thresholds.
+    const io =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(schedule, { rootMargin: '100px', threshold: Array.from({ length: 21 }, (_, i) => i / 20) });
+    io?.observe(el);
     return () => {
-      window.removeEventListener('scroll', schedule);
+      document.removeEventListener('scroll', schedule, { capture: true });
       window.removeEventListener('resize', schedule);
+      io?.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [container]);
+  }, [root]);
 }
 
 export function HeroDashboardPreview() {
   const rootRef = useRef<HTMLDivElement>(null);
-  useStackDepth(rootRef);
+  useTiltFlatten(rootRef);
   return (
     <div
       ref={rootRef}
       data-testid="hero-dashboard-preview"
-      className="mx-auto mb-6 flex w-full max-w-3xl flex-col gap-3 sm:relative sm:mb-0 sm:block sm:h-[470px] lg:h-[440px]"
+      className="relative mx-auto mb-6 h-[var(--bb-stack,488px)] w-full max-w-3xl sm:mb-0 sm:h-[470px] lg:h-[440px]"
       aria-hidden="true"
     >
       {/* Bookings card — list (left) + the real page's detail side panel (right) */}
-      <div data-stack-card style={{ ['--bb-top' as string]: '16px' }} className={`${CARD_CLASS} ${POSITIONS[0]}`}>
+      <div data-stack-card className={`${CARD_CLASS} ${POSITIONS[0]}`}>
         <div className="mb-0.5">
           <div className="text-[13px] font-bold text-gray-900">Bookings</div>
           <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
@@ -205,7 +234,7 @@ export function HeroDashboardPreview() {
       </div>
 
       {/* Schedule card */}
-      <div data-stack-card style={{ ['--bb-top' as string]: '30px' }} className={`${CARD_CLASS} ${POSITIONS[1]}`}>
+      <div data-stack-card className={`${CARD_CLASS} ${POSITIONS[1]}`}>
         <div className="mb-1.5 flex items-start justify-between">
           <div>
             <div className="text-[13px] font-bold text-gray-900">Schedule</div>
@@ -256,7 +285,7 @@ export function HeroDashboardPreview() {
       </div>
 
       {/* Messages card — conversation list (left) + the real page's open thread (right) */}
-      <div data-stack-card style={{ ['--bb-top' as string]: '44px' }} className={`${CARD_CLASS} ${POSITIONS[2]}`}>
+      <div data-stack-card className={`${CARD_CLASS} ${POSITIONS[2]}`}>
         <div className="mb-1.5">
           <div className="text-[13px] font-bold text-gray-900">Messages</div>
           <div className="text-[9.5px] font-medium leading-tight text-gray-500">
@@ -298,7 +327,7 @@ export function HeroDashboardPreview() {
 
       {/* Dashboard summary card — same uniform size as the rest, last in
           DOM order so it's the unobstructed front layer. */}
-      <div data-stack-card style={{ ['--bb-top' as string]: '58px' }} className={`${CARD_CLASS} ${POSITIONS[3]} sm:shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]`}>
+      <div data-stack-card className={`${CARD_CLASS} ${POSITIONS[3]} sm:shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]`}>
         <div className="mb-1 flex items-center gap-1">
           <span className="text-[13px] font-bold text-gray-900">Good morning! 👋</span>
           <Sparkles className="h-3 w-3 text-yellow-400" />
