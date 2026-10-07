@@ -34,6 +34,7 @@ import {
   MessagesSkeleton,
 } from "../components/Skeletons";
 import { useAuth } from "../auth/AuthProvider";
+import { sessionWordingTitle, sessionWordingBody } from "../lib/notificationWording";
 import { useUnreadMessages } from "../lib/chat";
 import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
@@ -240,8 +241,8 @@ function NotificationRow({ n }: { n: NotifItem }) {
     <div className="flex items-start gap-2">
       {!n.read_at && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-baby-pink" />}
       <div className="min-w-0 flex-1">
-        <p className="font-black">{n.title}</p>
-        {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{n.body}</p>}
+        <p className="font-black">{sessionWordingTitle(n.title)}</p>
+        {n.body && <p className="mt-0.5 text-sm font-semibold text-[#59658d]">{sessionWordingBody(n.body)}</p>}
         <p className="mt-1 text-xs font-semibold text-[#6D748A]">{sgDateTime(n.created_at)}</p>
       </div>
       {target && <Icon name="chevron" className="mt-1 h-4 w-4 flex-shrink-0 text-[#9AA2BD]" />}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sessionWordingTitle, sessionWordingBody } from '@/lib/notification-wording';
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
 import { sendPushToUser } from '@/lib/push';
@@ -75,8 +76,8 @@ export async function POST(request: Request) {
   if (notification.push_status === 'pending') {
     const pushData = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
     await sendPushToUser(notification.user_id, {
-      title: notification.title,
-      body: notification.body,
+      title: sessionWordingTitle(notification.title),
+      body: sessionWordingBody(notification.body),
       url: typeof pushData.url === 'string' ? pushData.url : undefined,
     }).catch((err) => console.error(`[notifications webhook] push failed for ${notificationId}:`, err));
     await admin.from('notifications').update({ push_status: 'sent' }).eq('id', notificationId);
@@ -122,6 +123,22 @@ export async function POST(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://babybrain-final.vercel.app';
   const data = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
 
+  // The booking-confirmed email carries an "Add to calendar" button. The
+  // notification payload has the display strings but not the session's real
+  // start/end, so look them up; if that fails the email simply omits the button.
+  if (notification.type === 'booking_confirmed' && typeof data.booking_id === 'string') {
+    const { data: b } = await admin
+      .from('bookings')
+      .select('activity_sessions(starts_at, ends_at)')
+      .eq('id', data.booking_id)
+      .maybeSingle();
+    const sess = (b as { activity_sessions?: { starts_at?: string; ends_at?: string } | null } | null)?.activity_sessions;
+    if (sess?.starts_at) {
+      data.starts_at = sess.starts_at;
+      data.ends_at = sess.ends_at;
+    }
+  }
+
   // Everything from here on can throw (a bad template, Resend rejecting the
   // request) — without the try/catch that used to leave the row uncaught,
   // email_status stayed 'pending' forever with no record of why, since the
@@ -132,7 +149,7 @@ export async function POST(request: Request) {
   try {
     // Branded template for this type, or a safe generic fallback.
     const rendered = renderEmail(notification.type, data, { appUrl, recipientName: name });
-    subject = rendered?.subject ?? notification.title;
+    subject = rendered?.subject ?? sessionWordingTitle(notification.title);
     // The generic fallback (used for any notification type without a branded
     // template, e.g. provider_message) interpolates title/body/url that can be
     // user-controlled — chat text most notably — so every field is HTML-escaped
@@ -140,8 +157,8 @@ export async function POST(request: Request) {
     html =
       rendered?.html ??
       `<div style="font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;color:#767676;font-size:18px">
-        <h2 style="color:#4a4a4a">${esc(notification.title)}</h2>
-        <p>${esc(notification.body)}</p>
+        <h2 style="color:#4a4a4a">${esc(sessionWordingTitle(notification.title))}</h2>
+        <p>${esc(sessionWordingBody(notification.body))}</p>
         <p><a href="${esc(appUrl)}${typeof data.url === 'string' ? esc(data.url) : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
       </div>`;
 

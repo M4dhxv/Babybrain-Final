@@ -18,7 +18,7 @@ import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { ApiError, apiGet, apiPost } from "../lib/api";
 import { pruneAnswers, type FormAnswers } from "../lib/eventForm";
 import { cleanRpcErrorMessage } from "../lib/errors";
-import { goTo, getParam } from "../lib/nav";
+import { goTo, getParam, routePath } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -221,7 +221,10 @@ export default function BookingPage() {
   const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
-  const [count, setCount] = useState(1);
+  const [count, setCount] = useState(() => {
+    const n = Number(getParam("count"));
+    return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 1;
+  });
   // Optional names for the extra seats of a multi-child booking (00084);
   // index 0 = the 2nd child. Blank entries become "Guest child" on both the
   // parent card and the vendor roster, editable later from My Bookings.
@@ -756,10 +759,19 @@ export default function BookingPage() {
   // leave the party larger than what's left.
   useEffect(() => { setCount((c) => Math.min(c, maxChildren)); }, [maxChildren]);
 
+  /** Login URL that returns to this exact booking: same activity, the chosen
+   *  slot and party size (the picker state lives only in memory otherwise). */
+  function loginHref() {
+    const q = new URLSearchParams(window.location.search);
+    if (sessionId) q.set("session", sessionId);
+    if (count > 1) q.set("count", String(count));
+    return `/login?next=${encodeURIComponent(`${routePath()}?${q.toString()}`)}`;
+  }
+
   async function pay() {
     setErr(null);
     if (!auth) {
-      goTo("/login");
+      goTo(loginHref());
       return;
     }
     if (!sessionId) {
@@ -1067,7 +1079,7 @@ export default function BookingPage() {
   }
 
   async function payWithPackage() {
-    if (!auth) { goTo("/login"); return; }
+    if (!auth) { goTo(loginHref()); return; }
     if (!sessionId) { setErr("Please choose a date and time first."); return; }
     if (!packageCredit) return;
     // 1 child = 1 credit = 1 spot — count is how many are attending.
@@ -1156,7 +1168,7 @@ export default function BookingPage() {
 
   /** Buy a multi-class pack, then come back here to book with a credit. */
   async function buyPack(packageId: string) {
-    if (!auth) { goTo("/login"); return; }
+    if (!auth) { goTo(loginHref()); return; }
     // Reachable only via checkout() now (the row's own button just selects
     // the pack), which already requires sessionId via the CTA's disabled
     // state — this guard is defense in case that call path ever changes.

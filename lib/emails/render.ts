@@ -136,8 +136,35 @@ const PARENT_UPGRADE_BENEFITS = [
 const cta = (href: string, label: string) =>
   `<p style="margin:0 0 20px"><a href="${href}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${esc(label)}</a></p>`;
 
+/** "Add to calendar" button for a confirmed booking. Points at the public
+ *  .ics endpoint (a plain link that iOS, Android and desktop calendars all open
+ *  directly), built from the same fields the parent already sees. Empty when
+ *  the payload has no real start time. */
+function calendarButton(d: EmailData, ctx: EmailCtx): string {
+  const start = str(d, 'starts_at');
+  const title = str(d, 'activity_name');
+  if (!start || !title || Number.isNaN(new Date(start).getTime())) return '';
+  const q = new URLSearchParams({ t: title, s: start });
+  if (str(d, 'ends_at')) q.set('e', str(d, 'ends_at')!);
+  if (str(d, 'address')) q.set('v', str(d, 'address')!);
+  const href = `${ctx.appUrl}/api/public/calendar?${q.toString()}`;
+  return `<p style="margin:0 0 20px"><a href="${esc(href)}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">📅 Add to calendar</a></p>`;
+}
+
 const fallbackLink = (href: string) =>
   `<p style="margin:0 0 16px;font-size:14px;color:#9a9a9a">Or paste this into your browser:<br/><span style="word-break:break-all">${esc(href)}</span></p>`;
+
+/** Shared by package_expiry_changed / make_up_token_expiry_changed. */
+function expiryChanged(d: EmailData, ctx: EmailCtx, kind: string, subject: string, label: string, fallbackUrl: string): RenderedEmail {
+  const name = str(d, 'activity_name') ?? str(d, 'package_name');  // package notices carry neither today; the sentence just reads without it
+  const until = str(d, 'expires_on');
+  const url = str(d, 'url') ?? fallbackUrl;
+  return wrap(ctx, `${subject} 👶🧠`,
+    p(greet(ctx.recipientName)) +
+    p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has updated the validity of your ${kind}${name ? ` for ${bold(name)}` : ''}${until ? `. It is now valid until ${bold(until)}` : ''}.`) +
+    cta(/^https?:\/\//i.test(url) ? url : `${ctx.appUrl}${url}`, label) +
+    sign);
+}
 
 // ---- template registry ----
 type Template = (d: EmailData, ctx: EmailCtx) => RenderedEmail;
@@ -209,7 +236,6 @@ const T: Record<string, Template> = {
       p('Welcome to BabyBrain!') +
       p('Our mission is to make it easier, simpler and faster for parents in Singapore to find &amp; book activities for their children.') +
       p(`If you haven’t already, you can start discovering what is available for your family’s specific needs and ${link(ctx, '/explore', 'booking activities here')}.`) +
-      p(`Once you have ${link(ctx, '/profile', 'completed your profile')}, you will start receiving suggested activities with availability based on your preferences.`) +
       p('If you have any questions or requests, please do not hesitate to reply to this email and we will be sure to get back to you.') +
       p('We look forward to helping you create meaningful experiences for your little ones!') +
       sign),
@@ -219,6 +245,7 @@ const T: Record<string, Template> = {
       p(greet(ctx.recipientName)) +
       p('Your booking is confirmed as follows:') +
       details(d, false) +
+      calendarButton(d, ctx) +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys the activity when it comes!') +
       sign),
@@ -272,9 +299,9 @@ const T: Record<string, Template> = {
     // was made good (refund withheld / make-up token / package credit).
     const bookingId = str(d, 'booking_id');
     const href = bookingId ? `/profile?tab=past&highlight=${encodeURIComponent(bookingId)}` : '/profile?tab=past';
-    return wrap(ctx, 'Unfortunately your class has been cancelled 👶🧠',
+    return wrap(ctx, 'Unfortunately your session has been cancelled 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your class')} has been cancelled${str(d, 'child_name') ? ` for ${bold(str(d, 'child_name') as string)}` : ''}. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
+      p(`Unfortunately ${bold(str(d, 'activity_name') ?? 'your session')} has been cancelled${str(d, 'child_name') ? ` for ${bold(str(d, 'child_name') as string)}` : ''}. Any refund or make up token issuance follows the policy of ${bold(str(d, 'provider_name') ?? 'the provider')}.`) +
       p(`You can see the details in ${link(ctx, href, 'your past activities')}.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign);
@@ -309,10 +336,10 @@ const T: Record<string, Template> = {
       // books that class and spends one, so the email must not claim the full
       // pack (lib/notify-package-purchased.ts).
       (str(d, 'booked_activity')
-        ? p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready, and we’ve booked you onto ${bold(str(d, 'booked_activity') as string)}, which used one credit. ${Number(d.credits) > 0 ? `You have ${bold(str(d, 'credits') ?? '0')} class ${Number(d.credits) === 1 ? 'credit' : 'credits'} left to use.` : 'That was your only credit.'}`) +
-          (Number(d.credits) > 0 ? p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your next class')} whenever you’re ready.`) : '')
-        : p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready — you have ${bold(str(d, 'credits') ?? 'your')} class credits to use.`) +
-          p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your first class')} whenever you’re ready.`)) +
+        ? p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready, and we’ve booked you onto ${bold(str(d, 'booked_activity') as string)}, which used one credit. ${Number(d.credits) > 0 ? `You have ${bold(str(d, 'credits') ?? '0')} session ${Number(d.credits) === 1 ? 'credit' : 'credits'} left to use.` : 'That was your only credit.'}`) +
+          (Number(d.credits) > 0 ? p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your next session')} whenever you’re ready.`) : '')
+        : p(`Thanks for your purchase! Your ${bold(str(d, 'package_name') ?? 'package')} with ${bold(str(d, 'provider_name') ?? 'your provider')} is ready — you have ${bold(str(d, 'credits') ?? 'your')} session credits to use.`) +
+          p(`${link(ctx, str(d, 'url') ?? '/explore', 'Book your first session')} whenever you’re ready.`)) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -320,6 +347,15 @@ const T: Record<string, Template> = {
   // url updated in 00126 to deep-link straight to booking rather than the
   // Plus-gated /profile?tab=makeup) whenever a paid/expired-pack booking is
   // cancelled and a make-up token is issued as compensation.
+  // A vendor changed the expiry of a package / make-up token the parent holds.
+  // `body` (the notification's own sentence) already says what changed and the
+  // new date; the button goes to that exact package / token.
+  package_expiry_changed: (d, ctx) =>
+    expiryChanged(d, ctx, 'package', 'Your package validity has been updated', 'View my package', '/profile?tab=packages'),
+
+  make_up_token_expiry_changed: (d, ctx) =>
+    expiryChanged(d, ctx, 'make-up token', 'Your make-up token validity has been updated', 'View my make-up token', '/profile?tab=makeup'),
+
   make_up_token_issued: (d, ctx) =>
     wrap(ctx, 'Your make-up token is ready 👶🧠',
       p(greet(ctx.recipientName)) +
@@ -330,11 +366,11 @@ const T: Record<string, Template> = {
       // waitlisted parents paid for the same freed seat and this one lost.
       // No cash refunds, so the payment became a token.
       (d.reason === 'waitlist_race'
-        ? p(`Someone else claimed the spot on ${bold(str(d, 'activity_name') ?? 'the class')} a moment before your payment went through. Your payment has been turned into a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}, so you haven’t lost anything. It doesn’t expire, and you’re still on the waitlist.`)
+        ? p(`Someone else claimed the spot on ${bold(str(d, 'activity_name') ?? 'the session')} a moment before your payment went through. Your payment has been turned into a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}, so you haven’t lost anything. It doesn’t expire, and you’re still on the waitlist.`)
         : d.manual
         ? p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has issued you a make-up token${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name') as string)}` : ''}. ${str(d, 'expires_on') ? `Use it before ${bold(str(d, 'expires_on') as string)}.` : 'It doesn’t expire.'}`)
-        : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a class')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
-      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
+        : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a session')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another session with it')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -344,8 +380,8 @@ const T: Record<string, Template> = {
   make_up_token_returned: (d, ctx) =>
     wrap(ctx, 'Your make-up token is available again 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Your make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')} is back — the class it was booked on has been cancelled, so it’s free to use again.`) +
-      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another class with it')} whenever suits you.`) +
+      p(`Your make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')} is back — the session it was booked on has been cancelled, so it’s free to use again.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another session with it')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -354,8 +390,8 @@ const T: Record<string, Template> = {
   package_credit_returned: (d, ctx) =>
     wrap(ctx, 'Your package credit is back 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Your credit for ${bold(str(d, 'activity_name') ?? 'a class')} is back on your ${bold(str(d, 'provider_name') ?? 'provider')} package — the booking it was used on has been cancelled.`) +
-      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=packages', 'Book another class with it')} whenever suits you.`) +
+      p(`Your credit for ${bold(str(d, 'activity_name') ?? 'a session')} is back on your ${bold(str(d, 'provider_name') ?? 'provider')} package — the booking it was used on has been cancelled.`) +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=packages', 'Book another session with it')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -442,9 +478,9 @@ const T: Record<string, Template> = {
 
   // Parent side of the class group chat email; see provider_class_group_message.
   class_group_message: (d, ctx) =>
-    wrap(ctx, 'New messages in your class group chat 👶🧠',
+    wrap(ctx, 'New messages in your session group chat 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'class')} group chat. ${link(ctx, str(d, 'url') ?? '/profile?tab=messages', 'Open the chat')} to read and reply.`) +
+      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'session')} group chat. ${link(ctx, str(d, 'url') ?? '/profile?tab=messages', 'Open the chat')} to read and reply.`) +
       sign),
 
   unsubscribe_response: (d, ctx) =>
