@@ -10,6 +10,19 @@ const AGE_BAND_COPY = [
   "Confident explorers",
 ];
 
+const REVIEWS = [
+  {
+    name: "Hannah",
+    // Woman: blond hair, light skin tone (the avatar catalogue has no blonde option).
+    emoji: "\u{1F471}\u{1F3FB}‍♀️",
+    text: "BabyBrain is what we have all been waiting for! It’s amazing to have one go to platform to book classes for our child. It’s incredibly intuitive to use & has so many fantastic activities to choose from. BabyBrain is a must have for parents of young ones in Singapore!",
+    role: "Mum of 2 month old",
+  },
+  // Man, light skin tone.
+  { name: "Marcus", emoji: "\u{1F468}\u{1F3FB}", text: "Easy to use and saves us so much time planning weekends.", role: "Dad of 3.5 year old" },
+  { name: "Sarah", emoji: undefined, text: "A great platform to discover new activities and local gems.", role: "Mum of 4.5 year old" },
+];
+
 export default function HomePage() {
   return (
     <PageShell active="/" auth="public">
@@ -98,30 +111,6 @@ export default function HomePage() {
                 </article>
               ))}
             </div>
-            {/* Stacked on mobile, each row used to centre itself, so "Locations"
-                — much shorter than "Curated activities" — sat visibly right of
-                the rows above it. The inner wrapper shrinks to the widest row
-                and centres as one block, giving every row a shared left edge;
-                from md up they're columns again and centre individually. */}
-            <div className="mt-5 rounded-[18px] border border-[#EBE3E5] bg-white p-3">
-              <div className="mx-auto grid w-fit gap-3 md:w-full md:grid-cols-3">
-                {[
-                  ["people", "1000+", "Curated activities"],
-                  ["store", "100+", "Verified providers"],
-                  ["chart", "200+", "Locations"],
-                ].map(([icon, stat, label]) => (
-                  <div key={stat} className="flex items-center justify-start gap-3 md:justify-center">
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta">
-                      <Icon name={icon} className="h-7 w-7" />
-                    </span>
-                    <p>
-                      <strong className="block text-2xl font-black text-baby-pink">{stat}</strong>
-                      <span className="text-sm font-semibold">{label}</span>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </section>
 
@@ -163,20 +152,17 @@ export default function HomePage() {
         </section>
 
         <section className="bb-reveal mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3" style={{ animationDelay: "160ms" }}>
-          {["Joanne", "Marcus", "Sarah"].map((name, index) => (
+          {REVIEWS.map(({ name, text, role, emoji }) => (
             <article key={name} className="flex gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-              <AnimalAvatar seed={name} kind="parent" className="h-11 w-11" />
-              <div>
+              <AnimalAvatar seed={name} kind="parent" emoji={emoji} className="h-11 w-11 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: 5 }).map((_, starIndex) => <Icon key={starIndex} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
-                <p className="mt-2 text-sm font-semibold leading-6">
-                  {index === 0
-                    ? "We found so many engaging activities that our daughter loves."
-                    : index === 1
-                      ? "Easy to use and saves us so much time planning weekends."
-                      : "A great platform to discover new activities and local gems."}
-                </p>
-                <strong className="mt-3 block text-sm">{name}</strong>
-                <span className="text-xs font-semibold text-[#6b759a]">Mum of {index + 2}.5 year old</span>
+                <p className="mt-2 text-sm font-semibold leading-6">{text}</p>
+                {/* Names sit on a shared baseline across the three cards, however long the review above them. */}
+                <div className="mt-auto pt-3">
+                  <strong className="block text-sm">{name}</strong>
+                  <span className="text-xs font-semibold text-[#6b759a]">{role}</span>
+                </div>
               </div>
             </article>
           ))}

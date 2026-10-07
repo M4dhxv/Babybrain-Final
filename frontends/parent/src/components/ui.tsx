@@ -404,6 +404,7 @@ export function AnimalAvatar({
   seed,
   kind = "parent",
   gender,
+  emoji: emojiOverride,
   className = "h-11 w-11",
 }: {
   seed?: string | null;
@@ -411,9 +412,15 @@ export function AnimalAvatar({
   kind?: "child" | "parent";
   /** Without a picked avatar, a stated gender chooses a girl/boy face. */
   gender?: string | null;
+  /** Show this exact emoji instead of the catalogue pick (e.g. a marketing testimonial's face). The background still comes from `seed`. */
+  emoji?: string;
   className?: string;
 }) {
-  const { emoji, background, label } = resolveAvatar(seed, kind, gender);
+  const resolved = resolveAvatar(seed, kind, gender);
+  const { background } = resolved;
+  // The catalogue label describes the catalogue face, not an overridden emoji.
+  const label = emojiOverride ? "Profile picture" : resolved.label;
+  const emoji = emojiOverride ?? resolved.emoji;
   return (
     <span
       role="img"
