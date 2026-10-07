@@ -70,7 +70,7 @@ const statTiles = [
 // taller ratio (still uniform across all four cards) purely to avoid
 // clipping; sm+ keeps the approved 253:159 shape.
 const CARD_CLASS =
-  'absolute left-0 top-[var(--bb-y,0px)] min-h-[150px] w-full origin-top opacity-[var(--bb-o,1)] [transform:translateY(var(--bb-ty,0px))_scale(var(--bb-s,1))_perspective(600px)_rotateX(var(--bb-rx,0deg))] sm:min-h-0 sm:w-[55%] sm:opacity-100 sm:[transform:none] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_-10px_24px_-12px_rgba(15,23,42,0.30)] sm:shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
+  'absolute left-0 top-[var(--bb-y,0px)] min-h-[150px] w-full origin-center opacity-[var(--bb-o,1)] [transform:translateY(var(--bb-ty,0px))_scale(var(--bb-s,1))_perspective(600px)_rotateX(var(--bb-rx,0deg))] sm:min-h-0 sm:w-[55%] sm:opacity-100 sm:[transform:none] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_-10px_24px_-12px_rgba(15,23,42,0.30)] sm:shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
 // Left/top steps are sized so the last card's far edge lands at the
 // container's edge — the cascade fills the box instead of leaving a dead
 // margin on the right/bottom. The vertical step has two competing limits
@@ -81,7 +81,7 @@ const CARD_CLASS =
 // enough that 3 steps + one card's height doesn't exceed the container.
 // Card height (via the aspect-ratio) and the container's own height both
 // change per breakpoint, so each needs its own calibrated step.
-// Below sm the cards are an overlapped pile driven by useTiltFlatten; positions only apply from sm up.
+// Below sm the cards are an overlapped pile driven by useRiseFromDepth; positions only apply from sm up.
 const POSITIONS = [
   'sm:left-0 sm:top-0',
   'sm:left-[15%] sm:top-[15.5%] lg:top-[16%]',
@@ -89,16 +89,18 @@ const POSITIONS = [
   'sm:left-[45%] sm:top-[46.5%] lg:top-[48%]',
 ];
 
-/** Mobile "tilt and flatten" (below sm): the four cards sit as an overlapped
- *  pile, each showing the same preview height (70% of the Bookings card). As the pile scrolls up into view,
- *  each card leans back and faded, then snaps upright in turn, top card first.
- *  Driven by scroll position (reverses on the way back); written as CSS
+/** Mobile "rise from depth" (below sm): the four cards sit as an overlapped
+ *  stack, each covered card showing the same preview height (72% of the
+ *  Bookings card). As the stack scrolls up into view, each card starts small,
+ *  faded and low, then zooms up into its slot while straightening, top card
+ *  first. Driven by scroll position (reverses on the way back); written as CSS
  *  variables the card classes read, so from sm up none of it applies. Reduced
- *  motion gets a plain, fully separated stack. */
+ *  motion gets a plain, fully separated stack.
+ *  (A "deal out" version of this hook is saved in HeroDashboardPreview.dealout.tsx.txt.) */
 const SHOWN = 0.72; // share of the first (Bookings) card that stays visible; every covered card shows that same height
 const GAP = 12; // gap between cards in the reduced-motion (flat) layout
 
-function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
+function useRiseFromDepth(root: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -110,7 +112,7 @@ function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
       const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-stack-card]'));
       if (!narrow.matches) {
         el.style.removeProperty('--bb-stack');
-        cards.forEach((c) => ['--bb-y', '--bb-rx', '--bb-o'].forEach((v) => c.style.removeProperty(v)));
+        cards.forEach((c) => ['--bb-y', '--bb-ty', '--bb-s', '--bb-rx', '--bb-o'].forEach((v) => c.style.removeProperty(v)));
         return;
       }
       const hs = cards.map((c) => c.offsetHeight);
@@ -119,6 +121,8 @@ function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
         let y = 0;
         cards.forEach((c, i) => {
           c.style.setProperty('--bb-y', `${y}px`);
+          c.style.setProperty('--bb-ty', '0px');
+          c.style.setProperty('--bb-s', '1');
           c.style.setProperty('--bb-rx', '0deg');
           c.style.setProperty('--bb-o', '1');
           y += hs[i] + GAP;
@@ -133,11 +137,13 @@ function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
       const vh = window.innerHeight;
       const p = Math.min(1, Math.max(0, (vh - el.getBoundingClientRect().top) / (vh * 0.9)));
       cards.forEach((c, i) => {
-        const t = Math.min(1, Math.max(0, (p - i * 0.16) / 0.4));
+        const t = Math.min(1, Math.max(0, (p - i * 0.18) / 0.5));
         const e = 1 - Math.pow(1 - t, 3);
         c.style.setProperty('--bb-y', `${ys[i]}px`);
-        c.style.setProperty('--bb-rx', `${-(1 - e) * 58}deg`);
-        c.style.setProperty('--bb-o', String(0.35 + 0.65 * e));
+        c.style.setProperty('--bb-ty', `${(1 - e) * 150}px`);
+        c.style.setProperty('--bb-s', String(0.7 + 0.3 * e));
+        c.style.setProperty('--bb-rx', `${-(1 - e) * 28}deg`);
+        c.style.setProperty('--bb-o', String(0.15 + 0.85 * e));
       });
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(update); };
@@ -163,7 +169,7 @@ function useTiltFlatten(root: React.RefObject<HTMLDivElement | null>) {
 
 export function HeroDashboardPreview() {
   const rootRef = useRef<HTMLDivElement>(null);
-  useTiltFlatten(rootRef);
+  useRiseFromDepth(rootRef);
   return (
     <div
       ref={rootRef}
