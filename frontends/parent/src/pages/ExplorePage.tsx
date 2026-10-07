@@ -12,7 +12,7 @@ import {
 import { SelectField, Opt } from "../components/SelectField";
 import { ActivityRowListSkeleton } from "../components/Skeletons";
 import { AGE_BANDS, categories } from "../data/content";
-import { useActivities, useActivityPins, useFacetCounts } from "../lib/useActivities";
+import { useActivities, useActivityPins, useFacetCounts, EXPLORE_PAGE_SIZE } from "../lib/useActivities";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore } from "../lib/nav";
@@ -506,7 +506,7 @@ export default function ExplorePage() {
   const query = getParam("q");
   // First page size for cards — the map and facet counts aren't paginated
   // (see useActivityPins/useFacetCounts), only the card list is.
-  const PAGE = 50;
+  const PAGE = EXPLORE_PAGE_SIZE;
 
   const [minH, maxH] = timeRange;
   const priceActive = maxPrice < PRICE_MAX;

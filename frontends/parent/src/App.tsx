@@ -9,7 +9,7 @@ import { useLocation, routePath } from "./lib/nav";
 import { BootSplash } from "./components/BootSplash";
 import { ExplorePageSkeleton } from "./components/Skeletons";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
-import { warmActivity, warmDashboard, warmExplore } from "./lib/prefetch";
+import { warmActivity, warmDashboard, warmExplore, warmExploreData } from "./lib/prefetch";
 import { lazyRoute } from "./lib/lazyRoute";
 import AboutPage from "./pages/AboutPage";
 import TermsPage from "./pages/TermsPage";
@@ -92,7 +92,7 @@ function App() {
     const ric = "requestIdleCallback" in window
       ? (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback
       : null;
-    const warm = () => { warmExplore(); warmActivity(); };
+    const warm = () => { warmExplore(); warmActivity(); warmExploreData(); };
     const id = ric ? ric(warm) : window.setTimeout(warm, 2500);
     return () => {
       if (ric) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id);

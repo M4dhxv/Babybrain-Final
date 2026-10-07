@@ -33,6 +33,11 @@ export function warmDashboard(): void {
   });
 }
 
+/** Warm Explore's first page of data (the chunk is warmed separately). Safe to call repeatedly: it skips when the cache is fresh. */
+export function warmExploreData(): void {
+  void import("./useActivities").then((m) => m.warmExploreList()).catch(() => {});
+}
+
 let warmingActivity = false;
 
 /** Warm the activity page's chunk so the first listing opened isn't a chunk fetch + skeleton. */

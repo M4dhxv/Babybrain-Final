@@ -260,6 +260,9 @@ const PINS_AFTER_MS = 500;
 const FACETS_AFTER_MS = 300;
 
 const DEFAULT_PAGE_SIZE = 24;
+/** Rows in Explore's first page. Shared with `warmExploreList` so the warmed
+ *  entry lands under exactly the key Explore reads. */
+export const EXPLORE_PAGE_SIZE = 50;
 /** Rows pulled per background fetch once the caller has revealed everything
  *  already in memory — a real network round trip, so it's sized like a page
  *  (matching DEFAULT_PAGE_SIZE), not like a single reveal step. A caller that
@@ -304,6 +307,51 @@ type Page = { rows: LiveActivity[]; total: number };
  *  - A superseded request is aborted, so quick filter changes don't pile up
  *    work in the database, and a late answer can't overwrite a newer one.
  */
+/** A quiet background refresh of an entry newer than this is skipped. */
+const WARM_SKIP_MS = 5 * 60_000;
+let warmingList = false;
+
+/**
+ * Pre-load Explore's default (unfiltered, most popular) first page into the
+ * query cache, so opening Explore after hours away — when the persisted copy has
+ * aged out — shows real cards at once instead of a skeleton plus a database round trip.
+ * Chunks were already warmed on idle; this warms the data too.
+ *
+ * Deliberately gentle, because the database is small: ONE request, through the
+ * same limited, edge-cached catalogue path Explore itself uses (so it never adds
+ * to the in-flight cap), only when the cache is empty or older than 5 minutes,
+ * and never on a data-saver connection or a hidden tab. A failure is silent;
+ * Explore simply loads as it always did.
+ */
+export async function warmExploreList(): Promise<void> {
+  if (warmingList || typeof document === "undefined" || document.visibilityState !== "visible") return;
+  const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
+  if (conn?.saveData) return;
+  const args = searchArgs({ sort: "popular" });
+  const key = "activities:" + JSON.stringify({ ...args, limit: EXPLORE_PAGE_SIZE });
+  const cached = cacheGet<Page>(key);
+  if (cached && cached.age < WARM_SKIP_MS) return;
+  warmingList = true;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12_000);
+    const { data, error } = await catalogRpc(
+      "search_activities",
+      { ...args, p_limit: EXPLORE_PAGE_SIZE, p_offset: 0 },
+      ctl.signal,
+    ).finally(() => clearTimeout(timer));
+    if (error || !data) return;
+    const rows = data as SearchActivitiesRow[];
+    const mapped = rows.map(toLiveActivity);
+    const total = Math.max(Number(rows[0]?.total_count ?? 0), mapped.length);
+    cacheSet(key, { rows: mapped, total });
+  } catch {
+    /* best effort */
+  } finally {
+    warmingList = false;
+  }
+}
+
 export function useActivities(params: ActivityQuery = {}) {
   const args = searchArgs(params);
   const key = "activities:" + JSON.stringify({ ...args, limit: params.limit ?? DEFAULT_PAGE_SIZE });
