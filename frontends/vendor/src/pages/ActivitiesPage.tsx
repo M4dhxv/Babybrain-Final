@@ -3349,7 +3349,7 @@ export default function ActivitiesPage() {
                             if (!cur || cur.waitlisted === 0) return null;
                             return (
                               <span className="mt-1 block text-xs text-gray-500">
-                                {cur.booked} booked, {cur.waitlisted} on the waitlist. Each extra space you add invites the next family in line to book.
+                                {cur.booked} booked, {cur.waitlisted} on the waitlist. Each extra space you add invites every family on the waitlist to book. First come, first serve.
                               </span>
                             );
                           })()}
