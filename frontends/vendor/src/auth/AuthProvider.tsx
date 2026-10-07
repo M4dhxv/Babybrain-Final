@@ -61,6 +61,9 @@ function withTimeout(p: Promise<boolean>, ms: number, controller: AbortControlle
   });
 }
 
+/** How long past its expiry a stored session is still trusted for the optimistic first render (see readStoredSession). */
+const STALE_SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Read the Supabase session straight out of localStorage, synchronously, so a
  * returning vendor's first render isn't a full-screen boot loader while
@@ -84,7 +87,18 @@ function readStoredSession(): Session | null {
       | (Session & { expires_at?: number })
       | undefined;
     if (!s || !s.access_token || !s.user?.id) return null;
-    if (typeof s.expires_at === 'number' && s.expires_at * 1000 <= Date.now()) return null;
+    // An access token only lives about an hour, so a vendor coming back after a
+    // few hours always had an "expired" one here and got the full-screen loader
+    // until a token renewal round trip finished (and, on a dead connection, a
+    // lot longer). The refresh token outlives it, and supabase-js renews the
+    // access token on its own before the first request goes out — so keep
+    // rendering optimistically while it is within a week of expiry. If the
+    // renewal is refused, the SIGNED_OUT event below clears the session and
+    // routes them to sign in, same as any other expired session.
+    if (typeof s.expires_at === 'number' && s.expires_at * 1000 <= Date.now()) {
+      const staleMs = Date.now() - s.expires_at * 1000;
+      if (!s.refresh_token || staleMs > STALE_SESSION_MAX_MS) return null;
+    }
     return s;
   } catch {
     /* storage blocked or JSON malformed — fall back to the async path */

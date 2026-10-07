@@ -2,18 +2,12 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import NoBusinessGate from './NoBusinessGate';
 import OnboardingGate from '@/components/OnboardingGate';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { FullPageLoader } from '@/components/ui/rainbow-loader';
 
 /** Gate the vendor portal: must be signed in AND a member of a business. */
 export default function RequireAuth() {
   const { session, provider, role, providerResolved, providerError, loading, refreshProvider } = useAuth();
-  if (loading) {
-    return (
-      <div data-bb-loading className="flex h-screen items-center justify-center">
-        <RainbowLoader label="Loading your portal" />
-      </div>
-    );
-  }
+  if (loading) return <FullPageLoader label="Loading your portal" />;
   // No session (signed out, or the refresh token expired while the tab sat
   // open): send them to the public landing page rather than a bare login form.
   if (!session) return <Navigate to="/" replace />;
@@ -22,13 +16,7 @@ export default function RequireAuth() {
   // lookup can lose a race with the token refresh on a cold page load, and
   // reading that silence as "no business" is what put real vendors on the
   // chooser below after a refresh. Wait for a real answer instead.
-  if (!provider && !providerResolved && !providerError) {
-    return (
-      <div data-bb-loading className="flex h-screen items-center justify-center">
-        <RainbowLoader label="Loading your portal" />
-      </div>
-    );
-  }
+  if (!provider && !providerResolved && !providerError) return <FullPageLoader label="Loading your portal" />;
 
   // The lookup failed outright (offline, RLS hiccup). Say so and offer a retry
   // — claiming "no business" here would be a guess, and a misleading one.

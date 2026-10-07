@@ -5,7 +5,7 @@ import { capturePageview } from './lib/posthog';
 import { supabase } from './lib/supabase';
 import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './layouts/PortalLayout';
-import { RainbowLoader } from '@/components/ui/rainbow-loader';
+import { FullPageLoader } from '@/components/ui/rainbow-loader';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import { lazyRoute } from '@/lib/lazyRoute';
 import { Toaster } from '@/components/ui/sonner';
@@ -88,11 +88,7 @@ function ScrollToTop() {
 /** Shown while a route's chunk is in flight. `data-bb-loading` keeps the
  *  index.html watchdog treating a slow chunk as "loading", not "wedged". */
 function RouteFallback() {
-  return (
-    <div data-bb-loading className="flex h-screen items-center justify-center">
-      <RainbowLoader label="Loading" />
-    </div>
-  );
+  return <FullPageLoader label="Loading" />;
 }
 
 function App() {

@@ -105,7 +105,7 @@ export default function LandingPage() {
           the visitor actually scrolls. */}
       <div className="flex flex-1 flex-col justify-evenly">
       {/* Hero Section */}
-      <section className="relative px-4 sm:px-8">
+      <section className="relative px-4 pt-7 sm:px-8 sm:pt-0">
         <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:items-center lg:gap-8">
           {/* Left Content */}
           <div className="flex-1">
@@ -113,7 +113,7 @@ export default function LandingPage() {
             <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FED7E4] rounded-full mb-3 relative">
               <Shield className="w-4 h-4 text-[#FA4D8D]" />
               <span className="text-sm font-bold text-[#FA4D8D]">Join 75+ trusted providers</span>
-              <Sparkles className="w-4 h-4 text-yellow-400 absolute -left-6 -top-2" />
+              <Sparkles className="absolute -left-1 -top-3 h-5 w-5 text-yellow-500 sm:-left-6 sm:-top-2 sm:h-4 sm:w-4 sm:text-yellow-400" />
               <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />
             </div>
 
