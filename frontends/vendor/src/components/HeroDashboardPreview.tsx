@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   Search,
   Plus,
@@ -36,6 +37,18 @@ const today = new Date();
 const todayShort = `${today.toLocaleDateString('en-US', { weekday: 'short' })}, ${today.getDate()} ${today.toLocaleDateString('en-US', { month: 'short' })}, 11:45 am`;
 const bookingBlurb = `Tinkers Playdate · ${todayShort}`;
 
+// Phone-width only (the stacked cards are full width there, so they have room for more rows).
+const extraBookingRows = [
+  { name: 'Noah', status: 'Paid' },
+  { name: 'Ella', status: 'Paid' },
+];
+const extraConversations = [{ name: 'John Doe' }, { name: 'Joey' }];
+const extraWeeks = [
+  [30, 31, 1, 2, 3, 4, 5],
+  [6, 7, 8, 9, 10, 11, 12],
+];
+const extraWeekCounts = ['0/1', '1/1', '0/1', '1/10', '0/1', '0/1', '1/10'];
+
 const conversations = [
   { name: 'Sarah Tan', preview: 'Anyone want a coffee after class tomorrow?' },
   { name: 'Wei Jie', preview: 'Thanks so much, see you Saturday!' },
@@ -57,7 +70,7 @@ const statTiles = [
 // taller ratio (still uniform across all four cards) purely to avoid
 // clipping; sm+ keeps the approved 253:159 shape.
 const CARD_CLASS =
-  'absolute w-[55%] aspect-[3/4] sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
+  'sticky top-[var(--bb-top)] min-h-[150px] w-full origin-top scale-[var(--bb-s,1)] opacity-[var(--bb-o,1)] sm:absolute sm:min-h-0 sm:w-[55%] sm:scale-100 sm:opacity-100 sm:aspect-[253/159] overflow-hidden rounded-xl border-2 border-gray-300 bg-white p-3 shadow-[0_-10px_24px_-12px_rgba(15,23,42,0.30)] sm:shadow-[0_12px_28px_-10px_rgba(15,23,42,0.22)]';
 // Left/top steps are sized so the last card's far edge lands at the
 // container's edge — the cascade fills the box instead of leaving a dead
 // margin on the right/bottom. The vertical step has two competing limits
@@ -68,40 +81,85 @@ const CARD_CLASS =
 // enough that 3 steps + one card's height doesn't exceed the container.
 // Card height (via the aspect-ratio) and the container's own height both
 // change per breakpoint, so each needs its own calibrated step.
+// Below sm the cards are a full-width sticky stack (see useStackDepth); positions only apply from sm up.
 const POSITIONS = [
-  'left-0 top-0',
-  'left-[15%] top-[15%] sm:top-[15.5%] lg:top-[16%]',
-  'left-[30%] top-[30%] sm:top-[31%] lg:top-[32%]',
-  'left-[45%] top-[45%] sm:top-[46.5%] lg:top-[48%]',
+  'sm:left-0 sm:top-0',
+  'sm:left-[15%] sm:top-[15.5%] lg:top-[16%]',
+  'sm:left-[30%] sm:top-[31%] lg:top-[32%]',
+  'sm:left-[45%] sm:top-[46.5%] lg:top-[48%]',
 ];
 
+/** Mobile "sticky stack": below sm the cards are a vertical stack where each
+ *  card sticks near the top (a little lower than the one before) while the next
+ *  slides up over it, so every card gets its full moment on screen. As later
+ *  cards cover it, an older card shrinks and dims, driven by scroll. Progress
+ *  is written to --bb-s / --bb-o on each [data-stack-card]; index.css applies
+ *  it below sm only. Unset = cards shown normally. */
+function useStackDepth(container: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const root = container.current;
+    if (!root) return;
+    const narrow = window.matchMedia('(max-width: 639px)');
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-stack-card]'));
+      if (!narrow.matches || reduced.matches) {
+        cards.forEach((c) => { c.style.removeProperty('--bb-s'); c.style.removeProperty('--bb-o'); });
+        return;
+      }
+      const tops = cards.map((c) => c.getBoundingClientRect().top);
+      cards.forEach((c, i) => {
+        const h = c.offsetHeight;
+        let covered = 0;
+        for (let j = i + 1; j < cards.length; j++) {
+          covered += Math.min(1, Math.max(0, (tops[i] + h - tops[j]) / h));
+        }
+        c.style.setProperty('--bb-s', String(1 - 0.05 * covered));
+        c.style.setProperty('--bb-o', String(Math.max(0.45, 1 - 0.18 * covered)));
+      });
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [container]);
+}
+
 export function HeroDashboardPreview() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useStackDepth(rootRef);
   return (
     <div
+      ref={rootRef}
       data-testid="hero-dashboard-preview"
-      className="relative mx-auto h-[480px] w-full max-w-3xl sm:h-[470px] lg:h-[440px]"
+      className="mx-auto mb-6 flex w-full max-w-3xl flex-col gap-3 sm:relative sm:mb-0 sm:block sm:h-[470px] lg:h-[440px]"
       aria-hidden="true"
     >
       {/* Bookings card — list (left) + the real page's detail side panel (right) */}
-      <div className={`${CARD_CLASS} ${POSITIONS[0]}`}>
+      <div data-stack-card style={{ ['--bb-top' as string]: '16px' }} className={`${CARD_CLASS} ${POSITIONS[0]}`}>
         <div className="mb-0.5">
           <div className="text-[13px] font-bold text-gray-900">Bookings</div>
           <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
-            <span className="sm:hidden">Manage your bookings</span>
-            <span className="hidden sm:inline">Manage bookings for your sessions</span>
+            <span>Manage bookings for your sessions</span>
           </div>
         </div>
         <div className="mb-1 flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-0">
           <span className="truncate text-[8.5px] text-gray-600">
-            <span className="sm:hidden">{todayShort}</span>
-            <span className="hidden sm:inline">{bookingBlurb}</span>
+            <span>{bookingBlurb}</span>
           </span>
           <span className="flex items-center gap-0.5 whitespace-nowrap text-[8.5px] font-semibold text-[#FA4D8D]">
             <Plus className="h-2.5 w-2.5" /> Add
           </span>
         </div>
         <div className="flex gap-3">
-          <div className="w-full space-y-1 sm:w-[55%]">
+          <div className="w-[55%] space-y-1">
             {bookingRows.map((row, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[8px] font-semibold ${
@@ -119,28 +177,40 @@ export function HeroDashboardPreview() {
                 </span>
               </div>
             ))}
+            {extraBookingRows.map((row, i) => (
+              <div key={`x${i}`} className="flex items-center gap-1.5 sm:hidden">
+                <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[8px] font-semibold ${
+                  ['bg-green-100 text-green-700', 'bg-purple-100 text-purple-700'][i]
+                }`}>
+                  {row.name[0]}
+                </div>
+                <div className="min-w-0 flex-1 truncate text-[8.5px] font-medium text-gray-800">{row.name}</div>
+                <span className="whitespace-nowrap rounded-full bg-green-50 px-1.5 py-0.5 text-[7px] font-semibold text-green-600">
+                  {row.status}
+                </span>
+              </div>
+            ))}
           </div>
           {/* Side panel: the real page's booking-detail view (hidden on the
               smallest screens — the card doesn't have room for it there). */}
-          <div className="hidden w-[45%] rounded-md border border-gray-100 bg-gray-50 p-1.5 sm:block">
+          <div className="w-[45%] rounded-md border border-gray-100 bg-gray-50 p-1.5">
             <div className="mb-0.5 flex items-center gap-1">
               <div className="flex h-4 w-4 items-center justify-center rounded-full bg-pink-100 text-[6.5px] font-semibold text-pink-700">A</div>
               <div className="text-[8px] font-semibold text-gray-900">Alfie</div>
             </div>
             <div className="text-[6.5px] text-gray-400">Payment</div>
-            <div className="text-[7px] font-medium text-gray-700">None</div>
+            <div className="text-[7px] font-medium text-gray-700"><span className="sm:hidden">Paid</span><span className="hidden sm:inline">None</span></div>
           </div>
         </div>
       </div>
 
       {/* Schedule card */}
-      <div className={`${CARD_CLASS} ${POSITIONS[1]}`}>
+      <div data-stack-card style={{ ['--bb-top' as string]: '30px' }} className={`${CARD_CLASS} ${POSITIONS[1]}`}>
         <div className="mb-1.5 flex items-start justify-between">
           <div>
             <div className="text-[13px] font-bold text-gray-900">Schedule</div>
             <div className="text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
-              <span className="sm:hidden">Live availability</span>
-              <span className="hidden sm:inline">Site bookings & live availability</span>
+              <span>Site bookings & live availability</span>
             </div>
           </div>
           <RefreshCw className="h-3 w-3 text-gray-300" />
@@ -169,11 +239,24 @@ export function HeroDashboardPreview() {
               {v && <span className="text-[6px] font-medium text-gray-500">{v}</span>}
             </div>
           ))}
+          {extraWeeks.flatMap((week, w) =>
+            week.map((day, i) => (
+              <div
+                key={`w${w}-${i}`}
+                className={`flex h-8 flex-col items-center justify-center gap-0.5 rounded sm:hidden ${
+                  i === 1 || i === 3 ? 'bg-pink-100' : 'bg-gray-50'
+                }`}
+              >
+                <span className="text-[7px] font-semibold text-gray-500">{day}</span>
+                <span className="text-[6px] font-medium text-gray-500">{extraWeekCounts[i]}</span>
+              </div>
+            )),
+          )}
         </div>
       </div>
 
       {/* Messages card — conversation list (left) + the real page's open thread (right) */}
-      <div className={`${CARD_CLASS} ${POSITIONS[2]}`}>
+      <div data-stack-card style={{ ['--bb-top' as string]: '44px' }} className={`${CARD_CLASS} ${POSITIONS[2]}`}>
         <div className="mb-1.5">
           <div className="text-[13px] font-bold text-gray-900">Messages</div>
           <div className="text-[9.5px] font-medium leading-tight text-gray-500">
@@ -181,7 +264,7 @@ export function HeroDashboardPreview() {
           </div>
         </div>
         <div className="flex gap-2">
-          <div className="w-full space-y-1.5 sm:w-[38%]">
+          <div className="w-[38%] space-y-1.5">
             <div className="mb-1 flex items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5 py-1">
               <Search className="h-2 w-2 text-gray-300" />
               <span className="text-[6.5px] text-gray-300">Search</span>
@@ -192,10 +275,16 @@ export function HeroDashboardPreview() {
                 <div className="min-w-0 flex-1 truncate text-[7px] font-medium text-gray-800">{c.name}</div>
               </div>
             ))}
+            {extraConversations.map((c, i) => (
+              <div key={`x${i}`} className="flex items-center gap-1 sm:hidden">
+                <div className={`h-4 w-4 flex-shrink-0 rounded-full ${['bg-pink-100', 'bg-green-100'][i]}`} />
+                <div className="min-w-0 flex-1 truncate text-[7px] font-medium text-gray-800">{c.name}</div>
+              </div>
+            ))}
           </div>
           {/* Side panel: the real page's open conversation thread (hidden on
               the smallest screens — the card doesn't have room for it there). */}
-          <div className="hidden flex-1 rounded-md border border-gray-100 bg-gray-50 p-1.5 sm:block">
+          <div className="flex-1 rounded-md border border-gray-100 bg-gray-50 p-1.5">
             <div className="mb-1 text-[7px] font-semibold text-gray-900">Sarah Tan</div>
             <div className="mb-1 max-w-[90%] rounded-lg rounded-tl-sm bg-white px-1.5 py-1 text-[6.5px] text-gray-700 shadow-sm">
               {conversations[0].preview}
@@ -209,14 +298,13 @@ export function HeroDashboardPreview() {
 
       {/* Dashboard summary card — same uniform size as the rest, last in
           DOM order so it's the unobstructed front layer. */}
-      <div className={`${CARD_CLASS} ${POSITIONS[3]} shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]`}>
+      <div data-stack-card style={{ ['--bb-top' as string]: '58px' }} className={`${CARD_CLASS} ${POSITIONS[3]} sm:shadow-[0_18px_40px_-12px_rgba(15,23,42,0.30)]`}>
         <div className="mb-1 flex items-center gap-1">
           <span className="text-[13px] font-bold text-gray-900">Good morning! 👋</span>
           <Sparkles className="h-3 w-3 text-yellow-400" />
         </div>
         <div className="mb-1 text-[9.5px] font-medium text-gray-500 whitespace-nowrap">
-          <span className="sm:hidden">What's happening today</span>
-          <span className="hidden sm:inline">Here's what's happening today</span>
+          <span>Here's what's happening today</span>
         </div>
         <div className="mb-1.5 grid grid-cols-5 gap-1">
           {statTiles.map((s, i) => (
@@ -225,7 +313,7 @@ export function HeroDashboardPreview() {
                 <s.icon className={`h-2 w-2 ${s.color}`} />
               </div>
               <div className="text-[9.5px] font-bold text-gray-900">{s.value}</div>
-              <div className="hidden break-words text-[6.5px] leading-[7px] text-gray-400 sm:block">{s.label}</div>
+              <div className="break-words text-[6.5px] leading-[7px] text-gray-400">{s.label}</div>
             </div>
           ))}
         </div>
@@ -241,7 +329,7 @@ export function HeroDashboardPreview() {
                 { name: 'Tinkers Playdate', booked: '5 / 20' },
                 { name: 'Kids Yoga', booked: '1 / 1' },
               ].map((s, i) => (
-                <div key={i} className={`items-center gap-1 ${i === 0 ? 'flex' : 'hidden sm:flex'}`}>
+                <div key={i} className="flex items-center gap-1">
                   <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-pink-100">
                     <CalendarDays className="h-2 w-2 text-pink-600" />
                   </div>
@@ -263,7 +351,7 @@ export function HeroDashboardPreview() {
                 { initial: 'L', name: 'Lorelei' },
                 { initial: 'M', name: 'Madhav' },
               ].map((b, i) => (
-                <div key={i} className={`items-center gap-1 ${i === 0 ? 'flex' : 'hidden sm:flex'}`}>
+                <div key={i} className="flex items-center gap-1">
                   <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[5.5px] font-bold ${
                     ['bg-pink-100 text-pink-700', 'bg-purple-100 text-purple-700'][i]
                   }`}>

@@ -5,8 +5,6 @@ import {
   Users,
   TrendingUp,
   CheckCircle,
-  Store,
-  CalendarCheck,
   Heart,
   Sparkles,
   Cloud,
@@ -27,7 +25,7 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="bg-white overflow-x-hidden">
+    <div className="bg-white overflow-x-clip">
       {/* Header + fold: sized to fill exactly one viewport (min-h-screen)
           and kept separate from the footer below, so the footer's own
           height never eats into the free space this needs to center in —
@@ -105,10 +103,10 @@ export default function LandingPage() {
       {/* Fold — sized to exactly fill the space below the header and
           vertically centered, so the footer never peeks into view until
           the visitor actually scrolls. */}
-      <div className="flex flex-1 flex-col justify-center">
+      <div className="flex flex-1 flex-col justify-evenly">
       {/* Hero Section */}
-      <section className="relative px-4 pt-3 pb-3 sm:px-8 sm:pt-4 sm:pb-4">
-        <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:gap-8">
+      <section className="relative px-4 sm:px-8">
+        <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:items-center lg:gap-8">
           {/* Left Content */}
           <div className="flex-1">
             {/* Trust Badge */}
@@ -177,45 +175,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="bg-gray-50 py-3 px-4 sm:px-8">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#FED7E4] to-[#FEEBF2] flex items-center justify-center">
-              <Users className="w-7 h-7 text-[#FA4D8D]" />
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-[#FA4D8D]">10K+</div>
-              <div className="text-base font-semibold text-gray-900">Parents</div>
-              <div className="text-sm text-gray-500">reached every month</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 sm:border-l sm:border-r sm:border-gray-200 sm:px-6">
-            <div className="w-14 h-14 rounded-2xl bg-yellow-100 flex items-center justify-center">
-              <Store className="w-7 h-7 text-yellow-600" />
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-yellow-600">75+</div>
-              <div className="text-base font-semibold text-gray-900">Active providers</div>
-              <div className="text-sm text-gray-500">growing with us</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center">
-              <CalendarCheck className="w-7 h-7 text-green-600" />
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-green-600">1000+</div>
-              <div className="text-base font-semibold text-gray-900">Activities to book</div>
-              <div className="text-sm text-gray-500">every month</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Trust Banner */}
-      <section className="bg-white py-1.5 px-8 mt-5 mb-1">
-        <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
+      {/* justify-evenly on the fold gives three equal gaps: header → hero, hero → this line, this line → bottom of the fold. */}
+      <section className="bg-white px-8">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-center gap-2">
           <Heart className="w-5 h-5 flex-shrink-0 text-pink-400" />
           {/* Centred, not just centred-as-a-block: on a narrow screen this wraps
               to two lines, and left-aligned text there reads as off-centre
