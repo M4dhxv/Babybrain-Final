@@ -171,13 +171,18 @@ export async function POST(request: Request) {
     // contested freed seat rather than each independently confirming it.
     // RLS is bypassed by the admin client, so scope reads/writes to this
     // parent's own bookings.
-    const { confirmedIds, tokenIds } = await confirmPaidBookingSeats(admin, {
+    const { confirmedIds, tokenIds, failed } = await confirmPaidBookingSeats(admin, {
       seatIds,
       groupId,
       bookingId,
       paymentIntent,
       scopeUserId: user.id,
     });
+    // Nothing was settled (the database did not answer). Say so rather than
+    // "applied": the webhook is retried by Stripe and settles it.
+    if (failed) {
+      return NextResponse.json({ applied: false, reason: 'try_again' }, { status: 503 });
+    }
 
     // Same ledger entry the webhook would have written. recordSale is
     // idempotent on the payment intent, so whichever path runs first wins.

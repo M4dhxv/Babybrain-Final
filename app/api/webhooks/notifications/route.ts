@@ -17,6 +17,13 @@ const CHAT_EMAIL_DELAY_MS = 4 * 60 * 60 * 1000; // keep in step with send_pendin
  *  Mirrors the PDPA rule noted in OnboardingPage. */
 const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'providers_added', 'package_rebook']);
 
+/** A notification's `url` as a path on this site, or nothing. It is appended
+ *  straight to the app's origin, so anything not starting with a single "/"
+ *  ("@evil.example", "//evil.example", ".evil.example") would turn the link
+ *  into another host. */
+const sitePath = (url: unknown): string =>
+  typeof url === 'string' && /^\/(?!\/)/.test(url) ? esc(url) : '';
+
 async function chatMessageRead(channelId: unknown, userId: string, sentAt: Date): Promise<boolean> {
   if (typeof channelId !== 'string') return false;
   try {
@@ -159,7 +166,7 @@ export async function POST(request: Request) {
       `<div style="font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;color:#767676;font-size:18px">
         <h2 style="color:#4a4a4a">${esc(sessionWordingTitle(notification.title))}</h2>
         <p>${esc(sessionWordingBody(notification.body))}</p>
-        <p><a href="${esc(appUrl)}${typeof data.url === 'string' ? esc(data.url) : ''}" style="color:#FA5D93">Open BabyBrain</a></p>
+        <p><a href="${esc(appUrl)}${sitePath(data.url)}" style="color:#FA5D93">Open BabyBrain</a></p>
       </div>`;
 
     const resend = new Resend(process.env.RESEND_API_KEY!);

@@ -17,9 +17,27 @@ const NO_STORE = [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }];
 const HASHED_ASSET = String.raw`/app/assets/:file([^/]+\.(?:js|css|woff2))`;
 const IMMUTABLE = [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }];
 
+// Baseline browser protections, on every response. None of these change what
+// the apps load or call: they stop another site framing ours (clickjacking a
+// "Pay" or "Cancel" button) and stop a browser guessing a file's type. Framing
+// by our own pages stays allowed (/admin previews emails in an iframe). A full
+// Content-Security-Policy for scripts is deliberately not set here: Stripe,
+// Stream, PostHog and the map tiles each need allow-listing and a wrong entry
+// breaks the page it guards.
+const SECURITY = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+];
+
 const nextConfig = {
+  // Don't advertise the framework and version to scanners.
+  poweredByHeader: false,
+
   async headers() {
     return [
+      { source: '/:path*', headers: SECURITY },
       { source: HASHED_ASSET, headers: IMMUTABLE },
       { source: '/vendor', headers: NO_STORE },
       { source: '/vendor/', headers: NO_STORE },

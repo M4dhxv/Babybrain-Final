@@ -43,6 +43,11 @@ export async function requireAdmin(
   }
   const { user } = await getAuthedContext(request);
   if (!user) return { ok: false, status: 401, error: 'Not authenticated' };
+  // Admin is granted by email address alone, so the address has to be one the
+  // account has proved it owns. Supabase's "Confirm email" setting is what
+  // enforces that today; this holds even if that setting is ever switched off
+  // (or an allowlisted address has no account yet and someone signs up as it).
+  if (!user.email_confirmed_at) return { ok: false, status: 403, error: 'Not an admin' };
   const role = adminRoleOf(user.email);
   if (!role) return { ok: false, status: 403, error: 'Not an admin' };
   if (!allow.includes(role)) return { ok: false, status: 403, error: 'Admin only' };

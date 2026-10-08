@@ -606,6 +606,12 @@ export type Database = {
           // A vendor promoted this waitlisted booking on a paid class it
           // wasn't paid for (00101) — parent gets "Pay now" even at capacity.
           waitlist_pay_invited: boolean;
+          // When a waitlisted seat was claimed via "Pay now" (00197): an
+          // unpaid claim goes back to the waitlist 45 minutes after this.
+          pending_since: string | null;
+          // When the parent last opened Stripe Checkout for this unpaid seat
+          // (00229): the stale clean-up counts its 45 minutes from here.
+          checkout_started_at: string | null;
           medical_disclosure: string | null;
           info_response: string | null;
           payment_status: PaymentStatus;
@@ -681,6 +687,7 @@ export type Database = {
           cancel_refund_mode?: 'refund' | 'none' | null;
           cancel_reason?: string | null;
           cancelled_by?: string | null;
+          checkout_started_at?: string | null;
           // Only ever written by the service-role client, and only from
           // app/api/wix/bookings/reschedule — the plain reschedule_booking
           // Postgres RPC (00091) moves this via raw SQL as `security
@@ -1219,6 +1226,7 @@ export type Database = {
           auto_issued: boolean;
         };
         Insert: {
+          id?: string;
           provider_id: string;
           user_id?: string | null;
           child_id?: string | null;

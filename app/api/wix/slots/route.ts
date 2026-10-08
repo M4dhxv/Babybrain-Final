@@ -6,6 +6,7 @@ import {
   wixLocalToUtcIso,
 } from '@/lib/wix/client';
 import { syncWixActivityAvailability } from '@/lib/wix/sync';
+import { rateLimited, clientIp } from '@/lib/rate-limit';
 
 /**
  * Live Wix availability for a Wix-linked activity. Used by the parent
@@ -52,6 +53,21 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient();
+
+  // This route is public and every uncached call reads the vendor's Wix
+  // account live and writes the result back to our sessions table. The CDN
+  // only collapses identical URLs, so any extra query parameter got a fresh
+  // run: one caller could spend a vendor's Wix quota and keep the database
+  // busy. A parent opening a class makes a handful of calls a minute; the
+  // vendor's Schedule page makes one per Wix class. Fails open (see
+  // rateLimited) so a throttle outage never hides a class's times.
+  if (await rateLimited(admin, `wixslots:${clientIp(request)}`, 90, 60)) {
+    return NextResponse.json(
+      { error: 'Too many requests — please try again in a minute.' },
+      { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } }
+    );
+  }
+
   const { data: activity } = await admin
     .from('activities')
     .select('id, provider_id, wix_service_id, wix_resource_id, wix_service_type')

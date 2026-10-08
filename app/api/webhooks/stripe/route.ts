@@ -352,12 +352,29 @@ export async function POST(request: Request) {
       } else if (expired.metadata?.kind === 'booking' && expired.metadata?.seat_ids) {
         const seatIds = expired.metadata.seat_ids.split(',').filter(Boolean);
         if (seatIds.length) {
-          await admin
-            .from('bookings')
-            .update({ status: 'cancelled' })
-            .in('id', seatIds)
-            .eq('status', 'pending')
-            .eq('payment_status', 'none');
+          // Two kinds of seat must NOT be cancelled here:
+          //  - A waitlist claim hold (pending_since set, 00197). It goes back
+          //    to the waitlist with its place kept, and the 5-minute clean-up
+          //    does that and tells everyone else the spot is free. Cancelling
+          //    it here took the parent off the waitlist altogether.
+          //  - A seat the parent has since reopened checkout for
+          //    (checkout_started_at is later than this session, 00229). This
+          //    is the OLD session expiring while they are paying on the new
+          //    one; cancelling it charged them for a seat they no longer had.
+          // checkout_started_at is stamped just before a session is created,
+          // so the session that is expiring now has one at or before its own
+          // `created`; a minute's allowance covers the two clocks.
+          const openedBy = new Date((expired.created + 60) * 1000).toISOString();
+          const releasable = () =>
+            admin
+              .from('bookings')
+              .update({ status: 'cancelled' })
+              .in('id', seatIds)
+              .eq('status', 'pending')
+              .eq('payment_status', 'none')
+              .is('pending_since', null);
+          await releasable().is('checkout_started_at', null);
+          await releasable().lte('checkout_started_at', openedBy);
         }
       } else if (expired.metadata?.kind === 'wix_booking' && expired.metadata?.booking_ids) {
         const bookingIds = JSON.parse(expired.metadata.booking_ids) as string[];
@@ -467,12 +484,20 @@ export async function POST(request: Request) {
         // is always confirmed. Anyone this checkout charged but couldn't
         // seat because a concurrent claim won the race gets a make-up token
         // for the vendor (no cash refunds) and stays on the waitlist.
-        const { confirmedIds, tokenIds } = await confirmPaidBookingSeats(admin, {
+        const { confirmedIds, tokenIds, failed } = await confirmPaidBookingSeats(admin, {
           seatIds,
           groupId,
           bookingId,
           paymentIntent,
         });
+        // The database did not answer, so the parent has paid and the seat is
+        // still unpaid in our books — and the clean-up cancels an unpaid seat
+        // 45 minutes on. Answering 200 would mark this event delivered and it
+        // would never be tried again (the same failure as the package branch
+        // below). 500 makes Stripe redeliver; settling twice is safe.
+        if (failed) {
+          return NextResponse.json({ error: 'Booking payment not recorded' }, { status: 500 });
+        }
 
         // Ledger entry so the vendor can see what they earned on this booking
         // and what was deducted. Idempotent on the payment intent. Confirmed

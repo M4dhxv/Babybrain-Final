@@ -128,6 +128,12 @@ export async function POST(request: Request) {
   // which isn't being paid for on this checkout.
   const seatIds = chargeSeats.map((s) => s.id);
   await admin.from('bookings').update({ amount: price }).in('id', seatIds);
+  // Restart the 45-minute hold from now (00229). The clean-up used to count
+  // from when the booking was created, so a parent who came back to pay 20
+  // minutes later got a 40-minute Stripe session on a seat with 25 minutes
+  // left, and could be charged after it had been cancelled. Its own statement,
+  // result ignored: nothing about taking payment may depend on it.
+  await admin.from('bookings').update({ checkout_started_at: new Date().toISOString() }).in('id', seatIds);
 
   // Seats from this group that stay on the waitlist after this payment — the
   // confirmation page tells the parent so "Your class is booked!" isn't a lie
