@@ -2,7 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: on an iPhone / iPad the page then runs to the
+         screen's real edges and env(safe-area-inset-*) reports the home
+         indicator and notch. Without it iOS reports those insets as 0, so the
+         "clear the home indicator" padding in the app (the Explore filter
+         bar, the install banner, the Plus bar) had nothing to work with. PageShell pads
+         the page itself by the same insets, so nothing sits under the notch
+         or the indicator. No effect on other browsers. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
     <link rel="icon" type="image/png" href="/app/assets/brand/logo-icon.png" />
     <meta

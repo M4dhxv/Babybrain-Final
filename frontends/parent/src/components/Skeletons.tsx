@@ -67,7 +67,7 @@ export function ActivityRowSkeleton() {
 /** A list of `ActivityRowSkeleton`s for the Explore results column. */
 export function ActivityRowListSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid gap-2.5 xl:grid-cols-2" aria-hidden="true">
+    <div className="grid gap-2.5 lg:grid-cols-2" aria-hidden="true">
       {Array.from({ length: count }).map((_, i) => (
         <ActivityRowSkeleton key={i} />
       ))}

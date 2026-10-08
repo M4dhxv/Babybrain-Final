@@ -104,7 +104,12 @@ export function PendingPlusGate() {
       role="region"
       aria-label="Finish upgrading to Plus"
       className="fixed inset-x-0 bottom-0 z-[60] border-t border-[#F4C6D6] bg-white px-4 pt-3 shadow-[0_-4px_16px_rgba(17,26,76,0.08)]"
-      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      style={{
+        paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+        // Sideways on an iPhone, keep the text out from under the notch.
+        paddingLeft: "max(1rem, env(safe-area-inset-left))",
+        paddingRight: "max(1rem, env(safe-area-inset-right))",
+      }}
     >
       <div className="mx-auto flex max-w-[720px] flex-wrap items-center gap-x-4 gap-y-2">
         <p className="min-w-0 flex-1 text-sm font-bold text-[#34406f]">

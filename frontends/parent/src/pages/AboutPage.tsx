@@ -1,6 +1,8 @@
 import { PageShell, Button, Icon, Footer } from "../components/ui";
+import { useAuth } from "../auth/AuthProvider";
 
 export default function AboutPage() {
+  const { session } = useAuth();
   return (
     <PageShell active="/about" auth="public">
       <main className="mx-auto max-w-[1024px] px-6 py-8">
@@ -46,7 +48,10 @@ export default function AboutPage() {
             <h2 className="text-[46px] font-black leading-none text-baby-lilac">Our mission</h2>
             <p className="mt-5 text-2xl font-black leading-tight">To reduce the mental load for parents in Singapore.</p>
             <p className="mt-4 max-w-[440px] font-semibold leading-7 text-[#3f4b78]">We want to help you spend less time on administration and more time having meaningful experiences.</p>
-            <Button href="/onboarding" size="lg" className="mt-6">Join today →</Button>
+            {/* Sign-up invitation: only for a visitor who isn't logged in. A
+                logged-in parent was sent to the sign-up form by it. Same test
+                the header uses for its Log in / Sign up buttons. */}
+            {!session && <Button href="/onboarding" size="lg" className="mt-6">Join today →</Button>}
           </div>
           <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.svg`} alt="" className="mx-auto h-48 object-contain" />
         </section>

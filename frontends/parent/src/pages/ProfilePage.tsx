@@ -2412,7 +2412,9 @@ export default function ProfilePage() {
           }}
           // touch-none is unconditional: it has to be set before the gesture
           // starts, or the browser has already claimed the touch as a scroll.
-          className="fixed left-0 z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] transition-transform duration-300 ease-out will-change-transform [--bb-handle-x:0px] group-data-[menu=open]:[--bb-handle-x:calc(62vw-44px)] lg:hidden"
+          // Closed, it rests at the left edge — beside the notch when an iPhone
+          // is held sideways (the inset is 0 otherwise), not underneath it.
+          className="fixed left-0 z-50 grid h-14 w-11 touch-none select-none place-items-center text-[#FA4D8D] transition-transform duration-300 ease-out will-change-transform [--bb-handle-x:env(safe-area-inset-left)] group-data-[menu=open]:[--bb-handle-x:calc(62vw-44px)] lg:hidden"
         >
           <span className="relative -ml-2 block [filter:drop-shadow(0_0_3px_#fff)_drop-shadow(0_0_1px_#fff)]">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="hidden group-data-[menu=open]:block">
@@ -2427,7 +2429,9 @@ export default function ProfilePage() {
           </span>
         </button>
         <aside
-          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out will-change-transform lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 -translate-x-full group-data-[menu=open]:translate-x-0`}
+          // max-lg (the sliding drawer only): its last item clears the iPhone
+          // home indicator and its content the notch. Both are 0 elsewhere.
+          className={`fixed inset-y-0 left-0 z-40 order-1 w-[62%] overflow-y-auto bb-slim-scroll transition-transform duration-300 ease-out will-change-transform max-lg:pb-[env(safe-area-inset-bottom)] max-lg:pl-[env(safe-area-inset-left)] lg:sticky lg:top-[90px] lg:z-auto lg:w-auto lg:self-start lg:overflow-visible lg:transition-none lg:translate-x-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 -translate-x-full group-data-[menu=open]:translate-x-0`}
         >
           {/* The scroll boundary on desktop: max-height + overflow live here,
               on the same box as its own rounded corners (12px, matching the

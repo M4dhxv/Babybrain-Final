@@ -1200,7 +1200,12 @@ export default function ExplorePage() {
                   <ActivityRowListSkeleton count={6} />
                 ) : (
                   <>
-                    <div className="grid gap-2.5 xl:grid-cols-2">
+                    {/* Two across from 1024px, so an iPad on its side (1024-1194px
+                        wide) shows two classes per row like a desktop does. It
+                        used to be one row the full width of the screen until
+                        1280px. Narrower than 1024 a second column leaves no room
+                        for the photo-beside-details row, so portrait stays a list. */}
+                    <div className="grid gap-2.5 lg:grid-cols-2">
                       {/* Only the revealed slice renders — the rest of this
                           fetched page sits in `activities` already, ready for
                           the next click to reveal instantly with no fetch. */}

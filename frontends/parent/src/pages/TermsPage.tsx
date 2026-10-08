@@ -146,7 +146,12 @@ function OnThisPage({ doc }: { doc: LegalDoc }) {
   useEffect(() => setOpen(false), [doc.key]);
 
   return (
-    <div ref={ref} className="fixed bottom-6 right-6 z-40">
+    <div
+      ref={ref}
+      className="fixed z-40"
+      // 1.5rem in from the corner, plus the iPhone home indicator / notch.
+      style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))", right: "calc(1.5rem + env(safe-area-inset-right))" }}
+    >
       {open && (
         <nav className="absolute bottom-[calc(100%+10px)] right-0 max-h-[60vh] w-64 space-y-0.5 overflow-y-auto rounded-2xl border border-[#EBE3E5] bg-white p-2 shadow-soft">
           {doc.sections.map((s) => (

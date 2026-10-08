@@ -852,7 +852,17 @@ export function PageShell({
   unreadNotifications?: number;
 }) {
   return (
-    <div className="min-h-screen bg-baby-paper text-baby-ink">
+    <div
+      className="min-h-screen bg-baby-paper text-baby-ink"
+      // iPhone / iPad (index.html sets viewport-fit=cover): keep every page out
+      // from under the notch when held sideways, and let its last line scroll
+      // clear of the home indicator. All three are 0 everywhere else.
+      style={{
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+    >
       <Header active={active} auth={auth} unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
       {children}
     </div>
@@ -1089,7 +1099,9 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
       </div>
       <div className="relative p-4">
         <SaveHeart activityId={activity.id} className="absolute right-4 top-4 h-9 w-9" />
-        <h3 className="mb-0.5 text-[16px] font-black">{activity.title}</h3>
+        {/* pr-10 keeps the title clear of the save heart above (36px + a gap):
+            a long title used to run underneath it instead of wrapping. */}
+        <h3 className="mb-0.5 pr-10 text-[16px] font-black">{activity.title}</h3>
         {providerLabel(activity) && (
           <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold text-palette-blue">
             <Icon name="store" className="h-3.5 w-3.5" /> {providerLabel(activity)}

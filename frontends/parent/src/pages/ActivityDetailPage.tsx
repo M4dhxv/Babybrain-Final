@@ -44,7 +44,16 @@ function PhotoLightbox({
   }, [index, images.length, onClose, onIndex]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/85 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-black/85 p-4"
+      // p-4 all round, plus the iPhone home indicator / notch where there is one.
+      style={{
+        paddingBottom: "calc(1rem + env(safe-area-inset-bottom))",
+        paddingLeft: "calc(1rem + env(safe-area-inset-left))",
+        paddingRight: "calc(1rem + env(safe-area-inset-right))",
+      }}
+      onClick={onClose}
+    >
       <div className="flex items-center justify-between text-white">
         <span className="text-sm font-bold">{index + 1} / {images.length}</span>
         <button type="button" onClick={onClose} aria-label="Close photos" className="rounded-full p-2 hover:bg-white/10">
