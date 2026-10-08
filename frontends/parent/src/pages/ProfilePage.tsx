@@ -3477,7 +3477,7 @@ function PastActivitiesTab({
   );
 }
 
-/** The seats of a multi-child booking (00084). The "N children" line is the
+/** The seats of a multi-child booking (00084). The "N tickets" line is the
  *  disclosure toggle; opening it reveals the roster indented right beneath.
  *  Seat 1 is the chosen child (read-only); guest seats read "Guest child"
  *  until the parent renames them — the name is written to bookings.guest_name
@@ -3508,7 +3508,7 @@ function PartyPlaces({
         className="group flex items-center gap-2 text-sm font-bold text-[#59658d] transition-colors hover:text-baby-cta"
       >
         <Icon name="people" className="h-4 w-4 text-baby-lilac" />
-        <span>{b.places.length} children</span>
+        <span>{b.places.length} {b.places.length === 1 ? "ticket" : "tickets"}</span>
         <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F3EDF8] transition-colors group-hover:bg-[#FCE6EF]">
           <Icon
             name="chevron"

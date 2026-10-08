@@ -136,7 +136,7 @@ export async function POST(request: Request) {
     (s) => (s as { status?: string }).status === 'waitlisted' && !chargeIds.has(s.id)
   ).length;
 
-  const title = activity?.title ?? 'Class booking';
+  const title = activity?.title ?? 'Session booking';
   const origin = appOrigin(request);
 
   const params = {
@@ -153,8 +153,8 @@ export async function POST(request: Request) {
           product_data: {
             name:
               seatCount > 1
-                ? `${title} — class booking (${seatCount} children)`
-                : `${title} — class booking`,
+                ? `${title} — session booking (${seatCount} tickets)`
+                : `${title} — session booking`,
           },
         },
         quantity: seatCount,

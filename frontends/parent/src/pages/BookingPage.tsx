@@ -1084,7 +1084,7 @@ export default function BookingPage() {
     if (!packageCredit) return;
     // 1 child = 1 credit = 1 spot — count is how many are attending.
     if (packageCredit.remaining < count) {
-      setErr(`This pack only has ${packageCredit.remaining} credit${packageCredit.remaining === 1 ? "" : "s"} left — not enough for ${count} children.`);
+      setErr(`This pack only has ${packageCredit.remaining} credit${packageCredit.remaining === 1 ? "" : "s"} left — not enough for ${count} tickets.`);
       return;
     }
     setBusy(true);
@@ -1185,7 +1185,7 @@ export default function BookingPage() {
     // buying it would leave some children unbooked with no way to tell
     // which. Same shape as payWithPackage()'s existing check.
     if (pack && pack.credits < count) {
-      setErr(`This pack only has ${pack.credits} credit${pack.credits === 1 ? "" : "s"} — not enough for ${count} children. Reduce the number of children or pick a pack with more credits.`);
+      setErr(`This pack only has ${pack.credits} credit${pack.credits === 1 ? "" : "s"} — not enough for ${count} tickets. Reduce the number of tickets or pick a pack with more credits.`);
       return;
     }
     setBusy(true);
@@ -1781,7 +1781,7 @@ export default function BookingPage() {
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
                 {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
-                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {count === 1 ? "child" : "children"}, {ageText}</p>
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>

@@ -179,7 +179,7 @@ export async function POST(request: Request) {
         price_data: {
           currency: 'sgd',
           unit_amount: pkg.price_cents,
-          product_data: { name: `${pkg.name} (${pkg.credits} classes)` },
+          product_data: { name: `${pkg.name} (${pkg.credits} ${pkg.credits === 1 ? 'session' : 'sessions'})` },
         },
         quantity: 1,
       },

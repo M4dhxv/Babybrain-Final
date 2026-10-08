@@ -162,7 +162,7 @@ export async function POST(request: Request) {
 
   const amountCents = Math.round(price * 100);
   const origin = appOrigin(request);
-  const title = activity.title ?? 'Class booking';
+  const title = activity.title ?? 'Session booking';
 
   const params = {
     mode: 'payment' as const,
@@ -172,7 +172,7 @@ export async function POST(request: Request) {
         price_data: {
           currency: 'sgd' as const,
           unit_amount: amountCents,
-          product_data: { name: `${title} — class booking` },
+          product_data: { name: count > 1 ? `${title} — session booking (${count} tickets)` : `${title} — session booking` },
         },
         quantity: count,
       },
