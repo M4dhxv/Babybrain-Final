@@ -331,6 +331,10 @@ export default function BookingsPage() {
   // export even offers a medical notes column.
   const [activityRequiresMedical, setActivityRequiresMedical] = useState<Record<string, boolean>>({});
   const [sessionId, setSessionId] = useState<string>('');
+  // ?booking= deep-link from the Notifications tab: kept until the roster has
+  // loaded and the family is selected (see the effect after visibleBookings).
+  const pendingBookingRef = useRef<string | null>(searchParams.get('booking'));
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   // No Waitlist tab for the currently-selected session when its activity is a
   // Wix Event / COURSE (00107). `bookingsTabs` stays the full list for
   // deep-link matching; only what's rendered — and reachable — is trimmed.
@@ -737,7 +741,7 @@ export default function BookingsPage() {
         const picked = opts.find((o) => o.id === preselect);
         setDateFilter(picked && picked.starts_at < dayStartIso ? sgDateKey(picked.starts_at) : '');
       }
-      if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); return next; }, { replace: true });
+      if (requested) setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('session'); next.delete('booking'); return next; }, { replace: true });
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -874,6 +878,32 @@ export default function BookingsPage() {
     : activeTab === 'Bookings' && statusFilter === 'all' ? [...booked, ...cancelled]
     : booked;
   const visibleBookings = listSource.filter((b) => b.child_name.toLowerCase().includes(search.toLowerCase()));
+  // Notification deep-link: once this session's roster is in, switch to the tab
+  // / filter the booking lives under, select it and flash a highlight on it.
+  // Stays armed until it has fired (a cached roster paints first and the live
+  // read re-selects row 0, so it re-applies on each roster update) and is
+  // disarmed by a timer rather than on first hit.
+  useEffect(() => {
+    const id = pendingBookingRef.current;
+    if (!id || rosterSessionId !== sessionId) return;
+    const row = roster.find((r) => r.booking_id === id);
+    if (!row) return;
+    if (row.status === 'waitlisted') {
+      if (activeTab !== 'Waitlist') { setActiveTab('Waitlist'); return; }
+    } else {
+      if (activeTab === 'Waitlist') { setActiveTab('Bookings'); return; }
+      const want = row.status === 'cancelled' ? 'cancelled' : 'active';
+      if (statusFilter !== want && statusFilter !== 'all') { setStatusFilter(want); return; }
+    }
+    const idx = visibleBookings.findIndex((b) => b.booking_id === id);
+    if (idx < 0) return;
+    setSelected(idx);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('booking'); return next; }, { replace: true });
+    setHighlightId(id);
+    requestAnimationFrame(() => document.getElementById(`roster-row-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    window.setTimeout(() => { pendingBookingRef.current = null; setHighlightId(null); }, 4000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster, rosterSessionId, sessionId, activeTab, statusFilter, search]);
   const presentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'present').length;
   const absentCount = booked.filter((b) => (attDraft[b.booking_id] ?? b.attendance_status) === 'absent').length;
 
@@ -1428,9 +1458,10 @@ export default function BookingsPage() {
             </div>
             <div className="space-y-2">
               {visibleBookings.map((b, idx) => (
-                <div key={b.booking_id} onClick={() => { setSelected(idx); if (activeTab === 'Bookings') setMobileDetail(true); }}
-                  className={cn('flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors',
-                    selected === idx ? 'bg-pink-50 border border-pink-300' : 'hover:bg-gray-50 border border-transparent')}>
+                <div key={b.booking_id} id={`roster-row-${b.booking_id}`} onClick={() => { setSelected(idx); if (activeTab === 'Bookings') setMobileDetail(true); }}
+                  className={cn('flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-500',
+                    selected === idx ? 'bg-pink-50 border border-pink-300' : 'hover:bg-gray-50 border border-transparent',
+                    highlightId === b.booking_id && 'ring-2 ring-[#FA4D8D] ring-offset-2 bg-pink-100')}>
                   <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0', PALETTE[idx % PALETTE.length])}>
                     {initials(b.child_name)}
                   </div>

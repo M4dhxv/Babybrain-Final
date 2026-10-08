@@ -4,6 +4,7 @@ import { Gift, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { useDeepLinkHighlight } from '@/lib/useDeepLinkHighlight';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { TableRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
@@ -58,6 +59,7 @@ export default function MakeUpTokensPage() {
   );
   const tokens = data ?? [];
   const [filter, setFilter] = useState<typeof statusFilters[number]>('All');
+  const highlightId = useDeepLinkHighlight('token', !loading && tokens.length > 0, () => setFilter('All'));
 
   // Inline expiry editor — one token open at a time. Issuance already lets you
   // set a bespoke expiry (BookingsPage); this is the same control for a token
@@ -194,7 +196,7 @@ export default function MakeUpTokensPage() {
             {visible.map((t) => {
               const editable = canManage && t.status !== 'redeemed';
               return (
-                <div key={t.token_id}>
+                <div key={t.token_id} id={`dl-${t.token_id}`} className={cn('transition-all duration-500', highlightId === t.token_id && 'bg-pink-50 ring-2 ring-inset ring-[#FA4D8D]')}>
                   <div className={cn(TOKEN_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">

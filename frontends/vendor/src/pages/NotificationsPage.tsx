@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
-import { CalendarCheck, UserPlus, CalendarX, Star, Gift, Bell } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CalendarCheck, UserPlus, CalendarX, Star, Gift, Bell, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -14,6 +15,11 @@ type Event = {
   actor_name: string;
   activity_title: string | null;
   detail: string | null;
+  booking_id: string | null;
+  session_id: string | null;
+  activity_id: string | null;
+  review_id: string | null;
+  token_id: string | null;
 };
 
 const KIND_META: Record<Event['kind'], { icon: typeof Bell; color: string; bg: string }> = {
@@ -37,6 +43,20 @@ function message(e: Event): string {
     case 'token_issued':
       return `A make-up token was issued to ${e.actor_name}.`;
   }
+}
+
+/** Where an entry opens. Booking-type entries land on that slot's roster with
+ *  the family highlighted. BookingsPage reads ?session= and ?booking= and
+ *  picks the right tab / Cancelled filter from the booking's own status. */
+function target(e: Event): string {
+  if ((e.kind === 'booking' || e.kind === 'waitlist' || e.kind === 'cancellation') && e.session_id) {
+    const q = new URLSearchParams({ session: e.session_id });
+    if (e.booking_id) q.set('booking', e.booking_id);
+    return `/bookings?${q.toString()}`;
+  }
+  if (e.kind === 'review') return e.review_id ? `/reviews?review=${e.review_id}` : '/reviews';
+  if (e.kind === 'token_issued') return e.token_id ? `/make-up-tokens?token=${e.token_id}` : '/make-up-tokens';
+  return '/bookings';
 }
 
 export default function NotificationsPage() {
@@ -74,9 +94,10 @@ export default function NotificationsPage() {
             {events.map((e, i) => {
               const meta = KIND_META[e.kind];
               return (
-                <div
+                <Link
                   key={`${e.kind}-${e.event_at}-${i}`}
-                  className={cn('flex items-start gap-3 px-5 py-4', i > 0 && 'border-t border-gray-100')}
+                  to={target(e)}
+                  className={cn('group flex items-start gap-3 px-5 py-4 transition-colors hover:bg-gray-50', i > 0 && 'border-t border-gray-100')}
                 >
                   <div className={cn('mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-full', meta.bg)}>
                     <meta.icon className={cn('h-4 w-4', meta.color)} />
@@ -85,7 +106,8 @@ export default function NotificationsPage() {
                     <p className="text-sm text-gray-900">{message(e)}</p>
                     <p className="mt-0.5 text-xs text-gray-500">{formatDistanceToNow(new Date(e.event_at), { addSuffix: true })}</p>
                   </div>
-                </div>
+                  <ChevronRight className="mt-2 h-4 w-4 flex-shrink-0 text-gray-300 group-hover:text-gray-500" />
+                </Link>
               );
             })}
             {events.length === 0 && (

@@ -1050,6 +1050,11 @@ export type Database = {
           actor_name: string;
           activity_title: string | null;
           detail: string | null;
+          booking_id: string | null;
+          session_id: string | null;
+          activity_id: string | null;
+          review_id: string | null;
+          token_id: string | null;
         }[];
       };
       provider_notification_unread_count: {

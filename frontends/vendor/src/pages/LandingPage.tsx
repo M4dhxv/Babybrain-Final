@@ -105,7 +105,7 @@ export default function LandingPage() {
           the visitor actually scrolls. */}
       <div className="flex flex-1 flex-col justify-evenly">
       {/* Hero Section */}
-      <section className="relative px-4 pt-7 sm:px-8 sm:pt-0">
+      <section className="relative px-4 pt-10 sm:px-8 sm:pt-0">
         <div className="flex flex-col items-start gap-6 max-w-7xl mx-auto lg:flex-row lg:items-center lg:gap-8">
           {/* Left Content */}
           <div className="flex-1">
@@ -114,9 +114,9 @@ export default function LandingPage() {
               <Shield className="w-4 h-4 text-[#FA4D8D]" />
               <span className="text-sm font-bold text-[#FA4D8D]">Join 75+ trusted providers</span>
               <Sparkles
-                className="absolute -left-1 -top-3 h-6 w-6 sm:-left-6 sm:-top-2 sm:h-5 sm:w-5"
-                // Bright, filled yellow with a soft glow (an outline-only stroke in the stock yellow read as a dull olive on phones).
-                style={{ color: '#FFC400', fill: '#FFE14D', filter: 'drop-shadow(0 0 5px rgba(255, 214, 64, 0.95))' }}
+                // Sits just above the pill on phones so it never overlaps it. Plain filled yellow, no glow.
+                className="absolute -left-1 -top-6 h-[22px] w-[22px] sm:-left-6 sm:-top-2 sm:h-5 sm:w-5"
+                style={{ color: '#FFC400', fill: '#FFE14D' }}
                 aria-hidden="true"
               />
               <Cloud className="w-5 h-5 text-purple-300 absolute -right-8 top-0" />

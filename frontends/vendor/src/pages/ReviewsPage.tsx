@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
+import { useDeepLinkHighlight } from '@/lib/useDeepLinkHighlight';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
 
 const sgDate = (iso: string) =>
@@ -64,6 +65,7 @@ export default function ReviewsPage() {
     },
   );
   const reviews = data ?? [];
+  const highlightId = useDeepLinkHighlight('review', !loading && reviews.length > 0, () => setFilter('all'));
 
   async function submitResponse(reviewId: string) {
     const text = (drafts[reviewId] ?? '').trim();
@@ -128,7 +130,7 @@ export default function ReviewsPage() {
 
         <div className="space-y-4">
           {visible.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-5">
+            <div key={r.id} id={`dl-${r.id}`} className={cn('bg-white rounded-xl border border-gray-200 p-5 transition-all duration-500', highlightId === r.id && 'ring-2 ring-[#FA4D8D] ring-offset-2')}>
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-full bg-pink-300 text-pink-800 flex items-center justify-center text-sm font-bold flex-shrink-0">
                   {initials(r.parent_name)}
