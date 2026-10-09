@@ -996,9 +996,13 @@ function useRowHighlight(id: string): boolean {
  *  keyframes in styles/index.css — Tailwind alone can't express it). */
 const HIGHLIGHT_RING = "bb-highlight";
 
+/** A use-by date can be months out, so it carries its year (sgDay alone has none). */
+const sgYear = (iso: string) => new Date(iso).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", year: "numeric" });
+
 /** One make-up token, shared by the flat and the split-by-child lists. */
 function TokenRow({ t }: { t: TokenItem }) {
   const highlighted = useRowHighlight(t.id);
+  const lapsed = t.status === "expired" || (!!t.expires_at && Date.parse(t.expires_at) <= Date.now());
   return (
     <div id={`row-${t.id}`} className={`flex flex-col gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card transition-shadow sm:flex-row sm:items-center sm:gap-4 ${highlighted ? HIGHLIGHT_RING : ""}`}>
       <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -1006,10 +1010,15 @@ function TokenRow({ t }: { t: TokenItem }) {
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-black">{t.activityTitle ?? t.provider}</h3>
           {t.activityTitle && <p className="truncate text-sm font-bold text-[#3f4b78]">{t.provider}</p>}
-          <p className="text-sm font-semibold text-[#59658d]">
-            Issued {sgDay(t.created_at)}
-            {t.expires_at ? ` · expires ${sgDay(t.expires_at)}` : ""}
-          </p>
+          <p className="text-sm font-semibold text-[#59658d]">Issued {sgDay(t.created_at)}</p>
+          {/* The use-by date on its own line: tucked after the issue date it
+              was easy to miss, and a token with no expiry said nothing at all,
+              leaving the parent to guess. A used token no longer needs one. */}
+          {t.status !== "redeemed" && (
+            <p className={`text-sm font-black ${lapsed ? "text-[#6D748A]" : "text-baby-cta"}`}>
+              {!t.expires_at ? "No expiry date" : `${lapsed ? "Expired" : "Use by"} ${sgDay(t.expires_at)} ${sgYear(t.expires_at)}`}
+            </p>
+          )}
         </div>
       </div>
       {/* On mobile these drop below the text and line up under it (past the

@@ -451,7 +451,7 @@ async function refreshSeriesActivity(admin: Admin, plan: SeriesPlan, ctx: Series
 
   const { data: current } = await admin
     .from('activities')
-    .select('address, postal_code, location_id')
+    .select('address, postal_code, location_id, wix_locked_fields')
     .eq('id', plan.canonicalActivityId)
     .maybeSingle();
   const ev = next.event;
@@ -465,12 +465,14 @@ async function refreshSeriesActivity(admin: Admin, plan: SeriesPlan, ctx: Series
     locationId = (await resolveEventLocation(admin, ctx.providerId, ev, cache, { count: (locs ?? []).length })) ?? locationId;
   }
 
+  // A name or photos the vendor set on BabyBrain are theirs (activities.wix_locked_fields, see lib/wix/sync.ts).
+  const locked = current?.wix_locked_fields ?? [];
   await admin
     .from('activities')
     .update({
-      title: ev.title,
+      ...(locked.includes('title') ? {} : { title: ev.title }),
       ...(ev.description ? { description: ev.description } : {}),
-      ...(ev.mainImageUrl ? { image_urls: [ev.mainImageUrl] } : {}),
+      ...(ev.mainImageUrl && !locked.includes('image_urls') ? { image_urls: [ev.mainImageUrl] } : {}),
       ...(cheapest != null ? { price: cheapest / 100 } : {}),
       ...(capacityOf(types) != null && !splitMultiDay(ev) ? { default_capacity: capacityOf(types) } : {}),
       location_id: locationId,

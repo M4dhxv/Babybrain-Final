@@ -1471,6 +1471,15 @@ export default function ActivitiesPage() {
     // location so the parent app can show "where to go" without an extra
     // join — keep them in sync with whichever location the vendor picks.
     const loc = locations.find((l) => l.id === form.location_id);
+    // Renaming a Wix-linked activity, or changing its photos, claims that field
+    // (wix_locked_fields) so the next sync no longer puts Wix's name or single
+    // cover photo back over it. Once claimed it stays claimed.
+    const prevLocks = editingActivity?.wix_locked_fields ?? [];
+    const sameList = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
+    const titleClaimed = prevLocks.includes('title') || form.title.trim() !== (editingActivity?.title ?? '').trim();
+    const photosClaimed = prevLocks.includes('image_urls')
+      || !sameList(form.image_urls, editingActivity?.image_urls ?? [])
+      || form.image_source !== (editingActivity?.image_source === 'custom' ? 'custom' : 'profile');
     const fields = {
       title: form.title,
       description: form.description,
@@ -1491,8 +1500,10 @@ export default function ActivitiesPage() {
       ...(isWixLinked
         ? {
             wix_locked_fields: [
-              ...(editingActivity?.wix_locked_fields ?? []).filter((x) => x !== 'price'),
+              ...prevLocks.filter((x) => x !== 'price' && x !== 'title' && x !== 'image_urls'),
               ...(priceOverridable && priceOverridden ? ['price'] : []),
+              ...(titleClaimed ? ['title'] : []),
+              ...(photosClaimed ? ['image_urls'] : []),
             ],
             ...(priceOverridable && priceOverridden
               ? { price: form.price ? Number(form.price) : null }

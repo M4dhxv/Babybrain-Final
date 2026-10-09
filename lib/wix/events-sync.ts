@@ -161,6 +161,8 @@ interface EventMirrorContext {
     { price_cents: number; capacity_total: number | null; fee_type: string | null; fee_rate_percent: number | null }[]
   >;
   existingActivityIdByLocalEventId: Map<string, string>;
+  /** activities.wix_locked_fields per mirrored activity: what the vendor has claimed (see lib/wix/sync.ts). */
+  lockedFieldsByActivityId: Map<string, string[]>;
   sessionsByActivityId: Map<string, { id: string }[]>;
   bookedSessionIds: Set<string>;
   communityEventsCategoryId: number | null;
@@ -218,17 +220,19 @@ async function syncEventActivityMirror(
 
   let activityId: string;
   if (existingActivityId) {
+    // A name or photos the vendor set on BabyBrain are theirs: the sync leaves them alone.
+    const locked = ctx.lockedFieldsByActivityId.get(existingActivityId) ?? [];
     await admin
       .from('activities')
       .update({
-        title: event.title,
+        ...(locked.includes('title') ? {} : { title: event.title }),
         ...(price != null ? { price } : {}),
         ...(capacity != null ? { default_capacity: capacity } : {}),
         ...(event.description ? { description: event.description } : {}),
         location_id: locationId,
         address: event.location.formattedAddress,
         postal_code: event.location.postalCode,
-        ...(event.mainImageUrl ? { image_urls: [event.mainImageUrl] } : {}),
+        ...(event.mainImageUrl && !locked.includes('image_urls') ? { image_urls: [event.mainImageUrl] } : {}),
         // Wix knows about this event again (this fetch found it) — same
         // revival rule the wix_events row itself just got above.
         wix_missing_since: null,
@@ -651,9 +655,12 @@ async function syncProviderWixEventsImpl(
 
     const { data: existingMirrorRows } = await admin
       .from('activities')
-      .select('id, wix_event_id')
+      .select('id, wix_event_id, wix_locked_fields')
       .eq('provider_id', providerId)
       .in('wix_event_id', localEventIdsToMirror);
+    const lockedFieldsByActivityId = new Map(
+      (existingMirrorRows ?? []).map((r) => [r.id, r.wix_locked_fields ?? []])
+    );
     const existingActivityIdByLocalEventId = new Map(
       (existingMirrorRows ?? []).map((r) => [r.wix_event_id as string, r.id])
     );
@@ -706,6 +713,7 @@ async function syncProviderWixEventsImpl(
       locationCountRef,
       ticketTypesByEventId,
       existingActivityIdByLocalEventId,
+      lockedFieldsByActivityId,
       sessionsByActivityId,
       bookedSessionIds,
       communityEventsCategoryId: communityEventsCategory?.id ?? null,

@@ -417,10 +417,11 @@ export async function updateProviderWithCatalogue(
     // class (which is always allowed regardless of payout status).
     const patchIds = acts.filter((a) => !a._delete).map((a) => a.id);
     type CurrentActivity = { id: string; title: string; is_published: boolean; external_booking_url: string | null;
-                             location_id: string | null; wix_service_id: string | null; wix_locked_fields: string[] | null };
+                             location_id: string | null; wix_service_id: string | null; wix_locked_fields: string[] | null;
+                             wix_event_id: string | null; wix_series_id: string | null; image_urls: string[] | null };
     const currentRows: CurrentActivity[] = patchIds.length
       ? ((await db.from('activities')
-          .select('id, title, is_published, external_booking_url, location_id, wix_service_id, wix_locked_fields')
+          .select('id, title, is_published, external_booking_url, location_id, wix_service_id, wix_locked_fields, wix_event_id, wix_series_id, image_urls')
           .in('id', patchIds)).data as unknown as CurrentActivity[] | null) ?? []
       : [];
     const currentById = new Map(currentRows.map((r) => [r.id, r]));
@@ -467,6 +468,15 @@ export async function updateProviderWithCatalogue(
           && !(cur.wix_locked_fields ?? []).includes('location')) {
         row.wix_locked_fields = [...(cur.wix_locked_fields ?? []), 'location'];
         warnings.push(`"${a.title ?? cur.title}" is linked to Wix. Its venue is now locked here, so the Wix sync will not move it back.`);
+      }
+      // Same for a name or photos changed here: claimed, so the Wix sync leaves them as set.
+      if (cur && (cur.wix_service_id || cur.wix_event_id || cur.wix_series_id)) {
+        const locks = new Set((row.wix_locked_fields as string[] | undefined) ?? cur.wix_locked_fields ?? []);
+        const before = locks.size;
+        if (row.title !== undefined && row.title !== cur.title) locks.add('title');
+        if (row.image_urls !== undefined
+            && JSON.stringify(row.image_urls) !== JSON.stringify(cur.image_urls ?? [])) locks.add('image_urls');
+        if (locks.size !== before) row.wix_locked_fields = [...locks];
       }
       if (a.is_custom_location !== undefined) row.is_custom_location = a.is_custom_location;
       if (a.custom_location_label !== undefined) row.custom_location_label = a.custom_location_label?.trim() || null;

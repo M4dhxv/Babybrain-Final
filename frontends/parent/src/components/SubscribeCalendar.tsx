@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "./ui";
 import { apiGet, apiPost } from "../lib/api";
-import { googleSubscribeUrl, isAndroidDevice, isAppleDevice, isNonSafariIos } from "../lib/ics";
+import { appleSubscribeUrl, googleSubscribeUrl, isAndroidDevice, isAppleDevice, isNonSafariIos } from "../lib/ics";
 
 type Feed = { url: string; webcalUrl: string };
 
@@ -103,7 +103,7 @@ export default function SubscribeCalendar({ intro }: { intro?: string }) {
               // A real link, not a script redirect: iOS hands a tapped webcal:// link to Calendar ("Subscribe"),
               // but is unreliable about one set from window.location.
               <a
-                href={feed.webcalUrl}
+                href={appleSubscribeUrl(feed.url)}
                 className="flex h-10 flex-1 items-center justify-center rounded-[10px] border border-[#FED7E4] px-3 text-sm font-black text-baby-cta hover:bg-[#FEF1F6]"
               >
                 Open in calendar app

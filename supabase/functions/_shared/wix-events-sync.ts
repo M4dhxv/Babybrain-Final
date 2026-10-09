@@ -133,6 +133,8 @@ interface EventMirrorContext {
   locationCountRef: { count: number };
   ticketTypesByEventId: Map<string, any[]>;
   existingActivityIdByLocalEventId: Map<string, string>;
+  /** activities.wix_locked_fields per mirrored activity: what the vendor has claimed. */
+  lockedFieldsByActivityId: Map<string, string[]>;
   sessionsByActivityId: Map<string, { id: string }[]>;
   bookedSessionIds: Set<string>;
   communityEventsCategoryId: number | null;
@@ -161,17 +163,19 @@ async function syncEventActivityMirror(
 
   let activityId: string;
   if (existingActivityId) {
+    // A name or photos the vendor set on BabyBrain are theirs: the sync leaves them alone.
+    const locked = ctx.lockedFieldsByActivityId.get(existingActivityId) ?? [];
     await admin
       .from('activities')
       .update({
-        title: event.title,
+        ...(locked.includes('title') ? {} : { title: event.title }),
         ...(price != null ? { price } : {}),
         ...(capacity != null ? { default_capacity: capacity } : {}),
         ...(event.description ? { description: event.description } : {}),
         location_id: locationId,
         address: event.location.formattedAddress,
         postal_code: event.location.postalCode,
-        ...(event.mainImageUrl ? { image_urls: [event.mainImageUrl] } : {}),
+        ...(event.mainImageUrl && !locked.includes('image_urls') ? { image_urls: [event.mainImageUrl] } : {}),
         wix_missing_since: null,
       })
       .eq('id', existingActivityId);
@@ -419,10 +423,11 @@ export async function syncProviderWixEvents(
 
     const { data: existingMirrorRows } = await admin
       .from('activities')
-      .select('id, wix_event_id')
+      .select('id, wix_event_id, wix_locked_fields')
       .eq('provider_id', providerId)
       .in('wix_event_id', localEventIdsToMirror);
     const existingActivityIdByLocalEventId = new Map((existingMirrorRows ?? []).map((r: any) => [r.wix_event_id, r.id]));
+    const lockedFieldsByActivityId = new Map<string, string[]>((existingMirrorRows ?? []).map((r: any) => [r.id, r.wix_locked_fields ?? []]));
 
     const { data: freshTicketTypeRows } = await admin
       .from('event_ticket_types')
@@ -465,6 +470,7 @@ export async function syncProviderWixEvents(
       locationCountRef,
       ticketTypesByEventId,
       existingActivityIdByLocalEventId: existingActivityIdByLocalEventId as Map<string, string>,
+      lockedFieldsByActivityId,
       sessionsByActivityId,
       bookedSessionIds,
       communityEventsCategoryId: communityEventsCategory?.id ?? null,

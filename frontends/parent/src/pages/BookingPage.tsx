@@ -17,6 +17,7 @@ import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { ApiError, apiGet, apiPost } from "../lib/api";
 import { pruneAnswers, type FormAnswers } from "../lib/eventForm";
+import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bookingDraft";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
@@ -218,6 +219,12 @@ export default function BookingPage() {
   // only place a pack purchase can actually go through, since it's the only
   // place a slot + Provider terms can be gathered first.
   const wantPackId = getParam("pack");
+  // What the parent had filled in before the login hop (see loginHref below),
+  // put back once: the simple fields seed their state here, the event's ticket
+  // type and answers wait for that event to load.
+  const [draft] = useState(() => readBookingDraft(getParam("slug")));
+  const draftEventPending = useRef(draft != null);
+  useEffect(() => { clearBookingDraft(); }, []);
   const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
@@ -228,7 +235,7 @@ export default function BookingPage() {
   // Optional names for the extra seats of a multi-child booking (00084);
   // index 0 = the 2nd child. Blank entries become "Guest child" on both the
   // parent card and the vendor roster, editable later from My Bookings.
-  const [guestNames, setGuestNames] = useState<string[]>([]);
+  const [guestNames, setGuestNames] = useState<string[]>(draft?.guestNames ?? []);
   const [childId, setChildId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -249,17 +256,17 @@ export default function BookingPage() {
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean; validity_days: number | null; expiry_date: string | null }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
-  const [payWith, setPayWith] = useState<string>("single");
+  const [payWith, setPayWith] = useState<string>(draft?.payWith ?? "single");
   // The provider's own consents / waivers / disclosures for this class, and
   // which of them the parent has ticked. QA: the vendor's "require medical
   // disclosure" switch changed nothing on the parent's side, and each vendor
   // wants their own bespoke paperwork accepted before a booking stands.
   const [policies, setPolicies] = useState<ProviderPolicy[]>([]);
-  const [acceptedPolicies, setAcceptedPolicies] = useState<string[]>([]);
-  const [medicalNote, setMedicalNote] = useState("");
+  const [acceptedPolicies, setAcceptedPolicies] = useState<string[]>(draft?.acceptedPolicies ?? []);
+  const [medicalNote, setMedicalNote] = useState(draft?.medicalNote ?? "");
   /* The vendor's bespoke information request (migration 00074) — e.g. an
      address when the class is hosted at the family's own condo. */
-  const [infoResponse, setInfoResponse] = useState("");
+  const [infoResponse, setInfoResponse] = useState(draft?.infoResponse ?? "");
   /* Sessions this parent already holds a live booking on, as
      `${session_id}:${child_id}` -> that booking's status. Booking the same
      child onto the same class twice is allowed — a parent may well want two
@@ -524,10 +531,10 @@ export default function BookingPage() {
     if (want && wantOpen) {
       setDateKey(sgDay(want.starts_at));
       setSessionId(want.id);
-      if (want.wix_day) setPickedDays([want.wix_day]);
+      if (want.wix_day) setPickedDays(draft?.pickedDays.length ? draft.pickedDays : [want.wix_day]);
     }
     setPreselectPending(false);
-  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes]);
+  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes, draft]);
 
   useEffect(() => {
     if (preselectPending) return;
@@ -574,9 +581,16 @@ export default function BookingPage() {
       if (cancelled) return;
       setTicketTypes((types.data ?? []) as EventTicketType[]);
       setEventInfo((info.data ?? null) as EventInfo | null);
+      // Back from logging in: the ticket type and answers the parent had given for this same event.
+      if (draftEventPending.current && draft?.eventId === eventId) {
+        draftEventPending.current = false;
+        if ((types.data ?? []).some((t) => t.id === draft.ticketTypeId && !t.sold_out)) setTicketTypeId(draft.ticketTypeId);
+        const questions = ((info.data?.form_questions ?? []) as EventQuestion[]);
+        setFormAnswers((prev) => ({ ...prev, ...pruneAnswers(questions, draft.formAnswers) }));
+      }
     });
     return () => { cancelled = true; };
-  }, [isEvent, eventId]);
+  }, [isEvent, eventId, draft]);
 
   useEffect(() => {
     if (ticketTypes.length === 0 || ticketTypeId) return;
@@ -760,8 +774,14 @@ export default function BookingPage() {
   useEffect(() => { setCount((c) => Math.min(c, maxChildren)); }, [maxChildren]);
 
   /** Login URL that returns to this exact booking: same activity, the chosen
-   *  slot and party size (the picker state lives only in memory otherwise). */
+   *  slot and party size (the picker state lives only in memory otherwise).
+   *  Everything typed so far is parked in a one-shot draft for the way back. */
   function loginHref() {
+    saveBookingDraft({
+      slug: getParam("slug") ?? "",
+      guestNames, medicalNote, infoResponse, acceptedPolicies, payWith, pickedDays,
+      eventId, ticketTypeId, formAnswers,
+    });
     const q = new URLSearchParams(window.location.search);
     if (sessionId) q.set("session", sessionId);
     if (count > 1) q.set("count", String(count));

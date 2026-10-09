@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../lib/api";
-import { googleSubscribeUrl, isAndroidDevice, isAppleDevice } from "../lib/ics";
+import { appleSubscribeUrl, googleSubscribeUrl, isAndroidDevice, isAppleDevice } from "../lib/ics";
 
 type Feed = { url: string; webcalUrl: string };
 
@@ -18,7 +18,7 @@ const outlookSubscribeUrl = (feedUrl: string) =>
  *   - Google: adds the feed to the Google account, so it also shows in the
  *     Calendar app on an Android phone. Android has no "subscribe to a link"
  *     of its own, so this is the Android route.
- *   - Apple: a webcal:// link, which iPhone, iPad and Mac open straight into
+ *   - Apple: a webcals:// link (HTTPS, see appleSubscribeUrl), which iPhone, iPad and Mac open straight into
  *     Calendar's Subscribe prompt.
  *   - Outlook: Outlook.com's subscribe page. The desktop Outlook app on
  *     Windows takes the copied link under Add calendar, Subscribe from web.
@@ -71,7 +71,7 @@ export default function SyncCalendar() {
       key: "apple",
       label: "Apple Calendar",
       note: "iPhone, iPad, Mac",
-      run: (f) => window.location.assign(f.webcalUrl),
+      run: (f) => window.location.assign(appleSubscribeUrl(f.url)),
     },
     {
       key: "outlook",

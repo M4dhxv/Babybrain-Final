@@ -73,7 +73,7 @@ async function resolveWixServiceLocation(
 
   const { data: existing } = await admin
     .from('provider_locations')
-    .select('id, address, postal_code, wix_address_locked')
+    .select('id, name, address, postal_code, wix_address_locked')
     .eq('provider_id', providerId)
     .eq('wix_location_id', loc.id)
     .maybeSingle();
@@ -82,6 +82,28 @@ async function resolveWixServiceLocation(
     // An admin corrected this venue's address on purpose (00214): use theirs, not Wix's.
     if (existing.wix_address_locked) {
       return { locationId: existing.id, address: existing.address, postalCode: existing.postal_code };
+    }
+    // Same refresh as lib/wix/sync.ts (this copy had missed it, and it is the one the cron runs):
+    // a vendor who edits the address in Wix keeps the same wix_location_id, so activities.address
+    // moved (Explore) while this row stayed on the old place. It is what the vendor's activity
+    // shows, what the booking confirmation email prints and, through its pin, what the area filter
+    // derives the region from. Cleared coordinates: they belong to the old address, and the region
+    // trigger re-derives from the new postal code.
+    const name = known?.name ?? address ?? existing.name;
+    // Nothing from Wix (null address) never blanks a stored one.
+    if (address != null && (address !== existing.address || postalCode !== existing.postal_code || name !== existing.name)) {
+      const { error: refreshError } = await admin
+        .from('provider_locations')
+        .update({
+          name,
+          address,
+          postal_code: postalCode,
+          ...(address !== existing.address || postalCode !== existing.postal_code
+            ? { latitude: null, longitude: null }
+            : {}),
+        })
+        .eq('id', existing.id);
+      if (refreshError) console.error('Wix location refresh failed', existing.id, refreshError);
     }
     return { locationId: existing.id, address, postalCode };
   }
