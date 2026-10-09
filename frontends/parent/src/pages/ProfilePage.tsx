@@ -301,7 +301,9 @@ function NotificationRow({ n }: { n: NotifItem }) {
 
   return <div className={cardClass}>{body}</div>;
 }
-type TokenItem = { id: string; status: string; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null };
+type TokenItem = { id: string; status: string; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null;
+  /** Where a token with no origin class can be spent: that provider's bookable classes. */
+  redeemOptions: { slug: string; title: string }[] };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
 
 /** [key, label, icon, plusOnly] — the Plus-only tabs are the ones QA listed as
@@ -1003,7 +1005,11 @@ const sgYear = (iso: string) => new Date(iso).toLocaleDateString("en-SG", { time
 function TokenRow({ t }: { t: TokenItem }) {
   const highlighted = useRowHighlight(t.id);
   const lapsed = t.status === "expired" || (!!t.expires_at && Date.parse(t.expires_at) <= Date.now());
+  // No origin class to go back to: pick one of the provider's classes instead.
+  const [choosing, setChoosing] = useState(false);
+  const canChoose = t.status === "issued" && !lapsed && !t.originSlug && t.redeemOptions.length > 0;
   return (
+    <div>
     <div id={`row-${t.id}`} className={`flex flex-col gap-3 rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card transition-shadow sm:flex-row sm:items-center sm:gap-4 ${highlighted ? HIGHLIGHT_RING : ""}`}>
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-[#FEF2D7] text-[#FFD77A]"><Icon name="gift" className="h-6 w-6" /></span>
@@ -1019,6 +1025,10 @@ function TokenRow({ t }: { t: TokenItem }) {
               {!t.expires_at ? "No expiry date" : `${lapsed ? "Expired" : "Use by"} ${sgDay(t.expires_at)} ${sgYear(t.expires_at)}`}
             </p>
           )}
+          {/* Still valid but nowhere to spend it: say so, rather than a card with no button and no reason. */}
+          {t.status === "issued" && !lapsed && !t.originSlug && t.redeemOptions.length === 0 && (
+            <p className="text-xs font-semibold text-[#59658d]">{t.provider} has no classes open for booking right now.</p>
+          )}
         </div>
       </div>
       {/* On mobile these drop below the text and line up under it (past the
@@ -1027,8 +1037,32 @@ function TokenRow({ t }: { t: TokenItem }) {
         {t.status === "issued" && t.originSlug && (
           <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
         )}
+        {canChoose && (t.redeemOptions.length === 1 ? (
+          <Button href={`/book?slug=${t.redeemOptions[0].slug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+        ) : (
+          <Button type="button" onClick={() => setChoosing((v) => !v)} size="sm" variant="outline">Redeem</Button>
+        ))}
         <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
       </div>
+    </div>
+      {canChoose && choosing && (
+        <div className="mt-2 rounded-[12px] border border-[#EBE3E5] bg-white p-4">
+          <p className="mb-2 text-sm font-black">Choose a class from {t.provider} to use this token on</p>
+          <ul className="space-y-2">
+            {t.redeemOptions.map((o) => (
+              <li key={o.slug}>
+                <a
+                  href={`/book?slug=${o.slug}&token=${t.id}`}
+                  className="flex min-h-[44px] items-center justify-between gap-3 rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-bold text-[#3f4b78] hover:bg-[#FEF1F6]"
+                >
+                  <span className="min-w-0 truncate">{o.title}</span>
+                  <span className="flex-shrink-0 font-black text-baby-cta">Book</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -2189,7 +2223,7 @@ export default function ProfilePage() {
       const data = await cacheFetch(`profile:tokens:${uid}`, PROFILE_FRESH_MS, () =>
         supabase
           .from("make_up_tokens")
-          .select("id, status, created_at, expires_at, origin_booking_id, child_id, providers(business_name)")
+          .select("id, status, created_at, expires_at, origin_booking_id, child_id, provider_id, providers(business_name)")
           .order("created_at", { ascending: false })
           .limit(100)
           .then(({ data }) => data ?? [])
@@ -2201,6 +2235,7 @@ export default function ProfilePage() {
         expires_at: string | null;
         origin_booking_id: string | null;
         child_id: string | null;
+        provider_id: string;
         providers: { business_name: string } | null;
       }>;
       // Resolve the origin class from its booking — the slug so "Redeem" can
@@ -2217,10 +2252,55 @@ export default function ProfilePage() {
           originByBooking.set(b.booking_id, { slug: b.slug ?? null, title: b.title ?? null });
         }
       }
+      // A token is good for any class of its provider, but "Redeem" only knew the class it came
+      // from. One issued by hand, or whose original booking has since been removed, has no such
+      // class and showed no way to use it at all. Offer that provider's bookable classes instead
+      // (not ticketed events: a token can't pay for one).
+      // The origin class may also be one parents can no longer book (unpublished, archived, removed
+      // from Wix): its Redeem button opened the booking page on "Session not found". Only a class
+      // that is still published counts as somewhere to go back to.
+      const originSlugs = [...new Set([...originByBooking.values()].map((o) => o.slug).filter((x): x is string => !!x))];
+      const liveSlugs = new Set<string>();
+      if (originSlugs.length) {
+        const { data: live } = await supabase
+          .from("activities")
+          .select("slug, wix_service_type")
+          .in("slug", originSlugs)
+          .eq("is_published", true)
+          .is("archived_at", null);
+        for (const a of (live ?? []) as Array<{ slug: string; wix_service_type: string | null }>) {
+          if (a.wix_service_type !== "EVENT") liveSlugs.add(a.slug);
+        }
+      }
+      const liveOriginSlug = (r: { origin_booking_id: string | null }) => {
+        const slug = r.origin_booking_id ? originByBooking.get(r.origin_booking_id)?.slug ?? null : null;
+        return slug && liveSlugs.has(slug) ? slug : null;
+      };
+      const strandedProviders = [...new Set(
+        rows.filter((r) => r.status === "issued" && !liveOriginSlug(r)).map((r) => r.provider_id)
+      )];
+      const optionsByProvider = new Map<string, { slug: string; title: string }[]>();
+      if (strandedProviders.length) {
+        const { data: acts } = await supabase
+          .from("activities")
+          .select("provider_id, slug, title, wix_service_type")
+          .in("provider_id", strandedProviders)
+          .eq("is_published", true)
+          .is("archived_at", null)
+          .order("title")
+          .limit(200);
+        for (const a of (acts ?? []) as Array<{ provider_id: string; slug: string; title: string; wix_service_type: string | null }>) {
+          if (a.wix_service_type === "EVENT") continue;
+          const list = optionsByProvider.get(a.provider_id) ?? [];
+          list.push({ slug: a.slug, title: a.title });
+          optionsByProvider.set(a.provider_id, list);
+        }
+      }
       setTokens(
         rows.map((r) => {
           const origin = r.origin_booking_id ? originByBooking.get(r.origin_booking_id) ?? null : null;
           return {
+            redeemOptions: liveOriginSlug(r) ? [] : optionsByProvider.get(r.provider_id) ?? [],
             id: r.id,
             status: r.status,
             created_at: r.created_at,
@@ -2228,7 +2308,7 @@ export default function ProfilePage() {
             provider: r.providers?.business_name ?? "A provider",
             activityTitle: origin?.title ?? null,
             childId: r.child_id,
-            originSlug: origin?.slug ?? null,
+            originSlug: liveOriginSlug(r),
           };
         })
       );

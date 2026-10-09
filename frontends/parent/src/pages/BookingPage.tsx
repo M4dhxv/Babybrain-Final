@@ -1360,7 +1360,13 @@ export default function BookingPage() {
     return (
       <PageShell active="/book">
         <main className="mx-auto max-w-[1024px] px-6 py-16 text-center font-bold text-[#5a6690]">
-          Session not found. <a href="/explore" className="text-baby-pink">Browse activities →</a>
+          {/* Arrived to spend a make-up token on a class that is no longer bookable: send them back
+              to the token, which lists the provider's other classes, not off to Explore without it. */}
+          {redeemToken ? (
+            <>This class is no longer open for booking. <a href={`/profile?tab=makeup&highlight=${encodeURIComponent(redeemToken)}`} className="text-baby-pink">Back to your make-up tokens →</a></>
+          ) : (
+            <>Session not found. <a href="/explore" className="text-baby-pink">Browse activities →</a></>
+          )}
         </main>
       </PageShell>
     );
