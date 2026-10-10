@@ -43,7 +43,7 @@ const nextConfig = {
       { source: '/vendor/', headers: NO_STORE },
       { source: '/', headers: NO_STORE },
       // Parent SPA deep links (same exclusions as the rewrite below); anything with a dot is a real file and keeps its caching.
-      { source: '/((?!api|auth/|admin|vendor|app/|_next/|assets/|favicon)[^.]*)', headers: NO_STORE },
+      { source: '/((?!api|auth/|admin|vendor|app/|events|_next/|assets/|favicon)[^.]*)', headers: NO_STORE },
     ];
   },
 
@@ -75,12 +75,16 @@ const nextConfig = {
       beforeFiles: [
         { source: '/vendor', destination: '/vendor/index.html' },
         { source: '/vendor/', destination: '/vendor/index.html' },
+        // The BabyBrain x The Artground launch event: static pages in public/events. They must be
+        // listed before the catch-all below, which would otherwise answer /events with the parent SPA.
+        { source: '/events', destination: '/events/index.html' },
+        { source: '/events/terms', destination: '/events/terms/index.html' },
         {
           // `auth/` must stay excluded: /auth/callback is the Supabase email
           // confirmation + OAuth landing route. Without it the rewrite served
           // the SPA instead, so confirming an email dropped parents back on
           // the sign-up form rather than their new profile.
-          source: '/((?!api|auth/|admin|vendor|app/|_next/|assets/|favicon).*)',
+          source: '/((?!api|auth/|admin|vendor|app/|events|_next/|assets/|favicon).*)',
           destination: '/app/index.html',
         },
       ],

@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join us – BabyBrain Launch Event</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/events/style.css">
+</head>
+<body>
+<main class="card">
+
+  <section class="brands" aria-label="BabyBrain and The Artground">
+    <img class="bb" src="/events/assets/babybrain-clean.png" alt="BabyBrain">
+    <img class="ag" src="/events/assets/artground.png" alt="The Artground – a curious place to be">
+  </section>
+
+  <div class="panel">
+  <section class="frame">
+    <p class="sub">Join us to celebrate</p>
+    <h1 class="eyebrow">The launch of BabyBrain</h1>
+    <p class="tags">Try out taster classes, play and mingle</p>
+    <p class="when">Sunday 8th November</p>
+    <p class="where"><b>The Artground @ One Holland Village</b><br>7 Holland Vlg Wy, #01-20, Singapore, 275748</p>
+
+    <form id="rsvp" novalidate>
+      <div class="stage">
+
+        <!-- 1 · details -->
+        <div class="slide active" data-step="1">
+          <h3>Your details</h3>
+          <label for="name">Name</label>
+          <input id="name" autocomplete="name" placeholder="Your full name">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+          <label for="wa">WhatsApp number</label>
+          <div class="phone"><span class="cc">+65</span><input id="wa" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="9" autocomplete="tel-national" placeholder="9123 4567" aria-label="WhatsApp number (Singapore, 8 digits)"></div>
+          <div class="err" id="err1"></div>
+        </div>
+
+        <!-- 2 · time -->
+        <div class="slide" data-step="2">
+          <h3>Pick a time</h3>
+          <div class="times">
+            <label class="time"><input type="radio" name="slot" value="1445-1545" data-label="2:45 PM – 3:45 PM"><span class="radio"></span>2:45 PM – 3:45 PM</label>
+            <label class="time"><input type="radio" name="slot" value="1600-1700" data-label="4:00 PM – 5:00 PM"><span class="radio"></span>4:00 PM – 5:00 PM</label>
+          </div>
+          <label class="agree" id="agree">
+            <input type="checkbox" id="terms">
+            <span class="box"><svg viewBox="0 0 12 12"><path d="M2.2 6.4l2.4 2.4 5.2-5.6"/></svg></span>
+            <span>I hereby accept the <a href="/events/terms" id="termsLink">Terms and Conditions</a> of the BabyBrain launch event</span>
+          </label>
+          <div class="err" id="err2"></div>
+        </div>
+
+        <!-- 3 · guests -->
+        <div class="slide" data-step="3">
+          <h3>Who’s coming?</h3>
+          <div class="adds">
+            <button type="button" class="ghost" id="addAdult">+ Add a second adult</button>
+            <button type="button" class="ghost" id="addKid">+ Add kids</button>
+          </div>
+          <div class="scroll">
+            <div id="adultList"></div>
+            <div id="kidList"></div>
+          </div>
+          <div class="err" id="err3"></div>
+        </div>
+
+        <!-- 4 · confirm -->
+        <div class="slide" data-step="4">
+          <h3>Review Details</h3>
+          <div id="rows"></div>
+          <div class="err" id="err4"></div>
+          <div class="recap" id="recap"></div>
+        </div>
+
+        <!-- 5 · thanks -->
+        <div class="slide" data-step="5">
+          <div class="thanks">
+            <div class="tick" id="doneIcon">✓</div>
+            <h3 id="doneTitle">Thank you!</h3>
+            <p id="doneText">You will shortly receive a confirmation to your email.<br>We can't wait to see you there!</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls" id="controls">
+        <button type="button" class="back" id="back" hidden>← Back</button>
+        <span></span>
+        <button type="button" class="btn" id="next">Next</button>
+      </div>
+      <div class="dots" id="dots" aria-hidden="true"><i class="dot on"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+    </form>
+  </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const slides = [...document.querySelectorAll('.slide')];
+  const dots = [...document.querySelectorAll('.dot')];
+  const back = $('#back'), next = $('#next'), controls = $('#controls');
+  const data = { name: '', email: '', wa: '', slot: '', slotKey: '', terms: false, adult: null, kids: [] };
+  let step = 1;
+
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const emailOk = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+  /* Singapore numbers: +65 then 8 digits, shown as "XXXX XXXX". mobiles start with 8 or 9, landlines with 6. */
+  const sgDigits = v => { let d = String(v).replace(/\D/g, ''); if (d.length > 8 && d.startsWith('65')) d = d.slice(2); return d.slice(0, 8); };
+  const sgFormat = v => { const d = sgDigits(v); return d.length > 4 ? d.slice(0, 4) + ' ' + d.slice(4) : d; };
+  const waOk = v => /^[689][0-9]{7}$/.test(sgDigits(v));
+  const WA_HELP = 'Enter a Singapore number: 8 digits starting with 6, 8 or 9.';
+  document.addEventListener('input', e => { if (e.target.matches('.phone input')) e.target.value = sgFormat(e.target.value); });
+  $('#terms').addEventListener('change', e => { if (e.target.checked) { $('#agree').classList.remove('bad'); if ($('#err2').textContent.includes('Terms')) $('#err2').textContent = ''; } });
+
+  /* ----- slide 3: companion + kids (1 adult, up to 3 kids) ----- */
+  const adultList = $('#adultList'), kidList = $('#kidList'), addAdult = $('#addAdult'), addKid = $('#addKid');
+  function syncAdds() {
+    [...kidList.children].forEach((row, i) => {   // label by current position, so removing Child 1 turns Child 3 into Child 1
+      row.querySelector('.k-name').placeholder = 'Child ' + (i + 1);
+      row.querySelector('.k-name').setAttribute('aria-label', 'Child ' + (i + 1) + ' name');
+      row.querySelector('.dd-btn').setAttribute('aria-label', 'Child ' + (i + 1) + ' age');
+    });
+    addAdult.disabled = adultList.children.length >= 1;
+    if (kidList.children.length) { addKid.classList.remove('need'); if ($('#err3').textContent.startsWith('Please add at least')) $('#err3').textContent = ''; }
+    addKid.disabled = kidList.children.length >= 3;
+  }
+  addAdult.onclick = () => {
+    if (adultList.children.length) return;
+    adultList.insertAdjacentHTML('beforeend',
+      `<div class="guest adult"><div><input class="a-name" placeholder="Second adult’s name" aria-label="Second adult name"></div>
+       <button type="button" class="x" aria-label="Remove">×</button></div>`);
+    adultList.querySelector('.x').onclick = () => { adultList.innerHTML = ''; syncAdds(); };
+    adultList.querySelector('input').focus(); syncAdds();
+  };
+  addKid.onclick = () => {
+    if (kidList.children.length >= 3) return;
+    const n = kidList.children.length + 1;
+    const row = document.createElement('div');
+    row.className = 'guest';
+    row.innerHTML = `<div><input class="k-name" placeholder="Child ${n}" aria-label="Child ${n} name"></div>
+      <div class="dd" data-value=""><button type="button" class="dd-btn" aria-haspopup="listbox" aria-label="Child ${n} age"><span class="dd-label">Age</span><svg viewBox="0 0 12 12"><path d="M2 4l4 4 4-4"/></svg></button></div>
+      <button type="button" class="x" aria-label="Remove">×</button>`;
+    row.querySelector('.x').onclick = () => { row.remove(); syncAdds(); };
+    row.querySelector('.dd-btn').onclick = e => openMenu(row.querySelector('.dd'), e.currentTarget);
+    kidList.appendChild(row); row.querySelector('input').focus(); syncAdds();
+    row.scrollIntoView({ block: 'nearest' });
+  };
+
+  /* themed age dropdown: <1 to 9 */
+  const AGES = ['<1', ...Array.from({ length: 9 }, (_, i) => String(i + 1))];
+  const menu = document.createElement('ul'); menu.id = 'ddMenu'; menu.setAttribute('role', 'listbox'); menu.hidden = true; document.body.appendChild(menu);
+  let openFor = null;
+  function closeMenu() { if (openFor) openFor.btn.classList.remove('open'); openFor = null; menu.hidden = true; }
+  function openMenu(dd, btn) {
+    if (openFor && openFor.dd === dd) return closeMenu();
+    closeMenu();
+    menu.innerHTML = AGES.map(a => `<li role="option" data-v="${a}" class="${dd.dataset.value === a ? 'sel' : ''}">${a === '<1' ? '&lt;1' : a}</li>`).join('');
+    const r = btn.getBoundingClientRect();
+    menu.hidden = false;
+    const k = parseFloat((getComputedStyle(menu).transform.match(/matrix\(([^,]+)/) || [0, 1])[1]) || 1;   // the menu is drawn at 110% on roomy desktops
+    menu.style.minWidth = r.width / k + 'px';
+    const h = menu.getBoundingClientRect().height, below = innerHeight - r.bottom;
+    menu.style.left = r.left + 'px';
+    menu.style.top = (below >= h + 8 || below >= r.top ? r.bottom + 4 : r.top - h - 4) + 'px';
+    btn.classList.add('open'); openFor = { dd, btn };
+  }
+  menu.addEventListener('click', e => {
+    const li = e.target.closest('li'); if (!li || !openFor) return;
+    const { dd, btn } = openFor, v = li.dataset.v;
+    dd.dataset.value = v; btn.querySelector('.dd-label').textContent = v; btn.classList.add('has'); btn.classList.remove('bad');
+    closeMenu(); btn.focus();
+  });
+  document.addEventListener('click', e => { if (openFor && !menu.contains(e.target) && !openFor.btn.contains(e.target)) closeMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  addEventListener('resize', closeMenu);
+  document.querySelector('.scroll').addEventListener('scroll', closeMenu);
+
+  /* ----- navigation ----- */
+  function show(n) {
+    step = n;
+    slides.forEach(s => s.classList.toggle('active', +s.dataset.step === n));
+    dots.forEach((d, i) => { d.classList.toggle('on', i + 1 === Math.min(n, 4) && n < 5); d.classList.toggle('done', i + 1 < n || n === 5); });
+    back.hidden = n === 1 || n === 5;
+    controls.style.visibility = n === 5 ? "hidden" : "visible";
+    next.textContent = n === 4 ? 'Confirm' : 'Next';
+    if (n === 4) fillConfirm();
+    if (n === 5) { try { sessionStorage.removeItem(KEY); } catch (e) {} } else save();
+    const f = slides[n - 1].querySelector('input:not([type=radio])'); if (f && n !== 3) f.focus();
+  }
+
+  function mark(el, bad) { el.classList.toggle('bad', !!bad); return !bad; }
+
+  function validate(n) {
+    if (n === 1) {
+      const name = $('#name'), email = $('#email'), wa = $('#wa');
+      const ok = [mark(name, !name.value.trim()), mark(email, !emailOk(email.value.trim())), mark(wa, !waOk(wa.value))].every(Boolean);
+      $('#err1').textContent = ok ? '' : (waOk(wa.value) ? 'Please fill in your name and a valid email.' : (wa.value.trim() ? WA_HELP : 'Please fill in your name, a valid email and your WhatsApp number.'));
+      if (ok) Object.assign(data, { name: name.value.trim(), email: email.value.trim(), wa: '+65 ' + sgFormat(wa.value) });
+      return ok;
+    }
+    if (n === 2) {
+      const s = document.querySelector('input[name=slot]:checked'), t = $('#terms').checked;
+      $('#agree').classList.toggle('bad', !t);
+      $('#err2').textContent = s && t ? '' : (!s && !t ? 'Please pick a time and accept the Terms and Conditions.' : (!s ? 'Please pick a time.' : 'Please accept the Terms and Conditions to continue.'));
+      if (s) { data.slotKey = s.value; data.slot = s.dataset.label || s.value; }
+      if (s && t) data.terms = true;
+      return !!s && t;
+    }
+    if (n === 3) {
+      const a = adultList.querySelector('.a-name');
+      const kids = [...kidList.querySelectorAll('.guest')].map(r => ({ n: r.querySelector('.k-name'), a: r.querySelector('.dd-btn'), v: r.querySelector('.dd').dataset.value }));
+      let ok = true;
+      addKid.classList.toggle('need', !kids.length);
+      if (!kids.length) { $('#err3').textContent = 'Please add at least one child to continue.'; return false; }
+      if (a) ok = mark(a, !a.value.trim()) && ok;
+      kids.forEach(k => { ok = mark(k.n, !k.n.value.trim()) && ok; ok = mark(k.a, k.v === '') && ok; });
+      $('#err3').textContent = ok ? '' : 'Please fill in each name and age, or remove the empty row.';
+      if (ok) { data.adult = a ? a.value.trim() : null; data.kids = kids.map(k => ({ name: k.n.value.trim(), age: k.v })); }
+      return ok;
+    }
+    if (n === 4) {   // commit any row still being edited
+      const open = [...document.querySelectorAll('#rows .row.editing')];
+      const ok = open.every(r => commitRow(r));
+      if (ok) $('#err4').textContent = '';
+      return ok;
+    }
+    return true;
+  }
+
+  const FIELDS = [
+    { key: 'name', label: 'Name', ok: v => !!v.trim() },
+    { key: 'wa', label: 'WhatsApp number', phone: true, ok: waOk },
+    { key: 'email', label: 'Email', type: 'email', ok: v => emailOk(v.trim()) },
+  ];
+  function commitRow(row) {
+    const f = FIELDS.find(x => x.key === row.dataset.key), input = row.querySelector('input');
+    if (!mark(input, !f.ok(input.value))) { $('#err4').textContent = f.phone ? WA_HELP : 'Please check the highlighted detail.'; return false; }
+    data[f.key] = f.phone ? '+65 ' + sgFormat(input.value) : input.value.trim();
+    row.querySelector('.val').textContent = data[f.key];
+    row.classList.remove('editing'); row.querySelector('.fld').hidden = true; row.querySelector('.val').hidden = false; row.querySelector('.edit').textContent = 'Edit';
+    return true;
+  }
+  function fillConfirm() {
+    $('#rows').innerHTML = FIELDS.map(f => {
+      const input = f.phone
+        ? `<div class="phone fld" hidden><span class="cc">+65</span><input type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="9" autocomplete="tel-national" value="${esc(data.wa.replace(/^\+65\s*/, ''))}" aria-label="${f.label}"></div>`
+        : `<input class="fld" type="${f.type || 'text'}" value="${esc(data[f.key])}" aria-label="${f.label}" hidden>`;
+      return `<div class="row" data-key="${f.key}"><div class="rl">${f.label}</div>
+      <div><span class="val">${esc(data[f.key])}</span>${input}</div>
+      <button type="button" class="edit">Edit</button></div>`;
+    }).join('');
+    document.querySelectorAll('#rows .row').forEach(row => {
+      row.querySelector('.edit').onclick = () => {
+        if (row.classList.contains('editing')) { if (commitRow(row)) $('#err4').textContent = ''; return; }
+        row.classList.add('editing'); row.querySelector('.val').hidden = true;
+        row.querySelector('.fld').hidden = false;
+        const inp = row.querySelector('input'); inp.focus(); inp.select(); row.querySelector('.edit').textContent = 'Done';
+      };
+    });
+    $('#err4').textContent = '';
+    const party = [`Adults: you${data.adult ? ' + ' + esc(data.adult) : ''}`,
+      data.kids.length && `${data.kids.length} child${data.kids.length > 1 ? 'ren' : ''} (${data.kids.map(k => `${esc(k.name)}, ${esc(k.age)}`).join('; ')})`].filter(Boolean);
+    $('#recap').innerHTML = `<b>${esc(data.slot)}</b>, Sunday 8th November` + (party.length ? `<br>${party.join(' · ')}` : '');
+  }
+
+  next.onclick = () => {
+    if (!validate(step)) return;
+    if (step === 4) submit(); else show(step + 1);
+  };
+
+  /* ----- send the registration; the server decides confirmed vs waitlisted (50 seats per slot) ----- */
+  const DONE_HTML = { text: $('#doneText').innerHTML, title: $('#doneTitle').textContent, icon: $('#doneIcon').textContent };
+  let sending = false;
+  async function submit() {
+    if (sending) return;
+    sending = true; next.disabled = true; back.disabled = true; next.textContent = 'Sending…';
+    $('#err4').textContent = '';
+    try {
+      const res = await fetch('/api/events/launch/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name, email: data.email, phone: data.wa, slot: data.slotKey,
+          termsAccepted: data.terms === true, secondAdult: data.adult || '',
+          children: data.kids.map(k => ({ name: k.name, age: k.age })),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "We couldn't save your registration just now. Please try again.");
+      if (out.status === 'waitlisted') {
+        $('#doneIcon').textContent = '…';
+        $('#doneTitle').textContent = 'You are on the waitlist!';
+        $('#doneText').textContent = 'We will notify you if a spot becomes available';
+      } else {
+        $('#doneIcon').textContent = DONE_HTML.icon; $('#doneTitle').textContent = DONE_HTML.title; $('#doneText').innerHTML = DONE_HTML.text;
+      }
+      show(5);
+    } catch (e) {
+      $('#err4').textContent = e instanceof Error ? e.message : String(e);
+      next.disabled = false; back.disabled = false; next.textContent = 'Confirm';
+    }
+    sending = false;
+  }
+  back.onclick = () => { if (step > 1) show(step - 1); };
+  $('#rsvp').addEventListener('submit', e => { e.preventDefault(); next.click(); });
+  $('#rsvp').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'radio') { e.preventDefault(); next.click(); } });
+  /* ----- keep progress for this browser tab (cleared once the form is confirmed) ----- */
+  const KEY = 'launchevent-rsvp';
+  function save() {
+    try {
+      const a = adultList.querySelector('.a-name');
+      sessionStorage.setItem(KEY, JSON.stringify({
+        step, data,
+        name: $('#name').value, email: $('#email').value, wa: $('#wa').value,
+        slot: (document.querySelector('input[name=slot]:checked') || {}).value || '',
+        terms: $('#terms').checked,
+        adult: a ? a.value : null,
+        kids: [...kidList.querySelectorAll('.guest')].map(r => ({ n: r.querySelector('.k-name').value, v: r.querySelector('.dd').dataset.value })),
+      }));
+    } catch (e) { /* storage blocked: the form still works, it just won't be remembered */ }
+  }
+  function restore() {
+    let st; try { st = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { st = null; }
+    if (!st || st.step >= 5) return;
+    Object.assign(data, st.data || {});
+    $('#name').value = st.name || ''; $('#email').value = st.email || ''; $('#wa').value = st.wa || '';
+    const slot = [...document.querySelectorAll('input[name=slot]')].find(i => i.value === st.slot); if (slot) slot.checked = true;
+    $('#terms').checked = !!st.terms;
+    if (st.adult !== null) { addAdult.click(); adultList.querySelector('.a-name').value = st.adult; }
+    (st.kids || []).forEach(k => {
+      addKid.click(); const row = kidList.lastElementChild;
+      row.querySelector('.k-name').value = k.n;
+      if (k.v) { const dd = row.querySelector('.dd'); dd.dataset.value = k.v; const b = dd.querySelector('.dd-btn'); b.querySelector('.dd-label').textContent = k.v; b.classList.add('has'); }
+    });
+    const want = parseInt(new URLSearchParams(location.search).get('step'), 10) || st.step;
+    show(Math.max(1, Math.min(want, st.step)));
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+  ['input', 'change'].forEach(ev => document.addEventListener(ev, save));
+  restore();
+  syncAdds();
+})();
+</script>
+</body>
+</html>

@@ -21,12 +21,14 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   marketing: () => import('./_views/marketing'),
   audit: () => import('./_views/audit'),
   bookings: () => import('./_views/bookings'),
+  events: () => import('./_views/events'),
 };
 // The read endpoints each tab loads first, fetched in the background when its sidebar item is hovered.
 const WARM_DATA: Record<string, string[]> = {
   metrics: ['/api/admin/metrics'],
   messages: ['/api/admin/channels'],
   contact: ['/api/admin/contact'],
+  events: ['/api/admin/events'],
   addVendor: ['/api/admin/providers'],
   vendors: ['/api/admin/vendors/runs'],
   commercials: ['/api/admin/commercials'],
@@ -50,16 +52,18 @@ const CommercialsView = dynamic(() => import('./_views/commercials'), { ssr: fal
 const PaymentsView = dynamic(() => import('./_views/payments'), { ssr: false, loading: viewLoading });
 const FlowsView = dynamic(() => import('./_views/flows'), { ssr: false, loading: viewLoading });
 const BookingsView = dynamic(() => import('./_views/bookings'), { ssr: false, loading: viewLoading });
+const EventsView = dynamic(() => import('./_views/events'), { ssr: false, loading: viewLoading });
 const AuditView = dynamic(() => import('./_views/audit'), { ssr: false, loading: viewLoading });
 const MarketingView = dynamic(() => import('./_views/marketing'), { ssr: false, loading: viewLoading });
 
 // ---- navigation: grouped sidebar, tab kept in the URL (?tab=) ----
-type Tab = 'metrics' | 'audit' | 'parents' | 'bookings' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
+type Tab = 'metrics' | 'audit' | 'parents' | 'bookings' | 'events' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
 const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string }[] }[] = [
   { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: 'grid' }] },
   { label: 'People', items: [
     { id: 'parents', label: 'Parents', icon: 'user' },
     { id: 'bookings', label: 'Bookings', icon: 'calendar' },
+    { id: 'events', label: 'Events', icon: 'calendar' },
     { id: 'addVendor', label: 'Vendors', icon: 'plus' },
     { id: 'vendors', label: 'Vendor data', icon: 'list' },
     { id: 'marketing', label: 'Marketing', icon: 'mail' },
@@ -324,6 +328,7 @@ export default function AdminPage() {
         {viewOk('flows') && <FlowsView key={refreshKey} />}
         {viewOk('marketing') && <MarketingView key={refreshKey} />}
         {viewOk('bookings') && <BookingsView key={refreshKey} onOpenParents={openParents} />}
+        {viewOk('events') && <EventsView key={refreshKey} />}
         {viewOk('audit') && <AuditView key={refreshKey} />}
       </main>
       </div>
