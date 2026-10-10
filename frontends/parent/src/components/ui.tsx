@@ -1110,8 +1110,12 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
   const href = activityHref(activity);
   const thumb = useThumb(activity.image, 440, 352);
   return (
-    <a href={href} className="grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
-      <div className="relative">
+    <a href={href} className="grid h-full grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
+      {/* On sm+ the image fills this cell absolutely, so its own aspect ratio can never set the row
+          height: a square logo used to make its card ~70px taller than a landscape one and left
+          ragged gaps in the grid. The text column decides the height; object-contain still shows the
+          whole image (no crop, so a vendor logo is never cut). */}
+      <div className="relative sm:min-h-[176px]">
         <img
           src={thumb.src}
           onError={thumb.onError}
@@ -1122,8 +1126,8 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
           decoding="async"
           className={
             thumb.isLogo
-              ? "h-44 w-full bg-[#F3EDF0] object-contain p-6 sm:h-full sm:min-h-[100px]"
-              : "h-44 w-full bg-[#F3EDF0] object-contain sm:h-full sm:min-h-[100px]"
+              ? "h-44 w-full bg-[#F3EDF0] object-contain p-6 sm:absolute sm:inset-0 sm:h-full"
+              : "h-44 w-full bg-[#F3EDF0] object-contain sm:absolute sm:inset-0 sm:h-full"
           }
         />
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
