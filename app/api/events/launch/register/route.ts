@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { rateLimited, clientIp } from '@/lib/rate-limit';
 import { LAUNCH_EVENT_SLUG, parseRegistration, type RegisterResult } from '@/lib/launch-event';
+import { emailRegistration } from '@/lib/launch-event-notify';
 
 /**
  * Public registration for the BabyBrain launch event (babybrain.sg/events).
@@ -45,5 +46,8 @@ export async function POST(request: Request) {
   }
 
   const r = data as RegisterResult;
+  // Receipt email ("you're registered" / "you're on the waitlist"): after the response, so the parent
+  // never waits on it, and never for a repeat submission. On hold: skipped unless LAUNCH_EVENT_EMAILS=on (and RESEND_API_KEY is set).
+  if (!r.duplicate) after(() => emailRegistration(db, r.id));
   return NextResponse.json({ status: r.status, duplicate: r.duplicate });
 }

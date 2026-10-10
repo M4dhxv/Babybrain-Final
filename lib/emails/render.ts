@@ -683,6 +683,54 @@ const T: Record<string, Template> = {
       p('If you didn’t request this, you can ignore this email — nothing changes.') +
       sign),
 
+  // Launch event (migration 00232): a seat opened up and a waitlisted party was confirmed,
+  // automatically or by hand. Sent by lib/launch-event-notify.ts - not a notification-feed type.
+  event_waitlist_promoted: (d, ctx) =>
+    wrap(ctx, 'A spot opened up - you’re in! 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Good news - a spot has opened up and ${bold('your registration is now confirmed')} for the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')}.`) +
+      p([
+        str(d, 'date_text') ? bold(str(d, 'date_text')!) : null,
+        str(d, 'slot_label') ? esc(str(d, 'slot_label')!) : null,
+        str(d, 'venue') ? esc(str(d, 'venue')!) : null,
+        str(d, 'address') ? esc(str(d, 'address')!) : null,
+      ].filter(Boolean).join('<br/>')) +
+      (str(d, 'party_text') ? p(`Your party: ${esc(str(d, 'party_text')!)}.`) : '') +
+      p('Please remember non-slip grip socks for everyone, adults included.') +
+      p('If you can no longer make it, just reply to this email so we can offer your place to another family.') +
+      p('We can’t wait to see you there!') +
+      sign),
+
+  // Launch event registration receipts, sent by lib/launch-event-notify.ts right after the form is
+  // submitted (only when LAUNCH_EVENT_EMAILS=on and Resend is configured).
+  event_registration_confirmed: (d, ctx) =>
+    wrap(ctx, 'You’re registered! 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Thank you for registering for the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')} - ${bold('your place is confirmed')}.`) +
+      p([
+        str(d, 'date_text') ? bold(str(d, 'date_text')!) : null,
+        str(d, 'slot_label') ? esc(str(d, 'slot_label')!) : null,
+        str(d, 'venue') ? esc(str(d, 'venue')!) : null,
+        str(d, 'address') ? esc(str(d, 'address')!) : null,
+      ].filter(Boolean).join('<br/>')) +
+      (str(d, 'party_text') ? p(`Your party: ${esc(str(d, 'party_text')!)}.`) : '') +
+      p('Please remember non-slip grip socks for everyone, adults included.') +
+      p('If your plans change, just reply to this email so we can offer your place to another family.') +
+      p('We can’t wait to see you there!') +
+      sign),
+
+  event_registration_waitlisted: (d, ctx) =>
+    wrap(ctx, 'You’re on the waitlist 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Thank you for your interest in the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')}. That session is full right now, so ${bold('you are on the waitlist')}.`) +
+      p([
+        str(d, 'date_text') ? bold(str(d, 'date_text')!) : null,
+        str(d, 'slot_label') ? esc(str(d, 'slot_label')!) : null,
+      ].filter(Boolean).join('<br/>')) +
+      (str(d, 'party_text') ? p(`Your party: ${esc(str(d, 'party_text')!)}.`) : '') +
+      p('We will email you as soon as a spot becomes available - there is nothing more you need to do.') +
+      sign),
+
   contact_received: (d, ctx) =>
     wrap(ctx, `[Contact] ${str(d, 'subject') ?? 'New contact form message'}`,
       p(bold(str(d, 'subject') ?? 'New contact form message')) +

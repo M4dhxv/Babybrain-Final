@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/admin';
 import { logAdminAction } from '@/lib/admin-audit';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { parseRegistration, type RegisterResult } from '@/lib/launch-event';
+import { launchEmailsEnabled } from '@/lib/launch-event-notify';
 
 const SLUG = /^[a-z0-9-]{1,60}$/;
 
@@ -19,7 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     db.from('events').select('slug, title, starts_on, venue').eq('slug', slug).maybeSingle(),
     db.from('event_slots').select('slot_key, label, capacity, sort').eq('event_slug', slug).order('sort'),
     db.from('event_registrations')
-      .select('id, slot_key, name, email, phone, adults, children, party_size, status, source, over_capacity, adult_names, child_details, notes, created_at, status_changed_at, changed_by')
+      .select('id, slot_key, name, email, phone, adults, children, party_size, status, source, over_capacity, held, promoted_at, promoted_auto, notified_at, notify_error, adult_names, child_details, notes, created_at, status_changed_at, changed_by')
       .eq('event_slug', slug)
       .order('created_at', { ascending: false }),
   ]);
@@ -39,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       waitlisted: mine.filter((r) => r.status === 'waitlisted').length,
     };
   });
-  return NextResponse.json({ event: event.data, slots: slotSummary, registrations: regs.data ?? [] });
+  return NextResponse.json({ event: event.data, slots: slotSummary, registrations: regs.data ?? [], emailsEnabled: launchEmailsEnabled() });
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn, td, th, toast } from '../_lib/core';
 
 type EventSummary = {
@@ -12,10 +12,25 @@ type Registration = {
   id: string; slot_key: string; name: string; email: string | null; phone: string;
   adults: number; children: number; party_size: number;
   status: 'confirmed' | 'waitlisted' | 'cancelled'; source: 'web' | 'admin'; over_capacity: boolean;
+  held: boolean; promoted_at: string | null; promoted_auto: boolean; notified_at: string | null; notify_error: string | null;
   adult_names: string[]; child_details: { name: string; age: string }[];
   notes: string | null; created_at: string; status_changed_at: string | null; changed_by: string | null;
 };
-type EventDetail = { event: { slug: string; title: string; starts_on: string | null; venue: string | null }; slots: Slot[]; registrations: Registration[] };
+type EventDetail = { event: { slug: string; title: string; starts_on: string | null; venue: string | null }; slots: Slot[]; registrations: Registration[]; emailsEnabled: boolean };
+
+/** Re-run `fn` every `ms` while this browser tab is visible, and when the tab regains focus. */
+function useAutoRefresh(fn: () => void, ms: number, paused = false) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (paused) return;
+    const tick = () => { if (document.visibilityState === 'visible') ref.current(); };
+    const id = setInterval(tick, ms);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [ms, paused]);
+}
+const clock = (d: Date | null) => (d ? d.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) : '');
 
 const AGES = ['<1', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const dayText = (d: string | null) => (d ? new Date(`${d}T00:00:00+08:00`).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Singapore' }) : '');
@@ -35,14 +50,28 @@ export default function EventsView() {
 function EventList({ onOpen }: { onOpen: (slug: string) => void }) {
   const [events, setEvents] = useState<EventSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    adminFetch<{ events: EventSummary[] }>('/api/admin/events').then((r) => setEvents(r.events)).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadList = useCallback((manual = false) => {
+    if (manual) setRefreshing(true);
+    adminFetch<{ events: EventSummary[] }>('/api/admin/events')
+      .then((r) => { setEvents(r.events); setErr(null); setUpdatedAt(new Date()); })
+      .catch((e) => { if (manual || !events) setErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => setRefreshing(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  if (err) return <p style={{ color: C.pink }}>{err}</p>;
+  useEffect(() => { loadList(); }, [loadList]);
+  useAutoRefresh(loadList, 20_000);
+  if (err && !events) return <p style={{ color: C.pink }}>{err}</p>;
   if (!events) return <Skeleton rows={2} height={110} />;
   return (
     <div>
-      <h2 style={{ fontWeight: 900, fontSize: 20, marginBottom: 12 }}>Events</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>Events</h2>
+        <span style={{ flex: 1 }} />
+        <span style={{ color: C.muted, fontSize: 12 }}>Updated {clock(updatedAt)} · refreshes automatically</span>
+        <button type="button" style={tabBtn(false)} disabled={refreshing} onClick={() => loadList(true)}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
+      </div>
       {events.length === 0 && <p style={{ color: C.muted }}>No events yet.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
         {events.map((e) => (
@@ -70,12 +99,25 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'confirmed' | 'waitlisted' | 'cancelled'>('all');
 
-  const load = useCallback(() => {
-    adminFetch<EventDetail>(`/api/admin/events/${slug}`).then(setData).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const haveData = useRef(false);
+  const load = useCallback((manual?: boolean) => {
+    // a click handler passes an event object; only an explicit `true` counts as a manual refresh
+    const isManual = manual === true;
+    if (isManual) setRefreshing(true);
+    adminFetch<EventDetail>(`/api/admin/events/${slug}`)
+      .then((d) => { setData(d); haveData.current = true; setErr(null); setUpdatedAt(new Date()); })
+      // a failed background refresh keeps what is on screen; the first load and a manual refresh say why
+      .catch((e) => { if (isManual || !haveData.current) setErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => setRefreshing(false));
   }, [slug]);
   useEffect(() => { load(); }, [load]);
+  // Live: new registrations, promotions and seat counts appear without a reload. Paused while an
+  // action is in flight or the add form is open, so nothing shifts under the admin's hands.
+  useAutoRefresh(load, 15_000, busy !== null || adding);
 
-  if (err) return <div><button style={tabBtn(false)} onClick={onBack}>← Events</button><p style={{ color: C.pink, marginTop: 12 }}>{err}</p></div>;
+  if (err && !data) return <div><button style={tabBtn(false)} onClick={onBack}>← Events</button><p style={{ color: C.pink, marginTop: 12 }}>{err}</p></div>;
   if (!data) return <Skeleton rows={6} />;
 
   const slotLabel = (k: string) => data.slots.find((s) => s.slot_key === k)?.label ?? k;
@@ -84,8 +126,12 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
   async function setStatus(r: Registration, status: Registration['status'], override = false) {
     setBusy(r.id);
     try {
-      await adminFetch(`/api/admin/events/registrations/${r.id}`, { method: 'PATCH', body: JSON.stringify({ status, override }) });
-      toast(status === 'confirmed' ? `${r.name} is confirmed` : status === 'waitlisted' ? `${r.name} moved to the waitlist` : `${r.name} cancelled`);
+      const out = await adminFetch<{ promoted?: string[]; notify?: { sent: number; failed: number; error?: string; disabled?: boolean } }>(
+        `/api/admin/events/registrations/${r.id}`, { method: 'PATCH', body: JSON.stringify({ status, override }) });
+      const head = status === 'confirmed' ? `${r.name} is confirmed` : status === 'waitlisted' ? `${r.name} moved to the waitlist (held)` : `${r.name} cancelled`;
+      const auto = out.promoted?.length ? ` · seats freed: ${out.promoted.join(', ')} promoted from the waitlist automatically${out.notify?.disabled ? ' - emails are not set up yet, please tell them yourself' : ''}` : '';
+      const mail = out.notify && !out.notify.disabled ? (out.notify.error ? ` · emails not sent: ${out.notify.error}` : out.notify.failed ? ` · ${out.notify.failed} email(s) failed - see "Send emails now"` : out.notify.sent ? ` · ${out.notify.sent} email(s) sent` : '') : '';
+      toast(head + auto + mail, !out.notify?.disabled && (out.notify?.error || out.notify?.failed) ? 'error' : 'ok');
       load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -96,6 +142,16 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
     setBusy(null);
   }
 
+  const pending = data.registrations.filter((r) => r.status === 'confirmed' && r.promoted_at && !r.notified_at && (r.email || !data.emailsEnabled));
+  async function sendPending() {
+    setBusy('notify');
+    try {
+      const out = await adminFetch<{ sent: number; failed: number }>(`/api/admin/events/${slug}/notify`, { method: 'POST', body: '{}' });
+      toast(out.failed ? `${out.sent} sent, ${out.failed} failed` : `${out.sent} email${out.sent === 1 ? '' : 's'} sent`, out.failed ? 'error' : 'ok');
+      load();
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), 'error'); }
+    setBusy(null);
+  }
   const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const btn = (label: string, onClick: () => void, disabled: boolean, primary = false) => (
     <button type="button" disabled={disabled} onClick={onClick}
@@ -106,7 +162,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
     <div>
       <button type="button" style={tabBtn(false)} onClick={onBack}>← Events</button>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', margin: '14px 0 4px' }}>
-        <h2 style={{ fontWeight: 900, fontSize: 20 }}>{data.event.title}</h2>
+        <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>{data.event.title}</h2>
         <span style={{ color: C.muted, fontSize: 13 }}>{dayText(data.event.starts_on)}{data.event.venue ? ` · ${data.event.venue}` : ''}</span>
       </div>
 
@@ -127,8 +183,22 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
           <button key={f} type="button" style={tabBtn(filter === f)} onClick={() => setFilter(f)}>{f === 'all' ? 'Active' : f[0].toUpperCase() + f.slice(1)}</button>
         ))}
         <span style={{ flex: 1 }} />
+        <span style={{ color: C.muted, fontSize: 12 }}>
+          {err ? <span style={{ color: C.pink }}>Couldn’t refresh — {err}</span> : <>Updated {clock(updatedAt)}{adding ? ' · paused while adding' : ' · refreshes automatically'}</>}
+        </span>
+        <button type="button" style={tabBtn(false)} disabled={refreshing} onClick={() => load(true)}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
         <button type="button" style={primaryBtn()} onClick={() => setAdding((a) => !a)}>{adding ? 'Close' : '+ Add registration'}</button>
       </div>
+
+      {pending.length > 0 && (
+        <div style={{ ...card(), borderColor: '#f5b942', marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220, fontSize: 13, lineHeight: 1.5 }}>
+            <strong style={{ color: '#f5b942' }}>{pending.length} promoted {pending.length === 1 ? 'party hasn’t' : 'parties haven’t'} been told yet{data.emailsEnabled ? ' (email pending)' : ' — email isn’t set up, please contact them yourself'}</strong>
+            <span style={{ color: C.muted }}> — {pending.map((p) => p.name).join(', ')}{pending.some((p) => p.notify_error) ? ` · last error: ${pending.find((p) => p.notify_error)!.notify_error}` : ''}</span>
+          </div>
+          {data.emailsEnabled && <button type="button" style={primaryBtn()} disabled={busy === 'notify'} onClick={sendPending}>{busy === 'notify' ? 'Sending…' : 'Send emails now'}</button>}
+        </div>
+      )}
 
       {adding && <AddForm slug={slug} slots={data.slots} onDone={() => { setAdding(false); load(); }} />}
 
@@ -160,6 +230,17 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                     <td style={td()}>
                       <Badge tone={tone(r.status)}>{r.status}</Badge>
                       {r.over_capacity && <div style={{ color: C.pink, fontSize: 11, fontWeight: 800, marginTop: 4 }}>over capacity</div>}
+                      {r.status === 'waitlisted' && r.held && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }} title="Held by an admin: it is not promoted automatically">held — promote by hand</div>}
+                      {r.status === 'confirmed' && r.promoted_at && (
+                        <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>
+                          {r.promoted_auto ? 'promoted automatically' : 'promoted by hand'}
+                          {' · '}
+                          {r.notified_at ? <span style={{ color: C.green }}>emailed</span>
+                            : !data.emailsEnabled ? <span style={{ color: '#f5b942' }}>not emailed — tell them</span>
+                            : r.email ? <span style={{ color: '#f5b942' }} title={r.notify_error ?? undefined}>{r.notify_error ? 'email failed' : 'email pending'}</span>
+                            : <span style={{ color: C.pink }}>no email — call them</span>}
+                        </div>
+                      )}
                       {r.source === 'admin' && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>added by hand</div>}
                     </td>
                     <td style={{ ...td(), whiteSpace: 'nowrap' }}>
@@ -189,6 +270,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                             <div style={{ fontSize: 13, lineHeight: 1.6 }}>
                               Registered {sgTime(r.created_at)}<br />
                               {r.status_changed_at ? <>Status changed {sgTime(r.status_changed_at)}{r.changed_by ? ` by ${r.changed_by}` : ''}<br /></> : null}
+                              {r.promoted_at ? <>Promoted from the waitlist {sgTime(r.promoted_at)} ({r.promoted_auto ? 'automatically' : 'by hand'})<br /></> : null}
                               {r.party_size} seat{r.party_size === 1 ? '' : 's'}
                               {r.notes ? <><br />Note: {r.notes}</> : null}
                             </div>
