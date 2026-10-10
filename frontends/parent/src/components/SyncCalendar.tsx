@@ -18,7 +18,7 @@ const outlookSubscribeUrl = (feedUrl: string) =>
  *   - Google: adds the feed to the Google account, so it also shows in the
  *     Calendar app on an Android phone. Android has no "subscribe to a link"
  *     of its own, so this is the Android route.
- *   - Apple: a webcals:// link (HTTPS, see appleSubscribeUrl), which iPhone, iPad and Mac open straight into
+ *   - Apple: a webcal:// link (see appleSubscribeUrl), which iPhone, iPad and Mac open straight into
  *     Calendar's Subscribe prompt.
  *   - Outlook: Outlook.com's subscribe page. The desktop Outlook app on
  *     Windows takes the copied link under Add calendar, Subscribe from web.

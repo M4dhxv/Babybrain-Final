@@ -1,4 +1,4 @@
-import { AnimalAvatar, Button, CategoryTile, Footer, Icon, MiniActivityGrid, PageShell, SectionTitle } from "../components/ui";
+import { AnimalAvatar, Button, CategoryTile, Footer, Icon, MiniActivityGrid, PageShell, SectionTitle, retryImage } from "../components/ui";
 import { AGE_BANDS, categories } from "../data/content";
 
 /** Marketing sub-line for each band, used by the home page tiles. */
@@ -57,6 +57,7 @@ export default function HomePage() {
             <Icon name="star" className="absolute right-[-18px] top-14 h-8 w-8 fill-[#FFD77A] text-[#FFD77A]" />
             <img
               src={`${import.meta.env.BASE_URL}assets/crops/hero-ball-pit.jpg`}
+              onError={retryImage}
               alt="A toddler wading through a ball pit at an indoor play space"
               width={1400}
               height={933}
@@ -102,7 +103,7 @@ export default function HomePage() {
                     {step}
                   </span>
                   <div className="mx-auto my-2 grid h-20 place-items-center">
-                    <img src={`${import.meta.env.BASE_URL}assets/crops/${art}.png`} alt="" className="h-full object-contain" />
+                    <img src={`${import.meta.env.BASE_URL}assets/crops/${art}.png`} alt="" onError={retryImage} className="h-full object-contain" />
                   </div>
                   <h3 className="text-lg font-black">{title}</h3>
                   <p className="mx-auto mt-2 max-w-[230px] text-sm font-semibold leading-6 text-[#46527d]">
@@ -170,7 +171,7 @@ export default function HomePage() {
 
         <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "160ms" }}>
           <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#E9E1F5] bg-gradient-to-r from-[#FEEBF2] via-white to-[#F4F0FA] px-10 py-5 md:grid-cols-[220px_1fr_280px]">
-            <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" className="h-28 object-contain object-left" />
+            <img src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`} alt="BabyBrain" onError={retryImage} className="h-28 object-contain object-left" />
             <div>
               <h2 className="text-2xl font-black">Reduce your mental load</h2>
               <p className="mt-1 font-semibold text-[#4e5982]">We make it quicker &amp; easier to plan activities for your little ones.</p>

@@ -1,4 +1,4 @@
-import { PageShell, Button, Icon, Footer } from "../components/ui";
+import { PageShell, Button, Icon, Footer, retryImage } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 
 export default function AboutPage() {
@@ -18,6 +18,7 @@ export default function AboutPage() {
               the default center-crop cutting into her hair. */}
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/about-family.jpg`}
+            onError={retryImage}
             alt="Katie, BabyBrain's founder, holding her son"
             width={1000}
             height={1000}
@@ -28,6 +29,7 @@ export default function AboutPage() {
         <section className="bb-reveal relative mt-8 grid items-center gap-8 overflow-hidden rounded-[24px] bg-gradient-to-r from-[#FEEBF2] to-[#FFF5F8] p-8 md:grid-cols-[300px_1fr]" style={{ animationDelay: "40ms" }}>
           <img
             src={`${import.meta.env.BASE_URL}assets/crops/founder-katie.jpg`}
+            onError={retryImage}
             alt="Katie Crowson, founder of BabyBrain"
             width={720}
             height={880}
@@ -53,7 +55,7 @@ export default function AboutPage() {
                 the header uses for its Log in / Sign up buttons. */}
             {!session && <Button href="/onboarding" size="lg" className="mt-6">Join today →</Button>}
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.svg`} alt="" className="mx-auto h-48 object-contain" />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/mission-target.svg`} alt="" onError={retryImage} className="mx-auto h-48 object-contain" />
         </section>
       </main>
       <Footer />

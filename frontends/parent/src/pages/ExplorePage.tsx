@@ -8,6 +8,7 @@ import {
   PageShell,
   SearchBox,
   Spinner,
+  retryImage,
 } from "../components/ui";
 import { SelectField, Opt } from "../components/SelectField";
 import { ActivityRowListSkeleton } from "../components/Skeletons";
@@ -807,7 +808,7 @@ export default function ExplorePage() {
               </button>
             )}
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" className="hidden h-24 object-contain md:block lg:h-28" />
+          <img src={`${import.meta.env.BASE_URL}assets/crops/explore-skyline.png`} alt="" onError={retryImage} className="hidden h-24 object-contain md:block lg:h-28" />
         </div>
 
         {/* Mobile/tablet search — desktop already has one in the header nav.

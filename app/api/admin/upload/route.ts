@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const db = createAdminClient();
   const { error } = await db.storage
     .from('activity-images')
-    .upload(path, file, { upsert: true, contentType: file.type });
+    .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '2592000' });
   if (error) return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 });
 
   const { data } = db.storage.from('activity-images').getPublicUrl(path);

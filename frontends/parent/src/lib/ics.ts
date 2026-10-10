@@ -122,11 +122,10 @@ export function isAndroidDevice(): boolean {
   return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 }
 
-/** The link Apple Calendar subscribes to. webcals:// (with the s) means "over HTTPS". Plain webcal://
- *  is plain http to an iPhone: it warns "insecure connection", fetches http://, gets our redirect to
- *  https instead of a calendar, and gives up with "Validation failed". */
+/** The link Apple Calendar subscribes to: webcal://. Do NOT use webcals://: it is not a scheme iOS
+ *  registers, so Safari answers "cannot open the page because the address is invalid". */
 export function appleSubscribeUrl(feedUrl: string): string {
-  return feedUrl.replace(/^https:/, "webcals:").replace(/^http:/, "webcal:");
+  return feedUrl.replace(/^https?:/, "webcal:");
 }
 
 /** Google's "add calendar from URL" link: opens Google Calendar with the feed

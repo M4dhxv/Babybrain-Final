@@ -288,7 +288,7 @@ export default function SettingsPage() {
     setProfileError(null);
     const file = await resizeImage(original);
     const path = `${provider.id}/${kind}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
-    const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true, cacheControl: '2592000' });
     if (error) { setProfileError(`Upload failed: ${error.message}`); return null; }
     return supabase.storage.from('activity-images').getPublicUrl(path).data.publicUrl;
   }

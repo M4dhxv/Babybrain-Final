@@ -71,16 +71,50 @@ export function fallbackToPlaceholder(e: SyntheticEvent<HTMLImageElement>) {
   img.src = ACTIVITY_PLACEHOLDER_URL;
 }
 
+/** Re-requests an image whose first load failed (a dropped connection, a throttled or
+ *  cold origin), up to twice with a growing pause and a `?r=n` cache-buster, so a
+ *  one-second blip no longer leaves a blank box. Plain `<img>` tags use it as
+ *  `onError={retryImage}`; useThumb has its own copy of the same policy so it can
+ *  fall back to the brand mark once the retries run out. */
+const IMAGE_RETRIES = 2;
+const withRetryParam = (url: string, n: number) => {
+  if (n === 0 || url.startsWith("data:")) return url;
+  try {
+    const u = new URL(url, window.location.href);
+    u.searchParams.set("r", String(n));
+    return u.toString();
+  } catch {
+    return url;
+  }
+};
+export function retryImage(e: SyntheticEvent<HTMLImageElement>) {
+  const img = e.currentTarget;
+  const n = Number(img.dataset.retry || 0);
+  if (n >= IMAGE_RETRIES) return;
+  img.dataset.retry = String(n + 1);
+  const base = img.dataset.retryBase || img.src;
+  img.dataset.retryBase = base;
+  window.setTimeout(() => {
+    img.src = withRetryParam(base, n + 1);
+  }, 800 * (n + 1));
+}
+
 export function useThumb(url: string, w: number, h: number) {
   // Every caller keys its list by activity id, so a different activity is a
   // different component instance (mount, not update) — this never needs to
   // reset itself mid-life for a changed `url`.
-  const [broken, setBroken] = useState(false);
+  const [tries, setTries] = useState(0);
+  const broken = tries > IMAGE_RETRIES;
   const isLogo = broken || url === FALLBACK_LOGO_URL;
   return {
-    src: isLogo ? FALLBACK_LOGO_URL : wixThumbUrl(url, w, h),
+    src: isLogo ? FALLBACK_LOGO_URL : withRetryParam(wixThumbUrl(url, w, h), tries),
     isLogo,
-    onError: () => setBroken(true),
+    // Retry first (a transient failure should not demote a real photo to the
+    // brand mark for good); only after IMAGE_RETRIES more failures give up.
+    onError: () => {
+      if (tries >= IMAGE_RETRIES) setTries(tries + 1);
+      else window.setTimeout(() => setTries((t) => t + 1), 800 * (tries + 1));
+    },
   };
 }
 
@@ -444,6 +478,7 @@ export function Brand({ className = "h-11 sm:h-12" }: { className?: string }) {
       <img
         src={`${import.meta.env.BASE_URL}assets/brand/logo-horizontal.png`}
         alt="BabyBrain"
+        onError={retryImage}
         className={`w-auto ${className}`}
       />
     </a>
@@ -457,6 +492,7 @@ export function BrandIcon({ className = "h-10 w-10" }: { className?: string }) {
       src={`${import.meta.env.BASE_URL}assets/brand/logo-icon.png`}
       alt=""
       aria-hidden="true"
+      onError={retryImage}
       className={`object-contain ${className}`}
     />
   );
@@ -469,6 +505,7 @@ export function BrandStacked({ className = "h-24" }: { className?: string }) {
     <img
       src={`${import.meta.env.BASE_URL}assets/brand/logo-stacked.png`}
       alt="BabyBrain"
+      onError={retryImage}
       className={`mx-auto w-auto object-contain ${className}`}
     />
   );
