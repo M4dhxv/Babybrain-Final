@@ -34,6 +34,20 @@ const SPA_ROUTES = new Set([
   "/privacy",
 ]);
 
+/** Routes a parent should never be sent "back" to after logging in. */
+const NO_RETURN_ROUTES = new Set(["/", "/login", "/forgot-password", "/reset-password", "/onboarding"]);
+
+/** The login URL that returns to the page the parent is on now. Any "log in to
+ *  do X" entry point (heart, chat, review, upgrade, header button) should use
+ *  this: a bare `/login` drops the destination and LoginPage falls back to
+ *  /profile, so the parent ends up somewhere they didn't ask for. Call it at
+ *  click/render time, not module load, so it reads the current URL. */
+export function loginUrl(): string {
+  if (NO_RETURN_ROUTES.has(routePath())) return "/login";
+  const dest = routePath() + window.location.search + window.location.hash;
+  return `/login?next=${encodeURIComponent(dest)}`;
+}
+
 /** Strip the dev `/app` base and any trailing slash. */
 function normalisePath(pathname: string): string {
   return pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";

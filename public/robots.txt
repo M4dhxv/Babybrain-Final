@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /auth/
+Disallow: /vendor/
+Disallow: /login
+Disallow: /profile
+Disallow: /edit-profile
+Disallow: /book
+Disallow: /booked
+Disallow: /payment
+
+Sitemap: https://babybrain.sg/sitemap.xml

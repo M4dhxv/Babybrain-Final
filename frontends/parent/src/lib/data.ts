@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useFavoritesStore } from "./favorites";
 import { cacheGet, cacheSet, cacheInvalidate, cacheFetch } from "./queryCache";
 import { withRetry } from "./retry";
-import { goTo } from "./nav";
+import { goTo, loginUrl } from "./nav";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "./activityMedia";
 import { isMultiDay, sgShortRange, sgDay } from "./schedule";
 import {
@@ -560,7 +560,7 @@ export function useFavoriteProvider(providerId: string | null | undefined) {
   async function toggle() {
     if (!providerId) return;
     if (!session) {
-      goTo("/login");
+      goTo(loginUrl());
       return;
     }
     setBusy(true);
@@ -603,7 +603,7 @@ export function useFavorite(activityId: string | undefined, onToggled?: (saved: 
   async function toggle(): Promise<boolean> {
     if (!activityId) return true;
     if (!session) {
-      goTo("/login");
+      goTo(loginUrl());
       return true;
     }
     if (locked) return false;

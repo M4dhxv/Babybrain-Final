@@ -8,7 +8,7 @@ import { useActivities } from "../lib/useActivities";
 import { useFavorite } from "../lib/data";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDuration, regionLabel } from "../lib/database.types";
-import { goTo, useLocation } from "../lib/nav";
+import { goTo, loginUrl, useLocation } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
 import { FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { requestInstall, useInstallState } from "../lib/install";
@@ -632,7 +632,7 @@ export function Header({
         {/* Desktop auth actions */}
         {!session ? (
           <div className="hidden items-center gap-3 lg:flex">
-            <Button href="/login" variant="outline" size="sm">
+            <Button href={loginUrl()} variant="outline" size="sm">
               <Icon name="user" className="h-4 w-4" /> Log in
             </Button>
             <Button href="/onboarding" size="sm">
@@ -717,7 +717,7 @@ export function Header({
           <div className="mt-3 border-t border-[#EBE3E5] pt-3">
             {!session ? (
               <div className="flex flex-col gap-2">
-                <Button href="/login" variant="outline" className="w-full justify-center">
+                <Button href={loginUrl()} variant="outline" className="w-full justify-center">
                   <Icon name="user" className="h-4 w-4" /> Log in
                 </Button>
                 <Button href="/onboarding" className="w-full justify-center">

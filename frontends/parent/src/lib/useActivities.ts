@@ -263,6 +263,10 @@ const DEFAULT_PAGE_SIZE = 24;
 /** Rows in Explore's first page. Shared with `warmExploreList` so the warmed
  *  entry lands under exactly the key Explore reads. */
 export const EXPLORE_PAGE_SIZE = 50;
+/** How Explore orders results until the parent picks something else. The page,
+ *  its "Reset" button, the URL sync and `warmExploreList` all read this, so the
+ *  warmed cache entry always lands under the key Explore itself looks up. */
+export const EXPLORE_DEFAULT_SORT = "soonest" as const;
 /** Rows pulled per background fetch once the caller has revealed everything
  *  already in memory — a real network round trip, so it's sized like a page
  *  (matching DEFAULT_PAGE_SIZE), not like a single reveal step. A caller that
@@ -312,7 +316,7 @@ const WARM_SKIP_MS = 5 * 60_000;
 let warmingList = false;
 
 /**
- * Pre-load Explore's default (unfiltered, most popular) first page into the
+ * Pre-load Explore's default (unfiltered, starting soonest) first page into the
  * query cache, so opening Explore after hours away — when the persisted copy has
  * aged out — shows real cards at once instead of a skeleton plus a database round trip.
  * Chunks were already warmed on idle; this warms the data too.
@@ -327,7 +331,7 @@ export async function warmExploreList(): Promise<void> {
   if (warmingList || typeof document === "undefined" || document.visibilityState !== "visible") return;
   const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
   if (conn?.saveData) return;
-  const args = searchArgs({ sort: "popular" });
+  const args = searchArgs({ sort: EXPLORE_DEFAULT_SORT });
   const key = "activities:" + JSON.stringify({ ...args, limit: EXPLORE_PAGE_SIZE });
   const cached = cacheGet<Page>(key);
   if (cached && cached.age < WARM_SKIP_MS) return;

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireProviderRole } from '@/lib/vendor';
 import { getProviderWixCredentials, fetchWixLocations } from '@/lib/wix/client';
+import { geocodeVenue } from '@/lib/geocode';
 
 /**
  * "Import" on the Settings -> Locations "Fetch from Wix" picker. Purely
@@ -49,17 +50,22 @@ export async function POST(request: Request) {
     const hasAnyLocation = (existingRows ?? []).length > 0;
     const byId = new Map(wixLocations.map((l) => [l.id, l]));
 
-    const toInsert = locationIds
+    const fresh = locationIds
       .filter((id) => !alreadyImported.has(id) && byId.has(id))
-      .map((id) => byId.get(id)!)
-      .map((l, i) => ({
-        provider_id: providerId,
-        name: l.name,
-        address: l.address,
-        postal_code: l.postalCode,
-        wix_location_id: l.id,
-        is_primary: !hasAnyLocation && i === 0,
-      }));
+      .map((id) => byId.get(id)!);
+    // Place each venue (pin + area) as it is added: Wix often has an address
+    // but no postal code, and a row with neither never reaches the map.
+    const places = await Promise.all(fresh.map((l) => geocodeVenue(l.address, l.postalCode)));
+    const toInsert = fresh.map((l, i) => ({
+      provider_id: providerId,
+      name: l.name,
+      address: l.address,
+      postal_code: places[i].postalCode ?? l.postalCode,
+      latitude: places[i].latitude,
+      longitude: places[i].longitude,
+      wix_location_id: l.id,
+      is_primary: !hasAnyLocation && i === 0,
+    }));
 
     if (toInsert.length === 0) {
       return NextResponse.json({ ok: true, imported: 0 });

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { PageShell, Button, Icon, Footer } from "../components/ui";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
-import { getParam } from "../lib/nav";
+import { getParam, loginUrl } from "../lib/nav";
 import AddToCalendar from "../components/AddToCalendar";
 import SubscribeCalendar from "../components/SubscribeCalendar";
 import { useAuth } from "../auth/AuthProvider";
@@ -214,7 +214,7 @@ export default function BookedPage() {
                   <p className="mt-2 text-center text-xs font-semibold text-[#59658d]">Messaging providers is a BabyBrain Plus feature.</p>
                 </>
               ) : providerId ? (
-                <Button href="/login" variant="outline" className="mt-4 w-full">
+                <Button href={loginUrl()} variant="outline" className="mt-4 w-full">
                   <Icon name="mail" className="h-4 w-4" /> Log in to message the provider
                 </Button>
               ) : (

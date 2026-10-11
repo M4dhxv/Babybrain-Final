@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { PageShell, Button, Icon } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { apiPost } from "../lib/api";
-import { goTo, getParam } from "../lib/nav";
+import { goTo, getParam, loginUrl } from "../lib/nav";
 import { usePlan } from "../lib/data";
 import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
@@ -27,7 +27,7 @@ export default function PricingPage() {
 
   async function upgrade() {
     if (!session) {
-      goTo("/login");
+      goTo(loginUrl());
       return;
     }
     setError(null);

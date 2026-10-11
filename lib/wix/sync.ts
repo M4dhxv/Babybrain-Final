@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { withWixSyncLock } from './sync-lock';
+import { geocodeVenue } from '../geocode';
 import {
   fetchWixServices,
   fetchWixResources,
@@ -114,7 +115,7 @@ async function resolveWixServiceLocation(
 
   const { data: existing } = await admin
     .from('provider_locations')
-    .select('id, name, address, postal_code, wix_address_locked')
+    .select('id, name, address, postal_code, latitude, wix_address_locked')
     .eq('provider_id', providerId)
     .eq('wix_location_id', loc.id)
     .maybeSingle();
@@ -135,16 +136,19 @@ async function resolveWixServiceLocation(
     // address, and the region trigger re-derives from the new postal code.
     const name = known?.name ?? address ?? existing.name;
     // Nothing from Wix (null address) never blanks a stored one.
-    if (address != null && (address !== existing.address || postalCode !== existing.postal_code || name !== existing.name)) {
+    const moved = address !== existing.address || postalCode !== existing.postal_code;
+    // Also retry a venue that was stored without coordinates (created before it was placed on creation).
+    const unplaced = existing.latitude == null;
+    if (address != null && (moved || unplaced || name !== existing.name)) {
+      // A moved or still-unpinned venue is placed rather than left off the map until someone notices.
+      const place = moved || unplaced ? await geocodeVenue(address, postalCode) : null;
       const { error: refreshError } = await admin
         .from('provider_locations')
         .update({
           name,
           address,
-          postal_code: postalCode,
-          ...(address !== existing.address || postalCode !== existing.postal_code
-            ? { latitude: null, longitude: null }
-            : {}),
+          postal_code: place?.postalCode ?? postalCode,
+          ...(place ? { latitude: place.latitude, longitude: place.longitude } : {}),
         })
         .eq('id', existing.id);
       if (refreshError) console.error('Wix location refresh failed', existing.id, refreshError);
@@ -158,13 +162,18 @@ async function resolveWixServiceLocation(
     .select('id', { count: 'exact', head: true })
     .eq('provider_id', providerId);
 
+  // New venue: place it now. Wix's service location often has only an address,
+  // and a row with no coordinates never gets a pin on the Explore map.
+  const place = await geocodeVenue(address, postalCode);
   const { data: created } = await admin
     .from('provider_locations')
     .insert({
       provider_id: providerId,
       name: known?.name ?? address ?? 'Wix location',
       address,
-      postal_code: postalCode,
+      postal_code: place.postalCode ?? postalCode,
+      latitude: place.latitude,
+      longitude: place.longitude,
       wix_location_id: loc.id,
       is_primary: (count ?? 0) === 0,
     })

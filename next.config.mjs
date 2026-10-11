@@ -84,7 +84,7 @@ const nextConfig = {
           // confirmation + OAuth landing route. Without it the rewrite served
           // the SPA instead, so confirming an email dropped parents back on
           // the sign-up form rather than their new profile.
-          source: '/((?!api|auth/|admin|vendor|app/|events|_next/|assets/|favicon).*)',
+          source: '/((?!api|auth/|admin|vendor|app/|events|_next/|assets/|favicon|robots|sitemap).*)',
           destination: '/app/index.html',
         },
       ],

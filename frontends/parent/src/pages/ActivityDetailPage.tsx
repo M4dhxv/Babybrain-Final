@@ -12,7 +12,7 @@ import { ActivityDetailSkeleton } from "../components/Skeletons";
 import { useActivityDetail, useFavorite, usePlan, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cacheFetch } from "../lib/queryCache";
-import { goTo, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref, requestExploreRestore } from "../lib/nav";
+import { goTo, loginUrl, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref, requestExploreRestore } from "../lib/nav";
 import { sgDateTime, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
@@ -687,7 +687,7 @@ export default function ActivityDetailPage() {
       ? "The session group chat unlocks once you've booked this session. You can still chat with the provider directly."
       : null);
   const requireLogin = (open: () => void) => () => {
-    if (!session) goTo("/login");
+    if (!session) goTo(loginUrl());
     else open();
   };
 
@@ -1099,7 +1099,7 @@ function ReviewForm({ activityId }: { activityId: string }) {
   if (!session) {
     return (
       <p className="mb-4 rounded-[10px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
-        <a href="/login" className="font-black text-baby-pink">Log in</a> to leave a review.
+        <a href={loginUrl()} className="font-black text-baby-pink">Log in</a> to leave a review.
       </p>
     );
   }

@@ -11,11 +11,28 @@
          or the indicator. No effect on other browsers. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
-    <link rel="icon" type="image/png" href="/app/assets/brand/logo-icon.png" />
+    <!-- Search-result favicon: Google only uses a SQUARE icon whose side is a
+         multiple of 48px (logo-icon.png is 385x256, so it showed the grey globe),
+         and falls back to /favicon.ico. Both are square brand marks. -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/app/assets/brand/icon-192.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="canonical" href="https://babybrain.sg/" />
     <meta
       name="description"
-      content="BabyBrain.sg — find and book the best kids' activities and classes in Singapore."
+      content="Find and book classes, workshops and play activities for babies and children across Singapore. Filter by age, area and date, and book in minutes."
     />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="BabyBrain.sg" />
+    <meta property="og:title" content="BabyBrain.sg — Discover &amp; book kids' activities in Singapore" />
+    <meta
+      property="og:description"
+      content="Find and book classes, workshops and play activities for babies and children across Singapore."
+    />
+    <meta property="og:url" content="https://babybrain.sg/" />
+    <meta property="og:image" content="https://babybrain.sg/app/assets/brand/icon-512.png" />
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"WebSite","name":"BabyBrain.sg","alternateName":"BabyBrain","url":"https://babybrain.sg/"}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Warm the Supabase connection (DNS + TLS + HTTP/2) while the bundle is
@@ -29,7 +46,7 @@
       href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap"
       rel="stylesheet"
     />
-    <title>BabyBrain.sg</title>
+    <title>BabyBrain.sg — Discover &amp; book kids' activities in Singapore</title>
 
     <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
          the favicon (it is 385x256, not square) and draws a grey letter tile

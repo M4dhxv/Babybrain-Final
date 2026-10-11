@@ -11,6 +11,10 @@ import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { geocodePostal } from '@/lib/geocode';
 import type { ProviderLocation } from '@/lib/database.types';
 
+/** A Singapore postal code: exactly six digits. Required on every location. */
+const POSTAL_RE = /^\d{6}$/;
+const POSTAL_MESSAGE = 'A 6-digit postal code is required so your venue appears on the map and in area search.';
+
 /**
  * Live locations list + add/remove/edit form.
  *
@@ -133,6 +137,9 @@ export default function LocationsManager({
 
   async function addLocation() {
     if (!provider || !form.name.trim()) { setError('A location name is required.'); return; }
+    // The postal code is what puts the venue on the Explore map and in the
+    // area filter; a location saved without one never shows up for parents.
+    if (!POSTAL_RE.test(form.postal_code.trim())) { setError(POSTAL_MESSAGE); return; }
     setSaving(true);
     setError(null);
     // Geocode from the postal code so the venue gets a map pin and area
@@ -143,7 +150,7 @@ export default function LocationsManager({
       provider_id: provider.id,
       name: form.name.trim(),
       address: form.address.trim() || null,
-      postal_code: form.postal_code.trim() || null,
+      postal_code: form.postal_code.trim(),
       latitude: coords?.latitude ?? null,
       longitude: coords?.longitude ?? null,
       is_primary: locations.length === 0, // first location becomes the main branch
@@ -175,6 +182,7 @@ export default function LocationsManager({
 
   async function saveEdit(id: string) {
     if (!editForm.name.trim()) { setEditError('A location name is required.'); return; }
+    if (!POSTAL_RE.test(editForm.postal_code.trim())) { setEditError(POSTAL_MESSAGE); return; }
     setEditSaving(true);
     setEditError(null);
     // Re-geocode on edit too, so correcting a postal code moves the pin
@@ -183,7 +191,7 @@ export default function LocationsManager({
     const { error: err } = await supabase.from('provider_locations').update({
       name: editForm.name.trim(),
       address: editForm.address.trim() || null,
-      postal_code: editForm.postal_code.trim() || null,
+      postal_code: editForm.postal_code.trim(),
       ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
     }).eq('id', id);
     setEditSaving(false);
@@ -294,7 +302,7 @@ export default function LocationsManager({
               <input className={inputCls} placeholder="Location name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input className={inputCls} placeholder="Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-                <input className={inputCls} placeholder="Postal code" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} />
+                <input className={inputCls} placeholder="Postal code (6 digits)" inputMode="numeric" maxLength={6} required aria-required="true" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value.replace(/\D/g, '') })} />
               </div>
               <div className="flex gap-2">
                 <button onClick={() => saveEdit(loc.id)} disabled={editSaving} className="px-3 py-1.5 bg-[#FA4D8D] text-white rounded-lg text-xs font-medium disabled:opacity-50">
@@ -347,12 +355,12 @@ export default function LocationsManager({
               <input className={inputCls} placeholder="Street & unit" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Postal code</label>
-              <input className={inputCls} placeholder="e.g. 038983" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block">Postal code <span className="text-[#FA4D8D]">*</span></label>
+              <input className={inputCls} placeholder="e.g. 038983" inputMode="numeric" maxLength={6} required aria-required="true" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value.replace(/\D/g, '') })} />
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={addLocation} disabled={saving || !form.name.trim()} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
+            <Button onClick={addLocation} disabled={saving || !form.name.trim() || !POSTAL_RE.test(form.postal_code.trim())} className="gradient-primary text-white rounded-xl hover:opacity-90 px-5">
               {saving ? 'Saving…' : 'Save location'}
             </Button>
             <Button variant="outline" onClick={() => { setShowForm(false); setError(null); }} className="rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>

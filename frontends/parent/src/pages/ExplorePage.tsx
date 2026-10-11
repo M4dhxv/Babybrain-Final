@@ -13,7 +13,7 @@ import {
 import { SelectField, Opt } from "../components/SelectField";
 import { ActivityRowListSkeleton } from "../components/Skeletons";
 import { AGE_BANDS, categories } from "../data/content";
-import { useActivities, useActivityPins, useFacetCounts, EXPLORE_PAGE_SIZE } from "../lib/useActivities";
+import { useActivities, useActivityPins, useFacetCounts, EXPLORE_PAGE_SIZE, EXPLORE_DEFAULT_SORT } from "../lib/useActivities";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore, markBackNavigation } from "../lib/nav";
@@ -449,7 +449,13 @@ function datePresets(): { key: string; label: string; from: string; to: string }
 export default function ExplorePage() {
   // "Top rated" and "Most popular" read the same to parents, so popularity now
   // covers both; the other two sorts are the ones QA asked for.
-  const [sort, setSort] = useState<"popular" | "distance" | "soonest" | "price_asc" | "price_desc">("popular");
+  // Starts on the soonest sessions (what a parent can actually book next); a
+  // `?sort=` in the address bar wins so a picked sort survives leaving and
+  // coming back, "Most popular" included now that it is no longer the default.
+  const [sort, setSort] = useState<"popular" | "distance" | "soonest" | "price_asc" | "price_desc">(() => {
+    const s = getParam("sort");
+    return s === "popular" || s === "distance" || s === "soonest" || s === "price_asc" || s === "price_desc" ? s : EXPLORE_DEFAULT_SORT;
+  });
   // Seed every filter from the query string — home-page tiles, header search
   // and category emails only ever set `cat`/`age` (still a single value
   // there), but this is also how a parent's own filter picks survive leaving
@@ -603,7 +609,7 @@ export default function ExplorePage() {
   // The chosen sort wins outright. Instant-book listings used to be pinned
   // above everything regardless, so picking "Nearest" changed nothing and QA
   // saw a class 30 minutes away above ones within 10. Instant book now only
-  // breaks ties, which still keeps it first under the default "Most popular".
+  // breaks ties, which still keeps it first among sessions starting at the same time.
   //
   // With no precise location (the "pick your area" fallback), rank by area
   // first — the whole chosen area, then the next-closest area, and so on —
@@ -731,7 +737,7 @@ export default function ExplorePage() {
     if (dateTo) params.set("to", dateTo);
     if (timeActive) { params.set("timeMin", String(minH)); params.set("timeMax", String(maxH)); }
     if (priceActive) params.set("price", String(maxPrice));
-    if (sort !== "popular") params.set("sort", sort);
+    if (sort !== EXPLORE_DEFAULT_SORT) params.set("sort", sort);
     const search = params.toString();
     const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
     window.history.replaceState({}, "", url);
@@ -826,7 +832,7 @@ export default function ExplorePage() {
                 { key: "type", label: "Type", icon: "target", active: categories_.length > 0 },
                 { key: "age", label: "Age", icon: "people", active: ages.length > 0 },
                 { key: "area", label: "Area", icon: "compass", active: regions.length > 0 },
-                { key: "sort", label: "More", icon: "funnel", active: sort !== "popular" || priceActive || timeActive || !!dateFrom || !!dateTo },
+                { key: "sort", label: "More", icon: "funnel", active: sort !== EXPLORE_DEFAULT_SORT || priceActive || timeActive || !!dateFrom || !!dateTo },
               ] as const
             ).map((t) => (
               <button
@@ -856,7 +862,7 @@ export default function ExplorePage() {
                   {(mobileSheet === "type" ? categories_.length > 0
                     : mobileSheet === "age" ? ages.length > 0
                     : mobileSheet === "area" ? regions.length > 0
-                    : sort !== "popular" || !!dateFrom || !!dateTo || priceActive || timeActive) && (
+                    : sort !== EXPLORE_DEFAULT_SORT || !!dateFrom || !!dateTo || priceActive || timeActive) && (
                     <button
                       type="button"
                       onClick={() => {
@@ -864,7 +870,7 @@ export default function ExplorePage() {
                         else if (mobileSheet === "age") setAges([]);
                         else if (mobileSheet === "area") setRegions([]);
                         else {
-                          setSort("popular");
+                          setSort(EXPLORE_DEFAULT_SORT);
                           setDateFrom(""); setDateTo(""); setPickingDate(false);
                           setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
                         }

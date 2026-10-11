@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BrandStacked, Button, PageShell } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { apiPost } from "../lib/api";
-import { goTo } from "../lib/nav";
+import { goTo, loginUrl } from "../lib/nav";
 
 export default function PaymentPage() {
   // Card details are collected on Stripe's hosted Checkout, never here. This
@@ -14,7 +14,7 @@ export default function PaymentPage() {
   useEffect(() => {
     if (loading) return;
     if (!session) {
-      goTo("/login");
+      goTo(loginUrl());
       return;
     }
     apiPost<{ url?: string }>("/api/customer/stripe/subscription", { billing: "monthly" })

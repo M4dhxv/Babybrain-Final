@@ -9,7 +9,7 @@ export async function geocodePostalCode(postalCode: string): Promise<{
     `?searchVal=${encodeURIComponent(postalCode)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
 
   try {
-    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    const res = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       results?: { LATITUDE: string; LONGITUDE: string; ADDRESS?: string }[];
@@ -61,6 +61,30 @@ export function pickAddressHit(address: string, found: number, results: OneMapHi
   const longitude = parseFloat(hit.LONGITUDE);
   if (!ok || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   return { postalCode: hit.POSTAL as string, latitude, longitude };
+}
+
+export interface VenuePlace {
+  postalCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/** Where a venue is, from whatever it was given: its postal code, a postal code written inside the address
+ *  ("280 River Valley Road, Singapore, 238321" with the field left empty put a venue with no pin and no area on
+ *  the map), or failing both a street address OneMap names unambiguously. Never throws; every part is null when
+ *  nothing could be placed, so a caller saves what it has rather than blocking on a lookup. */
+export async function geocodeVenue(address: string | null, postalCode: string | null): Promise<VenuePlace> {
+  const given = postalCode?.trim() ?? '';
+  const code = /^\d{6}$/.test(given) ? given : (address?.match(/(?<!\d)\d{6}(?!\d)/)?.[0] ?? null);
+  if (code) {
+    const hit = await geocodePostalCode(code);
+    return { postalCode: code, latitude: hit?.latitude ?? null, longitude: hit?.longitude ?? null };
+  }
+  if (address) {
+    const hit = await geocodeAddress(address);
+    if (hit) return { postalCode: hit.postalCode, latitude: hit.latitude, longitude: hit.longitude };
+  }
+  return { postalCode: postalCode?.trim() || null, latitude: null, longitude: null };
 }
 
 /** A Singapore street address ("103 Prince Charles Cres, Singapore") -> postal code and coordinates via OneMap,
