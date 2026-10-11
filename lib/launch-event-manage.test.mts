@@ -43,3 +43,11 @@ test('masking keeps just enough to be recognised', () => {
   assert.ok(!maskName('Priya Raman').includes('riya'));
   assert.ok(!maskPhone('+65 9123 4567').includes('4567'));
 });
+
+test('an email-link token (60 days) is valid for weeks, then expires', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const t = signManageToken(ID, T0, 60 * 24 * 60 * 60);
+  assert.equal(verifyManageToken(t, T0 + 28 * DAY), ID);   // well after the event
+  assert.equal(verifyManageToken(t, T0 + 61 * DAY), null);
+  assert.ok(t.length < 200);                               // fits the verify length cap and a URL
+});

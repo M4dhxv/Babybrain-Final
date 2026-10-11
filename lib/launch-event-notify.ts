@@ -1,6 +1,10 @@
 import { Resend } from 'resend';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { renderEmail } from '@/lib/emails/render';
+import { signManageToken } from '@/lib/launch-event-manage';
+
+/** How long the edit link in an email stays valid (the event is on 8 Nov 2026). */
+const EMAIL_LINK_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 /**
  * Tell parents their waitlisted registration has been confirmed ("a spot opened up").
@@ -59,11 +63,10 @@ export function launchEmailData(r: Reg, ev: { title: string; starts_on: string |
   const others = [...(r.adult_names ?? []).slice(1), ...(r.child_details ?? []).map((c) => c.name)].filter(Boolean).join(', ');
   const venue = ev?.venue ?? null;
   const address = ADDRESS[r.event_slug] ?? null;
-  const rsvp = `mailto:hello@babybrain.sg?subject=${encodeURIComponent('Update my BabyBrain Launch Event RSVP')}&body=${encodeURIComponent(`Hi Katie,
-
-Please update the RSVP for ${r.name} (${slotLabel ?? 'the launch event'}):
-
-`)}`;
+  // "update the RSVP" opens the edit form on the events page. The link carries a signed token that names this
+  // one registration (it only ever goes to the registrant's inbox), valid until well after the event.
+  let rsvp = `${appUrl}/events`;
+  try { rsvp = `${appUrl}/events?edit=${signManageToken(r.id, Date.now(), EMAIL_LINK_TTL_SECONDS)}`; } catch { /* no signing secret: fall back to the plain page */ }
   return {
     event_title: ev ? `${ev.title} event` : 'BabyBrain launch event',
     date_text: longDate(ev?.starts_on ?? null),

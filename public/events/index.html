@@ -101,7 +101,7 @@
         <div class="slide" data-step="6">
           <div class="mg" id="mgMain">
             <h3>You have already registered</h3>
-            <p class="mg-msg">You have already registered. You can edit your RSVP <a href="#" id="mgHere">here</a>.</p>
+            <p class="mg-msg">You can edit or cancel your RSVP below.</p>
             <p class="mg-who" id="mgWho"></p>
             <p class="mg-note" id="mgNote" hidden>We couldn’t match enough of your details to make changes. Please go back and check your name, email and number, or report an issue.</p>
             <div class="mg-actions">
@@ -457,8 +457,6 @@
       : `Registered under <b>${esc(m.name)}</b> (${esc(m.email)}, ${esc(m.phone)})${out.slotLabel ? ' · ' + esc(out.slotLabel) : ''}`;
     $('#mgNote').hidden = !!out.verified;
     $('#mgEdit').disabled = $('#mgCancel').disabled = !out.verified;
-    $('#mgHere').style.pointerEvents = out.verified ? '' : 'none';
-    $('#mgHere').style.opacity = out.verified ? '' : '.5';
     $('#sharePanelA').hidden = true;
     mgShow('mgMain');
     show(6);
@@ -491,7 +489,6 @@
     show(1);
   }
   $('#mgEdit').onclick = startEdit;
-  $('#mgHere').addEventListener('click', e => { e.preventDefault(); startEdit(); });
 
   // Cancel: a confirmation pop-up first
   const modal = $('#cancelModal');
@@ -621,6 +618,26 @@
   ['input', 'change'].forEach(ev => document.addEventListener(ev, save));
   restore();
   syncAdds();
+
+  /* ----- the "update the RSVP" link in the confirmation email: /events?edit=<token> opens the edit form ----- */
+  (async function resumeFromEmail() {
+    const token = new URLSearchParams(location.search).get('edit');
+    if (!token) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* keep the query if the browser refuses */ }
+    try {
+      const out = await postJson('/api/events/launch/resume', { token });
+      if (out.found && out.verified) { mg = out; startEdit(); return; }
+      show(1);
+      $('#err1').textContent = out.cancelled
+        ? 'That registration was cancelled. You’re welcome to register again below.'
+        : 'We couldn’t find that registration. Please enter your details below.';
+    } catch (e) {
+      show(1);
+      $('#err1').textContent = e.code === 'expired'
+        ? 'That link has expired. Enter your details and we’ll find your registration.'
+        : e.message;
+    }
+  })();
 })();
 </script>
 </body>
