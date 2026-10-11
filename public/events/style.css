@@ -192,6 +192,7 @@
        appears in the spare space below the number field without moving anything */
     .slide[data-step="1"].active { padding-bottom: 0; justify-content: center; }
     .slide[data-step="1"] .phone { margin-bottom: 0; }
+    .slide[data-step="1"].active > :first-child { margin-top: 0; }   /* centre with justify-content (also while the "editing" pill is the first child) */
     .slide[data-step="1"] #err1 { position: absolute; left: 8px; right: 8px; bottom: 0; margin: 0; min-height: 0; }
     /* slide 6 (already registered): every panel is centred the same way, whichever one is showing */
     .slide[data-step="6"].active > .mg { margin-top: auto; margin-bottom: auto; }
@@ -325,3 +326,7 @@
 .slide[data-step="4"] .row { padding: 6px 2px; }
 .slide[data-step="4"] .row:first-of-type { padding-top: 2px; }
 .slide[data-step="4"] .recap { padding-top: 9px; margin-top: 4px; }
+
+/* slide 1 while editing an existing RSVP: the "you're editing" pill takes the place of the title so the fields keep their room above Next */
+.slide[data-step="1"]:has(#editNote:not([hidden])) > h3 { display: none; }
+.slide[data-step="1"] .editing-note { margin: 0 0 12px; }
