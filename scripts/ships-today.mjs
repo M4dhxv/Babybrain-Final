@@ -8,7 +8,7 @@
  */
 import { execFileSync } from "node:child_process";
 
-const LIMIT = 3;
+const LIMIT = 5;
 const istDay = (d) => new Date(d.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
 const raw = execFileSync(

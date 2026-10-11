@@ -9,11 +9,11 @@
 
 ## Shipping cadence and warnings (MUST)
 
-Every push to `main` deploys to Production, and on 3 Oct we shipped four times in six hours. Stability for parents (fast, accurate, never "not found") comes before new features or polish. Aim for **at most 2-3 Production ships per day**, each a larger, verified batch, not many small ones.
+Every push to `main` deploys to Production, and on 3 Oct we shipped four times in six hours. Stability for parents (fast, accurate, never "not found") comes before new features or polish. Aim for **at most 5 Production ships per day** (raised from 2-3 on 2026-10-11 at Aman's instruction), each a larger, verified batch, not many small ones.
 
 Claude must warn the person running the session, in chat, before acting, whenever any of these is true. Warn once, plainly, say what to do instead, and then do what they decide (a warning is not a refusal):
 
-1. **Ship count.** Before any `git push`, run `node scripts/ships-today.mjs`. Say "this would be ship N of 3 today". At 3 or more, warn and suggest holding the change for tomorrow's batch.
+1. **Ship count.** Before any `git push`, run `node scripts/ships-today.mjs`. Say "this would be ship N of 5 today". At 5 or more, warn and suggest holding the change for tomorrow's batch.
 2. **Small push.** If they ask to push a change that is small or cosmetic and more work is plausibly coming, suggest bundling it into the next batch instead.
 3. **Late night.** Between 21:00 and 07:00 India time, warn against shipping unless it is an urgent fix for something broken right now.
 4. **Fresh work on the critical path.** For Explore, activity pages, booking, payments and anything touching `search_activities`, ask for the smoke check first (`node scripts/smoke.mjs`) and check the `uptime` GitHub workflow is green after the push.
