@@ -31,7 +31,7 @@
     "validate:migrations": "node scripts/validate-migrations.mjs",
     "validate:stripe-config": "node scripts/validate-stripe-config.mjs",
     "test:admin": "node --test lib/admin-test-rules.test.mts",
-    "test:launch": "node --test lib/launch-event.test.mts"
+    "test:launch": "node --test lib/launch-event.test.mts lib/launch-event-manage.test.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

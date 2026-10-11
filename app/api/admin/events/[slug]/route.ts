@@ -16,15 +16,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (!SLUG.test(slug)) return NextResponse.json({ error: 'No such event.' }, { status: 404 });
 
   const db = createAdminClient() as unknown as SupabaseClient;
-  const [event, slots, regs] = await Promise.all([
+  const [event, slots, regs, issues] = await Promise.all([
     db.from('events').select('slug, title, starts_on, venue').eq('slug', slug).maybeSingle(),
     db.from('event_slots').select('slot_key, label, capacity, sort').eq('event_slug', slug).order('sort'),
     db.from('event_registrations')
       .select('id, slot_key, name, email, phone, adults, children, party_size, status, source, over_capacity, held, promoted_at, promoted_auto, notified_at, notify_error, adult_names, child_details, notes, created_at, status_changed_at, changed_by')
       .eq('event_slug', slug)
       .order('created_at', { ascending: false }),
+    // open items first, then the most recent resolved ones
+    db.from('event_issues')
+      .select('id, registration_id, kind, name, email, phone, note, status, created_at, resolved_at, resolved_by')
+      .eq('event_slug', slug)
+      .order('status', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(100),
   ]);
-  const failed = event.error ?? slots.error ?? regs.error;
+  const failed = event.error ?? slots.error ?? regs.error ?? issues.error;
   if (failed) return NextResponse.json({ error: failed.message }, { status: 500 });
   if (!event.data) return NextResponse.json({ error: 'No such event.' }, { status: 404 });
 
@@ -40,7 +47,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       waitlisted: mine.filter((r) => r.status === 'waitlisted').length,
     };
   });
-  return NextResponse.json({ event: event.data, slots: slotSummary, registrations: regs.data ?? [], emailsEnabled: launchEmailsEnabled() });
+  return NextResponse.json({ event: event.data, slots: slotSummary, registrations: regs.data ?? [], issues: issues.data ?? [], emailsEnabled: launchEmailsEnabled() });
 }
 
 /**

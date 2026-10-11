@@ -5,7 +5,7 @@ import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn
 
 type EventSummary = {
   slug: string; title: string; starts_on: string | null; venue: string | null;
-  registrations: number; confirmedSeats: number; waitlisted: number; capacity: number;
+  registrations: number; confirmedSeats: number; waitlisted: number; capacity: number; openIssues: number;
 };
 type Slot = { slot_key: string; label: string; capacity: number; confirmedSeats: number; seatsLeft: number; waitlisted: number };
 type Registration = {
@@ -16,7 +16,13 @@ type Registration = {
   adult_names: string[]; child_details: { name: string; age: string }[];
   notes: string | null; created_at: string; status_changed_at: string | null; changed_by: string | null;
 };
-type EventDetail = { event: { slug: string; title: string; starts_on: string | null; venue: string | null }; slots: Slot[]; registrations: Registration[]; emailsEnabled: boolean };
+type Issue = {
+  id: string; registration_id: string | null; kind: 'report' | 'email_corrected';
+  name: string | null; email: string | null; phone: string | null; note: string | null;
+  status: 'open' | 'resolved'; created_at: string; resolved_at: string | null; resolved_by: string | null;
+};
+type EventDetail = { event: { slug: string; title: string; starts_on: string | null; venue: string | null }; slots: Slot[]; registrations: Registration[]; issues: Issue[]; emailsEnabled: boolean };
+const KIND_LABEL: Record<Issue['kind'], string> = { report: 'Reported a problem', email_corrected: 'Corrected their email' };
 
 /** Re-run `fn` every `ms` while this browser tab is visible, and when the tab regains focus. */
 function useAutoRefresh(fn: () => void, ms: number, paused = false) {
@@ -83,6 +89,7 @@ function EventList({ onOpen }: { onOpen: (slug: string) => void }) {
               <span><strong>{e.registrations}</strong> registered</span>
               <span><strong>{e.confirmedSeats}</strong> / {e.capacity} seats</span>
               {e.waitlisted > 0 && <span style={{ color: '#f5b942' }}><strong>{e.waitlisted}</strong> waitlisted</span>}
+              {e.openIssues > 0 && <span style={{ color: C.pink, fontWeight: 800 }}>⚑ {e.openIssues} open issue{e.openIssues === 1 ? '' : 's'}</span>}
             </div>
           </button>
         ))}
@@ -142,6 +149,17 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
     setBusy(null);
   }
 
+  async function setIssue(i: Issue, status: 'resolved' | 'open') {
+    setBusy(i.id);
+    try {
+      await adminFetch(`/api/admin/events/issues/${i.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      toast(status === 'resolved' ? 'Marked resolved' : 'Reopened');
+      load();
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), 'error'); }
+    setBusy(null);
+  }
+  const openIssues = data.issues.filter((i) => i.status === 'open');
+  const doneIssues = data.issues.filter((i) => i.status === 'resolved');
   const pending = data.registrations.filter((r) => r.status === 'confirmed' && r.promoted_at && !r.notified_at && (r.email || !data.emailsEnabled));
   async function sendPending() {
     setBusy('notify');
@@ -189,6 +207,32 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
         <button type="button" style={tabBtn(false)} disabled={refreshing} onClick={() => load(true)}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
         <button type="button" style={primaryBtn()} onClick={() => setAdding((a) => !a)}>{adding ? 'Close' : '+ Add registration'}</button>
       </div>
+
+      {(openIssues.length > 0 || doneIssues.length > 0) && (
+        <div style={{ ...card(), borderColor: openIssues.length ? C.pink : C.border, marginBottom: 14 }}>
+          <div style={{ fontWeight: 900, marginBottom: 8, color: openIssues.length ? C.pink : C.muted }}>
+            ⚑ Issues {openIssues.length > 0 ? `— ${openIssues.length} open` : '— all resolved'}
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {[...openIssues, ...doneIssues.slice(0, 5)].map((i) => (
+              <div key={i.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', opacity: i.status === 'resolved' ? 0.6 : 1,
+                borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+                <div style={{ flex: 1, minWidth: 240, fontSize: 13, lineHeight: 1.6 }}>
+                  <Badge tone={i.status === 'open' ? 'pink' : 'grey'}>{KIND_LABEL[i.kind]}</Badge>{' '}
+                  <strong>{i.name ?? 'Unknown'}</strong>
+                  <span style={{ color: C.muted }}> · {i.email ?? 'no email'} · {i.phone ?? 'no phone'} · {sgTime(i.created_at)}</span>
+                  {i.note && <div style={{ color: C.text }}>{i.note}</div>}
+                  {i.status === 'resolved' && <div style={{ color: C.muted, fontSize: 12 }}>Resolved {sgTime(i.resolved_at)}{i.resolved_by ? ` by ${i.resolved_by}` : ''}</div>}
+                </div>
+                <button type="button" disabled={busy === i.id} style={i.status === 'open' ? { ...primaryBtn(), padding: '6px 12px', fontSize: 12 } : { ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
+                  onClick={() => setIssue(i, i.status === 'open' ? 'resolved' : 'open')}>
+                  {i.status === 'open' ? 'Mark resolved' : 'Reopen'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div style={{ ...card(), borderColor: '#f5b942', marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -242,6 +286,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                         </div>
                       )}
                       {r.source === 'admin' && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>added by hand</div>}
+                      {r.status === 'cancelled' && r.changed_by === 'registrant' && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>cancelled by the registrant</div>}
                     </td>
                     <td style={{ ...td(), whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', gap: 6 }}>

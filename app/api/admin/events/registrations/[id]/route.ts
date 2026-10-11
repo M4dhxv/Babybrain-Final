@@ -46,6 +46,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const r = data as { ok: boolean; error?: string; seats_left?: number; party_size?: number; over_capacity?: boolean; promoted?: { id: string; name: string; party_size: number }[] };
   if (!r.ok) {
+    if (r.error === 'email_taken') {
+      return NextResponse.json({ error: 'That email address has registered again since, so this one cannot be re-confirmed. Cancel or edit the newer registration first.', code: 'email_taken' }, { status: 409 });
+    }
     return NextResponse.json({
       error: `Not enough free seats: this party needs ${r.party_size}, ${r.seats_left} left in that slot. Use "Confirm anyway" to go over capacity.`,
       code: 'no_capacity',

@@ -153,6 +153,7 @@
   .thanks { text-align: center; padding: 28px 0 8px; }
   .thanks .tick { width: 58px; height: 58px; border-radius: 50%; background: var(--pink); color: #fff; font-size: 30px; display: grid; place-items: center; margin: 0 auto 14px; }
   .thanks h3 { font-size: 28px; margin-bottom: 8px; }
+
   .thanks p { color: var(--muted); font-size: 14.5px; line-height: 1.55; }
 
   /* ---------- controls ---------- */
@@ -252,3 +253,47 @@
   .ttitle { font-size: 26px; }
   .doc { flex: none; overflow: visible; margin: 0; padding: 0; }
 }
+
+/* ---------- already registered: edit / cancel / didn't receive mail / share ---------- */
+.editing-note { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--pink-deep); background: rgba(250,77,141,.1); border-radius: 8px; padding: 5px 10px; margin: 0 0 8px; }
+.mg h3 { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.mg-msg { font-size: 14.5px; line-height: 1.5; color: var(--ink); margin: 0 0 8px; }
+.mg-msg a { color: var(--pink-deep); font-weight: 800; text-decoration: underline; }
+.mg-who { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 0 0 8px; }
+.mg-who b { color: var(--ink); }
+.mg-status { display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--pink-deep); }
+.mg-note { font-size: 12.5px; line-height: 1.45; color: var(--pink-deep); margin: 0 0 8px; }
+.mg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.mg-btn { font: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: .04em; color: var(--ink); background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; transition: all .15s; }
+.mg-btn:hover:not(:disabled) { border-color: var(--pink); color: var(--pink-deep); }
+.mg-btn.pri { background: var(--pink); border-color: var(--pink); color: #fff; }
+.mg-btn.pri:hover:not(:disabled) { filter: brightness(1.05); color: #fff; }
+.mg-btn.danger { border-color: var(--pink-deep); color: var(--pink-deep); }
+.mg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mg-link { font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 8px 0 0; }
+.mg-link:hover { color: var(--ink); }
+.mg-dl { margin: 0 0 6px; display: grid; gap: 4px; }
+.mg-dl div { display: flex; gap: 8px; font-size: 13.5px; }
+.mg-dl dt { width: 52px; flex: none; color: var(--muted); font-weight: 800; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
+.mg-dl dd { margin: 0; color: var(--ink); font-weight: 700; word-break: break-all; }
+.mg-form { margin-top: 6px; }
+.mg-form input { margin-bottom: 8px; }
+.mg-form .phone { margin-bottom: 8px; }
+.share { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px auto 0; max-width: 440px; }
+.share input { flex: 1; min-width: 160px; margin: 0; font-size: 13px; padding: 8px 10px; }
+.share .copy { flex: none; padding: 9px 14px; }
+.share .copied { font-size: 12px; font-weight: 800; color: var(--pink-deep); }
+.done-actions { margin-top: 10px; }
+.done-actions .mg-btn { padding: 7px 18px; }
+
+/* cancel confirmation pop-up */
+.modal { position: fixed; inset: 0; z-index: 60; background: rgba(74, 42, 51, .55); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal[hidden] { display: none !important; }
+.modal-card { background: var(--cream); border-radius: 14px; max-width: 420px; width: 100%; padding: 22px 22px 18px; box-shadow: 0 20px 60px rgba(0,0,0,.35); text-align: left; }
+.modal-card h3 { font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.modal-card p { font-size: 14px; line-height: 1.55; color: var(--ink); margin-bottom: 8px; }
+.modal-what { font-weight: 800; background: rgba(184,131,143,.18); border-radius: 8px; padding: 8px 10px; font-size: 13px !important; }
+
+.share { position: relative; }
+.share-x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0,0,0,.07); color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.share-x:hover { background: rgba(250,77,141,.18); color: var(--pink-deep); }

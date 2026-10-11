@@ -23,6 +23,9 @@ export interface EmailCtx {
    *  into. renderEmail() sets this from the template type (every `provider_*`
    *  key is a vendor template) — callers don't need to pass it themselves. */
   audience?: 'parent' | 'provider';
+  /** 'events' = the launch-event footer: Instagram, Sign up, Explore activities (no profile /
+   *  unsubscribe links - registrants usually don't have an account). */
+  footer?: 'events';
 }
 export interface RenderedEmail {
   subject: string;
@@ -103,10 +106,15 @@ function layout(ctx: EmailCtx, inner: string): string {
     <div style="text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #eee">
       <img src="${appUrl}/assets/brand/logo-horizontal.png" alt="BabyBrain" width="132" style="max-width:132px;height:auto;margin-bottom:12px" /><br/>
       <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram <img src="${appUrl}/assets/brand/instagram.png" alt="Instagram" width="15" height="15" style="width:15px;height:15px;vertical-align:-2px;border:0" /></a>
-      <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
+      ${ctx.footer === 'events'
+        ? `<div style="margin-top:10px;font-size:14px;color:#9a9a9a">
+        <a href="${appUrl}/signup" style="color:#767676;text-decoration:none">Sign up</a> &nbsp;·&nbsp;
+        <a href="${appUrl}/explore" style="color:#767676;text-decoration:none">Explore activities</a>
+      </div>`
+        : `<div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${profileHref}" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
         <a href="${unsubscribeHref}" style="color:#9a9a9a">Unsubscribe</a>
-      </div>
+      </div>`}
     </div>
   </div>
 </div>`;
@@ -146,7 +154,8 @@ function calendarButton(d: EmailData, ctx: EmailCtx): string {
   if (!start || !title || Number.isNaN(new Date(start).getTime())) return '';
   const q = new URLSearchParams({ t: title, s: start });
   if (str(d, 'ends_at')) q.set('e', str(d, 'ends_at')!);
-  if (str(d, 'address')) q.set('v', str(d, 'address')!);
+  const venue = str(d, 'calendar_venue') ?? str(d, 'address');
+  if (venue) q.set('v', venue);
   const href = `${ctx.appUrl}/api/public/calendar?${q.toString()}`;
   return `<p style="margin:0 0 20px"><a href="${esc(href)}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">📅 Add to calendar</a></p>`;
 }
@@ -163,6 +172,34 @@ function expiryChanged(d: EmailData, ctx: EmailCtx, kind: string, subject: strin
     p(greet(ctx.recipientName)) +
     p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has updated the validity of your ${kind}${name ? ` for ${bold(name)}` : ''}${until ? `. It is now valid until ${bold(until)}` : ''}.`) +
     cta(/^https?:\/\//i.test(url) ? url : `${ctx.appUrl}${url}`, label) +
+    sign);
+}
+
+/** The launch-event confirmation (copy agreed with Aman): used for a registration that was confirmed
+ *  straight away and, with an `intro`, for a waitlisted party that has just been promoted. */
+function launchConfirmation(d: EmailData, ctx: EmailCtx, intro?: string): RenderedEmail {
+  const c: EmailCtx = { ...ctx, footer: 'events' };
+  const slot = str(d, 'slot_label');
+  const others = str(d, 'others');
+  const rsvp = str(d, 'rsvp_href');
+  const when = [
+    `${esc(str(d, 'date_text') ?? '')}${slot ? `, ${bold(slot)}` : ''}`,
+    esc(str(d, 'duration') ?? '1 hour'),
+    str(d, 'venue') ? esc(str(d, 'venue')!) : null,
+    str(d, 'address') ? esc(str(d, 'address')!) : null,
+    others ? `Other attendees: ${bold(others)}` : null,
+  ].filter(Boolean).join('<br/>');
+  return wrap(c, 'BabyBrain Launch Event Confirmation',
+    p(`Hi ${bold(ctx.recipientName ?? 'there')}👋`) +
+    (intro ? p(esc(intro)) : '') +
+    p('We are delighted to confirm your place at the BabyBrain Launch Event:') +
+    p(when) +
+    calendarButton(d, c) +
+    p('Please do bring grip socks for anyone other than pre-walking babies (including adults), these are mandatory for entry to The Artground.') +
+    p(`If you or some of your party are no longer able to attend, please do ${rsvp
+      ? `<a href="${esc(rsvp)}" style="color:${PINK};font-weight:600;text-decoration:underline">update the RSVP</a>`
+      : bold('update the RSVP')} so we can free up space for others who wish to attend.`) +
+    p('We look forward to seeing you!') +
     sign);
 }
 
@@ -683,44 +720,12 @@ const T: Record<string, Template> = {
       p('If you didn’t request this, you can ignore this email — nothing changes.') +
       sign),
 
-  // Launch event (migration 00232): a seat opened up and a waitlisted party was confirmed,
-  // automatically or by hand. Sent by lib/launch-event-notify.ts - not a notification-feed type.
-  event_waitlist_promoted: (d, ctx) =>
-    wrap(ctx, 'A spot opened up - you’re in! 👶🧠',
-      p(greet(ctx.recipientName)) +
-      p(`Good news - a spot has opened up and ${bold('your registration is now confirmed')} for the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')}.`) +
-      p([
-        str(d, 'date_text') ? bold(str(d, 'date_text')!) : null,
-        str(d, 'slot_label') ? esc(str(d, 'slot_label')!) : null,
-        str(d, 'venue') ? esc(str(d, 'venue')!) : null,
-        str(d, 'address') ? esc(str(d, 'address')!) : null,
-      ].filter(Boolean).join('<br/>')) +
-      (str(d, 'party_text') ? p(`Your party: ${esc(str(d, 'party_text')!)}.`) : '') +
-      p('Please remember non-slip grip socks for everyone, adults included.') +
-      p('If you can no longer make it, just reply to this email so we can offer your place to another family.') +
-      p('We can’t wait to see you there!') +
-      sign),
-
-  // Launch event registration receipts, sent by lib/launch-event-notify.ts right after the form is
-  // submitted (only when LAUNCH_EVENT_EMAILS=on and Resend is configured).
-  event_registration_confirmed: (d, ctx) =>
-    wrap(ctx, 'You’re registered! 👶🧠',
-      p(greet(ctx.recipientName)) +
-      p(`Thank you for registering for the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')} - ${bold('your place is confirmed')}.`) +
-      p([
-        str(d, 'date_text') ? bold(str(d, 'date_text')!) : null,
-        str(d, 'slot_label') ? esc(str(d, 'slot_label')!) : null,
-        str(d, 'venue') ? esc(str(d, 'venue')!) : null,
-        str(d, 'address') ? esc(str(d, 'address')!) : null,
-      ].filter(Boolean).join('<br/>')) +
-      (str(d, 'party_text') ? p(`Your party: ${esc(str(d, 'party_text')!)}.`) : '') +
-      p('Please remember non-slip grip socks for everyone, adults included.') +
-      p('If your plans change, just reply to this email so we can offer your place to another family.') +
-      p('We can’t wait to see you there!') +
-      sign),
+  // Launch event emails, sent by lib/launch-event-notify.ts (only when LAUNCH_EVENT_EMAILS=on and Resend is configured).
+  event_registration_confirmed: (d, ctx) => launchConfirmation(d, ctx),
+  event_waitlist_promoted: (d, ctx) => launchConfirmation(d, ctx, 'Good news - a spot has opened up!'),
 
   event_registration_waitlisted: (d, ctx) =>
-    wrap(ctx, 'You’re on the waitlist 👶🧠',
+    wrap({ ...ctx, footer: 'events' }, 'You’re on the waitlist 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`Thank you for your interest in the ${esc(str(d, 'event_title') ?? 'BabyBrain launch event')}. That session is full right now, so ${bold('you are on the waitlist')}.`) +
       p([

@@ -12,12 +12,13 @@ export async function GET(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const db = createAdminClient() as unknown as SupabaseClient;
-  const [events, slots, regs] = await Promise.all([
+  const [events, slots, regs, issues] = await Promise.all([
     db.from('events').select('slug, title, starts_on, venue').order('starts_on', { ascending: false }),
     db.from('event_slots').select('event_slug, slot_key, label, capacity, sort').order('sort'),
     db.from('event_registrations').select('event_slug, slot_key, status, party_size'),
+    db.from('event_issues').select('event_slug').eq('status', 'open'),
   ]);
-  const failed = events.error ?? slots.error ?? regs.error;
+  const failed = events.error ?? slots.error ?? regs.error ?? issues.error;
   if (failed) return NextResponse.json({ error: failed.message }, { status: 500 });
 
   type Reg = { event_slug: string; slot_key: string; status: string; party_size: number };
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
       registrations: mine.filter((r: Reg) => r.status !== 'cancelled').length,
       confirmedSeats: mine.filter((r: Reg) => r.status === 'confirmed').reduce((n: number, r: Reg) => n + r.party_size, 0),
       waitlisted: mine.filter((r: Reg) => r.status === 'waitlisted').length,
+      openIssues: (issues.data ?? []).filter((i: { event_slug: string }) => i.event_slug === e.slug).length,
       capacity: (slots.data ?? []).filter((s: { event_slug: string }) => s.event_slug === e.slug)
         .reduce((n: number, s: { capacity: number }) => n + s.capacity, 0),
     };
