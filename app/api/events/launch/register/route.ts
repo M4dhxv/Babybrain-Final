@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
   const r = data as RegisterResult;
   // Receipt email ("you're registered" / "you're on the waitlist"): after the response, so the parent
-  // never waits on it, and never for a repeat submission. On hold: skipped unless LAUNCH_EVENT_EMAILS=on (and RESEND_API_KEY is set).
+  // never waits on it, and never for a repeat submission. Skipped (with the reason saved on the row) when RESEND_API_KEY is not set or LAUNCH_EVENT_EMAILS=off.
   if (!r.duplicate) after(() => emailRegistration(db, r.id));
   return NextResponse.json({ status: r.status, duplicate: r.duplicate });
 }

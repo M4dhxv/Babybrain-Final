@@ -720,7 +720,7 @@ const T: Record<string, Template> = {
       p('If you didn’t request this, you can ignore this email — nothing changes.') +
       sign),
 
-  // Launch event emails, sent by lib/launch-event-notify.ts (only when LAUNCH_EVENT_EMAILS=on and Resend is configured).
+  // Launch event emails, sent by lib/launch-event-notify.ts (only when Resend is configured, RESEND_API_KEY, and LAUNCH_EVENT_EMAILS is not "off").
   event_registration_confirmed: (d, ctx) => launchConfirmation(d, ctx),
   event_waitlist_promoted: (d, ctx) => launchConfirmation(d, ctx, 'Good news - a spot has opened up!'),
 

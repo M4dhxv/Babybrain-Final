@@ -17,14 +17,12 @@ const ADDRESS: Record<string, string> = {
 
 export type NotifyResult = { sent: number; failed: number; noEmail: number; error?: string; disabled?: boolean };
 
-/** Launch emails are ON HOLD until both Resend is configured (RESEND_API_KEY) and LAUNCH_EVENT_EMAILS=on is set.
- *  Until then promotions still happen and stay marked as awaiting a notification, so switching it on later lets
- *  "Send emails now" catch up. */
+/** Launch emails send whenever Resend is configured (RESEND_API_KEY is set on the deployment).
+ *  LAUNCH_EVENT_EMAILS is only an optional kill switch: set it to "off" to pause sending without removing the key.
+ *  While paused, promotions still happen and stay marked as awaiting a notification, so "Send emails now" can catch up. */
 export function launchEmailsStatus(): { enabled: boolean; reason?: string } {
   const flag = (process.env.LAUNCH_EVENT_EMAILS ?? '').trim().replace(/^["']|["']$/g, '').toLowerCase();
-  if (!['on', 'true', '1', 'yes'].includes(flag)) {
-    return { enabled: false, reason: flag ? `LAUNCH_EVENT_EMAILS is "${flag.slice(0, 20)}", expected "on"` : 'LAUNCH_EVENT_EMAILS is not set in this deployment' };
-  }
+  if (['off', 'false', '0', 'no'].includes(flag)) return { enabled: false, reason: 'paused: LAUNCH_EVENT_EMAILS is set to "off"' };
   if (!process.env.RESEND_API_KEY) return { enabled: false, reason: 'RESEND_API_KEY is not set in this deployment' };
   return { enabled: true };
 }
