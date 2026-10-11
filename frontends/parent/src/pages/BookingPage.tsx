@@ -19,7 +19,7 @@ import { ApiError, apiGet, apiPost } from "../lib/api";
 import { pruneAnswers, type FormAnswers } from "../lib/eventForm";
 import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bookingDraft";
 import { cleanRpcErrorMessage } from "../lib/errors";
-import { goTo, getParam, routePath } from "../lib/nav";
+import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -208,6 +208,14 @@ export default function BookingPage() {
   const heroImg = useThumb(img, 490, 416);
   const summaryImg = useThumb(img, 224, 192);
   const { session: auth, children: kids, dataResolved } = useAuth();
+  // A logged-out visitor on this page is mid-booking. Park the page as their
+  // post-login destination, so signing in later from anywhere (an installed
+  // iPhone app that was killed and relaunched on Home comes back with no URL)
+  // returns here with the slot, not on Profile. Consumed or cleared once signed in.
+  useEffect(() => {
+    if (auth) clearLoginNext();
+    else rememberLoginNext(`${routePath()}${window.location.search}`);
+  }, [auth]);
   const redeemToken = getParam("token");
   /* "A spot has opened up" emails deep-link here with the freed slot
      (migration 00083): /book?slug=…&session=<id>. Until that slot has been

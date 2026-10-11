@@ -48,6 +48,49 @@ export function loginUrl(): string {
   return `/login?next=${encodeURIComponent(dest)}`;
 }
 
+const LOGIN_NEXT_KEY = "bb:loginNext";
+const LOGIN_NEXT_MAX_AGE_MS = 30 * 60 * 1000;
+
+/** Same-origin relative paths only ("//host" would be an open redirect). */
+export function isSafeNext(next: string | null | undefined): next is string {
+  return !!next && next.startsWith("/") && !next.startsWith("//");
+}
+
+/** Remembers where a logged-out parent was heading, beyond the URL's own `?next=`.
+ *  An installed iPhone app is killed while it sits in the background (a trip to
+ *  the password manager, Mail or Messages is enough) and cold-starts on
+ *  `start_url` with no query string and an empty sessionStorage, so the
+ *  `?next=` on /login was gone by the time they signed in and they landed on
+ *  /profile. localStorage outlives that; the short life keeps an old intention
+ *  from steering a much later, unrelated login. */
+export function rememberLoginNext(next: string): void {
+  if (!isSafeNext(next)) return;
+  try {
+    localStorage.setItem(LOGIN_NEXT_KEY, JSON.stringify({ next, at: Date.now() }));
+  } catch {
+    // Storage blocked: the URL's `?next=` still works while the page stays open.
+  }
+}
+
+/** The remembered destination, if a fresh one is waiting. Pure read. */
+export function peekLoginNext(): string | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(LOGIN_NEXT_KEY) ?? "null") as { next?: string; at?: number } | null;
+    if (!d || !isSafeNext(d.next) || typeof d.at !== "number" || Date.now() - d.at > LOGIN_NEXT_MAX_AGE_MS) return null;
+    return d.next;
+  } catch {
+    return null;
+  }
+}
+
+export function clearLoginNext(): void {
+  try {
+    localStorage.removeItem(LOGIN_NEXT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /** Strip the dev `/app` base and any trailing slash. */
 function normalisePath(pathname: string): string {
   return pathname.replace(/^\/app(?=\/|$)/, "").replace(/\/$/, "") || "/";

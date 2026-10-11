@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { ResendConfirmation } from "../components/ResendConfirmation";
 import { PasswordInput } from "../components/PasswordInput";
 import { supabase } from "../lib/supabase";
-import { goTo, getParam } from "../lib/nav";
+import { goTo, getParam, isSafeNext, rememberLoginNext, peekLoginNext, clearLoginNext } from "../lib/nav";
 import { warmDashboard } from "../lib/prefetch";
 import { PASSWORD_RULES, passwordError } from "../lib/validation";
 
@@ -19,6 +19,12 @@ export function LoginPage() {
   // Nearly everyone lands on Profile right after signing in. Fetch its chunks
   // now, while they type, so the post-login hop isn't a download + skeleton.
   useEffect(() => { warmDashboard(); }, []);
+  // Keep the destination somewhere that survives the app being killed and
+  // relaunched mid-login (see rememberLoginNext).
+  useEffect(() => {
+    const next = getParam("next");
+    if (isSafeNext(next)) rememberLoginNext(next);
+  }, []);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -28,13 +34,16 @@ export function LoginPage() {
     if (error) return setError(error);
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
-    const next = getParam("next");
+    // The URL's own `next` wins; the remembered one covers a relaunched app.
+    const fromUrl = getParam("next");
+    const next = isSafeNext(fromUrl) ? fromUrl : peekLoginNext();
+    clearLoginNext();
     // Client-side hop, not a reload: AuthProvider already holds the new session
     // (onAuthStateChange fires before signIn resolves) and every per-user hook is
     // keyed on the user id, so the destination mounts straight into the
     // signed-in app. A hard reload here re-downloaded and re-parsed the whole
     // bundle — several seconds on a phone — for nothing.
-    goTo(next && next.startsWith("/") && !next.startsWith("//") ? next : "/profile", { replace: true });
+    goTo(isSafeNext(next) ? next : "/profile", { replace: true });
   }
   return (
     <PageShell active="/login">
