@@ -13,13 +13,13 @@ const AGE_BAND_COPY = [
 const REVIEWS = [
   {
     name: "Hannah",
-    // Woman: blond hair, light skin tone (the avatar catalogue has no blonde option).
-    emoji: "\u{1F471}\u{1F3FB}‍♀️",
+    // Woman: dark-haired brunette, light skin tone.
+    emoji: "\u{1F469}\u{1F3FB}",
     text: "BabyBrain is what we have all been waiting for! It’s amazing to have one go to platform to book classes for our child. It’s incredibly intuitive to use & has so many fantastic activities to choose from. BabyBrain is a must have for parents of young ones in Singapore!",
     role: "Mum of 2 month old",
   },
-  // Man, light skin tone.
-  { name: "Marcus", emoji: "\u{1F468}\u{1F3FB}", text: "Easy to use and saves us so much time planning weekends.", role: "Dad of 3.5 year old" },
+  // Luke: bearded adult, light skin tone. The seed is the picker's "bearded adult" entry so the circle keeps its purple; the emoji overrides the tone.
+  { name: "Luke", avatarSeed: "parent:bearded-adult:3", emoji: "\u{1F9D4}\u{1F3FB}", text: "Such a useful platform. BabyBrain makes it so easy to book and find new activities for our son. And we love being part of the BB community!", role: "Dad of 13 month old" },
   { name: "Sarah", emoji: undefined, text: "A great platform to discover new activities and local gems.", role: "Mum of 4.5 year old" },
 ];
 
@@ -153,9 +153,9 @@ export default function HomePage() {
         </section>
 
         <section className="bb-reveal mx-auto grid max-w-[1120px] gap-4 px-6 py-3 md:grid-cols-3" style={{ animationDelay: "160ms" }}>
-          {REVIEWS.map(({ name, text, role, emoji }) => (
+          {REVIEWS.map(({ name, text, role, emoji, avatarSeed }) => (
             <article key={name} className="flex gap-4 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
-              <AnimalAvatar seed={name} kind="parent" emoji={emoji} className="h-11 w-11 shrink-0" />
+              <AnimalAvatar seed={avatarSeed ?? name} kind="parent" emoji={emoji} className="h-11 w-11 shrink-0" />
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: 5 }).map((_, starIndex) => <Icon key={starIndex} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
                 <p className="mt-2 text-sm font-semibold leading-6">{text}</p>
