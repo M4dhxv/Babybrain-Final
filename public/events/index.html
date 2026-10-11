@@ -133,15 +133,14 @@
               <label for="fixEmail">Email</label><input id="fixEmail" type="email" autocomplete="email">
               <label for="fixWa">WhatsApp number</label>
               <div class="phone"><span class="cc">+65</span><input id="fixWa" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="9" autocomplete="tel-national"></div>
-              <div class="mg-actions"><button type="button" class="mg-btn pri" id="fixSave">Save and send confirmation</button><button type="button" class="mg-btn" id="fixBack">Back</button></div>
+              <div class="mg-actions"><button type="button" class="mg-btn pri" id="fixSave">Save and send confirmation</button></div>
             </div>
             <div class="mg-form" id="mgReportForm" hidden>
               <label for="reportNote">What happened? (optional)</label>
               <input id="reportNote" maxlength="300" placeholder="e.g. nothing in my inbox or spam">
-              <div class="mg-actions"><button type="button" class="mg-btn pri" id="reportSend">Send report</button><button type="button" class="mg-btn" id="reportBack">Back</button></div>
+              <div class="mg-actions"><button type="button" class="mg-btn pri" id="reportSend">Send report</button></div>
             </div>
             <div class="err" id="mgMailErr"></div>
-            <button type="button" class="mg-link" id="mailBack">← Back</button>
           </div>
 
           <div class="mg" id="mgDone" hidden>
@@ -266,6 +265,7 @@
     const dn = n === 6 ? 1 : n;   // the "already registered" panel sits on the first dot
     dots.forEach((d, i) => { d.classList.toggle('on', i + 1 === Math.min(dn, 4) && dn < 5); d.classList.toggle('done', i + 1 < dn || dn === 5); });
     back.hidden = n === 1 || n === 5;
+    if (n === 6) syncBack();
     controls.style.visibility = n === 5 ? "hidden" : "visible";
     next.style.visibility = n === 6 ? 'hidden' : '';
     next.textContent = n === 4 ? (editing ? 'Save changes' : 'Confirm') : 'Next';
@@ -417,7 +417,13 @@
     }
     sending = false;
   }
-  back.onclick = () => { if (step === 6) show(1); else if (step > 1) show(step - 1); };
+  back.onclick = () => {
+    if (step === 6) {
+      if (!$('#mgMail').hidden) {
+        if (!$('#mgFixForm').hidden || !$('#mgReportForm').hidden) mailChoices(); else mgShow('mgMain');
+      } else show(1);
+    } else if (step > 1) show(step - 1);
+  };
   $('#rsvp').addEventListener('submit', e => { e.preventDefault(); next.click(); });
   $('#rsvp').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'radio') { e.preventDefault(); next.click(); } });
   /* ----- already registered: edit / cancel / "didn't receive mail" / share ----- */
@@ -433,7 +439,13 @@
   const lookupRegistration = () => postJson('/api/events/launch/lookup', { name: data.name, email: data.email, phone: data.wa });
 
   const mgViews = ['mgMain', 'mgMail', 'mgDone'];
-  const mgShow = id => mgViews.forEach(v => { $('#' + v).hidden = v !== id; });
+  const mgShow = id => { mgViews.forEach(v => { $('#' + v).hidden = v !== id; }); syncBack(); };
+  /* One Back button (the one in the footer) walks back through the panel: form -> mail choices -> main -> the details slide.
+     It is hidden on the final "done" views, which have their own button. */
+  function syncBack() {
+    if (step !== 6) return;
+    back.hidden = !$('#mgDone').hidden;
+  }
   const partyText = r => { const k = (r.children || []).length, a = r.secondAdult ? 2 : 1; return `${a} adult${a === 1 ? '' : 's'}, ${k} child${k === 1 ? '' : 'ren'}`; };
 
   function openManage(out) {
@@ -516,7 +528,7 @@
   }
 
   // Didn't receive mail
-  const mailChoices = () => { $('#mgFixForm').hidden = true; $('#mgReportForm').hidden = true; $('#mailChoices').hidden = false; $('#mgMailErr').textContent = ''; };
+  const mailChoices = () => { $('#mgFixForm').hidden = true; $('#mgReportForm').hidden = true; $('#mailChoices').hidden = false; $('#mgMailErr').textContent = ''; $('#mgMail .mg-dl').hidden = false; };
   $('#mgNoMail').onclick = () => {
     const v = mg.verified, r = mg.registration || {}, m = mg.masked || {};
     $('#mailName').textContent = v ? r.name : m.name;
@@ -525,13 +537,10 @@
     $('#mgFixEmail').hidden = !v;   // only the verified registrant may change the address
     mailChoices(); mgShow('mgMail');
   };
-  $('#mailBack').onclick = () => mgShow('mgMain');
-  $('#fixBack').onclick = mailChoices;
-  $('#reportBack').onclick = mailChoices;
   $('#mgFixEmail').onclick = () => {
     const r = mg.registration;
     $('#fixName').value = r.name || ''; $('#fixEmail').value = r.email || ''; $('#fixWa').value = sgFormat(r.phone || '');
-    $('#mailChoices').hidden = true; $('#mgFixForm').hidden = false; $('#mgMailErr').textContent = '';
+    $('#mailChoices').hidden = true; $('#mgMail .mg-dl').hidden = true; $('#mgFixForm').hidden = false; $('#mgMailErr').textContent = '';
     $('#fixEmail').focus();
   };
   $('#fixSave').onclick = async () => {
@@ -551,7 +560,7 @@
     }
     b.disabled = false; b.textContent = 'Save and send confirmation';
   };
-  $('#mgReport').onclick = () => { $('#mailChoices').hidden = true; $('#mgReportForm').hidden = false; $('#mgMailErr').textContent = ''; $('#reportNote').focus(); };
+  $('#mgReport').onclick = () => { $('#mailChoices').hidden = true; $('#mgMail .mg-dl').hidden = true; $('#mgReportForm').hidden = false; $('#mgMailErr').textContent = ''; $('#reportNote').focus(); };
   $('#reportSend').onclick = async () => {
     const b = $('#reportSend'); b.disabled = true; b.textContent = 'Sending…';
     try {

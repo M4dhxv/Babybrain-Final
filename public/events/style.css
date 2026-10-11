@@ -188,6 +188,13 @@
     /* even rhythm: fixed gaps between the blocks, the whole group centred in the frame */
     .when { margin-top: 31px; }
     form { margin-top: 8px; }
+    /* slide 1: the fields sit right above Next (no empty error row between them); a validation message
+       appears in the spare space below the number field without moving anything */
+    .slide[data-step="1"].active { padding-bottom: 0; justify-content: flex-end; }
+    .slide[data-step="1"] .phone { margin-bottom: 20px; }
+    .slide[data-step="1"] #err1 { position: absolute; left: 8px; right: 8px; bottom: 0; margin: 0; min-height: 0; }
+    /* slide 6 (already registered): every panel is centred the same way, whichever one is showing */
+    .slide[data-step="6"].active > .mg { margin-top: auto; margin-bottom: auto; }
   }
 
   /* roomy desktop windows: draw the cream box at 110% (like a 110% browser zoom). Skipped on windows shorter than 810px or narrower than 1240px, where there is no spare room. */
@@ -277,7 +284,7 @@
 .mg-dl dt { width: 52px; flex: none; color: var(--muted); font-weight: 800; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
 .mg-dl dd { margin: 0; color: var(--ink); font-weight: 700; word-break: break-all; }
 .mg-form { margin-top: 6px; }
-.mg-form input { margin-bottom: 8px; }
+.mg-form input { margin-bottom: 6px; }
 .mg-form .phone { margin-bottom: 8px; }
 .share { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px auto 0; max-width: 440px; }
 .share input { flex: 1; min-width: 160px; margin: 0; font-size: 13px; padding: 8px 10px; }
@@ -297,3 +304,14 @@
 .share { position: relative; }
 .share-x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0,0,0,.07); color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
 .share-x:hover { background: rgba(250,77,141,.18); color: var(--pink-deep); }
+
+/* ---------- already registered: even, centred layout for all three panels ---------- */
+.mg-actions { align-items: stretch; }
+.mg-actions:has(> :only-child) { grid-template-columns: 1fr; }
+.mg-actions .mg-btn { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 42px; line-height: 1.2; }
+.mg-who { margin-bottom: 12px; }
+.mg-actions { margin-top: 12px; }
+.mg-form label { margin-top: 2px; }
+.mg-form .mg-actions { margin-top: 4px; }
+.mg-form input, .mg-form .phone { margin-bottom: 6px; }
+.mg .err:empty { min-height: 0; margin: 0; }

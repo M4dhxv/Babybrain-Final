@@ -20,7 +20,15 @@ export type NotifyResult = { sent: number; failed: number; noEmail: number; erro
 /** Launch emails are ON HOLD until both Resend is configured (RESEND_API_KEY) and LAUNCH_EVENT_EMAILS=on is set.
  *  Until then promotions still happen and stay marked as awaiting a notification, so switching it on later lets
  *  "Send emails now" catch up. */
-export const launchEmailsEnabled = (): boolean => process.env.LAUNCH_EVENT_EMAILS === 'on' && Boolean(process.env.RESEND_API_KEY);
+export function launchEmailsStatus(): { enabled: boolean; reason?: string } {
+  const flag = (process.env.LAUNCH_EVENT_EMAILS ?? '').trim().replace(/^["']|["']$/g, '').toLowerCase();
+  if (!['on', 'true', '1', 'yes'].includes(flag)) {
+    return { enabled: false, reason: flag ? `LAUNCH_EVENT_EMAILS is "${flag.slice(0, 20)}", expected "on"` : 'LAUNCH_EVENT_EMAILS is not set in this deployment' };
+  }
+  if (!process.env.RESEND_API_KEY) return { enabled: false, reason: 'RESEND_API_KEY is not set in this deployment' };
+  return { enabled: true };
+}
+export const launchEmailsEnabled = (): boolean => launchEmailsStatus().enabled;
 
 const dayText = (d: string | null) =>
   d ? new Date(`${d}T00:00:00+08:00`).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Singapore' }) : null;
@@ -77,7 +85,11 @@ Please update the RSVP for ${r.name} (${slotLabel ?? 'the launch event'}):
 
 export async function notifyPromoted(db: SupabaseClient, slug?: string): Promise<NotifyResult> {
   const result: NotifyResult = { sent: 0, failed: 0, noEmail: 0 };
-  if (!launchEmailsEnabled()) return { ...result, disabled: true };
+  const st = launchEmailsStatus();
+  if (!st.enabled) {
+    console.warn(`[launch-notify] promotion emails skipped: ${st.reason}`);
+    return { ...result, disabled: true };
+  }
 
   let q = db.from('event_registrations')
     .select('id, event_slug, slot_key, name, email, adults, children, adult_names, child_details')
@@ -149,8 +161,13 @@ export async function notifyPromoted(db: SupabaseClient, slug?: string): Promise
  */
 export async function emailRegistration(db: SupabaseClient, registrationId: string): Promise<{ sent: boolean; reason?: string }> {
   try {
-    if (!launchEmailsEnabled()) return { sent: false, reason: 'disabled' };
-    if (!process.env.RESEND_API_KEY) return { sent: false, reason: 'RESEND_API_KEY not set' };
+    const st = launchEmailsStatus();
+    if (!st.enabled) {
+      // say why, instead of failing silently: in the function log and on the row (the admin sees it as "email failed")
+      console.warn(`[launch-notify] receipt email skipped for ${registrationId}: ${st.reason}`);
+      await db.from('event_registrations').update({ notify_error: `not sent: ${st.reason}`.slice(0, 300) }).eq('id', registrationId);
+      return { sent: false, reason: st.reason };
+    }
 
     const { data: r } = await db.from('event_registrations')
       .select('id, event_slug, slot_key, name, email, adults, children, status, adult_names, child_details')
