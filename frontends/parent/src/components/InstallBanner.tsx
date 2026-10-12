@@ -11,6 +11,7 @@ import {
   snoozeInstall,
   useInstallState,
 } from "../lib/install";
+import { usePushPromptWanted } from "../lib/push";
 
 // Pages where a banner would get in the way (sign-in, sign-up, checkout).
 const QUIET_ROUTES = new Set(["/login", "/forgot-password", "/reset-password", "/onboarding", "/book", "/booked", "/payment"]);
@@ -38,6 +39,8 @@ const isMobileBrowser = () =>
  */
 export function InstallBanner({ pathname }: { pathname: string }) {
   const state = useInstallState();
+  // Notifications are asked for first (NotificationPrompt); this waits its turn.
+  const notificationsFirst = usePushPromptWanted();
   const [open, setOpen] = useState(false);
 
   // Bookkeeping for the "second visit / viewed an activity" rule.
@@ -46,7 +49,11 @@ export function InstallBanner({ pathname }: { pathname: string }) {
 
   const installable = !state.installed && (state.native || state.ios);
   const eligible =
-    installable && !QUIET_ROUTES.has(pathname) && isMobileBrowser() && (state.forced || (hasEngaged() && !isSnoozed()));
+    installable &&
+    !notificationsFirst &&
+    !QUIET_ROUTES.has(pathname) &&
+    isMobileBrowser() &&
+    (state.forced || (hasEngaged() && !isSnoozed()));
 
   useEffect(() => {
     if (!eligible) { setOpen(false); return; }
@@ -109,7 +116,9 @@ export function InstallBanner({ pathname }: { pathname: string }) {
         </>
       ) : (
         <>
-          <p className="mt-2 text-sm font-semibold leading-5 text-[#59658d]">Add BabyBrain to your home screen in three taps:</p>
+          <p className="mt-2 text-sm font-semibold leading-5 text-[#59658d]">
+            Add BabyBrain to your home screen in three taps. It's also how you get booking notifications on iPhone:
+          </p>
           <ol className="mt-2.5 space-y-2 text-sm font-semibold text-baby-ink">
             <li className="flex items-center gap-2.5">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-palette-pinkTint text-xs font-black text-baby-cta">1</span>

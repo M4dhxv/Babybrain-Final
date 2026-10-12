@@ -17,6 +17,11 @@ const CHAT_EMAIL_DELAY_MS = 4 * 60 * 60 * 1000; // keep in step with send_pendin
  *  Mirrors the PDPA rule noted in OnboardingPage. */
 const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'providers_added', 'package_rebook']);
 
+/** Never pushed to a device (email only): the promotional flows above, plus the
+ *  "you were missed" nudge, which is a re-engagement prompt rather than news
+ *  about a booking. */
+const NO_PUSH_TYPES = new Set([...MARKETING_TYPES, 'missed_activity']);
+
 /** A notification's `url` as a path on this site, or nothing. It is appended
  *  straight to the app's origin, so anything not starting with a single "/"
  *  ("@evil.example", "//evil.example", ".evil.example") would turn the link
@@ -80,14 +85,21 @@ export async function POST(request: Request) {
   // Push goes out on this first call, ahead of the chat-email-delay logic
   // below — unlike email, push shouldn't wait 4h. push_status guards against
   // the delayed chat re-post (below) sending it a second time.
-  if (notification.push_status === 'pending') {
+  if (notification.push_status === 'pending' && NO_PUSH_TYPES.has(notification.type)) {
+    // Promotional types are email-only: a buzz on the phone is a bigger ask
+    // than marketing-email consent covers.
+    await admin.from('notifications').update({ push_status: 'skipped' }).eq('id', notificationId);
+  } else if (notification.push_status === 'pending') {
     const pushData = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
-    await sendPushToUser(notification.user_id, {
+    const pushResult = await sendPushToUser(notification.user_id, {
       title: sessionWordingTitle(notification.title),
       body: sessionWordingBody(notification.body),
       url: typeof pushData.url === 'string' ? pushData.url : undefined,
-    }).catch((err) => console.error(`[notifications webhook] push failed for ${notificationId}:`, err));
-    await admin.from('notifications').update({ push_status: 'sent' }).eq('id', notificationId);
+    });
+    // 'sent' only when a device actually accepted it, so push_status can be
+    // trusted: no devices / VAPID unset → 'skipped', every device rejected → 'failed'.
+    const pushStatus = pushResult.outcome === 'sent' ? 'sent' : pushResult.outcome === 'failed' ? 'failed' : 'skipped';
+    await admin.from('notifications').update({ push_status: pushStatus }).eq('id', notificationId);
   }
 
   // Chat replies: hold the email until the message has sat unread for 4h.

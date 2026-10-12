@@ -39,6 +39,16 @@ const nextConfig = {
     return [
       { source: '/:path*', headers: SECURITY },
       { source: HASHED_ASSET, headers: IMMUTABLE },
+      // The Web Push worker is registered at scope "/" (see frontends/parent/public/push-sw.js),
+      // wider than its own /app/ directory, which browsers only allow with this header.
+      // Never cached, so a fix to it reaches every device on the next check.
+      {
+        source: '/app/push-sw.js',
+        headers: [
+          { key: 'Service-Worker-Allowed', value: '/' },
+          { key: 'Cache-Control', value: 'no-cache, must-revalidate' },
+        ],
+      },
       { source: '/vendor', headers: NO_STORE },
       { source: '/vendor/', headers: NO_STORE },
       { source: '/', headers: NO_STORE },

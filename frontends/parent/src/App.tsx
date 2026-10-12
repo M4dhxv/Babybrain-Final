@@ -1,5 +1,6 @@
 import { Suspense, useEffect, type ReactNode } from "react";
 import { InstallBanner } from "./components/InstallBanner";
+import { NotificationPrompt } from "./components/NotificationPrompt";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { OfflinePage } from "./pages/OfflinePage";
 import { useOnline } from "./lib/useOnline";
@@ -165,6 +166,7 @@ function App() {
         <Suspense fallback={pathname === "/explore" ? exploreLoader : bootLoader}>{page}</Suspense>
       </RouteErrorBoundary>
       <PullToRefresh />
+      <NotificationPrompt pathname={pathname} />
       <InstallBanner pathname={pathname} />
     </>
   );

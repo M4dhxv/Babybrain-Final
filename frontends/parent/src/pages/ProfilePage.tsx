@@ -60,7 +60,7 @@ import { CHILD_AVATARS } from "../lib/avatars";
 import { dobError } from "../lib/validation";
 import { Chip } from "./prefChips";
 import { lazyRoute } from "../lib/lazyRoute";
-import { isStandalone } from "../lib/install";
+import { requestInstall } from "../lib/install";
 import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "../lib/push";
 
 const MessagesTab = lazyRoute(
@@ -3206,14 +3206,16 @@ export default function ProfilePage() {
   );
 }
 
-/** Settings → Notifications. Only rendered for an installed app (isStandalone) —
- *  iOS can't deliver push to a plain Safari tab at all, and prompting
- *  tab visitors elsewhere is friction with no payoff. Mirrors the toggle
+/** Settings → Notifications. Works in any browser and in the installed app.
+ *  iPhone / iPad only expose push to a Home Screen app, so there it explains
+ *  that and offers the install steps instead of a switch. Mirrors the toggle
  *  pattern of the other Settings cards above it. */
 function NotificationsPanel() {
   const [state, setState] = useState<PushState | "loading">("loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     getPushState().then(setState).catch(() => setState("unsupported"));
@@ -3222,6 +3224,7 @@ function NotificationsPanel() {
   async function toggle() {
     setBusy(true);
     setError(null);
+    setTestMsg(null);
     try {
       setState(state === "subscribed" ? await unsubscribeFromPush() : await subscribeToPush());
     } catch (e) {
@@ -3231,7 +3234,26 @@ function NotificationsPanel() {
     }
   }
 
-  if (!isStandalone() || state === "unsupported") return null;
+  async function sendTest() {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const r = await apiPost<{ ok?: boolean; outcome?: string }>("/api/customer/push-test", {});
+      setTestMsg(
+        r.ok
+          ? "Sent — it should arrive on this device in a few seconds."
+          : r.outcome === "no_devices"
+            ? "No device is subscribed yet. Turn notifications off and on again."
+            : "We couldn't deliver it. Turn notifications off and on again, then retry."
+      );
+    } catch (e) {
+      setTestMsg(e instanceof Error ? e.message : "Couldn't send the test — try again.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (state === "unsupported") return null;
 
   return (
     <div className="mt-4 rounded-[14px] border border-[#EBE3E5] bg-white p-6 shadow-card">
@@ -3241,16 +3263,36 @@ function NotificationsPanel() {
           <p className="mt-1 font-black">Push notifications</p>
           <p className="mt-1 text-sm font-semibold text-[#59658d]">
             {state === "denied"
-              ? "Blocked in your device settings — enable notifications for BabyBrain there to turn this back on."
-              : "Get a notification for booking updates and messages, even when the app is closed."}
+              ? "Blocked in your browser or device settings — allow notifications for BabyBrain there to turn this back on."
+              : state === "needs-install"
+                ? "On iPhone and iPad, add BabyBrain to your Home Screen to get booking notifications."
+                : "Get a notification for booking updates and messages, even when BabyBrain is closed."}
           </p>
         </div>
-        {state !== "denied" && state !== "loading" && (
+        {state === "needs-install" && (
+          <Button type="button" variant="primary" onClick={() => void requestInstall()}>
+            How to install
+          </Button>
+        )}
+        {state !== "denied" && state !== "loading" && state !== "needs-install" && (
           <Button type="button" variant={state === "subscribed" ? "outline" : "primary"} onClick={toggle} disabled={busy}>
             {busy ? "Saving…" : state === "subscribed" ? "Turn off" : "Turn on"}
           </Button>
         )}
       </div>
+      {state === "subscribed" && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={sendTest}
+            disabled={testing}
+            className="text-sm font-black text-baby-cta underline-offset-2 hover:underline disabled:opacity-60"
+          >
+            {testing ? "Sending…" : "Send a test notification"}
+          </button>
+          {testMsg && <p className="mt-1 text-sm font-semibold text-[#59658d]">{testMsg}</p>}
+        </div>
+      )}
       {error && <p className="mt-3 text-sm font-bold text-red-600">{error}</p>}
     </div>
   );
