@@ -91,7 +91,43 @@ async function saveSubscription(sub: PushSubscription): Promise<void> {
   if (error) throw error;
 }
 
+// --- Is push switched on for this deployment? -------------------------------
+
+let serverEnabled: boolean | null = null;
+let configPromise: Promise<boolean> | null = null;
+const configListeners = new Set<() => void>();
+
+/**
+ * Asks the server (GET /api/push/config) whether the VAPID variables are set.
+ * Until it says yes nothing in the app asks for permission or offers the
+ * switch. Fails closed: an error counts as "not enabled" for this page load.
+ */
+export function loadPushConfig(): Promise<boolean> {
+  if (!configPromise) {
+    const base = (import.meta.env.VITE_API_BASE as string) || "";
+    configPromise = fetch(`${base}/api/push/config`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { enabled: false }))
+      .then((j: { enabled?: boolean }) => j.enabled === true)
+      .catch(() => false)
+      .then((v) => {
+        serverEnabled = v;
+        configListeners.forEach((l) => l());
+        return v;
+      });
+  }
+  return configPromise;
+}
+
+export function usePushServerEnabled(): boolean {
+  return useSyncExternalStore(
+    (cb) => { configListeners.add(cb); return () => { configListeners.delete(cb); }; },
+    () => serverEnabled === true,
+    () => false
+  );
+}
+
 export async function getPushState(): Promise<PushState> {
+  if (!(await loadPushConfig())) return "unsupported";
   if (!supported()) return pushNeedsInstall() ? "needs-install" : "unsupported";
   if (Notification.permission === "denied") return "denied";
   const reg = await navigator.serviceWorker.getRegistration("/");
@@ -106,7 +142,10 @@ export async function getPushState(): Promise<PushState> {
  * saves the subscription against the signed-in parent.
  */
 export async function subscribeToPush(): Promise<PushState> {
-  if (!supported()) return pushNeedsInstall() ? "needs-install" : "unsupported";
+  // The config is already loaded by the time a tap can happen (the prompt and
+  // the Settings switch both wait for it), so this resolves without a real
+  // await and the permission request below still counts as the tap's own.
+  if (!serverEnabled || !supported()) return pushNeedsInstall() ? "needs-install" : "unsupported";
 
   // First await in the handler, before anything else, to keep the user gesture.
   const permission = await Notification.requestPermission();
@@ -143,6 +182,7 @@ let syncedFor: string | null = null;
  */
 export async function syncPushSubscription(userId: string): Promise<void> {
   if (!supported() || Notification.permission !== "granted" || syncedFor === userId) return;
+  if (!(await loadPushConfig())) return;
   syncedFor = userId;
   try {
     const reg = await pushRegistration();

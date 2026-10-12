@@ -5,12 +5,14 @@ import {
   PUSH_CLOSE_MS,
   PUSH_NOT_NOW_MS,
   isPushSnoozed,
+  loadPushConfig,
   pushAvailable,
   pushPermission,
   setPushPromptWanted,
   snoozePush,
   subscribeToPush,
   syncPushSubscription,
+  usePushServerEnabled,
 } from "../lib/push";
 
 // Pages where a popup would get in the way (sign-in, sign-up, checkout).
@@ -46,8 +48,13 @@ export function NotificationPrompt({ pathname }: { pathname: string }) {
     if (userId) void syncPushSubscription(userId);
   }, [userId]);
 
+  // Only once the server confirms the VAPID variables are set: otherwise a
+  // parent would be asked for a permission nothing can use yet.
+  const serverEnabled = usePushServerEnabled();
+  useEffect(() => { void loadPushConfig(); }, []);
+
   const due =
-    !!userId && !dismissed && pushAvailable() && pushPermission() === "default" && !isPushSnoozed();
+    !!userId && serverEnabled && !dismissed && pushAvailable() && pushPermission() === "default" && !isPushSnoozed();
   const eligible = due && !QUIET_ROUTES.has(pathname);
 
   // Held for as long as it is due, so the install banner waits its turn.
