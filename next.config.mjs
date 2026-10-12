@@ -59,6 +59,12 @@ const nextConfig = {
 
   async redirects() {
     return [
+      // `/vendors` (plural) is a natural thing to type or link to, but it is
+      // neither the portal (`/vendor`) nor handed to the parent SPA (the
+      // catch-all below excludes every path that starts with "vendor"), so it
+      // fell through to Next's 404. Send it to the portal landing page.
+      { source: '/vendors', destination: '/vendor/', permanent: false },
+
       // The vendor portal is a HashRouter SPA that only answers at `/vendor`
       // and `/vendor/`. A bare deep path — `/vendor/login` from an old invite
       // mail, or anything typed/guessed — has no rewrite and fell through to
