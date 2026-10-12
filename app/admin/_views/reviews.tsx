@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, peekCache, sgTime } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, peekCache, sgTime } from '../_lib/core';
 
 type ReviewRow = {
   id: string; rating: number; comment: string | null; createdAt: string; reviewer: string;
@@ -15,8 +15,8 @@ const stars = (n: number) => '★'.repeat(Math.max(0, Math.min(5, Math.round(n))
 type Option = { value: string; label: string; hint?: string };
 
 /** A dropdown of checkboxes: empty selection = no filter. */
-function MultiSelect({ label, allLabel, options, selected, onChange, minWidth = 200 }: {
-  label: string; allLabel: string; options: Option[]; selected: Set<string>; onChange: (next: Set<string>) => void; minWidth?: number;
+function MultiSelect({ label, allLabel, options, selected, onChange }: {
+  label: string; allLabel: string; options: Option[]; selected: Set<string>; onChange: (next: Set<string>) => void;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -34,24 +34,22 @@ function MultiSelect({ label, allLabel, options, selected, onChange, minWidth = 
   const summary = selected.size === 0 ? allLabel : names.length <= 1 ? (names[0] ?? `${selected.size} selected`) : `${names.length} selected`;
 
   return (
-    <div ref={box} style={{ position: 'relative' }}>
-      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={label} onClick={() => setOpen((o) => !o)}
-        style={{ minWidth, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.panel2, color: C.text,
-          border: `1px solid ${selected.size ? C.blue : C.border}`, borderRadius: 10, padding: '9px 12px', font: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>{summary}</span>
-        <span aria-hidden style={{ color: C.muted, fontSize: 11 }}>{open ? '▴' : '▾'}</span>
+    <div ref={box} style={{ position: 'relative', minWidth: 0 }}>
+      <button type="button" className="bb-select" aria-haspopup="listbox" aria-expanded={open} aria-label={label} onClick={() => setOpen((o) => !o)}
+        style={{ ...input(), textAlign: 'left', font: 'inherit', fontSize: 14, border: `1px solid ${selected.size ? C.blue : C.border}` }}>
+        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</span>
       </button>
       {open && (
-        <div role="listbox" aria-multiselectable style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 6px)', left: 0, minWidth: '100%', width: 'max-content', maxWidth: 360,
-          maxHeight: 320, overflowY: 'auto', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.45)' }}>
+        <div role="listbox" aria-multiselectable style={{ position: 'absolute', zIndex: 30, top: 'calc(100% + 6px)', left: 0, minWidth: '100%', width: 'max-content', maxWidth: 380,
+          maxHeight: 300, overflowY: 'auto', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.45)' }}>
           <button type="button" onClick={() => onChange(new Set())} disabled={selected.size === 0}
             style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: selected.size ? C.blue : C.muted, font: 'inherit', fontSize: 12, fontWeight: 800, padding: '6px 8px', cursor: selected.size ? 'pointer' : 'default' }}>
             {selected.size ? `Clear (${selected.size})` : allLabel}
           </button>
           {options.length === 0 && <div style={{ color: C.muted, fontSize: 12, padding: '6px 8px' }}>Nothing to choose.</div>}
           {options.map((o) => (
-            <label key={o.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 8px', fontSize: 13, cursor: 'pointer', borderRadius: 8 }}>
-              <input type="checkbox" checked={selected.has(o.value)} onChange={() => toggle(o.value)} style={{ marginTop: 3 }} />
+            <label key={o.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', fontSize: 13, fontWeight: 600, cursor: 'pointer', borderRadius: 8 }}>
+              <input type="checkbox" checked={selected.has(o.value)} onChange={() => toggle(o.value)} style={{ marginTop: 2 }} />
               <span>{o.label}{o.hint && <span style={{ color: C.muted, fontSize: 12 }}> · {o.hint}</span>}</span>
             </label>
           ))}
@@ -122,6 +120,7 @@ export default function ReviewsView() {
   const shown = groups.reduce((n, g) => n + g.reviews.length, 0);
   const overall = shown ? groups.reduce((s, g) => s + g.avg * g.reviews.length, 0) / shown : 0;
   const filtered = vendors.size + activities.size + ratings.size > 0;
+  const lab: React.CSSProperties = { display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 };
   const clearAll = () => { setVendors(new Set()); setActivities(new Set()); setRatings(new Set()); };
 
   return (
@@ -134,17 +133,25 @@ export default function ReviewsView() {
         </span>
       </div>
 
-      <div style={{ ...card(), display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <MultiSelect label="Filter by vendor" allLabel={`All vendors (${data.vendors.length})`} selected={vendors} onChange={setVendors}
-          options={data.vendors.map((v) => ({ value: v.key, label: v.name }))} />
-        <MultiSelect label="Filter by activity" allLabel={`All activities (${activityOptions.length})`} selected={activities} onChange={setActivities}
-          options={activityOptions} minWidth={220} />
-        <MultiSelect label="Filter by stars" allLabel="All ratings" selected={ratings} onChange={setRatings} minWidth={150}
-          options={[5, 4, 3, 2, 1].map((n) => ({ value: String(n), label: `${'★'.repeat(n)}${'☆'.repeat(5 - n)}  ${n} star${n === 1 ? '' : 's'}` }))} />
-        {filtered && (
-          <button type="button" onClick={clearAll}
-            style={{ background: 'none', border: 'none', color: C.blue, font: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Clear filters</button>
-        )}
+      <div style={{ ...card(), marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, alignItems: 'end' }}>
+          <div style={lab}>Vendor
+            <MultiSelect label="Filter by vendor" allLabel={`All vendors (${data.vendors.length})`} selected={vendors} onChange={setVendors}
+              options={data.vendors.map((v) => ({ value: v.key, label: v.name }))} />
+          </div>
+          <div style={lab}>Activity
+            <MultiSelect label="Filter by activity" allLabel={`All activities (${activityOptions.length})`} selected={activities} onChange={setActivities}
+              options={activityOptions} />
+          </div>
+          <div style={lab}>Stars
+            <MultiSelect label="Filter by stars" allLabel="All ratings" selected={ratings} onChange={setRatings}
+              options={[5, 4, 3, 2, 1].map((n) => ({ value: String(n), label: `${'★'.repeat(n)}${'☆'.repeat(5 - n)}  ${n} star${n === 1 ? '' : 's'}` }))} />
+          </div>
+          {filtered && (
+            <button type="button" onClick={clearAll}
+              style={{ background: 'none', border: 'none', color: C.blue, font: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer', padding: '11px 0', textAlign: 'left' }}>Clear filters</button>
+          )}
+        </div>
       </div>
 
       {groups.length === 0 && <p style={{ color: C.muted }}>No reviews{filtered ? ' match these filters' : ' yet'}.</p>}

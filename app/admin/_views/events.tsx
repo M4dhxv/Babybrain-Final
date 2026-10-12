@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn, td, th, toast } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn, td, th, toast, Select } from '../_lib/core';
 
 type EventSummary = {
   slug: string; title: string; starts_on: string | null; venue: string | null;
@@ -366,17 +366,17 @@ function AddForm({ slug, slots, onDone }: { slug: string; slots: Slot[]; onDone:
         <label><span style={lbl}>Email (optional)</span><input style={input()} type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
         <label><span style={lbl}>Phone (Singapore)</span><input style={input()} inputMode="numeric" placeholder="9123 4567" value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
         <label><span style={lbl}>Slot</span>
-          <select style={input()} value={f.slot} onChange={(e) => set('slot', e.target.value)}>
+          <Select style={input()} value={f.slot} onChange={(e) => set('slot', e.target.value)}>
             {slots.map((s) => <option key={s.slot_key} value={s.slot_key}>{s.label} ({s.seatsLeft} left)</option>)}
-          </select>
+          </Select>
         </label>
         <label><span style={lbl}>Second adult (optional)</span><input style={input()} value={f.secondAdult} onChange={(e) => set('secondAdult', e.target.value)} /></label>
         <label><span style={lbl}>Placement</span>
-          <select style={input()} value={f.status} onChange={(e) => set('status', e.target.value)}>
+          <Select style={input()} value={f.status} onChange={(e) => set('status', e.target.value)}>
             <option value="">Automatic (by capacity)</option>
             <option value="confirmed">Confirmed — even if full</option>
             <option value="waitlisted">Waitlist</option>
-          </select>
+          </Select>
         </label>
       </div>
 
@@ -386,9 +386,9 @@ function AddForm({ slug, slots, onDone }: { slug: string; slots: Slot[]; onDone:
           {kids.map((k, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px auto', gap: 8 }}>
               <input style={input()} placeholder={`Child ${i + 1} name`} value={k.name} onChange={(e) => setKids((p) => p.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-              <select style={input()} value={k.age} onChange={(e) => setKids((p) => p.map((x, j) => j === i ? { ...x, age: e.target.value } : x))}>
+              <Select style={input()} value={k.age} onChange={(e) => setKids((p) => p.map((x, j) => j === i ? { ...x, age: e.target.value } : x))}>
                 <option value="">Age</option>{AGES.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
+              </Select>
               {kids.length > 1 ? <button type="button" style={tabBtn(false)} onClick={() => setKids((p) => p.filter((_, j) => j !== i))}>Remove</button> : <span />}
             </div>
           ))}

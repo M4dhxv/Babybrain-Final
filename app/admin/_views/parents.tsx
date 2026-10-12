@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MultiSelect } from '../_lib/multiselect';
-import { Badge, C, Skeleton, adminFetch, card, input, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, sgClock } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, sgClock, Select } from '../_lib/core';
 
 // ---- Parents: who signed up, what they hold and spend, filterable ----
 type ParentRowT = {
@@ -440,7 +440,7 @@ export default function ParentsView() {
 
   const lab: React.CSSProperties = { display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 };
   const sel = (k: keyof ParentFilters, opts: [string, string][]) => (
-    <select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+    <Select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
   );
   const sortTh = (k: string, label: string, right?: boolean) => (
     <th style={{ ...th(), textAlign: right ? 'right' : 'left', cursor: 'pointer', userSelect: 'none' }}

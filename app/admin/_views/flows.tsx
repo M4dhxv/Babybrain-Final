@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { C, CATEGORY_ORDER, Skeleton, adminFetch, card, tabBtn, peekCache } from '../_lib/core';
 
 type EmailFlow = {
-  type: string; category: 'Account' | 'Parent' | 'Provider'; label: string; description: string;
+  type: string; category: 'Account' | 'Parent' | 'Provider' | 'Events'; label: string; description: string;
   wired: boolean; trigger: string;
   last30d: { sent: number; pending: number; failed: number; skipped: number; total: number };
 };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { planLabel, planMonthlyFeeCents } from '@/lib/plans';
-import { C, Skeleton, adminFetch, card, input, sgd, td, th, toast, peekCache } from '../_lib/core';
+import { C, Skeleton, adminFetch, card, input, sgd, td, th, toast, peekCache, Select } from '../_lib/core';
 import { type Col, SortTh, TableFooter, downloadCsv, useTable } from '../_lib/table';
 
 // ---- Commercials: bespoke commission terms per vendor ----
@@ -160,14 +160,14 @@ export default function CommercialsView() {
                       follows the Plan column, not something to edit per row. */}
                   <td style={td()}>{sgd(planMonthlyFeeCents(r.plan))} / mo</td>
                   <td style={td()}>
-                    <select
+                    <Select
                       style={{ ...input(), width: 118, padding: '6px 8px' }}
                       value={r.fee_payer}
                       onChange={(e) => void save(r.provider_id, { fee_payer: e.target.value as 'platform' | 'vendor' })}
                     >
                       <option value="platform">We absorb</option>
                       <option value="vendor">Vendor pays</option>
-                    </select>
+                    </Select>
                   </td>
                   <td style={td()}>
                     <input

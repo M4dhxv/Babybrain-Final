@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache, Select } from '../_lib/core';
 
 type VendorResult = { name: string; website: string; outcome: 'price_updated' | 'no_price' | 'no_wp'; price_updated: number };
 type VendorRun = {
@@ -362,11 +362,11 @@ export default function AddVendorView() {
           <div style={grid2}>
             <div style={field}>
               <label style={label('')}>Business type *</label>
-              <select value={vendorCategory} onChange={(e) => setVendorCategory(e.target.value)} style={input()}>
+              <Select value={vendorCategory} onChange={(e) => setVendorCategory(e.target.value)} style={input()}>
                 {(meta?.vendorCategories ?? Object.keys(VENDOR_CATEGORY_LABELS)).map((v) => (
                   <option key={v} value={v}>{VENDOR_CATEGORY_LABELS[v] ?? v}</option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div style={field}>
               <label style={label('')}>Website</label>
@@ -515,10 +515,10 @@ export default function AddVendorView() {
                 </div>
                 <div>
                   <label style={label('')}>Category</label>
-                  <select value={a.category_slug} style={input()}
+                  <Select value={a.category_slug} style={input()}
                     onChange={(e) => setActivities((p) => p.map((x, j) => j === i ? { ...x, category_slug: e.target.value } : x))}>
                     {(meta?.categories ?? []).map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <button type="button" title="Remove class"
                   onClick={() => setActivities((p) => p.filter((_, j) => j !== i))}
@@ -891,16 +891,16 @@ function EditVendorModal({
             <div style={grid2}>
               <div>
                 <label style={lbl}>Business type</label>
-                <select value={d.vendor_category ?? 'other'} style={input()}
+                <Select value={d.vendor_category ?? 'other'} style={input()}
                   onChange={(e) => set('vendor_category', e.target.value)}>
                   {vendorCategories.map((v) => <option key={v} value={v}>{VENDOR_CATEGORY_LABELS[v] ?? v}</option>)}
-                </select>
+                </Select>
               </div>
               <div>
                 <label style={lbl}>Listing status</label>
-                <select value={d.status} style={input()} onChange={(e) => set('status', e.target.value)}>
+                <Select value={d.status} style={input()} onChange={(e) => set('status', e.target.value)}>
                   {['active', 'draft', 'pending', 'suspended'].map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -1057,10 +1057,10 @@ function EditVendorModal({
                     </div>
                     <div>
                       <label style={lbl}>Category</label>
-                      <select value={a.category_slug ?? ''} style={input()} disabled={gone}
+                      <Select value={a.category_slug ?? ''} style={input()} disabled={gone}
                         onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, category_slug: e.target.value } : x))}>
                         {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-                      </select>
+                      </Select>
                     </div>
                     <button type="button" style={{ ...tabBtn(false), color: gone ? C.blue : C.pink, height: 42 }}
                       onClick={() => setDropAct((p) => gone ? p.filter((x) => x !== a.id) : [...p, a.id])}>
@@ -1134,11 +1134,11 @@ function EditVendorModal({
                           placeholder='Shown to parents instead of "Custom", e.g. "We travel to you"'
                           onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, custom_location_label: e.target.value } : x))} />
                       ) : (
-                        <select value={a.location_id ?? ''} style={{ ...input(), marginTop: 8 }} disabled={gone}
+                        <Select value={a.location_id ?? ''} style={{ ...input(), marginTop: 8 }} disabled={gone}
                           onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, location_id: e.target.value || null } : x))}>
                           <option value="">No fixed venue</option>
                           {d.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
+                        </Select>
                       )}
                     </div>
                   </div>

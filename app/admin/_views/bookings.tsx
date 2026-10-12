@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, sgClock, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, sgClock, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone, Select } from '../_lib/core';
 import { MultiSelect } from '../_lib/multiselect';
 import type { ParentFilters } from './parents';
 
@@ -165,7 +165,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
 
   const lab: React.CSSProperties = { display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700 };
   const sel = (k: keyof Filters, opts: [string, string][]) => (
-    <select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+    <Select value={f[k]} onChange={set(k)} style={input()}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
   );
   const sortTh = (k: string, label: string, align: 'left' | 'center' | 'right' = 'left') => (
     <th style={{ ...th(), textAlign: align, cursor: 'pointer', userSelect: 'none' }}

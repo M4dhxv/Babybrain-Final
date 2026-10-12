@@ -50,6 +50,29 @@ function sampleData(type: string): EmailData {
       return { action_url: 'https://babybrain-final.vercel.app/auth/callback' };
     case 'package_rebook':
       return { ...activity, provider_name: 'BabyBrain Demo Studio' };
+    case 'event_registration_confirmed':
+    case 'event_waitlist_promoted':
+    case 'event_registration_waitlisted':
+      // The launch-event emails read the fields lib/launch-event-notify.ts builds (launchEmailData).
+      return {
+        event_title: 'BabyBrain x The Artground launch event',
+        date_text: 'Sunday, 8 November 2026',
+        slot_label: '10:00 am - 11:00 am',
+        duration: '1 hour',
+        venue: 'The Artground',
+        address: '1 Holland Village Way, #01-20, Singapore 275748',
+        others: 'Ben, Mia',
+        party_text: '2 adults and 2 children',
+        activity_name: 'BabyBrain Launch Event',
+        starts_at: '2026-11-08T10:00:00+08:00',
+        ends_at: '2026-11-08T11:00:00+08:00',
+        calendar_venue: 'The Artground, 1 Holland Village Way, #01-20, Singapore 275748',
+        rsvp_href: '/events',
+      };
+    case 'event_ticket_pending':
+      return { ...activity, provider_name: 'BabyBrain Demo Studio' };
+    case 'event_ticket_refunded':
+      return { ...activity, amount: 'S$28.00' };
     case 'provider_claim_code':
       return { code: '481920', business_name: 'Little Explorers Studio', expires_in_minutes: 30 };
     default:

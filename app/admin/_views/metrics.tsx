@@ -251,10 +251,12 @@ export default function MetricsView({ onOpenParents, onOpenBookings, onGoTab }: 
 
   // A row's optional 5th item makes the card a link to the Parents tab with those filters on.
   // A row's optional 5th item makes the card a link: to the Parents tab, or to the Bookings tab, with those filters on.
-  type CardLink = { to: 'parents'; filters: Partial<ParentFilters> } | { to: 'bookings'; filters: Record<string, string> };
+  type CardLink = { to: 'parents'; filters: Partial<ParentFilters> } | { to: 'bookings'; filters: Record<string, string> } | { to: 'tab'; tab: string; label: string };
   const P = (filters: Partial<ParentFilters>): CardLink => ({ to: 'parents', filters });
   // The Bookings list defaults to paid / credit / token only, so a card that counts every booking asks for all payment types (pay=all).
   const B = (filters: Record<string, string>): CardLink => ({ to: 'bookings', filters: { hide_abandoned: '1', pay: 'all', ...filters } });
+  /** A card that opens another admin tab as it is (no filters). */
+  const T = (tab: string, label: string): CardLink => ({ to: 'tab', tab, label });
   type Row = [string, number | string, string, string?, CardLink?];
   const sgDay_ = (msAgo: number) => new Date(Date.now() - msAgo).toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
   const section = (title: string, rows: Row[]) => (
@@ -266,11 +268,11 @@ export default function MetricsView({ onOpenParents, onOpenBookings, onGoTab }: 
             <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
             <div style={{ fontSize: 28, fontWeight: 900, color, marginTop: 6 }}>{value}</div>
             {sub && <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>}
-            {link && <div className="bb-cardlink" style={{ color: C.blue, fontSize: 12, fontWeight: 800, marginTop: 6 }}>{link.to === 'bookings' ? 'View bookings →' : 'View parents →'}</div>}
+            {link && <div className="bb-cardlink" style={{ color: C.blue, fontSize: 12, fontWeight: 800, marginTop: 6 }}>{link.to === 'tab' ? `${link.label} →` : link.to === 'bookings' ? 'View bookings →' : 'View parents →'}</div>}
           </>);
           return link ? (
-            <button key={label} type="button" className="bb-cardbtn" onClick={() => (link.to === 'bookings' ? onOpenBookings(link.filters) : onOpenParents(link.filters))}
-              title={link.to === 'bookings' ? 'Open these bookings in the Bookings tab' : 'Open these parents in the Parents tab'} style={{ ...card(), textAlign: 'left', cursor: 'pointer', font: 'inherit', color: C.text }}>
+            <button key={label} type="button" className="bb-cardbtn" onClick={() => (link.to === 'tab' ? onGoTab(link.tab) : link.to === 'bookings' ? onOpenBookings(link.filters) : onOpenParents(link.filters))}
+              title={link.to === 'tab' ? `Open the ${link.label.replace('View ', '')} tab` : link.to === 'bookings' ? 'Open these bookings in the Bookings tab' : 'Open these parents in the Parents tab'} style={{ ...card(), textAlign: 'left', cursor: 'pointer', font: 'inherit', color: C.text }}>
               {inner}
             </button>
           ) : <div key={label} style={card()}>{inner}</div>;
@@ -325,7 +327,7 @@ export default function MetricsView({ onOpenParents, onOpenBookings, onGoTab }: 
         ['Upcoming fill rate', pctText(m.health.upcomingFillRate), C.green, `${m.health.upcomingSessions} sessions with a capacity`],
         ['On waitlists', m.health.waitlisted, C.muted, undefined, B({ status: 'waitlisted' })],
         ['Activities', m.totals.activities, C.muted],
-        ['Reviews', m.totals.reviews, C.muted],
+        ['Reviews', m.totals.reviews, C.muted, undefined, T('reviews', 'View reviews')],
       ])}
 
       {section('Subscriptions', [

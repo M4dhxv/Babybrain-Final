@@ -19,7 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 type FlowMeta = {
   type: string;
   dbType?: string; // the notifications.type value this renders under, if different
-  category: 'Account' | 'Parent' | 'Provider';
+  category: 'Account' | 'Parent' | 'Provider' | 'Events';
   label: string;
   description: string;
   wired: boolean;
@@ -61,6 +61,17 @@ const FLOWS: FlowMeta[] = [
   { type: 'package_rebook', category: 'Parent', label: 'Re-book your package', description: 'Nudge to re-buy a package the day after it expires.', wired: true, trigger: 'Daily pg_cron job, matches package_purchases.expires_at (SGT date) against yesterday (migration 00124).' },
 
   // ---- Provider lifecycle ----
+  // ---- Events ----
+  // The BabyBrain launch event (public/events): sent by lib/launch-event-notify.ts straight through Resend, not via
+  // the notifications table, so the 30-day counts stay at 0. They only send when RESEND_API_KEY is set and
+  // LAUNCH_EVENT_EMAILS is on (held while the sending domain is being verified).
+  { type: 'event_registration_confirmed', category: 'Events', label: 'Launch event: registration confirmed', description: 'The place is confirmed: date, time slot, venue, other attendees, add-to-calendar and a link to update the RSVP.', wired: true, trigger: 'Registering on /events when the slot has room (lib/launch-event-notify.ts). Held: only sends when LAUNCH_EVENT_EMAILS is on and Resend is configured.' },
+  { type: 'event_registration_waitlisted', category: 'Events', label: 'Launch event: on the waitlist', description: 'The slot was full, so the party is waitlisted and told they will be emailed if a spot opens.', wired: true, trigger: 'Registering on /events when the slot is full (lib/launch-event-notify.ts). Held behind LAUNCH_EVENT_EMAILS like the confirmation.' },
+  { type: 'event_waitlist_promoted', category: 'Events', label: 'Launch event: spot opened up', description: 'A waitlisted party got a place (a cancellation, a raised capacity or an admin promotion). Same email as the confirmation with a "Good news" line.', wired: true, trigger: 'DB auto-promotion (migration 00232) or an admin promoting from the Events tab, then notifyPromoted() (lib/launch-event-notify.ts). Held behind LAUNCH_EVENT_EMAILS.' },
+  // Wix Events tickets bought through BabyBrain (these do go through notifications).
+  { type: 'event_ticket_pending', category: 'Events', label: 'Event ticket: payment received, confirming', description: 'The parent paid for a Wix event but the organiser has not accepted the order yet, so they are told it is being confirmed.', wired: true, trigger: 'Wix Events checkout finalise (lib/wix/finalize-event-checkout.ts, lib/wix/event-notify.ts).' },
+  { type: 'event_ticket_refunded', category: 'Events', label: 'Event ticket: refunded', description: 'An admin refunded a Wix event ticket in full.', wired: true, trigger: 'Admin refund of an event order (lib/wix/event-order-admin.ts, lib/wix/event-notify.ts).' },
+
   { type: 'provider_welcome_free', category: 'Provider', label: 'Welcome (Free)', description: 'First email after a vendor signs up on Free.', wired: false, trigger: 'Not wired to anything yet.' },
   { type: 'provider_welcome_growth', category: 'Provider', label: 'Welcome (Growth)', description: 'Welcome variant for vendors on Growth.', wired: false, trigger: 'Not wired to anything yet.' },
   { type: 'provider_welcome_pro', category: 'Provider', label: 'Welcome (Pro)', description: 'Welcome variant for vendors on Pro.', wired: false, trigger: 'Not wired to anything yet.' },
