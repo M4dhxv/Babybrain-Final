@@ -4,6 +4,7 @@ import { supabase, AUTH_STORAGE_KEY } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
 import { clearPlanCache } from "../lib/planCache";
 import { reportDevice } from "../lib/device";
+import { releasePushOnSignOut } from "../lib/push";
 import { goTo, appUrl } from "../lib/nav";
 import { getAttribution } from "../lib/attribution";
 import type { ParentProfile, Child } from "../lib/database.types";
@@ -324,6 +325,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return error ? { error: authErrorMessage(error) } : {};
     },
     signOut: async () => {
+      // Needs the session, so before it ends: stop this device getting the account's pushes.
+      await releasePushOnSignOut();
       await supabase.auth.signOut();
       // Full reload on the way out so no signed-in state (dashboard caches,
       // favourites, plan) lingers in memory for the landing page.

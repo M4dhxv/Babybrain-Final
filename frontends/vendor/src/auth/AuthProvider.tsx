@@ -6,6 +6,7 @@ import type { Provider, ProviderRole, SubscriptionPlan } from '@/lib/database.ty
 import { getCachedSubscription, setCachedSubscription, clearCachedSubscription, getCachedProvider, setCachedProvider } from '@/lib/providerCache';
 import { cacheInvalidate } from '@/lib/queryCache';
 import { disconnectChat } from '@/lib/chat';
+import { releasePushOnSignOut } from '@/lib/push';
 
 /** supabase-js falls back to `JSON.stringify(body)` when a GoTrue error
  *  response has none of msg/message/error_description/error (see auth-js's
@@ -333,6 +334,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // getChatClient() call to open a fresh connection for whoever signs in
       // next.
       await disconnectChat();
+      // Needs the session, so before it ends: stop this device getting the account's pushes.
+      await releasePushOnSignOut();
       await supabase.auth.signOut();
     },
     refreshProvider: async () => {

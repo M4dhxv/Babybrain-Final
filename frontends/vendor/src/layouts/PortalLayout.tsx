@@ -70,6 +70,15 @@ export default function PortalLayout() {
      the feed seen on mount — clears the bubble right away instead of waiting
      out the poll. */
   const unreadNotifications = useUnreadNotifications(provider?.id ?? null, location.pathname);
+  // Installed portal: the unread count on the home-screen icon (Badging API; a no-op elsewhere).
+  const badgeTotal = unreadMessages + unreadNotifications;
+  useEffect(() => {
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    try {
+      if (badgeTotal > 0) void nav.setAppBadge?.(badgeTotal)?.catch(() => {});
+      else void nav.clearAppBadge?.()?.catch(() => {});
+    } catch { /* unsupported */ }
+  }, [badgeTotal]);
   const renewLabel = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' })
     : '';

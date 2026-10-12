@@ -69,6 +69,11 @@ export async function GET(request: Request) {
   if (app === 'yes') rows = rows.filter((r) => r.surface === 'app' || r.surface === 'both');
   else if (app === 'no') rows = rows.filter((r) => r.surface !== 'app' && r.surface !== 'both');
 
+  // Notifications on: at least one device with push turned on (push_subscriptions).
+  const push = sp.get('push');
+  if (push === 'yes') rows = rows.filter((r) => r.pushDevices > 0);
+  else if (push === 'no') rows = rows.filter((r) => r.pushDevices === 0);
+
   const plan = sp.get('plan');
   if (plan === 'free' || plan === 'plus' || plan === 'plus_past_due' || plan === 'plus_canceled') rows = rows.filter((r) => r.plan === plan);
 
@@ -133,13 +138,13 @@ export async function GET(request: Request) {
 
   if (sp.get('format') === 'csv') {
     const head = ['Name', 'Email', 'Phone', 'Postal code', 'Children', 'Plan', 'Bookings', 'Upcoming', 'Spend (SGD)',
-      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account', 'Devices', 'App or web', 'App installed',
+      'Last booking', 'Marketing', 'Onboarded', 'Joined', 'Account type', 'Vendor', 'Preferred regions', 'Test account', 'Devices', 'App or web', 'App installed', 'Notification devices',
       'Last active', 'Days since joined', 'Signup source', 'Signup medium', 'Signup campaign', 'Signup referrer'];
     const body = rows.map((r) => [r.name, r.email, r.phone, r.area,
       r.children.map((c) => `${c.name} (${c.ageMonths < 24 ? `${c.ageMonths}m` : `${Math.floor(c.ageMonths / 12)}y`})`).join('; '),
       r.plan, r.bookings, r.upcoming, r.spend.toFixed(2), r.lastBookingAt?.slice(0, 10) ?? '', r.marketing,
       r.onboarded ? 'yes' : 'no', r.joinedAt.slice(0, 10), r.kind, r.vendorNames.join('; '), r.regions.join('; '), r.isTest ? 'yes' : 'no',
-      r.devices.map((d) => DEVICE_LABEL[d.os]).join('; '), r.surface, r.surface === 'app' || r.surface === 'both' ? 'yes' : 'no',
+      r.devices.map((d) => DEVICE_LABEL[d.os]).join('; '), r.surface, r.surface === 'app' || r.surface === 'both' ? 'yes' : 'no', r.pushDevices,
       r.lastActiveAt?.slice(0, 10) ?? '', Math.floor((now - Date.parse(r.joinedAt)) / DAY),
       r.signupSource ?? '', r.signupMedium ?? '', r.signupCampaign ?? '', r.signupReferrer ?? ''].map(csvCell).join(','));
     return new NextResponse([head.join(','), ...body].join('\n') + '\n', {
@@ -149,7 +154,9 @@ export async function GET(request: Request) {
 
   const pageSize = 50;
   const total = rows.length;
+  // Of the parents matching the filters, how many can be reached by push (the adoption number).
+  const withPush = rows.filter((r) => r.pushDevices > 0).length;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, Math.floor(num(sp.get('page')) ?? 1)), pages);
-  return NextResponse.json({ rows: rows.slice((page - 1) * pageSize, page * pageSize), total, page, pages, pageSize });
+  return NextResponse.json({ rows: rows.slice((page - 1) * pageSize, page * pageSize), total, withPush, page, pages, pageSize });
 }

@@ -75,6 +75,8 @@ export type AdminParent = {
   lastSeenAt: string | null;
   /** Latest sign of life: the later of the last app/web visit and the last booking. Null if neither is on record. */
   lastActiveAt: string | null;
+  /** How many devices have push notifications turned on (push_subscriptions). 0 = none. */
+  pushDevices: number;
   /** First-touch campaign/referrer recorded at sign-up (migration 00226). All null for parents who joined before it. */
   signupSource: string | null; signupMedium: string | null; signupCampaign: string | null; signupReferrer: string | null;
 };
@@ -133,7 +135,7 @@ export async function loadParents(admin: SupabaseClient, fresh = false): Promise
 
 async function build(admin: SupabaseClient, now: number, fresh: boolean): Promise<AdminParent[]> {
   const cols = 'id, full_name, email, phone, postal_code, onboarding_completed_at, marketing_consent_at, marketing_consent_withdrawn_at, created_at';
-  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid, pkgEarnings, pkgBuyers, deviceRows] = await Promise.all([
+  const [parents, kids, prefs, bookings, sessions, subs, seats, testPaid, stripePaid, pkgEarnings, pkgBuyers, deviceRows, pushRows] = await Promise.all([
     // is_test comes from migration 00207 and is_real_override from 00212; read whichever exist.
     (async () => {
       let select: string = cols;
@@ -176,7 +178,12 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     // Devices (migration 00215). Until it is applied the read fails and every parent just shows no device.
     fetchAll<{ user_id: string; os: string; surface: string; last_seen_at: string }>((f, t) =>
       admin.from('parent_devices').select('user_id, os, surface, last_seen_at').range(f, t)).catch(() => []),
+    // Push devices (migration 00168).
+    fetchAll<{ user_id: string }>((f, t) =>
+      admin.from('push_subscriptions').select('user_id').range(f, t)).catch(() => []),
   ]);
+  const pushBy = new Map<string, number>();
+  for (const r of pushRows) pushBy.set(r.user_id, (pushBy.get(r.user_id) ?? 0) + 1);
   const devicesBy = new Map<string, { os: string; surface: string; last_seen_at: string }[]>();
   for (const d of deviceRows) {
     const list = devicesBy.get(d.user_id) ?? [];
@@ -273,6 +280,7 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
         const lastActiveAt = d.lastSeenAt && booked ? (d.lastSeenAt > booked ? d.lastSeenAt : booked) : d.lastSeenAt ?? booked;
         return { devices: d.devices, surface: d.surface, lastSeenAt: d.lastSeenAt, lastActiveAt };
       })(),
+      pushDevices: pushBy.get(p.id) ?? 0,
       signupSource: p.signup_source ?? null,
       signupMedium: p.signup_medium ?? null,
       signupCampaign: p.signup_campaign ?? null,

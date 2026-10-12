@@ -40,8 +40,8 @@ export async function POST(request: Request) {
   const event = parsed as {
     type?: string;
     channel_id?: string;
-    user?: { id?: string };
-    message?: { text?: string };
+    user?: { id?: string; name?: string };
+    message?: { text?: string; user?: { id?: string; name?: string } };
     members?: { user_id?: string; user?: { id?: string } }[];
   };
 
@@ -51,6 +51,11 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
   const text = (event.message?.text ?? '').slice(0, 300);
+  // Who sent it, for the notification title. A provider's staff are registered in the chat with the
+  // business name, a parent with their name (or email when they never set one: never put an email
+  // address in a lock-screen notification, so that reads as no name).
+  const rawSender = (event.user?.name ?? event.message?.user?.name ?? '').trim();
+  const senderName = rawSender && !rawSender.includes('@') ? rawSender.slice(0, 60) : '';
 
   // ---- BabyBrain Support → parent ----
   if (event.user?.id === SUPPORT_USER_ID && event.channel_id?.startsWith('support-')) {
@@ -83,11 +88,14 @@ export async function POST(request: Request) {
         .eq('status', 'active');
       const staffIds = new Set((staffRows ?? []).map((r) => r.user_id as string));
 
+      // "New message from Ind-SG Kids Center" (a parent reading the provider's reply) or "from Priya"
+      // (a provider reading a parent's message). Without the name the lock screen only said
+      // "New message" and you had to open the app to learn who wrote.
       const { error } = await admin.from('notifications').insert(
         recipients.map((uid) =>
           staffIds.has(uid)
-            ? { user_id: uid, type: 'provider_message_response', title: 'New message', body: text, data: { url: '/vendor', channel_id: event.channel_id } }
-            : { user_id: uid, type: 'provider_message', title: 'New message', body: text, data: { url: '/messages', channel_id: event.channel_id } }
+            ? { user_id: uid, type: 'provider_message_response', title: `New message from ${senderName || 'a parent'}`, body: text, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
+            : { user_id: uid, type: 'provider_message', title: `New message from ${senderName || 'your provider'}`, body: text, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
         )
       );
       if (error) console.error('[stream webhook] notification insert failed:', error.message, { channel: event.channel_id });
@@ -137,12 +145,14 @@ export async function POST(request: Request) {
         .eq('status', 'active');
       const staffIds = new Set((staffRows ?? []).map((r) => r.user_id as string));
       const title = groupName ? `New messages in ${groupName}` : 'New messages in your class group';
+      // The group title says where; the body says who, e.g. "Ind-SG Kids Center: See you at 10".
+      const groupBody = senderName ? `${senderName}: ${text}`.slice(0, 300) : text;
 
       const { error } = await admin.from('notifications').insert(
         recipients.map((uid) =>
           staffIds.has(uid)
-            ? { user_id: uid, type: 'provider_class_group_message', title, body: text, data: { url: '/vendor', channel_id: channelId, group_name: groupName } }
-            : { user_id: uid, type: 'class_group_message', title, body: text, data: { url: '/profile?tab=messages', channel_id: channelId, group_name: groupName } }
+            ? { user_id: uid, type: 'provider_class_group_message', title, body: groupBody, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName } }
+            : { user_id: uid, type: 'class_group_message', title, body: groupBody, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName } }
         )
       );
       if (error) console.error('[stream webhook] group notification insert failed:', error.message, { channel: channelId });

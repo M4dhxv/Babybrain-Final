@@ -16,7 +16,8 @@ import {
 } from "../lib/push";
 
 // Pages where a popup would get in the way (sign-in, sign-up, checkout).
-const QUIET_ROUTES = new Set(["/login", "/forgot-password", "/reset-password", "/onboarding", "/book", "/booked", "/payment"]);
+// /booked is deliberately NOT here: right after a booking is when "tell me about this" matters most.
+const QUIET_ROUTES = new Set(["/login", "/forgot-password", "/reset-password", "/onboarding", "/book", "/payment"]);
 
 /** Any full-screen overlay (the email sign-up popup, the photo viewer) is up. */
 const overlayOpen = () => !!document.querySelector("div.fixed.inset-0");

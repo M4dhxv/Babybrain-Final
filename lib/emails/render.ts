@@ -283,6 +283,7 @@ const T: Record<string, Template> = {
       p('Your booking is confirmed as follows:') +
       details(d, false) +
       calendarButton(d, ctx) +
+      p(`Want a heads-up before it starts? <a href="${esc(ctx.appUrl)}/profile?tab=settings" style="color:${PINK}">Turn on notifications</a> and we will remind you.`) +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys the activity when it comes!') +
       sign),

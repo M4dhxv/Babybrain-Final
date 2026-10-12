@@ -593,6 +593,15 @@ export function Header({
   const unreadMessages = unreadMessagesProp ?? liveUnreadMessages;
   const unreadNotifications = unreadNotificationsProp ?? liveUnreadNotifications;
   const hasUnread = unreadMessages > 0 || unreadNotifications > 0;
+  // Installed app: the unread count on the home-screen icon (Badging API; a no-op elsewhere).
+  const badgeTotal = session ? unreadMessages + unreadNotifications : 0;
+  useEffect(() => {
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    try {
+      if (badgeTotal > 0) void nav.setAppBadge?.(badgeTotal)?.catch(() => {});
+      else void nav.clearAppBadge?.()?.catch(() => {});
+    } catch { /* unsupported */ }
+  }, [badgeTotal]);
   // Close the mobile dropdown after a navigation — client-side nav keeps the
   // Header mounted, so tapping a link no longer clears it on its own.
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sessionWordingTitle, sessionWordingBody } from '@/lib/notification-wording';
@@ -21,6 +22,39 @@ const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'provi
  *  re-engagement nudges ("you were missed", a vendor's "your schedule is light"
  *  and "trial ending"), which are prompts rather than news about a booking. */
 const NO_PUSH_TYPES = new Set([...MARKETING_TYPES, 'missed_activity', 'provider_add_activities', 'trial_ending']);
+
+/** Quiet hours (Singapore): reminders and review requests are not pushed between 22:00 and 07:00. */
+const QUIET_PUSH_TYPES = new Set(['booking_reminder', 'class_followup']);
+const isQuietHourSgt = (): boolean => {
+  const h = (new Date().getUTCHours() + 8) % 24;
+  return h < 7 || h >= 22;
+};
+
+/** Which push preference (notification_preferences, 00236) a notification type falls under. */
+const MESSAGE_TYPES = new Set([...CHAT_TYPES, 'support_message']);
+const REMINDER_TYPES = new Set(['booking_reminder', 'booking_starting_soon', 'class_followup']);
+const pushPrefColumn = (type: string): 'push_messages' | 'push_reminders' | 'push_bookings' =>
+  MESSAGE_TYPES.has(type) ? 'push_messages' : REMINDER_TYPES.has(type) ? 'push_reminders' : 'push_bookings';
+
+/** The one button under a push where the device supports them. Tapping it opens the same page. */
+function pushActions(type: string): { action: string; title: string }[] | undefined {
+  if (MESSAGE_TYPES.has(type)) return [{ action: 'open', title: 'Open chat' }];
+  if (type === 'waitlist_available') return [{ action: 'open', title: 'Claim your spot' }];
+  if (type.startsWith('booking_') || type === 'session_rescheduled' || type === 'class_cancelled' || type === 'provider_booking_received') {
+    return [{ action: 'open', title: 'View booking' }];
+  }
+  return undefined;
+}
+
+/** Why a push should not be sent right now (preference off, quiet hours), or null to send it.
+ *  A failed preference lookup (table not migrated yet, a hiccup) never blocks a push. */
+async function pushSkipReason(db: SupabaseClient, userId: string, type: string): Promise<string | null> {
+  if (QUIET_PUSH_TYPES.has(type) && isQuietHourSgt()) return 'quiet hours';
+  const column = pushPrefColumn(type);
+  const { data } = await db.from('notification_preferences').select(column).eq('user_id', userId).maybeSingle();
+  if (data && (data as unknown as Record<string, unknown>)[column] === false) return 'turned off by the user';
+  return null;
+}
 
 /** A notification's `url` as a path on this site, or nothing. It is appended
  *  straight to the app's origin, so anything not starting with a single "/"
@@ -63,7 +97,9 @@ export async function POST(request: Request) {
     .select('id, user_id, type, title, body, data, email_status, push_status, created_at')
     .eq('id', notificationId)
     .single();
-  if (!notification || notification.email_status !== 'pending') {
+  // Email and push have their own status. A push-only notification (email 'skipped', e.g. the
+  // "starting soon" reminder) still has to be pushed.
+  if (!notification || (notification.email_status !== 'pending' && notification.push_status !== 'pending')) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
@@ -91,15 +127,29 @@ export async function POST(request: Request) {
     await admin.from('notifications').update({ push_status: 'skipped' }).eq('id', notificationId);
   } else if (notification.push_status === 'pending') {
     const pushData = (typeof notification.data === 'object' && notification.data !== null ? notification.data : {}) as EmailData;
-    const pushResult = await sendPushToUser(notification.user_id, {
-      title: sessionWordingTitle(notification.title),
-      body: sessionWordingBody(notification.body),
-      url: typeof pushData.url === 'string' ? pushData.url : undefined,
-    });
-    // 'sent' only when a device actually accepted it, so push_status can be
-    // trusted: no devices / VAPID unset → 'skipped', every device rejected → 'failed'.
-    const pushStatus = pushResult.outcome === 'sent' ? 'sent' : pushResult.outcome === 'failed' ? 'failed' : 'skipped';
-    await admin.from('notifications').update({ push_status: pushStatus }).eq('id', notificationId);
+    const skipReason = await pushSkipReason(admin as unknown as SupabaseClient, notification.user_id, notification.type);
+    if (skipReason) {
+      await admin.from('notifications').update({ push_status: 'skipped' }).eq('id', notificationId);
+    } else {
+      const channelId = typeof pushData.channel_id === 'string' ? pushData.channel_id : null;
+      const pushResult = await sendPushToUser(notification.user_id, {
+        title: sessionWordingTitle(notification.title),
+        body: sessionWordingBody(notification.body),
+        url: typeof pushData.url === 'string' ? pushData.url : undefined,
+        // One entry per conversation, so a burst of replies doesn't stack up.
+        tag: CHAT_TYPES.has(notification.type) && channelId ? `chat-${channelId}` : undefined,
+        actions: pushActions(notification.type),
+      });
+      // 'sent' only when a device actually accepted it, so push_status can be
+      // trusted: no devices / VAPID unset → 'skipped', every device rejected → 'failed'.
+      const pushStatus = pushResult.outcome === 'sent' ? 'sent' : pushResult.outcome === 'failed' ? 'failed' : 'skipped';
+      await admin.from('notifications').update({ push_status: pushStatus }).eq('id', notificationId);
+    }
+  }
+
+  // Push-only notification (no email to send): done.
+  if (notification.email_status !== 'pending') {
+    return NextResponse.json({ ok: true, pushOnly: true });
   }
 
   // Chat replies: hold the email until the message has sat unread for 4h.

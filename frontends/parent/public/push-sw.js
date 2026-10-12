@@ -19,7 +19,7 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = { title: "BabyBrain", body: event.data ? event.data.text() : "" };
   }
-  const { title = "BabyBrain", body = "", url = "/" } = payload;
+  const { title = "BabyBrain", body = "", url = "/", tag, actions } = payload;
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
@@ -35,6 +35,10 @@ self.addEventListener("push", (event) => {
       vibrate: [200, 100, 200],
       silent: false,
       timestamp: Date.now(),
+      // One entry per conversation: a second message replaces the first and buzzes again.
+      ...(tag ? { tag, renotify: true } : {}),
+      // Where actions are supported (Chrome, Edge, Android) tapping one opens the same page.
+      ...(Array.isArray(actions) && actions.length ? { actions: actions.slice(0, 2) } : {}),
     }),
   );
 });

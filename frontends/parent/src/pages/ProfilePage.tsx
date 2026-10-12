@@ -62,6 +62,7 @@ import { dobError } from "../lib/validation";
 import { Chip } from "./prefChips";
 import { lazyRoute } from "../lib/lazyRoute";
 import { requestInstall } from "../lib/install";
+import { PushPreferences } from "../components/PushPreferences";
 import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "../lib/push";
 
 const MessagesTab = lazyRoute(
@@ -3296,6 +3297,7 @@ function NotificationsPanel() {
           {testMsg && <p className="mt-1 text-sm font-semibold text-[#59658d]">{testMsg}</p>}
         </div>
       )}
+      {state === "subscribed" && <PushPreferences />}
       {error && <p className="mt-3 text-sm font-bold text-red-600">{error}</p>}
     </div>
   );

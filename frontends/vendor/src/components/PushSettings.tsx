@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiPost } from '@/lib/api';
+import { PushPreferences } from '@/components/PushPreferences';
 import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from '@/lib/push';
 
 /** Settings → Notifications: turn browser notifications on or off for this device, and send a test. */
@@ -105,6 +106,7 @@ export function PushSettings() {
           {testMsg && <p className="mt-1 text-sm text-gray-600">{testMsg}</p>}
         </div>
       )}
+      {state === 'subscribed' && <PushPreferences />}
       {error && <p className="mt-3 text-sm font-medium text-red-600">{error}</p>}
     </div>
   );

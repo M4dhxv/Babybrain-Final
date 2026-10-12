@@ -11,6 +11,7 @@
  */
 
 import webpush from 'web-push';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export function pushEnabled(): boolean {
@@ -44,7 +45,15 @@ export interface PushResult {
  */
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; url?: string }
+  payload: {
+    title: string;
+    body: string;
+    url?: string;
+    /** Same tag = the new notification replaces the old one (a chat conversation stays one entry). */
+    tag?: string;
+    /** Buttons under the notification; tapping one opens `url`, same as the notification itself. */
+    actions?: { action: string; title: string }[];
+  }
 ): Promise<PushResult> {
   if (!pushEnabled()) return { outcome: 'disabled', devices: 0, delivered: 0 };
 
@@ -71,7 +80,18 @@ export async function sendPushToUser(
         } catch (err) {
           const statusCode = (err as { statusCode?: number }).statusCode;
           if (statusCode === 404 || statusCode === 410) {
+            // The push service says this device's subscription is gone. Remember the endpoint
+            // (push_dead_endpoints, 00235) so the app is told to re-subscribe instead of quietly
+            // re-saving the same dead one, then drop the row. The note is best effort: before
+            // that migration is applied the insert just fails and the delete still happens.
+            await (admin as unknown as SupabaseClient)
+              .from('push_dead_endpoints')
+              .upsert(
+                { endpoint: sub.endpoint, user_id: userId, status_code: statusCode, reason: 'push service reported the subscription gone' },
+                { onConflict: 'endpoint' }
+              );
             await admin.from('push_subscriptions').delete().eq('id', sub.id);
+            console.warn(`[push] removed dead subscription ${sub.id} (HTTP ${statusCode})`);
           } else {
             console.error(`[push] send failed for subscription ${sub.id}:`, err);
           }
