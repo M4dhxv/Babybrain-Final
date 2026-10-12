@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache, Select } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache } from '../_lib/core';
+import { Select } from '../_lib/multiselect';
 
 type VendorResult = { name: string; website: string; outcome: 'price_updated' | 'no_price' | 'no_wp'; price_updated: number };
 type VendorRun = {

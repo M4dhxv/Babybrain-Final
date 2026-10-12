@@ -1,7 +1,8 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn, td, th, toast, Select } from '../_lib/core';
+import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, tabBtn, td, th, toast } from '../_lib/core';
+import { Select } from '../_lib/multiselect';
 
 type EventSummary = {
   slug: string; title: string; starts_on: string | null; venue: string | null;

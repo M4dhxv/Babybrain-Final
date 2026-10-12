@@ -137,22 +137,20 @@ const ADMIN_CSS = `
 .bb-navbtn:hover { background: #1c2740; }
 .bb-navbtn[aria-current="page"] { background: #4a90ff; color: #fff; }
 .bb-menu { display: none; }
-/* One checkbox everywhere: same size, same look, aligned with its label. The test-data switch is the larger one. */
-input[type="checkbox"] { -webkit-appearance: none; appearance: none; flex: none; box-sizing: border-box; width: 16px !important; height: 16px !important; margin-block: 0; border: 1.5px solid #4b5b82; border-radius: 4px; background: #0d1424; display: inline-grid; place-content: center; vertical-align: middle; cursor: pointer; outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent; transition: background .12s, border-color .12s; }
-input[type="checkbox"]::after { content: ''; width: 8px; height: 4px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); opacity: 0; }
-input[type="checkbox"]:checked { background: #4a90ff; border-color: #4a90ff; }
-input[type="checkbox"]:checked::after { opacity: 1; }
-input[type="checkbox"]:hover { border-color: #4a90ff; }
+/* One checkbox everywhere: medium (18px), softly rounded, crisp tick, aligned with its label. The test-data switch is the larger one. */
+input[type="checkbox"] { -webkit-appearance: none; appearance: none; flex: none; box-sizing: border-box; width: 18px !important; height: 18px !important; margin-block: 0; border: 1.5px solid #55668f; border-radius: 6px; background-color: #0d1424; background-repeat: no-repeat; background-position: center; background-size: 14px 14px; display: inline-block; vertical-align: middle; cursor: pointer; outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent; transition: background-color .12s, border-color .12s; }
+input[type="checkbox"]:checked { background-color: #4a90ff; border-color: #4a90ff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+input[type="checkbox"]:hover { border-color: #7db4ff; }
 input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px #0d1424, 0 0 0 4px #4a90ff; }
 input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
-input[type="checkbox"].bb-check-lg { width: 22px !important; height: 22px !important; border-radius: 6px; }
-input[type="checkbox"].bb-check-lg::after { width: 11px; height: 6px; }
+input[type="checkbox"].bb-check-lg { width: 24px !important; height: 24px !important; border-radius: 8px; background-size: 18px 18px; }
 /* No text-selection flash when a checkbox label is clicked twice. */
 label:has(> input[type="checkbox"]) { user-select: none; -webkit-user-select: none; }
 /* One dropdown everywhere: the Parents-tab look (input() box) with a drawn chevron. */
 select, .bb-select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238b96b3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 12px center !important; background-size: 12px 8px !important; padding-right: 34px !important; cursor: pointer; }
 select:focus-visible, .bb-select:focus-visible { border-color: #4a90ff !important; }
 select option { background: #151d31; color: #e8edf7; }
+[role="listbox"] > div { scrollbar-width: thin; scrollbar-color: #3a4a70 transparent; }
 @media (max-width: 800px) {
   .bb-shell { flex-direction: column; }
   .bb-side { width: auto; height: auto; position: static; border-right: none; border-bottom: 1px solid #26324f; padding: 10px 12px; }

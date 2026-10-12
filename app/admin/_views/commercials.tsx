@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { planLabel, planMonthlyFeeCents } from '@/lib/plans';
-import { C, Skeleton, adminFetch, card, input, sgd, td, th, toast, peekCache, Select } from '../_lib/core';
+import { C, Skeleton, adminFetch, card, input, sgd, td, th, toast, peekCache } from '../_lib/core';
+import { Select } from '../_lib/multiselect';
 import { type Col, SortTh, TableFooter, downloadCsv, useTable } from '../_lib/table';
 
 // ---- Commercials: bespoke commission terms per vendor ----

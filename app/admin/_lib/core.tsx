@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, isValidElement, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export const C = {
@@ -160,84 +160,6 @@ export function input(): React.CSSProperties {
   return { width: '100%', padding: '11px 13px', borderRadius: 10, border: `1px solid ${C.border}`,
     background: C.bg, color: C.text, fontSize: 14, outline: 'none' };
 }
-/**
- * The admin's single-select dropdown: a drop-in for `<select>` (same `value`, `onChange(e.target.value)`,
- * `disabled`, `style` and <option> children) whose list opens as the same rounded panel the multi-select
- * filters use, instead of the browser's square one.
- */
-export function Select({ value, onChange, disabled, style, children, 'aria-label': ariaLabel }: {
-  value: string | number | undefined | null;
-  onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  disabled?: boolean;
-  style?: React.CSSProperties;
-  children?: React.ReactNode;
-  'aria-label'?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(-1);
-  const box = useRef<HTMLDivElement>(null);
-  const opts = Children.toArray(children).flatMap((c) => {
-    if (!isValidElement(c)) return [];
-    const p = c.props as { value?: string | number; children?: React.ReactNode; disabled?: boolean };
-    const label = Children.toArray(p.children).map((x) => (typeof x === 'string' || typeof x === 'number' ? String(x) : '')).join('');
-    return [{ value: String(p.value ?? label), label, disabled: !!p.disabled }];
-  });
-  const current = opts.find((o) => o.value === String(value ?? '')) ?? opts[0];
-
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
-  }, [open]);
-
-  const choose = (v: string) => {
-    setOpen(false);
-    if (v !== String(value ?? '')) onChange?.({ target: { value: v }, currentTarget: { value: v } } as unknown as React.ChangeEvent<HTMLSelectElement>);
-  };
-  const step = (dir: 1 | -1) => {
-    const n = opts.length;
-    if (!n) return;
-    let i = active < 0 ? Math.max(0, opts.findIndex((o) => o === current)) : active;
-    for (let k = 0; k < n; k++) { i = (i + dir + n) % n; if (!opts[i].disabled) break; }
-    setActive(i);
-  };
-  const { width, marginTop, ...boxStyle } = style ?? {};
-
-  return (
-    <div ref={box} style={{ position: 'relative', width: width ?? '100%', marginTop, minWidth: 0 }}>
-      <button type="button" className="bb-select" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}
-        onClick={() => { setOpen((o) => !o); setActive(-1); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
-          else if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); step(1); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); if (!open) setOpen(true); step(-1); }
-          else if (e.key === 'Enter' && open && active >= 0) { e.preventDefault(); choose(opts[active].value); }
-        }}
-        style={{ ...input(), ...boxStyle, width: '100%', textAlign: 'left', fontFamily: 'inherit', fontSize: boxStyle.fontSize ?? 14, opacity: disabled ? 0.55 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
-        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current?.label ?? ''}</span>
-      </button>
-      {open && (
-        <div role="listbox" style={{ position: 'absolute', zIndex: 30, top: 'calc(100% + 6px)', left: 0, minWidth: '100%', width: 'max-content', maxWidth: 380,
-          maxHeight: 300, overflowY: 'auto', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.45)' }}>
-          {opts.map((o, i) => {
-            const on = o.value === current?.value;
-            return (
-              <button key={o.value + i} type="button" role="option" aria-selected={on} disabled={o.disabled}
-                onMouseEnter={() => setActive(i)} onClick={() => choose(o.value)}
-                style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 12, textAlign: 'left', border: 'none', borderRadius: 8,
-                  padding: '8px 10px', font: 'inherit', fontSize: 13, fontWeight: on ? 800 : 600, cursor: o.disabled ? 'not-allowed' : 'pointer',
-                  background: active === i ? C.panel2 : 'transparent', color: o.disabled ? C.muted : on ? C.blue : C.text }}>
-                <span>{o.label}</span>{on && <span aria-hidden>✓</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function primaryBtn(): React.CSSProperties {
   return { padding: '11px 18px', borderRadius: 10, border: 'none', background: C.blue, color: '#fff',
     fontWeight: 800, cursor: 'pointer', fontSize: 14 };
