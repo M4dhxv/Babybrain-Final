@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LoadingRows } from '@/components/Skeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone, Crop } from 'lucide-react';
+import { User, MapPin, Users, Shield, Store, Pencil, FileText, ImageUp, Globe, Mail, Phone, MessageCircle, Hash, CheckCircle, Plus, X, Save, Plug, Eye, EyeOff, RefreshCw, LogOut, Copy, Check, ExternalLink, ChevronDown, Trash2, ScrollText, Lock, Megaphone, Crop, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WixApiKeyHelp, WixApiKeyHelpTrigger } from '@/components/WixApiKeyHelp';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -18,6 +18,7 @@ import type { VendorCategory } from '@/lib/database.types';
 import { VENDOR_CATEGORIES } from '@/lib/categories';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { PushSettings } from '@/components/PushSettings';
 
 const settingsTabs = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -26,6 +27,7 @@ const settingsTabs = [
   // (alongside the medical-disclosure control), so a vendor manages every
   // booking gate for a class in one place.
   { id: 'compliance', label: 'Compliance', icon: Shield },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'integrations', label: 'Integrate your business', icon: Plug },
 ];
 
@@ -794,6 +796,8 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'compliance' && <ComplianceTab justUnsubscribed={justUnsubscribed} />}
+
+        {activeTab === 'notifications' && <PushSettings />}
 
         {activeTab === 'integrations' && (
           <div className="max-w-2xl bg-white rounded-xl border border-gray-200 p-6">

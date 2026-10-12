@@ -23,9 +23,18 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/app/assets/brand/icon-192.png",
-      badge: "/app/assets/brand/icon-192.png",
+      // Transparent mascot only (no square, no white backing) — see assets/brand/notify-icon.png.
+      icon: "/app/assets/brand/notify-icon.png",
+      // Android paints the badge from its alpha channel alone, so it must be a
+      // transparent white silhouette; the full-colour app icon showed as a white square.
+      badge: "/app/assets/brand/notify-badge.png",
       data: { url },
+      // Ask to be noticed, like a message app: Android only promotes a web
+      // notification to an on-screen banner when it signals it is important, and
+      // a plain title+body one lands quietly in the tray.
+      vibrate: [200, 100, 200],
+      silent: false,
+      timestamp: Date.now(),
     }),
   );
 });

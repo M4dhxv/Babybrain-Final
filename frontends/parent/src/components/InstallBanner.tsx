@@ -12,6 +12,7 @@ import {
   useInstallState,
 } from "../lib/install";
 import { usePushPromptWanted } from "../lib/push";
+import { IosInstallSteps } from "./IosInstallSteps";
 
 // Pages where a banner would get in the way (sign-in, sign-up, checkout).
 const QUIET_ROUTES = new Set(["/login", "/forgot-password", "/reset-password", "/onboarding", "/book", "/booked", "/payment"]);
@@ -47,7 +48,7 @@ export function InstallBanner({ pathname }: { pathname: string }) {
   useEffect(() => { countVisit(); }, []);
   useEffect(() => { if (pathname === "/activity") countActivityView(); }, [pathname]);
 
-  const installable = !state.installed && (state.native || state.ios);
+  const installable = !state.installed && (state.native || state.ios || state.iosOther);
   const eligible =
     installable &&
     !notificationsFirst &&
@@ -92,7 +93,7 @@ export function InstallBanner({ pathname }: { pathname: string }) {
       </button>
 
       <div className="flex items-center gap-3 pr-9">
-        <img src="/app/assets/brand/icon-192.png" alt="" width={44} height={44} className="h-11 w-11 shrink-0 rounded-[12px]" />
+        <img src="/app/assets/brand/notify-icon.png" alt="" width={52} height={52} className="h-[52px] w-[52px] shrink-0 object-contain" />
         <h2 className="text-[17px] font-black leading-tight text-baby-ink">Upgrade your experience ✨</h2>
       </div>
 
@@ -119,25 +120,7 @@ export function InstallBanner({ pathname }: { pathname: string }) {
           <p className="mt-2 text-sm font-semibold leading-5 text-[#59658d]">
             Add BabyBrain to your home screen in three taps. It's also how you get booking notifications on iPhone:
           </p>
-          <ol className="mt-2.5 space-y-2 text-sm font-semibold text-baby-ink">
-            <li className="flex items-center gap-2.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-palette-pinkTint text-xs font-black text-baby-cta">1</span>
-              <span className="flex items-center gap-1.5">
-                Tap the Share button
-                <svg viewBox="0 0 24 24" className="h-5 w-5 text-baby-cta" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" />
-                </svg>
-              </span>
-            </li>
-            <li className="flex items-center gap-2.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-palette-pinkTint text-xs font-black text-baby-cta">2</span>
-              <span>Choose <b className="font-black">Add to Home Screen</b></span>
-            </li>
-            <li className="flex items-center gap-2.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-palette-pinkTint text-xs font-black text-baby-cta">3</span>
-              <span>Tap <b className="font-black">Add</b></span>
-            </li>
-          </ol>
+          <IosInstallSteps />
         </>
       )}
 

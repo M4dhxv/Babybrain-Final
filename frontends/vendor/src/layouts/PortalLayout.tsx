@@ -31,6 +31,7 @@ import { planMeta } from '@/lib/plans';
 import { BrandIcon, BrandLogo } from '@/components/BrandLogo';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
+import { PushPrompt } from '@/components/PushPrompt';
 import { prefetchRoute, warmPortal } from '@/lib/prefetch';
 
 const sidebarItems = [
@@ -291,6 +292,7 @@ export default function PortalLayout() {
         )}
         <SiteFooter />
       </main>
+      <PushPrompt />
     </div>
   );
 }

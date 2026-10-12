@@ -2,6 +2,17 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { cacheFetch } from "./queryCache";
 
+/** Chat replies. They arrive as push notifications (and a delayed email), but the
+ *  Notifications page and its unread dot leave them out: the Messages tab is where
+ *  chat lives. The rows stay in the table, since the push/email webhook needs them. */
+export const CHAT_NOTIFICATION_TYPES = [
+  "provider_message",
+  "provider_message_response",
+  "class_group_message",
+  "provider_class_group_message",
+] as const;
+export const CHAT_TYPES_FILTER = `(${CHAT_NOTIFICATION_TYPES.join(",")})`;
+
 const FRESH_MS = 60_000;
 /** Notifications have no realtime feed (unlike messages, which get one from
  *  Stream's websocket) — a new row only ever shows up here by asking again.
@@ -30,6 +41,7 @@ export function useUnreadNotifications(userId: string | undefined): number {
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .is("read_at", null)
+        .not("type", "in", CHAT_TYPES_FILTER)
         .then(({ count }) => {
           if (!cancelled) setCount(count ?? 0);
         });
@@ -41,6 +53,7 @@ export function useUnreadNotifications(userId: string | undefined): number {
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .is("read_at", null)
+        .not("type", "in", CHAT_TYPES_FILTER)
         .then(({ count }) => count ?? 0)
     ).then((c) => {
       if (!cancelled) setCount(c);

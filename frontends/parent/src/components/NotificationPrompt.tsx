@@ -110,8 +110,12 @@ export function NotificationPrompt({ pathname }: { pathname: string }) {
       </button>
 
       <div className="flex items-center gap-3 pr-9">
-        <img src="/app/assets/brand/icon-192.png" alt="" width={44} height={44} className="h-11 w-11 shrink-0 rounded-[12px]" />
-        <h2 className="text-[17px] font-black leading-tight text-baby-ink">Never miss a booking update 🔔</h2>
+        {/* The transparent mascot (brain and face, uncropped) — the square app icon filled the frame edge to edge and read as cut off. */}
+        <img src="/app/assets/brand/notify-icon.png" alt="" width={52} height={52} className="h-[52px] w-[52px] shrink-0 object-contain" />
+        <h2 className="flex items-center gap-2 text-[17px] font-black leading-tight text-baby-ink">
+          <span>Never miss an update</span>
+          <Icon name="bell" className="h-5 w-5 shrink-0 text-baby-cta" />
+        </h2>
       </div>
       <p className="mt-2 text-sm font-semibold leading-5 text-[#59658d]">
         Get a notification when a booking is confirmed or a class is coming up, even when BabyBrain is closed.

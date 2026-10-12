@@ -10,6 +10,8 @@ import { usePlan } from "../lib/data";
 import { resolveActivityImage, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { wixThumbUrl } from "../components/ui";
 import { canShare, mapsUrl, share } from "../lib/share";
+import { markBooked } from "../lib/install";
+import { NotificationInstallNudge } from "../components/NotificationInstallNudge";
 
 // The chat pulls in the whole Stream client, so it loads only when the parent taps the button.
 const EnquiryChat = lazy(() => import("../components/EnquiryChat").then((m) => ({ default: m.EnquiryChat })));
@@ -75,6 +77,9 @@ export default function BookedPage() {
   // Same rule as the activity page: messaging is a Plus feature. While the plan is still loading the
   // button stays usable rather than flashing a lock.
   const chatLocked = !!session && planKnown && !isPlus;
+  // A booking is the strongest reason to install: from here on the install banner stops waiting for a
+  // second visit (see hasEngaged in lib/install).
+  useEffect(() => { markBooked(); }, []);
   useEffect(() => {
     const checkoutSession = getParam("session_id");
     if (checkoutSession) {
@@ -131,6 +136,7 @@ export default function BookedPage() {
                 </div>
               )}
             </article>
+            <NotificationInstallNudge />
             <article className="rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card">
               <h2 className="text-xl font-black">What to bring &amp; know</h2>
               {detail?.what_to_bring?.trim() ? (

@@ -40,6 +40,7 @@ import { supabase } from "../lib/supabase";
 import { cacheFetch, cacheInvalidate } from "../lib/queryCache";
 import { sessionCacheGet, sessionCacheSet, sessionCacheInvalidate } from "../lib/sessionCache";
 import { apiGet, apiPost } from "../lib/api";
+import { CHAT_TYPES_FILTER } from "../lib/notifications";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
@@ -1594,6 +1595,7 @@ export default function ProfilePage() {
         supabase
           .from("notifications")
           .select("id, type, title, body, read_at, created_at, data")
+          .not("type", "in", CHAT_TYPES_FILTER)
           .order("created_at", { ascending: false })
           .limit(100)
           .then(({ data, error }) => {
@@ -2198,6 +2200,7 @@ export default function ProfilePage() {
       supabase
         .from("notifications")
         .select("id, type, title, body, read_at, created_at, data")
+        .not("type", "in", CHAT_TYPES_FILTER)
         .order("created_at", { ascending: false })
         .limit(100)
         .then(({ data }) => data ?? [])

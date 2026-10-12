@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { StreamChat } from 'stream-chat';
+import type { Channel as StreamChannel, StreamChat } from 'stream-chat';
 import {
   Chat,
   Channel,
@@ -10,7 +10,9 @@ import {
   MessageList,
   MessageInput,
   Thread,
+  ChannelPreviewMessenger,
   useChatContext,
+  type ChannelPreviewUIComponentProps,
 } from 'stream-chat-react';
 import { MessageSquare, ArrowLeft } from 'lucide-react';
 import 'stream-chat-react/dist/css/v2/index.css';
@@ -18,6 +20,38 @@ import { getChatClient } from '@/lib/chat';
 import { useAuth } from '@/auth/AuthProvider';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
 import { cn } from '@/lib/utils';
+
+/**
+ * Who a parent enquiry is *with*, as the vendor should see it.
+ *
+ * A parent↔provider channel is created with `name: <the business's name>` so
+ * the parent's own inbox reads "Odissi Classes". That one stored name is shown
+ * to everyone, so the vendor's inbox listed their own business against every
+ * parent. Here the title is the parent's name instead, plus a short code from
+ * their id so two parents called "Priya" can be told apart.
+ *
+ * Only for the 1:1 enquiry channels (they carry `bb_parent_id`); session group
+ * channels keep their own name. If the signed-in user is the parent (a vendor
+ * who also books as a parent) the business name stays as it is.
+ */
+function enquiryTitle(channel: StreamChannel, myId: string | undefined): string | null {
+  const parentId = (channel.data as { bb_parent_id?: string } | undefined)?.bb_parent_id;
+  if (!parentId || parentId === myId) return null;
+  const name = channel.state?.members?.[parentId]?.user?.name?.trim() || 'Parent';
+  return `${name} · #${parentId.replace(/-/g, '').slice(0, 4).toUpperCase()}`;
+}
+
+function EnquiryPreview(props: ChannelPreviewUIComponentProps) {
+  const { client } = useChatContext();
+  const title = enquiryTitle(props.channel, client.userID);
+  return <ChannelPreviewMessenger {...props} displayTitle={title ?? props.displayTitle} />;
+}
+
+function EnquiryHeader() {
+  const { channel, client } = useChatContext();
+  const title = channel ? enquiryTitle(channel, client.userID) : null;
+  return <ChannelHeader title={title ?? undefined} />;
+}
 
 /**
  * The list + conversation panes. On desktop both are always visible
@@ -59,6 +93,7 @@ function ChatPanes({
             searchForChannels: true,
             placeholder: 'Search conversations',
           }}
+          Preview={EnquiryPreview}
           customActiveChannel={deepLinkChannel}
           /* Mobile lands on the list (WhatsApp-style); desktop still
              opens the most recent conversation on mount. */
@@ -85,7 +120,7 @@ function ChatPanes({
             >
               <ArrowLeft className="h-4 w-4" /> All conversations
             </button>
-            <ChannelHeader />
+            <EnquiryHeader />
             {/* QA: "not sure what the pen edit button would be intended
                 to do under messages but currently doesn't work". It's
                 Stream's stock "edit my own message" action (hover a

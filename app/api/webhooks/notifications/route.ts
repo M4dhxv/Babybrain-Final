@@ -18,9 +18,9 @@ const CHAT_EMAIL_DELAY_MS = 4 * 60 * 60 * 1000; // keep in step with send_pendin
 const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'providers_added', 'package_rebook']);
 
 /** Never pushed to a device (email only): the promotional flows above, plus the
- *  "you were missed" nudge, which is a re-engagement prompt rather than news
- *  about a booking. */
-const NO_PUSH_TYPES = new Set([...MARKETING_TYPES, 'missed_activity']);
+ *  re-engagement nudges ("you were missed", a vendor's "your schedule is light"
+ *  and "trial ending"), which are prompts rather than news about a booking. */
+const NO_PUSH_TYPES = new Set([...MARKETING_TYPES, 'missed_activity', 'provider_add_activities', 'trial_ending']);
 
 /** A notification's `url` as a path on this site, or nothing. It is appended
  *  straight to the app's origin, so anything not starting with a single "/"

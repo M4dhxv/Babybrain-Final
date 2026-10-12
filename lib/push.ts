@@ -61,7 +61,11 @@ export async function sendPushToUser(
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            body
+            body,
+            // High urgency so a phone in Doze wakes for it instead of holding it until it
+            // next checks in; a booking or a reply that arrives minutes late reads as "no
+            // notification". TTL: drop it after an hour rather than show a stale one.
+            { urgency: 'high', TTL: 60 * 60 }
           );
           return true;
         } catch (err) {

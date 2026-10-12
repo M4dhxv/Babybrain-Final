@@ -19,6 +19,7 @@ export const SNOOZE_KEY = "bb_install_snooze_until";
 export const DONE_KEY = "bb_install_done";
 export const VISITS_KEY = "bb_visits";
 export const ACTIVITY_VIEWS_KEY = "bb_activity_views";
+export const BOOKED_KEY = "bb_has_booked";
 
 export const NOT_NOW_MS = 5 * 24 * 60 * 60 * 1000; // "Not now": 5 days
 export const CLOSE_MS = 24 * 60 * 60 * 1000; // the cross: 24 hours
@@ -47,6 +48,19 @@ export function isIosSafari(): boolean {
   return ios && !otherBrowser;
 }
 
+/** Any browser on iPhone / iPad, Safari or not. */
+export function isIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Macintosh") && navigator.maxTouchPoints > 1);
+}
+
+/** Chrome, Firefox, Edge etc. on iPhone / iPad. From iOS 17 they can add a site to the Home Screen
+ *  too, so the install steps apply; the share button just sits in a different place. */
+export function isIosOtherBrowser(): boolean {
+  return isIos() && !isIosSafari();
+}
+
 let deferred: InstallPromptEvent | null = null;
 let installed = isStandalone() || read(DONE_KEY) === "1";
 let forced = false; // opened on purpose from the menu link, ignoring the snooze
@@ -57,13 +71,15 @@ export interface InstallState {
   native: boolean;
   /** iPhone / iPad Safari: manual steps only. */
   ios: boolean;
+  /** iPhone / iPad in another browser (Chrome, Firefox, Edge): the same manual steps. */
+  iosOther: boolean;
   installed: boolean;
   forced: boolean;
 }
 let snapshot: InstallState = compute();
 
 function compute(): InstallState {
-  return { native: deferred !== null, ios: isIosSafari(), installed, forced };
+  return { native: deferred !== null, ios: isIosSafari(), iosOther: isIosOtherBrowser(), installed, forced };
 }
 function emit() {
   snapshot = compute();
@@ -138,5 +154,8 @@ export function countVisit() {
   write(VISITS_KEY, String(Number(read(VISITS_KEY) ?? 0) + 1));
 }
 export const countActivityView = () => write(ACTIVITY_VIEWS_KEY, String(Number(read(ACTIVITY_VIEWS_KEY) ?? 0) + 1));
+/** The parent has made a booking: the best moment to suggest installing, so it no longer waits for a
+ *  second visit (a parent who books once and leaves would otherwise never be asked). */
+export const markBooked = () => write(BOOKED_KEY, "1");
 export const hasEngaged = (): boolean =>
-  Number(read(VISITS_KEY) ?? 0) >= 2 || Number(read(ACTIVITY_VIEWS_KEY) ?? 0) >= 1;
+  Number(read(VISITS_KEY) ?? 0) >= 2 || Number(read(ACTIVITY_VIEWS_KEY) ?? 0) >= 1 || read(BOOKED_KEY) === "1";

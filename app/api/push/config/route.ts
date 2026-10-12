@@ -11,5 +11,11 @@ import { pushEnabled } from '@/lib/push';
  * Public and tiny; never cached, so the answer is always the live one.
  */
 export async function GET() {
-  return NextResponse.json({ enabled: pushEnabled() }, { headers: { 'Cache-Control': 'no-store' } });
+  // The public key is public by design (it is also baked into the parent build); sending it
+  // here lets the vendor portal subscribe without a build-time variable of its own.
+  const enabled = pushEnabled();
+  return NextResponse.json(
+    { enabled, publicKey: enabled ? process.env.VAPID_PUBLIC_KEY : null },
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }
