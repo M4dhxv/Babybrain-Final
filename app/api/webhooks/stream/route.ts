@@ -8,6 +8,26 @@ import { SUPPORT_USER_ID, getStreamServerClient } from '@/lib/stream';
 // key to auth.users, so one of those would fail the whole batch insert.
 const isUserId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
+/** The notification title for a chat message: "Ind-SG Kids Center 3 messages", "Priya 1 message". */
+const countTitle = (name: string, n: number) => `${name} ${n} ${n === 1 ? 'message' : 'messages'}`;
+
+/**
+ * How many unread messages each member of a channel has, from Stream's read state. The message
+ * that just arrived is included. Returns an empty map on any failure and callers then say 1,
+ * so a Stream hiccup never costs a notification.
+ */
+async function unreadByUser(channelId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  try {
+    const state = await getStreamServerClient().channel('messaging', channelId).query({ state: true, messages: { limit: 0 } });
+    for (const r of state.read ?? []) out.set(r.user.id, r.unread_messages ?? 0);
+  } catch {
+    // fall back to 1
+  }
+  return out;
+}
+const unreadFor = (counts: Map<string, number>, uid: string) => Math.max(1, counts.get(uid) ?? 0);
+
 /**
  * GetStream webhook (configure URL in the Stream Dashboard after deploy).
  * On message.new from support → in-app notification for the parent
@@ -60,10 +80,11 @@ export async function POST(request: Request) {
   // ---- BabyBrain Support → parent ----
   if (event.user?.id === SUPPORT_USER_ID && event.channel_id?.startsWith('support-')) {
     const parentId = event.channel_id.slice('support-'.length);
+    const supportUnread = await unreadByUser(event.channel_id);
     const { error } = await admin.from('notifications').insert({
       user_id: parentId,
       type: 'support_message',
-      title: 'New message from BabyBrain Support',
+      title: countTitle('BabyBrain Support', unreadFor(supportUnread, parentId)),
       body: text,
       data: { url: '/support' },
     });
@@ -88,14 +109,14 @@ export async function POST(request: Request) {
         .eq('status', 'active');
       const staffIds = new Set((staffRows ?? []).map((r) => r.user_id as string));
 
-      // "New message from Ind-SG Kids Center" (a parent reading the provider's reply) or "from Priya"
-      // (a provider reading a parent's message). Without the name the lock screen only said
-      // "New message" and you had to open the app to learn who wrote.
+      // "Ind-SG Kids Center 3 messages" (a parent reading the provider's replies) or "Priya 1 message"
+      // (a provider reading a parent's message): who, and how many are waiting.
+      const unread = await unreadByUser(event.channel_id);
       const { error } = await admin.from('notifications').insert(
         recipients.map((uid) =>
           staffIds.has(uid)
-            ? { user_id: uid, type: 'provider_message_response', title: `New message from ${senderName || 'a parent'}`, body: text, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
-            : { user_id: uid, type: 'provider_message', title: `New message from ${senderName || 'your provider'}`, body: text, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
+            ? { user_id: uid, type: 'provider_message_response', title: countTitle(senderName || 'A parent', unreadFor(unread, uid)), body: text, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
+            : { user_id: uid, type: 'provider_message', title: countTitle(senderName || 'Your provider', unreadFor(unread, uid)), body: text, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(event.channel_id ?? '')}`, channel_id: event.channel_id, sender_name: senderName || null } }
         )
       );
       if (error) console.error('[stream webhook] notification insert failed:', error.message, { channel: event.channel_id });
@@ -110,9 +131,12 @@ export async function POST(request: Request) {
       .map((m) => m.user_id ?? m.user?.id)
       .filter((id): id is string => Boolean(id) && id !== senderId && isUserId(id as string));
 
-    // One email per person per group per quiet spell: skip anyone whose last
-    // group email for this channel hasn't gone out yet. Without this a busy
-    // group would email every parent for every message.
+    // One email per person per group per quiet spell: anyone whose last group
+    // email for this channel hasn't gone out yet gets no further email. Without
+    // this a busy group would email every parent for every message. That limit is
+    // for email only: they still get a notification row (email 'skipped'), so every
+    // message is pushed. Previously they were dropped entirely, which silently
+    // stopped group pushes for hours after the first message.
     const { data: waiting } = members.length
       ? await admin
           .from('notifications')
@@ -123,7 +147,7 @@ export async function POST(request: Request) {
           .in('user_id', members)
       : { data: [] as { user_id: string }[] };
     const already = new Set((waiting ?? []).map((r) => r.user_id as string));
-    const recipients = members.filter((id) => !already.has(id));
+    const recipients = members;
 
     if (recipients.length > 0) {
       let groupName: string | null = null;
@@ -144,16 +168,16 @@ export async function POST(request: Request) {
         .in('user_id', recipients)
         .eq('status', 'active');
       const staffIds = new Set((staffRows ?? []).map((r) => r.user_id as string));
-      const title = groupName ? `New messages in ${groupName}` : 'New messages in your class group';
-      // The group title says where; the body says who, e.g. "Ind-SG Kids Center: See you at 10".
-      const groupBody = senderName ? `${senderName}: ${text}`.slice(0, 300) : text;
+      // Title: who and how many ("Ind-SG Kids Center 3 messages"); body: which group, then the text.
+      const unread = await unreadByUser(channelId);
+      const groupBody = (groupName ? `${groupName}: ${text}` : text).slice(0, 300);
 
       const { error } = await admin.from('notifications').insert(
         recipients.map((uid) =>
           staffIds.has(uid)
-            ? { user_id: uid, type: 'provider_class_group_message', title, body: groupBody, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName } }
-            : { user_id: uid, type: 'class_group_message', title, body: groupBody, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName } }
-        )
+            ? { user_id: uid, type: 'provider_class_group_message', title: countTitle(senderName || 'Class group', unreadFor(unread, uid)), body: groupBody, data: { url: `/vendor/#/messages?channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName }, ...(already.has(uid) ? { email_status: 'skipped' } : {}) }
+            : { user_id: uid, type: 'class_group_message', title: countTitle(senderName || 'Class group', unreadFor(unread, uid)), body: groupBody, data: { url: `/profile?tab=messages&channel=${encodeURIComponent(channelId)}`, channel_id: channelId, group_name: groupName }, ...(already.has(uid) ? { email_status: 'skipped' } : {}) }
+        ) as never // email_status is a real column the generated insert type doesn't list
       );
       if (error) console.error('[stream webhook] group notification insert failed:', error.message, { channel: channelId });
     }
