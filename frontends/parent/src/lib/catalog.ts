@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { timeoutFetch } from "./net";
 
 /**
  * Explore's catalogue reads, routed through the edge-cached /api/explore/<fn>
@@ -100,7 +101,13 @@ async function catalogRpcNow(
 ): Promise<{ data: unknown[] | null; error: unknown }> {
   let apiNote = "";
   try {
-    const res = await fetch(`${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}`, { signal });
+    // Hedged GET: if this stays silent for 3s (a half-dead keep-alive socket on a
+    // phone that just woke, a flaky radio), a second copy goes out on a fresh
+    // connection and the first answer wins. A plain fetch here sat silent until
+    // the 8s deadline and then showed "Couldn't load", since a timeout isn't
+    // retried. The route de-duplicates identical queries and is edge-cached, so
+    // the second copy costs the database nothing.
+    const res = await timeoutFetch(`${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}`, { signal });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) return { data, error: null };
