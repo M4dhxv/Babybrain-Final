@@ -24,6 +24,7 @@ import {
   ACTIVITY_PLACEHOLDER_URL,
 } from "../components/ui";
 import { AvatarPicker } from "../components/AvatarPicker";
+import { ShareButton } from "../components/ShareButton";
 import { SelectField, Opt } from "../components/SelectField";
 import { UnreadBadge } from "../components/UnreadBadge";
 import RedirectToLanding from "../components/RedirectToLanding";
@@ -2668,6 +2669,13 @@ export default function ProfilePage() {
                 {children.length > 0 && (
                   <Button href="/profile?tab=children" variant="outline"><Icon name="people" className="h-4 w-4" /> Manage children</Button>
                 )}
+                {/* Shares the BabyBrain home page through the device's share sheet. */}
+                <ShareButton
+                  url="/"
+                  title="BabyBrain"
+                  text="Discover activities for your little ones on BabyBrain"
+                  label="Share BabyBrain"
+                />
               </div>
             </div>
             <div className="rounded-[10px] bg-[#FEEBF2] p-5">

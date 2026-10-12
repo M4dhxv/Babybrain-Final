@@ -272,6 +272,7 @@ type IconName =
   | "phone"
   | "pen"
   | "whatsapp"
+  | "share"
   | "instagram"
   | "gift"
   | "chart"
@@ -337,6 +338,7 @@ const iconPaths: Record<IconName, string> = {
   pen: "M5 18.5h14M7 15.5l8.8-8.8 2.5 2.5-8.8 8.8H7v-2.5Z",
   whatsapp:
     "M5.6 18.4A8 8 0 1 1 12 21a8 8 0 0 1-3.8-1l-3.7 1 1.1-2.6Zm4-8.8c.2 3.1 2.6 5 5 5.4l1.3-1.5-2-1-1 1c-1.1-.5-1.9-1.2-2.4-2.3l1-1-1-2-1 .4Z",
+  share: "M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1",
   instagram:
     "M7.5 3.5h9a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4h-9a4 4 0 0 1-4-4v-9a4 4 0 0 1 4-4Zm4.5 5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm4.6-1.1h.01",
   gift:
@@ -756,7 +758,7 @@ export function Header({
 type ButtonProps = {
   children: React.ReactNode;
   href?: string;
-  variant?: "primary" | "outline" | "soft" | "pink" | "ghost" | "blue" | "blueOutline";
+  variant?: "primary" | "outline" | "soft" | "pink" | "ghost" | "blue" | "blueOutline" | "share";
   size?: "sm" | "md" | "lg";
   type?: "button" | "submit";
   className?: string;
@@ -801,6 +803,11 @@ export function Button({
     // — no electric `baby-blue`.
     blue: "border-transparent bg-palette-blue text-white shadow-sm hover:brightness-95",
     blueOutline: "border-palette-blue bg-white text-palette-blue hover:bg-palette-blueTint",
+    // The share button: an outline in the palette's pastel orange, exactly as
+    // supplied, matching how the WhatsApp / Email / Website buttons beside it use
+    // green, blue and purple. Orange is the one hue they don't use, so it reads
+    // as its own action without filling the box or competing with Book.
+    share: "border-palette-orange bg-white text-palette-orange hover:bg-palette-orangeTint",
   }[variant];
   // `border` here is the WIDTH only, so every variant is the same height.
   const classes = `inline-flex items-center justify-center gap-2 rounded-[11px] border font-extrabold leading-none transition ${sizeClass} ${variantClass} ${className}${disabled ? " cursor-not-allowed opacity-60" : ""}`;

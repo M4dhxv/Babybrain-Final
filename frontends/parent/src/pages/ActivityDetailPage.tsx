@@ -9,6 +9,7 @@ import {
   wixThumbUrl,
 } from "../components/ui";
 import { ActivityDetailSkeleton } from "../components/Skeletons";
+import { ShareButton } from "../components/ShareButton";
 import { useActivityDetail, useFavorite, usePlan, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { supabase } from "../lib/supabase";
 import { cacheFetch } from "../lib/queryCache";
@@ -409,14 +410,14 @@ function ChatButton({
     return (
       <span
         title={disabledReason}
-        className="mt-3 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-6 py-3 text-[15px] font-extrabold leading-none text-[#6D7486]"
+        className="mt-2.5 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[11px] border border-[#EBE3E5] bg-[#FAF7F7] px-4 py-2.5 text-[13px] font-extrabold leading-none text-[#6D7486]"
       >
         <Icon name={icon} className="h-4 w-4" /> {label} <Icon name="lock" className="h-3.5 w-3.5" />
       </span>
     );
   }
   return (
-    <Button variant="blueOutline" className="mt-3 w-full" onClick={onOpen}>
+    <Button variant="blueOutline" size="sm" className="mt-2.5 w-full" onClick={onOpen}>
       <Icon name={icon} className="h-4 w-4" /> {label}
     </Button>
   );
@@ -905,7 +906,7 @@ export default function ActivityDetailPage() {
             )}
           </section>
         </div>
-        <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
+        <aside className="order-3 h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5 lg:py-4 shadow-card lg:sticky lg:top-[90px] lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll lg:order-none lg:col-start-2 lg:row-span-3 lg:row-start-1">
             {nextPrice != null ? (
               nextPrice <= 0 ? (
                 <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">Free</strong></p>
@@ -972,8 +973,20 @@ export default function ActivityDetailPage() {
               }
               onOpen={requireLogin(() => setEnquiring(true))}
             />
+            {/* Opens the device's share sheet with this activity's link (copies
+                the link where there is none, e.g. most desktops). */}
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <ShareButton
+                size="sm"
+                url={`/activity?slug=${encodeURIComponent(activity.slug)}`}
+                title={activity.title}
+                text={`${activity.title} on BabyBrain`}
+                label="Share this activity"
+                className="w-full"
+              />
+            </div>
             {/* 1.4: direct click-through contact — the same three every time. */}
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-2.5 flex flex-wrap gap-2">
               <ContactLink
                 icon="whatsapp"
                 label="WhatsApp"
@@ -1012,9 +1025,10 @@ export default function ActivityDetailPage() {
             />
             <Button
               variant="soft"
+              size="sm"
               type="button"
               onClick={() => fav.toggle().then((ok) => { if (!ok) setFavUpgrade(true); })}
-              className="mt-3 w-full text-baby-pink"
+              className="mt-2.5 w-full text-baby-pink"
             >
               <Icon name="heart" className="h-4 w-4" /> {fav.saved ? "Saved to favourites" : "Save to favourites"}
             </Button>
@@ -1037,7 +1051,7 @@ export default function ActivityDetailPage() {
                 is misaligned". These were floated spans, so a wrapping address
                 dropped out of line with the label beside it. Flex rows keep the
                 label and value on the same baseline however long the value. */}
-            <div className="mt-5 space-y-4 border-t border-[#F4EFF0] pt-4 text-sm font-semibold">
+            <div className="mt-3 space-y-3 border-t border-[#F4EFF0] pt-3 text-sm font-semibold">
               {nextVenueAddress && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">Location</strong>
