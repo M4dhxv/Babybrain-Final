@@ -1,5 +1,4 @@
 import { AnimalAvatar, Button, CategoryTile, Footer, Icon, MiniActivityGrid, PageShell, SectionTitle, retryImage } from "../components/ui";
-import { LeadCapture } from "../components/LeadCapture";
 import { AGE_BANDS, categories } from "../data/content";
 
 /** Marketing sub-line for each band, used by the home page tiles. */
@@ -169,8 +168,6 @@ export default function HomePage() {
             </article>
           ))}
         </section>
-
-        <LeadCapture />
 
         <section className="bb-reveal mx-auto max-w-[1120px] px-6 py-4" style={{ animationDelay: "160ms" }}>
           <div className="grid items-center gap-6 overflow-hidden rounded-[18px] border border-[#E9E1F5] bg-gradient-to-r from-[#FEEBF2] via-white to-[#F4F0FA] px-10 py-5 md:grid-cols-[220px_1fr_280px]">

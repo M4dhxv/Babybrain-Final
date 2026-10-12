@@ -19,6 +19,8 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   payments: () => import('./_views/payments'),
   flows: () => import('./_views/flows'),
   marketing: () => import('./_views/marketing'),
+  leads: () => import('./_views/leads'),
+  reviews: () => import('./_views/reviews'),
   audit: () => import('./_views/audit'),
   bookings: () => import('./_views/bookings'),
   events: () => import('./_views/events'),
@@ -28,6 +30,8 @@ const WARM_DATA: Record<string, string[]> = {
   metrics: ['/api/admin/metrics'],
   messages: ['/api/admin/channels'],
   contact: ['/api/admin/contact'],
+  leads: ['/api/admin/leads'],
+  reviews: ['/api/admin/reviews'],
   events: ['/api/admin/events'],
   addVendor: ['/api/admin/providers'],
   vendors: ['/api/admin/vendors/runs'],
@@ -55,9 +59,11 @@ const BookingsView = dynamic(() => import('./_views/bookings'), { ssr: false, lo
 const EventsView = dynamic(() => import('./_views/events'), { ssr: false, loading: viewLoading });
 const AuditView = dynamic(() => import('./_views/audit'), { ssr: false, loading: viewLoading });
 const MarketingView = dynamic(() => import('./_views/marketing'), { ssr: false, loading: viewLoading });
+const LeadsView = dynamic(() => import('./_views/leads'), { ssr: false, loading: viewLoading });
+const ReviewsView = dynamic(() => import('./_views/reviews'), { ssr: false, loading: viewLoading });
 
 // ---- navigation: grouped sidebar, tab kept in the URL (?tab=) ----
-type Tab = 'metrics' | 'audit' | 'parents' | 'bookings' | 'events' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing';
+type Tab = 'metrics' | 'audit' | 'parents' | 'bookings' | 'events' | 'messages' | 'contact' | 'addVendor' | 'vendors' | 'commercials' | 'payments' | 'flows' | 'marketing' | 'leads' | 'reviews';
 const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string }[] }[] = [
   { label: 'Overview', items: [{ id: 'metrics', label: 'Metrics', icon: 'grid' }] },
   { label: 'People', items: [
@@ -67,6 +73,8 @@ const NAV_GROUPS: { label: string; items: { id: Tab; label: string; icon: string
     { id: 'addVendor', label: 'Vendors', icon: 'plus' },
     { id: 'vendors', label: 'Vendor data', icon: 'list' },
     { id: 'marketing', label: 'Marketing', icon: 'mail' },
+    { id: 'leads', label: 'Leads', icon: 'plus' },
+    { id: 'reviews', label: 'Reviews', icon: 'chat' },
   ] },
   { label: 'Money', items: [
     { id: 'commercials', label: 'Commercials', icon: 'percent' },
@@ -327,6 +335,8 @@ export default function AdminPage() {
         {viewOk('payments') && <PaymentsView key={refreshKey} />}
         {viewOk('flows') && <FlowsView key={refreshKey} />}
         {viewOk('marketing') && <MarketingView key={refreshKey} />}
+        {viewOk('leads') && <LeadsView key={refreshKey} />}
+        {viewOk('reviews') && <ReviewsView key={refreshKey} />}
         {viewOk('bookings') && <BookingsView key={refreshKey} onOpenParents={openParents} />}
         {viewOk('events') && <EventsView key={refreshKey} />}
         {viewOk('audit') && <AuditView key={refreshKey} />}
