@@ -112,6 +112,9 @@ function NavIcon({ name }: { name: string }) {
   );
 }
 const TAB_IDS = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.id));
+const TAB_LABEL: Record<string, string> = Object.fromEntries(NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.id, i.label])));
+/** Tabs whose view draws its own blue title; every other tab gets the shared one in <main>. */
+const OWN_HEADER = new Set<string>(['events', 'contact', 'flows', 'leads', 'reviews', 'marketing', 'payments', 'commercials', 'audit']);
 /** What a support login may open (everyone in ADMIN_EMAILS may open everything). */
 const SUPPORT_TABS = new Set<string>(['parents', 'messages', 'contact', 'flows']);
 function tabFromUrl(): Tab {
@@ -324,6 +327,9 @@ export default function AdminPage() {
             <button onClick={signOut}
               style={{ ...primaryBtn(), marginTop: 16 }}>Sign out</button>
           </div>
+        )}
+        {phase === 'ok' && can(tab) && !OWN_HEADER.has(tab) && (
+          <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue, marginBottom: 12 }}>{TAB_LABEL[tab]}</h2>
         )}
         {viewOk('metrics') && <MetricsView key={refreshKey} onOpenParents={openParents} onOpenBookings={openBookings} onGoTab={(t) => setTab(t as Tab)} />}
         {viewOk('parents') && <ParentsView key={refreshKey} />}

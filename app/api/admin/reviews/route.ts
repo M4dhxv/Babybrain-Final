@@ -47,14 +47,20 @@ export async function GET(request: Request) {
       userIds.length === 0 ? [] : all<{ id: string; full_name: string | null; email: string | null }>((f, t) =>
         db.from('parent_profiles').select('id, full_name, email').in('id', userIds).range(f, t) as never),
     ]);
+    // activities.provider_name is free text and blank on many listings; the vendor's real name is
+    // the provider row the activity belongs to.
+    const providerIds = [...new Set(activities.map((a) => a.provider_id).filter((v): v is string => !!v))];
+    const providers = providerIds.length === 0 ? [] : await all<{ id: string; business_name: string | null }>((f, t) =>
+      db.from('providers').select('id, business_name').in('id', providerIds).range(f, t) as never);
+    const providerName = new Map(providers.map((p) => [p.id, p.business_name?.trim() || '']));
     const actBy = new Map(activities.map((a) => [a.id, a]));
     const parentBy = new Map(parents.map((p) => [p.id, p]));
 
     const vendors = new Map<string, string>();
     const rows = reviews.map((r) => {
       const a = actBy.get(r.activity_id);
-      const vendorKey = a?.provider_id ?? `name:${a?.provider_name ?? 'unknown'}`;
-      const vendorName = a?.provider_name?.trim() || 'Unknown vendor';
+      const vendorName = (a?.provider_id && providerName.get(a.provider_id)) || a?.provider_name?.trim() || 'Unknown vendor';
+      const vendorKey = a?.provider_id ?? `name:${vendorName}`;
       vendors.set(vendorKey, vendorName);
       const p = parentBy.get(r.user_id);
       return {

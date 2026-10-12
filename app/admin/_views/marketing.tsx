@@ -62,7 +62,7 @@ export default function MarketingView() {
 
   return (
     <div>
-      <h2 style={{ fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Marketing</h2>
+      <h2 style={{ fontWeight: 900, fontSize: 20, marginBottom: 6, color: C.blue }}>Marketing</h2>
       <p style={{ color: C.muted, fontSize: 14, marginBottom: 16, maxWidth: 760, lineHeight: 1.6 }}>
         BabyBrain doesn&apos;t send anything to Klaviyo. Download who has agreed to marketing emails and import them yourself.
         Only people on the first list may be emailed.

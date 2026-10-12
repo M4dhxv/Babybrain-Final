@@ -111,7 +111,7 @@ export default function PaymentsView() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={card()}>
-        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Payments</div>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6, color: C.blue }}>Payments</div>
         <p style={{ color: C.muted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
           Every sale&apos;s split, and separately what Stripe has actually paid into BabyBrain&apos;s bank
           account. Those are different things — a sale can be collected today and not reach the bank for

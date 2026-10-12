@@ -39,7 +39,7 @@ export default function FlowsView() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
-        <h2 style={{ fontWeight: 900, fontSize: 20 }}>Email flows</h2>
+        <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>Email flows</h2>
         <span style={{ color: C.muted, fontSize: 13 }}>
           {wiredCount} of {flows.length} actually fire today · the rest are branded templates waiting on a trigger
         </span>

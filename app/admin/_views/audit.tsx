@@ -39,7 +39,7 @@ export default function AuditView() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={card()}>
-        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Audit log</div>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6, color: C.blue }}>Audit log</div>
         <p style={{ color: C.muted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
           Who changed what in the admin: marking parents or vendors as test, editing commission terms,
           creating or editing vendors and running syncs. Newest first. Only admins can see this page.

@@ -33,7 +33,7 @@ export default function ContactView() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
-        <h2 style={{ fontWeight: 900, fontSize: 20 }}>Contact form</h2>
+        <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>Contact form</h2>
         <span style={{ color: C.muted, fontSize: 13 }}>
           {rows.length} message{rows.length === 1 ? '' : 's'}
           {undelivered > 0 && (

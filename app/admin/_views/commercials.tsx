@@ -80,7 +80,7 @@ export default function CommercialsView() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={card()}>
-        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Commercial terms</div>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6, color: C.blue }}>Commercial terms</div>
         <p style={{ color: C.muted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
           The deal per vendor. Rates are read at checkout and stamped onto each sale, so changes apply to
           future bookings only. <strong style={{ color: C.text }}>Stripe fee</strong> decides who absorbs

@@ -48,7 +48,7 @@ export default function LeadsView() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <h2 style={{ fontWeight: 900, fontSize: 20 }}>Leads</h2>
+        <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>Leads</h2>
         <span style={{ color: C.muted, fontSize: 13 }}>
           {data.unique} unique email{data.unique === 1 ? '' : 's'} · {data.total} submission{data.total === 1 ? '' : 's'}
           {data.alreadyParents > 0 && <> · {data.alreadyParents} already signed up</>}
