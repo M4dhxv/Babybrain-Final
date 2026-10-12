@@ -106,6 +106,8 @@ type ParentDetailT = {
   }[];
   bookings: {
     id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
+    /** Set when the seat was booked with a package credit (one booking row = one credit). */
+    package_purchase_id: string | null; cancel_refund_mode: 'refund' | 'none' | null;
     session: { starts_at: string; activity: { title: string } | null } | null;
   }[];
   isTest: boolean; override: 'auto' | 'test' | 'real'; testSource: 'manual' | 'auto' | null; testReason: string | null;
@@ -151,6 +153,19 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
       <span style={{ color: C.muted, fontWeight: 700 }}>{label}</span><span style={{ wordBreak: 'break-word' }}>{value}</span>
     </div>
   );
+  // Paid column: a seat booked with a package credit shows the credits it used (one per seat) instead
+  // of a dash, with the package name beneath and a note when the credit went back on a cancellation.
+  const paidCell = (b: ParentDetailT['bookings'][number]) => {
+    if (b.package_purchase_id) {
+      const pk = d?.packages.find((x) => x.id === b.package_purchase_id);
+      const returned = b.status === 'cancelled' && b.cancel_refund_mode === 'refund';
+      return <>
+        1 credit{returned ? ' (returned)' : ''}
+        {pk?.package?.name && <div style={{ color: C.muted, fontSize: 11 }}>{pk.package.name}</div>}
+      </>;
+    }
+    return b.payment_status === 'paid' && b.amount != null ? sgdDollars(Number(b.amount)) : b.payment_status === 'refunded' ? 'Refunded' : dash;
+  };
   // Sections that can be folded away (the long ones); a closed one keeps just its title row.
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const collapsible = (key: string, title: string, body: React.ReactNode) => {
@@ -316,7 +331,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
                       <td style={td()}>{b.session?.activity?.title ?? dash}{b.guest_name ? <span style={{ color: C.muted }}> · {b.guest_name}</span> : null}</td>
                       <td style={{ ...td(), whiteSpace: 'nowrap' }}>{b.session ? sgDay(b.session.starts_at) : dash}</td>
                       <td style={td()}><Badge tone={b.status === 'confirmed' || b.status === 'completed' ? 'green' : b.status === 'cancelled' ? 'grey' : 'amber'}>{b.status}</Badge></td>
-                      <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{b.payment_status === 'paid' && b.amount != null ? sgdDollars(Number(b.amount)) : b.payment_status === 'refunded' ? 'Refunded' : dash}</td>
+                      <td style={{ ...td(), textAlign: 'right', whiteSpace: 'nowrap' }}>{paidCell(b)}</td>
                       <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(b.created_at)}</td>
                     </tr>
                   ))}

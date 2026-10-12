@@ -14,11 +14,12 @@ export const metadata: Metadata = {
   // beforeFiles rewrite in next.config.mjs), so it carries the web app
   // manifest; a manifest route here would be shadowed by that rewrite and
   // never reached. These pages — /admin, /auth — just need a real icon.
+  // The tab icon is the transparent logo (the vendor portal uses the same
+  // file): icon-192/512 carry a solid cream background, which showed as a
+  // white square in the tab. Those two stay for the installed-app manifest,
+  // which needs a filled square.
   icons: {
-    icon: [
-      { url: '/assets/brand/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/assets/brand/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
+    icon: [{ url: '/assets/brand/logo-icon.png', sizes: '256x256', type: 'image/png' }],
     apple: [{ url: '/assets/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   appleWebApp: { capable: true, title: 'BabyBrain', statusBarStyle: 'default' },

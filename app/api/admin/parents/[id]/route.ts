@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { invalidateParents, loadParents } from '@/lib/admin-parents';
+import { invalidateParents, summariseDevices } from '@/lib/admin-parents';
+import { classifyParent } from '@/lib/admin-test-rules';
 import { logAdminAction } from '@/lib/admin-audit';
 import { OVERRIDE_LABEL, applyOverride, parseOverride } from '@/lib/admin-test-override';
 import { getStripe } from '@/lib/stripe';
@@ -26,30 +27,25 @@ export async function GET(request: Request, { params }: Params) {
   if (!UUID.test(id)) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
   const db = createAdminClient() as unknown as SupabaseClient;
 
-  const [profile, kids, prefs, sub, bookings, packages, parentRows] = await Promise.all([
-    db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
-    db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
-    db.from('user_preferences').select('preferred_days, preferred_times, preferred_regions, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
-    db.from('customer_subscriptions').select('plan, billing_interval, status, current_period_end, cancel_at_period_end, stripe_customer_id').eq('user_id', id).maybeSingle(),
-    db.from('bookings')
-      .select('id, status, payment_status, amount, created_at, guest_name, child_id, session:activity_sessions(starts_at, activity:activities(title))')
-      .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
-    db.from('package_purchases')
-      .select('id, credits_total, credits_remaining, status, created_at, expires_at, stripe_payment_intent, package:packages(name, price_cents), provider:providers(business_name)')
-      .eq('user_id', id).order('created_at', { ascending: false }),
-    loadParents(db),
-  ]);
-  if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
-  if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+  // Everything below is scoped to this one parent. This panel used to call loadParents(), which reads
+  // every parent, child, booking and earning in the database (plus up to 5,000 Stripe invoices) to
+  // work out a handful of flags for one row; on a cold cache that took many seconds.
+  const subQuery = db.from('customer_subscriptions')
+    .select('plan, billing_interval, status, current_period_end, cancel_at_period_end, stripe_customer_id').eq('user_id', id).maybeSingle();
 
-  // What the parent has paid for their plan lives only in Stripe: read their paid invoices.
-  // If Stripe can't be reached (or the customer is from the other Stripe mode) the panel just omits it.
-  let planPayments: { id: string; paidAt: string; amount: number; currency: string; description: string | null }[] = [];
-  const customerId = (sub.data as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
-  if (customerId) {
+  // What the parent has paid for their plan lives only in Stripe: read their paid invoices, started as
+  // soon as the customer id is known so it overlaps the other reads. If Stripe can't be reached (or the
+  // customer is from the other Stripe mode) or is slow, the panel just omits it.
+  type PlanPayment = { id: string; paidAt: string; amount: number; currency: string; description: string | null };
+  const planPaymentsQuery: Promise<PlanPayment[]> = Promise.resolve(subQuery).then(async (r) => {
+    const customerId = (r.data as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
+    if (!customerId) return [];
     try {
-      const list = await getStripe().invoices.list({ customer: customerId, status: 'paid', limit: 24 });
-      planPayments = list.data
+      const list = await Promise.race([
+        getStripe().invoices.list({ customer: customerId, status: 'paid', limit: 24 }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('stripe timeout')), 4000)),
+      ]);
+      return list.data
         .filter((i) => i.amount_paid > 0)
         .map((i) => ({
           id: i.id ?? '',
@@ -58,11 +54,40 @@ export async function GET(request: Request, { params }: Params) {
           currency: i.currency,
           description: i.lines.data[0]?.description ?? null,
         }));
-    } catch { /* leave empty */ }
-  }
+    } catch { return []; }
+  });
 
-  const p = profile.data as Record<string, unknown> & { email: string; is_test?: boolean | null };
-  const row = parentRows.find((r) => r.id === id);
+  const [profile, kids, prefs, sub, bookings, packages, seats, heldCount, devices, planPayments] = await Promise.all([
+    db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
+    db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
+    db.from('user_preferences').select('preferred_days, preferred_times, preferred_regions, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
+    subQuery,
+    db.from('bookings')
+      .select('id, status, payment_status, amount, created_at, guest_name, child_id, package_purchase_id, cancel_refund_mode, session:activity_sessions(starts_at, activity:activities(title))')
+      .eq('user_id', id).order('created_at', { ascending: false }).limit(100),
+    db.from('package_purchases')
+      .select('id, credits_total, credits_remaining, status, created_at, expires_at, stripe_payment_intent, package:packages(name, price_cents), provider:providers(business_name)')
+      .eq('user_id', id).order('created_at', { ascending: false }),
+    db.from('provider_members').select('provider:providers(business_name, is_test)').eq('user_id', id).eq('status', 'active'),
+    // Bookings the parent actually holds (not cancelled / waitlisted); counted, not listed, so it holds past the 100 shown.
+    db.from('bookings').select('id', { count: 'exact', head: true }).eq('user_id', id).not('status', 'in', '("cancelled","waitlisted")'),
+    // Until migration 00215 is applied this read fails and the parent just shows no device.
+    Promise.resolve(db.from('parent_devices').select('os, surface, last_seen_at').eq('user_id', id)).then((r) => r.data ?? [], () => []),
+    planPaymentsQuery,
+  ]);
+  if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
+  if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
+
+  const p = profile.data as Record<string, unknown> & { email: string; is_test?: boolean | null; is_real_override?: boolean | null };
+  // The same shared rule the Parents list uses (lib/admin-test-rules.ts) decides the status.
+  const seatList = ((seats.data ?? []) as unknown as { provider: { business_name: string | null; is_test: boolean | null } | null }[])
+    .map((r) => r.provider).filter((v): v is { business_name: string | null; is_test: boolean | null } => !!v);
+  const cls = classifyParent({
+    email: p.email, manualTest: p.is_test, forcedReal: p.is_real_override,
+    seats: seatList.map((v) => ({ isTestVendor: !!v.is_test })),
+    hasParentActivity: (kids.data?.length ?? 0) > 0 || (heldCount.count ?? 0) > 0,
+  });
+  const dev = summariseDevices(devices as { os: string; surface: string; last_seen_at: string }[]);
   return NextResponse.json({
     profile: p,
     children: kids.data ?? [],
@@ -71,16 +96,16 @@ export async function GET(request: Request, { params }: Params) {
     planPayments,
     bookings: bookings.data ?? [],
     packages: packages.data ?? [],
-    isTest: row?.isTest ?? !!p.is_test,
-    testSource: row?.testSource ?? (p.is_test ? 'manual' : null),
-    testReason: row?.testReason ?? null,
-    kind: row?.kind ?? (p.is_test ? 'test' : 'parent'),
-    override: row?.override ?? (p.is_test ? 'test' : 'auto'),
-    isVendor: row?.isVendor ?? false,
-    vendorNames: row?.vendorNames ?? [],
-    devices: row?.devices ?? [],
-    surface: row?.surface ?? 'unknown',
-    lastSeenAt: row?.lastSeenAt ?? null,
+    isTest: cls.kind === 'test',
+    testSource: cls.testSource,
+    testReason: cls.testReason,
+    kind: cls.kind,
+    override: p.is_test ? 'test' : p.is_real_override ? 'real' : 'auto',
+    isVendor: cls.isVendor,
+    vendorNames: [...new Set(seatList.map((v) => v.business_name).filter((n): n is string => !!n))],
+    devices: dev.devices,
+    surface: dev.surface,
+    lastSeenAt: dev.lastSeenAt,
   });
 }
 

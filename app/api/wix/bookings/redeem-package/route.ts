@@ -66,7 +66,7 @@ async function insertFallbackPackageBookings(
     user_id: params.userId,
     session_id: params.sessionId,
     child_id: i === 0 ? childId : null,
-    guest_name: i === 0 ? null : (params.guestNames[i - 1]?.trim() || 'Guest child'),
+    guest_name: i === 0 ? null : (params.guestNames[i - 1]?.trim() || 'Accompany'),
     package_purchase_id: params.packagePurchaseId,
     policies_accepted: params.policiesAccepted,
     wix_booking_id: params.wixBookingId,
