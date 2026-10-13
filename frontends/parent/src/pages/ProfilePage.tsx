@@ -168,7 +168,7 @@ type BookingItem = {
   // A multi-child booking (00084): every seat is its own booking row sharing
   // one booking_group_id, collapsed here into a single card. `places` lists
   // them in seat order — seat 1 is the chosen child, the rest are guests
-  // ("Accompany" until renamed). `allIds` drives group reschedule; cancel
+  // ("Guest" until renamed). `allIds` drives group reschedule; cancel
   // uses `groupId`.
   groupId: string | null;
   places: { bookingId: string; name: string; isGuest: boolean; status: string }[];
@@ -1910,7 +1910,7 @@ export default function ProfilePage() {
           else groups.set(key, [r]);
         }
         const placeName = (r: (typeof rows)[number]) =>
-          r.children?.name?.trim() || r.guest_name?.trim() || "Accompany";
+          r.children?.name?.trim() || r.guest_name?.trim() || "Guest";
         setBookings(
           [...groups.values()].map((seats) => {
             // The card represents the live seats; if every seat is cancelled
@@ -3627,7 +3627,7 @@ function PastActivitiesTab({
 
 /** The seats of a multi-child booking (00084). The "N tickets" line is the
  *  disclosure toggle; opening it reveals the roster indented right beneath.
- *  Seat 1 is the chosen child (read-only); guest seats read "Accompany"
+ *  Seat 1 is the chosen child (read-only); guest seats read "Guest"
  *  until the parent renames them — the name is written to bookings.guest_name
  *  and shows on the vendor's roster too. Each seat can be cancelled on its
  *  own, leaving the rest of the party booked. */
@@ -3669,7 +3669,7 @@ function PartyPlaces({
       {open && (
         <ul id={listId} className="mt-2.5 space-y-1.5">
           {b.places.map((p, i) => {
-            const unnamed = p.isGuest && (p.name === "Accompany" || p.name === "Guest child");
+            const unnamed = p.isGuest && (p.name === "Guest" || p.name === "Accompany" || p.name === "Guest child");
             return (
               <li key={p.bookingId} className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <span
@@ -3691,7 +3691,7 @@ function PartyPlaces({
                         if (e.key === "Enter") { onRename(p.bookingId, draft); setEditing(null); }
                         if (e.key === "Escape") setEditing(null);
                       }}
-                      placeholder="Accompany"
+                      placeholder="Guest name"
                       className="min-w-0 flex-1 rounded-[9px] border border-[#FED7E4] px-2.5 py-1.5 text-sm font-semibold outline-none focus:border-baby-pink"
                     />
                     <button type="button" onClick={() => { onRename(p.bookingId, draft); setEditing(null); }} className="text-xs font-black text-baby-pink">Save</button>
@@ -3768,10 +3768,18 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // list ever rendered the row for it to highlight, which is exactly what
   // "the highlighted row is there but not visibly marked" looked like.
   const [flashing, setFlashing] = useState(false);
+  // A multi-ticket booking is one row, keyed (id="row-…") by its first seat, but
+  // the notification may name any seat of it. Resolve the highlight id to the
+  // row that actually holds it — scrolling to `row-<seat id>` found nothing for
+  // every other seat, so the page opened with no row marked. Null when this list
+  // doesn't hold it (the page renders one list per child, or it's filtered out).
+  const highlightRowId = highlightId
+    ? items.find((b) => b.id === highlightId || b.allIds.includes(highlightId))?.id ?? null
+    : null;
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightRowId) return;
     let t: number | undefined;
-    const stopScroll = scrollHighlightIntoView(`row-${highlightId}`, () => {
+    const stopScroll = scrollHighlightIntoView(`row-${highlightRowId}`, () => {
       setFlashing(true);
       t = window.setTimeout(() => setFlashing(false), 1600);
     });
@@ -3779,8 +3787,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       stopScroll();
       window.clearTimeout(t);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightId]);
+  }, [highlightRowId]);
 
   const hoursLabel = (h: number) => (h === 1 ? "1 hour" : `${h} hours`);
   const upcoming = (b: BookingItem) =>

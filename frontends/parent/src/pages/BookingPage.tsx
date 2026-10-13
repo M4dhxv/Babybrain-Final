@@ -241,7 +241,7 @@ export default function BookingPage() {
     return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 1;
   });
   // Optional names for the extra seats of a multi-child booking (00084);
-  // index 0 = the 2nd child. Blank entries become "Accompany" on both the
+  // index 0 = the 2nd child. Blank entries become "Guest" on both the
   // parent card and the vendor roster, editable later from My Bookings.
   const [guestNames, setGuestNames] = useState<string[]>(draft?.guestNames ?? []);
   const [childId, setChildId] = useState<string | null>(null);
@@ -991,7 +991,7 @@ export default function BookingPage() {
         childId: bookChildId,
         policiesAccepted: acceptedPolicies,
         count,
-        // Names for the extra seats (00084); blank -> "Accompany".
+        // Names for the extra seats (00084); blank -> "Guest".
         ...(count > 1
           ? { guestNames: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
           : {}),
@@ -1158,7 +1158,7 @@ export default function BookingPage() {
           p_child_id: bookChildId,
           p_policies: acceptedPolicies,
           p_quantity: count,
-          // Names for the extra seats (00084); blank -> "Accompany".
+          // Names for the extra seats (00084); blank -> "Guest".
           ...(count > 1
             ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
             : {}),
@@ -1604,7 +1604,7 @@ export default function BookingPage() {
                       <section>
                         <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="mb-3 text-sm font-semibold text-[#59658d]">
-                          {bookChild?.name ?? "Your child"} takes the first place. Name the other {count - 1 === 1 ? "child" : "children"} if you like — otherwise they show as &ldquo;Accompany&rdquo; to you and the provider. You can edit these later from My Bookings.
+                          {bookChild?.name ?? "Your child"} takes the first place. Name the {count - 1 === 1 ? "guest" : "guests"} if you like — otherwise they show as &ldquo;Guest&rdquo; to you and the provider. You can edit these later from My Bookings.
                         </p>
                         <div className="space-y-2">
                           {Array.from({ length: count - 1 }).map((_, i) => (
@@ -1615,7 +1615,7 @@ export default function BookingPage() {
                               autoComplete="off"
                               autoCapitalize="words"
                               onChange={(e) => setGuestNames((xs) => { const n = [...xs]; n[i] = e.target.value; return n; })}
-                              placeholder="Accompany"
+                              placeholder="Guest name"
                               className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
                             />
                           ))}

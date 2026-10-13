@@ -65,7 +65,9 @@ export default function NotificationsPage() {
     provider ? `notifications:${provider.id}` : null,
     async () => {
       const { data: rows } = await supabase.rpc('provider_notification_feed', { p_provider: provider!.id, p_limit: 50 });
-      return (rows ?? []) as Event[];
+      // Newest first. The feed RPC unions five kinds; sort here as well so the
+      // page is right even before the ordering fix (00240) is applied.
+      return ((rows ?? []) as Event[]).sort((a, b) => new Date(b.event_at).getTime() - new Date(a.event_at).getTime());
     },
   );
   const events = data ?? [];

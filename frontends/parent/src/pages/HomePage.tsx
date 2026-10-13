@@ -18,9 +18,10 @@ const REVIEWS = [
     text: "BabyBrain is what we have all been waiting for! It’s amazing to have one go to platform to book classes for our child. It’s incredibly intuitive to use & has so many fantastic activities to choose from. BabyBrain is a must have for parents of young ones in Singapore!",
     role: "Mum of 2 month old",
   },
-  // Luke: bearded adult, light skin tone. The seed is the picker's "bearded adult" entry so the circle keeps its purple; the emoji overrides the tone.
-  { name: "Luke", avatarSeed: "parent:bearded-adult:3", emoji: "\u{1F9D4}\u{1F3FB}", text: "Such a useful platform. BabyBrain makes it so easy to book and find new activities for our son. And we love being part of the BB community!", role: "Dad of 13 month old" },
-  { name: "Sarah", emoji: undefined, text: "A great platform to discover new activities and local gems.", role: "Mum of 4.5 year old" },
+  // Luke: the picker's "bearded adult", medium-light skin tone (blond hair and beard), on the green circle - the avatar Aman picked. Seed parent:bearded-adult:2 is exactly that picker option, so the face and circle colour match it.
+  { name: "Luke", avatarSeed: "parent:bearded-adult:2", emoji: "\u{1F9D4}\u{1F3FC}", text: "Such a useful platform. BabyBrain makes it so easy to book and find new activities for our son. And we love being part of the BB community!", role: "Dad of 13 month old" },
+  // Rach: brunette woman, medium-light skin tone (half Singaporean, half English).
+  { name: "Rach", emoji: "\u{1F469}\u{1F3FC}", text: "What we’ve all been waiting for! A seamless platform that brings all the activities and classes for your little ones together in one place. No more jumping between different websites to book activities. I love how easy it is to browse by location and age, making it so simple to find the perfect activities for your little ones. Thank you BabyBrain!", role: "Mum of 3.5 year old and 17 month old" },
 ];
 
 export default function HomePage() {

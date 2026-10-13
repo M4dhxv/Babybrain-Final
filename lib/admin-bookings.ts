@@ -175,7 +175,7 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
     const payVia: PayVia = isManual ? 'manual' : tokenCount > 0 ? 'token' : credits > 0 ? 'credit' : paidSeats.length > 0 ? 'amount' : unpaidPriced ? 'unpaid' : 'free';
 
     const purchase = seats.map((s) => (s.package_purchase_id ? purchaseBy.get(s.package_purchase_id) : undefined)).find(Boolean);
-    const childNames = seats.map((s) => (s.child_id ? childBy.get(s.child_id) : null) ?? s.guest_name ?? (isManual ? null : 'Accompany')).filter((n): n is string => !!n);
+    const childNames = seats.map((s) => (s.child_id ? childBy.get(s.child_id) : null) ?? s.guest_name ?? (isManual ? null : 'Guest')).filter((n): n is string => !!n);
 
     out.push({
       id: key,

@@ -470,11 +470,15 @@ function ContactLink({
 }
 
 
+/** Reviews shown at first, and how many more each "Show more reviews" press adds. */
+const REVIEWS_PAGE = 3;
+
 export default function ActivityDetailPage() {
   const { activity, sessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading, error: loadError, reload: reloadDetail } = useActivityDetail(getParam("slug"));
   const fav = useFavorite(activity?.id);
   const { session } = useAuth();
   const { isPlus } = usePlan();
+  const [reviewsShown, setReviewsShown] = useState(REVIEWS_PAGE);
   const [enquiring, setEnquiring] = useState(false);
   const [groupChat, setGroupChat] = useState(false);
   /** Whether this parent holds a live booking on the activity — unlocks the class group chat. */
@@ -888,11 +892,11 @@ export default function ActivityDetailPage() {
               </div>
             ) : (
               <div className="bb-reveal">
-                {reviews.map((r) => (
+                {reviews.slice(0, reviewsShown).map((r) => (
                   <div key={r.id} className="mb-3 border-b border-[#F4EFF0] pb-3">
                     <div className="flex gap-0.5 text-[#FFD77A]">{Array.from({ length: r.rating }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</div>
                     {r.comment && <p className="mt-1 font-semibold text-[#34406f]">{r.comment}</p>}
-                    <p className="mt-1 text-xs font-semibold text-[#6D748D]">A BabyBrain parent</p>
+                    <p className="mt-1 text-xs font-semibold text-[#6D748D]">{r.author_name || "A BabyBrain parent"}</p>
                     {r.provider_response && (
                       <div className="mt-2 rounded-[10px] bg-[#FFF5F8] p-3">
                         <p className="text-xs font-black text-baby-pink">Response from the provider</p>
@@ -901,6 +905,15 @@ export default function ActivityDetailPage() {
                     )}
                   </div>
                 ))}
+                {reviews.length > reviewsShown && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewsShown((n) => n + REVIEWS_PAGE)}
+                    className="text-sm font-black text-baby-pink hover:underline"
+                  >
+                    Show more reviews
+                  </button>
+                )}
                 {reviews.length === 0 && <p className="text-sm font-semibold text-[#68718f]">No reviews yet — be the first!</p>}
               </div>
             )}

@@ -24,8 +24,10 @@ export interface EmailCtx {
    *  key is a vendor template) — callers don't need to pass it themselves. */
   audience?: 'parent' | 'provider';
   /** 'events' = the launch-event footer: Instagram, Sign up, Explore activities (no profile /
-   *  unsubscribe links - registrants usually don't have an account). */
-  footer?: 'events';
+   *  unsubscribe links - registrants usually don't have an account).
+   *  'auth' = account emails (confirm, reset, log-in link): Instagram only, no profile /
+   *  unsubscribe links (nothing to update yet, and replies already reach BabyBrain). */
+  footer?: 'events' | 'auth';
 }
 export interface RenderedEmail {
   subject: string;
@@ -111,6 +113,7 @@ function layout(ctx: EmailCtx, inner: string): string {
         <a href="${appUrl}/signup" style="color:#767676;text-decoration:none">Sign up</a> &nbsp;·&nbsp;
         <a href="${appUrl}/explore" style="color:#767676;text-decoration:none">Explore activities</a>
       </div>`
+        : ctx.footer === 'auth' ? ''
         : `<div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${profileHref}" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
         <a href="${unsubscribeHref}" style="color:#9a9a9a">Unsubscribe</a>
@@ -211,7 +214,7 @@ const T: Record<string, Template> = {
   // These replace Supabase's default unbranded auth emails; they are sent by
   // app/api/auth/send-email (the Supabase "Send Email" auth hook).
   auth_confirm_signup: (d, ctx) =>
-    wrap(ctx, 'Confirm your email 👶🧠',
+    wrap({ ...ctx, footer: 'auth' }, 'Confirm your email 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.') +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Confirm my email') +
@@ -220,7 +223,7 @@ const T: Record<string, Template> = {
       sign),
 
   auth_recovery: (d, ctx) =>
-    wrap(ctx, 'Reset your password 👶🧠',
+    wrap({ ...ctx, footer: 'auth' }, 'Reset your password 👶🧠',
       p(greet(ctx.recipientName)) +
       p('We received a request to reset the password on your BabyBrain account.') +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Set a new password') +
@@ -229,7 +232,7 @@ const T: Record<string, Template> = {
       sign),
 
   auth_magic_link: (d, ctx) =>
-    wrap(ctx, 'Your BabyBrain log-in link 👶🧠',
+    wrap({ ...ctx, footer: 'auth' }, 'Your BabyBrain log-in link 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Here’s your link to log in — no password needed.') +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Log in to BabyBrain') +
@@ -238,7 +241,7 @@ const T: Record<string, Template> = {
       sign),
 
   auth_email_change: (d, ctx) =>
-    wrap(ctx, 'Confirm your new email 👶🧠',
+    wrap({ ...ctx, footer: 'auth' }, 'Confirm your new email 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`Please confirm ${bold(str(d, 'new_email') ?? 'your new email address')} so we can use it for your BabyBrain account.`) +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Confirm new email') +
@@ -247,7 +250,7 @@ const T: Record<string, Template> = {
       sign),
 
   auth_invite: (d, ctx) =>
-    wrap(ctx, 'You’re invited to BabyBrain 👶🧠',
+    wrap({ ...ctx, footer: 'auth' }, 'You’re invited to BabyBrain 👶🧠',
       p(greet(ctx.recipientName)) +
       p('You’ve been invited to join BabyBrain — activities for little ones across Singapore, in one place.') +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Accept the invitation') +
@@ -318,15 +321,23 @@ const T: Record<string, Template> = {
       sign);
   },
 
-  waitlist_confirmed: (d, ctx) =>
-    wrap(ctx, 'You’re off the waitlist — you’re in! 👶🧠',
+  waitlist_confirmed: (d, ctx) => {
+    // Same ?highlight= as the other booking emails, so the bookings page marks
+    // the booking that just got its place.
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const bookingId = str(d, 'booking_id');
+    const href = bookingId && url.startsWith('/profile?tab=bookings') && !url.includes('highlight=')
+      ? `${url}&highlight=${encodeURIComponent(bookingId)}`
+      : url;
+    return wrap(ctx, 'You’re off the waitlist — you’re in! 👶🧠',
       p(greet(ctx.recipientName)) +
       p('Good news — a spot opened up on the following activity and, as it was already paid for, your place is now confirmed:') +
       details(d) +
-      p(`You can see it any time in ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'your bookings')}.`) +
+      p(`You can see it any time in ${link(ctx, href, 'your bookings')}.`) +
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys it!') +
-      sign),
+      sign);
+  },
 
   // Fired when a VENDOR cancels a booking (public.notify_booking_cancelled,
   // gated on cancelled_by is not null) — the only cancellation that emails the

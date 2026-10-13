@@ -666,12 +666,21 @@ export default function ActivitiesPage() {
       });
     supabase
       .from('packages')
-      .select('id, name, credits, price_cents, activity_ids')
+      .select('id, name, credits, price_cents, activity_ids, starts_at, available_until')
       .eq('provider_id', provider.id)
       .eq('active', true)
       .then(({ data }) => {
         if (stale) return;
-        const rows = (data ?? []) as unknown as Array<PreviewPackage & { activity_ids: string[] | null }>;
+        const rows = ((data ?? []) as unknown as Array<PreviewPackage & { activity_ids: string[] | null; starts_at: string | null; available_until: string | null }>)
+          // Same sale-window rule as the parent app's isPackOnSale: a pack
+          // that hasn't reached "Available from" (or is past "Available
+          // until") isn't shown to parents, so the preview must hide it too.
+          .filter((p) => {
+            const now = Date.now();
+            if (p.starts_at && new Date(p.starts_at).getTime() > now) return false;
+            if (p.available_until && new Date(p.available_until).getTime() <= now) return false;
+            return true;
+          });
         // Packs are for classes only — the parent app hides them on a Wix
         // Event/COURSE/APPOINTMENT, so the preview must too.
         const packsNotOffered = previewFor.wix_service_type === 'EVENT' || previewFor.wix_service_type === 'COURSE' || previewFor.wix_service_type === 'APPOINTMENT';

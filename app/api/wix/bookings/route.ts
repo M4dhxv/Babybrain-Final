@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     infoResponse?: string;
     count?: number;
     // Names for the extra seats of a multi-child booking (00084); index 0 =
-    // the 2nd child. Blank -> "Accompany".
+    // the 2nd child. Blank -> "Guest".
     guestNames?: string[];
   };
   const { activityId, wixSlotId } = body;
@@ -115,13 +115,13 @@ export async function POST(request: Request) {
 
   // A party (00084): every seat is its own row sharing a booking_group_id
   // so the parent app collapses them into one card. Seat 1 carries the
-  // child; seats 2..N are "Accompany" (renamable later) and skip the
+  // child; seats 2..N are "Guest" (renamable later) and skip the
   // medical/info fields, which ride on seat 1.
   const groupId = count > 1 ? randomUUID() : null;
   const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
     child_id: i === 0 ? child.childId : null,
-    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Accompany'),
+    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Guest'),
     booking_group_id: groupId,
     session_id: result.sessionId,
     status: 'confirmed' as const,

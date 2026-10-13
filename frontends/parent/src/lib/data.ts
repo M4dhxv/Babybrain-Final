@@ -198,7 +198,8 @@ export interface ActivityDetail {
       })
     | null;
   sessions: ActivitySession[];
-  reviews: Review[];
+  /** `author_name` is the reviewer's "First L." (activity_review_authors, 00242); null/absent -> "A BabyBrain parent". */
+  reviews: (Review & { author_name?: string | null })[];
   // A Wix COURSE's whole-run bounds from Wix's own schedule (see
   // /api/wix/slots). `sessions` is future-only, so this is what the "Runs …"
   // span uses to stay right for a course viewed mid-run.
@@ -494,13 +495,20 @@ export function useActivityDetail(slug: string | null): ActivityDetail & { error
           .select("*")
           .eq("activity_id", act.id)
           .order("created_at", { ascending: false })
-          .limit(10),
+          .limit(50),
+        // Reviewer labels ("Rachel S."), kept out of the reviews query because parent
+        // profiles are private; a failure just leaves the generic label.
+        supabase
+          .rpc("activity_review_authors", { p_activity_id: act.id })
+          .then((r) => (r.data ?? []) as { review_id: string; author: string | null }[], () => [] as { review_id: string; author: string | null }[]),
         act.provider_id
           ? apiGetPublic<{ canMessage: boolean }>(`/api/public/provider-plan?providerId=${act.provider_id}`)
               .then((r) => r.canMessage)
               .catch(() => false)
           : Promise.resolve(false),
-      ]).then(([{ data: reviews }, providerCanMessage]) => {
+      ]).then(([{ data: rawReviews }, authors, providerCanMessage]) => {
+        const nameOf = new Map(authors.map((a) => [a.review_id, a.author]));
+        const reviews = (rawReviews ?? []).map((r) => ({ ...r, author_name: nameOf.get(r.id) ?? null }));
         if (!cancelled) {
           setState((s) => ({
             ...s,

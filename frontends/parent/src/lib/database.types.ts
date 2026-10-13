@@ -1107,6 +1107,11 @@ export type Database = {
         Args: { p_review_id: string; p_response: string };
         Returns: undefined;
       };
+      // 00242: "First L." per review of an activity (parent profiles stay private).
+      activity_review_authors: {
+        Args: { p_activity_id: string };
+        Returns: { review_id: string; author: string | null }[];
+      };
       child_age_months: {
         Args: { dob: string };
         Returns: number;

@@ -625,7 +625,7 @@ export type Database = {
           policies_accepted: string[];
           // Manual/guest booking (00026) or, for a multi-child booking
           // (00084), an extra seat — always set to a real name or the
-          // literal "Accompany" (was "Guest child" until 00238) so the roster never falls back to the
+          // literal "Guest" (was "Guest child" until 00238) so the roster never falls back to the
           // parent's own name for a guest seat.
           guest_name: string | null;
           guest_contact: string | null;

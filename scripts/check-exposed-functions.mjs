@@ -32,7 +32,7 @@ const ALLOWED = new Set([
   'mark_own_attendance', 'my_booking_activities', 'child_journey_stats',
   'save_push_subscription', 'delete_push_subscription', 'record_parent_device',
   // Catalogue (public by design)
-  'search_activities', 'matching_activities', 'search_activity_facets',
+  'activity_review_authors', 'search_activities', 'matching_activities', 'search_activity_facets',
   'upcoming_activity_sessions', 'session_required_policies', 'search_claimable_providers',
   // Vendor portal (each checks membership of the provider it is asked about)
   'provider_overview', 'provider_analytics', 'provider_bookings_table', 'provider_make_up_tokens',

@@ -114,7 +114,7 @@ export async function POST(request: Request) {
   // trigger counts rows, so each child needs to be its own seat rather than
   // the whole party being one row. A party (00084) shares a
   // booking_group_id; seat 1 has the child + medical/info, seats 2..N are
-  // "Accompany".
+  // "Guest".
   // Timing + venue of the slot just reserved, for the confirmation page.
   const { data: slot } = await admin
     .from('activity_sessions')
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
   const rows = Array.from({ length: count }, (_unused, i) => ({
     user_id: user.id,
     child_id: i === 0 ? child.childId : null,
-    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Accompany'),
+    guest_name: i === 0 ? null : (body.guestNames?.[i - 1]?.trim() || 'Guest'),
     booking_group_id: groupId,
     session_id: reserved.sessionId,
     status: 'pending' as const,
