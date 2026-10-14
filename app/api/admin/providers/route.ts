@@ -33,7 +33,12 @@ export async function GET(request: Request) {
     db.from('activity_categories').select('slug, name').order('name'),
     db
       .from('providers')
-      .select('id, business_name, slug, vendor_category, region, status, is_claimed, is_auto_listed, created_at')
+      // Embedded counts ride on the one query (and aren't subject to the
+      // 1000-row cap that a separate activities select would hit).
+      .select(
+        'id, business_name, slug, vendor_category, region, status, is_claimed, is_auto_listed, created_at, ' +
+        'latitude, activities(is_published), provider_locations(latitude)'
+      )
       .order('created_at', { ascending: false })
       .limit(1000),
   ]);
@@ -41,10 +46,29 @@ export async function GET(request: Request) {
   if (cats.error) return NextResponse.json({ error: cats.error.message }, { status: 500 });
   if (providers.error) return NextResponse.json({ error: providers.error.message }, { status: 500 });
 
+  type Row = {
+    id: string; business_name: string; slug: string; vendor_category: string; region: string | null;
+    status: string; is_claimed: boolean; is_auto_listed: boolean; created_at: string;
+    latitude: number | null;
+    activities: { is_published: boolean }[] | null;
+    provider_locations: { latitude: number | null }[] | null;
+  };
+  // Health signals for the directory filters: what a parent would hit as a
+  // dead end (no classes) or what the map can't place (no pin).
+  const recent = ((providers.data ?? []) as unknown as Row[]).map(
+    ({ activities, provider_locations, latitude, ...p }) => ({
+      ...p,
+      class_count: activities?.length ?? 0,
+      live_count: activities?.filter((a) => a.is_published).length ?? 0,
+      venue_count: provider_locations?.length ?? 0,
+      no_pin: latitude == null && !(provider_locations ?? []).some((l) => l.latitude != null),
+    })
+  );
+
   return NextResponse.json({
     categories: cats.data ?? [],
     vendorCategories: VENDOR_CATEGORIES,
-    recent: providers.data ?? [],
+    recent,
   });
 }
 

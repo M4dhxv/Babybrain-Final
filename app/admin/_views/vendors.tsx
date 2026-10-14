@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache } from '../_lib/core';
 import { Select } from '../_lib/multiselect';
 
@@ -15,9 +15,12 @@ type AdminCategory = { slug: string; name: string };
 type RecentProvider = {
   id: string; business_name: string; slug: string; vendor_category: string;
   region: string | null; status: string; is_claimed: boolean; is_auto_listed: boolean; created_at: string;
+  /** Health signals for the directory filters; absent if the API didn't send them. */
+  class_count?: number; live_count?: number; venue_count?: number; no_pin?: boolean;
 };
 type NewVendorMeta = { categories: AdminCategory[]; vendorCategories: string[]; recent: RecentProvider[] };
-type DraftLocation = { name: string; address: string; postal_code: string };
+// `open` is UI-only (is this card expanded?) and is never sent to the API.
+type DraftLocation = { name: string; address: string; postal_code: string; open?: boolean };
 type DraftSession = {
   starts_at: string; duration_mins: string; capacity: string; teacher_name: string; studio: string;
 };
@@ -27,6 +30,7 @@ type DraftActivity = {
   image_urls: string; external_booking_url: string; requires_medical_disclosure: boolean;
   is_custom_location: boolean; custom_location_label: string;
   sessions: DraftSession[];
+  open?: boolean;
 };
 /** Images are entered as URLs, one per line. */
 const splitUrls = (s: string) => s.split(/[\n,]/).map((u) => u.trim()).filter(Boolean);
@@ -206,6 +210,12 @@ export default function AddVendorView() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<CreatedVendor | null>(null);
+  // The add-business form is tucked behind a button; the page opens on the directory.
+  const [showAdd, setShowAdd] = useState(false);
+  // Optional business fields (WhatsApp, booking link, images, socials, UEN) sit under a fold.
+  const [showMore, setShowMore] = useState(false);
+  // Directory health filter: 'all' | 'claimed' | 'auto' | 'hand' | 'noarea' | 'noclasses' | 'nopin'
+  const [filter, setFilter] = useState<string>('all');
 
   // business
   const [name, setName] = useState('');
@@ -246,9 +256,21 @@ export default function AddVendorView() {
   useEffect(() => { load(); }, [load]);
 
   const q = search.trim().toLowerCase();
-  const filteredVendors = !meta ? [] : !q ? meta.recent : meta.recent.filter((p) =>
-    [p.business_name, p.slug, p.region ?? '', VENDOR_CATEGORY_LABELS[p.vendor_category] ?? p.vendor_category]
-      .join(' ').toLowerCase().includes(q));
+  const FILTERS: { key: string; label: string; test: (p: RecentProvider) => boolean }[] = [
+    { key: 'all', label: 'All', test: () => true },
+    { key: 'claimed', label: 'Claimed', test: (p) => p.is_claimed },
+    { key: 'auto', label: 'Auto-listed', test: (p) => !p.is_claimed && p.is_auto_listed },
+    { key: 'hand', label: 'Added by hand', test: (p) => !p.is_claimed && !p.is_auto_listed },
+    { key: 'noarea', label: 'No area', test: (p) => !p.region },
+    // Only count a vendor as "no classes" when the API actually told us.
+    { key: 'noclasses', label: 'No classes', test: (p) => p.class_count === 0 },
+    { key: 'nopin', label: 'No map pin', test: (p) => p.no_pin === true },
+  ];
+  const activeFilter = FILTERS.find((f) => f.key === filter) ?? FILTERS[0];
+  const filteredVendors = !meta ? [] : meta.recent.filter((p) =>
+    activeFilter.test(p) && (!q ||
+      [p.business_name, p.slug, p.region ?? '', VENDOR_CATEGORY_LABELS[p.vendor_category] ?? p.vendor_category]
+        .join(' ').toLowerCase().includes(q)));
 
   // The slug is derived from the name until the founder edits it herself.
   const autoSlug = name.toLowerCase().normalize('NFKD')
@@ -262,8 +284,14 @@ export default function AddVendorView() {
     setDescription(''); setWebsite(''); setBookingUrl(''); setEmail(''); setPhone('');
     setWhatsapp(''); setAddress(''); setPostal(''); setLocations([]); setActivities([]);
     setLogoUrl(''); setCoverUrl(''); setUen(''); setInstagram(''); setFacebook(''); setTiktok('');
-    setOverridePayoutGate(false);
+    setOverridePayoutGate(false); setShowMore(false);
   }
+
+  /** Expand one draft card and fold its siblings, so the form stays short. */
+  const openOnly = <T extends { open?: boolean }>(list: T[], at: number): T[] =>
+    list.map((x, j) => ({ ...x, open: j === at }));
+  const toggleOpen = <T extends { open?: boolean }>(list: T[], at: number): T[] =>
+    list.map((x, j) => (j === at ? { ...x, open: !x.open } : x));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -319,6 +347,7 @@ export default function AddVendorView() {
       setDone(r);
       toast('Vendor created');
       reset();
+      setShowAdd(false);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -332,8 +361,46 @@ export default function AddVendorView() {
 
   return (
     <div>
+      <div style={{ ...card(), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Vendors</div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 4, maxWidth: 720 }}>
+            Search the directory below and click a vendor to edit it, or add a new business by hand.
+          </div>
+        </div>
+        <button type="button" onClick={() => setShowAdd((v) => !v)}
+          style={showAdd ? tabBtn(false) : { ...primaryBtn(), whiteSpace: 'nowrap' }}>
+          {showAdd ? 'Close' : '+ Add new business'}
+        </button>
+      </div>
+
+      {done && !showAdd && (
+        <div style={{ ...card(), marginTop: 12, borderColor: C.green }}>
+          <div style={{ color: C.green, fontWeight: 800 }}>
+            {done.provider.business_name} added — {done.activities} class{done.activities === 1 ? '' : 'es'},{' '}
+            {done.locations} venue{done.locations === 1 ? '' : 's'}
+            {done.provider.region ? `, ${done.provider.region}` : ''}.
+          </div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>
+            {done.geocoded} address{done.geocoded === 1 ? '' : 'es'} placed on the map. Find it at{' '}
+            <a href={`/explore?q=${encodeURIComponent(done.provider.business_name)}`}
+              target="_blank" rel="noreferrer" style={{ color: C.blue }}>
+              Explore &rarr; {done.provider.business_name}
+            </a>
+          </div>
+          {done.warnings.map((w, i) => (
+            <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>
+          ))}
+          <button type="button" onClick={() => setEditingId(done.provider.id)}
+            style={{ ...primaryBtn(), marginTop: 12 }}>
+            Open editor — add sessions &amp; check details
+          </button>
+        </div>
+      )}
+
+      {showAdd && (
       <form onSubmit={submit}>
-        <div style={card()}>
+        <div style={{ ...card(), marginTop: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Add a vendor to the directory</div>
           <div style={{ color: C.muted, fontSize: 13, marginTop: 4, maxWidth: 720 }}>
             Creates the business, its venues and its classes in one go. Addresses are looked up
@@ -404,6 +471,14 @@ export default function AddVendorView() {
             </div>
           </div>
 
+          <button type="button" onClick={() => setShowMore((v) => !v)}
+            aria-expanded={showMore}
+            style={{ ...tabBtn(false), marginBottom: showMore ? 14 : 0, fontSize: 13 }}>
+            {showMore ? '▾ Hide extra details' : '▸ More details'}
+            <span style={{ color: C.muted, fontWeight: 600 }}> · WhatsApp, booking link, logo, cover, socials, UEN</span>
+          </button>
+
+          {showMore && (<>
           <div style={grid2}>
             <div style={field}>
               <label style={label('')}>WhatsApp</label>
@@ -443,6 +518,7 @@ export default function AddVendorView() {
               <input value={uen} onChange={(e) => setUen(e.target.value)} style={input()} placeholder="business reg. no." />
             </div>
           </div>
+          </>)}
         </div>
 
         {/* ---- venues ---- */}
@@ -454,14 +530,39 @@ export default function AddVendorView() {
                 One per place they teach — each gets its own pin. Skip this if they only use the address above.
               </div>
             </div>
-            <button type="button" onClick={() => setLocations((p) => [...p, { name: '', address: '', postal_code: '' }])}
+            <button type="button"
+              onClick={() => setLocations((p) => {
+                const n = [...p, { name: '', address: '', postal_code: '' }];
+                return openOnly(n, n.length - 1);
+              })}
               style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add venue</button>
           </div>
 
           {locations.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No extra venues.</div>}
           {locations.map((l, i) => (
             <div key={i} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 40px', gap: 10, alignItems: 'end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button type="button" aria-expanded={!!l.open}
+                  onClick={() => setLocations((p) => toggleOpen(p, i))}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                    background: 'transparent', border: 'none', color: C.text, cursor: 'pointer', padding: 0 }}>
+                  <span style={{ color: C.muted, fontSize: 12, width: 12, display: 'inline-block',
+                    transform: l.open ? 'rotate(90deg)' : 'none' }}>▶</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {l.name || 'New venue'}
+                    </span>
+                    <span style={{ display: 'block', color: C.muted, fontSize: 12, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[l.address, l.postal_code].filter(Boolean).join(' · ') || 'No address yet'}
+                    </span>
+                  </span>
+                </button>
+                <button type="button" title="Remove venue"
+                  onClick={() => setLocations((p) => p.filter((_, j) => j !== i))}
+                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border }}>✕</button>
+              </div>
+              {l.open && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px', gap: 10, alignItems: 'end', marginTop: 12 }}>
                 <div>
                   <label style={label('')}>Venue name</label>
                   <input value={l.name} style={input()} placeholder="East Coast studio"
@@ -477,10 +578,8 @@ export default function AddVendorView() {
                   <input value={l.postal_code} style={input()}
                     onChange={(e) => setLocations((p) => p.map((x, j) => j === i ? { ...x, postal_code: e.target.value } : x))} />
                 </div>
-                <button type="button" title="Remove venue"
-                  onClick={() => setLocations((p) => p.filter((_, j) => j !== i))}
-                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border, height: 42 }}>✕</button>
               </div>
+              )}
             </div>
           ))}
         </div>
@@ -495,20 +594,49 @@ export default function AddVendorView() {
               </div>
             </div>
             <button type="button"
-              onClick={() => setActivities((p) => [...p, {
-                title: '', category_slug: defaultCategory, description: '',
-                age_min_months: '', age_max_months: '', price: '', is_published: true,
-                image_urls: '', external_booking_url: '', requires_medical_disclosure: false,
-                is_custom_location: false, custom_location_label: '',
-                sessions: [],
-              }])}
+              onClick={() => setActivities((p) => {
+                const n: DraftActivity[] = [...p, {
+                  title: '', category_slug: defaultCategory, description: '',
+                  age_min_months: '', age_max_months: '', price: '', is_published: true,
+                  image_urls: '', external_booking_url: '', requires_medical_disclosure: false,
+                  is_custom_location: false, custom_location_label: '',
+                  sessions: [],
+                }];
+                return openOnly(n, n.length - 1);
+              })}
               style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}>+ Add class</button>
           </div>
 
           {activities.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No classes yet.</div>}
           {activities.map((a, i) => (
             <div key={i} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 40px', gap: 10, alignItems: 'end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button type="button" aria-expanded={!!a.open}
+                  onClick={() => setActivities((p) => toggleOpen(p, i))}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                    background: 'transparent', border: 'none', color: C.text, cursor: 'pointer', padding: 0 }}>
+                  <span style={{ color: C.muted, fontSize: 12, width: 12, display: 'inline-block',
+                    transform: a.open ? 'rotate(90deg)' : 'none' }}>▶</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.title || 'New class'}
+                    </span>
+                    <span style={{ display: 'block', color: C.muted, fontSize: 12, marginTop: 2 }}>
+                      {(meta?.categories ?? []).find((c) => c.slug === a.category_slug)?.name ?? 'No category'}
+                      {` · ${a.price === '' ? 'on enquiry' : `S$${a.price}`}`}
+                      {` · ${a.sessions.length} session${a.sessions.length === 1 ? '' : 's'}`}
+                      {a.sessions.length === 0 && <span style={{ color: C.pink, fontWeight: 700 }}> · no sessions</span>}
+                    </span>
+                  </span>
+                </button>
+                <Badge tone={a.is_published ? 'green' : 'grey'}>{a.is_published ? 'Published' : 'Hidden'}</Badge>
+                <button type="button" title="Remove class"
+                  onClick={() => setActivities((p) => p.filter((_, j) => j !== i))}
+                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border }}>✕</button>
+              </div>
+
+              {a.open && (<>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
                 <div>
                   <label style={label('')}>Class name</label>
                   <input value={a.title} style={input()} placeholder="Outdoor Sensory Play"
@@ -521,9 +649,6 @@ export default function AddVendorView() {
                     {(meta?.categories ?? []).map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
                   </Select>
                 </div>
-                <button type="button" title="Remove class"
-                  onClick={() => setActivities((p) => p.filter((_, j) => j !== i))}
-                  style={{ ...tabBtn(false), color: C.pink, borderColor: C.border, height: 42 }}>✕</button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginTop: 10 }}>
@@ -621,6 +746,7 @@ export default function AddVendorView() {
                   </div>
                 ))}
               </div>
+              </>)}
             </div>
           ))}
         </div>
@@ -633,35 +759,17 @@ export default function AddVendorView() {
           Let this vendor publish without Stripe — BabyBrain will settle their paid bookings manually until they connect Stripe (saved on the vendor, so their own portal lets them publish too)
         </label>
 
-        {done && (
-          <div style={{ ...card(), marginTop: 12, borderColor: C.green }}>
-            <div style={{ color: C.green, fontWeight: 800 }}>
-              {done.provider.business_name} added — {done.activities} class{done.activities === 1 ? '' : 'es'},{' '}
-              {done.locations} venue{done.locations === 1 ? '' : 's'}
-              {done.provider.region ? `, ${done.provider.region}` : ''}.
-            </div>
-            <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>
-              {done.geocoded} address{done.geocoded === 1 ? '' : 'es'} placed on the map. Find it at{' '}
-              <a href={`/explore?q=${encodeURIComponent(done.provider.business_name)}`}
-                target="_blank" rel="noreferrer" style={{ color: C.blue }}>
-                Explore &rarr; {done.provider.business_name}
-              </a>
-            </div>
-            {done.warnings.map((w, i) => (
-              <div key={i} style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>⚠ {w}</div>
-            ))}
-          </div>
-        )}
-
         <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
           <button type="submit" disabled={busy || !name.trim()}
             style={{ ...primaryBtn(), opacity: busy || !name.trim() ? 0.55 : 1 }}>
             {busy ? 'Adding…' : 'Add vendor'}
           </button>
           <button type="button" onClick={reset} style={tabBtn(false)}>Clear</button>
+          <button type="button" onClick={() => setShowAdd(false)} style={tabBtn(false)}>Cancel</button>
           {busy && <span style={{ color: C.muted, fontSize: 13 }}>Looking up addresses…</span>}
         </div>
       </form>
+      )}
 
       {/* ---- the directory: search, then click to edit ---- */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '26px 0 10px', flexWrap: 'wrap' }}>
@@ -671,6 +779,21 @@ export default function AddVendorView() {
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, area or type…" style={{ ...input(), maxWidth: 320 }} />
       </div>
+      {meta && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          {FILTERS.map((f) => {
+            const n = meta.recent.filter(f.test).length;
+            const on = f.key === activeFilter.key;
+            return (
+              <button key={f.key} type="button" onClick={() => { setFilter(f.key); setShownCount(60); }}
+                aria-pressed={on}
+                style={{ ...tabBtn(on), padding: '5px 12px', fontSize: 12 }}>
+                {f.label} <span style={{ opacity: 0.7 }}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {!meta ? <Skeleton /> : (
         <div style={{ ...card(), padding: 0, overflow: 'hidden' }}>
           {filteredVendors.length === 0 && (
@@ -689,6 +812,12 @@ export default function AddVendorView() {
                   {VENDOR_CATEGORY_LABELS[p.vendor_category] ?? p.vendor_category}
                   {p.region ? ` · ${p.region}` : ' · no area'}
                   {` · ${new Date(p.created_at).toLocaleDateString('en-SG')}`}
+                  {p.class_count !== undefined && (
+                    p.class_count === 0
+                      ? <span style={{ color: C.pink, fontWeight: 700 }}> · no classes</span>
+                      : ` · ${p.live_count ?? 0} of ${p.class_count} class${p.class_count === 1 ? '' : 'es'} live`
+                  )}
+                  {p.no_pin && <span style={{ color: C.pink, fontWeight: 700 }}> · no map pin</span>}
                 </div>
               </div>
               <Badge tone={p.is_claimed ? 'green' : 'grey'}>
@@ -741,10 +870,15 @@ function EditVendorModal({
   // the array, but a saved one has to be sent back with _delete.
   const [dropSess, setDropSess] = useState<{ actId: string; sessId: string }[]>([]);
   const [newLocs, setNewLocs] = useState<DraftLocation[]>([]);
+  // Class ids currently expanded; empty = every class collapsed.
+  const [openActs, setOpenActs] = useState<string[]>([]);
+  // JSON of everything editable as it was when loaded (or last saved), so we
+  // can tell whether closing the modal would throw work away.
+  const baseline = useRef<string | null>(null);
   useEffect(() => {
     adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
-      .then((p) =>
-        setD({
+      .then((p) => {
+        const loaded: ProviderDetail = {
           ...p,
           activities: p.activities.map((a) => ({
             ...a,
@@ -760,10 +894,33 @@ function EditVendorModal({
               )),
             })),
           })),
-        })
-      )
+        };
+        baseline.current = JSON.stringify([loaded, [], [], [], []]);
+        setD(loaded);
+      })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [id]);
+
+  const dirty = d !== null && baseline.current !== null
+    && JSON.stringify([d, newLocs, dropLoc, dropAct, dropSess]) !== baseline.current;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+
+  function requestClose() {
+    if (dirtyRef.current && !window.confirm('You have unsaved changes. Discard them and close?')) return;
+    onClose();
+  }
+
+  // Also guard a tab close / refresh while edits are unsaved.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
 
   const set = <K extends keyof ProviderDetail>(k: K, v: ProviderDetail[K]) =>
     setD((p) => (p ? { ...p, [k]: v } : p));
@@ -845,6 +1002,8 @@ function EditVendorModal({
         ...r.warnings,
       ]);
       toast('Vendor saved');
+      // What's on screen is now what's saved, so closing shouldn't nag.
+      baseline.current = JSON.stringify([d, newLocs, dropLoc, dropAct, dropSess]);
       setTimeout(onSaved, 1200);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -856,7 +1015,7 @@ function EditVendorModal({
   const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 };
 
   return (
-    <div onClick={onClose}
+    <div onClick={requestClose}
       style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.55)', overflow: 'auto', padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ ...card(), maxWidth: 860, margin: '0 auto', padding: 20 }}>
@@ -874,7 +1033,7 @@ function EditVendorModal({
                     : 'Added by hand; the crawler leaves it alone.'}
                 </div>
               </div>
-              <button type="button" onClick={onClose} style={tabBtn(false)}>Close</button>
+              <button type="button" onClick={requestClose} style={tabBtn(false)}>Close</button>
             </div>
 
             {/* business */}
@@ -1036,10 +1195,18 @@ function EditVendorModal({
             ))}
 
             {/* classes */}
-            <div style={{ fontWeight: 800, margin: '18px 0 10px' }}>
-              Classes <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>
-                ({d.activities.filter((a) => a.is_published).length} live of {d.activities.length})
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, margin: '18px 0 10px' }}>
+              <div style={{ fontWeight: 800 }}>
+                Classes <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>
+                  ({d.activities.filter((a) => a.is_published).length} live of {d.activities.length})
+                </span>
+              </div>
+              {d.activities.length > 1 && (
+                <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
+                  onClick={() => setOpenActs(openActs.length === d.activities.length ? [] : d.activities.map((a) => a.id))}>
+                  {openActs.length === d.activities.length ? 'Collapse all' : 'Expand all'}
+                </button>
+              )}
             </div>
             {d.activities.length === 0 && (
               <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>
@@ -1048,9 +1215,41 @@ function EditVendorModal({
             )}
             {d.activities.map((a) => {
               const gone = dropAct.includes(a.id);
+              const isOpen = openActs.includes(a.id);
               return (
                 <div key={a.id} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10, opacity: gone ? 0.45 : 1 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 190px 80px', gap: 10, alignItems: 'end' }}>
+                  {/* Collapsed by default: one summary row per class, click to expand. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button type="button" aria-expanded={isOpen}
+                      onClick={() => setOpenActs((p) => isOpen ? p.filter((x) => x !== a.id) : [...p, a.id])}
+                      style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                        background: 'transparent', border: 'none', color: C.text, cursor: 'pointer', padding: 0 }}>
+                      <span style={{ color: C.muted, fontSize: 12, width: 12, display: 'inline-block',
+                        transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {a.title || 'Untitled class'}
+                        </span>
+                        <span style={{ display: 'block', color: C.muted, fontSize: 12, marginTop: 2 }}>
+                          {a.category_name ?? a.category_slug ?? 'No category'}
+                          {` · ${a.price == null ? 'on enquiry' : `S$${a.price}`}`}
+                          {` · ${a.sessions.length} session${a.sessions.length === 1 ? '' : 's'}`}
+                          {/* Problems a parent would hit, visible without expanding. */}
+                          {a.sessions.length === 0 && <span style={{ color: C.pink, fontWeight: 700 }}> · no sessions (Schedule TBC)</span>}
+                          {!a.is_custom_location && !a.location_id && <span style={{ color: C.pink, fontWeight: 700 }}> · no venue</span>}
+                          {a.bookings_paused && <span style={{ color: C.pink, fontWeight: 700 }}> · bookings paused</span>}
+                        </span>
+                      </span>
+                    </button>
+                    <Badge tone={a.is_published ? 'green' : 'grey'}>{a.is_published ? 'Published' : 'Hidden'}</Badge>
+                    <button type="button" style={{ ...tabBtn(false), color: gone ? C.blue : C.pink }}
+                      onClick={() => setDropAct((p) => gone ? p.filter((x) => x !== a.id) : [...p, a.id])}>
+                      {gone ? 'Undo' : 'Delete'}
+                    </button>
+                  </div>
+
+                  {isOpen && (<>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 190px', gap: 10, alignItems: 'end', marginTop: 12 }}>
                     <div>
                       <label style={lbl}>Class name</label>
                       <input value={a.title} style={input()} disabled={gone}
@@ -1063,10 +1262,6 @@ function EditVendorModal({
                         {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
                       </Select>
                     </div>
-                    <button type="button" style={{ ...tabBtn(false), color: gone ? C.blue : C.pink, height: 42 }}
-                      onClick={() => setDropAct((p) => gone ? p.filter((x) => x !== a.id) : [...p, a.id])}>
-                      {gone ? 'Undo' : 'Delete'}
-                    </button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 150px', gap: 10, marginTop: 10 }}>
                     <div>
@@ -1176,6 +1371,7 @@ function EditVendorModal({
                       </div>
                     ))}
                   </div>
+                  </>)}
                 </div>
               );
             })}
@@ -1203,12 +1399,22 @@ function EditVendorModal({
             </label>
 
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
+            {/* Pinned to the bottom of the screen so Save is always in reach,
+                however far down the classes you've scrolled. */}
+            <div style={{
+              position: 'sticky', bottom: 0, zIndex: 2, display: 'flex', gap: 10, alignItems: 'center',
+              flexWrap: 'wrap', marginTop: 16, marginLeft: -20, marginRight: -20, marginBottom: -20,
+              padding: '12px 20px', background: C.panel, borderTop: `1px solid ${C.border}`,
+              borderRadius: '0 0 14px 14px',
+            }}>
               <button type="button" onClick={save} disabled={busy}
                 style={{ ...primaryBtn(), opacity: busy ? 0.55 : 1 }}>
                 {busy ? 'Saving…' : 'Save changes'}
               </button>
-              <button type="button" onClick={onClose} style={tabBtn(false)}>Cancel</button>
+              <button type="button" onClick={requestClose} style={tabBtn(false)}>Cancel</button>
+              {dirty && !busy && (
+                <span style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>Unsaved changes</span>
+              )}
               {(dropLoc.length > 0 || dropAct.length > 0 || dropSess.length > 0) && (
                 <span style={{ color: C.pink, fontSize: 13, fontWeight: 700 }}>
                   {dropLoc.length + dropAct.length + dropSess.length} item
