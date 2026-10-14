@@ -58,7 +58,8 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { cacheGet, cacheSet } from '@/lib/queryCache';
 import { resizeImage } from '@/lib/resizeImage';
-import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { PhotoEditorDialog } from '@/components/PhotoEditorDialog';
+import { SKIP_EDITOR_TYPES } from '@/lib/usePhotoEditor';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
@@ -1392,48 +1393,62 @@ export default function ActivitiesPage() {
   }
 
   const ACTIVITY_IMAGES_MAX = 10;
-  // The photo currently open in the crop dialog.
+  // The stored photo currently open in the photo editor.
   const [cropUrl, setCropUrl] = useState<string | null>(null);
+  // Photos picked but not yet through the editor (one at a time).
+  const [photoQueue, setPhotoQueue] = useState<File[]>([]);
+  const [photoTotal, setPhotoTotal] = useState(0);
 
-  async function uploadOneImage(original: File): Promise<string | null> {
+  async function uploadOneImage(original: File, opts?: { edited?: boolean }): Promise<string | null> {
     if (!provider) return null;
-    const file = await resizeImage(original);
+    // Output of the photo editor is already sized and compressed; don't squeeze it twice.
+    const file = opts?.edited ? original : await resizeImage(original);
     const path = `${provider.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true, cacheControl: '2592000' });
     if (error) { setFormError(`Image upload failed: ${error.message}`); return null; }
     return supabase.storage.from('activity-images').getPublicUrl(path).data.publicUrl;
   }
 
-  /** Appends up to however many of `files` still fit under the 10-image cap. */
+  /** Appends one uploaded photo, within the 10-image cap. */
+  async function addActivityImage(file: File, opts?: { edited?: boolean }) {
+    const url = await uploadOneImage(file, opts);
+    if (!url) throw new Error('The upload failed. Please try again.');
+    setForm((f) => ({
+      ...f,
+      image_urls: [...f.image_urls, url].slice(0, ACTIVITY_IMAGES_MAX),
+      // First upload for this class becomes its cover by default — better
+      // than leaving the parent-facing hero blank until the vendor thinks
+      // to pick one.
+      cover_image_url: f.cover_image_url || url,
+    }));
+  }
+
+  /**
+   * Queues the picked photos for the photo editor (crop, resize, transparent
+   * background…), one at a time. GIF/SVG can't be re-encoded and go up untouched.
+   */
   async function uploadImages(files: FileList) {
     const room = ACTIVITY_IMAGES_MAX - form.image_urls.length;
     if (room <= 0) return;
     const oversized = Array.from(files).some((f) => f.size > 5 * 1024 * 1024);
     if (oversized) { setFormError('Each image must be under 5MB.'); return; }
-    setUploading(true);
     setFormError(null);
-    const urls: string[] = [];
-    for (const file of Array.from(files).slice(0, room)) {
-      const url = await uploadOneImage(file);
-      if (url) urls.push(url);
+    const picked = Array.from(files).slice(0, room);
+    const direct = picked.filter((f) => SKIP_EDITOR_TYPES.includes(f.type));
+    const editable = picked.filter((f) => !SKIP_EDITOR_TYPES.includes(f.type));
+    if (direct.length) {
+      setUploading(true);
+      for (const f of direct) { try { await addActivityImage(f); } catch { /* uploadOneImage already reported why */ } }
+      setUploading(false);
     }
-    setUploading(false);
-    if (urls.length) {
-      setForm((f) => ({
-        ...f,
-        image_urls: [...f.image_urls, ...urls].slice(0, ACTIVITY_IMAGES_MAX),
-        // First upload for this class becomes its cover by default — better
-        // than leaving the parent-facing hero blank until the vendor thinks
-        // to pick one.
-        cover_image_url: f.cover_image_url || urls[0],
-      }));
-    }
+    setPhotoQueue(editable);
+    setPhotoTotal(editable.length);
   }
 
-  /** Swaps a photo for its cropped version, keeping its place in the list and its cover status. */
+  /** Swaps a photo for its edited version, keeping its place in the list and its cover status. */
   async function replaceActivityImage(oldUrl: string, file: File) {
-    const url = await uploadOneImage(file);
-    if (!url) throw new Error('upload failed');
+    const url = await uploadOneImage(file, { edited: true });
+    if (!url) throw new Error('The upload failed. Please try again.');
     setForm((f) => ({
       ...f,
       image_urls: f.image_urls.map((u) => (u === oldUrl ? url : u)),
@@ -1686,12 +1701,27 @@ export default function ActivitiesPage() {
 
   return (
     <div className="relative">
-      <ImageCropDialog
-        url={cropUrl}
-        open={cropUrl != null}
-        onClose={() => setCropUrl(null)}
-        onCropped={(file) => (cropUrl ? replaceActivityImage(cropUrl, file) : undefined)}
-      />
+      {photoQueue[0] && (
+        <PhotoEditorDialog
+          key={`${photoQueue[0].name}-${photoQueue[0].size}-${photoTotal - photoQueue.length}`}
+          source={photoQueue[0]}
+          kind="photo"
+          heading="Add activity photo"
+          queueLabel={photoTotal > 1 ? `Photo ${photoTotal - photoQueue.length + 1} of ${photoTotal}` : undefined}
+          onCancel={() => setPhotoQueue([])}
+          onSave={async (f) => { await addActivityImage(f, { edited: true }); setPhotoQueue((q) => q.slice(1)); }}
+          onUseOriginal={async () => { await addActivityImage(photoQueue[0]); setPhotoQueue((q) => q.slice(1)); }}
+        />
+      )}
+      {cropUrl && (
+        <PhotoEditorDialog
+          source={cropUrl}
+          kind="photo"
+          heading="Edit activity photo"
+          onCancel={() => setCropUrl(null)}
+          onSave={async (f) => { await replaceActivityImage(cropUrl, f); setCropUrl(null); }}
+        />
+      )}
       {/* Top Bar */}
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
@@ -2391,8 +2421,8 @@ export default function ActivitiesPage() {
                           )}
                           <button
                             type="button"
-                            aria-label="Crop photo"
-                            title="Crop to the activity page frame"
+                            aria-label="Edit photo"
+                            title="Crop, adjust or resize this photo"
                             onClick={() => setCropUrl(url)}
                             className="absolute bottom-0.5 left-0.5 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
                           >

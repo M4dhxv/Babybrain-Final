@@ -10,7 +10,8 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { resizeImage } from '@/lib/resizeImage';
-import { ImageCropDialog } from '@/components/ImageCropDialog';
+import { PhotoEditorDialog } from '@/components/PhotoEditorDialog';
+import { SKIP_EDITOR_TYPES } from '@/lib/usePhotoEditor';
 import { apiPost, apiGet, ApiError } from '@/lib/api';
 import { geocodePostal } from '@/lib/geocode';
 import { useAuth } from '@/auth/AuthProvider';
@@ -199,8 +200,13 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
-  // Position in the catalogue of the photo open in the crop dialog (the logo is never cropped).
+  // Position in the catalogue of the photo open in the photo editor.
   const [cropIdx, setCropIdx] = useState<number | null>(null);
+  // What the photo editor is working on for the logo: a freshly picked file, or the stored logo's URL.
+  const [logoSource, setLogoSource] = useState<File | string | null>(null);
+  // Catalogue photos picked but not yet through the editor (one at a time).
+  const [galleryQueue, setGalleryQueue] = useState<File[]>([]);
+  const [galleryTotal, setGalleryTotal] = useState(0);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'manager' | 'staff'>('staff');
@@ -285,43 +291,66 @@ export default function SettingsPage() {
   }, [provider]);
 
   /** Uploads one image and returns its public URL, or null after reporting why. */
-  async function uploadImage(original: File, kind: string): Promise<string | null> {
+  async function uploadImage(original: File, kind: string, opts?: { edited?: boolean }): Promise<string | null> {
     if (!provider) return null;
     setProfileError(null);
-    const file = await resizeImage(original);
+    // Anything that came out of the photo editor is already sized and compressed; running it
+    // through resizeImage again would only lose quality.
+    const file = opts?.edited ? original : await resizeImage(original);
     const path = `${provider.id}/${kind}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]+/g, '_')}`;
     const { error } = await supabase.storage.from('activity-images').upload(path, file, { upsert: true, cacheControl: '2592000' });
     if (error) { setProfileError(`Upload failed: ${error.message}`); return null; }
     return supabase.storage.from('activity-images').getPublicUrl(path).data.publicUrl;
   }
 
-  async function uploadLogo(file: File) {
+  /** Uploads the logo (edited in the photo editor, or the untouched original) and points the profile at it. */
+  async function uploadLogo(file: File, opts?: { edited?: boolean }) {
     setUploadingLogo(true);
-    const url = await uploadImage(file, 'logo');
+    const url = await uploadImage(file, 'logo', opts);
     setUploadingLogo(false);
-    if (url) setForm((f) => ({ ...f, logo_url: url }));
+    if (!url) throw new Error('The upload failed. Please try again.');
+    setForm((f) => ({ ...f, logo_url: url }));
+  }
+
+  /** A picked logo goes through the photo editor, except formats it can't re-encode (GIF, SVG). */
+  async function pickLogo(file: File) {
+    if (SKIP_EDITOR_TYPES.includes(file.type)) {
+      try { await uploadLogo(file); } catch { /* uploadImage already reported why */ }
+      return;
+    }
+    setLogoSource(file);
   }
 
   const GALLERY_MAX = 9;
 
-  /** Swaps a catalogue photo for its cropped version, in the same position. */
+  /** Swaps a catalogue photo for its edited version, in the same position. */
   async function replaceGalleryImage(index: number, file: File) {
-    const url = await uploadImage(file, 'photo');
-    if (!url) throw new Error('upload failed');
+    const url = await uploadImage(file, 'photo', { edited: true });
+    if (!url) throw new Error('The upload failed. Please try again.');
     setForm((f) => ({ ...f, gallery_urls: f.gallery_urls.map((u, j) => (j === index ? url : u)) }));
   }
 
+  /** Adds one photo to the end of the catalogue, within the cap. */
+  async function addGalleryImage(file: File, opts?: { edited?: boolean }) {
+    const url = await uploadImage(file, 'photo', opts);
+    if (!url) throw new Error('The upload failed. Please try again.');
+    setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, url].slice(0, GALLERY_MAX) }));
+  }
+
+  /** Queues the picked photos for the editor, one at a time; GIF/SVG go up untouched. */
   async function uploadGallery(files: FileList) {
     const room = GALLERY_MAX - form.gallery_urls.length;
     if (room <= 0) return;
-    setUploadingGallery(true);
-    const urls: string[] = [];
-    for (const file of Array.from(files).slice(0, room)) {
-      const url = await uploadImage(file, 'photo');
-      if (url) urls.push(url);
+    const picked = Array.from(files).slice(0, room);
+    const direct = picked.filter((f) => SKIP_EDITOR_TYPES.includes(f.type));
+    const editable = picked.filter((f) => !SKIP_EDITOR_TYPES.includes(f.type));
+    if (direct.length) {
+      setUploadingGallery(true);
+      for (const f of direct) { try { await addGalleryImage(f); } catch { /* reported by uploadImage */ } }
+      setUploadingGallery(false);
     }
-    setUploadingGallery(false);
-    if (urls.length) setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, ...urls].slice(0, GALLERY_MAX) }));
+    setGalleryQueue(editable);
+    setGalleryTotal(editable.length);
   }
 
   async function saveProfile() {
@@ -483,14 +512,23 @@ export default function SettingsPage() {
           <div className="max-w-3xl bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-start justify-between mb-6">
               <div className="flex items-center gap-4">
-                <div className="relative w-20 h-20 rounded-2xl bg-pink-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {form.logo_url ? <img src={form.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-9 h-9 text-[#FA4D8D]" />}
+                <div className="flex-shrink-0">
+                <div className="relative w-20 h-20 rounded-2xl bg-pink-100 flex items-center justify-center overflow-hidden">
+                  {/* object-contain: a logo comes in any shape and is never cropped. */}
+                  {form.logo_url ? <img src={form.logo_url} alt="" className="w-full h-full object-contain" /> : <Store className="w-9 h-9 text-[#FA4D8D]" />}
                   {isEditingProfile && (
                     <label className={cn('absolute inset-0 flex items-center justify-center bg-black/40 text-white cursor-pointer', uploadingLogo && 'opacity-70 pointer-events-none')}>
                       <ImageUp className="w-5 h-5" />
-                      <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); }} />
+                      <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void pickLogo(f); }} />
                     </label>
                   )}
+                </div>
+                {isEditingProfile && form.logo_url && (
+                  <button type="button" onClick={() => setLogoSource(form.logo_url)}
+                    className="mt-1.5 w-20 text-center text-[11px] font-semibold text-[#FA4D8D] hover:underline">
+                    Edit logo
+                  </button>
+                )}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -617,12 +655,37 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <ImageCropDialog
-                      url={cropIdx != null ? form.gallery_urls[cropIdx] ?? null : null}
-                      open={cropIdx != null}
-                      onClose={() => setCropIdx(null)}
-                      onCropped={(file) => (cropIdx != null ? replaceGalleryImage(cropIdx, file) : undefined)}
-                    />
+                    {logoSource && (
+                      <PhotoEditorDialog
+                        source={logoSource}
+                        kind="logo"
+                        heading={typeof logoSource === 'string' ? 'Edit logo' : 'Add your logo'}
+                        onCancel={() => setLogoSource(null)}
+                        onSave={async (f) => { await uploadLogo(f, { edited: true }); setLogoSource(null); }}
+                        onUseOriginal={typeof logoSource === 'string' ? undefined : async () => { await uploadLogo(logoSource); setLogoSource(null); }}
+                      />
+                    )}
+                    {galleryQueue[0] && (
+                      <PhotoEditorDialog
+                        key={`${galleryQueue[0].name}-${galleryQueue[0].size}-${galleryTotal - galleryQueue.length}`}
+                        source={galleryQueue[0]}
+                        kind="photo"
+                        heading="Add catalogue photo"
+                        queueLabel={galleryTotal > 1 ? `Photo ${galleryTotal - galleryQueue.length + 1} of ${galleryTotal}` : undefined}
+                        onCancel={() => setGalleryQueue([])}
+                        onSave={async (f) => { await addGalleryImage(f, { edited: true }); setGalleryQueue((q) => q.slice(1)); }}
+                        onUseOriginal={async () => { await addGalleryImage(galleryQueue[0]); setGalleryQueue((q) => q.slice(1)); }}
+                      />
+                    )}
+                    {cropIdx != null && form.gallery_urls[cropIdx] && (
+                      <PhotoEditorDialog
+                        source={form.gallery_urls[cropIdx]}
+                        kind="photo"
+                        heading="Edit catalogue photo"
+                        onCancel={() => setCropIdx(null)}
+                        onSave={async (f) => { await replaceGalleryImage(cropIdx, f); setCropIdx(null); }}
+                      />
+                    )}
                     <label className="text-xs text-gray-500 mb-1 block">Catalogue photos ({form.gallery_urls.length}/{GALLERY_MAX})</label>
                     <p className="mb-2 text-xs text-gray-500">
                       Shown for any activity that doesn't have its own photos (see Activities → edit → Images).
@@ -634,8 +697,8 @@ export default function SettingsPage() {
                             <img src={url} alt="" className="h-full w-full object-cover" />
                             <button
                               type="button"
-                              aria-label="Crop photo"
-                              title="Crop to the activity page frame"
+                              aria-label="Edit photo"
+                              title="Crop, adjust or resize this photo"
                               onClick={() => setCropIdx(i)}
                               className="absolute bottom-1 left-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
                             >

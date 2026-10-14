@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache } from '../_lib/core';
 import { Select } from '../_lib/multiselect';
+import PhotoEditor, { type PhotoKind } from './PhotoEditor';
 
 type VendorResult = { name: string; website: string; outcome: 'price_updated' | 'no_price' | 'no_wp'; price_updated: number };
 type VendorRun = {
@@ -51,29 +52,48 @@ async function uploadImage(file: File, folder: string): Promise<string> {
   return json.url as string;
 }
 
+/** Formats the canvas editor can't usefully re-encode (animation, vector) go up untouched. */
+const SKIP_EDITOR = ['image/gif', 'image/svg+xml'];
+
 /**
  * One image: paste a URL or upload a file — both end up as a URL, since that's
- * what the column stores either way. Shows a thumbnail once there's something
- * to show, so a broken link is obvious straight away.
+ * what the column stores either way. A picked file opens the photo editor first
+ * (crop, resize, transparent background…); "Upload original" there skips it.
+ * Shows a thumbnail once there's something to show, so a broken link is obvious
+ * straight away, and clicking Edit re-opens the editor on what's already stored.
  */
 function ImageField({
-  label, value, folder, onChange, placeholder,
+  label, value, folder, onChange, placeholder, kind,
 }: {
   label: string; value: string; folder: string;
   onChange: (url: string) => void; placeholder?: string;
+  /** Logos start with background removal; photos start untouched. */
+  kind?: PhotoKind;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState<File | string | null>(null);
   const id = `up-${label.replace(/\W+/g, '')}-${folder}`;
+  const editorKind: PhotoKind = kind ?? (/logo/i.test(label) ? 'logo' : 'photo');
+
+  async function sendUp(f: File) {
+    const url = await uploadImage(f, folder);
+    onChange(url);
+  }
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = '';           // so re-picking the same file still fires
     if (!f) return;
-    setBusy(true); setErr(null);
-    try { onChange(await uploadImage(f, folder)); }
-    catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
-    finally { setBusy(false); }
+    setErr(null);
+    if (SKIP_EDITOR.includes(f.type)) {
+      setBusy(true);
+      try { await sendUp(f); }
+      catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
+      finally { setBusy(false); }
+      return;
+    }
+    setEditing(f);
   }
 
   return (
@@ -84,6 +104,10 @@ function ImageField({
       <div style={{ display: 'flex', gap: 8 }}>
         <input value={value} onChange={(e) => onChange(e.target.value)} style={input()}
           placeholder={placeholder ?? 'https://… or upload →'} />
+        {value.trim() && (
+          <button type="button" style={{ ...tabBtn(false), whiteSpace: 'nowrap' }}
+            onClick={() => setEditing(value.trim())}>Edit</button>
+        )}
         <label htmlFor={id} style={{ ...tabBtn(false), whiteSpace: 'nowrap', lineHeight: '22px', opacity: busy ? 0.6 : 1 }}>
           {busy ? 'Uploading…' : 'Upload'}
         </label>
@@ -93,31 +117,59 @@ function ImageField({
       {value.trim() && (
         <img src={value} alt="" style={{ height: 40, marginTop: 6, borderRadius: 6, background: C.panel2 }} />
       )}
+      {editing && (
+        <PhotoEditor
+          source={editing}
+          kind={editorKind}
+          heading={`${typeof editing === 'string' ? 'Edit' : 'Add'} ${label.toLowerCase()}`}
+          onCancel={() => setEditing(null)}
+          onSave={async (f) => { await sendUp(f); setEditing(null); }}
+          onUseOriginal={typeof editing === 'string' ? undefined : async () => { await sendUp(editing); setEditing(null); }}
+        />
+      )}
     </div>
   );
 }
 
-/** Several images for one class: a list of URLs plus an uploader that appends. */
+/**
+ * Several images for one class: a list of URLs plus an uploader that appends.
+ * Picked files go through the photo editor one at a time ("Photo 2 of 4"), and
+ * clicking a thumbnail re-opens the editor on that picture.
+ */
 function ImageListField({
   value, folder, onChange,
 }: { value: string; folder: string; onChange: (v: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [queue, setQueue] = useState<File[]>([]);
+  const [queued, setQueued] = useState(0);
+  const [reedit, setReedit] = useState<{ url: string; index: number } | null>(null);
   const id = `upl-${folder}`;
   const urls = splitUrls(value);
+  // Each step of a queue appends to whatever the list is by then.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const append = (u: string) => onChange([...splitUrls(valueRef.current), u].join('\n'));
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = [...(e.target.files ?? [])];
     e.target.value = '';
     if (!files.length) return;
-    setBusy(true); setErr(null);
-    try {
-      const added: string[] = [];
-      for (const f of files) added.push(await uploadImage(f, folder));
-      onChange([...urls, ...added].join('\n'));
-    } catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
-    finally { setBusy(false); }
+    setErr(null);
+    const editable = files.filter((f) => !SKIP_EDITOR.includes(f.type));
+    const direct = files.filter((f) => SKIP_EDITOR.includes(f.type));
+    if (direct.length) {
+      setBusy(true);
+      try { for (const f of direct) append(await uploadImage(f, folder)); }
+      catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
+      finally { setBusy(false); }
+    }
+    setQueue(editable);
+    setQueued(editable.length);
   }
+
+  const current = queue[0] ?? null;
+  const next = () => setQueue((q) => q.slice(1));
 
   return (
     <div>
@@ -136,9 +188,38 @@ function ImageListField({
       {urls.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
           {urls.slice(0, 6).map((u, k) => (
-            <img key={k} src={u} alt="" style={{ height: 38, borderRadius: 6, background: C.panel2 }} />
+            <img key={k} src={u} alt="" title="Click to edit this photo"
+              onClick={() => setReedit({ url: u, index: k })}
+              style={{ height: 38, borderRadius: 6, background: C.panel2, cursor: 'pointer' }} />
           ))}
         </div>
+      )}
+      {current && (
+        <PhotoEditor
+          key={`${current.name}-${current.size}-${queued - queue.length}`}
+          source={current}
+          kind="photo"
+          heading="Add class photo"
+          queueLabel={queued > 1 ? `Photo ${queued - queue.length + 1} of ${queued}` : undefined}
+          onCancel={() => setQueue([])}
+          onSave={async (f) => { append(await uploadImage(f, folder)); next(); }}
+          onUseOriginal={async () => { append(await uploadImage(current, folder)); next(); }}
+        />
+      )}
+      {reedit && (
+        <PhotoEditor
+          source={reedit.url}
+          kind="photo"
+          heading="Edit class photo"
+          onCancel={() => setReedit(null)}
+          onSave={async (f) => {
+            const url = await uploadImage(f, folder);
+            const list = splitUrls(valueRef.current);
+            list[reedit.index] = url;
+            onChange(list.join('\n'));
+            setReedit(null);
+          }}
+        />
       )}
     </div>
   );
