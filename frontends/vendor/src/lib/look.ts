@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import '@/styles/look-boutique.css';
 
-/* "Soft boutique" look for the portal — a preview, off by default.
+/* "Soft boutique" look for the portal — the default for every vendor.
  *
- * `?look=boutique` turns it on for this browser and `?look=classic` turns it
- * back off (either before or after the `#/route`); the choice is remembered in
- * localStorage so it survives navigation and reloads. Every rule lives under
- * `html.look-boutique` in styles/look-boutique.css, so with the flag off the
- * portal renders exactly as before. The class goes on <html> rather than the
- * layout so Radix dialogs and popovers, which portal to <body>, pick it up too. */
+ * `?look=classic` switches this browser back to the previous look and
+ * `?look=boutique` switches it back again (either before or after the
+ * `#/route`); the choice is remembered in localStorage so it survives
+ * navigation and reloads. Every rule lives under `html.look-boutique` in
+ * styles/look-boutique.css, so the classic look renders exactly as the portal
+ * did before. The class goes on <html> rather than the layout so Radix dialogs
+ * and popovers, which portal to <body>, pick it up too. */
 const KEY = 'bb:vendor-look';
 const FONT_ID = 'bb-look-boutique-font';
 
@@ -20,13 +21,13 @@ function readLook(): Look {
     const fromHash = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('look');
     const asked = fromSearch ?? fromHash;
     if (asked === 'boutique' || asked === 'classic') localStorage.setItem(KEY, asked);
-    return localStorage.getItem(KEY) === 'boutique' ? 'boutique' : 'classic';
+    return localStorage.getItem(KEY) === 'classic' ? 'classic' : 'boutique';
   } catch {
-    return 'classic';
+    return 'boutique';
   }
 }
 
-/** Read once at load: turning the flag on or off changes `location.search`,
+/** Read once at load: switching looks changes `location.search`,
     which is a full page load, so this can't go stale. Pages use it to swap in
     markup the CSS layer can't produce on its own (empty states, header). */
 export const BOUTIQUE = readLook() === 'boutique';
@@ -37,6 +38,8 @@ export function useBoutiqueLook() {
     if (look !== 'boutique') return;
     const html = document.documentElement;
     html.classList.add('look-boutique');
+    // index.html already links Manrope under this id so it's fetched before
+    // first paint; this is only the fallback if that tag is ever removed.
     if (!document.getElementById(FONT_ID)) {
       const link = document.createElement('link');
       link.id = FONT_ID;

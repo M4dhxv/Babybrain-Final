@@ -1,4 +1,5 @@
-/* "Soft boutique" look — preview, switched on by ?look=boutique (lib/look.ts).
+/* "Soft boutique" look — the portal default; ?look=classic opts a browser out
+ * (lib/look.ts).
  *
  * Warm cream canvas, borderless white cards that float on soft navy-tinted
  * depth, big radii, pill buttons, and Manrope for type. The brand palette is
@@ -10,7 +11,7 @@
  * all use (`bg-white rounded-xl border` cards, `bg-white border rounded-xl`
  * secondary buttons, `bg-[#FA4D8D]` CTAs, the shadcn slots). Everything is
  * scoped under `html.look-boutique`, which also out-ranks the single-class
- * utilities it overrides, so with the flag off none of this applies. */
+ * utilities it overrides, so in the classic look none of this applies. */
 
 html.look-boutique {
   --bq-canvas: #FBF5EF;
