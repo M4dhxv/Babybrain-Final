@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
@@ -142,6 +143,28 @@ export async function POST(request: Request) {
     const targetType = (target?.activities as { wix_service_type: string | null } | null)?.wix_service_type ?? '';
     if (['EVENT', 'COURSE', 'APPOINTMENT'].includes(targetType)) {
       return NextResponse.json({ error: 'Packages can only be used on classes.' }, { status: 400 });
+    }
+  }
+
+  // A term that does not accept package credits (migration 00243). The webhook
+  // books this seat as the service role, which term_session_gate lets through,
+  // so this is the only place that path can be stopped: without it a parent
+  // could pay for a pack whose booking can never be honoured. Untyped read: the
+  // term columns are newer than the generated types. Before the migration is
+  // applied the select errors, data is null, and nothing is refused.
+  if (activitySessionId) {
+    const db = admin as unknown as SupabaseClient;
+    const { data: termRow } = await db
+      .from('activity_sessions')
+      .select('term_slot_id, term_slots(terms(allow_packages))')
+      .eq('id', activitySessionId)
+      .maybeSingle();
+    const termOf = (termRow as { term_slot_id: string | null; term_slots: { terms: { allow_packages: boolean } | null } | null } | null);
+    if (termOf?.term_slot_id && termOf.term_slots?.terms && !termOf.term_slots.terms.allow_packages) {
+      return NextResponse.json(
+        { error: 'This term doesn’t accept package credits. Enrol in the term, or book a single session instead.' },
+        { status: 409 }
+      );
     }
   }
 

@@ -26,7 +26,12 @@ type DaySession = {
   fromWix: boolean;
   isCourse: boolean;
   bookingsPaused: boolean;
+  // Term enrolment preview: set on a class that belongs to a term.
+  term?: { name: string; sessionNo: number; sessionOf: number; termSeats: number; singleSeats: number; published: boolean };
 };
+
+// Placeholder names for the term preview's roster — there is no enrolment data yet.
+const MOCK_CHILDREN = ['Emma T.', 'Noah L.', 'Ava K.', 'Liam C.', 'Mia S.', 'Ethan W.', 'Zoe R.', 'Lucas H.', 'Chloe P.', 'Ryan N.', 'Isla F.', 'Jayden M.'];
 
 // Trimmed shape of the provider_session_roster RPC rows (see BookingsPage).
 type RosterRow = {
@@ -75,10 +80,64 @@ const PAY_STYLE: Record<PayKind, { label: string; cls: string }> = {
 function SessionBadges({ s }: { s: DaySession }) {
   return (
     <>
+      {s.term && <span className="rounded-full bg-teal-100 px-1.5 text-[10px] font-semibold text-teal-800">Term · session {s.term.sessionNo}/{s.term.sessionOf}</span>}
       {s.fromWix && <span className="rounded-full bg-purple-100 px-1.5 text-[10px] font-semibold text-purple-700">Wix</span>}
       {s.isCourse && <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700">Course</span>}
       {s.bookingsPaused && <span className="rounded-full bg-amber-200 px-1.5 text-[10px] font-semibold text-amber-800">Paused</span>}
     </>
+  );
+}
+
+// A term class: seats split between children enrolled for the term and
+// single-class bookings, with a placeholder roster (preview — no data yet).
+function TermClassBody({ session }: { session: DaySession }) {
+  const t = session.term!;
+  const cap = session.capacity ?? t.termSeats + t.singleSeats;
+  const free = Math.max(0, cap - t.termSeats - t.singleSeats);
+  const rows = [
+    ...MOCK_CHILDREN.slice(0, t.termSeats).map((n, i) => ({ n, kind: 'Term' as const, note: i === 2 && t.sessionNo > 2 ? `joined at session ${t.sessionNo - 1}` : '' })),
+    ...MOCK_CHILDREN.slice(t.termSeats, t.termSeats + t.singleSeats).map((n) => ({ n, kind: 'Single' as const, note: '' })),
+  ];
+  return (
+    <div>
+      <div className="text-sm font-semibold text-gray-900">{session.title}</div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+        <span>{sgTime(session.starts_at)} – {sgTime(session.ends_at)}</span>
+        {session.locationName && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{session.locationName}</span>}
+        <span>{t.name} · session {t.sessionNo} of {t.sessionOf}</span>
+      </div>
+
+      <div className="mt-4">
+        <div className="flex h-3.5 overflow-hidden rounded-full bg-gray-100">
+          <div className="bg-teal-600" style={{ width: `${(t.termSeats / Math.max(cap, 1)) * 100}%` }} />
+          <div className="bg-[#FA4D8D]" style={{ width: `${(t.singleSeats / Math.max(cap, 1)) * 100}%` }} />
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-teal-600" />{t.termSeats} term</span>
+          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-[#FA4D8D]" />{t.singleSeats} single</span>
+          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-gray-200" />{free} free</span>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        {rows.map((r) => (
+          <div key={r.n} className="flex items-center gap-2 border-t border-gray-100 py-2 first:border-t-0">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-pink-100 text-[10px] font-bold text-pink-700">{initials(r.n)}</span>
+            <span className="text-xs text-gray-900">{r.n}</span>
+            {r.note && <span className="text-[11px] text-gray-400">{r.note}</span>}
+            <span
+              className={cn(
+                'ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                r.kind === 'Term' ? 'bg-teal-100 text-teal-800' : 'border border-dashed border-pink-400 text-pink-700'
+              )}
+            >
+              {r.kind}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-gray-500">Preview data. Cancelling a term session will notify every enrolled family and offer a make-up.</p>
+    </div>
   );
 }
 
@@ -94,6 +153,8 @@ function RosterBody({
 }) {
   const booked = (roster ?? []).filter((r) => r.status === 'confirmed' || r.status === 'completed' || r.status === 'pending');
   const waitlisted = (roster ?? []).filter((r) => r.status === 'waitlisted');
+
+  if (session.term) return <TermClassBody session={session} />;
 
   return (
     <div>
@@ -298,6 +359,8 @@ export default function DayDetailDialog({
 
   useEffect(() => {
     if (!wantId || rosters[wantId]) return;
+    // Preview term classes have no roster row in the database.
+    if (wantId.startsWith('term:')) return;
     const seq = ++reqSeq.current;
     (async () => {
       const { data } = await supabase.rpc('provider_session_roster', { p_session_id: wantId });

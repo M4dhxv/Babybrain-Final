@@ -38,6 +38,9 @@ import {
   ChevronRight,
   Lock,
   Check,
+  Sparkles,
+  AlertTriangle,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -63,9 +66,23 @@ import { SKIP_EDITOR_TYPES } from '@/lib/usePhotoEditor';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
+import { TermsPanel } from '@/components/TermsPanel';
+import { hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
+import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
+import { BookModeChoice, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
+
+/** The Edit activity form's sections, in order — drives the navigator, the
+ *  scroll-to behaviour and which issues belong where. */
+const FORM_SECTIONS: { id: string; title: string; icon: LucideIcon; tone: Tone }[] = [
+  { id: 'about', title: 'About', icon: Sparkles, tone: 'pink' },
+  { id: 'where', title: 'Who, where, price', icon: MapPin, tone: 'blue' },
+  { id: 'photos', title: 'Photos', icon: ImageUp, tone: 'purple' },
+  { id: 'rules', title: 'Booking rules', icon: ShieldCheck, tone: 'amber' },
+  { id: 'parents', title: 'Parent info', icon: MessageCircle, tone: 'teal' },
+];
 
 /**
  * The activities table's column tracks. The header and every body row are
@@ -279,7 +296,7 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
   return (
     <div className="space-y-3 rounded-xl bg-gray-50 p-3">
       <div>
-        <label className="text-xs font-medium text-gray-600 mb-1 block">Booking policies</label>
+        <label className="mb-1 block text-[13px] font-semibold text-gray-700">Booking policies</label>
         <SelectField
           className={fieldCls}
           value={policy.mode}
@@ -525,6 +542,13 @@ export default function ActivitiesPage() {
     booking_cutoff_minutes: number | null;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
+  // Term enrolment is a UI preview behind a flag (lib/termsPreview.ts).
+  const termsOn = termsPreviewEnabled();
+  const [scheduleTab, setScheduleTab] = useState<'single' | 'terms'>('single');
+  // Edit activity pop-up: which section is in view, and the scroller it lives in.
+  const [formSection, setFormSection] = useState('about');
+  const formScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (showDrawer) setFormSection('about'); }, [showDrawer]);
   const [sessions, setSessions] = useState<Sess[]>([]);
   // True from the moment the schedule drawer opens until its sessions have
   // actually loaded — otherwise the empty initial list reads as "no sessions".
@@ -562,6 +586,50 @@ export default function ActivitiesPage() {
   const [sessError, setSessError] = useState<string | null>(null);
   const [togglingSessId, setTogglingSessId] = useState<string | null>(null);
   const [removeSessTarget, setRemoveSessTarget] = useState<Sess | null>(null);
+
+  // Term classes of the activity being scheduled (UI preview). They sit in the
+  // same list as drop-in sessions, tagged "Term", so one can't be mistaken for
+  // a single class and removed without knowing who it affects.
+  const allTerms = useTerms();
+  // Does this activity offer terms at all? (activity id -> on). Off = the Terms
+  // tab is frozen; on = the activity's own price and capacity are frozen.
+  const termsEnabledMap = useTermsEnabledMap();
+  const [termsToggle, setTermsToggle] = useState(false);
+  useEffect(() => {
+    if (showDrawer) setTermsToggle(editingId ? !!termsEnabledMap[editingId] : false);
+    // Only when the form opens or a different activity is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDrawer, editingId]);
+  const [skipTermTarget, setSkipTermTarget] = useState<TermSession | null>(null);
+  const termClassRows = useMemo(() => {
+    if (!termsOn || !scheduleFor) return [];
+    const mine = allTerms.filter((t) => t.activityId === scheduleFor.id);
+    if (mine.length === 0) return [];
+    return termSessionsBetween(mine, new Map([[scheduleFor.id, scheduleFor.title]]), new Date(), new Date(Date.now() + 400 * 86_400_000));
+  }, [termsOn, scheduleFor, allTerms]);
+  // While an activity offers terms ("Offer this activity as a term" in Edit
+  // activity), its sessions come from its terms, so the Single sessions tab is
+  // locked for adding new ones. Off: the Terms tab is the locked one instead.
+  const singlesLocked = !!(termsOn && scheduleFor && termsEnabledMap[scheduleFor.id]);
+  const sessionItems = useMemo(
+    () =>
+      [
+        ...sessions.map((s) => ({ at: s.starts_at, s, term: undefined })),
+        ...termClassRows.map((t) => ({ at: t.starts_at, s: undefined, term: t })),
+      ].sort((a, b) => a.at.localeCompare(b.at)),
+    [sessions, termClassRows],
+  );
+  /** Removing one class of a term means skipping that date for the slot. */
+  function skipTermClass(t: TermSession) {
+    const term = allTerms.find((x) => x.id === t.termId);
+    if (!term) return;
+    saveTerm({
+      ...term,
+      slots: term.slots.map((sl) => (sl.id === t.slotId ? { ...sl, skip: [...(sl.skip ?? []), t.ymd] } : sl)),
+    });
+    setSkipTermTarget(null);
+    toast('Session skipped for this term (preview)');
+  }
   const [removingSess, setRemovingSess] = useState(false);
   // Heads-up only: sessions were saved, but overlap something on the Wix calendar.
   const [sessNotice, setSessNotice] = useState<string | null>(null);
@@ -592,6 +660,19 @@ export default function ActivitiesPage() {
   const [previewFor, setPreviewFor] = useState<Activity | null>(null);
   const [previewDuration, setPreviewDuration] = useState<number | 'loading' | null>('loading');
   const [previewPage, setPreviewPage] = useState(0);
+  // Term enrolment in the preview: which option the vendor is looking at, the
+  // slot, and how far into the term to pretend it is (all outside the replica).
+  const [previewMode, setPreviewMode] = useState<BookMode>('term');
+  const [previewSlotIdx, setPreviewSlotIdx] = useState(0);
+  /** The term picked under "Which term?" on the booking page; null = the first. */
+  const [previewTermId, setPreviewTermId] = useState<string | null>(null);
+  /** The date picked for a trial, single or package booking of a term. */
+  const [previewOneOffDate, setPreviewOneOffDate] = useState<string | null>(null);
+  const [previewPassed, setPreviewPassed] = useState(0);
+  // How many trial sessions the previewed child has already used.
+  const [previewTrialUsed, setPreviewTrialUsed] = useState(0);
+  const previewForId = previewFor?.id;
+  useEffect(() => { setPreviewMode('term'); setPreviewSlotIdx(0); setPreviewPassed(0); setPreviewTrialUsed(0); setPreviewTermId(null); setPreviewOneOffDate(null); }, [previewForId]);
   const PREVIEW_PAGE_COUNT = 3;
   const [previewSessions, setPreviewSessions] = useState<PreviewSession[]>([]);
   const [previewPolicies, setPreviewPolicies] = useState<PreviewPolicy[]>([]);
@@ -707,11 +788,9 @@ export default function ActivitiesPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [previewFor]);
 
-  /* The edit / schedule drawers pin to the right edge with no backdrop, so
-     they sit directly over the table's right-most column — the row-actions
-     three-dots. A drawer left open (or one whose small ✕ was missed) therefore
-     makes every three-dots button unclickable. Escape now closes them too, the
-     same as the preview, so the table can't get silently "covered". */
+  /* The edit / schedule panels are centred pop-ups with a dimmed backdrop
+     (they used to be right-edge drawers that covered the row-actions
+     three-dots). Escape closes them, the same as the preview. */
   useEffect(() => {
     if (!showDrawer && !scheduleFor) return;
     const onKey = (e: KeyboardEvent) => {
@@ -741,6 +820,7 @@ export default function ActivitiesPage() {
   async function openSchedule(a: Activity) {
     setShowMenu(null);
     const seq = ++scheduleOpenSeq.current;
+    setScheduleTab('single');
     // Drop the previous activity's rows so nothing stale shows while loading.
     setSessions([]);
     setSessionsLoading(true);
@@ -1472,12 +1552,20 @@ export default function ActivitiesPage() {
 
   async function saveActivity() {
     if (!provider) return;
-    if (!form.title || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
+    // Anything the form already flags as an error, said once and shown where
+    // it lives: the banner, plus a jump to the section that needs fixing.
+    const firstError = formIssues.find((i) => i.level === 'error');
+    if (firstError) {
+      setFormError(firstError.text);
+      jumpToSection(firstError.section);
+      return;
+    }
+    if (!form.title.trim() || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
     // Capacity comes from Wix for a linked activity (and is null for an
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
     // with nothing to fix.
-    if (!isWixLinked && (!form.default_capacity || Number(form.default_capacity) < 1)) {
+    if (!isWixLinked && !termsToggle && (!form.default_capacity || Number(form.default_capacity) < 1)) {
       setFormError('Set a capacity for this activity.');
       return;
     }
@@ -1538,7 +1626,9 @@ export default function ActivitiesPage() {
             location_id: form.is_custom_location ? null : form.location_id || null,
             is_custom_location: form.is_custom_location,
             custom_location_label: form.is_custom_location ? form.custom_location_label.trim() || null : null,
-            default_capacity: Number(form.default_capacity),
+            // Left alone while terms are on and none was ever set: each slot
+            // carries its own seats.
+            ...(form.default_capacity ? { default_capacity: Number(form.default_capacity) } : {}),
             address: loc?.address ?? null,
             postal_code: loc?.postal_code ?? null,
             latitude: loc?.latitude ?? null,
@@ -1653,6 +1743,10 @@ export default function ActivitiesPage() {
       }
     }
 
+    // The "offer terms" switch is saved with the activity (preview store; in
+    // the real feature it is activities.terms_enabled).
+    if (editingId && !isWixLinked) setTermsEnabled(editingId, termsToggle);
+
     if (cascadeError) {
       setFormError(cascadeError);
       load();
@@ -1698,6 +1792,65 @@ export default function ActivitiesPage() {
   const activeFilterCount = [fStatus, fLocation, fAge, fActivity].filter(Boolean).length;
   // Mobile: full-width so the filter selects stack the same size; inline from sm up.
   const filterSelCls = 'w-full max-w-xs px-3 py-2 text-gray-700 sm:w-auto sm:max-w-none';
+
+  /* Edit activity: what is wrong or thin, per section. Errors are things the
+     save would reject (and now say where); warnings are gaps a parent would
+     notice — no venue, no price, no photo — that the vendor may still choose
+     to save. Computed from the form on every render; it's a handful of checks. */
+  const formIssues: FormIssue[] = [];
+  if (showDrawer) {
+    const err = (section: string, text: string) => formIssues.push({ section, level: 'error', text });
+    const warn = (section: string, text: string) => formIssues.push({ section, level: 'warn', text });
+    if (!form.title.trim()) err('about', 'Add a name that parents will recognise.');
+    if (!form.category_id) err('about', 'Choose at least one category so parents can find this activity.');
+    if (form.title.trim() && !form.description.trim()) warn('about', 'A short description helps parents choose. It shows on the activity page.');
+    const ageMin = form.age_min_months === '' ? null : Number(form.age_min_months);
+    const ageMax = form.age_max_months === '' ? null : Number(form.age_max_months);
+    if (ageMax != null && ageMax > 132) err('where', 'Maximum age can be at most 132 months (11 years).');
+    if (ageMin != null && ageMin > 132) err('where', 'Minimum age can be at most 132 months (11 years).');
+    if (ageMin != null && ageMax != null && ageMin > ageMax) err('where', "Minimum age can't be higher than the maximum age.");
+    if (ageMin == null && ageMax == null) warn('where', 'No age range set. Parents will see the activity as suitable for every age up to 11.');
+    if (!isWixLinked) {
+      if (!termsToggle && (!form.default_capacity || Number(form.default_capacity) < 1)) err('where', 'Set how many children each session holds.');
+      if (form.price !== '' && Number(form.price) < 0) err('where', "Price can't be negative.");
+      if (form.price === '' && !termsToggle) warn('where', 'No price set. Parents will see "Price on enquiry" and can still book.');
+      if (!form.is_custom_location && !form.location_id) warn('where', "No venue chosen. Parents won't see where to go.");
+    }
+    if (form.image_source === 'custom' && form.image_urls.length === 0) {
+      warn('photos', 'No photos uploaded for this activity. Parents will see a placeholder.');
+    }
+    if (form.image_source === 'profile' && profileImages.length === 0) {
+      warn('photos', 'You have no profile photos yet. Add some in Settings, or upload photos for this activity.');
+    }
+    const cutoffProblem = cutoffTooLong(form.booking_cutoff_minutes);
+    if (cutoffProblem) err('rules', cutoffProblem);
+    if (!form.allow_cancellation && !cancellationLocked) {
+      warn('rules', 'Cancellations are off. Parents are told the booking is non-cancellable and the place cannot be handed back.');
+    }
+    if (form.info_request_enabled && !form.info_request_prompt.trim()) {
+      err('parents', 'Say what you are asking parents for, or turn the question off. Parents cannot book without answering it.');
+    }
+  }
+  const formErrorCount = formIssues.filter((i) => i.level === 'error').length;
+  const formWarnCount = formIssues.length - formErrorCount;
+
+  const jumpToSection = (id: string) => {
+    setFormSection(id);
+    document.getElementById(`form-sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  /** Highlights the section whose top edge is nearest the top of the scroller. */
+  const onFormScroll = () => {
+    const box = formScrollRef.current;
+    if (!box) return;
+    const top = box.getBoundingClientRect().top + 24;
+    let current = FORM_SECTIONS[0].id;
+    for (const s of FORM_SECTIONS) {
+      const el = document.getElementById(`form-sec-${s.id}`);
+      if (el && el.getBoundingClientRect().top <= top) current = s.id;
+    }
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 4) current = FORM_SECTIONS[FORM_SECTIONS.length - 1].id;
+    setFormSection((prev) => (prev === current ? prev : current));
+  };
 
   return (
     <div className="relative">
@@ -2117,16 +2270,84 @@ export default function ActivitiesPage() {
 
       {/* Create Activity Drawer */}
       {showDrawer && (
-        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
-          <div className="flex items-center justify-between p-5 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">{editingId ? 'Edit activity' : 'Create activity'}</h3>
-            <button onClick={() => setShowDrawer(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-              <X className="w-4 h-4 text-gray-600" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setShowDrawer(false); }}
+        >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={editingId ? 'Edit activity' : 'Create activity'}
+          className="flex h-[90vh] max-h-[860px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-6 py-4">
+            <div className="min-w-0">
+              <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Edit activity' : 'Create activity'}</h3>
+              {editingId && form.title.trim() && <p className="truncate text-sm text-gray-500">{form.title}</p>}
+            </div>
+            <button onClick={() => setShowDrawer(false)} className="rounded-lg p-2 hover:bg-gray-100" aria-label="Close">
+              <X className="h-5 w-5 text-gray-600" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-auto p-5 space-y-5">
-            {formError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</div>}
+          {/* Section navigator: a left rail on wide screens, a scrolling chip
+              row on phones. Each entry carries its section's colour and a mark
+              for what still needs attention, so a long form can be jumped
+              around instead of scrolled end to end. */}
+          <nav className="flex gap-2 overflow-x-auto border-b border-gray-200 bg-gray-50 px-4 py-2 md:hidden" aria-label="Form sections">
+            {FORM_SECTIONS.map((s) => {
+              const active = formSection === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => jumpToSection(s.id)}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold',
+                    active ? cn(TONES[s.tone].chip, 'ring-2', TONES[s.tone].ring) : 'bg-white text-gray-600 ring-1 ring-gray-200',
+                  )}
+                >
+                  <s.icon className="h-4 w-4" /> {s.title}
+                  <SectionStatus issues={formIssues.filter((i) => i.section === s.id)} />
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex min-h-0 flex-1">
+            <nav className="hidden w-60 shrink-0 space-y-1 overflow-y-auto border-r border-gray-200 bg-gray-50 p-3 md:block" aria-label="Form sections">
+              {FORM_SECTIONS.map((s) => {
+                const active = formSection === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => jumpToSection(s.id)}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                      active ? 'bg-white shadow-sm ring-1 ring-gray-200' : 'hover:bg-white/70',
+                    )}
+                  >
+                    <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-lg', TONES[s.tone].chip)}>
+                      <s.icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className={cn('min-w-0 flex-1 text-[15px] leading-tight', active ? 'font-bold text-gray-900' : 'font-semibold text-gray-700')}>
+                      {s.title}
+                    </span>
+                    <SectionStatus issues={formIssues.filter((i) => i.section === s.id)} />
+                  </button>
+                );
+              })}
+            </nav>
+
+          <div
+            ref={formScrollRef}
+            onScroll={onFormScroll}
+            className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50/60 p-4 sm:p-6"
+          >
+            {formError && (
+              <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {formError}
+              </div>
+            )}
 
             {/* Everything Wix owns, shown read-only and grouped, so it is
                 obvious at a glance which half of this form is the vendor's to
@@ -2194,15 +2415,13 @@ export default function ActivitiesPage() {
               </div>
             )}
 
-            {isWixLinked && (
-              <div className="border-t border-gray-100 pt-4 text-sm font-semibold text-gray-900">Your BabyBrain details</div>
-            )}
+            <SectionCard id="about" icon={Sparkles} tone="pink" title="About the activity" subtitle="The name, categories and description parents see first." issues={formIssues.filter((i) => i.section === 'about')}>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#FA4D8D]">*</span></label>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Name <span className="text-[#FA4D8D]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">
                 Categories <span className="text-[#FA4D8D]">*</span>
                 <span className="ml-1 font-normal text-gray-500">(choose up to 2)</span>
               </label>
@@ -2222,13 +2441,32 @@ export default function ActivitiesPage() {
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Description</label>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Description</label>
               <textarea placeholder="Describe this activity..." rows={3} maxLength={500} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               <div className="text-right text-xs text-gray-400 mt-1">{form.description.length}/500</div>
             </div>
+            </SectionCard>
+
+            <SectionCard id="where" icon={MapPin} tone="blue" title="Who, where and how much" subtitle="Age range, venue, price and how many children each session holds." issues={formIssues.filter((i) => i.section === 'where')}>
+            {!isWixLinked && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <ToggleRow
+                  title="Offer this activity as a term"
+                  hint={termsToggle
+                    ? 'On. Price and seats are set per term and group under Manage schedule → Terms, so they are locked below.'
+                    : 'A term is a block of weekly sessions a parent enrols in once. Off keeps this activity to single sessions.'}
+                  checked={termsToggle}
+                  disabled={!editingId || (termsToggle && !!editingId && hasLiveTerm(allTerms, editingId))}
+                  disabledReason={!editingId
+                    ? 'Save the activity first, then turn terms on.'
+                    : 'A published term is still running. Let it finish before turning terms off.'}
+                  onChange={setTermsToggle}
+                />
+              </div>
+            )}
             {priceOverridable && (
               <div>
-                <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
+                <label className="mb-1.5 block text-sm font-semibold text-gray-800">Price (SGD per session)</label>
                 {priceOverridden ? (
                   <>
                     <NumberInput
@@ -2272,7 +2510,7 @@ export default function ActivitiesPage() {
               </div>
             )}
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Age range (months)</label>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Age range (months)</label>
               <div className="flex items-center gap-3">
                 <NumberInput min="0" placeholder="Min" className={inputCls} value={form.age_min_months} onChange={(e) => setForm({ ...form, age_min_months: e.target.value })} />
                 <span className="text-gray-400">—</span>
@@ -2282,16 +2520,15 @@ export default function ActivitiesPage() {
             {!isWixLinked && (
               <>
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium text-gray-900 block">Location</label>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Private session at the customer's home</span>
-                  <Switch
-                    checked={form.is_custom_location}
-                    onCheckedChange={(v) => setForm({ ...form, is_custom_location: v, location_id: v ? '' : form.location_id })}
-                  />
-                </div>
+              <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <ToggleRow
+                  title="We travel to the customer"
+                  hint="Private sessions at the family's home or a place they choose. No fixed venue is shown."
+                  checked={form.is_custom_location}
+                  onChange={(v) => setForm({ ...form, is_custom_location: v, location_id: v ? '' : form.location_id })}
+                />
               </div>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Venue</label>
               {form.is_custom_location ? (
                 <>
                   <input
@@ -2327,27 +2564,40 @@ export default function ActivitiesPage() {
               )}
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Price (SGD per session)</label>
               <NumberInput
                 
                 min="0"
                 step="any"
                 placeholder="e.g. 45"
-                className={inputCls}
+                className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')}
                 value={form.price}
+                disabled={termsToggle}
                 onChange={(e) => setForm({ ...form, price: e.target.value })}
               />
-              <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {termsToggle
+                  ? (() => {
+                      const hl = editingId ? termHeadline(allTerms, editingId) : null;
+                      const range = editingId ? termPriceRange(allTerms, editingId) : null;
+                      if (!hl) return 'Locked while terms are on. Add a term under Manage schedule → Terms and its price will show here.';
+                      return `Locked while terms are on. Parents see "${headlineLabel(hl)}".${range ? ` Term prices: $${range.min}${range.max !== range.min ? ` to $${range.max}` : ''}.` : ''}`;
+                    })()
+                  : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
+              </p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
-              <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
-              <p className="mt-1 text-xs text-gray-500">Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule.</p>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Capacity {!termsToggle && <span className="text-[#FA4D8D]">*</span>}</label>
+              <NumberInput min="1" required={!termsToggle} placeholder="e.g. 12" className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')} value={form.default_capacity} disabled={termsToggle} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
+              <p className="mt-1 text-xs text-gray-500">{termsToggle ? 'Locked while terms are on. Each group sets its own seats.' : "Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule."}</p>
             </div>
               </>
             )}
+            </SectionCard>
+
+            <SectionCard id="photos" icon={ImageUp} tone="purple" title="Photos" subtitle="Use your profile photos or upload some just for this activity." issues={formIssues.filter((i) => i.section === 'photos')}>
             <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Images</label>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Images</label>
               <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
                 <button
                   type="button"
@@ -2465,9 +2715,11 @@ export default function ActivitiesPage() {
             {/* Medical disclosure is set for all / certain classes at once under
                 Activities → Policy & consent management, not per activity here. */}
 
+            </SectionCard>
+
             {/* 2.2: cancellation & rescheduling policy for this class */}
-            <div className="rounded-xl border border-gray-200 p-4 space-y-4">
-              <div className="text-sm font-semibold text-gray-900">Booking policies</div>
+            <SectionCard id="rules" icon={ShieldCheck} tone="amber" title="Booking rules" subtitle="When parents can book, cancel or reschedule, and what happens to their payment." issues={formIssues.filter((i) => i.section === 'rules')}>
+            <div className="space-y-5">
               {cancellationLocked ? (
                 /* Wix Events and Courses can't be cancelled through BabyBrain
                    — no toggle, and parents always see the non-cancellable
@@ -2481,21 +2733,20 @@ export default function ActivitiesPage() {
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">Allow cancellations</div>
-                      <div className="text-xs text-gray-500">Parents can cancel their booking themselves</div>
-                    </div>
-                    <Switch checked={form.allow_cancellation} onCheckedChange={(v) => setForm({ ...form, allow_cancellation: v })} />
-                  </div>
+                  <ToggleRow
+                    title="Allow cancellations"
+                    hint="Parents can cancel their booking themselves."
+                    checked={form.allow_cancellation}
+                    onChange={(v) => setForm({ ...form, allow_cancellation: v })}
+                  />
                   {form.allow_cancellation ? (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">Cancellation cut-off (hours before session)</label>
+                        <label className="mb-1 block text-[13px] font-semibold text-gray-700">Cancellation cut-off (hours before session)</label>
                         <NumberInput min="0" className={inputCls} value={form.cancellation_cutoff_hours} onChange={(e) => setForm({ ...form, cancellation_cutoff_hours: e.target.value })} />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">When a booking is cancelled</label>
+                        <label className="mb-1 block text-[13px] font-semibold text-gray-700">When a booking is cancelled</label>
                         <SelectField
                           className={inputCls}
                           aria-label="When a booking is cancelled"
@@ -2523,16 +2774,17 @@ export default function ActivitiesPage() {
                   )}
                 </>
               )}
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Allow rescheduling</div>
-                  <div className="text-xs text-gray-500">Parents can move their booking to another session</div>
-                </div>
-                <Switch checked={form.allow_rescheduling} onCheckedChange={(v) => setForm({ ...form, allow_rescheduling: v })} />
+              <div className="border-t border-gray-100 pt-5">
+                <ToggleRow
+                  title="Allow rescheduling"
+                  hint="Parents can move their booking to another session."
+                  checked={form.allow_rescheduling}
+                  onChange={(v) => setForm({ ...form, allow_rescheduling: v })}
+                />
               </div>
               {form.allow_rescheduling && (
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Rescheduling cut-off (hours before session)</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Rescheduling cut-off (hours before session)</label>
                   <NumberInput min="0" className={inputCls} value={form.reschedule_cutoff_hours} onChange={(e) => setForm({ ...form, reschedule_cutoff_hours: e.target.value })} />
                 </div>
               )}
@@ -2543,7 +2795,7 @@ export default function ActivitiesPage() {
                   their own. Enforced in the database, so it holds regardless
                   of what the parent app does. */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Booking cut-off (minutes before session)</label>
+                <label className="mb-1 block text-[13px] font-semibold text-gray-700">Booking cut-off (minutes before session)</label>
                 <NumberInput
                   
                   min="0"
@@ -2560,15 +2812,17 @@ export default function ActivitiesPage() {
               </div>
             </div>
 
+            </SectionCard>
+
             {/* Bespoke information request (QA 21/08) */}
-            <div className="space-y-4 pt-2 border-t border-gray-100">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Ask parents for extra information</div>
-                  <div className="text-xs text-gray-500">For anything you need before the session — e.g. an address when you host at their condo</div>
-                </div>
-                <Switch checked={form.info_request_enabled} onCheckedChange={(v) => setForm({ ...form, info_request_enabled: v })} />
-              </div>
+            <SectionCard id="parents" icon={MessageCircle} tone="teal" title="What parents are told" subtitle="Extra questions before booking, what to bring, and the note shown after they book." issues={formIssues.filter((i) => i.section === 'parents')}>
+            <div className="space-y-5">
+              <ToggleRow
+                title="Ask parents for extra information"
+                hint="For anything you need before the session, for example an address when you host at their condo."
+                checked={form.info_request_enabled}
+                onChange={(v) => setForm({ ...form, info_request_enabled: v })}
+              />
               {(editingActivity?.wix_event_blockers?.length ?? 0) > 0 && (
                 <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
                   <p className="font-semibold">Parents can't book this event right now:</p>
@@ -2595,7 +2849,7 @@ export default function ActivitiesPage() {
               )}
               {form.info_request_enabled && (
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">What are you asking for?</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">What are you asking for?</label>
                   <textarea
                     rows={2}
                     maxLength={300}
@@ -2610,9 +2864,9 @@ export default function ActivitiesPage() {
             </div>
 
             {/* What parents see after booking (QA 24/08 + 28/08) */}
-            <div className="space-y-4 pt-2 border-t border-gray-100">
+            <div className="space-y-5 border-t border-gray-100 pt-5">
               <div>
-                <label className="text-sm font-medium text-gray-900 mb-1.5 block">What to bring &amp; know</label>
+                <label className="mb-1.5 block text-sm font-semibold text-gray-800">What to bring &amp; know</label>
                 <textarea
                   rows={3}
                   maxLength={1000}
@@ -2624,7 +2878,7 @@ export default function ActivitiesPage() {
                 <p className="mt-1 text-xs text-gray-500">Shown on the activity page and after booking. Leave blank for our general guidance.</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-900 mb-1.5 block">Booking confirmation note</label>
+                <label className="mb-1.5 block text-sm font-semibold text-gray-800">Booking confirmation note</label>
                 <textarea
                   rows={3}
                   maxLength={1000}
@@ -2636,14 +2890,33 @@ export default function ActivitiesPage() {
                 <p className="mt-1 text-xs text-gray-500">Shown on the confirmation screen once a parent has booked.</p>
               </div>
             </div>
+            </SectionCard>
+          </div>
           </div>
 
-          <div className="p-5 border-t border-gray-200 flex gap-3">
-            <Button variant="outline" onClick={() => setShowDrawer(false)} className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</Button>
-            <Button onClick={saveActivity} disabled={saving} className="flex-1 gradient-primary text-white rounded-xl hover:opacity-90">
-              {saving ? 'Saving…' : 'Save activity'}
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-6 py-4">
+            <p
+              className={cn(
+                'flex items-center gap-2 text-sm font-bold',
+                formErrorCount > 0 ? 'text-red-700' : formWarnCount > 0 ? 'text-amber-800' : 'text-green-700',
+              )}
+            >
+              {formErrorCount > 0 ? (
+                <><AlertTriangle className="h-4 w-4" /> {formErrorCount} required {formErrorCount === 1 ? 'item' : 'items'} to fix before saving</>
+              ) : formWarnCount > 0 ? (
+                <><AlertTriangle className="h-4 w-4" /> {formWarnCount} {formWarnCount === 1 ? 'suggestion' : 'suggestions'}: you can still save</>
+              ) : (
+                <><Check className="h-4 w-4" /> Everything looks complete</>
+              )}
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setShowDrawer(false)} className="h-11 rounded-xl border-2 border-gray-300 px-5 text-[15px] font-bold text-gray-700 hover:bg-gray-50">Cancel</Button>
+              <Button onClick={saveActivity} disabled={saving} className="h-11 rounded-xl px-6 text-[15px] font-bold gradient-primary text-white hover:opacity-90">
+                {saving ? 'Saving…' : 'Save activity'}
+              </Button>
+            </div>
           </div>
+        </div>
         </div>
       )}
 
@@ -2675,6 +2948,55 @@ export default function ActivitiesPage() {
         // non-cancellable regardless of the activity's own toggle.
         const previewNonCancellable = previewFor.wix_service_type === 'EVENT' || previewFor.wix_service_type === 'COURSE' || previewFor.allow_cancellation === false;
 
+        // The activity's terms. The booking page offers every one that hasn't
+        // ended (published first, then drafts, each by start date) under "Which
+        // term?", and the rest of the page follows the one picked. A draft still
+        // shows, flagged outside the replica, so a vendor can check it before
+        // publishing. With only ended terms, the latest one is shown as before.
+        const termRows = termsOn && termsEnabledMap[previewFor.id] ? allTerms.filter((t) => t.activityId === previewFor.id) : [];
+        const firstDate = (t: (typeof termRows)[number]) => t.slots.map((s) => s.start).filter(Boolean).sort()[0] ?? '';
+        const bookableTerms = termRows
+          .filter((t) => termStatus(t).key !== 'ended')
+          .sort((a, b) => Number(b.status === 'published') - Number(a.status === 'published') || firstDate(a).localeCompare(firstDate(b)));
+        const previewTerm =
+          bookableTerms.find((t) => t.id === previewTermId) ?? bookableTerms[0] ??
+          termRows.find((t) => t.status === 'published') ?? termRows[0] ?? null;
+        const pickerTerms = bookableTerms.map((t) => offeringFor(buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name), t.id));
+        const termView = previewTerm
+          ? buildTermView(previewTerm, price, (id) => locations.find((l) => l.id === id)?.name)
+          : null;
+        const termQuote = termView ? quoteFor(termView, previewSlotIdx, previewPassed) : null;
+        const termOn = !!termView && !!termQuote;
+        // The activity page's "Upcoming" block: every live term, the one-off
+        // session (trial, else single), and the packs the terms accept.
+        const liveTermRows = termOn ? allTerms.filter((t) => t.activityId === previewFor.id && termStatus(t).key !== 'ended') : [];
+        const liveViews = liveTermRows.map((t) => buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name));
+        const offeringTerms = liveViews.map((v, i) => offeringFor(v, liveTermRows[i].id));
+        const offeringOneOffs = oneOffFor(liveViews);
+        const offeringPacks = liveViews.some((v) => v.packages)
+          ? previewPackages.map((p) => ({ id: p.id, name: p.name, sessions: p.credits, price: `$${Math.round(p.price_cents / 100)}` }))
+          : [];
+        const previewHeadline = termsOn && termsEnabledMap[previewFor.id] ? termHeadline(allTerms, previewFor.id) : null;
+        const offered = (m: BookMode) =>
+          m === 'term' ||
+          (m === 'trial' && !!termView?.trial && previewTrialUsed < termView.trialLimit) ||
+          (m === 'single' && !!termView?.single && (!termView.trial || previewTrialUsed >= termView.trialLimit)) ||
+          (m === 'package' && !!termView?.packages);
+        const bookMode: BookMode = termOn && offered(previewMode) ? previewMode : 'term';
+        const termMode = termOn && bookMode === 'term';
+        // Trial, single or package: one of the term's groups, then one of its dates.
+        const oneOffGroups = termView ? termView.slots.map((s) => ({ key: s.key, label: s.label, venue: s.venue, dates: s.dates })) : [];
+        const oneOffOpen = oneOffGroups[Math.min(previewSlotIdx, oneOffGroups.length - 1)]?.dates.slice(previewPassed) ?? [];
+        const oneOffDate = previewOneOffDate && oneOffOpen.includes(previewOneOffDate) ? previewOneOffDate : oneOffOpen[0] ?? null;
+        // What the booking page totals to in each mode.
+        const shownPrice: number | null = !termOn
+          ? price
+          : termMode ? termQuote!.payNow
+          : bookMode === 'trial' ? termView!.trialPrice
+          : bookMode === 'single' ? termView!.singlePrice
+          : bookMode === 'package' ? (previewPackages[0] ? previewPackages[0].price_cents / 100 : null)
+          : price;
+
         return (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/25 p-4 backdrop-blur-sm"
@@ -2694,9 +3016,42 @@ export default function ActivitiesPage() {
                 <div>
                   <h3 className="text-sm font-bold text-[#111A4C]">Parent view — {pageLabels[previewPage]}</h3>
                   <p className="text-xs text-gray-500">How this looks to families on BabyBrain.sg</p>
+                  {termOn && previewTerm?.status === 'draft' && (
+                    <p className="text-xs font-semibold text-amber-700">This term is a draft. Families can't see it until you publish it.</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {termOn && previewPage === 1 && (
+                  <label className="hidden items-center gap-2 text-xs font-semibold text-gray-500 sm:flex">
+                    Show as if
+                    <select
+                      value={termQuote!.run}
+                      onChange={(e) => setPreviewPassed(Number(e.target.value))}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-700"
+                      aria-label="Sessions already run"
+                    >
+                      {Array.from({ length: termQuote!.lastJoin + 1 }, (_, i) => (
+                        <option key={i} value={i}>{i === 0 ? 'the term has not started' : `${i} ${i === 1 ? 'session has' : 'sessions have'} run`}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {termOn && previewPage === 1 && termView!.trial && (
+                  <label className="hidden items-center gap-2 text-xs font-semibold text-gray-500 sm:flex">
+                    Trials used
+                    <select
+                      value={previewTrialUsed}
+                      onChange={(e) => setPreviewTrialUsed(Number(e.target.value))}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-700"
+                      aria-label="Trial sessions this child has used"
+                    >
+                      {Array.from({ length: termView!.trialLimit + 1 }, (_, i) => (
+                        <option key={i} value={i}>{i} of {termView!.trialLimit}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="flex items-center gap-1 rounded-full bg-gray-100 p-1">
                   <button
                     type="button"
@@ -2809,8 +3164,10 @@ export default function ActivitiesPage() {
                   )}
 
                   <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
-                    <h2 className="mb-3 text-xl font-black">Upcoming sessions</h2>
-                    {previewSessions.length === 0 ? (
+                    <h2 className="mb-3 text-xl font-black">{termOn ? 'Upcoming' : 'Upcoming sessions'}</h2>
+                    {termOn ? (
+                      <UpcomingOfferings terms={offeringTerms} oneOffs={offeringOneOffs} packs={offeringPacks} />
+                    ) : previewSessions.length === 0 ? (
                       <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
                     ) : (
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -2825,7 +3182,9 @@ export default function ActivitiesPage() {
                 </div>
 
                 <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">
-                  {price != null && price > 0 ? (
+                  {termOn && previewHeadline ? (
+                    <p><strong className="text-[30px] text-[#C7B1E6]">{headlineParts(previewHeadline).prefix}{headlineParts(previewHeadline).amount}</strong> <span className="font-bold">{headlineParts(previewHeadline).unit}</span></p>
+                  ) : price != null && price > 0 ? (
                     <p><strong className="text-[30px] text-[#C7B1E6]">${price}</strong> <span className="font-bold">/ session</span></p>
                   ) : (
                     <p><strong className="text-[30px] text-[#C7B1E6]">Free</strong></p>
@@ -2903,13 +3262,39 @@ export default function ActivitiesPage() {
                           </div>
                         </div>
 
+                        {termOn && (
+                          // Interactive on purpose: a vendor has to be able to flip between
+                          // the options to see each one, as a parent would.
+                          <div className="pointer-events-auto mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
+                            <TermPicker
+                              terms={pickerTerms}
+                              selected={previewTerm!.id}
+                              onSelect={(id) => { setPreviewTermId(id); setPreviewSlotIdx(0); setPreviewPassed(0); setPreviewOneOffDate(null); }}
+                            />
+                            <BookModeChoice view={termView!} quote={termQuote!} mode={bookMode} onModeChange={setPreviewMode} trialUsed={previewTrialUsed} />
+                            {termMode && (
+                              <TermEnrolPanel view={termView!} slotIdx={previewSlotIdx} onSlotChange={setPreviewSlotIdx} quote={termQuote!} />
+                            )}
+                            {!termMode && (
+                              <TermSessionPicker
+                                groups={oneOffGroups}
+                                groupIdx={previewSlotIdx}
+                                onGroupChange={(i) => { setPreviewSlotIdx(i); setPreviewOneOffDate(null); }}
+                                from={previewPassed}
+                                selected={oneOffDate}
+                                onSelect={setPreviewOneOffDate}
+                              />
+                            )}
+                          </div>
+                        )}
+
                         <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
-                          {previewSessions.length === 0 ? (
+                          {!termOn && (previewSessions.length === 0 ? (
                             <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No upcoming sessions scheduled yet.</p>
                           ) : (
                             <>
                               <section>
-                                <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                                <h3 className="mb-4 text-xl font-black">Choose a date</h3>
                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                                   {dateKeys.map((d) => {
                                     const [weekday, dayMonth] = d.split(', ');
@@ -2924,7 +3309,7 @@ export default function ActivitiesPage() {
                                 </div>
                               </section>
                               <section>
-                                <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                                <h3 className="mb-4 text-xl font-black">Choose a time</h3>
                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                                   {(selectedDateKey ? sessionsByDate[selectedDateKey] : []).map((s) => (
                                     <div key={s.id} className={cn('rounded-[10px] border px-3 py-4 font-bold', s.id === nextSession?.id ? 'border-[#FA4D8D] bg-[#FEEBF2] text-[#FA4D8D]' : 'border-[#DCD2D5] bg-white')}>
@@ -2935,21 +3320,23 @@ export default function ActivitiesPage() {
                                 </div>
                               </section>
                             </>
-                          )}
+                          ))}
+                          {!termMode && (
                           <section>
-                            <h3 className="mb-2 text-xl font-black">3. Number of tickets/passes</h3>
+                            <h3 className="mb-2 text-xl font-black">Number of tickets/passes</h3>
                             <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                               <span className="grid h-12 w-12 place-items-center">-</span>
                               <span className="grid h-12 w-14 place-items-center">1</span>
                               <span className="grid h-12 w-12 place-items-center">+</span>
                             </div>
                           </section>
+                          )}
 
                           {(previewPolicies.length > 0 || previewFor.info_request_enabled || previewFor.requires_medical_disclosure) && (
                             <section>
-                              <h3 className="mb-2 text-xl font-black">4. Provider terms</h3>
+                              <h3 className="mb-2 text-xl font-black">Provider terms</h3>
                               <p className="mb-4 text-sm font-semibold text-[#59658d]">
-                                {provider?.business_name?.trim() || 'This provider'} asks you to read and accept the following before the session.
+                                {provider?.business_name?.trim() || 'This provider'} asks you to read and accept the following before the class.
                               </p>
                               <div className="space-y-3">
                                 {previewPolicies.map((p) => (
@@ -2995,17 +3382,19 @@ export default function ActivitiesPage() {
                             </section>
                           )}
 
-                          {previewPackages.length > 0 && (
+                          {previewPackages.length > 0 && !termMode && (!termOn || termView!.packages) && (
                             <section className="pointer-events-none">
-                              <h3 className="mb-2 text-xl font-black">5. Select package</h3>
+                              <h3 className="mb-2 text-xl font-black">Select package</h3>
                               <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
                               <div className="space-y-3">
+                                {!(termOn && bookMode === 'package') && (
                                 <div className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#FA4D8D] bg-[#FEEBF2] p-4">
-                                  <span className="font-black">Single session</span>
-                                  <span className="font-black text-[#FA4D8D]">{price != null ? `$${price.toFixed(2)}` : 'Price on enquiry'}</span>
+                                  <span className="font-black">{termOn && bookMode === 'trial' ? 'Trial session' : 'Single session'}</span>
+                                  <span className="font-black text-[#FA4D8D]">{shownPrice != null ? `$${shownPrice.toFixed(2)}` : 'Price on enquiry'}</span>
                                 </div>
-                                {previewPackages.map((p) => (
-                                  <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
+                                )}
+                                {previewPackages.map((p, pi) => (
+                                  <div key={p.id} className={cn('flex items-center justify-between gap-3 rounded-[12px] border-2 p-4', termOn && bookMode === 'package' && pi === 0 ? 'border-[#FA4D8D] bg-[#FEEBF2]' : 'border-[#DCD2D5] bg-white')}>
                                     <div><span className="block font-black">{p.name}</span><span className="text-sm font-semibold text-[#59658d]">{p.credits} {p.credits === 1 ? "session" : "sessions"}</span></div>
                                     <span className="font-black">${(p.price_cents / 100).toFixed(0)}</span>
                                   </div>
@@ -3023,26 +3412,27 @@ export default function ActivitiesPage() {
                           <div><h3 className="font-black">{previewFor.title}</h3>{ageText && <p className="mt-1 text-sm font-semibold">{ageText}</p>}</div>
                         </div>
                         <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
-                          <p className="flex gap-2"><CalendarDays className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {nextSession ? fmtDateTime(nextSession.starts_at) : 'Select a date & time'}</p>
+                          <p className="flex gap-2"><CalendarDays className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {termMode ? `Term · ${termQuote!.slot.label} · ${termQuote!.left} sessions from ${sgDay(termQuote!.joining[0])}` : termOn && bookMode === 'package' ? `Package · ${previewPackages[0]?.name ?? 'Choose a package'}${oneOffDate ? ` · ${sgDay(oneOffDate)}` : ''}` : termOn ? (oneOffDate ? `${bookMode === 'trial' ? 'Trial session' : 'Single session'} · ${sgDay(oneOffDate)}, ${sgTime(oneOffDate)}` : 'Select a date') : nextSession ? fmtDateTime(nextSession.starts_at) : 'Select a date & time'}</p>
                           {previewLocation(previewFor) && <p className="flex gap-2"><MapPin className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {previewLocation(previewFor)}</p>}
+                          <p className="flex gap-2"><Users className="h-5 w-5 shrink-0 text-[#C7B1E6]" /> {termMode ? '1 child' : '1 ticket'}{ageText ? `, ${ageText}` : ''}</p>
                         </div>
                         <div className="my-5 border-t border-[#F4EFF0]" />
-                        <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-[#FA4D8D]">{price != null ? `$${price.toFixed(2)}` : 'Price on enquiry'}</span></p>
+                        <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-[#FA4D8D]">{shownPrice != null ? `$${shownPrice.toFixed(2)}` : 'Price on enquiry'}</span></p>
                       </aside>
                     </div>
                   </section>
                   <section className="pointer-events-none mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 md:grid-cols-[1fr_360px]">
                     <div className="flex items-center gap-5">
                       <span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-[#FA4D8D]"><Lock className="h-8 w-8" /></span>
-                      <p><span className="block font-bold">Total amount</span><strong className="text-3xl">{price != null ? `$${price.toFixed(2)}` : '—'}</strong></p>
+                      <p><span className="block font-bold">Total amount</span><strong className="text-3xl">{shownPrice != null ? `$${shownPrice.toFixed(2)}` : '—'}</strong></p>
                     </div>
                     <span className="flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-r from-[#fa4d8d] to-[#ff6b9b] px-6 py-3 text-[15px] font-extrabold text-white">
-                      <Lock className="h-5 w-5" /> {price != null && price > 0 ? `Pay $${price.toFixed(2)}` : 'Confirm booking'}
+                      <Lock className="h-5 w-5" /> {termMode ? `Enrol for the term — $${termQuote!.payNow}` : termOn && bookMode === 'package' ? (shownPrice != null ? `Buy pack — $${shownPrice.toFixed(0)}` : 'Choose a package') : shownPrice != null && shownPrice > 0 ? `Pay $${shownPrice.toFixed(2)}` : 'Confirm booking'}
                     </span>
                     <div className="space-y-0.5 text-center md:col-span-2">
                       {previewNonCancellable && <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>}
                       {!previewNonCancellable && previewFor.cancellation_refund_mode === 'none' && <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>}
-                      {price != null && price > 0 && <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>}
+                      {shownPrice != null && shownPrice > 0 && <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>}
                     </div>
                   </section>
                 </div>
@@ -3134,18 +3524,88 @@ export default function ActivitiesPage() {
 
       {/* Schedule Drawer — the bookable dates/times for one activity */}
       {scheduleFor && (
-        <div className="fixed top-0 right-0 w-full max-w-[28rem] h-full bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setScheduleFor(null); }}
+        >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Manage schedule: ${scheduleFor.title}`}
+          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        >
           <div className="flex items-center justify-between p-5 border-b border-gray-200">
             <div>
-              <h3 className="font-semibold text-gray-900">Schedule</h3>
-              <p className="text-xs text-gray-500 mt-0.5">{scheduleFor.title}</p>
+              <h3 className="text-xl font-bold text-gray-900">Manage schedule</h3>
+              <p className="mt-0.5 text-sm text-gray-500">{scheduleFor.title}</p>
             </div>
-            <button onClick={() => setScheduleFor(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <button onClick={() => setScheduleFor(null)} className="p-1.5 hover:bg-gray-100 rounded-lg" aria-label="Close">
               <X className="w-4 h-4 text-gray-500" />
             </button>
           </div>
 
+          {termsOn && !scheduleIsWix && (
+            <div className="flex gap-2 border-b border-gray-200 px-5" role="tablist">
+              {([['single', 'Single sessions'], ['terms', 'Terms']] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={scheduleTab === k}
+                  onClick={() => setScheduleTab(k)}
+                  className={cn(
+                    '-mb-px flex items-center gap-1.5 border-b-[3px] px-3 py-3 text-[15px] transition-colors',
+                    scheduleTab === k ? 'border-[#FA4D8D] font-bold text-gray-900' : 'border-transparent font-semibold text-gray-500 hover:text-gray-800',
+                    k === 'single' && singlesLocked && 'text-gray-400',
+                    k === 'terms' && !termsEnabledMap[scheduleFor.id] && 'text-gray-400',
+                  )}
+                >
+                  {label}
+                  {((k === 'single' && singlesLocked) || (k === 'terms' && !termsEnabledMap[scheduleFor.id])) && <Lock className="h-3.5 w-3.5" aria-label="Frozen" />}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {termsOn && !scheduleIsWix && scheduleTab === 'terms' ? (
+              <>
+                {!termsEnabledMap[scheduleFor.id] && (
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                      <div>
+                        <p className="text-[15px] font-bold text-amber-950">Terms are switched off for this activity</p>
+                        <p className="mt-0.5 text-[13px] text-amber-900">
+                          Turn on "Offer this activity as a term" in Edit activity to build terms here.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => { const a = scheduleFor; setScheduleFor(null); openEdit(a); }}
+                      className="h-10 rounded-xl border-2 border-amber-400 px-4 text-sm font-bold text-amber-950 hover:bg-amber-100"
+                    >
+                      Open Edit activity
+                    </Button>
+                  </div>
+                )}
+                <div
+                  className={cn(!termsEnabledMap[scheduleFor.id] && 'pointer-events-none select-none opacity-40 grayscale')}
+                  aria-disabled={!termsEnabledMap[scheduleFor.id] ? true : undefined}
+                  inert={!termsEnabledMap[scheduleFor.id] ? true : undefined}
+                >
+                  <TermsPanel
+                    activityId={scheduleFor.id}
+                    activityTitle={scheduleFor.title}
+                    defaultPrice={scheduleFor.price ?? null}
+                    defaultCapacity={scheduleFor.default_capacity ?? null}
+                    defaultLocationId={scheduleFor.location_id ?? null}
+                    locations={locations}
+                  />
+                </div>
+              </>
+            ) : (
+            <>
             {/* A Wix-linked activity's dates come from Wix and are re-mirrored
                 (and reconciled) on every availability fetch, so a session added
                 or moved here is either swept away or becomes a slot Wix refuses
@@ -3166,12 +3626,33 @@ export default function ActivitiesPage() {
                 </p>
               </div>
             )}
+            {singlesLocked && !scheduleIsWix && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="text-[15px] font-bold text-amber-950">Single sessions are locked</p>
+                    <p className="mt-0.5 text-[13px] text-amber-900">
+                      This activity is offered as a term, so its sessions, including any trial or single sessions, are set up under Terms.
+                      Existing sessions below can still be edited or cancelled. Turn off "Offer this activity as a term" in Edit activity to add sessions here.
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={() => setScheduleTab('terms')} className="h-10 rounded-xl border-2 border-amber-400 px-4 text-sm font-bold text-amber-950 hover:bg-amber-100">
+                  Open Terms
+                </Button>
+              </div>
+            )}
             {!scheduleIsWix && (
-            <div>
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Add sessions</h4>
+            <div
+              className={cn(singlesLocked && 'pointer-events-none select-none opacity-40 grayscale')}
+              aria-disabled={singlesLocked ? true : undefined}
+              inert={singlesLocked ? true : undefined}
+            >
+              <h4 className="mb-3 text-lg font-bold text-gray-900">Add sessions</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Start date</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Start date</label>
                   <DatePicker
                     className={inputCls}
                     value={sessForm.date}
@@ -3190,37 +3671,37 @@ export default function ActivitiesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Start time</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Start time</label>
                   <TimePicker className={cn(inputCls, 'w-full')} value={sessForm.time} onChange={(v) => setSessForm({ ...sessForm, time: v })} aria-label="Start time" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Duration (mins)</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Duration (mins)</label>
                   <NumberInput min="15" step="1" className={inputCls} value={sessForm.duration} onChange={(e) => setSessForm({ ...sessForm, duration: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Capacity *</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Capacity *</label>
                   <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={sessForm.capacity} onChange={(e) => setSessForm({ ...sessForm, capacity: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Teacher (leave blank if N/A)</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Teacher (leave blank if N/A)</label>
                   <input placeholder="e.g. Ms Tan" className={inputCls} value={sessForm.teacher} onChange={(e) => setSessForm({ ...sessForm, teacher: e.target.value })} aria-label="Session teacher" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Studio / room (leave blank if N/A)</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Studio / room (leave blank if N/A)</label>
                   <input placeholder="e.g. Room 2" className={inputCls} value={sessForm.studio} onChange={(e) => setSessForm({ ...sessForm, studio: e.target.value })} />
                 </div>
                 {/* Venue and price per session (QA 21/08) — this is what lets one
                     activity run at three locations, or cost different amounts at
                     each, instead of being created three times. */}
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Venue</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Venue</label>
                   <SelectField className={inputCls} value={sessForm.location_id} onChange={(v) => setSessForm({ ...sessForm, location_id: v })} aria-label="Session venue">
                     <Opt value="">Same as the activity</Opt>
                     {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
                   </SelectField>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Price (SGD)</label>
+                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">Price (SGD)</label>
                   <NumberInput
                     
                     min="0"
@@ -3242,7 +3723,7 @@ export default function ActivitiesPage() {
                     into one. */}
                 <div className="col-span-2 space-y-3 rounded-xl bg-gray-50 p-3">
                   <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Repeat for</label>
+                    <label className="mb-1 block text-[13px] font-semibold text-gray-700">Repeat for</label>
                     <SelectField
                       className={inputCls}
                       value={sessForm.weeks}
@@ -3259,7 +3740,7 @@ export default function ActivitiesPage() {
 
                   {sessForm.weeks !== 'custom' ? (
                     <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">On these days</label>
+                      <label className="mb-1 block text-[13px] font-semibold text-gray-700">On these days</label>
                       <div className="flex gap-1">
                         {WEEKDAY_TOGGLES.map((d) => {
                           const on = sessForm.weekdays.includes(d.i);
@@ -3297,7 +3778,7 @@ export default function ActivitiesPage() {
                     </div>
                   ) : (
                     <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">Dates</label>
+                      <label className="mb-1 block text-[13px] font-semibold text-gray-700">Dates</label>
                       <div className="flex gap-2">
                         <DatePicker
                           className={inputCls}
@@ -3362,15 +3843,44 @@ export default function ActivitiesPage() {
             )}
 
             <div>
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Upcoming sessions{sessionsLoading ? '' : ` (${sessions.length})`}</h4>
+              <h4 className="mb-3 text-lg font-bold text-gray-900">
+                Upcoming sessions{sessionsLoading ? '' : ` (${sessions.length + termClassRows.length})`}
+                {termClassRows.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">{termClassRows.length} from terms</span>
+                )}
+              </h4>
               {sessionsLoading && (
                 <LoadingRows label="Loading sessions…" />
               )}
-              {!sessionsLoading && sessions.length === 0 && (
+              {!sessionsLoading && sessions.length === 0 && termClassRows.length === 0 && (
                 <p className="text-sm text-gray-400">No upcoming sessions — parents can't book this activity until you add some.</p>
               )}
               <div className="space-y-2">
-                {sessions.map((s) => (
+                {sessionItems.map((item) => item.term ? (
+                  <div key={item.term.id} className="flex items-center justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50/60 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900">
+                        {fmtDateTime(item.term.starts_at)}
+                        <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+                          Term · session {item.term.sessionNo}/{item.term.sessionOf}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {item.term.termName} · {item.term.termSeats} term{item.term.singleSeats > 0 ? ` + ${item.term.singleSeats} single` : ''} / {item.term.capacity} seats
+                        {item.term.locationId && item.term.locationId !== scheduleFor?.location_id && (
+                          <>{' · '}<span className="text-blue-700">{locations.find((l) => l.id === item.term!.locationId)?.name ?? 'Other venue'}</span></>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSkipTermTarget(item.term!)}
+                      className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      title="Skip this session for the term"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : ((s: Sess) => (
                   editingSessId === s.id ? (
                     <div key={s.id} className="rounded-lg border border-pink-300 bg-pink-50/30 px-3 py-2.5 space-y-2">
                       {/* A Wix-synced session's date/time/capacity/venue/price is
@@ -3522,12 +4032,28 @@ export default function ActivitiesPage() {
                       </div>
                     </div>
                   )
-                ))}
+                ))(item.s))}
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
+        </div>
       )}
+
+      <ConfirmDialog
+        open={!!skipTermTarget}
+        onOpenChange={(open) => { if (!open) setSkipTermTarget(null); }}
+        title="Skip this term session?"
+        description={
+          skipTermTarget
+            ? `This session belongs to "${skipTermTarget.termName}". ${skipTermTarget.termSeats} enrolled ${skipTermTarget.termSeats === 1 ? 'child' : 'children'} would lose it, and the term would have ${skipTermTarget.sessionOf - 1} sessions for every family. Enrolled parents are told and offered a make-up. You can add the date back from the Terms tab.`
+            : undefined
+        }
+        confirmLabel="Skip session"
+        onConfirm={() => skipTermTarget && skipTermClass(skipTermTarget)}
+      />
 
       <ConfirmDialog
         open={!!removeSessTarget}

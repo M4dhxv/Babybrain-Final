@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { NumberInput } from '@/components/ui/number-input';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
+import { Package as PackageIcon, Pencil, Trash2, Users, Plus, X, AlertTriangle, CalendarRange, Ticket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -13,6 +13,8 @@ import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SectionCard, ToggleRow } from '@/components/FormKit';
+import { packagesClosedActivityIds, termsPreviewEnabled, useTerms, useTermsEnabledMap } from '@/lib/termsPreview';
 
 /**
  * The package purchases table's column tracks. Header and body rows are separate grids, so the
@@ -25,6 +27,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 const PURCHASE_COLS =
   'grid min-w-[790px] gap-x-4 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)]';
 
+const packInputCls = 'h-11 w-full rounded-xl border px-4 text-[15px] font-medium text-gray-900 placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-300';
+const packLabelCls = 'mb-1.5 block text-sm font-semibold text-gray-800';
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const tabs = ['Packs', 'Purchases'];
 
@@ -133,6 +137,22 @@ export default function PackagesPage() {
   // an existing pack's restriction, even if it points at an ineligible one.
   const packEligibleActivities = activities.filter((a) => !PACK_INELIGIBLE_WIX_TYPES.has(a.wix_service_type ?? ''));
   const packs = data?.packs ?? [];
+  // Activities whose terms don't accept packages (term enrolment, preview).
+  // They can't be picked for a pack, and packs already limited to them say so.
+  const terms = useTerms();
+  const termsEnabled = useTermsEnabledMap();
+  const closedToPacks = termsPreviewEnabled() ? packagesClosedActivityIds(terms, termsEnabled) : new Set<string>();
+  const activityName = (id: string) => activities.find((a) => a.id === id)?.title ?? 'one activity';
+  /** The pack's restricted activities whose terms don't accept packages. */
+  const blockedFor = (ids: string[] | null) => (ids ?? []).filter((id) => closedToPacks.has(id));
+  const blockedNote = (ids: string[] | null) => {
+    const blocked = blockedFor(ids);
+    if (blocked.length === 0) return null;
+    const names = blocked.map(activityName).join(', ');
+    return blocked.length === (ids ?? []).length
+      ? `Parents can't use this pack anywhere right now: the terms on ${names} don't accept packages.`
+      : `Not usable at ${names}: ${blocked.length === 1 ? 'its' : 'their'} terms don't accept packages.`;
+  };
   const purchases = data?.purchases ?? [];
 
   const [packForm, setPackForm] = useState(emptyPack);
@@ -140,6 +160,8 @@ export default function PackagesPage() {
   const [packError, setPackError] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+  // The new/edit pack form is a pop-up; this is whether it is open.
+  const [packModal, setPackModal] = useState(false);
   // Set when the pack being edited was scoped only to Events/Courses/
   // Appointments: with those dropped from the picker its scope would read as
   // empty = "any of my activities", so saving must first pick real classes.
@@ -163,10 +185,7 @@ export default function PackagesPage() {
   const newParam = searchParams.get('new');
   useEffect(() => {
     if (newParam !== 'pack' || !canManage) return;
-    requestAnimationFrame(() => {
-      document.getElementById('pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      document.getElementById('pack-name-input')?.focus();
-    });
+    openNewPack();
     setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newParam, canManage]);
@@ -212,7 +231,28 @@ export default function PackagesPage() {
     return parts.join(' · ');
   };
 
+  function openNewPack() {
+    setEditingPackId(null);
+    setNeedsClassScope(false);
+    setPackForm(emptyPack);
+    setPackError(null);
+    setPackNotice(null);
+    setPackTouched({});
+    setPackModal(true);
+  }
+
+  function closePackModal() {
+    setPackModal(false);
+    setEditingPackId(null);
+    setNeedsClassScope(false);
+    setPackForm(emptyPack);
+    setPackError(null);
+    setPackNotice(null);
+    setPackTouched({});
+  }
+
   function editPack(p: Pack) {
+    setPackModal(true);
     setEditingPackId(p.id);
     setPackError(null);
     setPackNotice(null);
@@ -241,7 +281,6 @@ export default function PackagesPage() {
       until_time: until?.time ?? '',
       best_value: p.best_value,
     });
-    document.getElementById('pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function togglePack(p: Pack) {
@@ -308,6 +347,7 @@ export default function PackagesPage() {
     setSavingPack(false);
     if (error) return setPackError(error.message);
     setPackNotice(editingPackId ? `Updated "${fields.name}".` : `Added "${fields.name}".`);
+    setPackModal(false);
     setEditingPackId(null);
     setNeedsClassScope(false);
     setPackForm(emptyPack);
@@ -423,21 +463,57 @@ export default function PackagesPage() {
         {loading && <ListRowsSkeleton count={4} lines={1} />}
 
         {!loading && activeTab === 'Packs' && (
-          <div id="pack-form" className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-xs text-gray-500 mb-4">
-              Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-medium text-[#FA4D8D] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-medium text-[#FA4D8D] hover:underline">Make-up tokens</button>.
-            </p>
-            {packs.length > 0 && (
-              <div className="space-y-2">
+          <div id="pack-form" className="space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Your packs</h2>
+                <p className="mt-0.5 max-w-xl text-sm text-gray-500">
+                  Make-up tokens are separate: issue one from <button onClick={() => navigate('/bookings')} className="font-semibold text-[#FA4D8D] hover:underline">Bookings</button>, or see who holds one under <button onClick={() => navigate('/make-up-tokens')} className="font-semibold text-[#FA4D8D] hover:underline">Make-up tokens</button>.
+                </p>
+              </div>
+              {canManage && (
+                <button
+                  onClick={openNewPack}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#FA4D8D] px-5 text-[15px] font-bold text-white hover:bg-[#e23f7c]"
+                >
+                  <Plus className="h-5 w-5" /> New pack
+                </button>
+              )}
+            </div>
+
+            {packNotice && !packModal && (
+              <p className="rounded-xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-800">{packNotice}</p>
+            )}
+
+            {packs.length === 0 ? (
+              <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-white p-10 text-center">
+                <PackageIcon className="mx-auto h-9 w-9 text-gray-300" />
+                <p className="mt-3 text-base font-bold text-gray-800">No packs yet</p>
+                <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">
+                  A pack bundles several sessions at a better price, and gives parents flexibility to book when it suits them.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
                 {packs.map((p) => (
-                  <div key={p.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={p.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <span className="font-medium text-gray-900">{p.name}</span>
-                      <span className="ml-2 text-sm text-gray-500">{p.credits} {p.credits === 1 ? "session" : "sessions"} · ${(p.price_cents / 100).toFixed(0)}</span>
-                      {p.best_value && (
-                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Best value</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-bold text-gray-900">{p.name}</span>
+                        {p.best_value && (
+                          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">Best value</span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-gray-700">
+                        {p.credits} {p.credits === 1 ? 'session' : 'sessions'} · ${(p.price_cents / 100).toFixed(0)}
+                        {p.credits > 0 && <span className="ml-2 font-normal text-gray-500">about ${(p.price_cents / 100 / p.credits).toFixed(0)} each</span>}
+                      </div>
+                      {packRestriction(p) && <div className="mt-1 text-sm text-purple-700">{packRestriction(p)}</div>}
+                      {blockedNote(p.activity_ids) && (
+                        <div className="mt-1.5 flex items-start gap-1.5 text-sm font-semibold text-amber-800">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {blockedNote(p.activity_ids)}
+                        </div>
                       )}
-                      {packRestriction(p) && <div className="mt-0.5 text-xs text-purple-700">{packRestriction(p)}</div>}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
                       {canManage ? (
@@ -454,11 +530,11 @@ export default function PackagesPage() {
                       )}
                       {canManage && (
                         <>
-                          <button onClick={() => editPack(p)} title="Edit pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
-                            <Pencil className="h-3.5 w-3.5" />
+                          <button onClick={() => editPack(p)} title="Edit pack" aria-label="Edit pack" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800">
+                            <Pencil className="h-5 w-5" />
                           </button>
-                          <button onClick={() => setDeleteTarget(p)} title="Delete pack" className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600">
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <button onClick={() => setDeleteTarget(p)} title="Delete pack" aria-label="Delete pack" className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600">
+                            <Trash2 className="h-5 w-5" />
                           </button>
                         </>
                       )}
@@ -467,146 +543,187 @@ export default function PackagesPage() {
                 ))}
               </div>
             )}
-            {packs.length === 0 && <div className="text-sm text-gray-400">No packs yet.</div>}
 
-            {canManage && (
-              <>
-                <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Pack name</label>
-                    <input
-                      id="pack-name-input"
-                      value={packForm.name}
-                      onChange={(e) => setPackForm({ ...packForm, name: e.target.value })}
-                      onBlur={() => touch('name')}
-                      placeholder="10-session pack"
-                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-auto', packNameErr ? 'border-red-300' : 'border-gray-300')}
-                    />
-                    {packNameErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packNameErr}</p>}
+            {canManage && packModal && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6"
+                onMouseDown={(e) => { if (e.target === e.currentTarget) closePackModal(); }}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={editingPackId ? 'Edit pack' : 'New pack'}
+                  className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-6 py-4">
+                    <h3 className="text-xl font-bold text-gray-900">{editingPackId ? 'Edit pack' : 'New pack'}</h3>
+                    <button onClick={closePackModal} className="rounded-lg p-2 hover:bg-gray-100" aria-label="Close">
+                      <X className="h-5 w-5 text-gray-600" />
+                    </button>
                   </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Sessions</label>
-                    <NumberInput
-                      value={packForm.credits}
-                      onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })}
-                      onBlur={() => touch('credits')}
-                      placeholder="10"
-                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-24', packCreditsErr ? 'border-red-300' : 'border-gray-300')}
-                    />
-                    {packCreditsErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packCreditsErr}</p>}
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Price (SGD)</label>
-                    <NumberInput
-                      min="0"
-                      step="any"
-                      value={packForm.price}
-                      onChange={(e) => setPackForm({ ...packForm, price: e.target.value })}
-                      onBlur={() => touch('price')}
-                      placeholder="180"
-                      className={cn('h-9 w-full rounded-lg border px-3 text-sm sm:w-28', packPriceErr ? 'border-red-300' : 'border-gray-300')}
-                    />
-                    {packPriceErr && <p className="mt-1 text-center text-xs text-red-600 sm:text-left">{packPriceErr}</p>}
-                  </div>
-                  <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end sm:pb-2">
-                    <input
-                      id="pack-best-value"
-                      type="checkbox"
-                      checked={packForm.best_value}
-                      onChange={(e) => setPackForm({ ...packForm, best_value: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-[#FA4D8D] focus:ring-[#FA4D8D]"
-                    />
-                    <label htmlFor="pack-best-value" className="text-sm font-medium text-gray-700">
-                      Mark as "Best value"
-                    </label>
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Available from (optional)</label>
-                    <div className="flex w-full gap-2">
-                      <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack available-from date" className="w-32 flex-shrink-0" />
-                      <TimePicker value={packForm.starts_time} onChange={(v) => setPackForm({ ...packForm, starts_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Available-from time (SGT); leave blank for start of day" aria-label="Available-from time" />
-                    </div>
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Available until (optional)</label>
-                    <div className="flex w-full gap-2">
-                      <DatePicker value={packForm.until_date} onChange={(v) => setPackForm({ ...packForm, until_date: v })} aria-label="Pack available-until date" className="w-32 flex-shrink-0" />
-                      <TimePicker value={packForm.until_time} onChange={(v) => setPackForm({ ...packForm, until_time: v })} className="h-9 w-28 flex-shrink-0" clearable title="Available-until time (SGT); leave blank for end of day" aria-label="Available-until time" />
-                    </div>
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Expiry</label>
-                    <div className="flex w-full gap-2">
-                      <SelectField
-                        value={packForm.expiryMode}
-                        onChange={(v) => setPackForm({ ...packForm, expiryMode: v as ExpiryMode, validity_days: '', expiry_date: '' })}
-                        aria-label="Pack expiry type"
-                        className="h-9 flex-1 px-3 sm:flex-none sm:w-40"
-                      >
-                        <Opt value="none">No expiry</Opt>
-                        <Opt value="days">Days after purchase</Opt>
-                        <Opt value="date">Fixed date</Opt>
-                      </SelectField>
-                      {packForm.expiryMode === 'days' && (
-                        <NumberInput min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="90" className="h-9 w-24 flex-shrink-0 rounded-lg border border-gray-300 px-3 text-sm" />
+
+                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50/60 p-4 sm:p-6">
+                    {packError && (
+                      <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {packError}
+                      </div>
+                    )}
+                    {packNotice && (
+                      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {packNotice}
+                      </div>
+                    )}
+
+                    <SectionCard id="pack-basics" icon={PackageIcon} tone="pink" title="The pack" subtitle="What parents buy: a number of sessions for one price.">
+                      <div>
+                        <label className={packLabelCls}>Pack name</label>
+                        <input
+                          id="pack-name-input"
+                          value={packForm.name}
+                          onChange={(e) => setPackForm({ ...packForm, name: e.target.value })}
+                          onBlur={() => touch('name')}
+                          placeholder="10-session pack"
+                          className={cn(packInputCls, packNameErr ? 'border-red-400' : 'border-gray-300')}
+                        />
+                        {packNameErr && <p className="mt-1 text-[13px] font-semibold text-red-600">{packNameErr}</p>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={packLabelCls}>Sessions</label>
+                          <NumberInput
+                            value={packForm.credits}
+                            onChange={(e) => setPackForm({ ...packForm, credits: e.target.value })}
+                            onBlur={() => touch('credits')}
+                            placeholder="10"
+                            className={cn(packInputCls, packCreditsErr ? 'border-red-400' : 'border-gray-300')}
+                          />
+                          {packCreditsErr && <p className="mt-1 text-[13px] font-semibold text-red-600">{packCreditsErr}</p>}
+                        </div>
+                        <div>
+                          <label className={packLabelCls}>Price (SGD)</label>
+                          <NumberInput
+                            min="0"
+                            step="any"
+                            value={packForm.price}
+                            onChange={(e) => setPackForm({ ...packForm, price: e.target.value })}
+                            onBlur={() => touch('price')}
+                            placeholder="180"
+                            className={cn(packInputCls, packPriceErr ? 'border-red-400' : 'border-gray-300')}
+                          />
+                          {packPriceErr && <p className="mt-1 text-[13px] font-semibold text-red-600">{packPriceErr}</p>}
+                        </div>
+                      </div>
+                      {Number(packForm.credits) >= 1 && Number(packForm.price) > 0 && (
+                        <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                          That works out at about ${(Number(packForm.price) / Number(packForm.credits)).toFixed(2)} per session.
+                        </p>
                       )}
-                      {packForm.expiryMode === 'date' && (
-                        <DatePicker value={packForm.expiry_date} onChange={(v) => setPackForm({ ...packForm, expiry_date: v })} aria-label="Pack expiry date" className="w-36 flex-shrink-0" />
+                      <div className="border-t border-gray-100 pt-5">
+                        <ToggleRow
+                          title={'Mark as "Best value"'}
+                          hint="Shows parents a highlighted badge on this pack. Leave every pack unmarked and we highlight whichever is cheapest per session."
+                          checked={packForm.best_value}
+                          onChange={(v) => setPackForm({ ...packForm, best_value: v })}
+                        />
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard id="pack-sale" icon={CalendarRange} tone="blue" title="When it's sold and how long it lasts" subtitle="The sale window decides when parents can buy. Expiry decides how long their credits stay valid.">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className={packLabelCls}>Available from (optional)</label>
+                          <div className="flex gap-2">
+                            <DatePicker value={packForm.starts_date} onChange={(v) => setPackForm({ ...packForm, starts_date: v })} aria-label="Pack available-from date" className="h-11 min-w-0 flex-1" />
+                            <TimePicker value={packForm.starts_time} onChange={(v) => setPackForm({ ...packForm, starts_time: v })} className="h-11 w-28 flex-shrink-0" clearable title="Available-from time (SGT); leave blank for start of day" aria-label="Available-from time" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={packLabelCls}>Available until (optional)</label>
+                          <div className="flex gap-2">
+                            <DatePicker value={packForm.until_date} onChange={(v) => setPackForm({ ...packForm, until_date: v })} aria-label="Pack available-until date" className="h-11 min-w-0 flex-1" />
+                            <TimePicker value={packForm.until_time} onChange={(v) => setPackForm({ ...packForm, until_time: v })} className="h-11 w-28 flex-shrink-0" clearable title="Available-until time (SGT); leave blank for end of day" aria-label="Available-until time" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-t border-gray-100 pt-5">
+                        <label className={packLabelCls}>Expiry of each purchase</label>
+                        <div className="flex flex-wrap gap-2">
+                          <SelectField
+                            value={packForm.expiryMode}
+                            onChange={(v) => setPackForm({ ...packForm, expiryMode: v as ExpiryMode, validity_days: '', expiry_date: '' })}
+                            aria-label="Pack expiry type"
+                            className="h-11 w-full px-4 sm:w-56"
+                          >
+                            <Opt value="none">No expiry</Opt>
+                            <Opt value="days">Days after purchase</Opt>
+                            <Opt value="date">Fixed date</Opt>
+                          </SelectField>
+                          {packForm.expiryMode === 'days' && (
+                            <NumberInput min="1" value={packForm.validity_days} onChange={(e) => setPackForm({ ...packForm, validity_days: e.target.value })} placeholder="90" className={cn(packInputCls, 'w-28 border-gray-300')} aria-label="Days valid" />
+                          )}
+                          {packForm.expiryMode === 'date' && (
+                            <DatePicker value={packForm.expiry_date} onChange={(v) => setPackForm({ ...packForm, expiry_date: v })} aria-label="Pack expiry date" className="h-11 w-44" />
+                          )}
+                        </div>
+                        <p className="mt-2 text-[13px] text-gray-500">Always counted from the day a parent buys, not from "Available from".</p>
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard id="pack-scope" icon={Ticket} tone="purple" title="Where it can be used" subtitle="Leave both blank and credits work on any of your classes.">
+                      <div>
+                        <label className={packLabelCls}>Restrict to activities (optional)</label>
+                        <MultiSelectField
+                          values={packForm.activity_ids}
+                          onChange={(v) => setPackForm({ ...packForm, activity_ids: v })}
+                          allLabel="Any of my activities"
+                          aria-label="Restrict to activities"
+                          className="h-11 w-full"
+                          panelWidth={320}
+                        >
+                          {packEligibleActivities.map((a) => (
+                            <Opt key={a.id} value={a.id} disabled={closedToPacks.has(a.id) && !packForm.activity_ids.includes(a.id)}>
+                              {closedToPacks.has(a.id) ? `${a.title} (terms don't accept packages)` : a.title}
+                            </Opt>
+                          ))}
+                        </MultiSelectField>
+                        <p className="mt-1.5 text-[13px] text-gray-500">Packs are for classes only. Wix events, courses and appointments can't be paid for with a pack.</p>
+                      </div>
+                      <div>
+                        <label className={packLabelCls}>Restrict to weekly slot (optional)</label>
+                        <div className="flex flex-wrap gap-2">
+                          <SelectField value={packForm.allowed_weekday} onChange={(v) => setPackForm({ ...packForm, allowed_weekday: v })} aria-label="Restrict to weekday" className="h-11 flex-1 px-4 sm:flex-none sm:w-48">
+                            <Opt value="">Any day</Opt>
+                            {WEEKDAY_NAMES.map((d, i) => <Opt key={d} value={String(i)}>{d}</Opt>)}
+                          </SelectField>
+                          <TimePicker value={packForm.allowed_start_time} onChange={(v) => setPackForm({ ...packForm, allowed_start_time: v })} className="h-11 flex-1 sm:w-36 sm:flex-none" clearable placeholder="Any time" title="Session start time (SGT); leave blank for any time" aria-label="Session start time" />
+                        </div>
+                        <p className="mt-1.5 text-[13px] text-gray-500">For example, a 4-session pack limited to the Monday 4:00 pm session.</p>
+                      </div>
+                      {blockedNote(packForm.activity_ids) && (
+                        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          {blockedNote(packForm.activity_ids)} Remove {blockedFor(packForm.activity_ids).length === 1 ? 'it' : 'them'}, or open packages in that term.
+                        </p>
                       )}
-                    </div>
+                      {packConflicts.length > 0 && (
+                        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          Overlaps {packConflicts.map((c) => `"${c.name}" (${packRestriction(c) || 'no other restrictions'})`).join(', ')} for the same activity. That's allowed, and parents with credits on more than one can pick which to spend, but check the dates are what you meant.
+                        </p>
+                      )}
+                    </SectionCard>
                   </div>
-                  <button onClick={createPack} disabled={savingPack} className="h-9 w-full rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50 sm:w-auto">
-                    {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
-                  </button>
-                  {editingPackId && (
-                    <button
-                      onClick={() => { setEditingPackId(null); setNeedsClassScope(false); setPackForm(emptyPack); setPackError(null); setPackNotice(null); }}
-                      className="h-9 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 sm:w-auto"
-                    >
+
+                  <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4">
+                    <button onClick={closePackModal} className="h-11 rounded-xl border-2 border-gray-300 px-5 text-[15px] font-bold text-gray-700 hover:bg-gray-50">
                       Cancel
                     </button>
-                  )}
-                </div>
-                {(packError || packNotice) && (
-                  <p className={cn('mt-2 text-sm font-medium', packError ? 'text-red-600' : 'text-green-700')}>
-                    {packError ?? packNotice}
-                  </p>
-                )}
-                {packConflicts.length > 0 && (
-                  <p className="mt-2 text-sm font-medium text-amber-700">
-                    Overlaps {packConflicts.map((c) => `"${c.name}" (${packRestriction(c) || 'no other restrictions'})`).join(', ')} for the same activity. That's allowed — parents with credits on more than one will get to pick which pack to spend — but check the dates are what you meant.
-                  </p>
-                )}
-                <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to activities (optional)</label>
-                    <MultiSelectField
-                      values={packForm.activity_ids}
-                      onChange={(v) => setPackForm({ ...packForm, activity_ids: v })}
-                      allLabel="Any of my activities"
-                      aria-label="Restrict to activities"
-                      className="h-9 w-full sm:w-56"
-                      panelWidth={256}
-                    >
-                      {packEligibleActivities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
-                    </MultiSelectField>
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>
-                    <div className="flex w-full gap-2">
-                      <SelectField value={packForm.allowed_weekday} onChange={(v) => setPackForm({ ...packForm, allowed_weekday: v })} aria-label="Restrict to weekday" className="h-9 flex-1 px-3 sm:flex-none">
-                        <Opt value="">Any day</Opt>
-                        {WEEKDAY_NAMES.map((d, i) => <Opt key={d} value={String(i)}>{d}</Opt>)}
-                      </SelectField>
-                      <TimePicker value={packForm.allowed_start_time} onChange={(v) => setPackForm({ ...packForm, allowed_start_time: v })} className="h-9 flex-1 sm:w-28 sm:flex-none" clearable placeholder="Any time" title="Session start time (SGT); leave blank for any time" aria-label="Session start time" />
-                    </div>
+                    <button onClick={createPack} disabled={savingPack} className="h-11 rounded-xl bg-[#FA4D8D] px-6 text-[15px] font-bold text-white hover:bg-[#e23f7c] disabled:opacity-50">
+                      {savingPack ? 'Saving…' : editingPackId ? 'Save pack' : 'Add pack'}
+                    </button>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">Packs are for classes only. Wix events, courses and appointments can't be paid for with a pack, so they aren't listed here and parents won't see packs on them — "Any of my activities" covers your classes only.</p>
-                <p className="mt-1 text-xs text-gray-500">Restricted packs can only be redeemed against matching sessions — e.g. a 4-session pack limited to the Monday 4:00 pm session.</p>
-                <p className="mt-1 text-xs text-gray-500">"Best value" shows parents a highlighted badge on this pack. Mark any pack yourself, or leave every pack unmarked to let us highlight whichever works out cheapest per session.</p>
-                <p className="mt-1 text-xs text-gray-500">Available from/until decide when parents can buy this pack. Expiry is separate — it decides how long each parent's credits stay valid, always counted from the day they buy it, not from "Available from".</p>
-              </>
+              </div>
             )}
           </div>
         )}

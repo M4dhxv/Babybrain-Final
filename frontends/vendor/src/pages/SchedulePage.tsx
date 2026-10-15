@@ -14,6 +14,7 @@ import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity'
 import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import DayDetailDialog, { type OriginRect } from '@/components/DayDetailDialog';
+import { termSessionsBetween, termsPreviewEnabled, useTerms } from '@/lib/termsPreview';
 
 type ScheduleActivity = {
   id: string; title: string; location_id: string | null;
@@ -76,6 +77,9 @@ type EnrichedSession = {
   // Per-session pause (00091) — closes just this slot to new parent bookings,
   // independent of the activity-wide switch.
   bookingsPaused: boolean;
+  // Term enrolment (UI preview only, lib/termsPreview.ts): present on a class
+  // that belongs to a term, absent on an ordinary single-class session.
+  term?: { name: string; sessionNo: number; sessionOf: number; termSeats: number; singleSeats: number; published: boolean };
 };
 
 export default function SchedulePage() {
@@ -86,6 +90,7 @@ export default function SchedulePage() {
   const [cursor, setCursor] = useState(new Date());
   const [fActivity, setFActivity] = useState('');
   const [fLocation, setFLocation] = useState('');
+  const [fKind, setFKind] = useState<'all' | 'term' | 'single'>('all');
   const [dayDetail, setDayDetail] = useState<Date | null>(null);
   const [dayOrigin, setDayOrigin] = useState<OriginRect | null>(null);
 
@@ -247,17 +252,59 @@ export default function SchedulePage() {
       });
     },
   );
-  const sessions = sessionsData ?? NO_SESSIONS;
+  const baseSessions = sessionsData ?? NO_SESSIONS;
+
+  // Term classes (UI preview): overlaid on the calendar from the browser-held
+  // terms, so the term-vs-single look can be reviewed before there's a backend.
+  const termsOn = termsPreviewEnabled();
+  const terms = useTerms();
+  const sessions = useMemo(() => {
+    if (!termsOn || terms.length === 0) return baseSessions;
+    const titles = new Map(activities.map((a) => [a.id, a.title]));
+    const actLoc = new Map(activities.map((a) => [a.id, a.location_id]));
+    const locNames = new Map(locations.map((l) => [l.id, l.name]));
+    const termRows: EnrichedSession[] = termSessionsBetween(terms, titles, rangeStart, rangeEnd).map((t) => {
+      const locId = t.locationId ?? actLoc.get(t.activity_id) ?? null;
+      return {
+        id: t.id,
+        activity_id: t.activity_id,
+        title: t.title,
+        starts_at: t.starts_at,
+        ends_at: t.ends_at,
+        capacity: t.capacity,
+        booked: t.termSeats + t.singleSeats,
+        locationName: locId ? locNames.get(locId) ?? null : null,
+        teacherName: null,
+        studio: null,
+        fromWix: false,
+        isCourse: false,
+        wixClassOverflow: 0,
+        bookingsPaused: false,
+        term: { name: t.termName, sessionNo: t.sessionNo, sessionOf: t.sessionOf, termSeats: t.termSeats, singleSeats: t.singleSeats, published: t.published },
+      };
+    });
+    return [...baseSessions, ...termRows].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [termsOn, terms, baseSessions, activities, locations, rangeStart, rangeEnd]);
+  const hasTermRows = sessions.some((s) => s.term);
 
   const filtered = useMemo(
     () =>
       sessions.filter(
         (s) =>
           (!fActivity || s.activity_id === fActivity) &&
-          (!fLocation || locations.find((l) => l.id === fLocation)?.name === s.locationName)
+          (!fLocation || locations.find((l) => l.id === fLocation)?.name === s.locationName) &&
+          (fKind === 'all' || (fKind === 'term' ? !!s.term : !s.term))
       ),
-    [sessions, fActivity, fLocation, locations]
+    [sessions, fActivity, fLocation, fKind, locations]
   );
+
+  // A term class has no booking page of its own yet (preview), so it opens the
+  // day popup; a normal session goes to its roster as before.
+  const openSessionById = (id: string) => {
+    const s = filtered.find((x) => x.id === id);
+    if (s?.term) openDay(new Date(s.starts_at), null);
+    else navigate(`/bookings?session=${id}`);
+  };
 
   const goToday = () => setCursor(new Date());
   const goPrev = () => setCursor((c) => (view === 'week' ? addDays(c, -7) : addMonths(c, -1)));
@@ -432,6 +479,30 @@ export default function SchedulePage() {
 
           {/* Date range */}
           <div className="text-sm font-semibold text-gray-900 sm:order-2">{rangeLabel}</div>
+
+          {/* Term vs single — only once there is a term to tell apart (preview). */}
+          {termsOn && hasTermRows && (
+            <div className="flex w-full flex-col items-center gap-3 sm:order-6 sm:w-auto sm:flex-row">
+              <div className="flex w-full rounded-xl border border-gray-200 bg-white p-1 sm:inline-flex sm:w-auto">
+                {([['all', 'All'], ['term', 'Term'], ['single', 'Single']] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setFKind(k)}
+                    className={cn(
+                      'h-8 flex-1 px-3 text-sm font-medium rounded-lg transition-colors sm:flex-none',
+                      fKind === k ? 'bg-pink-50 text-[#FA4D8D]' : 'text-gray-600 hover:bg-gray-100'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1.5"><i className="h-3 w-1 rounded-full bg-teal-600" />Term session</span>
+                <span className="flex items-center gap-1.5"><i className="h-3 w-1 rounded-full bg-pink-400" />Single session</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {busy && <ScheduleWeekSkeleton />}
@@ -488,13 +559,13 @@ export default function SchedulePage() {
                         <SlotCard
                           key={g.items[0].id}
                           s={g.items[0]}
-                          onClick={() => navigate(`/bookings?session=${g.items[0].id}`)}
+                          onClick={() => openSessionById(g.items[0].id)}
                         />
                       ) : (
                         <ParallelSlotGroup
                           key={g.key}
                           items={g.items}
-                          onOpenSession={(id) => navigate(`/bookings?session=${id}`)}
+                          onOpenSession={openSessionById}
                         />
                       )
                     )}
@@ -562,11 +633,13 @@ export default function SchedulePage() {
                             key={g.items[0].id}
                             className={cn(
                               'truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
-                              g.items[0].bookingsPaused
-                                ? 'bg-amber-100 text-amber-800'
-                                : g.items[0].fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
+                              g.items[0].term
+                                ? 'border-l-[3px] border-teal-600 bg-teal-50 text-teal-800'
+                                : g.items[0].bookingsPaused
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : g.items[0].fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
                             )}
-                            title={g.items[0].bookingsPaused ? 'Bookings paused for this session' : undefined}
+                            title={g.items[0].term ? `${g.items[0].term.name} · session ${g.items[0].term.sessionNo} of ${g.items[0].term.sessionOf}` : g.items[0].bookingsPaused ? 'Bookings paused for this session' : undefined}
                           >
                             {sgTime(g.items[0].starts_at)} {g.items[0].title}
                           </div>
@@ -580,16 +653,18 @@ export default function SchedulePage() {
                                   title={x.title}
                                   className={cn(
                                     'inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
-                                    x.bookingsPaused
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : x.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
+                                    x.term
+                                      ? 'border-l-[3px] border-teal-600 bg-teal-50 text-teal-800'
+                                      : x.bookingsPaused
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : x.fromWix ? 'bg-purple-50 text-purple-700' : 'bg-pink-50 text-[#FA4D8D]'
                                   )}
                                 >
                                   <i
                                     aria-hidden
                                     className={cn(
                                       'h-1.5 w-1.5 shrink-0 rounded-full',
-                                      x.bookingsPaused ? 'bg-amber-500' : x.fromWix ? 'bg-purple-500' : 'bg-pink-500'
+                                      x.term ? 'bg-teal-600' : x.bookingsPaused ? 'bg-amber-500' : x.fromWix ? 'bg-purple-500' : 'bg-pink-500'
                                     )}
                                   />
                                   <span className="truncate">{x.title}</span>
@@ -614,8 +689,7 @@ export default function SchedulePage() {
         origin={dayOrigin}
         sessions={dayDetail ? sessionsFor(dayDetail) : []}
         onClose={() => setDayDetail(null)}
-        onOpenSession={(id) => { setDayDetail(null); navigate(`/bookings?session=${id}`); }}
-      />
+        onOpenSession={(id) => { setDayDetail(null); navigate(`/bookings?session=${id}`); }}      />
     </div>
   );
 }
@@ -648,6 +722,38 @@ function SlotCard({
   // silently omitted, so every card has the same shape and it's obvious at
   // a glance which sessions are missing one to fill in.
   const staff = s.teacherName?.trim() || 'No instructor set';
+  // A term class reads differently at a glance from a drop-in one: teal, a
+  // "Term" tag with its place in the run, and the seat split. Single classes
+  // keep the per-activity accent exactly as before.
+  if (s.term) {
+    const t = s.term;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${t.name} · session ${t.sessionNo} of ${t.sessionOf}`}
+        className="flex w-full items-stretch gap-2 rounded-lg border border-teal-200 bg-teal-50/70 py-1.5 pr-2.5 text-left transition-colors hover:bg-teal-50"
+      >
+        <span className="w-1 shrink-0 rounded-full bg-teal-600" />
+        <span className="min-w-0 flex-1">
+          {!hideTime && <span className="block text-xs font-semibold text-gray-900">{sgTime(s.starts_at)}</span>}
+          <span className="flex items-center justify-between gap-1">
+            <span className="min-w-0 truncate text-xs text-gray-800">{s.title}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-teal-400" />
+          </span>
+          <span className="flex items-center gap-1 text-[11px] text-teal-800">
+            <span className="rounded-full bg-teal-100 px-1.5 text-[10px] font-semibold">Term</span>
+            <span className="truncate">session {t.sessionNo}/{t.sessionOf}</span>
+          </span>
+          <span className="flex items-center gap-1 text-[11px] text-gray-500">
+            <Users className="h-3 w-3 shrink-0" />
+            {t.termSeats} term{t.singleSeats > 0 ? ` + ${t.singleSeats} single` : ''}
+            {s.capacity != null ? ` / ${s.capacity}` : ''}
+          </span>
+        </span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"

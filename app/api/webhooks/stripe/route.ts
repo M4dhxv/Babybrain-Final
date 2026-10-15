@@ -376,6 +376,24 @@ export async function POST(request: Request) {
           await releasable().is('checkout_started_at', null);
           await releasable().lte('checkout_started_at', openedBy);
         }
+      } else if (expired.metadata?.kind === 'booking' && expired.metadata?.booking_group_id) {
+        // A term enrolment (00243, /api/terms/checkout) has too many seats to
+        // list in Stripe's 500-character metadata value, so it names the
+        // booking group instead — which holds exactly that enrolment's seats.
+        // Same two rules as above: never a waitlist claim hold, never a seat
+        // the parent has since reopened checkout for.
+        const groupId = expired.metadata.booking_group_id;
+        const openedBy = new Date((expired.created + 60) * 1000).toISOString();
+        const releasable = () =>
+          admin
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .eq('booking_group_id', groupId)
+            .eq('status', 'pending')
+            .eq('payment_status', 'none')
+            .is('pending_since', null);
+        await releasable().is('checkout_started_at', null);
+        await releasable().lte('checkout_started_at', openedBy);
       } else if (expired.metadata?.kind === 'wix_booking' && expired.metadata?.booking_ids) {
         const bookingIds = JSON.parse(expired.metadata.booking_ids) as string[];
         if (bookingIds.length) {

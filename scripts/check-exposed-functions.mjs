@@ -40,6 +40,10 @@ const ALLOWED = new Set([
   'provider_recent_bookings', 'provider_session_roster', 'provider_set_purchase_expiry',
   'provider_trial_conversion', 'mark_provider_notifications_seen', 'promote_waitlist_entry',
   'respond_to_review', 'vendor_cancel_session',
+  // Term enrolment (00243): each checks the caller itself. term_quote and
+  // term_headline_prices only read a published term's public numbers, so the
+  // logged-out pages may call them.
+  'term_quote', 'term_headline_prices', 'term_trial_remaining', 'activity_packages_closed', 'publish_term', 'enrol_in_term', 'book_term_class', 'skip_term_class',
   // Used inside RLS policies, so the calling role must be able to run them
   'user_provider_ids', 'user_manage_provider_ids', 'user_owner_provider_ids',
   // Pure helpers / read-only lookups of already-public data

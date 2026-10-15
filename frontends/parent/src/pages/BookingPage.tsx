@@ -21,6 +21,9 @@ import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bo
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
+import { BookModeChoice, DEFAULT_OFFER, TermEnrolPreview, TermSessionPicker, termQuote, trialPriceFor, type BookMode, type TermOffer } from "../components/TermBookingPreview";
+import { deriveSlots, termsPreviewEnabled } from "../lib/termsPreview";
+import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
@@ -303,6 +306,24 @@ export default function BookingPage() {
   // APPOINTMENT is a single one-to-one slot — one credit = one session doesn't
   // map onto any of them, so the pack step is hidden and payment stays "single".
   const packagesNotOffered = isEvent || isCourse || isAppointment;
+  // Term enrolment UI preview: only for plain (non-Wix) classes with upcoming
+  // sessions, and only when the preview flag is on.
+  // A term-enabled activity opens on the whole term; single sessions are off
+  // unless the vendor turns them on. Ignored for activities without terms.
+  const [bookMode, setBookMode] = useState<BookMode>("term");
+  const [termSlotIdx, setTermSlotIdx] = useState(0);
+  const [termPassed, setTermPassed] = useState(0);
+  const [termEnrolled, setTermEnrolled] = useState(false);
+  const [termOffer, setTermOffer] = useState<TermOffer>(DEFAULT_OFFER);
+  // Packs are not offered where no running term accepts package credits.
+  const packagesOpen = usePackagesOpen(activity?.id);
+  const termEligible = termsPreviewEnabled() && !!activity && !activity.wix_service_type && !redeemToken && sessions.length > 0;
+  const termMode = termEligible && bookMode === "term";
+  const termUnitPrice = activity?.price != null ? Number(activity.price) : null;
+  const termSlots = useMemo(() => (termEligible ? deriveSlots(sessions) : []), [termEligible, sessions]);
+  // The term as it would be quoted to this parent today (the slot they picked,
+  // minus the classes that have already run).
+  const quote = termEligible ? termQuote(termSlots, termSlotIdx, termPassed, termUnitPrice) : null;
   // Non-cancellable once booked: always for Wix ticketed events and courses
   // (reserved inside Wix), and for any other activity where the provider has
   // turned the cancellation toggle off on the edit-activity card. Drives the
@@ -1248,6 +1269,15 @@ export default function BookingPage() {
     }
   }
 
+  // In package mode, settle on a credit or the first pack as soon as one exists
+  // (packs load after the page does), so the total and the Pay button are never
+  // left showing the single-session price.
+  useEffect(() => {
+    if (!termEligible || bookMode !== "package" || payWith !== "single") return;
+    const next = packageCredit ? "credit" : packs[0] ? `pack:${packs[0].id}` : null;
+    if (next) setPayWith(next);
+  }, [termEligible, bookMode, payWith, packageCredit, packs]);
+
   const requiredPolicies = policies.filter((p) => p.required);
   const missingPolicies = requiredPolicies.filter((p) => !acceptedPolicies.includes(p.id));
   const needsMedical = Boolean(activity?.requires_medical_disclosure);
@@ -1271,7 +1301,9 @@ export default function BookingPage() {
   // Greys the Pay button out as a hint that something's still missing —
   // it stays tappable in that state (see the button below) so a tap
   // explains exactly what, rather than silently doing nothing.
-  const bookingIncomplete = !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
+  const bookingIncomplete = termMode
+    ? consentProblem() != null
+    : !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
 
   /** Status of this child's existing booking on the chosen session, if any. */
   const existingBookingStatus = sessionId ? existingBookings.get(`${sessionId}:${bookChildId ?? ""}`) : undefined;
@@ -1281,11 +1313,78 @@ export default function BookingPage() {
    *  duplicate, just an abandoned checkout attempt. */
   const alreadyBookedPending = existingBookingStatus === "pending";
 
+  /** Picking how to book (term / trial / single / package). A package booking
+   *  is a single-class flow that can only be paid with credits or a pack. */
+  function chooseMode(m: BookMode) {
+    setTermEnrolled(false);
+    if (m === "package") {
+      setPayWith(packageCredit ? "credit" : packs[0] ? `pack:${packs[0].id}` : "single");
+    } else if (bookMode === "package") {
+      setPayWith("single");
+    }
+    setBookMode(m);
+  }
+
+  /** The vendor's term options changed (preview control): fall back to the
+   *  whole term if the mode the parent was on is no longer offered. */
+  // Trial, single or package on a term: one of the term's groups, then one of
+  // its dates. Only dates that are real sessions can be picked.
+  const sessionStarts = new Set(sessions.map((s) => s.starts_at));
+  const oneOffGroups = termSlots.map((s) => ({ key: s.key, label: s.label, venue: s.venue, dates: s.dates.filter((d) => sessionStarts.has(d)) }));
+  const oneOffOpen = oneOffGroups[Math.min(termSlotIdx, oneOffGroups.length - 1)]?.dates.slice(termPassed) ?? [];
+  const oneOffPicked = sessions.find((s) => s.id === sessionId)?.starts_at ?? null;
+  function pickOneOff(iso: string) {
+    const s = sessions.find((x) => x.starts_at === iso);
+    if (!s) return;
+    setDateKey(sgDay(iso));
+    setSessionId(s.id);
+  }
+  // Keep the picked session inside the chosen group (first open date otherwise).
+  const firstOpen = oneOffOpen[0] ?? null;
+  const pickedOpen = !!oneOffPicked && oneOffOpen.includes(oneOffPicked);
+  useEffect(() => {
+    if (termEligible && !termMode && !pickedOpen && firstOpen) pickOneOff(firstOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termEligible, termMode, pickedOpen, firstOpen]);
+
+  // Packs closed at this activity while the parent sat on "Use a package".
+  useEffect(() => {
+    if (!packagesOpen && bookMode === "package") { setBookMode("term"); setPayWith("single"); }
+  }, [packagesOpen, bookMode]);
+
+  function changeOffer(o: TermOffer) {
+    setTermOffer(o);
+    const gone =
+      (bookMode === "single" && (!o.single || (o.trial && o.trialUsed < o.trialLimit))) ||
+      (bookMode === "trial" && (!o.trial || o.trialUsed >= o.trialLimit)) ||
+      (bookMode === "package" && !o.packages);
+    if (gone) chooseMode("term");
+  }
+
+  /** Term enrolment (UI preview): same paperwork and age checks as a single
+   *  booking, then a confirmation only — nothing is saved or charged. */
+  function enrolTerm() {
+    setErr(null);
+    if (!auth) { goTo(loginHref()); return; }
+    const consent = consentProblem();
+    if (consent) { setErr(consent); return; }
+    if (childAgeMismatch) {
+      setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
+      return;
+    }
+    setTermEnrolled(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
     setErr(null);
     // The button is always clickable (see its comment above) so this is the
     // first thing a Pay tap with nothing chosen yet actually hits.
+    if (packageUnchosen) {
+      setErr("Choose a package to continue.");
+      return;
+    }
     if (!sessionId) {
       setErr(isEvent || isCourse ? "This isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
       return;
@@ -1326,8 +1425,19 @@ export default function BookingPage() {
   }
 
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
+  // Trial class (UI preview): one class at the trial price instead of the
+  // single-class price. Everything else about the booking is unchanged.
+  const trialUnit = termEligible && bookMode === "trial" ? trialPriceFor(termUnitPrice) : null;
+  // Package mode with no pack or credit picked yet (none exist, or they have not
+  // loaded): the single-session price must not stand in for it.
+  const packageUnchosen = termEligible && bookMode === "package" && payWith === "single";
+  const shownTotal = trialUnit != null ? trialUnit * ticketCount : total;
   const payLabel = !auth
     ? "Log in to book"
+    : packageUnchosen
+      ? "Choose a package"
+    : termMode
+      ? `Enrol for the term${quote?.payNow != null ? ` — $${quote.payNow}` : ""}`
     : isRsvpEvent
       ? "RSVP"
     : isEvent
@@ -1342,8 +1452,8 @@ export default function BookingPage() {
           ? "Confirm with a package credit"
           : selectedPack
             ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
-            : total != null && total > 0
-              ? `Pay $${total.toFixed(2)}`
+            : shownTotal != null && shownTotal > 0
+              ? `Pay $${shownTotal.toFixed(2)}`
               : "Confirm booking";
   // What the summary sidebar and the "Total amount" block actually show —
   // must track payLabel's own amount, not always the single-class price.
@@ -1352,7 +1462,11 @@ export default function BookingPage() {
   // a pack's price; now that it goes through this same CTA, showing the
   // single-class total while the button says "Buy pack — $500" read as a
   // straight contradiction (QA).
-  const displayTotal = redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : total;
+  const displayTotal = termMode
+    ? quote?.payNow ?? null
+    : packageUnchosen
+      ? null
+    : redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : shownTotal;
 
   // Unlike the activity-detail page, booking needs sessions to pick a
   // default date/time immediately — wait for both phases, same as this
@@ -1410,6 +1524,42 @@ export default function BookingPage() {
                 </div>
               </div>
 
+              {/* Term enrolment — UI preview, behind ?terms=preview (lib/termsPreview.ts). */}
+              {termEligible && quote && (
+                <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
+                  <BookModeChoice
+                    quote={quote}
+                    price={termUnitPrice}
+                    mode={bookMode}
+                    onModeChange={chooseMode}
+                    passed={termPassed}
+                    onPassedChange={(n) => { setTermPassed(n); setTermEnrolled(false); }}
+                    offer={packagesOpen ? termOffer : { ...termOffer, packages: false }}
+                    onOfferChange={changeOffer}
+                  />
+                  {termMode && (
+                    <TermEnrolPreview
+                      slots={termSlots}
+                      onSlotChange={(i) => { setTermSlotIdx(i); setTermEnrolled(false); }}
+                      quote={quote}
+                      childName={bookChild?.name ?? "your child"}
+                      activityTitle={activity.title}
+                      enrolled={termEnrolled}
+                    />
+                  )}
+                  {!termMode && (
+                    <TermSessionPicker
+                      groups={oneOffGroups}
+                      groupIdx={termSlotIdx}
+                      onGroupChange={(i) => { setTermSlotIdx(i); setTermEnrolled(false); }}
+                      from={termPassed}
+                      selected={oneOffPicked}
+                      onSelect={pickOneOff}
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
                 {sessions.length === 0 ? (
                   <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
@@ -1421,7 +1571,7 @@ export default function BookingPage() {
                   <>
                     {isCourse && (
                       <section>
-                        <h3 className="mb-4 text-xl font-black">1. Course schedule</h3>
+                        <h3 className="mb-4 text-xl font-black">Course schedule</h3>
                         <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4">
                           <p className="text-sm font-semibold text-[#5a6690]">
                             This is a course — one booking enrols your child for the whole run, every session below.
@@ -1478,15 +1628,15 @@ export default function BookingPage() {
                         )}
                       </section>
                     )}
-                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length === 0 && (
+                    {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length === 0 && (
                       <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
                         Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
                       </p>
                     )}
-                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
+                    {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
                       <>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
+                          <h3 className="mb-4 text-xl font-black">Choose a date</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {/* Split "Tue, 25 Aug" into two fixed lines rather than
                                 letting it wrap naturally — a plain text wrap broke
@@ -1505,7 +1655,7 @@ export default function BookingPage() {
                           </div>
                         </section>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
+                          <h3 className="mb-4 text-xl font-black">Choose a time</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {times.map((s) => (
                               <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
@@ -1563,7 +1713,7 @@ export default function BookingPage() {
                     )}
                     {kids.length > 1 && (
                       <section>
-                        <h3 className="mb-4 text-xl font-black">Who's this session for?</h3>
+                        <h3 className="mb-4 text-xl font-black">{termMode ? "Who's this term for?" : "Who's this session for?"}</h3>
                         <div className="flex flex-wrap gap-2">
                           {kids.map((k) => (
                             <button
@@ -1584,7 +1734,7 @@ export default function BookingPage() {
                         {bookChild.name} is {formatChildAge(bookChild.date_of_birth)}, outside this class's {ageText} age range — you won't be able to confirm this booking with them selected.
                       </p>
                     )}
-                    {alreadyBooked && !childAgeMismatch && (
+                    {!termMode && alreadyBooked && !childAgeMismatch && (
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {alreadyBookedPending
@@ -1592,15 +1742,17 @@ export default function BookingPage() {
                           : <span>{bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.</span>}
                       </p>
                     )}
+                    {!termMode && (
                     <section>
-                      <h3 className="mb-2 text-xl font-black">{isMultiDay ? "Number of children" : isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
+                      <h3 className="mb-2 text-xl font-black">{isMultiDay || isCourse ? "Number of children" : isEvent ? "Number of tickets" : "Number of tickets/passes"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
                         <button type="button" onClick={() => setCount((c) => Math.min(maxChildren, c + 1))} className="h-12 w-12">+</button>
                       </div>
                     </section>
-                    {(!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
+                    )}
+                    {!termMode && (!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
                       <section>
                         <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="mb-3 text-sm font-semibold text-[#59658d]">
@@ -1637,7 +1789,7 @@ export default function BookingPage() {
                             step, so its Provider terms is always step 3. The
                             package step (when present) comes after terms, not
                             before — see "5. Select package" below. */}
-                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${isCourse ? 3 : 4}. `}Provider terms</h3>
+                        <h3 className="mb-2 text-xl font-black">Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
@@ -1727,17 +1879,19 @@ export default function BookingPage() {
                         books a real seat, so the same slot + terms gating the
                         main CTA already enforces for a single-class booking
                         must apply here too — see checkout()/buyPack(). */}
-                    {!redeemToken && !packagesNotOffered && (
+                    {!termMode && !redeemToken && !packagesNotOffered && packagesOpen && (!termEligible || termOffer.packages) && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">5. Select package</h3>
+                        <h3 className="mb-2 text-xl font-black">Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
                         <div className="space-y-3">
-                          <PackageOption
-                            selected={payWith === "single"}
-                            onSelect={() => setPayWith("single")}
-                            title="Single session"
-                            price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
-                          />
+                          {!(termEligible && bookMode === "package") && (
+                            <PackageOption
+                              selected={payWith === "single"}
+                              onSelect={() => setPayWith("single")}
+                              title={trialUnit != null ? "Trial session" : "Single session"}
+                              price={trialUnit != null ? `$${(trialUnit * count).toFixed(2)}` : price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
+                            />
+                          )}
                           {packageCredit && matchingCredits.length === 1 && (
                             <PackageOption
                               selected={payWith === "credit"}
@@ -1806,16 +1960,16 @@ export default function BookingPage() {
               </div>
             </section>
 
-            <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll">
+            <aside className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll`}>
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={summaryImg.src} onError={summaryImg.onError} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${summaryImg.isLogo ? " p-3" : ""}`} />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <div className="mt-2 flex flex-wrap gap-1.5">{[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => <span key={n} className="inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{n}</span>)}</div>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
-                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
+                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode && quote ? `Term · ${quote.slot.label} · ${quote.left} sessions from ${sgDay(quote.joining[0])}` : selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
                 {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
-                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</p>
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode ? `${bookChild?.name ?? "1 child"}, ${ageText}` : <>{count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</>}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
@@ -1861,7 +2015,7 @@ export default function BookingPage() {
             // bug this guards against. It stays tappable in that dimmed state
             // so checkout() can surface a friendly message via the alert
             // above explaining what's left, instead of just sitting there.
-            <Button type="button" size="lg" onClick={checkout} disabled={busy} className={busy || bookingIncomplete ? "opacity-60" : ""}>
+            <Button type="button" size="lg" onClick={termMode ? enrolTerm : checkout} disabled={busy} className={busy || bookingIncomplete ? "opacity-60" : ""}>
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}
