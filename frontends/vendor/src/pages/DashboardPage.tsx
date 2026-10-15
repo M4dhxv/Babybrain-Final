@@ -26,6 +26,8 @@ import {
   Baby,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BOUTIQUE } from '@/lib/look';
+import { EmptyState } from '@/components/EmptyState';
 
 /* Every card used to send you to /bookings regardless of what you clicked, so
    "View details" on Attendance, Waitlist and Revenue all landed in the same
@@ -283,11 +285,35 @@ export default function DashboardPage() {
       {refreshing && <RefreshBar />}
       {/* Top Bar */}
       <div className="flex flex-col items-center gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div className="w-full text-center sm:w-auto sm:text-left">
-          <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
-          <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
-        </div>
+        {BOUTIQUE ? (
+          <div className="w-full text-center sm:w-auto sm:text-left">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">
+              {new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'long', day: 'numeric', month: 'long' })}
+            </div>
+            <h1 className="mt-1 text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}</h1>
+          </div>
+        ) : (
+          <div className="w-full text-center sm:w-auto sm:text-left">
+            <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
+            <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
+          </div>
+        )}
         <div className="flex items-center gap-3">
+          {/* Boutique look: messages live up here with an unread dot instead
+              of the floating bubble, which sat over the cards. */}
+          {BOUTIQUE && (
+            <button
+              onClick={() => navigate('/messages')}
+              aria-label={unreadCount ? `Messages, ${unreadCount} unread` : 'Messages'}
+              title="Messages"
+              className="relative grid h-10 w-10 place-items-center rounded-full bg-white text-gray-700 shadow-[0_2px_8px_rgba(17,26,76,0.06)] hover:text-[#C90044]"
+            >
+              <MessageSquare className="h-[18px] w-[18px]" />
+              {!!unreadCount && (
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-[1.5px] border-white bg-[#FA4D8D]" />
+              )}
+            </button>
+          )}
           <div className="relative">
             <button
               onClick={() => { setRangeOpen((v) => !v); setFilterOpen(false); }}
@@ -387,7 +413,26 @@ export default function DashboardPage() {
         {!loading && !(!data && !!error) && <>
         {/* Stats Cards */}
         <div className="grid grid-cols-2 gap-4 mb-6 sm:grid-cols-3 lg:grid-cols-5">
-          {statsCards.map((stat, i) => (
+          {BOUTIQUE ? statsCards.map((stat, i) => (
+            /* Boutique look: the whole card is the link, so the five repeated
+               "View details" links go. The "% vs last week" lines don't come
+               across: they're fixed strings in `statsCards`, not figures from
+               the backend, so showing them as a trend would be made up. */
+            <button
+              key={stat.label}
+              onClick={() => navigate(stat.to)}
+              className="bg-white rounded-xl border border-gray-200 p-4 text-left"
+            >
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <span className="text-xs font-semibold text-gray-600">{stat.label}</span>
+                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', stat.bg)}>
+                  <stat.icon className={cn('w-4 h-4', stat.color)} />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 tabular-nums">{liveValues[i] ?? '—'}</div>
+              <div className="mt-1 text-xs text-gray-500">{stat.sub}</div>
+            </button>
+          )) : statsCards.map((stat, i) => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', stat.bg)}>
@@ -458,7 +503,15 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
-              {loaded && visibleUpcoming.length === 0 && <div className="text-sm text-gray-400">No sessions in this range.</div>}
+              {loaded && visibleUpcoming.length === 0 && (BOUTIQUE ? (
+                <EmptyState
+                  icon={CalendarDays}
+                  tone="purple"
+                  title={`Nothing on in the ${RANGE_PRESETS.find((r) => r.key === rangeKey)!.label.toLowerCase()}`}
+                  detail="Sessions you add or sync from Wix show up here."
+                  action={{ label: 'Open schedule', onClick: () => navigate('/schedule') }}
+                />
+              ) : <div className="text-sm text-gray-400">No sessions in this range.</div>)}
             </div>
             <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#FA4D8D]">
               View full schedule
@@ -512,7 +565,14 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
-              {loaded && visibleRecent.length === 0 && <div className="text-sm text-gray-400">No {statusFilter === 'All' ? '' : statusFilter.toLowerCase() + ' '}bookings yet.</div>}
+              {loaded && visibleRecent.length === 0 && (BOUTIQUE ? (
+                <EmptyState
+                  icon={CalendarCheck}
+                  tone="green"
+                  title={statusFilter === 'All' ? 'No bookings yet' : `No ${statusFilter.toLowerCase()} bookings`}
+                  detail={statusFilter === 'All' ? 'New bookings from parents land here first.' : undefined}
+                />
+              ) : <div className="text-sm text-gray-400">No {statusFilter === 'All' ? '' : statusFilter.toLowerCase() + ' '}bookings yet.</div>)}
             </div>
             <button onClick={() => navigate('/bookings')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#FA4D8D]">
               View all bookings
@@ -546,7 +606,7 @@ export default function DashboardPage() {
           showing different messages" — they were never the same data. Rather
           than maintain two message UIs in parallel, this now opens the one
           real inbox, with its own real unread count. */}
-      <button
+      {!BOUTIQUE && <button
         onClick={() => navigate('/messages')}
         className="fixed bottom-6 right-6 w-14 h-14 gradient-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity z-50"
         title="Open messages"
@@ -557,7 +617,7 @@ export default function DashboardPage() {
             {unreadCount}
           </span>
         )}
-      </button>
+      </button>}
         </div>
   );
 }

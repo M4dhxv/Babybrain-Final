@@ -26,6 +26,8 @@ import { SelectField, Opt } from '@/components/ui/select-field';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import BookingsTable from '@/components/BookingsTable';
+import { EmptyState } from '@/components/EmptyState';
+import { BOUTIQUE } from '@/lib/look';
 
 /**
  * The class roster table's column tracks. Header and body rows are separate grids, so the
@@ -1489,7 +1491,19 @@ export default function BookingsPage() {
                 </div>
               ))}
               {!loading && rosterLoading && <LoadingRows label="Loading bookings…" count={2} />}
-              {!loading && !rosterLoading && visibleBookings.length === 0 && (
+              {!loading && !rosterLoading && visibleBookings.length === 0 && BOUTIQUE && (
+                <EmptyState
+                  icon={activeTab === 'Waitlist' ? UserPlus : CalendarCheck}
+                  tone={activeTab === 'Waitlist' ? 'blue' : 'purple'}
+                  title={activeTab === 'Waitlist'
+                    ? 'No one on the waitlist'
+                    : activeTab === 'Bookings' && statusFilter === 'cancelled'
+                    ? 'No cancelled bookings'
+                    : "No one's booked yet"}
+                  detail="For this session."
+                />
+              )}
+              {!loading && !rosterLoading && visibleBookings.length === 0 && !BOUTIQUE && (
                 <div className="text-sm text-gray-400 px-1">
                   {activeTab === 'Waitlist'
                     ? 'No one on the waitlist for this session.'

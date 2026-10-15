@@ -33,6 +33,7 @@ import { UnreadBadge } from '@/components/UnreadBadge';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import { PushPrompt } from '@/components/PushPrompt';
 import { prefetchRoute, warmPortal } from '@/lib/prefetch';
+import { useBoutiqueLook } from '@/lib/look';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -60,6 +61,9 @@ export default function PortalLayout() {
   const isPro = subscription?.plan === 'pro' || subscription?.plan === 'premium';
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Preview look behind ?look=boutique. The bb-* class names below are hooks
+  // for styles/look-boutique.css and do nothing when it's off.
+  useBoutiqueLook();
 
   const plan = planMeta(subscription?.plan);
   /* Unread badge on the Messages tab (QA 04/09). Messaging is available on
@@ -119,9 +123,9 @@ export default function PortalLayout() {
   const fillsScreen = location.pathname.startsWith('/messages');
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="bb-shell flex h-screen bg-gray-50">
       {/* Mobile top bar */}
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
+      <header className="bb-topbar fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
         <BrandLogo className="h-8" />
         <button
           onClick={() => setMobileOpen(true)}
@@ -147,7 +151,7 @@ export default function PortalLayout() {
           rather than squashing them. */}
       <aside
         className={cn(
-          'flex flex-col overflow-y-auto overscroll-contain bg-white border-r border-gray-200 h-full transition-transform duration-300',
+          'bb-side flex flex-col overflow-y-auto overscroll-contain bg-white border-r border-gray-200 h-full transition-transform duration-300',
           'fixed inset-y-0 left-0 z-50 md:static md:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           isSidebarCollapsed ? 'w-20' : 'w-64'
@@ -185,8 +189,9 @@ export default function PortalLayout() {
                 onMouseEnter={() => prefetchRoute(item.path)}
                 onFocus={() => prefetchRoute(item.path)}
                 title={locked ? 'Insights is a Premium feature' : undefined}
+                data-active={isActive || undefined}
                 className={cn(
-                  'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
+                  'bb-nav flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                   isActive
                     ? 'bg-pink-50 text-[#FA4D8D]'
                     : locked
@@ -216,7 +221,7 @@ export default function PortalLayout() {
             onClick={handleSignOut}
             title={isSidebarCollapsed ? 'Sign out' : undefined}
             className={cn(
-              'flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'bb-nav flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
               'text-gray-700 hover:bg-red-50 hover:text-red-600'
             )}
           >
@@ -227,7 +232,7 @@ export default function PortalLayout() {
 
         {/* Current Plan Card */}
         {!isSidebarCollapsed && (
-          <div className="shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100 text-center">
+          <div className="bb-plan shrink-0 mx-3 mb-4 p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-100 text-center">
             <div className="flex items-center justify-center gap-2 mb-2">
               <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-500 rounded-lg flex items-center justify-center">
                 <Crown className="w-4 h-4 text-white" />

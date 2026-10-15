@@ -12,6 +12,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { ScheduleWeekSkeleton, RefreshBar } from '@/components/Skeletons';
+import { BOUTIQUE } from '@/lib/look';
 import { SelectField, Opt } from '@/components/ui/select-field';
 import DayDetailDialog, { type OriginRect } from '@/components/DayDetailDialog';
 
@@ -350,7 +351,23 @@ export default function SchedulePage() {
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
-        {(wixError || syncError) && (
+        {/* Boutique look: a background refresh that couldn't reach Wix is a
+            quiet inline notice with a retry, not a full-width alarm. A sync the
+            vendor asked for that failed (syncError) keeps the full banner. */}
+        {BOUTIQUE && wixError && !syncError && (
+          <div className="mb-4 flex items-center gap-2.5 px-1 text-sm text-gray-500">
+            <span className="h-2 w-2 flex-shrink-0 rounded-full bg-yellow-400" aria-hidden="true" />
+            <span className="flex-1">Couldn&rsquo;t reach Wix for some classes, so their availability is the last saved copy.</span>
+            <button
+              onClick={() => refetchSessions()}
+              disabled={syncDisabled}
+              className="font-semibold text-[#C90044] hover:underline disabled:opacity-50"
+            >
+              {sessionsRefreshing ? 'Retrying…' : 'Retry'}
+            </button>
+          </div>
+        )}
+        {(BOUTIQUE ? !!syncError : (wixError || syncError)) && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{syncError ?? wixError}</div>
         )}
 
