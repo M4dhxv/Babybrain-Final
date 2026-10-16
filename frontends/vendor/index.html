@@ -17,6 +17,10 @@
     <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
     <link rel="dns-prefetch" href="%VITE_SUPABASE_URL%" />
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+    <!-- Manrope is the portal's face in the default "boutique" look
+         (src/lib/look.ts). Linked here, not on mount, so text doesn't paint
+         in Inter first and then reflow. The id tells look.ts it's loaded. -->
+    <link id="bb-look-boutique-font" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
     <!-- Home-screen identity. Without a manifest, "Add to Home screen" ignores
          the favicon (it is 385x256, not square) and draws a grey letter tile

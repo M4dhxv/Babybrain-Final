@@ -7,6 +7,8 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { useDeepLinkHighlight } from '@/lib/useDeepLinkHighlight';
 import { ListRowsSkeleton, RefreshBar } from '@/components/Skeletons';
+import { EmptyState } from '@/components/EmptyState';
+import { BOUTIQUE } from '@/lib/look';
 
 const sgDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric' });
@@ -122,7 +124,17 @@ export default function ReviewsPage() {
         </div>
 
         {loading && <ListRowsSkeleton count={4} />}
-        {!loading && visible.length === 0 && (
+        {!loading && visible.length === 0 && BOUTIQUE && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <EmptyState
+              icon={filter === 'unanswered' ? MessageSquare : Star}
+              tone={filter === 'unanswered' ? 'green' : 'yellow'}
+              title={filter === 'unanswered' ? "You're all caught up" : 'No reviews yet'}
+              detail={filter === 'unanswered' ? 'Every review has a reply.' : 'Reviews from parents will show up here.'}
+            />
+          </div>
+        )}
+        {!loading && visible.length === 0 && !BOUTIQUE && (
           <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
             {filter === 'unanswered' ? "You're all caught up — no unanswered reviews." : 'No reviews yet.'}
           </div>

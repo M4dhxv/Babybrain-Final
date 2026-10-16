@@ -1,0 +1,213 @@
+/* "Soft boutique" look — the portal default; ?look=classic opts a browser out
+ * (lib/look.ts).
+ *
+ * Warm cream canvas, borderless white cards that float on soft navy-tinted
+ * depth, big radii, pill buttons, and Manrope for type. The brand palette is
+ * unchanged: pastel tiles stay, #FA4D8D stays the one CTA fill, #C90044 the
+ * pink ink.
+ *
+ * The portal styles itself with stock Tailwind classes across ~40 files, so
+ * rather than touch every page this layer restyles the shared patterns they
+ * all use (`bg-white rounded-xl border` cards, `bg-white border rounded-xl`
+ * secondary buttons, `bg-[#FA4D8D]` CTAs, the shadcn slots). Everything is
+ * scoped under `html.look-boutique`, which also out-ranks the single-class
+ * utilities it overrides, so in the classic look none of this applies. */
+
+html.look-boutique {
+  --bq-canvas: #FBF5EF;
+  --bq-well: #F7F0EA;
+  --bq-line: #EFE5DF;
+  --bq-ink: #111A4C;
+  --bq-depth: 0 1px 2px rgba(17, 26, 76, 0.04), 0 10px 28px rgba(17, 26, 76, 0.06);
+  --bq-depth-hover: 0 2px 4px rgba(17, 26, 76, 0.05), 0 16px 36px rgba(17, 26, 76, 0.09);
+  --bq-pop: 0 4px 10px rgba(17, 26, 76, 0.06), 0 22px 48px rgba(17, 26, 76, 0.14);
+  /* shadcn tokens, so Card/Button/Tabs and friends follow along. */
+  --background: 30 64% 96%;
+  --radius: 0.875rem;
+}
+
+html.look-boutique body,
+html.look-boutique .bb-shell {
+  font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+
+html.look-boutique .bb-shell,
+html.look-boutique .bb-side {
+  background: var(--bq-canvas);
+}
+html.look-boutique .bb-side {
+  border-right-color: transparent;
+}
+html.look-boutique .bb-topbar {
+  background: rgba(251, 245, 239, 0.92);
+  border-bottom-color: var(--bq-line);
+  backdrop-filter: saturate(1.2) blur(10px);
+}
+
+html.look-boutique .bb-nav {
+  border-radius: 14px;
+  color: #5A5157;
+}
+html.look-boutique .bb-nav:not([data-active]):hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+html.look-boutique .bb-nav[data-active] {
+  background: #fff;
+  color: #C90044;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(17, 26, 76, 0.04), 0 6px 16px rgba(17, 26, 76, 0.06);
+}
+
+html.look-boutique .bb-plan {
+  background: #fff;
+  border-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--bq-depth);
+}
+html.look-boutique .bb-plan button {
+  border-radius: 999px;
+  background: var(--bq-canvas);
+  border-color: transparent;
+}
+
+/* ── Headings and figures ─────────────────────────────────────────────── */
+
+html.look-boutique main :is(h1, h2, h3) {
+  color: var(--bq-ink);
+  letter-spacing: -0.02em;
+}
+html.look-boutique main h1 {
+  font-weight: 800;
+}
+html.look-boutique main :is(.text-2xl, .text-3xl).font-bold {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--bq-ink);
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────── */
+
+/* A white, bordered, rounded block is a card everywhere in the portal; padded
+   buttons in the same style (Dashboard's quick actions) are clickable cards. */
+html.look-boutique main :is(div, section, article, a, li).bg-white.border:is(.rounded-xl, .rounded-2xl):not(.shadow-lg),
+html.look-boutique main button.bg-white.border:is(.rounded-xl, .rounded-2xl):is(.p-4, .p-5, .p-6),
+html.look-boutique [data-slot='card'] {
+  border-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--bq-depth);
+}
+html.look-boutique main button.bg-white.border:is(.rounded-xl, .rounded-2xl):is(.p-4, .p-5, .p-6) {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+html.look-boutique main button.bg-white.border:is(.rounded-xl, .rounded-2xl):is(.p-4, .p-5, .p-6):hover {
+  box-shadow: var(--bq-depth-hover);
+  transform: translateY(-1px);
+}
+
+/* A card inside a card keeps a hairline instead of stacking a second shadow. */
+html.look-boutique main :is(div, section, article, li).bg-white.border:is(.rounded-xl, .rounded-2xl) :is(div, section, article, a, li, button).bg-white.border:is(.rounded-xl, .rounded-2xl, .rounded-lg) {
+  border-color: var(--bq-line);
+  border-radius: 14px;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Plain grey panels (empty states, info wells) read as a soft well. */
+html.look-boutique main div.bg-gray-50.border:is(.rounded-xl, .rounded-2xl, .rounded-lg) {
+  background: var(--bq-well);
+  border-color: transparent;
+  border-radius: 16px;
+}
+
+/* Pastel icon tiles: rounder, so they sit with the card corners. */
+html.look-boutique main :is(div, span).rounded-lg:is(.bg-pink-100, .bg-purple-100, .bg-blue-100, .bg-green-100, .bg-yellow-100, .bg-orange-100, .bg-pink-300, .bg-purple-300, .bg-blue-300, .bg-yellow-300) {
+  border-radius: 12px;
+}
+html.look-boutique main :is(div, span).rounded-xl:is(.bg-pink-100, .bg-purple-100, .bg-blue-100, .bg-green-100, .bg-yellow-100, .bg-orange-100) {
+  border-radius: 16px;
+}
+
+/* Tables sit on lighter rules. */
+html.look-boutique main table :is(tr, th, td) {
+  border-color: var(--bq-line);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+/* Secondary (white, bordered) controls become pills. */
+html.look-boutique main button.bg-white.border:is(.rounded-xl, .rounded-lg):not(.p-4):not(.p-5):not(.p-6) {
+  border-radius: 999px;
+  border-color: #E6DAD5;
+}
+html.look-boutique main button.bg-white.border:is(.rounded-xl, .rounded-lg):not(.p-4):not(.p-5):not(.p-6):hover {
+  background: #fff;
+  border-color: #D9C9C3;
+}
+
+/* The CTA pink: pill-shaped with a soft pink lift. */
+html.look-boutique :is(button, a).bg-\[\#FA4D8D\],
+html.look-boutique :is(button, a).gradient-primary:not(.rounded-full),
+html.look-boutique [data-slot='button'][data-variant='default'] {
+  border-radius: 999px;
+  box-shadow: 0 6px 16px rgba(250, 77, 141, 0.26);
+}
+html.look-boutique [data-slot='button'][data-variant='outline'] {
+  border-radius: 999px;
+  background: #fff;
+  border-color: #E6DAD5;
+  box-shadow: none;
+}
+html.look-boutique [data-slot='button'][data-variant='secondary'],
+html.look-boutique [data-slot='button'][data-variant='ghost'] {
+  border-radius: 999px;
+}
+
+/* ── Fields ───────────────────────────────────────────────────────────── */
+
+html.look-boutique main :is(input:not([type]), input[type='text'], input[type='email'], input[type='search'], input[type='number'], input[type='tel'], input[type='url'], input[type='password'], input[type='date'], input[type='time'], textarea, select),
+html.look-boutique :is([data-slot='input'], [data-slot='textarea'], [data-slot='select-trigger']) {
+  border-radius: 12px;
+  border-color: #E6DAD5;
+}
+/* Inside a card, fields sit as a cream well; on the canvas they stay white. */
+html.look-boutique main :is(.bg-white.rounded-xl, .bg-white.rounded-2xl, [data-slot='card']) :is(input:not([type]), input[type='text'], input[type='email'], input[type='search'], input[type='number'], input[type='tel'], input[type='url'], input[type='password'], input[type='date'], input[type='time'], textarea, select, [data-slot='input'], [data-slot='textarea'], [data-slot='select-trigger']) {
+  background: #FCF8F5;
+}
+html.look-boutique main :is(input, textarea, select, [data-slot='select-trigger']):focus {
+  background: #fff;
+  border-color: #FFC1D6;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+
+html.look-boutique [data-slot='tabs-list'] {
+  background: #F1E7E1;
+  border-radius: 999px;
+  padding: 4px;
+  height: auto;
+}
+html.look-boutique [data-slot='tabs-trigger'] {
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+html.look-boutique [data-slot='tabs-trigger'][data-state='active'] {
+  background: #fff;
+  color: var(--bq-ink);
+  box-shadow: 0 1px 2px rgba(17, 26, 76, 0.06), 0 4px 10px rgba(17, 26, 76, 0.06);
+}
+
+/* ── Floating layers ──────────────────────────────────────────────────── */
+
+html.look-boutique main div.bg-white.border.shadow-lg,
+html.look-boutique :is([data-slot='popover-content'], [data-slot='dropdown-menu-content'], [data-slot='select-content']) {
+  border-color: transparent;
+  border-radius: 16px;
+  box-shadow: var(--bq-pop);
+}
+html.look-boutique :is([data-slot='dialog-content'], [data-slot='alert-dialog-content']) {
+  border-color: transparent;
+  border-radius: 24px;
+  box-shadow: var(--bq-pop);
+}
