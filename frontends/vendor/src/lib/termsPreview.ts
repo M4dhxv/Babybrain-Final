@@ -16,13 +16,23 @@ import { useSyncExternalStore } from 'react';
 const FLAG_KEY = 'bb_terms_preview';
 const STORE_KEY = 'bb_terms_preview_v1';
 
+// The babybrain-test Supabase project. A build pointed at it (the test site and
+// its previews) has the preview on by default, so admins testing there need no
+// special link. Production builds point at the live project and stay opt-in.
+const TEST_SUPABASE_REF = 'imlfhepnucytyajxpoum';
+
 export function termsPreviewEnabled(): boolean {
   try {
     if (import.meta.env.DEV) return true;
-    const p = new URLSearchParams(window.location.search).get('terms');
+    // `?terms=` may sit before the hash (/vendor?terms=preview#/activities) or
+    // inside the hash route (/vendor#/activities?terms=preview); read both.
+    const inHash = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('terms');
+    const p = new URLSearchParams(window.location.search).get('terms') ?? inHash;
     if (p === 'preview') window.localStorage.setItem(FLAG_KEY, '1');
-    if (p === 'off') window.localStorage.removeItem(FLAG_KEY);
-    return window.localStorage.getItem(FLAG_KEY) === '1';
+    if (p === 'off') window.localStorage.setItem(FLAG_KEY, '0');
+    const stored = window.localStorage.getItem(FLAG_KEY);
+    const testBuild = String(import.meta.env.VITE_SUPABASE_URL ?? '').includes(TEST_SUPABASE_REF);
+    return stored === '1' || (testBuild && stored !== '0');
   } catch {
     return false;
   }

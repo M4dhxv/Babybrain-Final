@@ -596,7 +596,7 @@ export default function ActivitiesPage() {
   const termsEnabledMap = useTermsEnabledMap();
   const [termsToggle, setTermsToggle] = useState(false);
   useEffect(() => {
-    if (showDrawer) setTermsToggle(editingId ? !!termsEnabledMap[editingId] : false);
+    if (showDrawer) setTermsToggle(termsOn && editingId ? !!termsEnabledMap[editingId] : false);
     // Only when the form opens or a different activity is loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDrawer, editingId]);
@@ -1745,7 +1745,7 @@ export default function ActivitiesPage() {
 
     // The "offer terms" switch is saved with the activity (preview store; in
     // the real feature it is activities.terms_enabled).
-    if (editingId && !isWixLinked) setTermsEnabled(editingId, termsToggle);
+    if (termsOn && editingId && !isWixLinked) setTermsEnabled(editingId, termsToggle);
 
     if (cascadeError) {
       setFormError(cascadeError);
@@ -2448,7 +2448,7 @@ export default function ActivitiesPage() {
             </SectionCard>
 
             <SectionCard id="where" icon={MapPin} tone="blue" title="Who, where and how much" subtitle="Age range, venue, price and how many children each session holds." issues={formIssues.filter((i) => i.section === 'where')}>
-            {!isWixLinked && (
+            {termsOn && !isWixLinked && (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <ToggleRow
                   title="Offer this activity as a term"
