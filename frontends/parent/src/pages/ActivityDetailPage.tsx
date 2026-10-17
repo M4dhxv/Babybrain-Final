@@ -309,16 +309,15 @@ const HeroCarousel = memo(function HeroCarousel({
     ticks.current = 0;
   }, [resetKey]);
   // Makes exactly one full lap through the photos, then stops back on the
-  // first rather than cycling forever.
-  useEffect(() => {
-    if (count <= 1 || paused || ticks.current >= count) return;
-    const t = setInterval(() => {
-      ticks.current += 1;
-      setAt((i) => (i + 1) % count);
-      if (ticks.current >= count) clearInterval(t);
-    }, 3000);
-    return () => clearInterval(t);
-  }, [count, paused]);
+  // first rather than cycling forever. The pill's shade fill is the timer:
+  // its 3s animation ending is what advances the slide, so the fill and the
+  // photo change can't drift apart, and a hover/touch pause (which pauses
+  // the animation) holds both. Keyed by slide, so a manual step restarts it.
+  const autoplaying = count > 1 && ticks.current < count;
+  const advance = () => {
+    ticks.current += 1;
+    setAt((i) => (i + 1) % count);
+  };
   // Warm the decode cache for every slide so none paints late — at the same
   // resized rendition HeroSlide actually renders, not the full original.
   useEffect(() => {
@@ -383,10 +382,19 @@ const HeroCarousel = memo(function HeroCarousel({
       <button
         type="button"
         onClick={() => onOpen(at)}
-        className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
+        className="absolute bottom-3 right-3 flex items-center gap-1.5 overflow-hidden rounded-full bg-white/95 px-3.5 py-2 text-[13px] font-bold text-baby-ink shadow-soft transition hover:bg-white"
       >
-        <Icon name="open" className="h-3.5 w-3.5" />{" "}
-        {count > 1 ? `${at + 1} / ${count}` : "View photo"}
+        {autoplaying && (
+          <span
+            key={`${resetKey}-${at}-${ticks.current}`}
+            aria-hidden="true"
+            onAnimationEnd={advance}
+            className="bb-hero-timer pointer-events-none absolute inset-0 origin-left bg-baby-ink/15"
+            style={{ animationPlayState: paused ? "paused" : "running" }}
+          />
+        )}
+        <Icon name="open" className="relative h-3.5 w-3.5" />{" "}
+        <span className="relative">{count > 1 ? `${at + 1} / ${count}` : "View photo"}</span>
       </button>
     </div>
   );

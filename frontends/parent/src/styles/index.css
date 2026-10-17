@@ -197,6 +197,19 @@ html[data-nav="back"] .bb-reveal {
   .bb-splash-orbit, .bb-splash-icon { animation: none; }
 }
 
+/* Activity hero photo pill: a soft shade fills it left to right over the 3s
+   a photo stays up. Its animationend is what advances the carousel
+   (HeroCarousel in pages/ActivityDetailPage.tsx), so under reduced motion
+   it keeps running but stays invisible, rather than being removed. */
+@keyframes bb-hero-timer {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bb-hero-timer { animation: bb-hero-timer 3s linear both; }
+@media (prefers-reduced-motion: reduce) {
+  .bb-hero-timer { opacity: 0; }
+}
+
 /* "This is the one" flash for a booking/package/token row a parent lands on
    from a notification link (dashboard.tsx's useRowHighlight/BookingList).
    The card rises and holds — not an instant snap back down — with a pink
