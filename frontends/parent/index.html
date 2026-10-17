@@ -109,6 +109,7 @@
         gap: 14px;
         background: #fffcf8;
         font-family: Nunito, ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
       }
       /* Boot splash: the ring of dots and the icon pop in together inside
          ~350ms, then settle into a continuous idle animation — the ring
@@ -204,8 +205,8 @@
         to { transform: rotate(360deg); }
       }
       @keyframes bb-icon-bob {
-        0%, 100% { transform: translateY(0) scale(1); }
-        50% { transform: translateY(-3px) scale(1.04); }
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
       }
       @media (prefers-reduced-motion: reduce) {
         #bb-boot .bb-orbit, #bb-boot .bb-icon { animation: none; }
@@ -354,6 +355,16 @@
         <button type="button" class="bb-retry" onclick="location.reload()">Reload</button>
       </div>
     </div>
+    <script>
+      /* Pin the splash's orbit and bob to time 0 of the page timeline. React's
+         <BootSplash> does the same on mount, so when it takes over (and again
+         on each later hand-off) the ring carries on from the same angle
+         instead of snapping back to 0deg. */
+      (function () {
+        var b = document.getElementById("bb-boot");
+        if (b && b.getAnimations) b.getAnimations({ subtree: true }).forEach(function (a) { a.startTime = 0; });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
