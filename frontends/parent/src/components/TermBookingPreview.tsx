@@ -62,23 +62,22 @@ export function termQuote(slots: PreviewSlot[], slotIdx: number, passed: number,
  * a family sees. Keep the two in step: copy, structure and classes.
  */
 export function BookModeChoice({
-  quote, price, mode, onModeChange, passed, onPassedChange, offer, onOfferChange, termName,
+  quote, price, trialPrice, mode, onModeChange, offer, termName,
 }: {
-  /** The vendor's name for the term; "Whole term" until terms are real. */
+  /** The vendor's name for the term. */
   termName?: string;
   quote: TermQuote;
+  /** The term's single-session price; null when it sells none. */
   price: number | null;
+  /** The term's trial price; null when it has no trial. */
+  trialPrice: number | null;
   mode: BookMode;
   onModeChange: (m: BookMode) => void;
-  passed: number;
-  onPassedChange: (n: number) => void;
   offer: TermOffer;
-  onOfferChange: (o: TermOffer) => void;
 }) {
   const card = (m: BookMode) =>
     `rounded-[12px] border p-4 text-left transition-colors ${mode === m ? "border-baby-pink bg-[#FEEBF2]" : "border-[#DCD2D5] bg-white hover:border-baby-pink"}`;
   const midTerm = quote.run > 0;
-  const trialPrice = trialPriceFor(price);
   // Trial and single can both be on, but for now one at a time: while this
   // child still has a trial session left, only the trial is offered. Once they
   // have used every trial the vendor allows, the trial card goes and single
@@ -161,45 +160,6 @@ export function BookModeChoice({
           Choose any session of this term whenever it suits you and pay with a pack credit, or buy a pack at checkout.
         </p>
       )}
-      <div className="mt-3 space-y-2 rounded-[10px] border border-dashed border-[#DCD2D5] px-3 py-2 text-xs font-bold text-[#697390]">
-        <div>Preview controls. The vendor sets these per term; prices are placeholders.</div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <label>
-            Sessions already run
-            <select
-              value={quote.run}
-              onChange={(e) => onPassedChange(Number(e.target.value))}
-              className="ml-2 rounded-[8px] border border-[#DCD2D5] bg-white px-2 py-1"
-            >
-              {Array.from({ length: quote.lastJoin + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={offer.trial} onChange={(e) => onOfferChange({ ...offer, trial: e.target.checked })} />
-            Trial on
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={offer.single} onChange={(e) => onOfferChange({ ...offer, single: e.target.checked })} />
-            Single on
-          </label>
-          {offer.trial && (
-            <label>
-              Trials used by this child
-              <select
-                value={offer.trialUsed}
-                onChange={(e) => onOfferChange({ ...offer, trialUsed: Number(e.target.value) })}
-                className="ml-2 rounded-[8px] border border-[#DCD2D5] bg-white px-2 py-1"
-              >
-                {Array.from({ length: offer.trialLimit + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </label>
-          )}
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={offer.packages} onChange={(e) => onOfferChange({ ...offer, packages: e.target.checked })} />
-            Packages open
-          </label>
-        </div>
-      </div>
     </section>
   );
 }
@@ -207,7 +167,7 @@ export function BookModeChoice({
 /** The term path: choose a slot and see every running date and the price. The
  *  consent steps and the Enrol button are the booking page's own. */
 export function TermEnrolPreview({
-  slots, onSlotChange, quote, childName, activityTitle, enrolled, termName,
+  slots, onSlotChange, quote, childName, activityTitle, termName, minLeft, allowMidTerm, reason,
 }: {
   /** The vendor's name for the term; falls back to "<activity> · Term". */
   termName?: string;
@@ -216,24 +176,18 @@ export function TermEnrolPreview({
   quote: TermQuote;
   childName: string;
   activityTitle: string;
-  enrolled: boolean;
+  /** Joining closes once this many sessions are left. */
+  minLeft: number;
+  allowMidTerm: boolean;
+  /** Why this slot can't be joined right now, if it can't. */
+  reason?: string | null;
 }) {
-  const { slot, run, left, n, payNow, fullPrice, perClass, joining } = quote;
-  const name = childName.charAt(0).toUpperCase() + childName.slice(1);
+  const { slot, run, left, n, payNow, fullPrice, perClass } = quote;
 
   return (
     <section className="space-y-5">
-      <div className="rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-700">
-        Preview only. Term enrolment is not live yet, so nothing here is saved or charged.
-      </div>
-
-      {enrolled && (
-        <div className="rounded-[12px] bg-[#DDF3EE] p-4">
-          <p className="font-black text-[#0F6E56]">{name} is enrolled</p>
-          <p className="mt-1 text-sm font-semibold text-[#0F6E56]">
-            They now appear on {joining.length} upcoming session{joining.length === 1 ? "" : "s"}, starting {sgDay(joining[0])}.
-          </p>
-        </div>
+      {reason && (
+        <div className="rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-700">{reason}</div>
       )}
 
       <div>
@@ -291,7 +245,9 @@ export function TermEnrolPreview({
             {run} {run === 1 ? "session has" : "sessions have"} already run, so the price drops by ${perClass * run}.
           </p>
         )}
-        <p className="mt-1 text-xs font-semibold text-[#697390]">Joining closes when {TERM_MIN_LEFT} sessions are left.</p>
+        <p className="mt-1 text-xs font-semibold text-[#697390]">
+          {allowMidTerm ? `Joining closes when ${minLeft} sessions are left.` : "Joining closes once the term starts."}
+        </p>
       </div>
     </section>
   );

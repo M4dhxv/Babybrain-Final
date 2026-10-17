@@ -1,20 +1,27 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/auth/AuthProvider';
 
 /**
- * Term enrolment — UI PREVIEW ONLY.
+ * Term enrolment (migration 00243).
  *
- * There is no backend for terms yet. Everything here lives in this browser's
- * localStorage so the admin can click through the vendor flow (Manage schedule →
- * Terms, the schedule calendar's term/single distinction) before the data model
- * is planned. Nothing is written to Supabase and no parent can see a term.
+ * Terms and their slots live in Supabase (terms, term_slots); publishing runs
+ * publish_term(), which writes the term's sessions as ordinary
+ * activity_sessions rows, so a published term's classes show on the schedule
+ * and to parents like any other session. The "Offer this activity as a term"
+ * switch is activities.terms_enabled.
  *
- * Gated: the Terms tab and the calendar overlay only show when the preview flag
- * is on (dev build, or `?terms=preview` once, which is remembered). That keeps a
- * push to main from exposing half a feature to vendors.
+ * Gated: the Terms tab, the switch and the calendar overlay only show when the
+ * preview flag is on (dev build, a build pointed at the test database, or
+ * `?terms=preview` once, which is remembered). That keeps a push to main from
+ * exposing half a feature to vendors.
  */
 
 const FLAG_KEY = 'bb_terms_preview';
-const STORE_KEY = 'bb_terms_preview_v1';
+
+// The term tables are newer than the generated Database types.
+const db = supabase as unknown as SupabaseClient;
 
 // The babybrain-test Supabase project. A build pointed at it (the test site and
 // its previews) has the preview on by default, so admins testing there need no
@@ -120,55 +127,221 @@ export function dayTimeFor(
   return own ?? { time: slot.time, duration: slot.duration };
 }
 
-/* ── tiny external store so the Terms tab and the calendar stay in step ── */
+/* ── the provider's terms, loaded from Supabase and shared by every screen ── */
 
-let cache: Term[] | null = null;
-const listeners = new Set<() => void>();
+type SlotRow = {
+  id: string;
+  position: number;
+  location_id: string | null;
+  capacity: number;
+  single_cap: number | null;
+  price_cents: number | null;
+  pattern: Partial<Pick<TermSlot, 'days' | 'time' | 'duration' | 'start' | 'weeks' | 'count' | 'skip' | 'perDay' | 'dayTimes'>>;
+};
 
-function read(): Term[] {
-  if (cache) return cache;
-  try {
-    const raw = window.localStorage.getItem(STORE_KEY);
-    cache = raw ? (JSON.parse(raw) as Term[]).map(normalizeTerm) : [];
-  } catch {
-    cache = [];
-  }
-  return cache;
+type TermRow = {
+  id: string;
+  activity_id: string;
+  name: string;
+  price_cents: number;
+  allow_mid_term: boolean;
+  min_left: number;
+  reduce_enabled: boolean;
+  reduce_by_cents: number;
+  allow_singles: boolean;
+  single_price_cents: number;
+  allow_trial: boolean;
+  trial_price_cents: number;
+  trial_limit: number;
+  allow_packages: boolean;
+  status: 'draft' | 'published' | 'archived';
+  term_slots: SlotRow[];
+};
+
+const toDollars = (cents: number) => cents / 100;
+const toCents = (dollars: number) => Math.round(dollars * 100);
+
+function fromRow(r: TermRow): Term {
+  return normalizeTerm({
+    id: r.id,
+    activityId: r.activity_id,
+    name: r.name,
+    price: toDollars(r.price_cents),
+    allowMidTerm: r.allow_mid_term,
+    minLeft: r.min_left,
+    reduce: r.reduce_enabled,
+    reduceBy: toDollars(r.reduce_by_cents),
+    allowSingles: r.allow_singles,
+    singlePrice: toDollars(r.single_price_cents),
+    allowTrial: r.allow_trial,
+    trialPrice: toDollars(r.trial_price_cents),
+    trialLimit: r.trial_limit,
+    allowPackages: r.allow_packages,
+    status: r.status === 'published' ? 'published' : 'draft',
+    slots: [...(r.term_slots ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((s) => ({
+        id: s.id,
+        days: s.pattern.days ?? [],
+        time: s.pattern.time ?? '09:00',
+        duration: s.pattern.duration ?? 45,
+        locationId: s.location_id ?? '',
+        capacity: s.capacity,
+        start: s.pattern.start ?? '',
+        weeks: s.pattern.weeks ?? 1,
+        count: s.pattern.count ?? null,
+        skip: s.pattern.skip ?? [],
+        price: s.price_cents != null ? toDollars(s.price_cents) : null,
+        singleCap: s.single_cap,
+        perDay: s.pattern.perDay ?? false,
+        dayTimes: s.pattern.dayTimes ?? {},
+      })),
+  });
 }
 
-function write(next: Term[]) {
-  cache = next;
-  try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(next));
-  } catch {
-    /* private mode — the in-memory copy still works for this tab */
-  }
-  listeners.forEach((l) => l());
+const termFields = (t: Term) => ({
+  activity_id: t.activityId,
+  name: t.name.trim() || 'Untitled term',
+  price_cents: toCents(t.price),
+  allow_mid_term: t.allowMidTerm,
+  min_left: Math.max(1, t.minLeft),
+  reduce_enabled: t.reduce,
+  reduce_by_cents: toCents(t.reduceBy),
+  allow_singles: t.allowSingles,
+  single_price_cents: toCents(t.singlePrice),
+  allow_trial: t.allowTrial,
+  trial_price_cents: toCents(t.trialPrice),
+  trial_limit: Math.min(10, Math.max(1, t.trialLimit)),
+  allow_packages: t.allowPackages,
+});
+
+const slotRow = (termId: string, s: TermSlot, position: number) => ({
+  id: s.id,
+  term_id: termId,
+  position,
+  location_id: s.locationId || null,
+  capacity: Math.max(1, s.capacity),
+  single_cap: s.singleCap,
+  price_cents: s.price != null ? toCents(s.price) : null,
+  pattern: {
+    days: s.days, time: s.time, duration: s.duration, start: s.start, weeks: s.weeks,
+    count: s.count, skip: s.skip ?? [], perDay: s.perDay, dayTimes: s.dayTimes ?? {},
+  },
+});
+
+const NO_TERMS: Term[] = [];
+let cache: Term[] = NO_TERMS;
+let loadedFor: string | null = null;
+let loading: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((l) => l());
+
+/** Reload this provider's terms (drafts and published; archived ones are gone). */
+export async function refreshTerms(providerId: string = loadedFor ?? ''): Promise<void> {
+  if (!providerId) return;
+  const { data, error } = await db
+    .from('terms')
+    .select('*, term_slots(*)')
+    .eq('provider_id', providerId)
+    .neq('status', 'archived')
+    .order('created_at');
+  if (error) throw error;
+  if (loadedFor !== providerId) loadedFor = providerId;
+  cache = ((data ?? []) as TermRow[]).map(fromRow);
+  notify();
 }
 
 export function useTerms(): Term[] {
+  const { provider } = useAuth();
+  const providerId = provider?.id ?? null;
+  useEffect(() => {
+    if (!providerId || loadedFor === providerId || loading) return;
+    loadedFor = providerId;
+    cache = NO_TERMS;
+    loading = refreshTerms(providerId)
+      .catch((e) => { console.error('Could not load terms', e); loadedFor = null; })
+      .finally(() => { loading = null; });
+  }, [providerId]);
   return useSyncExternalStore(
     (cb) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    read,
-    read,
+    () => cache,
+    () => cache,
   );
 }
 
-export function saveTerm(t: Term) {
-  const all = read();
-  write(all.some((x) => x.id === t.id) ? all.map((x) => (x.id === t.id ? t : x)) : [...all, t]);
+/** Save a term and its slots. A draft's slots are replaced wholesale; a
+ *  published term's days, times and venues are fixed (the database refuses
+ *  changes), so only seats, prices and the single-session cap are updated.
+ *  Saving with status 'published' over a draft publishes it, which writes its
+ *  sessions. Throws with the database's message on failure. */
+export async function saveTerm(t: Term): Promise<void> {
+  if (!loadedFor) throw new Error('Your business is still loading. Try again in a moment.');
+  const before = cache.find((x) => x.id === t.id);
+  if (!before) {
+    const { error } = await db.from('terms').insert({ id: t.id, provider_id: loadedFor, status: 'draft', ...termFields(t) });
+    if (error) throw error;
+  } else {
+    const { error } = await db.from('terms').update(termFields(t)).eq('id', t.id);
+    if (error) throw error;
+  }
+
+  if (before?.status === 'published') {
+    const known = new Set(before.slots.map((s) => s.id));
+    if (t.slots.some((s) => !known.has(s.id))) {
+      throw new Error('Groups can’t be added to a published term. Start a new term for a new group.');
+    }
+    const fixed = (s: TermSlot) => JSON.stringify([slotRow(t.id, s, 0).pattern, s.locationId || null]);
+    const was = new Map(before.slots.map((s) => [s.id, fixed(s)]));
+    if (t.slots.some((s) => was.get(s.id) !== fixed(s))) {
+      throw new Error('A published term’s days, times and venue are fixed. Cancel a session from the schedule instead, or start a new term.');
+    }
+    for (const s of t.slots) {
+      const { error } = await db
+        .from('term_slots')
+        .update({ capacity: Math.max(1, s.capacity), single_cap: s.singleCap, price_cents: s.price != null ? toCents(s.price) : null })
+        .eq('id', s.id);
+      if (error) throw error;
+    }
+  } else {
+    const keep = t.slots.map((s) => s.id);
+    let del = db.from('term_slots').delete().eq('term_id', t.id);
+    if (keep.length) del = del.not('id', 'in', `(${keep.join(',')})`);
+    const { error: delErr } = await del;
+    if (delErr) throw delErr;
+    if (t.slots.length) {
+      const { error } = await db.from('term_slots').upsert(t.slots.map((s, i) => slotRow(t.id, s, i)));
+      if (error) throw error;
+    }
+    if (t.status === 'published') {
+      const { error } = await db.rpc('publish_term', { p_term_id: t.id });
+      if (error) {
+        await refreshTerms();
+        throw error;
+      }
+    }
+  }
+  await refreshTerms();
 }
 
-export function deleteTerm(id: string) {
-  write(read().filter((t) => t.id !== id));
+/** A draft is deleted; a published term is archived (its sessions and any
+ *  bookings stay, and it stops taking enrolments). */
+export async function deleteTerm(id: string): Promise<'deleted' | 'archived'> {
+  const t = cache.find((x) => x.id === id);
+  const archived = t?.status === 'published';
+  const { error } = archived
+    ? await db.from('terms').update({ status: 'archived' }).eq('id', id)
+    : await db.from('terms').delete().eq('id', id);
+  if (error) throw error;
+  await refreshTerms();
+  return archived ? 'archived' : 'deleted';
 }
 
 /* ── pure helpers ── */
 
-export const newId = () => Math.random().toString(36).slice(2, 10);
+export const newId = () => crypto.randomUUID();
 
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -359,6 +532,10 @@ export function termSessionsBetween(
 ): TermSession[] {
   const out: TermSession[] = [];
   for (const t of terms) {
+    // A published term's classes are real activity_sessions rows (publish_term)
+    // and show on the schedule with their real bookings; only drafts, which have
+    // no sessions yet, are drawn from their pattern.
+    if (t.status === 'published') continue;
     const title = activityTitles.get(t.activityId);
     if (title === undefined) continue;
     for (const s of t.slots) {
@@ -368,7 +545,7 @@ export function termSessionsBetween(
         const starts = new Date(`${ymd}T${time}:00+08:00`);
         if (starts < from || starts > to) return;
         const ends = new Date(starts.getTime() + duration * 60000);
-        const seats = mockSeats(s.id, i + 1, s.capacity, s.singleCap ?? null);
+        const seats = { termSeats: 0, singleSeats: 0 };
         out.push({
           id: `term:${t.id}:${s.id}:${ymd}`,
           activity_id: t.activityId,
@@ -396,43 +573,46 @@ export function termSessionsBetween(
  *
  * Off by default. While it is off the activity's Terms tab is frozen; while it
  * is on, the activity's own price and capacity are frozen (a term carries its
- * own price and seats per slot). Preview-only, like the rest of this file; in
- * the real feature it is activities.terms_enabled (migration 00243). */
+ * own price and seats per slot). Stored as activities.terms_enabled (00243). */
 
-const ENABLED_KEY = 'bb_terms_enabled_v1';
-let enabledCache: Record<string, boolean> | null = null;
+const NO_ENABLED: Record<string, boolean> = {};
+let enabledCache: Record<string, boolean> = NO_ENABLED;
+let enabledFor: string | null = null;
 const enabledListeners = new Set<() => void>();
 
-function readEnabled(): Record<string, boolean> {
-  if (enabledCache) return enabledCache;
-  try {
-    const raw = window.localStorage.getItem(ENABLED_KEY);
-    enabledCache = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-  } catch {
-    enabledCache = {};
-  }
-  return enabledCache;
+async function loadEnabled(providerId: string) {
+  const { data, error } = await db.from('activities').select('id, terms_enabled').eq('provider_id', providerId);
+  if (error) throw error;
+  enabledCache = Object.fromEntries(((data ?? []) as { id: string; terms_enabled: boolean }[]).map((a) => [a.id, !!a.terms_enabled]));
+  enabledListeners.forEach((l) => l());
 }
 
 export function useTermsEnabledMap(): Record<string, boolean> {
+  const { provider } = useAuth();
+  const providerId = provider?.id ?? null;
+  useEffect(() => {
+    if (!providerId || enabledFor === providerId) return;
+    enabledFor = providerId;
+    enabledCache = NO_ENABLED;
+    loadEnabled(providerId).catch((e) => { console.error('Could not load term switches', e); enabledFor = null; });
+  }, [providerId]);
   return useSyncExternalStore(
     (cb) => {
       enabledListeners.add(cb);
       return () => enabledListeners.delete(cb);
     },
-    readEnabled,
-    readEnabled,
+    () => enabledCache,
+    () => enabledCache,
   );
 }
 
-export function setTermsEnabled(activityId: string, on: boolean) {
-  const next = { ...readEnabled(), [activityId]: on };
-  enabledCache = next;
-  try {
-    window.localStorage.setItem(ENABLED_KEY, JSON.stringify(next));
-  } catch {
-    /* private mode — the in-memory copy still works for this tab */
-  }
+/** Turn "Offer this activity as a term" on or off. The database refuses to
+ *  turn it off under a published term that still has sessions to run. */
+export async function setTermsEnabled(activityId: string, on: boolean): Promise<void> {
+  if ((enabledCache[activityId] ?? false) === on) return;
+  const { error } = await db.from('activities').update({ terms_enabled: on }).eq('id', activityId);
+  if (error) throw error;
+  enabledCache = { ...enabledCache, [activityId]: on };
   enabledListeners.forEach((l) => l());
 }
 

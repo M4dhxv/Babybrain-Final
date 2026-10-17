@@ -13,7 +13,7 @@ import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ToggleRow } from '@/components/FormKit';
 import {
   blankTerm, dayTimeFor, deleteTerm, fmtRange, fmtShort, lastJoinableAfter, newId, normalizeTerm, priceAfter,
-  saveTerm, slotDates, slotPatternDates, slotPrice, termStats, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
+  saveTerm, slotDates, slotPatternDates, slotPrice, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
   type Term, type TermSlot, type TermStatusKey,
 } from '@/lib/termsPreview';
 
@@ -123,7 +123,6 @@ export function TermsPanel({
             {terms.map((t) => {
               const n = slotDates(t.slots[0] ?? { days: [], start: '', weeks: 0 }).length;
               const status = termStatus(t);
-              const stats = termStats(t);
               return (
                 <div key={t.id} className="rounded-2xl border border-gray-200 p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -142,9 +141,8 @@ export function TermsPanel({
                         {t.allowPackages && <span className="rounded-md bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-900">Packages</span>}
                       </div>
                       {t.status === 'published' && (
-                        <p className="mt-2 text-sm font-semibold text-gray-800" title="Placeholder numbers until enrolment is live">
-                          {stats.enrolled} enrolled · {stats.seatsLeft} seats left · SGD {stats.revenue.toLocaleString('en-SG')}
-                          <span className="ml-1 text-xs font-normal text-gray-400">(preview numbers)</span>
+                        <p className="mt-2 text-sm font-semibold text-gray-800">
+                          Published. Its sessions are on your schedule; enrolments show under Bookings.
                         </p>
                       )}
                     </div>
@@ -153,7 +151,14 @@ export function TermsPanel({
                         <Pencil className="h-5 w-5" />
                       </button>
                       <button
-                        onClick={() => { deleteTerm(t.id); toast('Term removed (preview)'); }}
+                        onClick={async () => {
+                          try {
+                            const how = await deleteTerm(t.id);
+                            toast(how === 'archived' ? 'Term archived. It stops taking enrolments; its sessions stay on your schedule.' : 'Draft term deleted');
+                          } catch (e) {
+                            toast.error('Could not remove the term', { description: (e as { message?: string })?.message });
+                          }
+                        }}
                         className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600"
                         title="Delete term"
                         aria-label="Delete term"
@@ -197,10 +202,15 @@ export function TermsPanel({
       defaultCapacity={defaultCapacity}
       banner={banner}
       onCancel={() => setDraft(null)}
-      onSave={(t) => {
-        saveTerm(t);
-        setDraft(null);
-        toast(t.status === 'published' ? 'Term published (preview only)' : 'Term saved as draft (preview only)');
+      onSave={async (t) => {
+        const publishing = t.status === 'published' && all.find((x) => x.id === t.id)?.status !== 'published';
+        try {
+          await saveTerm(t);
+          setDraft(null);
+          toast(publishing ? 'Term published. Its sessions are on your schedule and parents can enrol.' : t.status === 'published' ? 'Term updated' : 'Term saved as draft');
+        } catch (e) {
+          toast.error(publishing ? 'Could not publish the term' : 'Could not save the term', { description: (e as { message?: string })?.message });
+        }
       }}
     />
   );

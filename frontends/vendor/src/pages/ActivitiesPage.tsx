@@ -619,16 +619,21 @@ export default function ActivitiesPage() {
       ].sort((a, b) => a.at.localeCompare(b.at)),
     [sessions, termClassRows],
   );
-  /** Removing one class of a term means skipping that date for the slot. */
-  function skipTermClass(t: TermSession) {
+  /** Removing one class of a draft term means skipping that date for the slot.
+   *  (A published term's classes are real sessions, cancelled like any other.) */
+  async function skipTermClass(t: TermSession) {
     const term = allTerms.find((x) => x.id === t.termId);
     if (!term) return;
-    saveTerm({
-      ...term,
-      slots: term.slots.map((sl) => (sl.id === t.slotId ? { ...sl, skip: [...(sl.skip ?? []), t.ymd] } : sl)),
-    });
+    try {
+      await saveTerm({
+        ...term,
+        slots: term.slots.map((sl) => (sl.id === t.slotId ? { ...sl, skip: [...(sl.skip ?? []), t.ymd] } : sl)),
+      });
+      toast('Session skipped for this term');
+    } catch (e) {
+      toast.error((e as { message?: string })?.message ?? 'Could not skip that session');
+    }
     setSkipTermTarget(null);
-    toast('Session skipped for this term (preview)');
   }
   const [removingSess, setRemovingSess] = useState(false);
   // Heads-up only: sessions were saved, but overlap something on the Wix calendar.
@@ -1743,9 +1748,14 @@ export default function ActivitiesPage() {
       }
     }
 
-    // The "offer terms" switch is saved with the activity (preview store; in
-    // the real feature it is activities.terms_enabled).
-    if (termsOn && editingId && !isWixLinked) setTermsEnabled(editingId, termsToggle);
+    // The "offer terms" switch is saved with the activity (activities.terms_enabled).
+    if (termsOn && editingId && !isWixLinked) {
+      try {
+        await setTermsEnabled(editingId, termsToggle);
+      } catch (e) {
+        cascadeError = `Activity saved, but the term switch could not be changed: ${(e as { message?: string })?.message ?? 'please try again.'}`;
+      }
+    }
 
     if (cascadeError) {
       setFormError(cascadeError);

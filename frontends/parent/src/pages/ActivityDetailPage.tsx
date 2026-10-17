@@ -1,5 +1,5 @@
 import { mapsUrl } from "../lib/share";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Icon,
@@ -17,7 +17,8 @@ import { cacheFetch } from "../lib/queryCache";
 import { goTo, loginUrl, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref, requestExploreRestore } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { UpcomingOfferings, type OfferingOneOff, type OfferingTerm } from "../components/TermBookingPreview";
-import { deriveSlots, termsPreviewEnabled } from "../lib/termsPreview";
+import { termsPreviewEnabled } from "../lib/termsPreview";
+import { useActivityTerms } from "../lib/terms";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { formatAgeRange, formatDuration } from "../lib/database.types";
@@ -477,7 +478,13 @@ function ContactLink({
 const REVIEWS_PAGE = 3;
 
 export default function ActivityDetailPage() {
-  const { activity, sessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading, error: loadError, reload: reloadDetail } = useActivityDetail(getParam("slug"));
+  const { activity, sessions: allSessions, reviews, courseSpan, eventSoldOut, loading, sessionsLoading, reviewsLoading, error: loadError, reload: reloadDetail } = useActivityDetail(getParam("slug"));
+  // Published terms (00243). Their classes are booked through the term, so the
+  // ordinary session list leaves them out; the "Upcoming" block lists the terms.
+  const spotsBySession = useMemo(() => new Map(allSessions.map((s) => [s.id, s.capacity])), [allSessions]);
+  const termsFlag = termsPreviewEnabled() && !!activity && !activity.wix_service_type;
+  const { terms: liveTerms, termSessionIds } = useActivityTerms(activity?.id ?? null, termsFlag, spotsBySession);
+  const sessions = useMemo(() => allSessions.filter((s) => !termSessionIds.has(s.id)), [allSessions, termSessionIds]);
   // With terms on, the price box leads with trial / single / lowest term.
   const termHeadline = useTermHeadline(activity?.id);
   // Packs are not offered where no running term accepts package credits.
@@ -645,29 +652,33 @@ export default function ActivityDetailPage() {
      activity's defaults. Same session-first, activity-fallback resolution the
      booking page and booking trigger use. */
   const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
-  // Term enrolment (UI preview, behind ?terms=preview): for a plain class lead with
-  // what a family can sign up for (the term, the one-off session), not a bare
-  // list of sessions. Packages keep their own card beside it.
-  const showOfferings = termsPreviewEnabled() && !activity.wix_service_type && sessions.length > 0;
-  const offeringSlots = showOfferings ? deriveSlots(sessions) : [];
-  const offeringUnit = activity.price != null ? Number(activity.price) : null;
-  const offeringTerms: OfferingTerm[] = offeringSlots.length === 0 ? [] : (() => {
-    const counts = offeringSlots.map((s) => s.dates.length);
+  // Term enrolment (00243, behind the terms flag): for a class with published
+  // terms, lead with what a family can sign up for (each term, the trial or
+  // single session) rather than a bare list of sessions. Packages keep their
+  // own card beside it.
+  const showOfferings = termsFlag && liveTerms.length > 0;
+  const money = (n: number) => `$${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
+  const offeringTerms: OfferingTerm[] = liveTerms.map((t) => {
+    const counts = t.slots.map((s) => s.dates.length);
     const lo = Math.min(...counts);
     const hi = Math.max(...counts);
-    const all = offeringSlots.flatMap((s) => s.dates).sort();
-    return [{
-      key: "term",
-      name: `${activity.title} · Term`,
+    const all = t.slots.flatMap((s) => s.dates).sort();
+    const prices = t.slots.map((s) => s.price);
+    return {
+      key: t.id,
+      name: t.name,
       sessions: lo === hi ? `${lo} sessions` : `${lo} to ${hi} sessions`,
       range: `${sgDay(all[0])} to ${sgDay(all[all.length - 1])}`,
-      slots: offeringSlots.map((s) => ({ label: s.label, venue: s.venue })),
-      price: offeringUnit != null ? `$${Math.round(offeringUnit * lo * 0.9)}` : "Price on enquiry",
-    }];
-  })();
-  const offeringOneOffs: OfferingOneOff[] = offeringUnit != null && offeringUnit > 0
-    ? [{ kind: "single", price: `$${offeringUnit % 1 === 0 ? offeringUnit.toFixed(0) : offeringUnit.toFixed(2)}`, note: "Pick one session and pay as you go." }]
-    : [];
+      slots: t.slots.map((s) => ({ label: s.label, venue: s.venue })),
+      price: Math.min(...prices) === Math.max(...prices) ? money(prices[0]) : `From ${money(Math.min(...prices))}`,
+    };
+  });
+  const trialTerm = liveTerms.find((t) => t.allowTrial);
+  const singleTerm = liveTerms.find((t) => t.allowSingles);
+  const offeringOneOffs: OfferingOneOff[] = [
+    ...(trialTerm ? [{ kind: "trial" as const, price: money(trialTerm.trialPrice), note: `Try a session before you enrol. ${trialTerm.trialLimit} per child.` }] : []),
+    ...(singleTerm ? [{ kind: "single" as const, price: money(singleTerm.singlePrice), note: "Pick one session and pay as you go." }] : []),
+  ];
   // A private session at the customer's own home has no fixed address to
   // show here — unless this particular session was itself moved to a real
   // venue (nextVenue, a session-level override still allowed for one-off
