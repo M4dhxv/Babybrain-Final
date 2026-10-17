@@ -1004,14 +1004,13 @@ function priceLabel(activity: Activity): string | null {
 // memoized so a parent re-render (e.g. the sort dropdown, an unrelated
 // favourite toggling elsewhere) doesn't re-render every card whose own props
 // haven't changed.
-/** "Term available" marker — UI PREVIEW (lib/termsPreview.ts). There is no term
- *  data yet, so under the preview flag it stands in on every bookable,
- *  non-course class; once terms exist it keys off the activity's own term. */
+/** "Term available" marker, behind the terms flag (lib/termsPreview.ts). Shown
+ *  only when the activity has a published term with sessions still to run —
+ *  the same thing term_headline_prices (00243) reports, which the card already
+ *  reads for its price line. */
 const TERMS_PREVIEW = termsPreviewEnabled();
-function TermAvailableBadge({ activity }: { activity: Activity }) {
-  // Explore rows carry these (useActivities.ts); the base card type doesn't.
-  const a = activity as { instantBook?: boolean; isCourse?: boolean };
-  if (!TERMS_PREVIEW || !a.instantBook || a.isCourse) return null;
+function TermAvailableBadge({ hasTerm }: { hasTerm: boolean }) {
+  if (!TERMS_PREVIEW || !hasTerm) return null;
   return (
     <span className="rounded-full bg-[#DDF3EE] px-2.5 py-1 text-[11px] font-bold text-[#0F6E56] shadow-soft">Term available</span>
   );
@@ -1054,7 +1053,7 @@ export const ActivityCard = memo(function ActivityCard({
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
-          <TermAvailableBadge activity={activity} />
+          <TermAvailableBadge hasTerm={termHeadline != null} />
         </div>
         <SaveHeart
           activityId={activity.id}
@@ -1173,7 +1172,7 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
-          <TermAvailableBadge activity={activity} />
+          <TermAvailableBadge hasTerm={termHeadline != null} />
         </div>
       </div>
       <div className="relative p-4">
