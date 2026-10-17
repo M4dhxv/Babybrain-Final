@@ -188,8 +188,8 @@ html[data-nav="back"] .bb-reveal {
   to { transform: rotate(360deg); }
 }
 @keyframes bb-splash-bob {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-3px) scale(1.04); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 .bb-splash-orbit { animation: bb-splash-orbit 5s linear infinite; }
 .bb-splash-icon { animation: bb-splash-bob 2.4s ease-in-out infinite; }
