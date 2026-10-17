@@ -43,6 +43,8 @@ import { sessionCacheGet, sessionCacheSet, sessionCacheInvalidate } from "../lib
 import { apiGet, apiPost } from "../lib/api";
 import { CHAT_TYPES_FILTER } from "../lib/notifications";
 import { cleanRpcErrorMessage } from "../lib/errors";
+import { MyTermsList, useMyTerms } from "../components/MyTerms";
+import { termsPreviewEnabled } from "../lib/termsPreview";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { calendarFileUrl, downloadBookingIcs, googleCalendarUrl, isAndroidDevice, isAppleDevice, outlookCalendarUrl } from "../lib/ics";
@@ -1506,6 +1508,8 @@ export default function ProfilePage() {
   // Until the first fetch resolves, the Bookings / Past tabs show a skeleton
   // rather than flashing the "you haven't booked anything" empty state.
   const [bookingsLoaded, setBookingsLoaded] = useState(false);
+  // Term enrolments get their own cards; their seats are left out of the session list.
+  const { terms: myTerms, groupIds: termGroupIds, reload: reloadTerms } = useMyTerms(session?.user.id, termsPreviewEnabled());
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
@@ -2375,9 +2379,10 @@ export default function ProfilePage() {
     const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
     return !!cutoff && new Date(cutoff).getTime() < now;
   };
+  const sessionBookings = termGroupIds.size > 0 ? bookings.filter((b) => !b.groupId || !termGroupIds.has(b.groupId)) : bookings;
   const childFiltered = childFilter
-    ? bookings.filter((b) => b.childId === childFilter)
-    : bookings;
+    ? sessionBookings.filter((b) => b.childId === childFilter)
+    : sessionBookings;
   const upcomingBookings = childFiltered.filter((b) => !isPast(b));
   const pastBookings = childFiltered.filter(isPast);
   // Bookings tab: status filter, then date sort. A booking with no start time
@@ -2820,6 +2825,10 @@ export default function ProfilePage() {
               {bookingsLoaded && planKnown && (
                 <BookingsToolbar items={upcomingBookings} parentName={parentName} isPlus={isPlus} />
               )}
+              <MyTermsList
+                terms={myTerms.filter((t) => !childFilter || t.childId === childFilter)}
+                onChanged={() => { void reloadTerms(); loadBookings(); }}
+              />
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
               ) : splitByChild ? (

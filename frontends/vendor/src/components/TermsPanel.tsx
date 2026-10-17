@@ -1,6 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, CalendarRange, Info, ArrowLeft, Ticket, Package, Check } from 'lucide-react';
+import { Plus, Trash2, Pencil, CalendarRange, Info, ArrowLeft, Ticket, Package, Check, Users, Copy, Repeat } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
@@ -14,7 +14,8 @@ import { ToggleRow } from '@/components/FormKit';
 import {
   blankTerm, dayTimeFor, deleteTerm, fmtRange, fmtShort, lastJoinableAfter, newId, normalizeTerm, priceAfter,
   saveTerm, slotDates, slotPatternDates, slotPrice, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
-  type Term, type TermSlot, type TermStatusKey,
+  fetchTermRoster, fetchTermSlotStats, nextTermFrom, openReenrolment, publicHolidaysIn, vendorWithdraw, SG_PUBLIC_HOLIDAYS,
+  type RosterRow, type SlotStats, type Term, type TermSlot, type TermStatusKey,
 } from '@/lib/termsPreview';
 
 /* Type scale for this panel: bold section titles, semibold labels, and 15px
@@ -87,8 +88,8 @@ export function TermsPanel({
     <div className="flex items-start gap-2.5 rounded-xl border border-teal-200 bg-teal-50 p-3.5 text-sm text-teal-900">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
       <span>
-        <strong className="font-bold">Preview.</strong> Terms are not live yet. What you build here stays in this
-        browser so the flow can be reviewed; parents cannot see it.
+        A draft is only visible to you. Publishing puts every session on your schedule and opens the term to
+        parents; after that its days, times and venue are fixed.
       </span>
     </div>
   );
@@ -140,10 +141,8 @@ export function TermsPanel({
                         {t.allowSingles && <span className="rounded-md bg-pink-100 px-2 py-0.5 text-xs font-bold text-pink-900">Single sessions</span>}
                         {t.allowPackages && <span className="rounded-md bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-900">Packages</span>}
                       </div>
-                      {t.status === 'published' && (
-                        <p className="mt-2 text-sm font-semibold text-gray-800">
-                          Published. Its sessions are on your schedule; enrolments show under Bookings.
-                        </p>
+                      {t.siblingDiscountPct > 0 && (
+                        <p className="mt-1.5 text-xs font-semibold text-gray-600">Sibling discount {t.siblingDiscountPct}%</p>
                       )}
                     </div>
                     <div className="flex shrink-0 gap-1">
@@ -184,6 +183,9 @@ export function TermsPanel({
                       );
                     })}
                   </div>
+                  {t.status === 'published' && (
+                    <PublishedTermTools term={t} hasNext={terms.some((x) => x.previousTermId === t.id)} onCopy={() => setDraft(nextTermFrom(t))} />
+                  )}
                 </div>
               );
             })}
@@ -526,6 +528,28 @@ function TermForm({
                     <span className="text-sm font-semibold text-gray-800">Session dates</span>
                     <span className="text-[13px] text-gray-500">Tap a date to skip it, for example a public holiday</span>
                   </div>
+                  {(() => {
+                    const holidays = publicHolidaysIn(s);
+                    const open = holidays.filter((d) => !(s.skip ?? []).includes(d));
+                    if (holidays.length === 0) return null;
+                    return (
+                      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+                        <span>
+                          {holidays.length} public holiday{holidays.length === 1 ? '' : 's'} in this group:{' '}
+                          {holidays.map((d) => `${fmtShort(d)} (${SG_PUBLIC_HOLIDAYS[d]})`).join(', ')}
+                        </span>
+                        {open.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSlot(s.id, { skip: [...(s.skip ?? []), ...open] })}
+                            className="rounded-md border border-amber-300 bg-white px-2 py-0.5 font-semibold hover:bg-amber-100"
+                          >
+                            Skip public holidays
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {pattern.length === 0 ? (
                     <p className="rounded-lg bg-white px-3 py-2 text-sm text-gray-600">Pick at least one day and a first session date.</p>
                   ) : (
@@ -680,6 +704,28 @@ function TermForm({
             </div>
           )}
         </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <ToggleRow
+            title="Sibling discount"
+            hint="Money off the term for the second and later child a parent enrols."
+            checked={t.siblingDiscountPct > 0}
+            onChange={(v) => set({ siblingDiscountPct: v ? 10 : 0 })}
+          />
+          {t.siblingDiscountPct > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Discount (%)</label>
+                <NumberInput min="1" max="100" className={inputCls} value={String(t.siblingDiscountPct)} onChange={(e) => set({ siblingDiscountPct: Math.max(1, Math.min(100, Number(e.target.value) || 1)) })} aria-label="Sibling discount percent" />
+              </div>
+              <div className="flex items-end">
+                <p className={hintCls}>
+                  {t.price > 0 ? `A second child pays SGD ${Math.round(t.price * (100 - t.siblingDiscountPct)) / 100} instead of SGD ${t.price}.` : 'Applies to the term price.'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section n={5} title="Packages" subtitle="For parents who want to pick sessions when it suits them.">
@@ -735,13 +781,215 @@ function TermForm({
 
       {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</p>}
       <div className="flex flex-wrap justify-end gap-3">
-        <Button variant="outline" onClick={() => submit('draft')} className="h-12 rounded-xl border-2 border-gray-300 px-6 text-[15px] font-bold text-gray-800">
-          Save as draft
-        </Button>
-        <Button onClick={() => submit('published')} className="h-12 rounded-xl px-6 text-[15px] font-bold gradient-primary text-white hover:opacity-90">
-          Publish term
-        </Button>
+        {/* A published term can't go back to being a draft, so it only saves
+            its changes (seats, prices, the single-session cap). */}
+        {term.status === 'published' ? (
+          <Button onClick={() => submit('published')} className="h-12 rounded-xl px-6 text-[15px] font-bold gradient-primary text-white hover:opacity-90">
+            Save changes
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" onClick={() => submit('draft')} className="h-12 rounded-xl border-2 border-gray-300 px-6 text-[15px] font-bold text-gray-800">
+              Save as draft
+            </Button>
+            <Button onClick={() => submit('published')} className="h-12 rounded-xl px-6 text-[15px] font-bold gradient-primary text-white hover:opacity-90">
+              Publish term
+            </Button>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+const money = (cents: number) => `SGD ${(cents / 100).toLocaleString('en-SG', { maximumFractionDigits: 2 })}`;
+const ageOf = (dob: string | null) => {
+  if (!dob) return null;
+  const b = new Date(dob);
+  const now = new Date();
+  const m = (now.getFullYear() - b.getFullYear()) * 12 + now.getMonth() - b.getMonth();
+  return m < 24 ? `${m} mo` : `${Math.floor(m / 12)} yr`;
+};
+const ROSTER_STATUS: Record<RosterRow['status'], string> = {
+  enrolled: 'bg-green-100 text-green-800',
+  unpaid: 'bg-amber-100 text-amber-900',
+  withdrawn: 'bg-gray-100 text-gray-500',
+};
+
+/**
+ * Under a published term: its numbers, who is enrolled (with Withdraw), copying
+ * it into the next term, and opening re-enrolment for this term's families.
+ */
+function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: boolean; onCopy: () => void }) {
+  const [stats, setStats] = useState<SlotStats[] | null>(null);
+  const [roster, setRoster] = useState<RosterRow[] | null>(null);
+  const [showRoster, setShowRoster] = useState(false);
+  const [withdrawing, setWithdrawing] = useState<RosterRow | null>(null);
+  const [refund, setRefund] = useState<'refund' | 'none'>('refund');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let stale = false;
+    fetchTermSlotStats(term.id).then((s) => { if (!stale) setStats(s); }).catch(() => { if (!stale) setStats([]); });
+    if (showRoster) fetchTermRoster(term.id).then((r) => { if (!stale) setRoster(r); }).catch(() => { if (!stale) setRoster([]); });
+    return () => { stale = true; };
+  }, [term.id, showRoster, version]);
+
+  const total = (k: 'enrolled' | 'unpaid' | 'revenue_cents' | 'one_off_bookings') => (stats ?? []).reduce((n, s) => n + (s[k] ?? 0), 0);
+  const placesLeft = (stats ?? []).reduce<number | null>((n, s) => (s.places_left == null ? n : (n ?? 0) + s.places_left), null);
+  const priorityOpen = term.priorityUntil != null && new Date(term.priorityUntil) > new Date();
+  const oneOffs = total('one_off_bookings');
+
+  async function confirmWithdraw() {
+    if (!withdrawing) return;
+    if (refund === 'none' && !reason.trim()) { toast.error('Add a reason when there is no refund.'); return; }
+    setBusy(true);
+    try {
+      const n = await vendorWithdraw(withdrawing.enrolment_id, refund, reason);
+      toast(`${withdrawing.child_name} withdrawn. ${n} upcoming session${n === 1 ? '' : 's'} cancelled.`);
+      setWithdrawing(null);
+      setReason('');
+      setVersion((v) => v + 1);
+    } catch (e) {
+      toast.error('Could not withdraw', { description: (e as { message?: string })?.message });
+    }
+    setBusy(false);
+  }
+
+  async function reenrol() {
+    setBusy(true);
+    try {
+      const n = await openReenrolment(term.id, 7);
+      toast(`Re-enrolment open for 7 days. ${n} ${n === 1 ? 'family was' : 'families were'} told.`);
+    } catch (e) {
+      toast.error('Could not open re-enrolment', { description: (e as { message?: string })?.message });
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { label: 'Enrolled', value: stats ? String(total('enrolled')) : '…' },
+          { label: 'Awaiting payment', value: stats ? String(total('unpaid')) : '…' },
+          { label: 'Places left', value: stats ? (placesLeft == null ? '—' : String(placesLeft)) : '…' },
+          { label: 'Paid so far', value: stats ? money(total('revenue_cents')) : '…' },
+        ].map((c) => (
+          <div key={c.label} className="rounded-xl bg-gray-50 px-3 py-2">
+            <div className="text-[12px] font-semibold text-gray-500">{c.label}</div>
+            <div className="text-base font-bold tabular-nums text-gray-900">{c.value}</div>
+          </div>
+        ))}
+      </div>
+      {oneOffs > 0 && (
+        <p className={hintCls}>Plus {oneOffs} trial, single, package or make-up booking{oneOffs === 1 ? '' : 's'}.</p>
+      )}
+      {priorityOpen && (
+        <p className="rounded-lg bg-blue-50 px-3 py-2 text-[13px] font-semibold text-blue-900">
+          Re-enrolment is open to current families until{' '}
+          {new Date(term.priorityUntil!).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.
+          Everyone else can enrol after that.
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => setShowRoster((v) => !v)} className="h-9 rounded-lg px-3 text-sm font-semibold">
+          <Users className="mr-1.5 h-4 w-4" /> {showRoster ? 'Hide roster' : 'Roster'}
+        </Button>
+        {!hasNext && (
+          <Button variant="outline" onClick={onCopy} className="h-9 rounded-lg px-3 text-sm font-semibold">
+            <Copy className="mr-1.5 h-4 w-4" /> Copy to next term
+          </Button>
+        )}
+        {term.previousTermId && !term.priorityUntil && (
+          <Button variant="outline" disabled={busy} onClick={reenrol} className="h-9 rounded-lg px-3 text-sm font-semibold">
+            <Repeat className="mr-1.5 h-4 w-4" /> Open re-enrolment (7 days)
+          </Button>
+        )}
+      </div>
+
+      {showRoster && (
+        <div className="rounded-xl border border-gray-200">
+          {roster === null ? (
+            <p className={cn('p-3', hintCls)}>Loading…</p>
+          ) : roster.length === 0 ? (
+            <p className={cn('p-3', hintCls)}>No one has enrolled yet.</p>
+          ) : (
+            term.slots.map((s, i) => {
+              const rows = roster.filter((r) => r.slot_id === s.id);
+              if (rows.length === 0) return null;
+              return (
+                <div key={s.id} className={cn(i > 0 && 'border-t border-gray-100')}>
+                  {term.slots.length > 1 && (
+                    <div className="bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-600">
+                      Group {i + 1} · {WEEKDAYS.filter((d) => s.days.includes(d.i)).map((d) => d.name.slice(0, 3)).join(', ')}
+                    </div>
+                  )}
+                  {rows.map((r) => (
+                    <div key={r.enrolment_id} className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 first:border-t-0">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-gray-900">{r.child_name}</span>
+                          {ageOf(r.child_dob) && <span className="text-xs text-gray-500">{ageOf(r.child_dob)}</span>}
+                          <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', ROSTER_STATUS[r.status])}>
+                            {r.status === 'enrolled' ? 'Enrolled' : r.status === 'unpaid' ? 'Awaiting payment' : 'Withdrawn'}
+                          </span>
+                          {r.joined_session_no != null && r.joined_session_no > 1 && (
+                            <span className="text-[11px] font-semibold text-gray-500">joined at session {r.joined_session_no}</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {[r.parent_name, r.parent_email].filter(Boolean).join(' · ')} · {money(r.price_cents)} · {r.sessions_left} of {r.sessions} sessions left
+                        </div>
+                      </div>
+                      {r.status !== 'withdrawn' && r.sessions_left > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setWithdrawing(r); setRefund('refund'); setReason(''); }}
+                          className="rounded-lg px-2 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Withdraw
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {withdrawing && (
+        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-bold text-red-900">
+            Withdraw {withdrawing.child_name} from {term.name}? Their {withdrawing.sessions_left} upcoming
+            session{withdrawing.sessions_left === 1 ? '' : 's'} will be cancelled and the family told.
+          </p>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={refund === 'refund'} onChange={() => setRefund('refund')} /> Give make-up credit for the cancelled sessions
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" checked={refund === 'none'} onChange={() => setRefund('none')} /> No refund
+            </label>
+          </div>
+          {refund === 'none' && (
+            <input className={inputCls} placeholder="Reason (shown to the family)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          )}
+          <div className="flex gap-2">
+            <Button disabled={busy} onClick={confirmWithdraw} className="h-9 rounded-lg bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700">
+              Withdraw
+            </Button>
+            <Button variant="outline" onClick={() => setWithdrawing(null)} className="h-9 rounded-lg px-4 text-sm font-semibold">
+              Keep
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

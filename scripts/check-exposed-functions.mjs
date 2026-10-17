@@ -44,6 +44,10 @@ const ALLOWED = new Set([
   // term_headline_prices only read a published term's public numbers, so the
   // logged-out pages may call them.
   'term_quote', 'term_headline_prices', 'term_trial_remaining', 'activity_packages_closed', 'publish_term', 'enrol_in_term', 'book_term_class', 'skip_term_class',
+  // 00244: withdraw (parent / vendor), the vendor's roster and numbers, opening
+  // re-enrolment — each checks the caller. activities_with_live_terms only
+  // lists activity ids with a published term, for the Explore filter.
+  'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
   // Used inside RLS policies, so the calling role must be able to run them
   'user_provider_ids', 'user_manage_provider_ids', 'user_owner_provider_ids',
   // Pure helpers / read-only lookups of already-public data

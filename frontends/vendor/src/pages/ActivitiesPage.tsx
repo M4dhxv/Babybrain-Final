@@ -67,7 +67,7 @@ import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
 import { TermsPanel } from '@/components/TermsPanel';
-import { hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
+import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
 import { BookModeChoice, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
 import { WixFormHandling } from '@/components/WixFormHandling';
@@ -663,6 +663,18 @@ export default function ActivitiesPage() {
      booking page, and the post-booking confirmation — navigated with the
      arrows in the header bar. */
   const [previewFor, setPreviewFor] = useState<Activity | null>(null);
+  // Places still free in each group of the previewed activity's published terms.
+  const [previewPlaces, setPreviewPlaces] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (!termsOn || !previewFor) { setPreviewPlaces({}); return; }
+    const published = allTerms.filter((t) => t.activityId === previewFor.id && t.status === 'published');
+    if (published.length === 0) { setPreviewPlaces({}); return; }
+    let stale = false;
+    Promise.all(published.map((t) => fetchTermSlotStats(t.id)))
+      .then((lists) => { if (!stale) setPreviewPlaces(Object.fromEntries(lists.flat().map((s) => [s.slot_id, s.places_left]))); })
+      .catch(() => { if (!stale) setPreviewPlaces({}); });
+    return () => { stale = true; };
+  }, [termsOn, previewFor, allTerms]);
   const [previewDuration, setPreviewDuration] = useState<number | 'loading' | null>('loading');
   const [previewPage, setPreviewPage] = useState(0);
   // Term enrolment in the preview: which option the vendor is looking at, the
@@ -2971,16 +2983,16 @@ export default function ActivitiesPage() {
         const previewTerm =
           bookableTerms.find((t) => t.id === previewTermId) ?? bookableTerms[0] ??
           termRows.find((t) => t.status === 'published') ?? termRows[0] ?? null;
-        const pickerTerms = bookableTerms.map((t) => offeringFor(buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name), t.id));
+        const pickerTerms = bookableTerms.map((t) => offeringFor(buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name, previewPlaces), t.id));
         const termView = previewTerm
-          ? buildTermView(previewTerm, price, (id) => locations.find((l) => l.id === id)?.name)
+          ? buildTermView(previewTerm, price, (id) => locations.find((l) => l.id === id)?.name, previewPlaces)
           : null;
         const termQuote = termView ? quoteFor(termView, previewSlotIdx, previewPassed) : null;
         const termOn = !!termView && !!termQuote;
         // The activity page's "Upcoming" block: every live term, the one-off
         // session (trial, else single), and the packs the terms accept.
         const liveTermRows = termOn ? allTerms.filter((t) => t.activityId === previewFor.id && termStatus(t).key !== 'ended') : [];
-        const liveViews = liveTermRows.map((t) => buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name));
+        const liveViews = liveTermRows.map((t) => buildTermView(t, price, (id) => locations.find((l) => l.id === id)?.name, previewPlaces));
         const offeringTerms = liveViews.map((v, i) => offeringFor(v, liveTermRows[i].id));
         const offeringOneOffs = oneOffFor(liveViews);
         const offeringPacks = liveViews.some((v) => v.packages)

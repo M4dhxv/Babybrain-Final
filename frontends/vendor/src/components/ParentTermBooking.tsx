@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import {
-  dayTimeFor, lastJoinableAfter, mockSeats, priceAfter, slotDates, slotPrice,
+  dayTimeFor, lastJoinableAfter, priceAfter, slotDates, slotPrice,
   type Term, type TermSlot,
 } from '@/lib/termsPreview';
 
@@ -97,6 +97,8 @@ export function buildTermView(
   term: Term,
   _activityPrice: number | null,
   locationName: (id: string) => string | undefined,
+  /** Places still free per slot of a published term (term_slot_stats); a draft has every seat free. */
+  placesLeft?: Record<string, number | null>,
 ): TermView {
   return {
     name: term.name.trim() || 'Your term',
@@ -123,7 +125,7 @@ export function buildTermView(
         label: slotLabel(s),
         venue: s.locationId ? locationName(s.locationId) ?? null : null,
         dates,
-        spotsLeft: Math.max(0, s.capacity - mockSeats(s.id, 1, s.capacity, s.singleCap ?? null).termSeats),
+        spotsLeft: term.status === 'published' ? placesLeft?.[s.id] ?? null : s.capacity,
         price: slotPrice(term, s),
       };
     }),

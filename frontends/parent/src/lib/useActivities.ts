@@ -95,6 +95,8 @@ export interface ActivityQuery {
   /** Areas nearest-first, used when `lat`/`lng` is only an area's centre (the
    *  "pick your area" fallback): the whole nearest area ranks before the next. */
   regionOrder?: string[] | null;
+  /** Only activities with a term open (00244). Sent only when true. */
+  termsOnly?: boolean;
   limit?: number;
   /** Rows fetched per `loadMore()` call — separate from `limit` (the first
    *  page's size), for a caller that reveals its own rows client-side a few
@@ -285,6 +287,8 @@ function searchArgs(params: ActivityQuery) {
     // Only sent when set: a database that hasn't had migration 00220 yet
     // rejects an argument it doesn't know, even a null one.
     ...(params.regionOrder?.length ? { p_region_order: params.regionOrder } : {}),
+    // Same reasoning: a database without 00244 would reject p_terms_only.
+    ...(params.termsOnly ? { p_terms_only: true } : {}),
   };
 }
 

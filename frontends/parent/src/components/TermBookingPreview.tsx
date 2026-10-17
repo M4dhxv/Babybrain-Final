@@ -104,7 +104,7 @@ export function BookModeChoice({
           {quote.payNow != null && (
             <span className="mt-2 block text-lg font-black text-baby-cta">
               ${quote.payNow}
-              {midTerm && quote.fullPrice != null && (
+              {midTerm && quote.fullPrice != null && quote.payNow < quote.fullPrice && (
                 <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${quote.fullPrice}</span>
               )}
               {!midTerm && offer.single && quote.savings != null && (
@@ -113,7 +113,10 @@ export function BookModeChoice({
             </span>
           )}
           {midTerm && (
-            <span className="mt-1 block text-xs font-bold text-[#0F6E56]">Joining mid-term, price reduced for the sessions already run</span>
+            <span className="mt-1 block text-xs font-bold text-[#0F6E56]">
+              Join from {sgDay(quote.joining[0])} · {quote.left} sessions
+              {quote.perClass != null && quote.perClass > 0 ? ` · $${quote.perClass * quote.run} off for the ${quote.run} already run` : ""}
+            </span>
           )}
         </button>
         {showTrial && (
@@ -232,17 +235,22 @@ export function TermEnrolPreview({
 
       <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="font-black text-[#34406f]">{run === 0 ? "Full term" : `${left} of ${n} sessions left`}</span>
+          <span className="font-black text-[#34406f]">
+            {run === 0 ? `Full term · ${n} sessions` : `Join from ${sgDay(quote.joining[0])} · ${left} of ${n} sessions`}
+          </span>
           {payNow != null && (
             <span className="text-2xl font-black text-baby-cta">
               ${payNow}
-              {run > 0 && fullPrice != null && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
+              {run > 0 && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
             </span>
           )}
         </div>
-        {run > 0 && perClass != null && (
+        {run > 0 && (
           <p className="mt-1 text-sm font-semibold text-[#59658d]">
-            {run} {run === 1 ? "session has" : "sessions have"} already run, so the price drops by ${perClass * run}.
+            {run} {run === 1 ? "session has" : "sessions have"} already run.{" "}
+            {perClass != null && perClass > 0
+              ? `You pay $${fullPrice} less $${perClass} for each, so $${payNow}.`
+              : `This term is the same price whenever you join.`}
           </p>
         )}
         <p className="mt-1 text-xs font-semibold text-[#697390]">

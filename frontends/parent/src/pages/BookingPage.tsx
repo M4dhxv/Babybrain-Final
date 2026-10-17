@@ -323,6 +323,8 @@ export default function BookingPage() {
   // whole term; trial / single / package are offered as the term allows.
   const [bookMode, setBookMode] = useState<BookMode>("term");
   const [termId, setTermId] = useState<string | null>(null);
+  // Brothers and sisters enrolled in the same checkout as the chosen child.
+  const [siblingIds, setSiblingIds] = useState<string[]>([]);
   const [termSlotIdx, setTermSlotIdx] = useState(0);
   // Packs are not offered where no running term accepts package credits.
   const packagesOpen = usePackagesOpen(activity?.id);
@@ -714,6 +716,18 @@ export default function BookingPage() {
     !!activity &&
     childAgeMonths != null &&
     (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
+  // Siblings added to a term enrolment: only children inside the age range can be ticked.
+  const siblingFits = (dob: string) => {
+    if (!activity) return false;
+    const m = ageInMonths(dob);
+    return m >= activity.age_min_months && m <= activity.age_max_months;
+  };
+  const termSiblings = termMode ? kids.filter((k) => k.id !== bookChildId && siblingIds.includes(k.id) && siblingFits(k.date_of_birth)) : [];
+  // What each sibling pays: the term price less the vendor's sibling discount
+  // (the same rounding as enrol_in_term).
+  const siblingPrice =
+    quote && liveTerm ? Math.round((quote.payNow * 100 * (100 - liveTerm.siblingDiscountPct)) / 100) / 100 : null;
+  const termTotal = quote ? quote.payNow + (siblingPrice ?? 0) * termSiblings.length : null;
   const selectedTicketType = isEvent ? ticketTypes.find((t) => t.id === ticketTypeId) ?? null : null;
   // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
   // discovered once per ticket type by lib/wix/events-sync.ts and cached —
@@ -1437,7 +1451,26 @@ export default function BookingPage() {
       setErr(error ? cleanRpcErrorMessage(error) : "Could not enrol");
       return;
     }
-    await payTermGroup((data as { group_id: string }).group_id);
+    const groupId = (data as { group_id: string }).group_id;
+    // Brothers and sisters join the same checkout (and get the sibling discount).
+    for (const sib of termSiblings) {
+      const { error: sibErr } = await termsDb
+        .rpc("enrol_in_term", {
+          p_slot_id: termSlot.id,
+          p_child_id: sib.id,
+          p_policies: acceptedPolicies,
+          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+          p_group_id: groupId,
+        })
+        .single();
+      if (sibErr) {
+        setBusy(false);
+        setErr(`Could not add ${sib.name}: ${cleanRpcErrorMessage(sibErr)}`);
+        return;
+      }
+    }
+    await payTermGroup(groupId);
   }
 
   /** A trial or single session of a term (book_term_class), then payment. */
@@ -1534,7 +1567,7 @@ export default function BookingPage() {
     : packageUnchosen
       ? "Choose a package"
     : termMode
-      ? `Enrol for the term${quote?.payNow != null ? ` — $${quote.payNow}` : ""}`
+      ? `Enrol ${termSiblings.length > 0 ? `${termSiblings.length + 1} children` : "for the term"}${termTotal != null ? ` — $${termTotal.toFixed(2).replace(/\.00$/, "")}` : ""}`
     : isRsvpEvent
       ? "RSVP"
     : isEvent
@@ -1560,7 +1593,7 @@ export default function BookingPage() {
   // single-class total while the button says "Buy pack — $500" read as a
   // straight contradiction (QA).
   const displayTotal = termMode
-    ? quote?.payNow ?? null
+    ? termTotal
     : packageUnchosen
       ? null
     : redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : shownTotal;
@@ -1843,6 +1876,37 @@ export default function BookingPage() {
                         </div>
                       </section>
                     )}
+                    {termMode && liveTerm && kids.length > 1 && (
+                      <section>
+                        <h3 className="mb-1 text-lg font-black">Enrolling brothers or sisters too?</h3>
+                        <p className="mb-3 text-sm font-semibold text-[#59658d]">
+                          Add them to the same checkout
+                          {liveTerm.siblingDiscountPct > 0 && siblingPrice != null
+                            ? ` — ${liveTerm.siblingDiscountPct}% off, $${siblingPrice.toFixed(2).replace(/\.00$/, "")} each.`
+                            : "."}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {kids.filter((k) => k.id !== bookChildId).map((k) => {
+                            const fits = siblingFits(k.date_of_birth);
+                            const on = fits && siblingIds.includes(k.id);
+                            return (
+                              <button
+                                key={k.id}
+                                type="button"
+                                disabled={!fits}
+                                aria-pressed={on}
+                                title={fits ? undefined : `${k.name} is outside this class's ${ageText} age range`}
+                                onClick={() => setSiblingIds((ids) => (ids.includes(k.id) ? ids.filter((x) => x !== k.id) : [...ids, k.id]))}
+                                className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold disabled:opacity-50 ${on ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}
+                              >
+                                <AnimalAvatar seed={k.avatar_seed ?? k.name} kind="child" gender={k.gender} className="h-6 w-6" />
+                                {on ? "✓ " : "+ "}{k.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
                     {childAgeMismatch && bookChild && (
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -2084,7 +2148,7 @@ export default function BookingPage() {
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
                 <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode && quote ? `Term · ${quote.slot.label} · ${quote.left} sessions from ${sgDay(quote.joining[0])}` : selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
                 {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
-                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode ? `${bookChild?.name ?? "1 child"}, ${ageText}` : <>{count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</>}</p>
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode ? `${[bookChild?.name ?? "1 child", ...termSiblings.map((k) => k.name)].join(", ")}, ${ageText}` : <>{count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</>}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>

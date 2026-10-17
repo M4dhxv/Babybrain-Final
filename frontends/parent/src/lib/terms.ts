@@ -39,6 +39,8 @@ export type LiveTerm = {
   trialPrice: number;
   trialLimit: number;
   allowPackages: boolean;
+  /** Off the 2nd and later child a parent enrols (00244). */
+  siblingDiscountPct: number;
   slots: LiveSlot[];
 };
 
@@ -66,6 +68,7 @@ type TermRow = {
   trial_price_cents: number;
   trial_limit: number;
   allow_packages: boolean;
+  sibling_discount_pct?: number | null;
   created_at: string;
   term_slots: SlotRow[];
 };
@@ -156,6 +159,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
       trialPrice: dollars(t.trial_price_cents),
       trialLimit: t.trial_limit,
       allowPackages: t.allow_packages,
+      siblingDiscountPct: t.sibling_discount_pct ?? 0,
       created_at: t.created_at,
       slots: [...t.term_slots]
         .sort((a, b) => a.position - b.position)

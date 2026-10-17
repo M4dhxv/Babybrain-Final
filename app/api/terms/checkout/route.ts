@@ -96,17 +96,26 @@ export async function POST(request: Request) {
 
   let totalCents: number;
   if (kind === 'term') {
-    const { data: enrol } = await db
+    // One group can hold several children's enrolments (siblings paid in one
+    // checkout, 00244); each is charged its own quoted price.
+    const heldBy = new Map<string, number>();
+    for (const s of chargeSeats) {
+      const id = s.term_enrolment_id as string | null;
+      if (id) heldBy.set(id, (heldBy.get(id) ?? 0) + 1);
+    }
+    const { data: enrols } = await db
       .from('term_enrolments')
-      .select('price_cents, sessions, user_id')
-      .eq('id', seats[0].term_enrolment_id)
-      .maybeSingle();
-    if (!enrol || enrol.user_id !== user.id) {
+      .select('id, price_cents, sessions, user_id')
+      .in('id', [...heldBy.keys()]);
+    if (!enrols || enrols.length !== heldBy.size || enrols.some((e) => e.user_id !== user.id)) {
       return NextResponse.json({ error: 'Enrolment not found' }, { status: 404 });
     }
     // If the vendor skipped a class after enrolment, those seats were
     // cancelled; charge only for the classes still held.
-    totalCents = Math.round((Number(enrol.price_cents) * seatCount) / Math.max(1, Number(enrol.sessions)));
+    totalCents = enrols.reduce(
+      (sum, e) => sum + Math.round((Number(e.price_cents) * (heldBy.get(e.id as string) ?? 0)) / Math.max(1, Number(e.sessions))),
+      0
+    );
   } else if (kind === 'trial') {
     totalCents = Number(term.trial_price_cents) * seatCount;
   } else {
@@ -162,7 +171,12 @@ export async function POST(request: Request) {
 
   const unitLabel =
     kind === 'term'
-      ? `${title} · whole term (${seatCount} ${seatCount === 1 ? 'session' : 'sessions'})`
+      ? (() => {
+          const kids = new Set(chargeSeats.map((s) => s.term_enrolment_id)).size;
+          return kids > 1
+            ? `${title} · whole term for ${kids} children`
+            : `${title} · whole term (${seatCount} ${seatCount === 1 ? 'session' : 'sessions'})`;
+        })()
       : kind === 'trial'
         ? `${title} · trial session`
         : `${title} · single session`;

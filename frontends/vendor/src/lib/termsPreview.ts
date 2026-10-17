@@ -94,6 +94,12 @@ export type Term = {
   trialLimit: number;
   /** Parents with a package can book individual sessions of this term with credits. */
   allowPackages: boolean;
+  /** Taken off the 2nd and later child a parent enrols in this term (00244). */
+  siblingDiscountPct: number;
+  /** The term this one was copied from, for re-enrolment priority (00244). */
+  previousTermId: string | null;
+  /** While in the future, only families from the previous term can enrol. */
+  priorityUntil: string | null;
   slots: TermSlot[];
   status: 'draft' | 'published';
 };
@@ -106,6 +112,9 @@ export function normalizeTerm(t: Term): Term {
     trialPrice: t.trialPrice ?? 0,
     trialLimit: t.trialLimit ?? 1,
     allowPackages: t.allowPackages ?? true,
+    siblingDiscountPct: t.siblingDiscountPct ?? 0,
+    previousTermId: t.previousTermId ?? null,
+    priorityUntil: t.priorityUntil ?? null,
     slots: t.slots.map((s) => ({
       ...s,
       count: s.count ?? null,
@@ -154,6 +163,9 @@ type TermRow = {
   trial_price_cents: number;
   trial_limit: number;
   allow_packages: boolean;
+  sibling_discount_pct: number | null;
+  previous_term_id: string | null;
+  priority_until: string | null;
   status: 'draft' | 'published' | 'archived';
   term_slots: SlotRow[];
 };
@@ -177,6 +189,9 @@ function fromRow(r: TermRow): Term {
     trialPrice: toDollars(r.trial_price_cents),
     trialLimit: r.trial_limit,
     allowPackages: r.allow_packages,
+    siblingDiscountPct: r.sibling_discount_pct ?? 0,
+    previousTermId: r.previous_term_id,
+    priorityUntil: r.priority_until,
     status: r.status === 'published' ? 'published' : 'draft',
     slots: [...(r.term_slots ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -213,6 +228,8 @@ const termFields = (t: Term) => ({
   trial_price_cents: toCents(t.trialPrice),
   trial_limit: Math.min(10, Math.max(1, t.trialLimit)),
   allow_packages: t.allowPackages,
+  sibling_discount_pct: Math.min(100, Math.max(0, Math.round(t.siblingDiscountPct || 0))),
+  previous_term_id: t.previousTermId,
 });
 
 const slotRow = (termId: string, s: TermSlot, position: number) => ({
@@ -462,6 +479,9 @@ export function blankTerm(activityId: string, defaults: { price?: number | null;
     trialPrice: defaults.price != null ? Math.round(defaults.price / 2) : 0,
     trialLimit: 1,
     allowPackages: true,
+    siblingDiscountPct: 0,
+    previousTermId: null,
+    priorityUntil: null,
     slots: [
       {
         id: newId(),
@@ -686,4 +706,109 @@ export function packagesClosedActivityIds(terms: Term[], enabled: Record<string,
   const closed = new Set<string>();
   for (const [id, list] of byActivity) if (!list.some((t) => t.allowPackages)) closed.add(id);
   return closed;
+}
+
+/* ── running a published term (00244) ── */
+
+export type RosterRow = {
+  enrolment_id: string;
+  slot_id: string;
+  child_name: string;
+  child_dob: string | null;
+  parent_name: string | null;
+  parent_email: string | null;
+  price_cents: number;
+  sessions: number;
+  sessions_left: number;
+  joined_session_no: number | null;
+  paid: boolean;
+  status: 'enrolled' | 'unpaid' | 'withdrawn';
+  enrolled_at: string;
+};
+
+export type SlotStats = {
+  slot_id: string;
+  enrolled: number;
+  unpaid: number;
+  places_left: number | null;
+  one_off_bookings: number;
+  revenue_cents: number;
+};
+
+export async function fetchTermRoster(termId: string): Promise<RosterRow[]> {
+  const { data, error } = await db.rpc('term_roster', { p_term_id: termId });
+  if (error) throw error;
+  return (data ?? []) as RosterRow[];
+}
+
+export async function fetchTermSlotStats(termId: string): Promise<SlotStats[]> {
+  const { data, error } = await db.rpc('term_slot_stats', { p_term_id: termId });
+  if (error) throw error;
+  return (data ?? []) as SlotStats[];
+}
+
+/** Take a child off a term: their sessions still to come are cancelled. */
+export async function vendorWithdraw(enrolmentId: string, refund: 'refund' | 'none', reason: string): Promise<number> {
+  const { data, error } = await db.rpc('vendor_withdraw_from_term', {
+    p_enrolment_id: enrolmentId, p_refund_mode: refund, p_reason: reason.trim() || null,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** Hold the new term for the previous term's families for `days`, and tell them. */
+export async function openReenrolment(termId: string, days = 7): Promise<number> {
+  const { data, error } = await db.rpc('open_reenrolment', { p_term_id: termId, p_days: days });
+  if (error) throw error;
+  await refreshTerms();
+  return Number(data ?? 0);
+}
+
+/** A draft of the next term: same groups, prices and rules, each group starting
+ *  on its first day after this term's last session. */
+export function nextTermFrom(t: Term): Term {
+  const last = t.slots.flatMap((s) => slotDates(s)).sort().pop();
+  const after = last ? parseYmd(last) : new Date();
+  return {
+    ...structuredClone(t),
+    id: newId(),
+    name: `${t.name} (next)`,
+    status: 'draft',
+    previousTermId: t.id,
+    priorityUntil: null,
+    slots: t.slots.map((s) => {
+      const d = new Date(after);
+      for (let i = 1; i <= 7; i++) {
+        d.setDate(after.getDate() + i);
+        if (s.days.includes(d.getDay())) break;
+      }
+      return { ...structuredClone(s), id: newId(), start: toYmd(d), skip: [] };
+    }),
+  };
+}
+
+/* ── Singapore public holidays, for "Skip public holidays" ──
+ * The observed day off (a Sunday holiday moves to Monday). Source: MOM's
+ * published list; add the next year's dates when MOM announces them. */
+export const SG_PUBLIC_HOLIDAYS: Record<string, string> = {
+  '2026-01-01': "New Year's Day",
+  '2026-02-17': 'Chinese New Year',
+  '2026-02-18': 'Chinese New Year',
+  '2026-03-21': 'Hari Raya Puasa',
+  '2026-04-03': 'Good Friday',
+  '2026-05-01': 'Labour Day',
+  '2026-05-27': 'Hari Raya Haji',
+  '2026-05-31': 'Vesak Day',
+  '2026-06-01': 'Vesak Day (observed)',
+  '2026-08-09': 'National Day',
+  '2026-08-10': 'National Day (observed)',
+  '2026-11-08': 'Deepavali',
+  '2026-11-09': 'Deepavali (observed)',
+  '2026-12-25': 'Christmas Day',
+  '2027-01-01': "New Year's Day",
+};
+
+/** The slot's dates that fall on a public holiday. */
+export function publicHolidaysIn(slot: DateRule): string[] {
+  return slotPatternDates(slot).filter((d) => d in SG_PUBLIC_HOLIDAYS);
 }
