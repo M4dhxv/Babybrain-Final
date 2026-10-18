@@ -240,6 +240,25 @@ html[data-nav="back"] .bb-reveal {
   .bb-highlight { animation: bb-highlight-elevate-reduced 1.6s ease-out; }
 }
 
+/* Sign-up (OnboardingPage): a parent presses Next again on a required question
+   while its notice is already showing. The notice gives a small shake and
+   flashes solid pink, then fades back to its own colours (no `to` frame, so it
+   returns to whatever the element's classes say). Reduced motion keeps the
+   flash and drops the shake. */
+@keyframes bb-notice-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+@keyframes bb-notice-flash {
+  0%, 30% { background-color: #FA4D8D; border-color: #FA4D8D; color: #fff; }
+}
+.bb-notice-nudge { animation: bb-notice-shake 0.35s ease-in-out, bb-notice-flash 0.9s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .bb-notice-nudge { animation: bb-notice-flash 0.9s ease-out; }
+}
+
 /* Stream Chat's own theme, repainted in the CTA pink — the same colour as the
    filled "Book a class" buttons (#FA4D8D, `baby.cta`).
 

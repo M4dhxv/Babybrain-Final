@@ -103,6 +103,9 @@ export default function OnboardingPage() {
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Times Next was pressed again while the same notice was already up. Each
+  // one re-mounts the notice with a shake and a pink flash (bb-notice-nudge).
+  const [nudges, setNudges] = useState(0);
   const [confirmSent, setConfirmSent] = useState(false);
   const [emailExists, setEmailExists] = useState(false);
   /* The account is only created on the last screen, once a plan is chosen, and
@@ -150,6 +153,7 @@ export default function OnboardingPage() {
 
   function show(id: string) {
     setError(null);
+    setNudges(0);
     setStep(id);
     window.history.pushState({ ...window.history.state, signupStep: id }, "");
     window.scrollTo(0, 0);
@@ -225,6 +229,7 @@ export default function OnboardingPage() {
     }
     const problem = validateStep(current);
     if (problem) {
+      setNudges((n) => (problem === error ? n + 1 : 0));
       setError(problem);
       return;
     }
@@ -780,7 +785,9 @@ export default function OnboardingPage() {
         {/* The error sits directly above the button — QA found it at the top of
             the page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-5 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
+          // Keyed on the nudge count, so a repeat press re-mounts it: the animation
+          // replays and screen readers hear the notice again.
+          <p key={nudges} role="alert" className={`mt-5 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta ${nudges > 0 ? "bb-notice-nudge" : ""}`}>
             {error}
           </p>
         )}
