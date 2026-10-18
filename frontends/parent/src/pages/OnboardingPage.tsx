@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { geocodePostal } from "../lib/geocode";
 import { goTo } from "../lib/nav";
+import { captureEvent } from "../lib/posthog";
 import {
   PASSWORD_RULES,
   dobError,
@@ -13,83 +14,69 @@ import {
   passwordError,
   postcodeError,
 } from "../lib/validation";
-import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
+import { TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
 import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
-type ChildDraft = { key: number; name: string; dob: string; gender: string; interests: string[] };
+type ChildDraft = { key: string; name: string; dob: string; gender: string; interests: string[] };
 
 const newChildDraft = (): ChildDraft => ({
-  key: Date.now() + Math.random(),
+  key: String(Date.now() + Math.random()),
   name: "",
   dob: "",
   gender: "unspecified",
   interests: [],
 });
 
-/** One child's fields inside the sign-up form (repeated per child). */
-function ChildDraftFields({
-  draft,
-  index,
-  total,
-  cats,
-  onChange,
-  onRemove,
-}: {
-  draft: ChildDraft;
-  index: number;
-  total: number;
-  cats: { slug: string; name: string }[];
-  onChange: (next: ChildDraft) => void;
-  onRemove: () => void;
-}) {
-  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
-  const toggle = (v: string) =>
-    onChange({
-      ...draft,
-      interests: draft.interests.includes(v)
-        ? draft.interests.filter((x) => x !== v)
-        : [...draft.interests, v],
-    });
+/* Sign-up is one question per screen. A screen is identified by a string id
+   rather than its position, because the list grows and shrinks as children are
+   added or removed: "name", "account", then four screens per child
+   ("child-name:<key>" and so on), "kids", "home", "areas", "when", "budget",
+   "terms" and finally "plan". Each screen is its own browser history entry, so
+   the phone's Back button goes to the previous question instead of leaving
+   sign-up and losing everything typed. No step counts are shown on purpose:
+   the bar at the top is the only progress cue. */
+const CHILD_SCREENS = ["child-name", "child-dob", "child-gender", "child-interests"] as const;
+type ChildScreen = (typeof CHILD_SCREENS)[number];
 
+function buildSteps(kids: ChildDraft[]): string[] {
+  return [
+    "name",
+    "account",
+    ...kids.flatMap((k) => CHILD_SCREENS.map((s) => `${s}:${k.key}`)),
+    "kids",
+    "home",
+    "areas",
+    "when",
+    "budget",
+    "terms",
+    "plan",
+  ];
+}
+
+/** "child-dob:123" → ["child-dob", "123"]; "home" → ["home", undefined]. */
+function parseStep(id: string): [string, string | undefined] {
+  const i = id.indexOf(":");
+  return i === -1 ? [id, undefined] : [id.slice(0, i), id.slice(i + 1)];
+}
+
+/** ISO yyyy-mm-dd → dd/mm/yyyy, the way parents typed it. */
+function dayFirst(iso: string) {
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
+
+/** A big tappable choice — the one-question screens' version of a chip. */
+function Option({ on, onClick, children, className = "" }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
-    <div className={index > 0 ? "mt-5 border-t border-[#FEEBF2] pt-5" : ""}>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
-        {total > 1 && (
-          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#FFC1D6] hover:underline">
-            Remove
-          </button>
-        )}
-      </div>
-      <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-sm font-black">Child's name</label>
-          <input className={input} autoComplete="off" autoCapitalize="words" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} placeholder="e.g. Emma" />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-black">Date of birth</label>
-          <DateInput
-            value={draft.dob}
-            onChange={(iso) => onChange({ ...draft, dob: iso })}
-            className={input}
-          />
-          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Day first, e.g. 14/03/2024.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
-            <Chip key={v} on={draft.gender === v} onClick={() => onChange({ ...draft, gender: v })}>{l}</Chip>
-          ))}
-        </div>
-        <div>
-          <p className="mb-1 text-sm font-black">Interests</p>
-          <div className="flex flex-wrap gap-2">
-            {cats.map((c) => (
-              <Chip key={c.slug} on={draft.interests.includes(c.slug)} onClick={() => toggle(c.slug)}>{c.name}</Chip>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={`flex min-h-[52px] items-center justify-between gap-2 rounded-[12px] border px-4 py-3 text-left text-[15px] font-black transition-colors ${on ? "border-baby-pink bg-[#FED7E4] text-baby-cta" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink"} ${className}`}
+    >
+      <span>{children}</span>
+      {on && <Icon name="check" className="h-4 w-4 shrink-0" />}
+    </button>
   );
 }
 
@@ -118,11 +105,10 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmSent, setConfirmSent] = useState(false);
   const [emailExists, setEmailExists] = useState(false);
-  /* Sign-up is a two-step wizard: step 1 is the profile form, step 2 is the
-     plan picker. The account is only created once a plan is chosen on step 2,
-     and `accountReady` guards against creating it twice if Plus checkout fails
-     and the parent retries. */
-  const [step, setStep] = useState<1 | 2>(1);
+  /* The account is only created on the last screen, once a plan is chosen, and
+     `accountReady` guards against creating it twice if Plus checkout fails and
+     the parent retries. */
+  const [step, setStep] = useState("name");
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "plus">("plus");
   const [accountReady, setAccountReady] = useState(false);
@@ -131,48 +117,126 @@ export default function OnboardingPage() {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
+  /* Browser Back / Forward move between questions. The first screen takes over
+     the current history entry (also resetting a reload, where the typed
+     answers are gone, back to the start); every later screen is pushed. */
+  useEffect(() => {
+    window.history.replaceState({ ...window.history.state, signupStep: "name" }, "");
+    const onPop = (e: PopStateEvent) => {
+      const s = (e.state as { signupStep?: string } | null)?.signupStep;
+      setError(null);
+      setStep(s ?? "name");
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const steps = buildSteps(kids);
+  // A history entry can point at a child that has since been removed; land on
+  // the children summary instead of a blank screen.
+  const stepIndex = steps.indexOf(step) === -1 ? steps.indexOf("kids") : steps.indexOf(step);
+  const current = steps[stepIndex];
+  const [kind, childKey] = parseStep(current);
+  const child = kids.find((k) => k.key === childKey);
+  const childLabel = child?.name.trim() || "your child";
+
+  // Which screens parents reach, so drop-off between them shows up in PostHog.
+  useEffect(() => {
+    void captureEvent("signup_step_viewed", { step: kind });
+  }, [current, kind]);
+
+  function show(id: string) {
+    setError(null);
+    setStep(id);
+    window.history.pushState({ ...window.history.state, signupStep: id }, "");
+    window.scrollTo(0, 0);
+  }
+
   const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
+  const updateChild = (key: string, patch: Partial<ChildDraft>) =>
+    setKids((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const input = "h-12 w-full rounded-[12px] border border-[#FED7E4] bg-white px-4 text-base font-semibold";
 
-  /** Everything recommendations depend on is required, so a new parent can't
-   *  land on an empty Matches page. Returns the first problem, or null. */
-  function validate(): string | null {
-    if (!fullName.trim()) return "Please add your full name.";
-    const emailProblem = emailError(email);
-    if (emailProblem) return emailProblem;
-    const pwProblem = passwordError(password);
-    if (pwProblem) return pwProblem;
-    if (password !== confirmPassword) return "Passwords don't match — please re-enter them.";
-    const postcodeProblem = postcodeError(postcode);
-    if (postcodeProblem) return postcodeProblem;
-    if (regions.length === 0) return "Pick at least one area you'd like activities in.";
-    for (const [i, k] of kids.entries()) {
-      const who = kids.length > 1 ? `Child ${i + 1}` : "Your child";
-      if (!k.name.trim()) return `${who} needs a name.`;
-      const dobProblem = dobError(k.dob);
-      if (dobProblem) return `${who}: ${dobProblem.charAt(0).toLowerCase()}${dobProblem.slice(1)}`;
-      if (k.interests.length === 0) return `Pick at least one interest for ${k.name.trim() || who.toLowerCase()}.`;
+  /** The problem on one screen, or null. Everything recommendations depend on
+   *  is required, so a new parent can't land on an empty Matches page. */
+  function validateStep(id: string): string | null {
+    const [k, key] = parseStep(id);
+    const c = kids.find((x) => x.key === key);
+    const who = c?.name.trim() || "your child";
+    switch (k) {
+      case "name":
+        return fullName.trim() ? null : "Please add your full name.";
+      case "account":
+        return emailError(email)
+          ?? passwordError(password)
+          ?? (password !== confirmPassword ? "Passwords don't match — please re-enter them." : null);
+      case "child-name":
+        return c?.name.trim() ? null : "Please add your child's name.";
+      case "child-dob": {
+        const problem = c ? dobError(c.dob) : null;
+        return problem;
+      }
+      case "child-interests":
+        return c && c.interests.length === 0 ? `Pick at least one interest for ${who}.` : null;
+      case "home":
+        return postcodeError(postcode);
+      case "areas":
+        return regions.length === 0 ? "Pick at least one area you'd like activities in." : null;
+      case "terms":
+        return acceptedTerms ? null : "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
+      default:
+        return null;
     }
-    if (!acceptedTerms) return "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
+  }
+
+  /** The first screen with a problem, checked before the account is created. */
+  function firstProblem(): { id: string; message: string } | null {
+    for (const id of steps) {
+      const message = validateStep(id);
+      if (message) return { id, message };
+    }
     return null;
   }
 
-  /** Step 1 → step 2. Validate the profile form, then show the plan picker.
-   *  Nothing is created yet — the account is made once a plan is chosen. */
-  function goToPlanStep() {
-    const problem = validate();
+  // Backing out of a just-added child leaves an empty draft behind; drop it on
+  // the children summary rather than list an "Unnamed child".
+  useEffect(() => {
+    if (kind !== "kids") return;
+    setKids((xs) => {
+      const kept = xs.filter((k) => k.name.trim() || k.dob || k.interests.length);
+      return kept.length && kept.length !== xs.length ? kept : xs;
+    });
+  }, [kind]);
+
+  function next() {
+    // Leaving the children summary: every child must be complete, so send the
+    // parent to the first unanswered question for any of them.
+    if (kind === "kids") {
+      const gap = steps.slice(0, stepIndex).map((id) => ({ id, message: validateStep(id) })).find((p) => p.message);
+      if (gap) {
+        show(gap.id);
+        setError(gap.message);
+        return;
+      }
+    }
+    const problem = validateStep(current);
     if (problem) {
       setError(problem);
       return;
     }
-    setError(null);
-    setStep(2);
-    window.scrollTo(0, 0);
+    show(steps[stepIndex + 1]);
   }
 
-  /** Step 2. Create the account (once), then either drop the parent into their
-   *  matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
+  function addChild() {
+    const k = newChildDraft();
+    setKids((xs) => [...xs, k]);
+    show(`child-name:${k.key}`);
+  }
+
+  /** Last screen. Create the account (once), then either drop the parent into
+   *  their matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
   async function submit(plan: "free" | "plus") {
     setBusy(true);
     setError(null);
@@ -180,11 +244,11 @@ export default function OnboardingPage() {
     // Create the account exactly once. If Plus checkout then fails the parent
     // is already signed up on Free, so a retry must not sign them up again.
     if (!accountReady) {
-      const problem = validate();
+      const problem = firstProblem();
       if (problem) {
         setBusy(false);
-        setStep(1);
-        setError(problem);
+        show(problem.id);
+        setError(problem.message);
         return;
       }
 
@@ -323,7 +387,7 @@ export default function OnboardingPage() {
           <ResendConfirmation email={email} startCoolingDown />
           <p className="mt-3 text-sm font-semibold text-[#5a6690]">
             Wrong address?{" "}
-            <button type="button" onClick={() => setConfirmSent(false)} className="font-black text-baby-pink underline">
+            <button type="button" onClick={() => { setConfirmSent(false); show("account"); }} className="font-black text-baby-pink underline">
               Go back and fix it
             </button>
           </p>
@@ -344,7 +408,7 @@ export default function OnboardingPage() {
           <p className="mt-3 font-semibold text-[#44507b]">An account with <strong>{email}</strong> already exists. Log in instead, or use a different email to sign up.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
           <p className="mt-4 text-sm font-semibold text-[#5a6690]">
-            <button type="button" onClick={() => setEmailExists(false)} className="font-black text-baby-pink underline">
+            <button type="button" onClick={() => { setEmailExists(false); show("account"); }} className="font-black text-baby-pink underline">
               Use a different email
             </button>
           </p>
@@ -353,147 +417,227 @@ export default function OnboardingPage() {
     );
   }
 
-  return (
-    <PageShell active="/onboarding">
-      <main className="mx-auto max-w-[680px] px-6 py-6">
-        <p className="mb-3 text-xs font-black uppercase tracking-wide text-[#9a86c7]">
-          Step {step} of 2 · {step === 1 ? "Your family" : "Your plan"}
-        </p>
-
-        {step === 1 && (
-        <>
-        <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Let's get to know <span className="text-baby-pink">you</span></h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
-          <div className="mt-5 space-y-3">
-            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
-            <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
-            <div>
-              <label className="mb-1 block text-sm font-black">Password</label>
-              <input type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
-              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
-                {PASSWORD_RULES.map((rule) => {
-                  const met = rule.test(password);
-                  return (
-                    <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
-                      {met ? "✓" : "•"} {rule.label}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-            <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
-              <div>
-                <label className="mb-1 block text-sm font-black">Postcode</label>
-                <input className={input} inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
-                <p className="mt-1 text-xs font-semibold text-[#6D748D]">Used to show what's near you.</p>
+  /* Each screen: one question (title), an optional line under it, the answer
+     controls, and what the main button says. Optional screens say "Skip"
+     until something is picked. */
+  let title: React.ReactNode = null;
+  let sub: React.ReactNode = null;
+  let body: React.ReactNode = null;
+  let cta = "Next";
+  switch (kind as "name" | "account" | ChildScreen | "kids" | "home" | "areas" | "when" | "budget" | "terms" | "plan") {
+    case "name":
+      title = <>First, what's <span className="text-baby-pink">your</span> name?</>;
+      sub = "We'll suggest activities that are a great fit for your family.";
+      body = (
+        <input className={input} autoFocus autoComplete="name" autoCapitalize="words" aria-label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
+      );
+      break;
+    case "account":
+      title = <>Create your <span className="text-baby-pink">account</span></>;
+      sub = `Nice to meet you${fullName.trim() ? `, ${fullName.trim().split(/\s+/)[0]}` : ""}. You'll log in with these.`;
+      body = (
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-email">Email address</label>
+            <input id="su-email" type="email" className={input} autoFocus autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-password">Password</label>
+            <input id="su-password" type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+            <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
+              {PASSWORD_RULES.map((rule) => {
+                const met = rule.test(password);
+                return (
+                  <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
+                    {met ? "✓" : "•"} {rule.label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-confirm">Confirm password</label>
+            <input id="su-confirm" type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" />
+          </div>
+        </div>
+      );
+      break;
+    case "child-name":
+      title = kids[0]?.key === childKey
+        ? <>What's your <span className="text-baby-pink">child's</span> name?</>
+        : <>What's your <span className="text-baby-pink">next child's</span> name?</>;
+      sub = kids[0]?.key === childKey ? "You can add more children in a moment." : null;
+      body = child && (
+        <input className={input} autoFocus autoComplete="off" autoCapitalize="words" aria-label="Child's name" value={child.name} onChange={(e) => updateChild(child.key, { name: e.target.value })} placeholder="e.g. Emma" />
+      );
+      break;
+    case "child-dob":
+      title = <>When was <span className="text-baby-pink">{childLabel}</span> born?</>;
+      sub = "Day first, e.g. 14/03/2024.";
+      body = child && (
+        <DateInput value={child.dob} onChange={(iso) => updateChild(child.key, { dob: iso })} className={input} />
+      );
+      break;
+    case "child-gender":
+      title = <>Is <span className="text-baby-pink">{childLabel}</span> a boy or a girl?</>;
+      body = child && (
+        <div className="grid gap-3">
+          {[["female", "Girl"], ["male", "Boy"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
+            // A single choice: tapping it answers the question and moves on.
+            <Option key={v} on={child.gender === v} onClick={() => { updateChild(child.key, { gender: v }); show(steps[stepIndex + 1]); }}>{l}</Option>
+          ))}
+        </div>
+      );
+      break;
+    case "child-interests":
+      title = <>What does <span className="text-baby-pink">{childLabel}</span> love?</>;
+      sub = "Pick as many as you like. We use this to match activities.";
+      body = child && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {cats.map((c) => (
+            <Option
+              key={c.slug}
+              on={child.interests.includes(c.slug)}
+              onClick={() => updateChild(child.key, {
+                interests: child.interests.includes(c.slug)
+                  ? child.interests.filter((x) => x !== c.slug)
+                  : [...child.interests, c.slug],
+              })}
+            >
+              {c.name}
+            </Option>
+          ))}
+        </div>
+      );
+      break;
+    case "kids":
+      title = <>Any other <span className="text-baby-pink">children</span>?</>;
+      sub = "Add them now and we'll find activities for each of them.";
+      cta = "That's everyone";
+      body = (
+        <div className="space-y-3">
+          {kids.map((k) => (
+            <div key={k.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#FEE9D7] bg-white px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate font-black">{k.name.trim() || "Unnamed child"}</p>
+                {k.dob && <p className="text-xs font-semibold text-[#6D748D]">Born {dayFirst(k.dob)}</p>}
+              </div>
+              <div className="flex shrink-0 gap-4 text-sm font-bold">
+                <button type="button" onClick={() => show(`child-name:${k.key}`)} className="text-baby-pink hover:underline">Edit</button>
+                {kids.length > 1 && (
+                  <button type="button" onClick={() => setKids((xs) => xs.filter((x) => x.key !== k.key))} className="text-[#6D748D] hover:underline">Remove</button>
+                )}
               </div>
             </div>
-          </div>
-
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
-          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick any areas that work for you — they don't have to be near home.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {REGION_FILTERS.map(([v, l]) => (
-              <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
-            ))}
-          </div>
-
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Chip on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Chip>
-            <Chip on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Chip>
-            {TIME_CHIPS.map(([v, l]) => <Chip key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Chip>)}
-            {BUDGET_CHIPS.map(([k, l]) => <Chip key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Chip>)}
-          </div>
-        </section>
-
-        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></h1>
-          <div className="mt-4">
-            {kids.map((k, i) => (
-              <ChildDraftFields
-                key={k.key}
-                draft={k}
-                index={i}
-                total={kids.length}
-                cats={cats}
-                onChange={(next) => setKids((xs) => xs.map((x) => (x.key === k.key ? next : x)))}
-                onRemove={() => setKids((xs) => xs.filter((x) => x.key !== k.key))}
-              />
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4"
-            onClick={() => setKids((xs) => [...xs, newChildDraft()])}
-          >
+          ))}
+          <Button type="button" variant="outline" className="w-full" onClick={addChild}>
             <Icon name="user" className="h-4 w-4" /> Add another child
           </Button>
-        </section>
-
-        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
-          <input
-            type="checkbox"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-baby-pink"
-          />
-          <span>
-            I hereby acknowledge that I have read the{" "}
-            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
-            {", "}
-            <a href="/terms#tou" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Use</a>
-            {" and "}
-            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
-            {" and confirm that I am in agreement with and legally bound by such terms, as modified from time to time."}
-          </span>
-        </label>
-
-        <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
-          <input
-            type="checkbox"
-            checked={marketingConsent}
-            onChange={(e) => setMarketingConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-baby-pink"
-          />
-          <span>
-            I agree and consent to receive marketing communications from BabyBrain to update me on
-            offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
-            services via any means of communication such as via email.
-          </span>
-        </label>
-
-        {/* The error sits directly above the CTA — QA found it at the top of the
-            page where you had to scroll back up to see why nothing happened. */}
-        {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
-            {error}
-          </p>
-        )}
-
-        <Button type="button" onClick={goToPlanStep} className="mt-3 w-full justify-center">Continue →</Button>
-        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
-        </>
-        )}
-
-        {step === 2 && (
+        </div>
+      );
+      break;
+    case "home":
+      title = <>Where's <span className="text-baby-pink">home</span>?</>;
+      sub = "Your postcode lets us show what's near you.";
+      body = (
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-postcode">Postcode</label>
+            <input id="su-postcode" className={input} autoFocus inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-phone">Phone <span className="font-semibold text-[#6D748D]">(optional)</span></label>
+            <input id="su-phone" className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" />
+          </div>
+        </div>
+      );
+      break;
+    case "areas":
+      title = <>Which <span className="text-baby-pink">areas</span> work for you?</>;
+      sub = "Pick any that suit you. They don't have to be near home.";
+      body = (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {REGION_FILTERS.map(([v, l]) => (
+            <Option key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Option>
+          ))}
+        </div>
+      );
+      break;
+    case "when":
+      title = <>When suits you <span className="text-baby-pink">best</span>?</>;
+      sub = "Optional. Skip it if you're flexible.";
+      if (!weekdays && !weekend && times.length === 0) cta = "Skip";
+      body = (
+        <div className="space-y-5">
+          <div>
+            <p className="mb-2 text-sm font-black">Days</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Option on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Option>
+              <Option on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Option>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-black">Times</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {TIME_CHIPS.map(([v, l]) => <Option key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Option>)}
+            </div>
+          </div>
+        </div>
+      );
+      break;
+    case "budget":
+      title = <>What's your <span className="text-baby-pink">budget</span>?</>;
+      sub = "Optional. Pick any that work for you.";
+      if (budgets.length === 0) cta = "Skip";
+      body = (
+        <div className="grid grid-cols-2 gap-3">
+          {BUDGET_CHIPS.map(([k, l]) => <Option key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Option>)}
+        </div>
+      );
+      break;
+    case "terms":
+      title = <>One last <span className="text-baby-pink">thing</span></>;
+      body = (
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-baby-pink"
+            />
+            <span>
+              I hereby acknowledge that I have read the{" "}
+              <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
+              {", "}
+              <a href="/terms#tou" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Use</a>
+              {" and "}
+              <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
+              {" and confirm that I am in agreement with and legally bound by such terms, as modified from time to time."}
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
+            <input
+              type="checkbox"
+              checked={marketingConsent}
+              onChange={(e) => setMarketingConsent(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-baby-pink"
+            />
+            <span>
+              I agree and consent to receive marketing communications from BabyBrain to update me on
+              offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
+              services via any means of communication such as via email.
+            </span>
+          </label>
+        </div>
+      );
+      break;
+    case "plan":
+      title = <>Choose your <span className="text-baby-pink">plan</span></>;
+      sub = "Start free, or unlock everything with Plus. Change or cancel any time from your profile.";
+      body = (
         <>
-        <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <button
-            type="button"
-            onClick={() => { setStep(1); setError(null); window.scrollTo(0, 0); }}
-            className="text-sm font-black text-baby-pink hover:underline"
-          >
-            ← Back
-          </button>
-          <h1 className="mt-2 text-[26px] font-black">Choose your <span className="text-baby-pink">plan</span></h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">Start free, or unlock everything with Plus. Change or cancel any time from your profile.</p>
-
-          <div className="mx-auto mt-4 grid h-11 max-w-[340px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 text-sm font-black">
+          <div className="mx-auto grid h-11 max-w-[340px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 text-sm font-black">
             <button
               type="button"
               onClick={() => setBilling("monthly")}
@@ -575,40 +719,85 @@ export default function OnboardingPage() {
               : "By continuing you agree to our "}
             <a href="/terms" target="_blank" rel="noreferrer" className="text-palette-blue underline">Terms &amp; Conditions</a>.
           </p>
-        </section>
+        </>
+      );
+      break;
+  }
 
+  const progress = stepIndex / (steps.length - 1);
+  // The gender screen answers on tap, so it has no Next button of its own.
+  const hasNext = kind !== "plan" && kind !== "child-gender";
+
+  return (
+    <PageShell active="/onboarding">
+      <div className="h-1 bg-[#FEEBF2]" aria-hidden="true">
+        <div className="h-1 bg-[#FA4D8D]" style={{ width: `${Math.max(progress, 0.04) * 100}%` }} />
+      </div>
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (hasNext) next(); }}
+        noValidate
+        className={`mx-auto flex min-h-[calc(100dvh-80px)] flex-col px-6 pb-6 pt-4 sm:min-h-0 sm:pb-16 sm:pt-8 ${kind === "plan" ? "max-w-[680px]" : "max-w-[540px]"}`}
+      >
+        <div className="h-8">
+          {stepIndex > 0 && (
+            <button type="button" onClick={() => window.history.back()} className="text-sm font-black text-baby-pink hover:underline">
+              ← Back
+            </button>
+          )}
+        </div>
+
+        {/* Keyed by screen so each one mounts fresh and its first field takes focus. */}
+        <div key={current} className="mt-2">
+          <h1 className="text-[28px] font-black leading-tight sm:text-[32px]">{title}</h1>
+          {sub && <p className="mt-2 text-sm font-semibold text-[#44507b]">{sub}</p>}
+          <div className="mt-6">{body}</div>
+        </div>
+
+        {/* The error sits directly above the button — QA found it at the top of
+            the page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
+          <p role="alert" className="mt-5 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
             {error}
           </p>
         )}
 
-        <Button
-          type="button"
-          onClick={() => submit(selectedPlan)}
-          className="mt-3 w-full justify-center"
-          disabled={busy}
-        >
-          {busy
-            ? "Setting up…"
-            : selectedPlan === "plus"
-              ? "Start Plus →"
-              : "Create my account →"}
-        </Button>
-
-        {selectedPlan === "plus" && (
-          <button
-            type="button"
-            onClick={() => submit("free")}
-            disabled={busy}
-            className="mt-3 w-full text-center text-sm font-bold text-[#6E748D] hover:text-[#59658d] disabled:opacity-50"
-          >
-            I'll decide later — start on the Free plan
-          </button>
-        )}
-        </>
-        )}
-      </main>
+        {/* On a phone the button sits at the bottom of the screen, under the thumb. */}
+        <div className="mt-auto pt-6 sm:mt-8">
+          {hasNext && (
+            <Button type="submit" size="lg" className="w-full justify-center">{cta}{cta !== "Skip" && " →"}</Button>
+          )}
+          {kind === "plan" && (
+            <>
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => submit(selectedPlan)}
+                className="w-full justify-center"
+                disabled={busy}
+              >
+                {busy
+                  ? "Setting up…"
+                  : selectedPlan === "plus"
+                    ? "Start Plus →"
+                    : "Create my account →"}
+              </Button>
+              {selectedPlan === "plus" && (
+                <button
+                  type="button"
+                  onClick={() => submit("free")}
+                  disabled={busy}
+                  className="mt-3 w-full text-center text-sm font-bold text-[#6E748D] hover:text-[#59658d] disabled:opacity-50"
+                >
+                  I'll decide later — start on the Free plan
+                </button>
+              )}
+            </>
+          )}
+          {kind === "name" && (
+            <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
+          )}
+        </div>
+      </form>
     </PageShell>
   );
 }
