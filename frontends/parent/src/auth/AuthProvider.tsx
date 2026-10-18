@@ -31,6 +31,9 @@ interface AuthState {
   ) => Promise<{ error?: string; emailExists?: boolean }>;
   /** Re-send the sign-up confirmation email (same link, same branded template). */
   resendConfirmation: (email: string) => Promise<{ error?: string }>;
+  /** Confirm a new account with the code from its sign-up email, instead of
+   *  the link. Signs the parent in, in this tab, on success. */
+  verifySignupCode: (email: string, code: string) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -313,6 +316,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile` },
       });
       return error ? { error: authErrorMessage(error) } : {};
+    },
+    verifySignupCode: async (email, code) => {
+      // "email" is the OTP type for the code in a sign-up confirmation email
+      // (the older "signup" type means the same thing to GoTrue).
+      const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "email" });
+      if (!error) return {};
+      if (/expired|invalid/i.test(error.message)) {
+        return { error: "That code didn't work. It may have expired, so check it's from the newest email or send a new one." };
+      }
+      if (/rate|too many/i.test(error.message)) {
+        return { error: "Too many tries. Wait a few minutes and try again." };
+      }
+      return { error: authErrorMessage(error) };
     },
     resetPassword: async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {

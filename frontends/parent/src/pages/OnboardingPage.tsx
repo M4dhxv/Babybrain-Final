@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageShell, Button, Icon, DateInput } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
-import { ResendConfirmation } from "../components/ResendConfirmation";
+import { VerifyEmailCode } from "../components/VerifyEmailCode";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { geocodePostal } from "../lib/geocode";
@@ -112,6 +112,8 @@ export default function OnboardingPage() {
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "plus">("plus");
   const [accountReady, setAccountReady] = useState(false);
+  // The plan picked when the account was created, for after the email code.
+  const [confirmPlan, setConfirmPlan] = useState<"free" | "plus">("free");
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
@@ -235,6 +237,24 @@ export default function OnboardingPage() {
     show(`child-name:${k.key}`);
   }
 
+  /** The form's answers in the shape the sign-up and the profile tables want. */
+  function answers() {
+    const { budget_min: budgetMin, budget_max: budgetMax } = budgetRange(budgets);
+    return {
+      days: [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])],
+      budgetMin,
+      budgetMax,
+      // Interests across all children drive the parent-level recommendations.
+      allInterests: [...new Set(kids.flatMap((k) => k.interests))],
+      draftKids: kids.map((k) => ({
+        name: k.name.trim(),
+        dob: k.dob,
+        gender: k.gender,
+        interests: k.interests,
+      })),
+    };
+  }
+
   /** Last screen. Create the account (once), then either drop the parent into
    *  their matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
   async function submit(plan: "free" | "plus") {
@@ -252,17 +272,7 @@ export default function OnboardingPage() {
         return;
       }
 
-      const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
-      const { budget_min: budgetMin, budget_max: budgetMax } = budgetRange(budgets);
-      // Interests across all children drive the parent-level recommendations.
-      const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
-      const draftKids = kids.map((k) => ({
-        name: k.name.trim(),
-        dob: k.dob,
-        gender: k.gender,
-        interests: k.interests,
-      }));
-
+      const { days, budgetMin, budgetMax, allInterests, draftKids } = answers();
       // Send the whole form with the sign-up. When confirmation is required there
       // is no session to write with, so the trigger persists this server-side —
       // QA: "the children hadn't been saved and I had to add them again".
@@ -292,62 +302,75 @@ export default function OnboardingPage() {
       }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // Email confirmation is on: there's no session to write with, and none
-        // to start Plus checkout from. The Plus choice rides along on the
-        // account (see the sign-up intent above) and PendingPlusGate takes the
-        // parent to payment as soon as they're back, confirmed. Dropping it
-        // here used to leave a parent who picked Plus on Free, never charged.
+        // Email confirmation is on: no session yet. The parent types the code
+        // from the email on the next screen and carries on from there (see
+        // confirmSent below). The Plus choice also rides along on the account
+        // (the sign-up intent above), so a parent who taps the email's link
+        // instead still gets taken to payment by PendingPlusGate.
         setBusy(false);
+        setConfirmPlan(plan);
         return setConfirmSent(true);
       }
-      const uid = session.user.id;
-      // Best-effort: resolves postal_code to coordinates so the recommendation
-      // engine's distance scoring (compute_recommendations_for_child) has
-      // something to work with — it previously read parent_profiles.latitude/
-      // longitude, which nothing ever wrote, so every parent fell back to its
-      // neutral "unknown location" score regardless of where they actually are.
-      const coords = await geocodePostal(postcode);
-      await supabase.from("parent_profiles").update({
-        full_name: fullName,
-        phone: phone || null,
-        postal_code: postcode.trim(),
-        terms_accepted_at: new Date().toISOString(),
-        // Finishing the wizard is what onboarding is; /admin → Parents reads this.
-        onboarding_completed_at: new Date().toISOString(),
-        // Only written when actually ticked — a null here means no consent, and
-        // that is the state every account starts in.
-        ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
-        ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
-      }).eq("id", uid);
-      await supabase.from("user_preferences").update({
-        preferred_days: days as never,
-        preferred_times: times as never,
-        preferred_regions: regions as never,
-        budget_min: budgetMin,
-        budget_max: budgetMax,
-        interests: allInterests,
-      }).eq("user_id", uid);
-      // The trigger already seeded these from the sign-up metadata; only insert
-      // when it didn't, so confirming by email never doubles a parent's children.
-      const { count } = await supabase
-        .from("children")
-        .select("id", { count: "exact", head: true })
-        .eq("parent_id", uid);
-      if (!count) {
-        await supabase.from("children").insert(
-          draftKids.map((k) => ({
-            parent_id: uid,
-            name: k.name,
-            date_of_birth: k.dob,
-            gender: k.gender as never,
-            interests: k.interests,
-            notes: null,
-          }))
-        );
-      }
-      setAccountReady(true);
+      await finishSignup(session.user.id);
     }
 
+    await startPlan(plan);
+  }
+
+  /** Signed in at last: save what the sign-up trigger can't (coordinates, the
+   *  onboarding-complete stamp) and make sure the children landed. */
+  async function finishSignup(uid: string) {
+    const { days, budgetMin, budgetMax, allInterests, draftKids } = answers();
+    // Best-effort: resolves postal_code to coordinates so the recommendation
+    // engine's distance scoring (compute_recommendations_for_child) has
+    // something to work with — it previously read parent_profiles.latitude/
+    // longitude, which nothing ever wrote, so every parent fell back to its
+    // neutral "unknown location" score regardless of where they actually are.
+    const coords = await geocodePostal(postcode);
+    await supabase.from("parent_profiles").update({
+      full_name: fullName,
+      phone: phone || null,
+      postal_code: postcode.trim(),
+      terms_accepted_at: new Date().toISOString(),
+      // Finishing the wizard is what onboarding is; /admin → Parents reads this.
+      onboarding_completed_at: new Date().toISOString(),
+      // Only written when actually ticked — a null here means no consent, and
+      // that is the state every account starts in.
+      ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
+      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
+    }).eq("id", uid);
+    await supabase.from("user_preferences").update({
+      preferred_days: days as never,
+      preferred_times: times as never,
+      preferred_regions: regions as never,
+      budget_min: budgetMin,
+      budget_max: budgetMax,
+      interests: allInterests,
+    }).eq("user_id", uid);
+    // The trigger already seeded these from the sign-up metadata; only insert
+    // when it didn't, so confirming by email never doubles a parent's children.
+    const { count } = await supabase
+      .from("children")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", uid);
+    if (!count) {
+      await supabase.from("children").insert(
+        draftKids.map((k) => ({
+          parent_id: uid,
+          name: k.name,
+          date_of_birth: k.dob,
+          gender: k.gender as never,
+          interests: k.interests,
+          notes: null,
+        }))
+      );
+    }
+    setAccountReady(true);
+  }
+
+  /** The account exists and the parent is signed in: Plus goes to Stripe, Free
+   *  goes to their matches. */
+  async function startPlan(plan: "free" | "plus") {
     if (plan === "plus") {
       // Hand off to Stripe Checkout to start Plus (same call PricingPage
       // uses). On any failure the parent stays signed up on Free — surface it
@@ -380,21 +403,22 @@ export default function OnboardingPage() {
   if (confirmSent) {
     return (
       <PageShell active="/onboarding">
-        <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
-          <h1 className="text-2xl font-black">Check your email</h1>
-          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
-          <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam or promotions folder — it can take a couple of minutes.</p>
-          <ResendConfirmation email={email} startCoolingDown />
-          <p className="mt-3 text-sm font-semibold text-[#5a6690]">
-            Wrong address?{" "}
-            <button type="button" onClick={() => { setConfirmSent(false); show("account"); }} className="font-black text-baby-pink underline">
-              Go back and fix it
-            </button>
-          </p>
-          <p className="mt-2 text-sm font-semibold text-[#5a6690]">
-            Still nothing? Email <a href="mailto:hello@babybrain.sg" className="font-black text-baby-pink underline">hello@babybrain.sg</a> and we'll activate your account.
-          </p>
-          <Button href="/login" className="mt-5">Go to log in</Button>
+        <main className="mx-auto max-w-[460px] px-6 py-16">
+          <VerifyEmailCode
+            email={email}
+            startCoolingDown
+            onChangeEmail={() => { setConfirmSent(false); show("account"); }}
+            onVerified={async () => {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) return;
+              await finishSignup(session.user.id);
+              // Back on the plan screen, so a failed Plus checkout shows its
+              // message there with the retry buttons.
+              setConfirmSent(false);
+              setBusy(true);
+              await startPlan(confirmPlan);
+            }}
+          />
         </main>
       </PageShell>
     );
