@@ -7,6 +7,7 @@ import { getCachedSubscription, setCachedSubscription, clearCachedSubscription, 
 import { cacheInvalidate } from '@/lib/queryCache';
 import { disconnectChat } from '@/lib/chat';
 import { releasePushOnSignOut } from '@/lib/push';
+import { apiPost } from '@/lib/api';
 
 /** supabase-js falls back to `JSON.stringify(body)` when a GoTrue error
  *  response has none of msg/message/error_description/error (see auth-js's
@@ -16,6 +17,52 @@ import { releasePushOnSignOut } from '@/lib/push';
 function authErrorMessage(error: { message: string }): string {
   const m = error.message.trim();
   return m && !/^[{[]/.test(m) ? m : 'Something went wrong on our end — please try again in a moment.';
+}
+
+type LoginHelp =
+  | { status: 'login' }
+  | { status: 'contact_only'; business_name: string; login_hint: string | null }
+  | { status: 'unknown' };
+
+/** Why an email didn't work (app/api/vendor/login-help). Null when the lookup
+ *  itself failed or was throttled — callers then keep Supabase's own wording. */
+async function loginHelp(email: string): Promise<LoginHelp | null> {
+  try {
+    return await apiPost<LoginHelp>('/api/vendor/login-help', { email });
+  } catch {
+    return null;
+  }
+}
+
+/** Why a sign-in or reset failed, for the auth pages to show next to the field
+ *  that's wrong (with a fix-it action) rather than as a banner. */
+export type AuthIssue =
+  | { kind: 'unknown_email' }
+  | { kind: 'wrong_password' }
+  /** The email is a business's public contact address, not a login — the
+   *  commonest vendor sign-in mistake. */
+  | { kind: 'contact_email'; businessName: string; loginHint: string | null };
+
+export interface AuthResult {
+  /** Plain-text reason, always set on failure (the claim flow shows only this). */
+  error?: string;
+  issue?: AuthIssue;
+}
+
+function issueResult(email: string, issue: AuthIssue): AuthResult {
+  const e = email.trim();
+  switch (issue.kind) {
+    case 'unknown_email':
+      return { issue, error: `No vendor account uses ${e}.` };
+    case 'wrong_password':
+      return { issue, error: 'Incorrect password.' };
+    case 'contact_email':
+      return { issue, error: `${e} is ${issue.businessName}'s contact email, not a login.` };
+  }
+}
+
+function contactIssue(help: Extract<LoginHelp, { status: 'contact_only' }>): AuthIssue {
+  return { kind: 'contact_email', businessName: help.business_name, loginHint: help.login_hint };
 }
 
 export interface Subscription {
@@ -38,8 +85,8 @@ interface AuthState {
    *  "no business" answer, so callers can offer a retry instead of a fork. */
   providerError: boolean;
   recovery: boolean;             // true after a password-reset link is opened
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  resetPassword: (email: string) => Promise<{ error?: string }>;
+  signIn: (email: string, password: string) => Promise<AuthResult>;
+  resetPassword: (email: string) => Promise<AuthResult>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProvider: () => Promise<void>;
@@ -306,9 +353,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     recovery,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error ? { error: authErrorMessage(error) } : {};
+      if (!error) return {};
+      // Supabase says "Invalid login credentials" for both a wrong password and
+      // an email with no account; ask which it was.
+      if (error.code === 'invalid_credentials') {
+        const help = await loginHelp(email);
+        if (help?.status === 'login') return issueResult(email, { kind: 'wrong_password' });
+        if (help?.status === 'contact_only') return issueResult(email, contactIssue(help));
+        if (help?.status === 'unknown') return issueResult(email, { kind: 'unknown_email' });
+      }
+      return { error: authErrorMessage(error) };
     },
     resetPassword: async (email) => {
+      // Supabase answers "sent" even when no account has this email, and sends
+      // nothing — so check first and say why.
+      const help = await loginHelp(email);
+      if (help?.status === 'unknown') return issueResult(email, { kind: 'unknown_email' });
+      if (help?.status === 'contact_only') return issueResult(email, contactIssue(help));
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         // No trailing slash: the hosted redirect allow-list is exact-match, and
         // `/vendor/` (BASE_URL) is silently rewritten to the parent site_url.
