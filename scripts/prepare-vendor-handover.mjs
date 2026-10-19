@@ -20,7 +20,7 @@
  * Handover is deliberately not an email flow — `auth.users.invited_at` is null
  * for every one of them and none has a single notifications row, because the
  * password goes out by hand. The owner then does the last three steps
- * themselves at https://test.babybrain.sg/vendor:
+ * themselves at https://babybrain.sg/vendor:
  *
  *     sign in -> set their own password -> OnboardingGate Terms -> Stripe Connect
  *
@@ -88,9 +88,11 @@ const COVER = arg('cover');
 // seeds an Express account with.
 const OWNER_EMAIL = arg('owner-email');
 // The vendor portal is served at /vendor/ (frontends/vendor/vite.config.ts
-// `base`). Note the brand domain www.babybrain.sg does NOT serve the app —
-// it 404s on /vendor and /explore alike.
-const PORTAL = arg('portal', 'https://test.babybrain.sg/vendor');
+// `base`). This script writes to PROD (.env.local), so the links must be the
+// prod portal: test.babybrain.sg runs on the TEST Supabase project, where a
+// prod account doesn't exist — sign-in fails and "Forgot password" silently
+// sends nothing (the /recover lands in the test project's logs).
+const PORTAL = arg('portal', 'https://babybrain.sg/vendor');
 
 if (!SLUG) {
   console.error('Usage: node scripts/prepare-vendor-handover.mjs --slug=<provider-slug> [--apply]');
