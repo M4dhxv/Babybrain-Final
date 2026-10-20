@@ -5,6 +5,7 @@ import RedirectToLanding from "../components/RedirectToLanding";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { geocodePostal } from "../lib/geocode";
+import { invalidateRecommendations } from "../lib/data";
 import { PARENT_AVATARS } from "../lib/avatars";
 import { postcodeError } from "../lib/validation";
 import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
@@ -116,6 +117,9 @@ export default function EditProfilePage() {
       })
       .eq("user_id", session.user.id);
     setBusy(false);
+    // The save's own triggers have recomputed the suggestions by now; drop the
+    // cached set so the next screen showing them reads the new one.
+    invalidateRecommendations();
     if (pErr || prefErr) return setError((pErr ?? prefErr)!.message);
     await refresh();
     setSaved(true);

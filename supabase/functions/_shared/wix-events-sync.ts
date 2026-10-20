@@ -171,7 +171,7 @@ async function syncEventActivityMirror(
         ...(locked.includes('title') ? {} : { title: event.title }),
         ...(price != null ? { price } : {}),
         ...(capacity != null ? { default_capacity: capacity } : {}),
-        ...(event.description ? { description: event.description } : {}),
+        ...(event.description && !locked.includes('description') ? { description: event.description } : {}),
         location_id: locationId,
         address: event.location.formattedAddress,
         postal_code: event.location.postalCode,

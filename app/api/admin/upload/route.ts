@@ -17,6 +17,10 @@ export const maxDuration = 60;
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml'];
+/** `kind=policy`: a waiver/consent document — a PDF or a photo of one, into the same
+ *  `provider-policies` bucket the vendor portal's PoliciesManager uploads to. */
+const POLICY_ALLOWED = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const POLICY_MAX_BYTES = 10 * 1024 * 1024;
 
 export async function POST(request: Request) {
   const auth = await requireAdmin(request);
@@ -31,13 +35,21 @@ export async function POST(request: Request) {
 
   const file = form.get('file');
   if (!(file instanceof File)) return NextResponse.json({ error: 'No file was sent.' }, { status: 400 });
-  if (!ALLOWED.includes(file.type)) {
+  const policy = form.get('kind') === 'policy';
+  if (policy) {
+    if (!POLICY_ALLOWED.includes(file.type)) {
+      return NextResponse.json({ error: `${file.type || 'That file type'} can't be used — upload a PDF or an image.` }, { status: 400 });
+    }
+    if (file.size > POLICY_MAX_BYTES) {
+      return NextResponse.json({ error: `That file is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is 10MB.` }, { status: 400 });
+    }
+  } else if (!ALLOWED.includes(file.type)) {
     return NextResponse.json(
       { error: `${file.type || 'That file type'} isn't an image we can use — try JPEG, PNG, WebP or GIF.` },
       { status: 400 }
     );
   }
-  if (file.size > MAX_BYTES) {
+  if (!policy && file.size > MAX_BYTES) {
     return NextResponse.json(
       { error: `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — the limit is 6MB.` },
       { status: 400 }
@@ -51,11 +63,12 @@ export async function POST(request: Request) {
   const path = `${folder}/${Date.now()}-${safeName}`;
 
   const db = createAdminClient();
+  const bucket = policy ? 'provider-policies' : 'activity-images';
   const { error } = await db.storage
-    .from('activity-images')
+    .from(bucket)
     .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '2592000' });
   if (error) return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 });
 
-  const { data } = db.storage.from('activity-images').getPublicUrl(path);
+  const { data } = db.storage.from(bucket).getPublicUrl(path);
   return NextResponse.json({ url: data.publicUrl, path, bytes: file.size });
 }

@@ -251,7 +251,23 @@ type EditActivity = {
   image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
   location_id: string | null;
   is_custom_location: boolean; custom_location_label: string | null;
+  secondary_category_slug: string | null;
+  allow_cancellation: boolean; cancellation_cutoff_hours: number; cancellation_refund_mode: 'refund' | 'none';
+  allow_rescheduling: boolean; reschedule_cutoff_hours: number; booking_cutoff_minutes: number;
+  what_to_bring: string | null; confirmation_message: string | null;
+  /** Wix kind when linked; an EVENT or COURSE is never cancellable by a parent. */
+  wix_kind: string | null;
   sessions: EditSession[];
+};
+type EditPolicy = {
+  id: string; title: string; body: string | null; document_url: string | null;
+  required: boolean; active: boolean; activity_ids: string[] | null;
+};
+type EditPackage = {
+  id: string; name: string; credits: number; price_cents: number; active: boolean;
+  activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
+  allowed_weekday: number | null; allowed_start_time: string | null;
+  starts_at: string | null; available_until: string | null; best_value: boolean; purchases: number;
 };
 type ProviderDetail = {
   id: string; business_name: string; slug: string | null; description: string | null;
@@ -263,6 +279,8 @@ type ProviderDetail = {
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
   payouts_enabled: boolean; allow_manual_payouts: boolean;
   locations: EditLocation[]; activities: EditActivity[];
+  /** Saved on their own (each has its own Save), so kept out of the modal's unsaved-changes tracking. */
+  policies?: EditPolicy[]; packages?: EditPackage[];
 };
 type SaveResult = {
   provider: { id: string; business_name: string; slug: string | null; region: string | null };
@@ -956,9 +974,18 @@ function EditVendorModal({
   // JSON of everything editable as it was when loaded (or last saved), so we
   // can tell whether closing the modal would throw work away.
   const baseline = useRef<string | null>(null);
+  // Waivers and packs: each saves straight away with its own button, so they live
+  // outside `d` and never count as unsaved changes to the rest of the form.
+  const [extras, setExtras] = useState<{ policies: EditPolicy[]; packages: EditPackage[] } | null>(null);
+  const reloadExtras = useCallback(() => {
+    adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
+      .then((p) => setExtras({ policies: p.policies ?? [], packages: p.packages ?? [] }))
+      .catch((e) => toast(e instanceof Error ? e.message : String(e), 'error'));
+  }, [id]);
   useEffect(() => {
     adminFetch<ProviderDetail>(`/api/admin/providers/${id}`)
-      .then((p) => {
+      .then(({ policies, packages, ...p }) => {
+        setExtras({ policies: policies ?? [], packages: packages ?? [] });
         const loaded: ProviderDetail = {
           ...p,
           activities: p.activities.map((a) => ({
@@ -1052,6 +1079,15 @@ function EditVendorModal({
             location_id: a.is_custom_location ? null : a.location_id,
             is_custom_location: a.is_custom_location,
             custom_location_label: a.is_custom_location ? a.custom_location_label : null,
+            secondary_category_slug: a.secondary_category_slug ?? null,
+            allow_cancellation: a.allow_cancellation,
+            cancellation_cutoff_hours: a.cancellation_cutoff_hours,
+            cancellation_refund_mode: a.cancellation_refund_mode,
+            allow_rescheduling: a.allow_rescheduling,
+            reschedule_cutoff_hours: a.reschedule_cutoff_hours,
+            booking_cutoff_minutes: a.booking_cutoff_minutes,
+            what_to_bring: a.what_to_bring,
+            confirmation_message: a.confirmation_message,
             sessions: [
               ...a.sessions
                 .filter((s) => s.starts_at.trim())
@@ -1297,6 +1333,10 @@ function EditVendorModal({
             {d.activities.map((a) => {
               const gone = dropAct.includes(a.id);
               const isOpen = openActs.includes(a.id);
+              const upd = (patch: Partial<EditActivity>) =>
+                set('activities', d.activities.map((x) => x.id === a.id ? { ...x, ...patch } : x));
+              // Same rule as the vendor portal: a Wix event or course can't be cancelled by a parent.
+              const cancelLocked = a.wix_kind === 'EVENT' || a.wix_kind === 'COURSE';
               return (
                 <div key={a.id} style={{ background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10, opacity: gone ? 0.45 : 1 }}>
                   {/* Collapsed by default: one summary row per class, click to expand. */}
@@ -1330,7 +1370,7 @@ function EditVendorModal({
                   </div>
 
                   {isOpen && (<>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 190px', gap: 10, alignItems: 'end', marginTop: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px 180px', gap: 10, alignItems: 'end', marginTop: 12 }}>
                     <div>
                       <label style={lbl}>Class name</label>
                       <input value={a.title} style={input()} disabled={gone}
@@ -1339,10 +1379,34 @@ function EditVendorModal({
                     <div>
                       <label style={lbl}>Category</label>
                       <Select value={a.category_slug ?? ''} style={input()} disabled={gone}
-                        onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, category_slug: e.target.value } : x))}>
+                        onChange={(e) => upd({
+                          category_slug: e.target.value,
+                          // A second category the same as the main one means nothing; drop it.
+                          secondary_category_slug: a.secondary_category_slug === e.target.value ? null : a.secondary_category_slug,
+                        })}>
                         {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
                       </Select>
                     </div>
+                    <div>
+                      <label style={lbl}>Also listed under</label>
+                      <Select value={a.secondary_category_slug ?? ''} style={input()} disabled={gone}
+                        onChange={(e) => upd({ secondary_category_slug: e.target.value || null })}>
+                        <option value="">No second category</option>
+                        {categories.filter((c) => c.slug !== a.category_slug).map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                      </Select>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    <label style={lbl}>Description</label>
+                    <textarea value={a.description ?? ''} rows={4} disabled={gone}
+                      placeholder="What happens in the class. Blank falls back to the business description."
+                      style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                      onChange={(e) => upd({ description: e.target.value })} />
+                    {a.wix_kind && (
+                      <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+                        Linked to Wix: a description changed here is kept, and the Wix sync stops replacing it.
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 150px', gap: 10, marginTop: 10 }}>
                     <div>
@@ -1420,6 +1484,67 @@ function EditVendorModal({
                     </div>
                   </div>
 
+                  {/* booking rules — same columns and defaults as the vendor portal's drawer */}
+                  <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>BOOKING RULES</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 8 }}>
+                      <div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, marginBottom: 6 }}>
+                          <input type="checkbox" checked={!cancelLocked && a.allow_cancellation} disabled={gone || cancelLocked}
+                            onChange={(e) => upd({ allow_cancellation: e.target.checked })} />
+                          Parents can cancel
+                        </label>
+                        {cancelLocked ? (
+                          <div style={{ color: C.muted, fontSize: 12 }}>Wix {a.wix_kind === 'EVENT' ? 'events' : 'courses'} can&rsquo;t be cancelled online.</div>
+                        ) : a.allow_cancellation && (<>
+                          <label style={lbl}>Up to (hours before)</label>
+                          <input value={String(a.cancellation_cutoff_hours)} inputMode="numeric" style={input()} disabled={gone}
+                            onChange={(e) => upd({ cancellation_cutoff_hours: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                          <label style={{ ...lbl, marginTop: 8 }}>On cancelling</label>
+                          <Select value={a.cancellation_refund_mode} style={input()} disabled={gone}
+                            onChange={(e) => upd({ cancellation_refund_mode: e.target.value as 'refund' | 'none' })}>
+                            <option value="refund">Refund as package credit / make-up token</option>
+                            <option value="none">No refund (shown as non-refundable at checkout)</option>
+                          </Select>
+                        </>)}
+                      </div>
+                      <div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, marginBottom: 6 }}>
+                          <input type="checkbox" checked={a.allow_rescheduling} disabled={gone}
+                            onChange={(e) => upd({ allow_rescheduling: e.target.checked })} />
+                          Parents can reschedule
+                        </label>
+                        {a.allow_rescheduling && (<>
+                          <label style={lbl}>Up to (hours before)</label>
+                          <input value={String(a.reschedule_cutoff_hours)} inputMode="numeric" style={input()} disabled={gone}
+                            onChange={(e) => upd({ reschedule_cutoff_hours: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                        </>)}
+                      </div>
+                      <div>
+                        <label style={lbl}>Booking closes (minutes before start)</label>
+                        <input value={String(a.booking_cutoff_minutes)} inputMode="numeric" style={input()} disabled={gone}
+                          onChange={(e) => upd({ booking_cutoff_minutes: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                        <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>0 = right up to the start. At most 20160 (14 days).</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      <div>
+                        <label style={lbl}>What to bring &amp; know</label>
+                        <textarea value={a.what_to_bring ?? ''} rows={3} disabled={gone}
+                          placeholder="Shown on the class page, e.g. grip socks, arrive 10 minutes early"
+                          style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                          onChange={(e) => upd({ what_to_bring: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={lbl}>Booking confirmation note</label>
+                        <textarea value={a.confirmation_message ?? ''} rows={3} disabled={gone}
+                          placeholder="Added to the parent's booking confirmation"
+                          style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                          onChange={(e) => upd({ confirmation_message: e.target.value })} />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* schedule */}
                   <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1456,6 +1581,13 @@ function EditVendorModal({
                 </div>
               );
             })}
+
+            {extras && (<>
+              <PoliciesSection providerId={id} slug={d.slug ?? d.id} policies={extras.policies}
+                activities={d.activities} onChanged={reloadExtras} />
+              <PackagesSection providerId={id} packages={extras.packages}
+                activities={d.activities} onChanged={reloadExtras} />
+            </>)}
 
             {err && <div style={{ ...card(), marginTop: 12, borderColor: C.pink, color: C.pink }}>{err}</div>}
             {note && (
@@ -1510,6 +1642,412 @@ function EditVendorModal({
   );
 }
 
+
+/* ------------------------------------------------------------------------------------------------
+ * Waivers & consents and class packs, inside the vendor editor. Same rows and rules as the vendor
+ * portal's own screens (PoliciesManager, PackagesPage); each item saves on its own button.
+ * --------------------------------------------------------------------------------------------- */
+
+const sectionHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, margin: '22px 0 10px' };
+const itemBox: React.CSSProperties = { background: C.panel2, borderRadius: 10, padding: 12, marginBottom: 10 };
+const smallLbl: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 5 };
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/** Wix kinds a pack can't be spent on (the portal leaves them out of its picker too). */
+const PACK_INELIGIBLE = new Set(['EVENT', 'COURSE', 'APPOINTMENT']);
+
+/** UTC ISO -> "YYYY-MM-DDTHH:mm" Singapore wall-clock, for datetime-local inputs. */
+const isoToSg = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(0, 16) : '');
+const sgWhen = (iso: string) => new Date(iso).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+/** Tick-list of the vendor's classes; none ticked = every class. */
+function ClassPicker({ classes, value, onChange, allLabel }: {
+  classes: { id: string; title: string }[]; value: string[]; onChange: (v: string[]) => void; allLabel: string;
+}) {
+  return (
+    <div style={{ ...input(), padding: 10, maxHeight: 180, overflow: 'auto' }}>
+      <div style={{ color: value.length ? C.muted : C.green, fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
+        {value.length ? `${value.length} selected` : allLabel}
+      </div>
+      {classes.map((c) => (
+        <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, padding: '3px 0' }}>
+          <input type="checkbox" checked={value.includes(c.id)}
+            onChange={(e) => onChange(e.target.checked ? [...value, c.id] : value.filter((x) => x !== c.id))} />
+          {c.title || 'Untitled class'}
+        </label>
+      ))}
+      {classes.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No classes to choose from.</div>}
+    </div>
+  );
+}
+
+type PolicyForm = { id: string | null; title: string; body: string; document_url: string; required: boolean; activity_ids: string[] };
+
+function PoliciesSection({ providerId, slug, policies, activities, onChanged }: {
+  providerId: string; slug: string; policies: EditPolicy[];
+  activities: EditActivity[]; onChanged: () => void;
+}) {
+  const [form, setForm] = useState<PolicyForm | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const titleOf = (id: string) => activities.find((a) => a.id === id)?.title ?? 'a removed class';
+
+  async function upload(file: File) {
+    setUploading(true); setErr(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body = new FormData();
+      body.append('file', file); body.append('folder', `policies-${slug}`); body.append('kind', 'policy');
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST', headers: session ? { Authorization: `Bearer ${session.access_token}` } : {}, body,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? 'Upload failed');
+      setForm((f) => (f ? { ...f, document_url: json.url as string } : f));
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setUploading(false); }
+  }
+
+  async function save() {
+    if (!form) return;
+    if (!form.title.trim()) { setErr('Give it a title parents will recognise.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const fields = { title: form.title, body: form.body, document_url: form.document_url, required: form.required, activity_ids: form.activity_ids };
+      await adminFetch(`/api/admin/providers/${providerId}/policies`, {
+        method: form.id ? 'PATCH' : 'POST',
+        body: JSON.stringify(form.id ? { policyId: form.id, ...fields } : fields),
+      });
+      toast(form.id ? 'Policy saved' : 'Policy added');
+      setForm(null);
+      onChanged();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function setActive(p: EditPolicy, active: boolean) {
+    try {
+      await adminFetch(`/api/admin/providers/${providerId}/policies`, { method: 'PATCH', body: JSON.stringify({ policyId: p.id, active }) });
+      toast(active ? `"${p.title}" turned on` : `"${p.title}" turned off`);
+      onChanged();
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), 'error'); }
+  }
+
+  return (
+    <>
+      <div style={sectionHead}>
+        <div style={{ fontWeight: 800 }}>
+          Waivers &amp; consents <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>({policies.length}) · parents accept these before booking · saves on its own</span>
+        </div>
+        <button type="button" style={tabBtn(false)} disabled={!!form}
+          onClick={() => { setErr(null); setForm({ id: null, title: '', body: '', document_url: '', required: true, activity_ids: [] }); }}>
+          + Add
+        </button>
+      </div>
+      {policies.length === 0 && !form && <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>None yet.</div>}
+      {policies.map((p) => (form?.id === p.id ? null : (
+        <div key={p.id} style={{ ...itemBox, opacity: p.active ? 1 : 0.55 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700 }}>
+                {p.title}{' '}
+                <Badge tone={p.required ? 'pink' : 'grey'}>{p.required ? 'Required to book' : 'Optional'}</Badge>{' '}
+                {!p.active && <Badge tone="grey">Off</Badge>}
+              </div>
+              <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+                {!p.activity_ids?.length ? 'All classes'
+                  : p.activity_ids.length <= 2 ? `Only for ${p.activity_ids.map(titleOf).join(' & ')}` : `Only for ${p.activity_ids.length} classes`}
+                {p.document_url && <> · <a href={p.document_url} target="_blank" rel="noreferrer" style={{ color: C.blue }}>document</a></>}
+              </div>
+              {p.body && <div style={{ fontSize: 13, marginTop: 6, whiteSpace: 'pre-wrap' }}>{p.body}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }} disabled={!!form}
+                onClick={() => { setErr(null); setForm({ id: p.id, title: p.title, body: p.body ?? '', document_url: p.document_url ?? '', required: p.required, activity_ids: p.activity_ids ?? [] }); }}>
+                Edit
+              </button>
+              <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }} onClick={() => setActive(p, !p.active)}>
+                {p.active ? 'Turn off' : 'Turn on'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )))}
+      {form && (
+        <div style={{ ...itemBox, border: `1px dashed ${C.blue}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={smallLbl}>Title</label>
+              <input value={form.title} style={input()} placeholder="e.g. Liability waiver" onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <label style={{ ...smallLbl, marginTop: 10 }}>What parents read</label>
+              <textarea value={form.body} rows={5} style={{ ...input(), resize: 'vertical', fontFamily: 'inherit' }}
+                placeholder="The wording a parent ticks to accept." onChange={(e) => setForm({ ...form, body: e.target.value })} />
+              <label style={{ ...smallLbl, marginTop: 10 }}>Document (optional)</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ ...tabBtn(false), padding: '6px 12px', fontSize: 13 }}>
+                  {uploading ? 'Uploading…' : 'Upload PDF'}
+                  <input type="file" accept="application/pdf,image/*" style={{ display: 'none' }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} />
+                </label>
+                {form.document_url && <>
+                  <a href={form.document_url} target="_blank" rel="noreferrer" style={{ color: C.blue, fontSize: 13 }}>Open</a>
+                  <button type="button" style={{ ...tabBtn(false), padding: '4px 8px', fontSize: 12, color: C.pink }}
+                    onClick={() => setForm({ ...form, document_url: '' })}>Remove</button>
+                </>}
+              </div>
+            </div>
+            <div>
+              <label style={smallLbl}>Applies to</label>
+              <ClassPicker classes={activities} value={form.activity_ids} allLabel="All of their classes"
+                onChange={(v) => setForm({ ...form, activity_ids: v })} />
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 13, marginTop: 10 }}>
+                <input type="checkbox" checked={form.required} style={{ marginTop: 2 }} onChange={(e) => setForm({ ...form, required: e.target.checked })} />
+                <span>Parents must accept this before they can book<br />
+                  <span style={{ color: C.muted, fontSize: 12 }}>Off: parents see it but can book without ticking.</span></span>
+              </label>
+            </div>
+          </div>
+          {err && <div style={{ color: C.pink, fontSize: 13, marginTop: 8 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" onClick={save} disabled={busy || uploading} style={{ ...primaryBtn(), padding: '8px 14px', opacity: busy ? 0.55 : 1 }}>
+              {busy ? 'Saving…' : form.id ? 'Save policy' : 'Add policy'}
+            </button>
+            <button type="button" style={tabBtn(false)} onClick={() => { setForm(null); setErr(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+type PackForm = {
+  id: string | null; name: string; credits: string; price: string; best_value: boolean;
+  expiry_mode: 'none' | 'days' | 'date'; validity_days: string; expiry_date: string;
+  activity_ids: string[]; allowed_weekday: string; allowed_start_time: string;
+  starts_at: string; available_until: string;
+};
+const blankPack = (): PackForm => ({
+  id: null, name: '', credits: '', price: '', best_value: false, expiry_mode: 'none', validity_days: '', expiry_date: '',
+  activity_ids: [], allowed_weekday: '', allowed_start_time: '', starts_at: '', available_until: '',
+});
+/** Same order of checks as the portal: paused, not on sale yet, sale window over, on sale. */
+function packStatus(p: EditPackage): { label: string; tone: 'green' | 'blue' | 'pink' | 'grey' } {
+  if (!p.active) return { label: 'Paused', tone: 'grey' };
+  const now = Date.now();
+  if (p.starts_at && new Date(p.starts_at).getTime() > now) return { label: 'Upcoming', tone: 'blue' };
+  if (p.available_until && new Date(p.available_until).getTime() <= now) return { label: 'Expired', tone: 'pink' };
+  return { label: 'Active', tone: 'green' };
+}
+
+function PackagesSection({ providerId, packages, activities, onChanged }: {
+  providerId: string; packages: EditPackage[]; activities: EditActivity[]; onChanged: () => void;
+}) {
+  const [form, setForm] = useState<PackForm | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const eligible = activities.filter((a) => !PACK_INELIGIBLE.has(a.wix_kind ?? ''));
+  const titleOf = (id: string) => activities.find((a) => a.id === id)?.title ?? 'a removed class';
+
+  function summary(p: EditPackage) {
+    const parts: string[] = [];
+    if (p.starts_at) parts.push(`on sale from ${sgWhen(p.starts_at)}`);
+    if (p.available_until) parts.push(`until ${sgWhen(p.available_until)}`);
+    if (p.activity_ids?.length) parts.push(p.activity_ids.length <= 2 ? p.activity_ids.map(titleOf).join(' & ') : `${p.activity_ids.length} classes`);
+    else parts.push('any class');
+    if (p.allowed_weekday != null) parts.push(`${WEEKDAYS[p.allowed_weekday]}${p.allowed_start_time ? ` ${p.allowed_start_time.slice(0, 5)}` : ''} only`);
+    else if (p.allowed_start_time) parts.push(`${p.allowed_start_time.slice(0, 5)} slot only`);
+    if (p.validity_days) parts.push(`credits last ${p.validity_days} days`);
+    else if (p.expiry_date) parts.push(`credits expire ${p.expiry_date}`);
+    return parts.join(' · ');
+  }
+
+  function edit(p: EditPackage) {
+    setErr(null);
+    setForm({
+      id: p.id, name: p.name, credits: String(p.credits), price: String(p.price_cents / 100), best_value: p.best_value,
+      expiry_mode: p.expiry_date ? 'date' : p.validity_days != null ? 'days' : 'none',
+      validity_days: p.validity_days != null ? String(p.validity_days) : '', expiry_date: p.expiry_date ?? '',
+      // A class that can no longer take packs (it became a Wix event/course/appointment) is dropped, as in the portal.
+      activity_ids: (p.activity_ids ?? []).filter((id) => eligible.some((a) => a.id === id)),
+      allowed_weekday: p.allowed_weekday != null ? String(p.allowed_weekday) : '',
+      allowed_start_time: p.allowed_start_time?.slice(0, 5) ?? '',
+      starts_at: isoToSg(p.starts_at), available_until: isoToSg(p.available_until),
+    });
+  }
+
+  async function save() {
+    if (!form) return;
+    // An existing pack limited only to classes that can't take packs any more would silently become "any class".
+    const original = form.id ? packages.find((p) => p.id === form.id) : null;
+    if (original?.activity_ids?.length && form.activity_ids.length === 0) {
+      setErr('This pack was limited to classes that no longer take packs (Wix events, courses or appointments). Choose which classes it applies to now.');
+      return;
+    }
+    setBusy(true); setErr(null);
+    try {
+      const fields = {
+        name: form.name, credits: Number(form.credits), price: form.price === '' ? 0 : Number(form.price),
+        best_value: form.best_value, expiry_mode: form.expiry_mode,
+        validity_days: form.validity_days === '' ? null : Number(form.validity_days), expiry_date: form.expiry_date || null,
+        activity_ids: form.activity_ids,
+        allowed_weekday: form.allowed_weekday === '' ? null : Number(form.allowed_weekday),
+        allowed_start_time: form.allowed_start_time || null,
+        starts_at: form.starts_at || null, available_until: form.available_until || null,
+      };
+      await adminFetch(`/api/admin/providers/${providerId}/packages`, {
+        method: form.id ? 'PATCH' : 'POST',
+        body: JSON.stringify(form.id ? { packageId: form.id, ...fields } : fields),
+      });
+      toast(form.id ? 'Pack saved' : 'Pack added');
+      setForm(null);
+      onChanged();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function setActive(p: EditPackage, active: boolean) {
+    try {
+      await adminFetch(`/api/admin/providers/${providerId}/packages`, { method: 'PATCH', body: JSON.stringify({ packageId: p.id, active }) });
+      toast(active ? `"${p.name}" resumed` : `"${p.name}" paused`);
+      onChanged();
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), 'error'); }
+  }
+
+  async function remove(p: EditPackage) {
+    if (!window.confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    try {
+      await adminFetch(`/api/admin/providers/${providerId}/packages?packageId=${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+      toast(`Deleted "${p.name}"`);
+      onChanged();
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), 'error'); }
+  }
+
+  return (
+    <>
+      <div style={sectionHead}>
+        <div style={{ fontWeight: 800 }}>
+          Packages <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>({packages.length}) · class packs parents buy up front · saves on its own</span>
+        </div>
+        <button type="button" style={tabBtn(false)} disabled={!!form} onClick={() => { setErr(null); setForm(blankPack()); }}>+ Add pack</button>
+      </div>
+      {packages.length === 0 && !form && <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>None yet.</div>}
+      {packages.map((p) => {
+        if (form?.id === p.id) return null;
+        const st = packStatus(p);
+        return (
+          <div key={p.id} style={{ ...itemBox, opacity: p.active ? 1 : 0.6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700 }}>
+                  {p.name}{' '}
+                  <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>
+                    {p.credits} session{p.credits === 1 ? '' : 's'} · S${(p.price_cents / 100).toFixed(2).replace(/\.00$/, '')}
+                  </span>{' '}
+                  <Badge tone={st.tone}>{st.label}</Badge>{' '}
+                  {p.best_value && <Badge tone="amber">Best value</Badge>}
+                </div>
+                <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+                  {summary(p)}{p.purchases ? ` · bought ${p.purchases} time${p.purchases === 1 ? '' : 's'}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }} disabled={!!form} onClick={() => edit(p)}>Edit</button>
+                <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }} onClick={() => setActive(p, !p.active)}>
+                  {p.active ? 'Pause' : 'Resume'}
+                </button>
+                {p.purchases === 0 && (
+                  <button type="button" style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12, color: C.pink }} onClick={() => remove(p)}>Delete</button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {form && (
+        <div style={{ ...itemBox, border: `1px dashed ${C.blue}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 120px', gap: 10 }}>
+            <div>
+              <label style={smallLbl}>Pack name</label>
+              <input value={form.name} style={input()} placeholder="e.g. 10-class pack" onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label style={smallLbl}>Sessions</label>
+              <input value={form.credits} inputMode="numeric" style={input()} onChange={(e) => setForm({ ...form, credits: e.target.value.replace(/\D/g, '') })} />
+            </div>
+            <div>
+              <label style={smallLbl}>Price (SGD)</label>
+              <input value={form.price} inputMode="decimal" style={input()}
+                onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') })} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+            <div>
+              <label style={smallLbl}>Applies to</label>
+              <ClassPicker classes={eligible} value={form.activity_ids} allLabel="Any of their classes"
+                onChange={(v) => setForm({ ...form, activity_ids: v })} />
+              {eligible.length < activities.length && (
+                <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Wix events, courses and appointments can&rsquo;t take packs, so they aren&rsquo;t listed.</div>
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, marginTop: 10 }}>
+                <input type="checkbox" checked={form.best_value} onChange={(e) => setForm({ ...form, best_value: e.target.checked })} />
+                Mark as &ldquo;Best value&rdquo;
+              </label>
+            </div>
+            <div>
+              <label style={smallLbl}>Credits expire</label>
+              <Select value={form.expiry_mode} style={input()}
+                onChange={(e) => setForm({ ...form, expiry_mode: e.target.value as PackForm['expiry_mode'], validity_days: '', expiry_date: '' })}>
+                <option value="none">Never</option>
+                <option value="days">A number of days after buying</option>
+                <option value="date">On a fixed date</option>
+              </Select>
+              {form.expiry_mode === 'days' && (
+                <input value={form.validity_days} inputMode="numeric" style={{ ...input(), marginTop: 8 }} placeholder="days, e.g. 90"
+                  onChange={(e) => setForm({ ...form, validity_days: e.target.value.replace(/\D/g, '') })} />
+              )}
+              {form.expiry_mode === 'date' && (
+                <input type="date" value={form.expiry_date} style={{ ...input(), marginTop: 8 }} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} />
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, marginTop: 10 }}>
+                <div>
+                  <label style={smallLbl}>Only on</label>
+                  <Select value={form.allowed_weekday} style={input()} onChange={(e) => setForm({ ...form, allowed_weekday: e.target.value })}>
+                    <option value="">Any day</option>
+                    {WEEKDAYS.map((w, i) => <option key={w} value={String(i)}>{w}</option>)}
+                  </Select>
+                </div>
+                <div>
+                  <label style={smallLbl}>At</label>
+                  <input type="time" value={form.allowed_start_time} style={input()} onChange={(e) => setForm({ ...form, allowed_start_time: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                <div>
+                  <label style={smallLbl}>On sale from</label>
+                  <input type="datetime-local" value={form.starts_at} style={input()} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} />
+                </div>
+                <div>
+                  <label style={smallLbl}>On sale until</label>
+                  <input type="datetime-local" value={form.available_until} style={input()} onChange={(e) => setForm({ ...form, available_until: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+                Sale dates decide when parents can buy it. Expiry is separate: how long each parent&rsquo;s credits stay valid.
+              </div>
+            </div>
+          </div>
+          {err && <div style={{ color: C.pink, fontSize: 13, marginTop: 8 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" onClick={save} disabled={busy} style={{ ...primaryBtn(), padding: '8px 14px', opacity: busy ? 0.55 : 1 }}>
+              {busy ? 'Saving…' : form.id ? 'Save pack' : 'Add pack'}
+            </button>
+            <button type="button" style={tabBtn(false)} onClick={() => { setForm(null); setErr(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 const OUTCOME: Record<VendorResult['outcome'], { label: string; color: string }> = {
   price_updated: { label: 'Price updated', color: C.green },

@@ -644,13 +644,29 @@ export interface ChildRecommendations {
   }[];
 }
 
-/** Recommendations are recomputed server-side by a job, never by anything the
- *  parent does here, so a cached set stays valid for a while. */
+/** Recommendations are recomputed server-side: hourly by a job, and straight
+ *  away (inside the save itself) by triggers when a child's date of birth or
+ *  interests change or the parent's preferences change. A cached set stays
+ *  valid for a while as long as those inputs haven't changed - the cache key
+ *  carries the child's own ones, and saving the parent's preferences clears
+ *  "recs:" (see invalidateRecommendations). */
 const RECS_FRESH_MS = 5 * 60_000;
+
+/** Call after saving anything the suggestions are scored on that doesn't live on
+ *  the child (preferred days/times/areas, budget, location), so the next screen
+ *  showing them fetches the freshly recomputed set. */
+export function invalidateRecommendations() {
+  cacheInvalidate("recs:");
+}
 
 export function useRecommendations(children: Child[]) {
   const ids = children.map((c) => c.id).join(",");
-  const cacheKey = "recs:" + ids;
+  // Keyed on what the suggestions depend on, not just which children: editing a
+  // child's interests or birthday (the trigger has already recomputed by the
+  // time the save returns) must not keep showing the old cached set.
+  const cacheKey =
+    "recs:" +
+    children.map((c) => `${c.id}~${c.date_of_birth ?? ""}~${[...(c.interests ?? [])].sort().join("|")}~${c.name}`).join(",");
   const seed = ids ? cacheGet<ChildRecommendations[]>(cacheKey) : undefined;
   const [data, setData] = useState<ChildRecommendations[]>(seed?.data ?? []);
   const [loading, setLoading] = useState(!seed);
@@ -764,7 +780,7 @@ export function useRecommendations(children: Child[]) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids]);
+  }, [cacheKey]);
 
   return { data, loading: loading || dataKey !== cacheKey };
 }

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { geocode, slugify, sgToUtcIso, VENDOR_CATEGORIES, type VendorCategory } from '@/lib/admin-create-provider';
 
@@ -53,9 +54,34 @@ export type ProviderDetail = {
     image_urls: string[]; requires_medical_disclosure: boolean; bookings_paused: boolean;
     location_id: string | null;
     is_custom_location: boolean; custom_location_label: string | null;
+    /** Second category the class is also listed under (Explore filters match either). */
+    secondary_category_slug: string | null;
+    /** Booking rules, same columns as the vendor portal's activity drawer. */
+    allow_cancellation: boolean; cancellation_cutoff_hours: number;
+    cancellation_refund_mode: 'refund' | 'none';
+    allow_rescheduling: boolean; reschedule_cutoff_hours: number;
+    booking_cutoff_minutes: number;
+    /** "What to bring & know", and the note shown on the booking confirmation. */
+    what_to_bring: string | null;
+    confirmation_message: string | null;
+    /** Wix kind, when linked: an EVENT or COURSE can never be cancelled by a parent. */
+    wix_kind: string | null;
     /** Upcoming sessions, as Singapore wall-clock for the form. */
     sessions: { id: string; starts_at: string; ends_at: string; capacity: number | null;
                 teacher_name: string | null; studio: string | null }[];
+  }[];
+  /** Waivers, consents and disclosures (provider_policies), newest settings as the vendor sees them. */
+  policies: {
+    id: string; title: string; body: string | null; document_url: string | null;
+    required: boolean; active: boolean; activity_ids: string[] | null;
+  }[];
+  /** Class packs, with how many have been bought (a bought pack can be paused, not deleted). */
+  packages: {
+    id: string; name: string; credits: number; price_cents: number; active: boolean;
+    activity_ids: string[] | null; validity_days: number | null; expiry_date: string | null;
+    allowed_weekday: number | null; allowed_start_time: string | null;
+    starts_at: string | null; available_until: string | null; best_value: boolean;
+    purchases: number;
   }[];
 };
 
@@ -68,6 +94,7 @@ function utcToSgLocal(iso: string): string {
 
 export async function getProviderDetail(id: string): Promise<ProviderDetail | null> {
   const db = createAdminClient();
+  const raw = db as unknown as SupabaseClient;
 
   const { data: p, error } = await db
     .from('providers')
@@ -81,29 +108,51 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
   if (error) throw new Error(error.message);
   if (!p) return null;
 
-  const [locs, acts, cats] = await Promise.all([
+  const [locs, acts, cats, pols, packs] = await Promise.all([
     db.from('provider_locations')
       .select('id, name, address, postal_code, region, is_primary, latitude, longitude, wix_location_id')
       .eq('provider_id', id).order('is_primary', { ascending: false }).order('name'),
     db.from('activities')
-      .select('id, title, slug, category_id, age_min_months, age_max_months, price, is_published, ' +
+      .select('id, title, slug, category_id, secondary_category_id, age_min_months, age_max_months, price, is_published, ' +
               'description, external_booking_url, image_urls, requires_medical_disclosure, bookings_paused, ' +
-              'location_id, is_custom_location, custom_location_label')
+              'location_id, is_custom_location, custom_location_label, ' +
+              'allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, ' +
+              'reschedule_cutoff_hours, booking_cutoff_minutes, what_to_bring, confirmation_message, ' +
+              'wix_service_type, wix_event_id')
       .eq('provider_id', id).order('title'),
     db.from('activity_categories').select('id, slug, name'),
+    // provider_policies (and packages.available_until) postdate types/database.ts, hence the untyped client.
+    raw.from('provider_policies')
+      .select('id, title, body, document_url, required, active, activity_ids')
+      .eq('provider_id', id).order('sort_order').order('created_at'),
+    raw.from('packages')
+      .select('id, name, credits, price_cents, active, activity_ids, validity_days, expiry_date, ' +
+              'allowed_weekday, allowed_start_time, starts_at, available_until, best_value')
+      .eq('provider_id', id).order('created_at', { ascending: false }),
   ]);
+  const packRows = (packs.data ?? []) as unknown as Omit<ProviderDetail['packages'][number], 'purchases'>[];
+  const bought = new Map<string, number>();
+  if (packRows.length) {
+    const { data: buys } = await db.from('package_purchases').select('package_id').in('package_id', packRows.map((p) => p.id));
+    for (const b of (buys ?? []) as { package_id: string }[]) bought.set(b.package_id, (bought.get(b.package_id) ?? 0) + 1);
+  }
 
   const catById = Object.fromEntries((cats.data ?? []).map((c) => [c.id, c]));
   /* The select lists are built by concatenation for readability, which defeats
      supabase-js's literal-type inference — so the rows come back untyped and
      are asserted here instead. */
   type RawActivity = {
-    id: string; title: string; slug: string; category_id: number;
+    id: string; title: string; slug: string; category_id: number; secondary_category_id: number | null;
     age_min_months: number; age_max_months: number; price: number | null;
     is_published: boolean; description: string | null; external_booking_url: string | null;
     image_urls: string[] | null; requires_medical_disclosure: boolean; bookings_paused: boolean;
     location_id: string | null;
     is_custom_location: boolean; custom_location_label: string | null;
+    allow_cancellation: boolean | null; cancellation_cutoff_hours: number | null;
+    cancellation_refund_mode: 'refund' | 'none' | null; allow_rescheduling: boolean | null;
+    reschedule_cutoff_hours: number | null; booking_cutoff_minutes: number | null;
+    what_to_bring: string | null; confirmation_message: string | null;
+    wix_service_type: string | null; wix_event_id: string | null;
   };
   const actRows = (acts.data ?? []) as unknown as RawActivity[];
   const actIds = actRows.map((a) => a.id);
@@ -131,7 +180,7 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
   }
 
   return {
-    ...(p as unknown as Omit<ProviderDetail, 'locations' | 'activities'>),
+    ...(p as unknown as Omit<ProviderDetail, 'locations' | 'activities' | 'policies' | 'packages'>),
     locations: (locs.data ?? []) as unknown as ProviderDetail['locations'],
     activities: actRows.map((a) => {
       const c = catById[a.category_id];
@@ -147,9 +196,22 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
         location_id: a.location_id,
         is_custom_location: a.is_custom_location,
         custom_location_label: a.custom_location_label,
+        secondary_category_slug: a.secondary_category_id != null ? catById[a.secondary_category_id]?.slug ?? null : null,
+        // Same defaults the vendor portal's drawer opens with.
+        allow_cancellation: a.allow_cancellation ?? true,
+        cancellation_cutoff_hours: a.cancellation_cutoff_hours ?? 24,
+        cancellation_refund_mode: a.cancellation_refund_mode ?? 'refund',
+        allow_rescheduling: a.allow_rescheduling ?? true,
+        reschedule_cutoff_hours: a.reschedule_cutoff_hours ?? 24,
+        booking_cutoff_minutes: a.booking_cutoff_minutes ?? 15,
+        what_to_bring: a.what_to_bring,
+        confirmation_message: a.confirmation_message,
+        wix_kind: a.wix_event_id ? 'EVENT' : a.wix_service_type,
         sessions: sessByAct.get(a.id) ?? [],
       };
     }),
+    policies: (pols.data ?? []) as unknown as ProviderDetail['policies'],
+    packages: packRows.map((p) => ({ ...p, purchases: bought.get(p.id) ?? 0 })),
   };
 }
 
@@ -210,9 +272,24 @@ export type ActivityPatch = {
   location_id?: string | null;
   is_custom_location?: boolean;
   custom_location_label?: string | null;
+  /** Slug, or null/'' to list the class under its main category only. */
+  secondary_category_slug?: string | null;
+  allow_cancellation?: boolean;
+  cancellation_cutoff_hours?: number;
+  cancellation_refund_mode?: 'refund' | 'none';
+  allow_rescheduling?: boolean;
+  reschedule_cutoff_hours?: number;
+  booking_cutoff_minutes?: number;
+  what_to_bring?: string | null;
+  confirmation_message?: string | null;
   sessions?: SessionPatch[];
   _delete?: boolean;
 };
+
+/** Same ceiling as the vendor portal's booking cut-off (14 days). */
+const MAX_BOOKING_CUTOFF_MINS = 20160;
+/** A cut-off in hours from the form: whole, not negative, 24 when it isn't a number (the portal's default). */
+const hours = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 24);
 
 export type UpdateResult = {
   provider: { id: string; business_name: string; slug: string | null; region: string | null };
@@ -418,10 +495,11 @@ export async function updateProviderWithCatalogue(
     const patchIds = acts.filter((a) => !a._delete).map((a) => a.id);
     type CurrentActivity = { id: string; title: string; is_published: boolean; external_booking_url: string | null;
                              location_id: string | null; wix_service_id: string | null; wix_locked_fields: string[] | null;
-                             wix_event_id: string | null; wix_series_id: string | null; image_urls: string[] | null };
+                             wix_event_id: string | null; wix_series_id: string | null; image_urls: string[] | null;
+                             description: string | null; wix_service_type: string | null; category_id: number };
     const currentRows: CurrentActivity[] = patchIds.length
       ? ((await db.from('activities')
-          .select('id, title, is_published, external_booking_url, location_id, wix_service_id, wix_locked_fields, wix_event_id, wix_series_id, image_urls')
+          .select('id, title, is_published, external_booking_url, location_id, wix_service_id, wix_locked_fields, wix_event_id, wix_series_id, image_urls, description, wix_service_type, category_id')
           .in('id', patchIds)).data as unknown as CurrentActivity[] | null) ?? []
       : [];
     const currentById = new Map(currentRows.map((r) => [r.id, r]));
@@ -469,15 +547,43 @@ export async function updateProviderWithCatalogue(
         row.wix_locked_fields = [...(cur.wix_locked_fields ?? []), 'location'];
         warnings.push(`"${a.title ?? cur.title}" is linked to Wix. Its venue is now locked here, so the Wix sync will not move it back.`);
       }
-      // Same for a name or photos changed here: claimed, so the Wix sync leaves them as set.
+      // Same for a name, description or photos changed here: claimed, so the Wix sync leaves them as set.
       if (cur && (cur.wix_service_id || cur.wix_event_id || cur.wix_series_id)) {
         const locks = new Set((row.wix_locked_fields as string[] | undefined) ?? cur.wix_locked_fields ?? []);
         const before = locks.size;
         if (row.title !== undefined && row.title !== cur.title) locks.add('title');
+        if (row.description !== undefined && row.description !== (cur.description ?? '')) locks.add('description');
         if (row.image_urls !== undefined
             && JSON.stringify(row.image_urls) !== JSON.stringify(cur.image_urls ?? [])) locks.add('image_urls');
         if (locks.size !== before) row.wix_locked_fields = [...locks];
       }
+
+      // Second category: none, or one that isn't the main category.
+      if (a.secondary_category_slug !== undefined) {
+        const slug = a.secondary_category_slug || null;
+        if (slug && !catId[slug]) throw new Error(`Unknown category "${slug}".`);
+        const mainId = a.category_slug !== undefined ? catId[a.category_slug] : cur?.category_id;
+        row.secondary_category_id = slug && catId[slug] !== mainId ? catId[slug] : null;
+      }
+
+      // Booking rules. A Wix event or course can never be cancelled by a parent (the vendor portal
+      // forces the same), so its cancellation stays off whatever the form says.
+      const cancelLocked = !!cur && (!!cur.wix_event_id || cur.wix_service_type === 'EVENT' || cur.wix_service_type === 'COURSE');
+      if (a.allow_cancellation !== undefined) row.allow_cancellation = cancelLocked ? false : a.allow_cancellation;
+      if (a.cancellation_refund_mode !== undefined) {
+        if (a.cancellation_refund_mode !== 'refund' && a.cancellation_refund_mode !== 'none') throw new Error('Unknown refund setting.');
+        row.cancellation_refund_mode = cancelLocked ? 'refund' : a.cancellation_refund_mode;
+      }
+      if (a.cancellation_cutoff_hours !== undefined) row.cancellation_cutoff_hours = hours(a.cancellation_cutoff_hours);
+      if (a.allow_rescheduling !== undefined) row.allow_rescheduling = a.allow_rescheduling;
+      if (a.reschedule_cutoff_hours !== undefined) row.reschedule_cutoff_hours = hours(a.reschedule_cutoff_hours);
+      if (a.booking_cutoff_minutes !== undefined) {
+        const m = Number.isFinite(a.booking_cutoff_minutes) ? Math.round(a.booking_cutoff_minutes) : 15;
+        if (m > MAX_BOOKING_CUTOFF_MINS) throw new Error(`"${a.title ?? cur?.title ?? 'A class'}": booking cut-off can be at most ${MAX_BOOKING_CUTOFF_MINS} minutes (14 days).`);
+        row.booking_cutoff_minutes = Math.max(0, m);
+      }
+      if (a.what_to_bring !== undefined) row.what_to_bring = a.what_to_bring?.trim() || null;
+      if (a.confirmation_message !== undefined) row.confirmation_message = a.confirmation_message?.trim() || null;
       if (a.is_custom_location !== undefined) row.is_custom_location = a.is_custom_location;
       if (a.custom_location_label !== undefined) row.custom_location_label = a.custom_location_label?.trim() || null;
       if (a.category_slug !== undefined) {
