@@ -110,7 +110,7 @@ function layout(ctx: EmailCtx, inner: string): string {
       <a href="${IG_URL}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram <img src="${appUrl}/assets/brand/instagram.png" alt="Instagram" width="15" height="15" style="width:15px;height:15px;vertical-align:-2px;border:0" /></a>
       ${ctx.footer === 'events'
         ? `<div style="margin-top:10px;font-size:14px;color:#9a9a9a">
-        <a href="${appUrl}/signup" style="color:#767676;text-decoration:none">Sign up</a> &nbsp;·&nbsp;
+        <a href="${appUrl}/onboarding" style="color:#767676;text-decoration:none">Sign up</a> &nbsp;·&nbsp;
         <a href="${appUrl}/explore" style="color:#767676;text-decoration:none">Explore activities</a>
       </div>`
         : ctx.footer === 'auth' ? ''
@@ -532,11 +532,14 @@ const T: Record<string, Template> = {
       p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'session')} group chat. ${link(ctx, str(d, 'url') ?? '/profile?tab=messages', 'Open the chat')} to read and reply.`) +
       sign),
 
+  // Footer without "Update your profile" / "Unsubscribe": both open an account that no longer exists.
   unsubscribe_response: (d, ctx) =>
-    wrap(ctx, 'We are sad to see you go 👶🧠',
+    wrap({ ...ctx, footer: 'events' }, 'We are sad to see you go 👶🧠',
       p(greet(ctx.recipientName)) +
       p('We are sad to see that you have decided to unsubscribe from BabyBrain. If you have a moment, we’d love if you could reply to this email sharing the reason behind this so that we can ensure we are continually improving the service we offer to parents in Singapore.') +
-      p(`If you have unsubscribed by accident, you can ${link(ctx, '/pricing', 'resubscribe here')}.`) +
+      // Sent after account deletion, so the account is gone: the way back is a fresh
+      // sign-up, not the plans page (whose "Manage subscription" needs a live account).
+      p(`If you have deleted your account by accident, you can ${link(ctx, '/onboarding', 'sign up again here')}.`) +
       p('Wishing you and your family all the best,<br/>Katie<br/>Founder, BabyBrain')),
 
   downgrade_response: (d, ctx) =>

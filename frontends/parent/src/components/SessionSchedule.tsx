@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Icon } from "./ui";
 import { isMultiDay, sgDateTime, sgTime } from "../lib/schedule";
 
@@ -65,6 +65,8 @@ export function SessionSchedule({
   onSelect,
   bookHref,
   preferredSessionAt,
+  fullIds,
+  pickedHint,
 }: {
   sessions: Session[];
   durationMins?: number | null;
@@ -80,7 +82,14 @@ export function SessionSchedule({
    *  land here and show a different "next available" day than the one just
    *  promised on the card. */
   preferredSessionAt?: string | null;
+  /** Sessions shown greyed out as "Full" and not selectable (the reschedule
+   *  picker). The activity page leaves this out: it only lists open sessions. */
+  fullIds?: ReadonlySet<string>;
+  /** What shows under a picked time. Left out, it's the "Click on Book…"
+   *  message; `null` shows nothing (the caller renders its own action). */
+  pickedHint?: ReactNode;
 }) {
+  const isFull = (id: string) => fullIds?.has(id) ?? false;
   const [showAll, setShowAll] = useState(false);
   const [showAllTimes, setShowAllTimes] = useState(false);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
@@ -153,7 +162,7 @@ export function SessionSchedule({
   const flat = days.flatMap((day) =>
     day.slots.map((slot) => ({ ...slot, day, shared: day.slots.filter((x) => x.time === slot.time).length > 1 }))
   );
-  const first = flat[0];
+  const first = flat.find((f) => !isFull(f.id)) ?? flat[0];
   const flatLabel = (f: (typeof flat)[number]) =>
     `${weekdayShort(f.day.iso)} ${dayMonth(f.day.iso)} · ${f.time}${f.shared && f.who ? ` · ${f.who}` : ""}`;
   const monthGroups: { key: string; name: string; days: Day[] }[] = [];
@@ -177,6 +186,12 @@ export function SessionSchedule({
   const timeCount = new Map<string, number>();
   selectedDay.slots.forEach((s) => timeCount.set(s.time, (timeCount.get(s.time) ?? 0) + 1));
   const picked = selectedDay.slots.some((s) => s.id === selectedId);
+  const fullCount = selectedDay.slots.filter((s) => isFull(s.id)).length;
+  const openCount = selectedDay.slots.length - fullCount;
+  const bookHint =
+    pickedHint !== undefined ? pickedHint : (
+      <>Click on {bookHref ? <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> : "Book"} to proceed with this time.</>
+    );
 
   const timesPanel = (
     <section
@@ -187,7 +202,9 @@ export function SessionSchedule({
         <div className="mb-3 flex items-end justify-between gap-3">
           <div>
             <h3 className="text-[18px] font-black text-baby-ink">{weekdayShort(selectedDay.iso)} {dayMonth(selectedDay.iso)}</h3>
-            <p className="text-xs font-semibold text-[#68718f]">{selectedDay.slots.length} {selectedDay.slots.length === 1 ? "session" : "sessions"} available</p>
+            <p className="text-xs font-semibold text-[#68718f]">
+              {openCount} {openCount === 1 ? "session" : "sessions"} available{fullCount > 0 ? ` · ${fullCount} full` : ""}
+            </p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <span className="rounded-full bg-palette-pinkSoft px-2.5 py-1 text-[11px] font-black text-baby-cta">Choose a time</span>
@@ -202,20 +219,29 @@ export function SessionSchedule({
           {shownSlots.map((slot) => {
             const active = selectedId === slot.id;
             const shared = (timeCount.get(slot.time) ?? 0) > 1;
+            const full = isFull(slot.id);
             return (
               <button
                 key={slot.id}
                 type="button"
                 aria-pressed={active}
+                disabled={full}
+                aria-label={full ? `${slot.time}${shared && slot.who ? `, ${slot.who}` : ""}, full` : undefined}
                 onClick={() => onSelect?.(slot.id)}
                 className={`min-h-12 rounded-[11px] border px-2 py-2 text-[15px] font-black tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
-                  active
+                  full
+                    ? "cursor-not-allowed border-[#EBE3E5] bg-[#F6F3F4] text-[#9AA0B4]"
+                    : active
                     ? "border-baby-pink bg-baby-pink text-baby-ink shadow-card"
                     : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
                 }`}
               >
-                {slot.time}
-                {shared && <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-baby-ink/70" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
+                <span className={full ? "line-through decoration-[1.5px]" : undefined}>{slot.time}</span>
+                {full ? (
+                  <span className="mt-0.5 block truncate text-[11px] font-bold">{shared && slot.who ? `${slot.who} · Full` : "Full"}</span>
+                ) : (
+                  shared && <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-baby-ink/70" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>
+                )}
               </button>
             );
           })}
@@ -229,9 +255,9 @@ export function SessionSchedule({
             {showAllTimes ? "Show fewer times" : `Show ${selectedDay.slots.length - VISIBLE_TIMES} more times`}
           </button>
         )}
-        {picked && (
+        {picked && bookHint && (
           <p role="status" className="mt-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
-            Click on {bookHref ? <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> : "Book"} to proceed with this time.
+            {bookHint}
           </p>
         )}
       </div>
@@ -271,7 +297,7 @@ export function SessionSchedule({
           {/* Row 2: the next few, plus a way into everything else. */}
           {flat.length > 1 && (
             <div className="mt-2.5 flex flex-wrap items-stretch gap-2">
-              {flat.slice(1, 4).map((f) => {
+              {flat.filter((f) => f.id !== first.id && !isFull(f.id)).slice(0, 3).map((f) => {
                 const active = selectedId === f.id;
                 return (
                   <button
@@ -344,18 +370,26 @@ export function SessionSchedule({
                 {expandDay.slots.map((slot) => {
                   const active = selectedId === slot.id;
                   const shared = expandDay.slots.filter((x) => x.time === slot.time).length > 1;
+                  const full = isFull(slot.id);
                   return (
                     <button
                       key={slot.id}
                       type="button"
                       aria-pressed={active}
+                      disabled={full}
                       onClick={() => onSelect?.(slot.id)}
                       className={`rounded-[10px] border px-3.5 py-2 text-[14px] font-black tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-baby-cta focus-visible:ring-offset-2 ${
-                        active ? "border-baby-cta bg-baby-cta text-white" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
+                        full
+                          ? "cursor-not-allowed border-[#EBE3E5] bg-[#F6F3F4] text-[#9AA0B4]"
+                          : active ? "border-baby-cta bg-baby-cta text-white" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink hover:bg-palette-pinkTint"
                       }`}
                     >
-                      {slot.time}
-                      {shared && <span className={`block text-[11px] font-bold ${active ? "text-white/90" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>}
+                      <span className={full ? "line-through decoration-[1.5px]" : undefined}>{slot.time}</span>
+                      {full ? (
+                        <span className="block text-[11px] font-bold">Full</span>
+                      ) : (
+                        shared && <span className={`block text-[11px] font-bold ${active ? "text-white/90" : "text-[#68718f]"}`}>{slot.who || "Another session"}</span>
+                      )}
                     </button>
                   );
                 })}
@@ -363,9 +397,9 @@ export function SessionSchedule({
             </div>
           )}
 
-          {flat.some((f) => f.id === selectedId) && (
+          {flat.some((f) => f.id === selectedId) && bookHint && (
             <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
-              <span>Click on {bookHref ? <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> : "Book"} to proceed with this time.</span>
+              <span>{bookHint}</span>
               <button type="button" onClick={() => onSelect?.(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
                 Clear
               </button>

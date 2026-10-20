@@ -220,7 +220,7 @@ async function syncEventActivityMirror(
 
   let activityId: string;
   if (existingActivityId) {
-    // A name or photos the vendor set on BabyBrain are theirs: the sync leaves them alone.
+    // A name, description or photos set on BabyBrain are theirs: the sync leaves them alone.
     const locked = ctx.lockedFieldsByActivityId.get(existingActivityId) ?? [];
     await admin
       .from('activities')
@@ -228,7 +228,7 @@ async function syncEventActivityMirror(
         ...(locked.includes('title') ? {} : { title: event.title }),
         ...(price != null ? { price } : {}),
         ...(capacity != null ? { default_capacity: capacity } : {}),
-        ...(event.description ? { description: event.description } : {}),
+        ...(event.description && !locked.includes('description') ? { description: event.description } : {}),
         location_id: locationId,
         address: event.location.formattedAddress,
         postal_code: event.location.postalCode,

@@ -44,7 +44,8 @@ import { apiGet, apiPost } from "../lib/api";
 import { CHAT_TYPES_FILTER } from "../lib/notifications";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
-import { sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
+import { isMultiDay, sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
+import { SessionSchedule } from "../components/SessionSchedule";
 import { calendarFileUrl, downloadBookingIcs, googleCalendarUrl, isAndroidDevice, isAppleDevice, outlookCalendarUrl } from "../lib/ics";
 import SyncCalendar from "../components/SyncCalendar";
 import { buildSchedulePdfFile, canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdfFile, withinRange } from "../lib/schedule-pdf";
@@ -88,6 +89,7 @@ type CustomerBookingRow = {
   guest_name: string | null;
   booking_group_id: string | null;
   package_purchase_id: string | null;
+  session_id?: string | null;
   children: { name: string } | null;
   activity_sessions: {
     starts_at: string;
@@ -128,6 +130,8 @@ type BookingItem = {
   /** Teacher and/or studio for this session, when the vendor set them (00074). */
   staff: string;
   activityId: string | null; childId: string | null; packagePurchaseId: string | null;
+  /** The session this booking is on now - left out of the reschedule picker. */
+  sessionId: string | null;
   allowCancel: boolean; allowReschedule: boolean;
   cancelCutoffH: number; resCutoffH: number;
   // Set once the vendor removes the activity (unlinkWixActivities stamps
@@ -177,6 +181,8 @@ type BookingItem = {
   // straddle a session's capacity, so the seats don't all share `status`.
   seatStatuses: string[];
 };
+/** A session the reschedule picker offers; `full` = not enough places for the whole party. */
+type ReschedSession = { id: string; starts_at: string; ends_at: string | null; teacher_name: string | null; studio: string | null; full: boolean };
 type ReviewItem = { id: string; rating: number; comment: string | null; title: string; slug: string; providerResponse: string | null };
 /** `data` is deliberately untyped (jsonb, shape varies by `type` — see
  *  notificationTarget below, which is the one place that reads into it). */
@@ -1954,6 +1960,7 @@ export default function ProfilePage() {
               activityId: s?.activity_id ?? null,
               childId: r.child_id ?? null,
               packagePurchaseId: r.package_purchase_id ?? null,
+              sessionId: r.session_id ?? null,
               allowCancel: act?.allow_cancellation ?? true,
               allowReschedule: act?.allow_rescheduling ?? true,
               cancelCutoffH: act?.cancellation_cutoff_hours ?? 24,
@@ -3753,7 +3760,12 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // booking can be added: a waitlisted or unpaid one isn't a session yet.
   const [calFor, setCalFor] = useState<BookingItem | null>(null);
   const [ticketFor, setTicketFor] = useState<BookingItem | null>(null);
-  const [reschedSessions, setReschedSessions] = useState<{ id: string; starts_at: string }[]>([]);
+  // null while the picker's sessions are loading.
+  const [reschedSessions, setReschedSessions] = useState<ReschedSession[] | null>(null);
+  const [reschedPick, setReschedPick] = useState<string | null>(null);
+  // Bumped on every open, so a slow load for a booking the parent has since
+  // closed can't fill the picker for a different one.
+  const reschedLoad = useRef(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Arrived here from a notification's "view this booking" link — scroll to
   // and briefly flash that one row (see useRowHighlight's comment; this list
@@ -3918,15 +3930,46 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
 
   async function openReschedule(b: BookingItem) {
     if (!b.activityId) return;
+    const load = ++reschedLoad.current;
     setReschedFor(b);
-    const { data } = await supabase
-      .from("activity_sessions")
-      .select("id, starts_at")
-      .eq("activity_id", b.activityId)
-      .gte("starts_at", new Date().toISOString())
-      .order("starts_at")
-      .limit(12);
-    setReschedSessions((data ?? []).filter((s) => s.starts_at !== b.startsAt));
+    setReschedPick(null);
+    setReschedSessions(null);
+    // A party moves together, so a session needs a place for every seat.
+    const seats = Math.max(1, b.allIds.length);
+    let rows: ReschedSession[] = [];
+    if (b.isWixLinked) {
+      // Wix-linked sessions carry a wix_slot_key, which upcoming_activity_sessions
+      // leaves out, so read them directly. Wix's own remaining capacity counts
+      // bookings made on the vendor's site too. A Wix class can only move to
+      // another Wix session (the reschedule route moves it in Wix as well).
+      let q = supabase
+        .from("activity_sessions")
+        .select("id, starts_at, ends_at, teacher_name, studio, wix_slot_key, wix_remaining_capacity")
+        .eq("activity_id", b.activityId)
+        .gte("starts_at", new Date().toISOString())
+        .eq("bookings_paused", false)
+        .neq("status", "cancelled")
+        .order("starts_at")
+        .limit(500);
+      if (b.isWixClass) q = q.not("wix_slot_key", "is", null);
+      const { data } = await q;
+      rows = (data ?? [])
+        .filter((s) => !(s.wix_slot_key ?? "").startsWith("wixcourse:"))
+        .map((s) => ({ ...s, full: s.wix_remaining_capacity != null && s.wix_remaining_capacity < seats }));
+    } else {
+      // Same source and window as the activity page: paused and cancelled
+      // sessions are already out, and `capacity` is the places still free.
+      const { data } = await supabase.rpc("upcoming_activity_sessions", { p_activity_id: b.activityId, p_limit: 40 });
+      rows = (data ?? []).map((s) => ({ ...s, full: s.capacity != null && s.capacity < seats }));
+    }
+    if (load !== reschedLoad.current) return;
+    setReschedSessions(rows.filter((s) => (b.sessionId ? s.id !== b.sessionId : s.starts_at !== b.startsAt)));
+  }
+
+  function closeReschedule() {
+    reschedLoad.current++;
+    setReschedFor(null);
+    setReschedPick(null);
   }
 
   async function doReschedule(newSessionId: string) {
@@ -3943,7 +3986,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
         setNotice(e instanceof Error ? e.message : "Couldn't move this booking — please try again.");
       } finally {
         setBusyId(null);
-        setReschedFor(null);
+        closeReschedule();
       }
       return;
     }
@@ -3954,7 +3997,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       if (res.error) { error = res.error; break; }
     }
     setBusyId(null);
-    setReschedFor(null);
+    closeReschedule();
     if (error) setNotice(cleanRpcErrorMessage(error));
     else onChanged?.();
   }
@@ -4134,29 +4177,86 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       )}
 
       {/* Reschedule picker */}
-      {reschedFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setReschedFor(null)}>
-          <div className="w-full max-w-md rounded-[16px] bg-white p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-black">Reschedule {reschedFor.title}</h3>
-            <p className="mt-1 text-sm font-semibold text-[#59658d]">Pick a new session — your booking moves instantly.</p>
-            <div className="mt-4 max-h-64 space-y-2 overflow-auto">
-              {reschedSessions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => doReschedule(s.id)}
-                  className="flex w-full items-center justify-between rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-left text-sm font-bold text-[#3f4b78] hover:border-baby-pink hover:bg-[#FFF5F8]"
-                >
-                  {sgDateTime(s.starts_at)}
-                  <Icon name="calendar" className="h-4 w-4 text-[#FFC1D6]" />
-                </button>
-              ))}
-              {reschedSessions.length === 0 && <p className="py-4 text-center text-sm font-semibold text-[#6D748D]">No other upcoming sessions for this class.</p>}
+      {reschedFor && (() => {
+        const moving = busyId === reschedFor.id;
+        const picked = reschedSessions?.find((s) => s.id === reschedPick && !s.full) ?? null;
+        const allFull = !!reschedSessions && reschedSessions.length > 0 && reschedSessions.every((s) => s.full);
+        // A whole-day camp has no times to pick, so SessionSchedule only lists
+        // its dates; those get a plain list of choices instead.
+        const multiDay = !!reschedSessions?.some((s) => isMultiDay(s.starts_at, s.ends_at));
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !moving && closeReschedule()}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="resched-title"
+              className="flex max-h-[90vh] w-full max-w-md flex-col rounded-[16px] bg-white shadow-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+                <h3 id="resched-title" className="text-lg font-black">Reschedule {reschedFor.title}</h3>
+                <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                  {reschedFor.when ? <>Booked for {reschedFor.when}. </> : null}Pick a new date and time.
+                </p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+                {reschedSessions === null ? (
+                  <div className="animate-pulse space-y-3" aria-label="Loading sessions">
+                    <div className="h-12 rounded-[12px] bg-[#F4EFF0]" />
+                    <div className="flex gap-2">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[84px] w-[74px] rounded-[14px] bg-[#F4EFF0]" />)}</div>
+                    <div className="h-40 rounded-[14px] bg-[#F4EFF0]" />
+                  </div>
+                ) : reschedSessions.length === 0 ? (
+                  <p className="py-4 text-center text-sm font-semibold text-[#6D748D]">No other upcoming sessions for this class.</p>
+                ) : multiDay ? (
+                  <div className="space-y-2">
+                    {reschedSessions.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={s.full}
+                        aria-pressed={reschedPick === s.id}
+                        onClick={() => setReschedPick(s.id)}
+                        className={`flex w-full items-center justify-between rounded-[10px] border px-4 py-2.5 text-left text-sm font-bold ${
+                          s.full
+                            ? "cursor-not-allowed border-[#EBE3E5] bg-[#F6F3F4] text-[#9AA0B4]"
+                            : reschedPick === s.id
+                            ? "border-baby-pink bg-baby-pink text-baby-ink"
+                            : "border-[#EBE3E5] text-[#3f4b78] hover:border-baby-pink hover:bg-[#FFF5F8]"
+                        }`}
+                      >
+                        {sgDayRange(s.starts_at, s.ends_at ?? s.starts_at)}
+                        {s.full ? <span className="text-xs">Full</span> : <Icon name="calendar" className="h-4 w-4 text-[#FFC1D6]" />}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {allFull && (
+                      <p className="mb-3 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-sm font-bold text-[#3f4b78]">
+                        Every other session is full right now. Check back later, or contact the provider.
+                      </p>
+                    )}
+                    <SessionSchedule
+                      sessions={reschedSessions}
+                      selectedId={reschedPick}
+                      onSelect={setReschedPick}
+                      fullIds={new Set(reschedSessions.filter((s) => s.full).map((s) => s.id))}
+                      pickedHint={null}
+                    />
+                  </>
+                )}
+              </div>
+              <div className="space-y-2 border-t border-[#EBE3E5] px-5 py-4 sm:px-6">
+                <Button type="button" className="w-full" disabled={!picked || moving} onClick={() => picked && doReschedule(picked.id)}>
+                  {moving ? "Moving your booking…" : picked ? `Move to ${multiDay ? sgDayRange(picked.starts_at, picked.ends_at ?? picked.starts_at) : sgDateTime(picked.starts_at)}` : "Pick a new time"}
+                </Button>
+                <Button type="button" variant="outline" className="w-full" disabled={moving} onClick={closeReschedule}>Close</Button>
+              </div>
             </div>
-            <Button type="button" variant="outline" className="mt-4 w-full" onClick={() => setReschedFor(null)}>Close</Button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
