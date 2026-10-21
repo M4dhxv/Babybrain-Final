@@ -529,9 +529,14 @@ const T: Record<string, Template> = {
           <div style="margin-top:8px">${link(ctx, href, 'View this booking →')}</div>
         </div>`
       : '';
+    // 00249: the provider moved this one booking to another session (vendor_reschedule_booking) —
+    // same email, opening with who moved it.
+    const movedBy = d.moved_by_provider ? str(d, 'provider_name') ?? 'Your provider' : null;
     return wrap(ctx, 'There has been a change to an activity you have booked 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`There has been some changes to your ${bold(str(d, 'activity_name') ?? 'activity')} booking. Please make sure you review the details ${link(ctx, href, 'here')}.`) +
+      (movedBy
+        ? p(`${esc(movedBy)} has moved your ${bold(str(d, 'activity_name') ?? 'activity')} booking to a different session. Please make sure you review the details ${link(ctx, href, 'here')}.`)
+        : p(`There has been some changes to your ${bold(str(d, 'activity_name') ?? 'activity')} booking. Please make sure you review the details ${link(ctx, href, 'here')}.`)) +
       changedBox +
       bookingBox +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
@@ -766,6 +771,23 @@ const T: Record<string, Template> = {
       p(`Great news - ${bold(str(d, 'activity_name') ?? 'your activity')} is fully booked! Would you like to ${link(ctx, str(d, 'url') ?? '/vendor', 'extend the capacity')}?`) +
       p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
       sign),
+
+  // 00247: a family joined a session's waitlist. Raising the capacity tells everyone waiting a
+  // place is free (00197/00204), so the ask is to extend it if they can.
+  provider_waitlist_joined: (d, ctx) => {
+    const waiting = Number(str(d, 'waiting_count') ?? 0);
+    const who = str(d, 'child_name') ?? 'A family';
+    return wrap(ctx, 'Someone joined your waitlist 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`${bold(who)} has joined the waitlist for the following activity:`) +
+      details(d, false) +
+      (waiting > 0
+        ? p(`There ${waiting === 1 ? 'is' : 'are'} now ${bold(String(waiting))} ${waiting === 1 ? 'family' : 'families'} on the waitlist for this session.`)
+        : '') +
+      p(`If you can take more, would you like to ${link(ctx, str(d, 'url') ?? '/vendor', 'increase the capacity for this session')}? Everyone on the waitlist is told straight away that a place is available, and whoever books first gets it.`) +
+      p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
+      sign);
+  },
 
   provider_add_activities: (d, ctx) =>
     wrap(ctx, 'Time to add to your schedule 👶🧠',

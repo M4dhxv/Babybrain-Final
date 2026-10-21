@@ -527,6 +527,67 @@ export default function BookingsPage() {
     loadRoster(sessionId);
   }
 
+  /* ---- Book a parent onto this session with their pack (client, 2026-10-21) ----
+     For a parent who bought one of this vendor's packs on BabyBrain: their credits are spent
+     exactly as when they book themselves (only places actually booked use a credit), and they
+     get the usual confirmation. See /api/vendor/bookings/pack. */
+  type PackHolder = {
+    purchase_id: string; parent_name: string; pack_name: string; credits_remaining: number;
+    expires_at: string | null; children: { id: string; name: string }[]; usable: boolean; reason: string | null;
+  };
+  const [addMode, setAddMode] = useState<'manual' | 'pack'>('manual');
+  const [holders, setHolders] = useState<PackHolder[] | null>(null);
+  const [holderNote, setHolderNote] = useState<string | null>(null);
+  const [holderSearch, setHolderSearch] = useState('');
+  const [packPick, setPackPick] = useState<{ purchaseId: string; childId: string; qty: number } | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showManual || addMode !== 'pack' || !sessionId || !provider) return;
+    let live = true;
+    setHolders(null);
+    setPackPick(null);
+    setPackError(null);
+    apiGet<{ holders: PackHolder[]; note?: string }>(`/api/vendor/bookings/pack?provider_id=${encodeURIComponent(provider.id)}&session_id=${encodeURIComponent(sessionId)}`)
+      .then((r) => { if (live) { setHolders(r.holders); setHolderNote(r.note ?? null); } })
+      .catch((e) => { if (live) { setHolders([]); setPackError(e instanceof Error ? e.message : 'Could not load pack holders.'); } });
+    return () => { live = false; };
+  }, [showManual, addMode, sessionId, provider]);
+
+  async function bookWithPack() {
+    if (!packPick || !provider || !sessionId) return;
+    const h = holders?.find((x) => x.purchase_id === packPick.purchaseId);
+    setPackBusy(true);
+    setPackError(null);
+    try {
+      const r = await apiPost<{ status: string; waitlisted: number; credits_left: number; wix_linked: boolean }>('/api/vendor/bookings/pack', {
+        provider_id: provider.id, session_id: sessionId, purchase_id: packPick.purchaseId,
+        child_id: packPick.childId || null, quantity: packPick.qty,
+      });
+      const booked = packPick.qty - r.waitlisted;
+      toast.success(
+        booked > 0
+          ? `Booked ${booked} ${booked === 1 ? 'place' : 'places'} for ${h?.parent_name ?? 'the parent'} with their pack.`
+          : `The session is full, so ${h?.parent_name ?? 'they'} joined the waitlist. No credit was used.`,
+        {
+          description: [
+            r.waitlisted > 0 && booked > 0 ? `${r.waitlisted} went on the waitlist (no credit used for ${r.waitlisted === 1 ? 'it' : 'them'}).` : null,
+            `${r.credits_left} ${r.credits_left === 1 ? 'credit' : 'credits'} left on their pack.`,
+            r.wix_linked ? "Saved on BabyBrain only — add it in Wix too if you need it there." : null,
+          ].filter(Boolean).join(' '),
+        },
+      );
+      setShowManual(false);
+      setPackPick(null);
+      loadRoster(sessionId);
+    } catch (e) {
+      setPackError(e instanceof Error ? e.message : 'Could not book with that pack.');
+    } finally {
+      setPackBusy(false);
+    }
+  }
+
   // 2.4: per-child skill level for this activity, set from the roster.
   const [savingSkill, setSavingSkill] = useState(false);
   async function setSkillLevel(row: RosterRow, level: string) {
@@ -873,9 +934,16 @@ export default function BookingsPage() {
      tab, all the bookings are still showing on the left — should just show the
      waitlist." The left-hand list now follows the tab. Attendance is still
      taken against the confirmed roster, so it keeps the booked list. */
-  const cancelled = useMemo(() => roster.filter((r) => r.status === 'cancelled'), [roster]);
+  /* A cancelled waitlist place was never a booking, so it stays under Waitlist (client,
+     2026-10-21). It is recognised by keeping its waitlist_position: joining sets it, cancelling
+     keeps it, and every promotion off the waitlist clears it (migration 00247). */
+  const cancelled = useMemo(() => roster.filter((r) => r.status === 'cancelled' && r.waitlist_position == null), [roster]);
+  const waitlistCancelled = useMemo(() => roster.filter((r) => r.status === 'cancelled' && r.waitlist_position != null), [roster]);
   const listSource =
-    activeTab === 'Waitlist' ? waitlisted
+    activeTab === 'Waitlist'
+      ? statusFilter === 'cancelled' ? waitlistCancelled
+        : statusFilter === 'all' ? [...waitlisted, ...waitlistCancelled]
+        : waitlisted
     : activeTab === 'Bookings' && statusFilter === 'cancelled' ? cancelled
     : activeTab === 'Bookings' && statusFilter === 'all' ? [...booked, ...cancelled]
     : booked;
@@ -890,13 +958,13 @@ export default function BookingsPage() {
     if (!id || rosterSessionId !== sessionId) return;
     const row = roster.find((r) => r.booking_id === id);
     if (!row) return;
-    if (row.status === 'waitlisted') {
+    const want = row.status === 'cancelled' ? 'cancelled' : 'active';
+    if (row.status === 'waitlisted' || (row.status === 'cancelled' && row.waitlist_position != null)) {
       if (activeTab !== 'Waitlist') { setActiveTab('Waitlist'); return; }
     } else {
       if (activeTab === 'Waitlist') { setActiveTab('Bookings'); return; }
-      const want = row.status === 'cancelled' ? 'cancelled' : 'active';
-      if (statusFilter !== want && statusFilter !== 'all') { setStatusFilter(want); return; }
     }
+    if (statusFilter !== want && statusFilter !== 'all') { setStatusFilter(want); return; }
     const idx = visibleBookings.findIndex((b) => b.booking_id === id);
     if (idx < 0) return;
     setSelected(idx);
@@ -1093,6 +1161,7 @@ export default function BookingsPage() {
 
   function openCancel(row: RosterRow) {
     setRowError(null);
+    setMoveFor(null);
     setCancelMode('refund');
     setCancelReason('');
     setCancelFor(row.booking_id);
@@ -1120,6 +1189,67 @@ export default function BookingsPage() {
     setSelected(0);
     setMobileDetail(false);
     loadRoster(sessionId);
+  }
+
+  /* ---- Move a booking to another session (client, 2026-10-21) ----
+     The vendor-side twin of the parent's own reschedule: same class, any upcoming session, the
+     whole party moves together, and the parent is told. A full session can be grown to fit
+     (not for a Wix-linked class — Wix owns its capacity). See /api/vendor/bookings/reschedule. */
+  const [moveFor, setMoveFor] = useState<string | null>(null);
+  const [moveOptions, setMoveOptions] = useState<{ id: string; starts_at: string; capacity: number | null; taken: number }[] | null>(null);
+  const [moveTarget, setMoveTarget] = useState('');
+  const [moveRaise, setMoveRaise] = useState(false);
+
+  async function openMove(row: RosterRow) {
+    setRowError(null);
+    setCancelFor(null);
+    setMoveFor(row.booking_id);
+    setMoveTarget('');
+    setMoveRaise(false);
+    setMoveOptions(null);
+    const activityId = sessionActivity[sessionId];
+    if (!activityId) { setMoveOptions([]); return; }
+    const { data: opts } = await supabase
+      .from('activity_sessions')
+      .select('id, starts_at, capacity')
+      .eq('activity_id', activityId)
+      .neq('status', 'cancelled')
+      .neq('id', sessionId)
+      .gt('starts_at', new Date().toISOString())
+      .order('starts_at')
+      .limit(200);
+    const ids = (opts ?? []).map((o) => o.id);
+    const taken: Record<string, number> = {};
+    if (ids.length) {
+      const { data: held } = await supabase.from('bookings').select('session_id').in('session_id', ids).in('status', ['pending', 'confirmed']);
+      for (const h of held ?? []) taken[h.session_id] = (taken[h.session_id] ?? 0) + 1;
+    }
+    setMoveOptions((opts ?? []).map((o) => ({ ...o, taken: taken[o.id] ?? 0 })));
+  }
+
+  async function moveBooking(row: RosterRow) {
+    if (!moveTarget || !provider) return;
+    setRowBusy(true);
+    setRowError(null);
+    try {
+      const r = await apiPost<{ moved: number; new_starts_at: string; capacity_raised: number }>('/api/vendor/bookings/reschedule', {
+        provider_id: provider.id, booking_id: row.booking_id, new_session_id: moveTarget, increase_capacity: moveRaise,
+      });
+      toast.success(`Moved ${row.child_name}${r.moved > 1 ? ` and ${r.moved - 1} more` : ''} to ${sgDateTime(r.new_starts_at)}.`, {
+        description: [
+          row.is_manual ? null : 'The parent has been told.',
+          r.capacity_raised ? `That session's capacity went up by ${r.capacity_raised} to fit.` : null,
+        ].filter(Boolean).join(' ') || undefined,
+      });
+      setMoveFor(null);
+      setSelected(0);
+      setMobileDetail(false);
+      loadRoster(sessionId);
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : 'Could not move the booking.');
+    } finally {
+      setRowBusy(false);
+    }
   }
 
   /* Rendered wherever a token can be issued, so the expiry is set where the
@@ -1364,6 +1494,99 @@ export default function BookingsPage() {
         {/* 2.1: record a booking taken outside BabyBrain */}
         {showManual && (
           <div className="mb-6 max-w-2xl rounded-xl border border-gray-200 bg-white p-4">
+            <div className="mb-3 inline-flex rounded-lg bg-gray-100 p-1 text-sm">
+              {([['manual', 'Booked outside BabyBrain'], ['pack', 'Parent with a BabyBrain pack']] as const).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setAddMode(m)}
+                  className={cn('rounded-md px-3 py-1.5 font-medium', addMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {addMode === 'pack' ? (
+              <div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Book a parent who bought one of your packs onto this session. Their credits are used just as if they booked it themselves, and they get the usual booking confirmation.
+                </p>
+                {!!activityWixType[sessionActivity[sessionId]] && (
+                  <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    This is a Wix-linked activity. The booking is saved on BabyBrain only — add it in Wix too if you need it there.
+                  </div>
+                )}
+                {slotIsFull && (
+                  <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    This slot is full, so a pack booking goes on the waitlist and uses no credit. Raise the capacity first if you want to give them a place.
+                  </div>
+                )}
+                {packError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{packError}</div>}
+                {holders === null ? (
+                  <LoadingRows label="Loading parents with packs…" count={2} />
+                ) : holderNote ? (
+                  <p className="text-sm text-gray-500">{holderNote}</p>
+                ) : holders.length === 0 ? (
+                  <p className="text-sm text-gray-500">No parents have unused credits on your packs right now.</p>
+                ) : (
+                  <>
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input value={holderSearch} onChange={(e) => setHolderSearch(e.target.value)} placeholder="Search parent or pack…"
+                        className="h-9 w-full rounded-lg border border-gray-300 pl-9 pr-3 text-sm" />
+                    </div>
+                    <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                      {holders
+                        .filter((h) => `${h.parent_name} ${h.pack_name}`.toLowerCase().includes(holderSearch.toLowerCase()))
+                        .map((h) => {
+                          const picked = packPick?.purchaseId === h.purchase_id;
+                          return (
+                            <button key={h.purchase_id} type="button" disabled={!h.usable}
+                              onClick={() => setPackPick({ purchaseId: h.purchase_id, childId: h.children[0]?.id ?? '', qty: 1 })}
+                              className={cn('flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm',
+                                picked ? 'border-[#FA4D8D] bg-pink-50' : 'border-gray-200 hover:bg-gray-50',
+                                !h.usable && 'cursor-not-allowed opacity-50 hover:bg-white')}>
+                              <span className="min-w-0">
+                                <span className="block font-medium text-gray-900">{h.parent_name}</span>
+                                <span className="block truncate text-xs text-gray-500">
+                                  {h.pack_name} · {h.credits_remaining} {h.credits_remaining === 1 ? 'credit' : 'credits'} left
+                                  {h.expires_at ? ` · expires ${new Date(h.expires_at).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', day: 'numeric', month: 'short' })}` : ''}
+                                </span>
+                              </span>
+                              {!h.usable && <span className="shrink-0 text-xs text-gray-500">{h.reason}</span>}
+                              {picked && <Check className="h-4 w-4 shrink-0 text-[#FA4D8D]" />}
+                            </button>
+                          );
+                        })}
+                    </div>
+                    {packPick && (() => {
+                      const h = holders.find((x) => x.purchase_id === packPick.purchaseId);
+                      if (!h) return null;
+                      const maxQty = Math.min(6, h.credits_remaining);
+                      return (
+                        <div className="mt-3 flex flex-wrap items-end gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Child</label>
+                            <SelectField value={packPick.childId} onChange={(v) => setPackPick({ ...packPick, childId: v })} aria-label="Child" className="h-9 w-48 px-3">
+                              {h.children.length === 0 && <Opt value="">No child on their profile</Opt>}
+                              {h.children.map((c) => <Opt key={c.id} value={c.id}>{c.name}</Opt>)}
+                            </SelectField>
+                          </div>
+                          {maxQty > 1 && (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-600">Places</label>
+                              <SelectField value={String(packPick.qty)} onChange={(v) => setPackPick({ ...packPick, qty: Number(v) })} aria-label="Places" className="h-9 w-24 px-3">
+                                {Array.from({ length: maxQty }, (_, i) => <Opt key={i + 1} value={String(i + 1)}>{i + 1}</Opt>)}
+                              </SelectField>
+                            </div>
+                          )}
+                          <button onClick={bookWithPack} disabled={packBusy} className="h-9 rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50">
+                            {packBusy ? 'Booking…' : `Book with ${packPick.qty} ${packPick.qty === 1 ? 'credit' : 'credits'}`}
+                          </button>
+                          <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+            ) : (<>
             <div className="text-sm font-semibold text-gray-900 mb-1">Add a booking taken outside BabyBrain</div>
             <p className="text-xs text-gray-500 mb-3">Recorded against the selected session so your roster and attendance stay complete.</p>
             {!!activityWixType[sessionActivity[sessionId]] && (
@@ -1397,6 +1620,7 @@ export default function BookingsPage() {
               </button>
               <button onClick={() => setShowManual(false)} className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             </div>
+            </>)}
           </div>
         )}
 
@@ -1426,11 +1650,11 @@ export default function BookingsPage() {
                 <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={activeTab === 'Waitlist' ? 'Search waitlist...' : 'Search bookings...'}
                   className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" />
               </div>
-              {activeTab === 'Bookings' && (
+              {(activeTab === 'Bookings' || activeTab === 'Waitlist') && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
-                      aria-label="Filter bookings"
+                      aria-label={activeTab === 'Waitlist' ? 'Filter waitlist' : 'Filter bookings'}
                       className={cn(
                         'relative flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-xl border bg-white text-gray-600 hover:bg-gray-50',
                         statusFilter === 'active' ? 'border-gray-200' : 'border-[#FA4D8D] text-[#FA4D8D]'
@@ -1440,11 +1664,10 @@ export default function BookingsPage() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-44 rounded-xl border-gray-200 bg-white py-1 shadow-lg">
-                    {([
-                      ['active', 'Active bookings'],
-                      ['cancelled', 'Cancelled only'],
-                      ['all', 'Active + cancelled'],
-                    ] as const).map(([value, label]) => (
+                    {(activeTab === 'Waitlist'
+                      ? ([['active', 'On the waitlist'], ['cancelled', 'Cancelled only'], ['all', 'Both']] as const)
+                      : ([['active', 'Active bookings'], ['cancelled', 'Cancelled only'], ['all', 'Active + cancelled']] as const)
+                    ).map(([value, label]) => (
                       <DropdownMenuItem
                         key={value}
                         onSelect={() => { setStatusFilter(value); setSelected(0); }}
@@ -1496,7 +1719,7 @@ export default function BookingsPage() {
                   icon={activeTab === 'Waitlist' ? UserPlus : CalendarCheck}
                   tone={activeTab === 'Waitlist' ? 'blue' : 'purple'}
                   title={activeTab === 'Waitlist'
-                    ? 'No one on the waitlist'
+                    ? statusFilter === 'cancelled' ? 'No cancelled waitlist places' : 'No one on the waitlist'
                     : activeTab === 'Bookings' && statusFilter === 'cancelled'
                     ? 'No cancelled bookings'
                     : "No one's booked yet"}
@@ -1506,7 +1729,7 @@ export default function BookingsPage() {
               {!loading && !rosterLoading && visibleBookings.length === 0 && !BOUTIQUE && (
                 <div className="text-sm text-gray-400 px-1">
                   {activeTab === 'Waitlist'
-                    ? 'No one on the waitlist for this session.'
+                    ? statusFilter === 'cancelled' ? 'No cancelled waitlist places for this session.' : 'No one on the waitlist for this session.'
                     : activeTab === 'Bookings' && statusFilter === 'cancelled'
                     ? 'No cancelled bookings for this session.'
                     : 'No bookings for this session.'}
@@ -1547,8 +1770,8 @@ export default function BookingsPage() {
               <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-gray-500">
                 <span className="whitespace-nowrap">
                   {listSource.length}{' '}
-                  {activeTab === 'Waitlist' ? 'on waitlist'
-                    : activeTab === 'Bookings' && statusFilter === 'cancelled' ? 'cancelled'
+                  {statusFilter === 'cancelled' && activeTab !== 'Attendance' ? 'cancelled'
+                    : activeTab === 'Waitlist' ? statusFilter === 'all' ? 'on waitlist or cancelled' : 'on waitlist'
                     : 'bookings'}
                 </span>
                 {spacesLeft != null && (
@@ -1887,6 +2110,62 @@ export default function BookingsPage() {
                             </button>
                           </div>
                         </div>
+                      ) : moveFor === sel.booking_id ? (
+                        <div className="space-y-3">
+                          <div className="text-sm font-medium text-gray-900">Move {sel.child_name}&rsquo;s booking</div>
+                          <p className="text-xs text-gray-500">
+                            To another session of this class. Every child on the same booking moves together{sel.is_manual ? '' : ', and the parent is told'}.
+                          </p>
+                          {moveOptions === null ? (
+                            <p className="text-xs text-gray-500">Loading sessions…</p>
+                          ) : moveOptions.length === 0 ? (
+                            <p className="text-xs text-gray-500">There are no other upcoming sessions of this class.</p>
+                          ) : (
+                            <>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-gray-600">New session</label>
+                                <SelectField value={moveTarget} onChange={(v) => { setMoveTarget(v); setMoveRaise(false); }} aria-label="New session" className="h-9 w-full px-3">
+                                  <Opt value="">Choose a session…</Opt>
+                                  {moveOptions.map((o) => (
+                                    <Opt key={o.id} value={o.id}>
+                                      {sgDateTime(o.starts_at)}{o.capacity != null ? ` · ${o.taken}/${o.capacity}${o.taken >= o.capacity ? ' full' : ''}` : ''}
+                                    </Opt>
+                                  ))}
+                                </SelectField>
+                              </div>
+                              {(() => {
+                                const t = moveOptions.find((o) => o.id === moveTarget);
+                                const isWixClass = activityWixType[sessionActivity[sessionId]] === 'CLASS';
+                                if (!t || t.capacity == null || t.taken < t.capacity) return null;
+                                return isWixClass ? (
+                                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                    That session is full, and this class&rsquo;s capacity is set in Wix. Raise it in Wix first, then move the booking.
+                                  </p>
+                                ) : (
+                                  <label className="flex items-start gap-2 text-sm text-gray-700">
+                                    <Checkbox checked={moveRaise} onCheckedChange={(v) => setMoveRaise(Boolean(v))} className="mt-0.5 data-[state=checked]:bg-[#FA4D8D]" />
+                                    That session is full. Raise its capacity so this booking fits.
+                                  </label>
+                                );
+                              })()}
+                            </>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => moveBooking(sel)}
+                              disabled={rowBusy || !moveTarget}
+                              className="h-9 rounded-lg bg-[#FA4D8D] px-4 text-sm font-medium text-white disabled:opacity-50"
+                            >
+                              {rowBusy ? 'Moving…' : 'Move booking'}
+                            </button>
+                            <button
+                              onClick={() => { setMoveFor(null); setRowError(null); }}
+                              className="h-9 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Keep it here
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <div className="flex flex-wrap items-center gap-4">
                           {/* A manual entry is the vendor's own offline record — correct
@@ -1907,6 +2186,15 @@ export default function BookingsPage() {
                                 <Trash2 className="h-4 w-4" /> Delete entry
                               </button>
                             </>
+                          )}
+                          {(sel.status === 'confirmed' || sel.status === 'pending') && !NO_WAITLIST_WIX_TYPES.includes(activityWixType[sessionActivity[sessionId]] ?? '') && (
+                            <button
+                              onClick={() => openMove(sel)}
+                              disabled={rowBusy}
+                              className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-60"
+                            >
+                              <CalendarDays className="h-4 w-4" /> Move to another session
+                            </button>
                           )}
                           <button
                             onClick={() => openCancel(sel)}
@@ -1993,6 +2281,24 @@ export default function BookingsPage() {
                 {rosterLoading && <LoadingRows label="Loading waitlist…" />}
                 {!rosterLoading && waitlisted.length === 0 && <div className="text-sm text-gray-400">No one on the waitlist.</div>}
               </div>
+              {/* Waitlist places that were cancelled (by the parent, by you, or because they
+                  booked another way). They were never bookings, so they're listed here
+                  rather than under Bookings → Cancelled. */}
+              {!rosterLoading && waitlistCancelled.length > 0 && (
+                <div className="mt-5 space-y-2">
+                  <h4 className="text-sm font-medium text-gray-700">No longer on the waitlist</h4>
+                  {waitlistCancelled.map((p, idx) => (
+                    <div key={p.booking_id} className="flex items-center gap-3 rounded-xl border border-dashed border-gray-200 p-3 opacity-80">
+                      <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold', PALETTE[idx % PALETTE.length])}>{initials(p.child_name)}</div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 text-sm">{p.child_name}</div>
+                        <div className="text-xs text-gray-500">{ageLabel(p.child_age_months)}</div>
+                      </div>
+                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">Cancelled</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex items-start gap-2 mt-5 p-3 bg-blue-50 rounded-xl">
                 <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-blue-700">Promoting confirms a family that already paid (package credit, make-up token, or a free session). On a paid session they haven't paid for, it sends them a "pay now" link instead — their place is confirmed once they pay.</p>

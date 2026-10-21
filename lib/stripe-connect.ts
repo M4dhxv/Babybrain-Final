@@ -146,3 +146,43 @@ export async function syncPayoutsEnabled(
   }
   return enabled;
 }
+
+/** What a fresh look at Stripe found for a vendor whose stored flag said payouts were off. */
+export interface PayoutsCheck {
+  /** The (possibly corrected) value now stored on the provider. */
+  payouts_enabled: boolean;
+  /** Stripe could actually be asked. False = Stripe unreachable; nothing was changed. */
+  checked: boolean;
+  /** When payouts are still off on Stripe's side: its own state, and how much it still wants. */
+  state: ConnectState | null;
+  due_count: number;
+}
+
+/**
+ * Re-check one vendor with Stripe when the stored `payouts_enabled` says "off" but they have a
+ * Stripe account, and correct the flag. The `account.updated` webhook is the normal way this
+ * flag turns on, but if it doesn't arrive the flag otherwise only refreshes when someone from
+ * the vendor opens their Billing page — Inspire Mum & Baby sat on "no Stripe" for over a day
+ * after connecting (2026-10-21). Used by the admin editor, its publish check and the hourly
+ * sweep (/api/cron/sync-payouts).
+ *
+ * Never clears an account id and never changes anything when Stripe can't be reached
+ * (`fetchAccount` returns null for any error, including a passing outage).
+ */
+export async function refreshStalePayouts(
+  admin: SupabaseClient<Database>,
+  provider: { id: string; stripe_account_id: string | null; payouts_enabled: boolean },
+): Promise<PayoutsCheck> {
+  if (!provider.stripe_account_id || provider.payouts_enabled) {
+    return { payouts_enabled: provider.payouts_enabled, checked: false, state: null, due_count: 0 };
+  }
+  const account = await fetchAccount(provider.stripe_account_id);
+  if (!account) return { payouts_enabled: false, checked: false, state: null, due_count: 0 };
+  const enabled = await syncPayoutsEnabled(admin, provider.id, account, provider.payouts_enabled);
+  return {
+    payouts_enabled: enabled,
+    checked: true,
+    state: enabled ? 'active' : connectState(account),
+    due_count: new Set([...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])]).size,
+  };
+}

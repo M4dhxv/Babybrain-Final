@@ -19,12 +19,16 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = { title: "BabyBrain", body: event.data ? event.data.text() : "" };
   }
-  const { title = "BabyBrain", body = "", url = "/", tag, actions } = payload;
+  const { title = "BabyBrain", body = "", url = "/", tag, actions, icon, image } = payload;
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
+      // A booking confirmation or suggestion brings the class's own photo (fitted server-side by
+      // /api/push/image, so a vendor's logo is never cropped); everything else keeps the mascot.
       // Transparent mascot only (no square, no white backing) — see assets/brand/notify-icon.png.
-      icon: "/app/assets/brand/notify-icon.png",
+      icon: typeof icon === "string" && icon ? icon : "/app/assets/brand/notify-icon.png",
+      // The large picture under the text when expanded (Android/Chrome; iOS ignores it).
+      ...(typeof image === "string" && image ? { image } : {}),
       // Android paints the badge from its alpha channel alone, so it must be a
       // transparent white silhouette; the full-colour app icon showed as a white square.
       badge: "/app/assets/brand/notify-badge.png",

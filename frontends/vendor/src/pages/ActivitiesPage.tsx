@@ -41,6 +41,7 @@ import {
   Sparkles,
   AlertTriangle,
   type LucideIcon,
+  Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RainbowLoader } from '@/components/ui/rainbow-loader';
@@ -486,6 +487,8 @@ export default function ActivitiesPage() {
 
   // Create/Edit-activity form (editingId set = editing an existing activity)
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Set while creating a copy (openDuplicate): the original's name, for the drawer header.
+  const [copyFrom, setCopyFrom] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   // A Wix Event–backed activity's price is the cheapest of its ticket types,
   // pulled live from Wix on every sync (lib/wix/events-sync.ts). Anything a
@@ -1439,6 +1442,7 @@ export default function ActivitiesPage() {
 
   function openCreate() {
     setEditingId(null);
+    setCopyFrom(null);
     setForm(emptyForm);
     setFormError(null);
     setShowDrawer(true);
@@ -1447,7 +1451,32 @@ export default function ActivitiesPage() {
   function openEdit(a: Activity) {
     setShowMenu(null);
     setEditingId(a.id);
-    setForm({
+    setCopyFrom(null);
+    setForm(formFrom(a));
+    setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
+    setFormError(null);
+    setShowDrawer(true);
+  }
+
+  /* "Duplicate" (client, 2026-10-21): a new activity pre-filled from an existing one — category,
+     description, ages, price, venue, capacity, photos, booking rules, what to bring, confirmation
+     note, the question for parents. Left out: the name (the vendor gives it a new one), and
+     everything that belongs to the original only — its page address (a fresh one is made on
+     save), sessions, bookings, reviews, any Wix link, and its published state (the copy is a
+     draft). It goes through the normal create path, so nothing here can touch the original. */
+  function openDuplicate(a: Activity) {
+    setShowMenu(null);
+    setEditingId(null);
+    setCopyFrom(a.title);
+    setForm({ ...formFrom(a), title: '' });
+    setPriceOverridden(false);
+    setFormError(null);
+    setShowDrawer(true);
+  }
+
+  /** The drawer's fields from an activity — shared by Edit and Duplicate. */
+  function formFrom(a: Activity) {
+    return {
       title: a.title,
       category_id: String(a.category_id ?? ''),
       secondary_category_id: a.secondary_category_id != null ? String(a.secondary_category_id) : '',
@@ -1473,10 +1502,7 @@ export default function ActivitiesPage() {
       info_request_prompt: a.info_request_prompt ?? '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
-    });
-    setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
-    setFormError(null);
-    setShowDrawer(true);
+    };
   }
 
   // 1.1: pause/resume parent bookings for one activity. Optimistic — see the
@@ -1578,6 +1604,13 @@ export default function ActivitiesPage() {
       return;
     }
     if (!form.title.trim() || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
+    // Two activities with one name look like the same class to a parent on Explore. Checked
+    // whenever the name is new or changed (an existing pair from before this check still saves).
+    const nameKey = form.title.trim().toLowerCase();
+    if (nameKey !== (editingActivity?.title ?? '').trim().toLowerCase()) {
+      const clash = activities.find((a) => a.id !== editingId && !isFullyRemoved(a) && a.title.trim().toLowerCase() === nameKey);
+      if (clash) { setFormError(`You already have an activity called “${clash.title}”. Give this one a different name.`); return; }
+    }
     // Capacity comes from Wix for a linked activity (and is null for an
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
@@ -2228,6 +2261,10 @@ export default function ActivitiesPage() {
                             <Pencil className="w-3.5 h-3.5" />
                             Edit
                           </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => openDuplicate(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                            <Copy className="w-3.5 h-3.5" />
+                            Duplicate
+                          </DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => openSchedule(a)} className="gap-2 px-3 py-2 text-sm text-gray-700">
                             <Clock className="w-3.5 h-3.5" />
                             Manage schedule
@@ -2299,13 +2336,14 @@ export default function ActivitiesPage() {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={editingId ? 'Edit activity' : 'Create activity'}
+          aria-label={editingId ? 'Edit activity' : copyFrom != null ? 'Duplicate activity' : 'Create activity'}
           className="flex h-[90vh] max-h-[860px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
         >
           <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-6 py-4">
             <div className="min-w-0">
-              <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Edit activity' : 'Create activity'}</h3>
+              <h3 className="text-xl font-bold text-gray-900">{editingId ? 'Edit activity' : copyFrom != null ? 'Duplicate activity' : 'Create activity'}</h3>
               {editingId && form.title.trim() && <p className="truncate text-sm text-gray-500">{form.title}</p>}
+              {!editingId && copyFrom != null && <p className="truncate text-sm text-gray-500">Copy of {copyFrom}</p>}
             </div>
             <button onClick={() => setShowDrawer(false)} className="rounded-lg p-2 hover:bg-gray-100" aria-label="Close">
               <X className="h-5 w-5 text-gray-600" />
@@ -2368,6 +2406,19 @@ export default function ActivitiesPage() {
             {formError && (
               <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {formError}
+              </div>
+            )}
+
+            {!editingId && copyFrom != null && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                <p>
+                  Copied from <span className="font-medium text-gray-900">{copyFrom}</span>. Give it a new name, check the
+                  details, then save. It starts as a draft, hidden from parents until you publish it.
+                </p>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Sessions aren't copied, so add a schedule after saving. Packs and waivers set to specific activities won't
+                  include the copy until you add it to them.
+                </p>
               </div>
             )}
 

@@ -48,6 +48,7 @@ import { termsPreviewEnabled } from "../lib/termsPreview";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { isMultiDay, sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
+import { resolveActivityImage } from "../lib/activityMedia";
 import { calendarFileUrl, downloadBookingIcs, googleCalendarUrl, isAndroidDevice, isAppleDevice, outlookCalendarUrl } from "../lib/ics";
 import SyncCalendar from "../components/SyncCalendar";
 import { buildSchedulePdfFile, canShareSchedulePdf, downloadSchedulePdf, shareSchedulePdfFile, withinRange } from "../lib/schedule-pdf";
@@ -234,6 +235,92 @@ function notificationTarget(n: NotifItem, isPlus: boolean): string | null {
   return url;
 }
 
+/** How long each suggested activity stays on the rotating thumbnail. */
+const SUGGESTION_ROTATE_MS = 2500;
+
+/**
+ * The thumbnail on a suggested-activities notification: each suggested class's
+ * first photo and name in turn, one every few seconds while the card is on screen
+ * (a push can't do this — it's a still picture — so the moving version lives here).
+ * Photos follow the same rule as every activity card (resolveActivityImage), shown
+ * object-contain on a tint so a vendor's logo is never cropped. Still (first item
+ * only) for anyone who asked their device to reduce motion.
+ */
+function SuggestionRotator({ activities }: { activities: SuggestedActivity[] }) {
+  const slugs = activities
+    .map((a) => (a.url ? new URLSearchParams(a.url.split("?")[1] ?? "").get("slug") : null))
+    .filter((s): s is string => !!s);
+  const key = slugs.join(",");
+  const [photos, setPhotos] = useState<Record<string, string | null>>({});
+  const [i, setI] = useState(0);
+  const box = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!slugs.length) return;
+    let live = true;
+    cacheFetch(`notif-photos:${key}`, 10 * 60_000, async () => {
+      const { data } = await supabase
+        .from("activities")
+        .select("slug, image_urls, image_source, cover_image_url, providers(logo_url, gallery_urls)")
+        .in("slug", slugs);
+      const out: Record<string, string | null> = {};
+      for (const r of (data ?? []) as unknown as Array<{ slug: string; image_urls: string[] | null; image_source: string | null;
+          cover_image_url: string | null; providers: { logo_url: string | null; gallery_urls: string[] | null } | null }>) {
+        out[r.slug] = resolveActivityImage(r, r.providers);
+      }
+      return out;
+    }).then((p) => { if (live) setPhotos(p); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  useEffect(() => {
+    if (activities.length < 2) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    // Only turn while the card is actually on screen and the app is in front.
+    let visible = false;
+    const io = typeof IntersectionObserver !== "undefined" && box.current
+      ? new IntersectionObserver(([e]) => { visible = e.isIntersecting; })
+      : null;
+    if (io && box.current) io.observe(box.current); else visible = true;
+    const t = window.setInterval(() => {
+      if (visible && document.visibilityState === "visible") setI((v) => (v + 1) % activities.length);
+    }, SUGGESTION_ROTATE_MS);
+    return () => { window.clearInterval(t); io?.disconnect(); };
+  }, [activities.length]);
+
+  const a = activities[i] ?? activities[0];
+  const slug = a?.url ? new URLSearchParams(a.url.split("?")[1] ?? "").get("slug") : null;
+  const photo = slug ? photos[slug] : null;
+
+  return (
+    <div ref={box} className="mt-3 flex items-center gap-3">
+      <a
+        href={a?.url ?? "/explore"}
+        className="grid h-16 w-16 flex-shrink-0 place-items-center overflow-hidden rounded-[10px] bg-[#FCEFF4]"
+        aria-label={a?.activity_name ?? "Suggested activity"}
+      >
+        {photo ? (
+          <img key={photo} src={photo} alt="" loading="lazy" className="bb-reveal h-full w-full object-contain" />
+        ) : (
+          <Icon name="star" className="h-6 w-6 text-[#FA4D8D]" />
+        )}
+      </a>
+      <div className="min-w-0 flex-1" aria-live="off">
+        <p className="truncate text-sm font-black text-[#34406f]">{a?.activity_name ?? "Activity"}</p>
+        {a?.date_time && <p className="truncate text-xs font-semibold text-[#59658d]">{a.date_time}</p>}
+        {activities.length > 1 && (
+          <div className="mt-1.5 flex gap-1" aria-hidden="true">
+            {activities.map((_, k) => (
+              <span key={k} className={`h-1.5 w-1.5 rounded-full ${k === i ? "bg-[#FA4D8D]" : "bg-[#EBE3E5]"}`} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** One row on the Notifications tab. Most types resolve to a single link (see
  *  notificationTarget); 'suggested_activities' is different — its `data`
  *  holds up to 5 activities rather than one target, so it opens as a small
@@ -266,6 +353,7 @@ function NotificationRow({ n }: { n: NotifItem }) {
         {body}
         {activities.length > 0 && (
           <>
+            <SuggestionRotator activities={activities} />
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
