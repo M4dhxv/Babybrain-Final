@@ -6,6 +6,7 @@ import { sessionWordingTitle, sessionWordingBody } from '@/lib/notification-word
 import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
 import { sendPushToUser } from '@/lib/push';
+import { pushExtras } from '@/lib/push-images';
 
 /** Chat reply emails wait this long and are dropped if the message was read. */
 const CHAT_TYPES = new Set(['provider_message', 'provider_message_response', 'class_group_message', 'provider_class_group_message']);
@@ -20,8 +21,12 @@ const MARKETING_TYPES = new Set(['suggested_activities', 'upgrade_nudge', 'provi
 
 /** Never pushed to a device (email only): the promotional flows above, plus the
  *  re-engagement nudges ("you were missed", a vendor's "your schedule is light"
- *  and "trial ending"), which are prompts rather than news about a booking. */
-const NO_PUSH_TYPES = new Set([...MARKETING_TYPES, 'missed_activity', 'provider_add_activities', 'trial_ending']);
+ *  and "trial ending"), which are prompts rather than news about a booking.
+ *  Exception: suggested_activities is pushed too (Aman, 2026-10-21), with its own
+ *  switch (push_suggestions, 00245) and still only to consented parents (above). */
+const NO_PUSH_TYPES = new Set(
+  [...MARKETING_TYPES, 'missed_activity', 'provider_add_activities', 'trial_ending'].filter((t) => t !== 'suggested_activities')
+);
 
 /** Quiet hours (Singapore): reminders and review requests are not pushed between 22:00 and 07:00. */
 const QUIET_PUSH_TYPES = new Set(['booking_reminder', 'class_followup']);
@@ -33,13 +38,18 @@ const isQuietHourSgt = (): boolean => {
 /** Which push preference (notification_preferences, 00236) a notification type falls under. */
 const MESSAGE_TYPES = new Set([...CHAT_TYPES, 'support_message']);
 const REMINDER_TYPES = new Set(['booking_reminder', 'booking_starting_soon', 'class_followup']);
-const pushPrefColumn = (type: string): 'push_messages' | 'push_reminders' | 'push_bookings' =>
-  MESSAGE_TYPES.has(type) ? 'push_messages' : REMINDER_TYPES.has(type) ? 'push_reminders' : 'push_bookings';
+const pushPrefColumn = (type: string): 'push_messages' | 'push_reminders' | 'push_bookings' | 'push_suggestions' =>
+  MESSAGE_TYPES.has(type) ? 'push_messages'
+    : REMINDER_TYPES.has(type) ? 'push_reminders'
+    : type === 'suggested_activities' ? 'push_suggestions'
+    : 'push_bookings';
 
 /** The one button under a push where the device supports them. Tapping it opens the same page. */
 function pushActions(type: string): { action: string; title: string }[] | undefined {
   if (MESSAGE_TYPES.has(type)) return [{ action: 'open', title: 'Open chat' }];
+  if (type === 'suggested_activities') return [{ action: 'open', title: 'See suggestions' }];
   if (type === 'waitlist_available') return [{ action: 'open', title: 'Claim your spot' }];
+  if (type === 'provider_waitlist_joined') return [{ action: 'open', title: 'View waitlist' }];
   if (type.startsWith('booking_') || type === 'session_rescheduled' || type === 'class_cancelled' || type === 'provider_booking_received') {
     return [{ action: 'open', title: 'View booking' }];
   }
@@ -139,6 +149,8 @@ export async function POST(request: Request) {
         // One entry per conversation, so a burst of replies doesn't stack up.
         tag: CHAT_TYPES.has(notification.type) && channelId ? `chat-${channelId}` : undefined,
         actions: pushActions(notification.type),
+        // Photo, and for suggestions a title naming the top pick (never blocks the push).
+        ...(await pushExtras(admin as unknown as SupabaseClient, notification.type, pushData).catch(() => ({}))),
       });
       // 'sent' only when a device actually accepted it, so push_status can be
       // trusted: no devices / VAPID unset → 'skipped', every device rejected → 'failed'.

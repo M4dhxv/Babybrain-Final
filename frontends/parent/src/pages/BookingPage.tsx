@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { staffLabel } from "../lib/staffLabel";
 import {
   ActivityCard,
@@ -284,6 +285,11 @@ export default function BookingPage() {
      gets its own message rather than "book a second place anyway?". */
   const [existingBookings, setExistingBookings] = useState<Map<string, string>>(new Map());
   const [dupPrompt, setDupPrompt] = useState<null | { childName: string; pending: boolean; proceed: () => void }>(null);
+  /** Buying a pack for a session without room for the whole party: what the parent is shown (and
+   *  must OK) before Stripe — see PackWaitlistDialog. */
+  const [packWaitlist, setPackWaitlist] = useState<null | {
+    packageId: string; packName: string; credits: number; priceCents: number; free: number; startsAt: string;
+  }>(null);
 
   // A Wix Event–backed activity (wix_service_type='EVENT', see
   // 00070_wix_events_as_activities.sql) reuses this whole page — the only
@@ -1194,8 +1200,9 @@ export default function BookingPage() {
     goTo(`/booked?${q.toString()}`);
   }
 
-  /** Buy a multi-class pack, then come back here to book with a credit. */
-  async function buyPack(packageId: string) {
+  /** Buy a multi-class pack, then come back here to book with a credit.
+   *  `waitlistOk`: the parent has already seen and accepted PackWaitlistDialog for this pack. */
+  async function buyPack(packageId: string, waitlistOk = false) {
     if (!auth) { goTo(loginHref()); return; }
     // Reachable only via checkout() now (the row's own button just selects
     // the pack), which already requires sessionId via the CTA's disabled
@@ -1214,6 +1221,17 @@ export default function BookingPage() {
     // which. Same shape as payWithPackage()'s existing check.
     if (pack && pack.credits < count) {
       setErr(`This pack only has ${pack.credits} credit${pack.credits === 1 ? "" : "s"} — not enough for ${count} tickets. Reduce the number of tickets or pick a pack with more credits.`);
+      return;
+    }
+    // The chosen session hasn't room for the whole party: the pack is still bought, but the places
+    // that don't fit go on the waitlist (no credit used for them, 00197). Say so plainly and ask
+    // for an OK before Stripe (client, 2026-10-21). `capacity` here is the places still free.
+    const chosen = selectedForCredit();
+    if (!waitlistOk && pack && chosen && chosen.capacity != null && chosen.capacity < count && !isEvent && !isCourse) {
+      setPackWaitlist({
+        packageId, packName: pack.name, credits: pack.credits, priceCents: pack.price_cents,
+        free: Math.max(0, chosen.capacity), startsAt: chosen.starts_at,
+      });
       return;
     }
     setBusy(true);
@@ -1896,7 +1914,91 @@ export default function BookingPage() {
           onClose={() => setDupPrompt(null)}
         />
       )}
+      {packWaitlist && (
+        <PackWaitlistDialog
+          {...packWaitlist}
+          places={count}
+          className={activity?.title ?? "This class"}
+          onConfirm={() => { const id = packWaitlist.packageId; setPackWaitlist(null); void buyPack(id, true); }}
+          onClose={() => setPackWaitlist(null)}
+        />
+      )}
       <Footer />
     </PageShell>
+  );
+}
+
+/**
+ * Shown before Stripe when a parent buys a pack for a session that hasn't room for everyone they're
+ * booking (client, 2026-10-21). The pack is still bought; places that don't fit go on the waitlist
+ * with no credit used for them (00197). When a place opens, everyone waiting is emailed and whoever
+ * books first gets it (00204) — so this never promises the place. Payment only goes ahead on OK.
+ */
+export function PackWaitlistDialog({
+  packName, credits, priceCents, free, places, startsAt, className, onConfirm, onClose,
+}: {
+  packName: string; credits: number; priceCents: number; free: number; places: number;
+  startsAt: string; className: string; onConfirm: () => void; onClose: () => void;
+}) {
+  const full = free <= 0;
+  const booked = Math.min(free, places);
+  const waiting = places - booked;
+  const creditsLeft = credits - booked;
+  const when = sgDateTime(startsAt);
+  const title = full ? "This session is full" : `Only ${free} of your ${places} places ${free === 1 ? "is" : "are"} free`;
+  const Row = ({ icon, children }: { icon: "clock" | "mail" | "check" | "calendar"; children: React.ReactNode }) => (
+    <li className="flex items-start gap-2.5">
+      <Icon name={icon} className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FA4D8D]" />
+      <span>{children}</span>
+    </li>
+  );
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-[400px] overflow-y-auto rounded-[16px] bg-white p-6 shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-[#FCEFF4] text-[#FA4D8D]">
+          <Icon name="clock" className="h-6 w-6" />
+        </span>
+        <h2 className="mt-3 text-lg font-black">{title}</h2>
+        <p className="mt-1.5 text-sm font-semibold leading-6 text-[#59658d]">
+          {full
+            ? <>{className} on {when} has no places left, so buying this pack won&rsquo;t get you into it right away.</>
+            : <>{className} on {when} has {free} {free === 1 ? "place" : "places"} left.</>}
+        </p>
+        <ul className="mt-4 space-y-2.5 text-sm font-semibold leading-6 text-[#34406f]">
+          {!full && (
+            <Row icon="check">
+              <b className="font-black">{booked} {booked === 1 ? "place is" : "places are"} booked</b> now, using {booked} {booked === 1 ? "credit" : "credits"}.
+            </Row>
+          )}
+          <Row icon="clock">
+            {full ? "You'll join the " : `The other ${waiting === 1 ? "place joins" : `${waiting} places join`} the `}
+            <b className="font-black">waitlist</b>{full ? " for this session" : ""}. <b className="font-black">No credit is used</b> for {full ? "it" : waiting === 1 ? "it" : "them"}: {full && creditsLeft > 1 ? "all " : ""}{creditsLeft} {creditsLeft === 1 ? "credit stays" : "credits stay"} in your pack.
+          </Row>
+          <Row icon="mail">
+            If a place opens up, we&rsquo;ll <b className="font-black">email you</b>. Places go to whoever books first, so book it with a credit as soon as you can.
+          </Row>
+          <Row icon="calendar">
+            Meanwhile, you can use your credits to book <b className="font-black">any other session that has space</b>.
+          </Row>
+        </ul>
+        <p className="mt-4 rounded-[10px] bg-[#FCEFF4] px-3 py-2 text-sm font-bold text-[#72243E]">
+          You&rsquo;ll pay ${(priceCents / 100).toFixed(0)} now for &ldquo;{packName}&rdquo;.
+        </p>
+        <div className="mt-5 flex flex-col gap-2">
+          <Button type="button" className="w-full justify-center" onClick={onConfirm}>OK, continue to payment</Button>
+          <Button type="button" variant="outline" className="w-full justify-center" onClick={onClose}>Choose another time</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

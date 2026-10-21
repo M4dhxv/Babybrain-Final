@@ -1043,9 +1043,9 @@ export type Database = {
         }[];
       };
       provider_notification_feed: {
-        Args: { p_provider: string; p_limit?: number };
+        Args: { p_provider: string; p_limit?: number; p_waitlist_left?: boolean };
         Returns: {
-          kind: 'booking' | 'waitlist' | 'cancellation' | 'review' | 'token_issued';
+          kind: 'booking' | 'waitlist' | 'waitlist_left' | 'cancellation' | 'review' | 'token_issued';
           event_at: string;
           actor_name: string;
           activity_title: string | null;

@@ -53,6 +53,10 @@ export async function sendPushToUser(
     tag?: string;
     /** Buttons under the notification; tapping one opens `url`, same as the notification itself. */
     actions?: { action: string; title: string }[];
+    /** Thumbnail in place of the mascot icon, and the large picture shown when the notification
+     *  is expanded (Android/Chrome; iOS shows neither). Site paths from lib/push-images. */
+    icon?: string;
+    image?: string;
   }
 ): Promise<PushResult> {
   if (!pushEnabled()) return { outcome: 'disabled', devices: 0, delivered: 0 };

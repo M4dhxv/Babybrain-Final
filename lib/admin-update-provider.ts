@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { refreshStalePayouts } from '@/lib/stripe-connect';
 import { geocode, slugify, sgToUtcIso, VENDOR_CATEGORIES, type VendorCategory } from '@/lib/admin-create-provider';
 
 /**
@@ -14,6 +15,25 @@ import { geocode, slugify, sgToUtcIso, VENDOR_CATEGORIES, type VendorCategory } 
  * derive from the coordinates — leaving stale ones behind is how a vendor ends
  * up filed under the wrong area after a move.
  */
+
+/** Per-session booking rules (migration 00133). All null = the session follows its class. */
+export type SessionRules = {
+  allow_cancellation: boolean | null; cancellation_cutoff_hours: number | null;
+  cancellation_refund_mode: 'refund' | 'none' | null; allow_rescheduling: boolean | null;
+  reschedule_cutoff_hours: number | null; booking_cutoff_minutes: number | null;
+};
+const SESSION_RULE_COLUMNS = ['allow_cancellation', 'cancellation_cutoff_hours', 'cancellation_refund_mode',
+  'allow_rescheduling', 'reschedule_cutoff_hours', 'booking_cutoff_minutes'] as const;
+
+/** One upcoming session as the editor shows it: Singapore wall-clock times, and the same
+ *  per-session overrides the vendor portal's Manage schedule offers (null = as the class). */
+export type AdminSession = {
+  id: string; starts_at: string; ends_at: string; capacity: number | null;
+  teacher_name: string | null; studio: string | null;
+  price: number | null; location_id: string | null;
+  /** Set on a Wix-mirrored session: Wix owns its date, time, capacity, venue and price. */
+  wix_slot_key: string | null;
+} & SessionRules;
 
 export type ProviderDetail = {
   id: string;
@@ -37,8 +57,14 @@ export type ProviderDetail = {
   cover_image_url: string | null;
   uen: string | null;
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
-  /** Live Stripe payouts (set by Stripe's webhook — read-only here). */
+  /** Live Stripe payouts — re-checked with Stripe on load when the stored flag says off. */
   payouts_enabled: boolean;
+  /** Has a Stripe Connect account at all (it may still be verifying). */
+  stripe_connected: boolean;
+  /** Stripe's own state when payouts are still off: 'incomplete' | 'action_required' | 'pending' | 'active'; null if not asked. */
+  stripe_state: string | null;
+  /** How many items Stripe still wants before it switches payouts on. */
+  stripe_due_count: number;
   /** Admin-set: vendor may publish without Stripe; BabyBrain settles manually. */
   allow_manual_payouts: boolean;
   locations: {
@@ -67,8 +93,7 @@ export type ProviderDetail = {
     /** Wix kind, when linked: an EVENT or COURSE can never be cancelled by a parent. */
     wix_kind: string | null;
     /** Upcoming sessions, as Singapore wall-clock for the form. */
-    sessions: { id: string; starts_at: string; ends_at: string; capacity: number | null;
-                teacher_name: string | null; studio: string | null }[];
+    sessions: AdminSession[];
   }[];
   /** Waivers, consents and disclosures (provider_policies), newest settings as the vendor sees them. */
   policies: {
@@ -101,12 +126,23 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
     .select(
       'id, business_name, slug, description, vendor_category, contact_email, contact_phone, whatsapp, ' +
         'website, address, postal_code, region, status, is_claimed, is_auto_listed, latitude, longitude, ' +
-        'logo_url, cover_image_url, uen, social, payouts_enabled, allow_manual_payouts'
+        'logo_url, cover_image_url, uen, social, payouts_enabled, allow_manual_payouts, stripe_account_id'
     )
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!p) return null;
+
+  // The stored flag can lag Stripe (see refreshStalePayouts): when it says "off" for a vendor that
+  // has a Stripe account, ask Stripe now and correct it, so the editor shows the truth.
+  const prov = p as unknown as { id: string; stripe_account_id: string | null; payouts_enabled: boolean };
+  const payouts = await refreshStalePayouts(db, prov).catch(() => null);
+  const stripeInfo = {
+    payouts_enabled: payouts?.payouts_enabled ?? prov.payouts_enabled,
+    stripe_connected: !!prov.stripe_account_id,
+    stripe_state: payouts?.state ?? (prov.payouts_enabled ? 'active' : null),
+    stripe_due_count: payouts?.due_count ?? 0,
+  };
 
   const [locs, acts, cats, pols, packs] = await Promise.all([
     db.from('provider_locations')
@@ -157,16 +193,29 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
   const actRows = (acts.data ?? []) as unknown as RawActivity[];
   const actIds = actRows.map((a) => a.id);
 
-  // Sessions for every class in one round trip, newest-relevant first.
-  const sessions = actIds.length
-    ? (await db.from('activity_sessions')
-        .select('id, activity_id, starts_at, ends_at, capacity, teacher_name, studio')
-        .in('activity_id', actIds)
-        .order('starts_at')).data ?? []
-    : [];
-  const sessByAct = new Map<string, ProviderDetail['activities'][number]['sessions']>();
-  for (const s of sessions as unknown as Array<{ id: string; activity_id: string; starts_at: string;
-      ends_at: string; capacity: number | null; teacher_name: string | null; studio: string | null }>) {
+  // Upcoming (or still running) sessions for every class in one round trip. Past ones are left out:
+  // they can't usefully be edited, and the editor used to load — and send back on every save — a
+  // vendor's whole history (2,500+ rows for one swim school), which ran past the request's time
+  // limit and left saves half-applied.
+  // Read in pages: the API returns at most 1,000 rows per request, and one vendor alone has ~1,800
+  // upcoming sessions.
+  type RawSession = Omit<AdminSession, 'starts_at' | 'ends_at'> & { activity_id: string; starts_at: string; ends_at: string };
+  const sessions: RawSession[] = [];
+  const nowIso = new Date().toISOString();
+  for (let from = 0; actIds.length; from += 1000) {
+    const { data: page, error: sErr } = await db.from('activity_sessions')
+      .select('id, activity_id, starts_at, ends_at, capacity, teacher_name, studio, price, location_id, wix_slot_key, ' +
+              SESSION_RULE_COLUMNS.join(', '))
+      .in('activity_id', actIds)
+      .gte('ends_at', nowIso)
+      .order('starts_at').order('id')
+      .range(from, from + 999);
+    if (sErr) throw new Error(sErr.message);
+    sessions.push(...((page ?? []) as unknown as RawSession[]));
+    if (!page || page.length < 1000) break;
+  }
+  const sessByAct = new Map<string, AdminSession[]>();
+  for (const s of sessions) {
     const list = sessByAct.get(s.activity_id) ?? [];
     list.push({
       id: s.id,
@@ -175,12 +224,22 @@ export async function getProviderDetail(id: string): Promise<ProviderDetail | nu
       capacity: s.capacity,
       teacher_name: s.teacher_name,
       studio: s.studio,
+      price: s.price,
+      location_id: s.location_id,
+      wix_slot_key: s.wix_slot_key,
+      allow_cancellation: s.allow_cancellation,
+      cancellation_cutoff_hours: s.cancellation_cutoff_hours,
+      cancellation_refund_mode: s.cancellation_refund_mode,
+      allow_rescheduling: s.allow_rescheduling,
+      reschedule_cutoff_hours: s.reschedule_cutoff_hours,
+      booking_cutoff_minutes: s.booking_cutoff_minutes,
     });
     sessByAct.set(s.activity_id, list);
   }
 
   return {
     ...(p as unknown as Omit<ProviderDetail, 'locations' | 'activities' | 'policies' | 'packages'>),
+    ...stripeInfo,
     locations: (locs.data ?? []) as unknown as ProviderDetail['locations'],
     activities: actRows.map((a) => {
       const c = catById[a.category_id];
@@ -244,6 +303,11 @@ export type SessionPatch = {
   capacity?: number | null;
   teacher_name?: string | null;
   studio?: string | null;
+  /** Null = the class's own price / venue (stored as null so a later class change carries over). */
+  price?: number | null;
+  location_id?: string | null;
+  /** All six present and non-null = this session's own booking rules; all null = as the class. */
+  rules?: SessionRules;
   _delete?: boolean;
 };
 
@@ -316,14 +380,19 @@ export async function updateProviderWithCatalogue(
   const warnings: string[] = [];
 
   const { data: before } = await db
-    .from('providers').select('id, address, postal_code, business_name, payouts_enabled, allow_manual_payouts').eq('id', id).maybeSingle();
+    .from('providers').select('id, address, postal_code, business_name, payouts_enabled, allow_manual_payouts, stripe_account_id').eq('id', id).maybeSingle();
   if (!before) throw new Error('That vendor no longer exists.');
+
+  // The stored flag can lag Stripe: ask Stripe before refusing to publish (see refreshStalePayouts).
+  const payouts = await refreshStalePayouts(db, before as unknown as { id: string; stripe_account_id: string | null; payouts_enabled: boolean })
+    .catch(() => null);
+  const payoutsLive = payouts?.payouts_enabled ?? Boolean(before.payouts_enabled);
 
   // Publishing into BabyBrain checkout without Stripe is allowed when payouts
   // are live, the vendor is already flagged for manual settlement, this same
   // save turns that flag on, or (older clients) the one-shot override is sent.
   const manualSettlementOk =
-    Boolean(before.payouts_enabled) ||
+    payoutsLive ||
     Boolean((before as { allow_manual_payouts?: boolean }).allow_manual_payouts) ||
     input.provider?.allow_manual_payouts === true ||
     Boolean(input.overridePayoutGate);
@@ -488,6 +557,9 @@ export async function updateProviderWithCatalogue(
   if (acts.length) {
     const { data: cats } = await db.from('activity_categories').select('id, slug');
     const catId = Object.fromEntries((cats ?? []).map((c) => [c.slug, c.id]));
+    // This vendor's venues (read after the venue edits above, so one added in this save counts).
+    const { data: vRows } = await db.from('provider_locations').select('id').eq('provider_id', id);
+    const venueIds = new Set((vRows ?? []).map((v) => v.id as string));
 
     // Current state of every class being touched, so the gate below can tell
     // an actual unpublished->published flip from a resave of an already-live
@@ -516,10 +588,19 @@ export async function updateProviderWithCatalogue(
       const wasPublished = cur?.is_published ?? false;
       const resolvedExternalUrl = a.external_booking_url !== undefined ? a.external_booking_url : cur?.external_booking_url;
       if (willPublish && !wasPublished && !resolvedExternalUrl?.trim() && !manualSettlementOk) {
+        // Say what Stripe actually reports: "connected but still verifying" is a different
+        // conversation with the vendor from "never connected".
+        const why = !before.stripe_account_id
+          ? 'this vendor has no Stripe payouts set up'
+          : payouts?.checked
+            ? `this vendor has connected Stripe but Stripe hasn't switched payouts on yet (${payouts.state === 'incomplete'
+                ? 'their Stripe sign-up isn\'t finished'
+                : payouts.due_count ? `Stripe still needs ${payouts.due_count} item${payouts.due_count === 1 ? '' : 's'} from them` : 'Stripe is still verifying them'})`
+            : 'Stripe couldn\'t be reached to confirm this vendor\'s payouts — try saving again in a minute';
         throw new Error(
-          `"${a.title ?? cur?.title ?? 'This class'}" would publish straight into BabyBrain checkout, but this ` +
-          `vendor has no Stripe payouts set up. Add an external booking link, leave it unpublished, or tick ` +
-          `"Let this vendor publish without Stripe" to have BabyBrain settle it manually until they connect Stripe.`
+          `"${a.title ?? cur?.title ?? 'This class'}" would publish straight into BabyBrain checkout, but ${why}. ` +
+          `Add an external booking link, leave it unpublished, or tick ` +
+          `"Let this vendor publish without Stripe" to have BabyBrain settle it manually until payouts are on.`
         );
       }
 
@@ -607,36 +688,86 @@ export async function updateProviderWithCatalogue(
       /* Sessions. A class with none shows "Schedule TBC" and can't be booked,
          which is the state most of the catalogue is in — so this is the point
          of the whole editor for a lot of listings. */
-      for (const s of a.sessions ?? []) {
+      const label = a.title ?? cur?.title ?? 'A class';
+      const sess = a.sessions ?? [];
+      // What the edited sessions are now, for the Wix and capacity rules below.
+      const editIds = sess.filter((s) => s.id && !s._delete).map((s) => s.id as string);
+      const curSess = new Map<string, { wix_slot_key: string | null }>();
+      if (editIds.length) {
+        const { data: rows } = await db.from('activity_sessions').select('id, wix_slot_key').in('id', editIds).eq('activity_id', a.id);
+        for (const r of (rows ?? []) as { id: string; wix_slot_key: string | null }[]) curSess.set(r.id, r);
+      }
+      const inserts: Record<string, unknown>[] = [];
+
+      for (const s of sess) {
         if (s._delete && s.id) {
           const { error } = await db.from('activity_sessions').delete().eq('id', s.id).eq('activity_id', a.id);
           if (error) throw new Error(`Could not remove a session: ${error.message}`);
           sessionsChanged += 1;
           continue;
         }
+        // A Wix-synced session's date, time, capacity, venue and price are Wix's (the sync puts them
+        // back); like the vendor portal, only its booking rules are changed here.
+        const isWix = !!(s.id && curSess.get(s.id)?.wix_slot_key);
         const sRow: Record<string, unknown> = {};
-        if (s.starts_at !== undefined) {
-          const startsIso = sgToUtcIso(s.starts_at);
-          sRow.starts_at = startsIso;
-          const mins = Number.isFinite(s.duration_mins as number) && (s.duration_mins as number) > 0
-            ? (s.duration_mins as number) : 60;
-          sRow.ends_at = new Date(new Date(startsIso).getTime() + mins * 60_000).toISOString();
+        if (!isWix) {
+          if (s.starts_at !== undefined) {
+            const startsIso = sgToUtcIso(s.starts_at);
+            sRow.starts_at = startsIso;
+            const mins = Number.isFinite(s.duration_mins as number) && (s.duration_mins as number) >= 15
+              ? (s.duration_mins as number) : 60;
+            sRow.ends_at = new Date(new Date(startsIso).getTime() + mins * 60_000).toISOString();
+          }
+          if (s.capacity !== undefined) sRow.capacity = s.capacity;
+          if (s.teacher_name !== undefined) sRow.teacher_name = s.teacher_name || null;
+          if (s.studio !== undefined) sRow.studio = s.studio || null;
+          if (s.price !== undefined) {
+            if (s.price != null && !(Number.isFinite(s.price) && s.price >= 0)) throw new Error(`"${label}": a session price must be 0 or more.`);
+            sRow.price = s.price;
+          }
+          if (s.location_id !== undefined) {
+            if (s.location_id && !venueIds.has(s.location_id)) throw new Error(`"${label}": that venue isn't one of this vendor's.`);
+            sRow.location_id = s.location_id || null;
+          }
         }
-        if (s.capacity !== undefined) sRow.capacity = s.capacity;
-        if (s.teacher_name !== undefined) sRow.teacher_name = s.teacher_name || null;
-        if (s.studio !== undefined) sRow.studio = s.studio || null;
+        if (s.rules !== undefined) {
+          const r = s.rules;
+          const set = SESSION_RULE_COLUMNS.filter((k) => r[k] != null).length;
+          if (set !== 0 && set !== SESSION_RULE_COLUMNS.length) throw new Error(`"${label}": a session's booking rules must be all its own or all the class's.`);
+          if (set) {
+            if (r.cancellation_refund_mode !== 'refund' && r.cancellation_refund_mode !== 'none') throw new Error('Unknown refund setting.');
+            if ((r.booking_cutoff_minutes as number) > MAX_BOOKING_CUTOFF_MINS) throw new Error(`"${label}": booking cut-off can be at most ${MAX_BOOKING_CUTOFF_MINS} minutes (14 days).`);
+          }
+          sRow.allow_cancellation = set ? !!r.allow_cancellation : null;
+          sRow.cancellation_cutoff_hours = set ? hours(r.cancellation_cutoff_hours as number) : null;
+          sRow.cancellation_refund_mode = set ? r.cancellation_refund_mode : null;
+          sRow.allow_rescheduling = set ? !!r.allow_rescheduling : null;
+          sRow.reschedule_cutoff_hours = set ? hours(r.reschedule_cutoff_hours as number) : null;
+          sRow.booking_cutoff_minutes = set ? Math.max(0, Math.round(r.booking_cutoff_minutes as number)) : null;
+        }
         if (!Object.keys(sRow).length) continue;
 
         if (s.id) {
+          // Capacity can't drop below what's already booked (the waitlist doesn't count).
+          if (typeof sRow.capacity === 'number') {
+            const { count } = await db.from('bookings').select('id', { count: 'exact', head: true })
+              .eq('session_id', s.id).in('status', ['pending', 'confirmed']);
+            if ((count ?? 0) > (sRow.capacity as number)) {
+              throw new Error(`"${label}": ${count} ${count === 1 ? 'seat is' : 'seats are'} already booked on ${s.starts_at?.replace('T', ' ') ?? 'a session'}, so its capacity can't go below ${count}.`);
+            }
+          }
           const { error } = await db.from('activity_sessions').update(sRow as never).eq('id', s.id).eq('activity_id', a.id);
           if (error) throw new Error(`Could not save a session: ${error.message}`);
-        } else {
-          if (!sRow.starts_at) continue;   // a blank new row is just an unused slot
-          const { error } = await db.from('activity_sessions')
-            .insert({ ...sRow, activity_id: a.id } as never);
-          if (error) throw new Error(`Could not add a session: ${error.message}`);
+          sessionsChanged += 1;
+        } else if (sRow.starts_at) {   // a blank new row is just an unused slot
+          inserts.push({ ...sRow, activity_id: a.id });
         }
-        sessionsChanged += 1;
+      }
+      // New sessions (one, or a recurring batch of up to 100) go in as a single write.
+      if (inserts.length) {
+        const { error } = await db.from('activity_sessions').insert(inserts as never);
+        if (error) throw new Error(`Could not add sessions to "${label}": ${error.message}`);
+        sessionsChanged += inserts.length;
       }
     }
   }

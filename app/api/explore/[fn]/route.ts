@@ -172,8 +172,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ fn: 
   const text = result.text;
 
   // Fresh for 45s, then served stale for up to 2 more minutes while one
-  // request refreshes it. A listing edit can therefore take a minute or two
-  // to reach Explore cards; the activity page and checkout always read live.
+  // request refreshes it. The parent app adds the catalogue version stamp
+  // (?v=…, see ../version and migration 00246) to the URL, and any listing edit
+  // changes the stamp, so an edit reaches Explore cards on the next request
+  // instead of after this window. The activity page and checkout always read live.
   return new Response(text, {
     status: 200,
     headers: {

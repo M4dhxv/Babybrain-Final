@@ -236,14 +236,29 @@ type EditLocation = {
   /** Set when this venue is mirrored from the vendor's Wix site. */
   wix_location_id?: string | null;
 };
+/** A session's own booking rules (migration 00133); all null = it follows the class. */
+type SessionRules = {
+  allow_cancellation: boolean | null; cancellation_cutoff_hours: number | null;
+  cancellation_refund_mode: 'refund' | 'none' | null; allow_rescheduling: boolean | null;
+  reschedule_cutoff_hours: number | null; booking_cutoff_minutes: number | null;
+};
+const NO_RULES: SessionRules = {
+  allow_cancellation: null, cancellation_cutoff_hours: null, cancellation_refund_mode: null,
+  allow_rescheduling: null, reschedule_cutoff_hours: null, booking_cutoff_minutes: null,
+};
+const hasOwnRules = (s: SessionRules) => s.allow_cancellation != null;
 type EditSession = {
   id: string; starts_at: string; ends_at: string; capacity: number | null;
   teacher_name: string | null; studio: string | null;
+  /** null = the class's own price / venue. */
+  price: number | null; location_id: string | null;
+  /** Set when Wix owns this session's date, time, capacity, venue and price. */
+  wix_slot_key?: string | null;
   // Captured once from the pristine starts_at/ends_at when this row loads —
   // see the save-payload builder below for why this can't be recomputed from
   // current form state.
   duration_mins: number;
-};
+} & SessionRules;
 type EditActivity = {
   id: string; title: string; slug: string; category_slug: string | null; category_name: string | null;
   age_min_months: number; age_max_months: number; price: number | null; is_published: boolean;
@@ -278,6 +293,8 @@ type ProviderDetail = {
   logo_url: string | null; cover_image_url: string | null; uen: string | null;
   social: { instagram?: string | null; facebook?: string | null; tiktok?: string | null } | null;
   payouts_enabled: boolean; allow_manual_payouts: boolean;
+  /** From a live Stripe check on load (see refreshStalePayouts). */
+  stripe_connected?: boolean; stripe_state?: string | null; stripe_due_count?: number;
   locations: EditLocation[]; activities: EditActivity[];
   /** Saved on their own (each has its own Save), so kept out of the modal's unsaved-changes tracking. */
   policies?: EditPolicy[]; packages?: EditPackage[];
@@ -960,6 +977,7 @@ function EditVendorModal({
 }) {
   const [d, setD] = useState<ProviderDetail | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string[] | null>(null);
   // ids marked for removal — applied on save, so a misclick is undoable
@@ -1033,86 +1051,123 @@ function EditVendorModal({
   const set = <K extends keyof ProviderDetail>(k: K, v: ProviderDetail[K]) =>
     setD((p) => (p ? { ...p, [k]: v } : p));
 
+  /* What the save sends, per row, in the shape the API takes. Only rows (and, for the business,
+     fields) that differ from what was loaded are sent: the save used to resend every class and
+     every session — thousands of one-at-a-time writes for a large vendor, which ran past the
+     request's time limit and left edits half-applied. */
+  const providerFields = (p: ProviderDetail) => ({
+    business_name: p.business_name,
+    slug: p.slug ?? undefined,
+    description: p.description,
+    vendor_category: p.vendor_category,
+    contact_email: p.contact_email,
+    contact_phone: p.contact_phone,
+    whatsapp: p.whatsapp,
+    website: p.website,
+    address: p.address,
+    postal_code: p.postal_code,
+    status: p.status,
+    logo_url: p.logo_url,
+    cover_image_url: p.cover_image_url,
+    uen: p.uen,
+    social: p.social ?? {},
+    // Saved on the vendor (migration 00200) so their own portal lets
+    // them publish too, not just this save.
+    allow_manual_payouts: p.allow_manual_payouts,
+  });
+  const locationFields = (l: EditLocation) =>
+    ({ name: l.name, address: l.address, postal_code: l.postal_code, is_primary: l.is_primary });
+  const activityFields = (a: EditActivity) => ({
+    title: a.title, category_slug: a.category_slug ?? undefined,
+    description: a.description, age_min_months: a.age_min_months,
+    age_max_months: a.age_max_months, price: a.price, is_published: a.is_published,
+    image_urls: a.image_urls.map((u) => u.trim()).filter(Boolean),
+    external_booking_url: a.external_booking_url,
+    requires_medical_disclosure: a.requires_medical_disclosure,
+    bookings_paused: a.bookings_paused,
+    location_id: a.is_custom_location ? null : a.location_id,
+    is_custom_location: a.is_custom_location,
+    custom_location_label: a.is_custom_location ? a.custom_location_label : null,
+    secondary_category_slug: a.secondary_category_slug ?? null,
+    allow_cancellation: a.allow_cancellation,
+    cancellation_cutoff_hours: a.cancellation_cutoff_hours,
+    cancellation_refund_mode: a.cancellation_refund_mode,
+    allow_rescheduling: a.allow_rescheduling,
+    reschedule_cutoff_hours: a.reschedule_cutoff_hours,
+    booking_cutoff_minutes: a.booking_cutoff_minutes,
+    what_to_bring: a.what_to_bring,
+    confirmation_message: a.confirmation_message,
+  });
+  const sessionFields = (s: EditSession) => ({
+    starts_at: s.starts_at,
+    // The form only ever edits starts_at (no end-time/duration field exists), so this has to be
+    // the value fixed at load time from the session's real, pristine starts_at/ends_at —
+    // recomputing from CURRENT starts_at against the still-pristine ends_at (older code here)
+    // silently changed the length of any rescheduled session.
+    duration_mins: s.duration_mins,
+    capacity: s.capacity,
+    teacher_name: s.teacher_name,
+    studio: s.studio,
+    price: s.price,
+    location_id: s.location_id || null,
+    rules: {
+      allow_cancellation: s.allow_cancellation, cancellation_cutoff_hours: s.cancellation_cutoff_hours,
+      cancellation_refund_mode: s.cancellation_refund_mode, allow_rescheduling: s.allow_rescheduling,
+      reschedule_cutoff_hours: s.reschedule_cutoff_hours, booking_cutoff_minutes: s.booking_cutoff_minutes,
+    },
+  });
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+  /** Only what changed since the form was loaded (or last saved); null when nothing did. */
+  function changes(cur: ProviderDetail) {
+    const orig = (baseline.current ? JSON.parse(baseline.current)[0] : null) as ProviderDetail | null;
+    const was = orig ? providerFields(orig) : null;
+    const now = providerFields(cur);
+    const provider = Object.fromEntries(
+      Object.entries(now).filter(([k, v]) => !was || !same(v, (was as Record<string, unknown>)[k]))
+    );
+    const locations = [
+      ...cur.locations.flatMap((l): Record<string, unknown>[] => {
+        if (dropLoc.includes(l.id)) return [{ id: l.id, _delete: true }];
+        const o = orig?.locations.find((x) => x.id === l.id);
+        return o && same(locationFields(o), locationFields(l)) ? [] : [{ id: l.id, ...locationFields(l) }];
+      }),
+      ...newLocs.filter((l) => l.name.trim() || l.address.trim())
+        .map((l) => ({ name: l.name, address: l.address, postal_code: l.postal_code })),
+    ];
+    const activities = cur.activities.flatMap((a): Record<string, unknown>[] => {
+      if (dropAct.includes(a.id)) return [{ id: a.id, _delete: true }];
+      const o = orig?.activities.find((x) => x.id === a.id);
+      const sessions = [
+        ...a.sessions.filter((s) => s.starts_at.trim()).flatMap((s) => {
+          if (!s.id) return [sessionFields(s)];
+          const os = o?.sessions.find((x) => x.id === s.id);
+          return os && same(sessionFields(os), sessionFields(s)) ? [] : [{ id: s.id, ...sessionFields(s) }];
+        }),
+        // only the ones that belonged to this class
+        ...dropSess.filter((x) => x.actId === a.id).map((x) => ({ id: x.sessId, _delete: true })),
+      ];
+      const fieldsChanged = !o || !same(activityFields(o), activityFields(a));
+      if (!fieldsChanged && sessions.length === 0) return [];
+      return [{ id: a.id, ...(fieldsChanged ? activityFields(a) : {}), ...(sessions.length ? { sessions } : {}) }];
+    });
+    if (!Object.keys(provider).length && !locations.length && !activities.length) return null;
+    return {
+      ...(Object.keys(provider).length ? { provider } : {}),
+      ...(locations.length ? { locations } : {}),
+      ...(activities.length ? { activities } : {}),
+    };
+  }
+
   async function save() {
-    if (!d) return;
+    if (!d || saved) return;
+    const body = changes(d);
+    if (!body) { toast('Nothing has changed'); return; }
     setBusy(true); setErr(null); setNote(null);
     try {
       const r = await adminFetch<SaveResult>(`/api/admin/providers/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          provider: {
-            business_name: d.business_name,
-            slug: d.slug ?? undefined,
-            description: d.description,
-            vendor_category: d.vendor_category,
-            contact_email: d.contact_email,
-            contact_phone: d.contact_phone,
-            whatsapp: d.whatsapp,
-            website: d.website,
-            address: d.address,
-            postal_code: d.postal_code,
-            status: d.status,
-            logo_url: d.logo_url,
-            cover_image_url: d.cover_image_url,
-            uen: d.uen,
-            social: d.social ?? {},
-            // Saved on the vendor (migration 00200) so their own portal lets
-            // them publish too, not just this save.
-            allow_manual_payouts: d.allow_manual_payouts,
-          },
-          locations: [
-            ...d.locations.map((l) => ({
-              id: l.id, name: l.name, address: l.address, postal_code: l.postal_code,
-              is_primary: l.is_primary, _delete: dropLoc.includes(l.id),
-            })),
-            ...newLocs.filter((l) => l.name.trim() || l.address.trim())
-              .map((l) => ({ name: l.name, address: l.address, postal_code: l.postal_code })),
-          ],
-          activities: d.activities.map((a) => ({
-            id: a.id, title: a.title, category_slug: a.category_slug ?? undefined,
-            description: a.description, age_min_months: a.age_min_months,
-            age_max_months: a.age_max_months, price: a.price, is_published: a.is_published,
-            image_urls: a.image_urls.map((u) => u.trim()).filter(Boolean),
-            external_booking_url: a.external_booking_url,
-            requires_medical_disclosure: a.requires_medical_disclosure,
-            bookings_paused: a.bookings_paused,
-            location_id: a.is_custom_location ? null : a.location_id,
-            is_custom_location: a.is_custom_location,
-            custom_location_label: a.is_custom_location ? a.custom_location_label : null,
-            secondary_category_slug: a.secondary_category_slug ?? null,
-            allow_cancellation: a.allow_cancellation,
-            cancellation_cutoff_hours: a.cancellation_cutoff_hours,
-            cancellation_refund_mode: a.cancellation_refund_mode,
-            allow_rescheduling: a.allow_rescheduling,
-            reschedule_cutoff_hours: a.reschedule_cutoff_hours,
-            booking_cutoff_minutes: a.booking_cutoff_minutes,
-            what_to_bring: a.what_to_bring,
-            confirmation_message: a.confirmation_message,
-            sessions: [
-              ...a.sessions
-                .filter((s) => s.starts_at.trim())
-                .map((s) => ({
-                  ...(s.id ? { id: s.id } : {}),
-                  starts_at: s.starts_at,
-                  // The form only ever edits starts_at (no end-time/duration
-                  // field exists), so this has to be the value fixed at load
-                  // time from the session's real, pristine starts_at/ends_at
-                  // — recomputing from CURRENT starts_at against the still-
-                  // pristine ends_at (the old code here) silently corrupted
-                  // the length of any rescheduled session: moving a 60-min
-                  // class's start later shrank it toward the clamp floor,
-                  // moving it earlier ballooned it.
-                  duration_mins: s.duration_mins,
-                  capacity: s.capacity,
-                  teacher_name: s.teacher_name,
-                  studio: s.studio,
-                })),
-              // only the ones that belonged to this class
-              ...dropSess.filter((x) => x.actId === a.id).map((x) => ({ id: x.sessId, _delete: true })),
-            ],
-            _delete: dropAct.includes(a.id),
-          })),
-        }),
+        body: JSON.stringify(body),
       });
       setNote([
         `Saved — ${r.locationsChanged} venue${r.locationsChanged === 1 ? '' : 's'}, ${r.activitiesChanged} class${r.activitiesChanged === 1 ? '' : 'es'}, ${r.sessionsChanged} session${r.sessionsChanged === 1 ? '' : 's'}${r.regeocoded ? ', map pin moved' : ''}${r.provider.region ? `, ${r.provider.region}` : ''}.`,
@@ -1121,6 +1176,9 @@ function EditVendorModal({
       toast('Vendor saved');
       // What's on screen is now what's saved, so closing shouldn't nag.
       baseline.current = JSON.stringify([d, newLocs, dropLoc, dropAct, dropSess]);
+      // Locked until the editor closes: a second click in this window used to send the new
+      // sessions and venues again and create duplicates.
+      setSaved(true);
       setTimeout(onSaved, 1200);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1545,38 +1603,14 @@ function EditVendorModal({
                     </div>
                   </div>
 
-                  {/* schedule */}
-                  <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>
-                        SESSIONS ({a.sessions.length})
-                        {a.sessions.length === 0 && <span style={{ color: C.pink }}> · none — shows &ldquo;Schedule TBC&rdquo; and can&rsquo;t be booked</span>}
-                      </span>
-                      <button type="button" disabled={gone} style={{ ...tabBtn(false), padding: '5px 10px', fontSize: 12 }}
-                        onClick={() => set('activities', d.activities.map((x) => x.id === a.id
-                          ? { ...x, sessions: [...x.sessions, { id: '', starts_at: '', ends_at: '', duration_mins: 60, capacity: null, teacher_name: '', studio: '' }] } : x))}>
-                        + Session
-                      </button>
-                    </div>
-                    {a.sessions.map((s, si) => (
-                      <div key={s.id || `new-${si}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 80px 1fr 1fr 34px', gap: 8, marginBottom: 8 }}>
-                        <input type="datetime-local" value={s.starts_at} style={input()} disabled={gone}
-                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, starts_at: e.target.value } : y) } : x))} />
-                        <input value={s.capacity == null ? '' : String(s.capacity)} inputMode="numeric" style={input()} placeholder="cap" disabled={gone}
-                          onChange={(e) => { const v = e.target.value.replace(/\D/g, '');
-                            set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, capacity: v === '' ? null : Number(v) } : y) } : x)); }} />
-                        <input value={s.teacher_name ?? ''} style={input()} placeholder="teacher" disabled={gone}
-                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, teacher_name: e.target.value } : y) } : x))} />
-                        <input value={s.studio ?? ''} style={input()} placeholder="room" disabled={gone}
-                          onChange={(e) => set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.map((y, k) => k === si ? { ...y, studio: e.target.value } : y) } : x))} />
-                        <button type="button" style={{ ...tabBtn(false), color: C.pink, padding: 0 }} disabled={gone}
-                          onClick={() => {
-                            if (s.id) setDropSess((p) => [...p, { actId: a.id, sessId: s.id }]);
-                            set('activities', d.activities.map((x) => x.id === a.id ? { ...x, sessions: x.sessions.filter((_, k) => k !== si) } : x));
-                          }}>✕</button>
-                      </div>
-                    ))}
-                  </div>
+                  {/* schedule — same options as the vendor portal's Manage schedule */}
+                  <SessionsEditor
+                    activity={a}
+                    venues={d.locations}
+                    disabled={gone}
+                    onChange={(sessions) => upd({ sessions })}
+                    onRemoveSaved={(sessId) => setDropSess((p) => [...p, { actId: a.id, sessId }])}
+                  />
                   </>)}
                 </div>
               );
@@ -1607,7 +1641,11 @@ function EditVendorModal({
                 {' '}
                 {d.payouts_enabled
                   ? 'Not needed: their Stripe payouts are already on.'
-                  : 'Saved on the vendor: it also lets them publish from their own portal, not just in this save.'}
+                  : d.stripe_connected
+                    ? `Stripe is connected, but Stripe hasn't switched their payouts on yet (${d.stripe_state === 'incomplete'
+                        ? 'their Stripe sign-up isn’t finished'
+                        : d.stripe_due_count ? `Stripe still needs ${d.stripe_due_count} item${d.stripe_due_count === 1 ? '' : 's'} from them` : 'Stripe is still verifying them'}). Saved on the vendor: it also lets them publish from their own portal.`
+                    : 'They haven’t connected Stripe. Saved on the vendor: it also lets them publish from their own portal, not just in this save.'}
               </span>
             </label>
 
@@ -1620,9 +1658,9 @@ function EditVendorModal({
               padding: '12px 20px', background: C.panel, borderTop: `1px solid ${C.border}`,
               borderRadius: '0 0 14px 14px',
             }}>
-              <button type="button" onClick={save} disabled={busy}
-                style={{ ...primaryBtn(), opacity: busy ? 0.55 : 1 }}>
-                {busy ? 'Saving…' : 'Save changes'}
+              <button type="button" onClick={save} disabled={busy || saved}
+                style={{ ...primaryBtn(), opacity: busy || saved ? 0.55 : 1 }}>
+                {busy ? 'Saving…' : saved ? 'Saved' : 'Save changes'}
               </button>
               <button type="button" onClick={requestClose} style={tabBtn(false)}>Cancel</button>
               {dirty && !busy && (
@@ -1642,6 +1680,287 @@ function EditVendorModal({
   );
 }
 
+
+/* ------------------------------------------------------------------------------------------------
+ * A class's sessions in the vendor editor, with the same options as the vendor portal's Manage
+ * schedule: one-off or recurring adds, and per-session price, venue, length and booking rules.
+ * Everything lands in the editor's draft and is written by its Save (only what changed is sent).
+ * --------------------------------------------------------------------------------------------- */
+
+/** Long schedules (one swim school has ~1,800 upcoming sessions) show this many until asked. */
+const SESSIONS_SHOWN = 30;
+/** Guardrail on one recurring add — same as the vendor portal. */
+const MAX_SESSIONS_PER_ADD = 100;
+/** Monday-first weekday toggles; i is 0 = Sunday … 6 = Saturday. */
+const WEEKDAY_TOGGLES = [
+  { i: 1, label: 'Mon' }, { i: 2, label: 'Tue' }, { i: 3, label: 'Wed' }, { i: 4, label: 'Thu' },
+  { i: 5, label: 'Fri' }, { i: 6, label: 'Sat' }, { i: 0, label: 'Sun' },
+];
+/* yyyy-mm-dd helpers on UTC, so the Singapore calendar day picked is the day used (as in the portal). */
+const dowOfYmd = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
+const shiftYmd = (ymd: string, n: number) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+};
+/** Every date a recurrence lands on — the vendor portal's plannedDates, unchanged. */
+function plannedDates(f: { date: string; weeks: string; weekdays: number[]; customDates: string[] }): string[] {
+  if (!f.date) return [];
+  if (f.weeks === 'custom') return [...new Set([f.date, ...f.customDates].filter(Boolean))].sort();
+  const nWeeks = Math.min(12, Math.max(1, Number(f.weeks) || 1));
+  const baseDow = dowOfYmd(f.date);
+  const days = f.weekdays.length ? f.weekdays : [baseDow];
+  const out = new Set<string>();
+  for (let w = 0; w < nWeeks; w++) for (const wd of days) out.add(shiftYmd(f.date, w * 7 + ((wd - baseDow + 7) % 7)));
+  return [...out].sort();
+}
+const fmtYmd = (ymd: string) => new Date(`${ymd}T00:00:00+08:00`)
+  .toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short' });
+
+type AddForm = {
+  date: string; time: string; duration: string; capacity: string; weeks: string; weekdays: number[];
+  customDates: string[]; customDraft: string; teacher: string; studio: string; location_id: string; price: string;
+};
+
+function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved }: {
+  activity: EditActivity; venues: EditLocation[]; disabled: boolean;
+  onChange: (sessions: EditSession[]) => void; onRemoveSaved: (sessId: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [add, setAdd] = useState<AddForm | null>(null);
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const isWixClass = a.wix_kind != null;
+  const classVenue = venues.find((v) => v.id === a.location_id)?.name ?? 'no fixed venue';
+  const sessions = a.sessions;
+  const shown = showAll ? sessions : sessions.slice(0, SESSIONS_SHOWN);
+  const small: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 3 };
+  const btn: React.CSSProperties = { ...tabBtn(false), padding: '5px 10px', fontSize: 12 };
+
+  const edit = (si: number, patch: Partial<EditSession>) =>
+    onChange(sessions.map((y, k) => (k === si ? { ...y, ...patch } : y)));
+  /** Blank, or the class's own price, is stored as null so a later class price change carries over. */
+  const priceValue = (raw: string): number | null => {
+    if (raw.trim() === '') return null;
+    const n = Math.max(0, Number(raw));
+    return a.price != null && n === Number(a.price) ? null : n;
+  };
+
+  const planned = add ? plannedDates(add) : [];
+  function addSessions() {
+    if (!add) return;
+    if (!add.date || !add.time) return setAddErr('Pick the first date and a start time.');
+    if (!(Number(add.capacity) >= 1)) return setAddErr('Set a capacity for these sessions.');
+    if (!(Number(add.duration) >= 15)) return setAddErr('Duration must be at least 15 minutes.');
+    if (!planned.length) return setAddErr(add.weeks === 'custom' ? 'Add at least one date.' : 'Pick at least one day of the week.');
+    if (planned.length > MAX_SESSIONS_PER_ADD) {
+      return setAddErr(`That's ${planned.length} sessions in one go. Trim the days or weeks, or add them in a couple of batches.`);
+    }
+    const drafts: EditSession[] = planned.map((ymd) => ({
+      id: '', starts_at: `${ymd}T${add.time}`, ends_at: '', duration_mins: Number(add.duration),
+      capacity: Number(add.capacity), teacher_name: add.teacher.trim() || null, studio: add.studio.trim() || null,
+      price: priceValue(add.price),
+      location_id: add.location_id && add.location_id !== (a.location_id ?? '') ? add.location_id : null,
+      ...NO_RULES,
+    }));
+    onChange([...sessions, ...drafts].sort((x, y) => (x.starts_at || '9').localeCompare(y.starts_at || '9')));
+    setShowAll(true);
+    setAdd({ ...add, date: '', customDates: [], customDraft: '' });
+    setAddErr(null);
+  }
+
+  return (
+    <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>
+          UPCOMING SESSIONS ({sessions.length})
+          {sessions.length === 0 && <span style={{ color: C.pink }}> · none — shows &ldquo;Schedule TBC&rdquo; and can&rsquo;t be booked</span>}
+        </span>
+        <span style={{ display: 'flex', gap: 6 }}>
+          <button type="button" disabled={disabled} style={btn}
+            onClick={() => { onChange([...sessions, { id: '', starts_at: '', ends_at: '', duration_mins: 60, capacity: null, teacher_name: '', studio: '', price: null, location_id: null, ...NO_RULES }]); setShowAll(true); }}>
+            + One session
+          </button>
+          <button type="button" disabled={disabled || !!add} style={btn}
+            onClick={() => { setAddErr(null); setAdd({ date: '', time: '', duration: '45', capacity: '', weeks: '4', weekdays: [], customDates: [], customDraft: '', teacher: '', studio: '', location_id: '', price: '' }); }}>
+            + Repeat weekly…
+          </button>
+        </span>
+      </div>
+      {isWixClass && (
+        <div style={{ color: C.muted, fontSize: 12, marginBottom: 8 }}>
+          Linked to Wix: a Wix session&rsquo;s date, time, capacity, venue and price come from Wix, so only its booking rules can be changed here.
+        </div>
+      )}
+
+      {add && (
+        <div style={{ border: `1px dashed ${C.blue}`, borderRadius: 10, padding: 10, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 90px 90px', gap: 8 }}>
+            <div><span style={small}>First date</span>
+              <input type="date" value={add.date} style={input()}
+                onChange={(e) => { const v = e.target.value; setAdd({ ...add, date: v, weekdays: add.weekdays.length ? add.weekdays : v ? [dowOfYmd(v)] : [] }); }} /></div>
+            <div><span style={small}>Start time</span>
+              <input type="time" value={add.time} style={input()} onChange={(e) => setAdd({ ...add, time: e.target.value })} /></div>
+            <div><span style={small}>Minutes</span>
+              <input value={add.duration} inputMode="numeric" style={input()} onChange={(e) => setAdd({ ...add, duration: e.target.value.replace(/\D/g, '') })} /></div>
+            <div><span style={small}>Capacity</span>
+              <input value={add.capacity} inputMode="numeric" style={input()} onChange={(e) => setAdd({ ...add, capacity: e.target.value.replace(/\D/g, '') })} /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8, marginTop: 8, alignItems: 'end' }}>
+            <div><span style={small}>Repeat for</span>
+              <Select value={add.weeks} style={input()} onChange={(e) => setAdd({ ...add, weeks: e.target.value })}>
+                <option value="1">Just this week</option>
+                {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => <option key={n} value={String(n)}>{n} weeks</option>)}
+                <option value="custom">Custom dates</option>
+              </Select></div>
+            {add.weeks === 'custom' ? (
+              <div><span style={small}>More dates</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input type="date" value={add.customDraft} style={{ ...input(), width: 170 }} onChange={(e) => setAdd({ ...add, customDraft: e.target.value })} />
+                  <button type="button" style={btn} disabled={!add.customDraft}
+                    onClick={() => setAdd({ ...add, customDates: [...new Set([...add.customDates, add.customDraft])], customDraft: '' })}>Add date</button>
+                  {add.customDates.map((d) => (
+                    <button key={d} type="button" style={{ ...btn, color: C.pink }} title="Remove"
+                      onClick={() => setAdd({ ...add, customDates: add.customDates.filter((x) => x !== d) })}>{fmtYmd(d)} ✕</button>
+                  ))}
+                </div></div>
+            ) : (
+              <div><span style={small}>On</span>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {WEEKDAY_TOGGLES.map((w) => {
+                    const on = add.weekdays.includes(w.i);
+                    return (
+                      <button key={w.i} type="button" aria-pressed={on}
+                        style={{ ...tabBtn(on), padding: '6px 9px', fontSize: 12 }}
+                        onClick={() => setAdd({ ...add, weekdays: on ? add.weekdays.filter((x) => x !== w.i) : [...add.weekdays, w.i] })}>
+                        {w.label}
+                      </button>
+                    );
+                  })}
+                </div></div>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr 110px', gap: 8, marginTop: 8 }}>
+            <div><span style={small}>Teacher</span>
+              <input value={add.teacher} style={input()} onChange={(e) => setAdd({ ...add, teacher: e.target.value })} /></div>
+            <div><span style={small}>Room</span>
+              <input value={add.studio} style={input()} onChange={(e) => setAdd({ ...add, studio: e.target.value })} /></div>
+            <div><span style={small}>Venue</span>
+              <Select value={add.location_id} style={input()} onChange={(e) => setAdd({ ...add, location_id: e.target.value })}>
+                <option value="">Class venue ({classVenue})</option>
+                {venues.filter((v) => v.id !== a.location_id).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </Select></div>
+            <div><span style={small}>Price (SGD)</span>
+              <input value={add.price} inputMode="decimal" style={input()} placeholder={a.price != null ? `class: ${a.price}` : 'class price'}
+                onChange={(e) => setAdd({ ...add, price: e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') })} /></div>
+          </div>
+          <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>
+            {planned.length
+              ? `Adds ${planned.length} session${planned.length === 1 ? '' : 's'}: ${planned.slice(0, 4).map(fmtYmd).join(', ')}${planned.length > 4 ? ` … ${fmtYmd(planned[planned.length - 1])}` : ''}`
+              : 'Pick the first date to see which days it adds.'}
+          </div>
+          {addErr && <div style={{ color: C.pink, fontSize: 13, marginTop: 6 }}>{addErr}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" style={{ ...primaryBtn(), padding: '7px 12px', fontSize: 13 }} onClick={addSessions}>Add to schedule</button>
+            <button type="button" style={btn} onClick={() => { setAdd(null); setAddErr(null); }}>Done</button>
+          </div>
+          <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Added sessions are saved with &ldquo;Save changes&rdquo;.</div>
+        </div>
+      )}
+
+      {shown.map((s, si) => {
+        const wix = !!s.wix_slot_key;
+        const own = hasOwnRules(s);
+        return (
+          <div key={s.id || `new-${si}`} style={{ borderBottom: `1px solid ${C.border}`, padding: '8px 0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 70px 70px 90px 1.3fr 34px', gap: 6 }}>
+              <input type="datetime-local" value={s.starts_at} style={input()} disabled={disabled || wix} aria-label="Starts"
+                onChange={(e) => edit(si, { starts_at: e.target.value })} />
+              <input value={String(s.duration_mins)} inputMode="numeric" style={input()} disabled={disabled || wix} title="Minutes" aria-label="Minutes"
+                onChange={(e) => edit(si, { duration_mins: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+              <input value={s.capacity == null ? '' : String(s.capacity)} inputMode="numeric" style={input()} placeholder="cap" disabled={disabled || wix} aria-label="Capacity"
+                onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); edit(si, { capacity: v === '' ? null : Number(v) }); }} />
+              <input value={s.price == null ? '' : String(s.price)} inputMode="decimal" style={input()} disabled={disabled || wix} aria-label="Price"
+                placeholder={a.price != null ? `S$${a.price}` : 'price'} title="Blank = the class price"
+                onChange={(e) => { const v = e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1'); edit(si, { price: priceValue(v) }); }} />
+              <Select value={s.location_id ?? ''} style={input()} disabled={disabled || wix} aria-label="Venue"
+                onChange={(e) => edit(si, { location_id: e.target.value && e.target.value !== (a.location_id ?? '') ? e.target.value : null })}>
+                <option value="">Class venue</option>
+                {venues.filter((v) => v.id !== a.location_id).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </Select>
+              <button type="button" style={{ ...tabBtn(false), color: C.pink, padding: 0 }} disabled={disabled} aria-label="Remove session"
+                onClick={() => { if (s.id) onRemoveSaved(s.id); onChange(sessions.filter((_, k) => k !== si)); }}>✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.6fr', gap: 6, marginTop: 6, alignItems: 'center' }}>
+              <input value={s.teacher_name ?? ''} style={input()} placeholder="teacher" disabled={disabled || wix} aria-label="Teacher"
+                onChange={(e) => edit(si, { teacher_name: e.target.value })} />
+              <input value={s.studio ?? ''} style={input()} placeholder="room" disabled={disabled || wix} aria-label="Room"
+                onChange={(e) => edit(si, { studio: e.target.value })} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: own ? C.text : C.muted }}>
+                <input type="checkbox" checked={own} disabled={disabled}
+                  onChange={(e) => edit(si, e.target.checked ? {
+                    allow_cancellation: a.allow_cancellation, cancellation_cutoff_hours: a.cancellation_cutoff_hours,
+                    cancellation_refund_mode: a.cancellation_refund_mode, allow_rescheduling: a.allow_rescheduling,
+                    reschedule_cutoff_hours: a.reschedule_cutoff_hours, booking_cutoff_minutes: a.booking_cutoff_minutes,
+                  } : NO_RULES)} />
+                {own ? 'Own booking rules' : 'Booking rules: as the class'}
+                {wix && <Badge tone="blue">From Wix</Badge>}
+              </label>
+            </div>
+            {own && (() => {
+              const num: React.CSSProperties = { ...input(), width: 64, padding: '6px 8px', display: 'inline-block' };
+              const grp: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 12 };
+              return (
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6, padding: 8, borderRadius: 8, background: C.bg }}>
+                  <div style={grp}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <input type="checkbox" checked={!!s.allow_cancellation} disabled={disabled}
+                        onChange={(e) => edit(si, { allow_cancellation: e.target.checked })} /> Can cancel
+                    </label>
+                    {s.allow_cancellation && (<>
+                      up to
+                      <input value={String(s.cancellation_cutoff_hours ?? 0)} inputMode="numeric" style={num} disabled={disabled} aria-label="Cancel up to hours before"
+                        onChange={(e) => edit(si, { cancellation_cutoff_hours: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                      h before,
+                      <Select value={s.cancellation_refund_mode ?? 'refund'} style={{ ...input(), width: 'auto', padding: '6px 8px' }} disabled={disabled} aria-label="On cancelling"
+                        onChange={(e) => edit(si, { cancellation_refund_mode: e.target.value as 'refund' | 'none' })}>
+                        <option value="refund">refund as credit / token</option>
+                        <option value="none">no refund</option>
+                      </Select>
+                    </>)}
+                  </div>
+                  <div style={grp}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <input type="checkbox" checked={!!s.allow_rescheduling} disabled={disabled}
+                        onChange={(e) => edit(si, { allow_rescheduling: e.target.checked })} /> Can reschedule
+                    </label>
+                    {s.allow_rescheduling && (<>
+                      up to
+                      <input value={String(s.reschedule_cutoff_hours ?? 0)} inputMode="numeric" style={num} disabled={disabled} aria-label="Reschedule up to hours before"
+                        onChange={(e) => edit(si, { reschedule_cutoff_hours: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                      h before
+                    </>)}
+                  </div>
+                  <div style={grp}>
+                    Booking closes
+                    <input value={String(s.booking_cutoff_minutes ?? 0)} inputMode="numeric" style={num} disabled={disabled} aria-label="Booking closes minutes before"
+                      onChange={(e) => edit(si, { booking_cutoff_minutes: Number(e.target.value.replace(/\D/g, '') || 0) })} />
+                    min before
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })}
+      {sessions.length > SESSIONS_SHOWN && (
+        <button type="button" style={{ ...btn, marginTop: 8 }} onClick={() => setShowAll((v) => !v)}>
+          {showAll ? `Show the first ${SESSIONS_SHOWN} only` : `Show all ${sessions.length} sessions`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Waivers & consents and class packs, inside the vendor editor. Same rows and rules as the vendor

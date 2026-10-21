@@ -32,6 +32,42 @@ function canonical(args: Record<string, unknown>): string {
   return JSON.stringify(out);
 }
 
+/**
+ * The catalogue version stamp (migration 00246, /api/explore/version): it changes
+ * whenever a listing changes, and goes into every Explore request URL — so the
+ * edge cache serves a fresh list right after an admin or vendor edit, instead of
+ * the up-to-3-minutes-old one, while browsing between edits still shares cache.
+ *
+ * Re-checked at most every few seconds and shared by every request in a burst.
+ * Never blocks Explore for long: past a short timeout (or on any failure) the
+ * last known stamp, or none, is used — exactly the old behaviour.
+ */
+const VERSION_FRESH_MS = 3000;
+const VERSION_TIMEOUT_MS = 1500;
+let version: { v: string | null; at: number } | null = null;
+let versionInFlight: Promise<string | null> | null = null;
+
+function catalogueVersion(): Promise<string | null> {
+  if (version && Date.now() - version.at < VERSION_FRESH_MS) return Promise.resolve(version.v);
+  if (!versionInFlight) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), VERSION_TIMEOUT_MS);
+    versionInFlight = fetch(`${API_BASE}/api/explore/version`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { v?: unknown } | null) => {
+        const v = typeof body?.v === "string" && /^\d{1,20}$/.test(body.v) ? body.v : null;
+        version = { v: v ?? version?.v ?? null, at: Date.now() };
+        return version.v;
+      })
+      .catch(() => version?.v ?? null)
+      .finally(() => {
+        clearTimeout(timer);
+        versionInFlight = null;
+      });
+  }
+  return versionInFlight;
+}
+
 /** One short line saying what went wrong, for the on-screen "Details" and for
  *  analytics. Never contains user data: only error names, codes and statuses. */
 export function describeError(e: unknown): string {
@@ -107,7 +143,11 @@ async function catalogRpcNow(
     // the 8s deadline and then showed "Couldn't load", since a timeout isn't
     // retried. The route de-duplicates identical queries and is edge-cached, so
     // the second copy costs the database nothing.
-    const res = await timeoutFetch(`${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}`, { signal });
+    const v = await catalogueVersion();
+    const res = await timeoutFetch(
+      `${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}${v ? `&v=${v}` : ""}`,
+      { signal },
+    );
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) return { data, error: null };
