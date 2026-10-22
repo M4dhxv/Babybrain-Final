@@ -966,6 +966,23 @@ export default function AddVendorView() {
 
 /** Full editor for one vendor: the business, its venues and its classes.
  *  Saves patch-style, so an untouched section is left exactly as it was. */
+/**
+ * Opens the vendor's own portal in a new tab, signed in as this admin with
+ * manager access to that vendor (no expiry; see migration 00251). The tab is
+ * opened before the request so a popup blocker doesn't eat it.
+ */
+async function openVendorPortal(providerId: string) {
+  const tab = window.open('about:blank', '_blank');
+  try {
+    const { url } = await adminFetch<{ url: string }>(`/api/admin/providers/${providerId}/portal-access`, { method: 'POST' });
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+  } catch (e) {
+    tab?.close();
+    toast(e instanceof Error ? e.message : 'Could not open the vendor portal', 'error');
+  }
+}
+
 function EditVendorModal({
   id, categories, vendorCategories, onClose, onSaved,
 }: {
@@ -1208,7 +1225,13 @@ function EditVendorModal({
                     : 'Added by hand; the crawler leaves it alone.'}
                 </div>
               </div>
-              <button type="button" onClick={requestClose} style={tabBtn(false)}>Close</button>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button type="button" onClick={() => openVendorPortal(id)} style={primaryBtn()}
+                  title="Work in this vendor's own portal as a manager. You stay out of their team, emails and notifications.">
+                  Open vendor portal
+                </button>
+                <button type="button" onClick={requestClose} style={tabBtn(false)}>Close</button>
+              </div>
             </div>
 
             {/* business */}

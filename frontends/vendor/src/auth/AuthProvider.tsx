@@ -8,6 +8,17 @@ import { cacheInvalidate } from '@/lib/queryCache';
 import { disconnectChat } from '@/lib/chat';
 import { releasePushOnSignOut } from '@/lib/push';
 import { apiPost } from '@/lib/api';
+import { getAdminTarget, clearAdminTarget, takeAdminToken } from '@/lib/adminView';
+
+/** Set when this load came from admin → "Open vendor portal" (see lib/adminView.ts). */
+const adminToken = takeAdminToken();
+
+/** Caches are per account, and per vendor in admin view, where one account
+ *  moves between vendors. */
+function cacheId(userId: string | undefined): string | undefined {
+  const target = getAdminTarget();
+  return userId && target ? `${userId}:as:${target}` : userId;
+}
 
 /** supabase-js falls back to `JSON.stringify(body)` when a GoTrue error
  *  response has none of msg/message/error_description/error (see auth-js's
@@ -85,6 +96,11 @@ interface AuthState {
    *  "no business" answer, so callers can offer a retry instead of a fork. */
   providerError: boolean;
   recovery: boolean;             // true after a password-reset link is opened
+  /** A Babybrain admin working in this vendor's portal as a manager (00251),
+   *  not one of the vendor's own team. */
+  adminView: boolean;
+  /** Back to the admin's own (vendor-less) portal. */
+  leaveAdminView: () => void;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   resetPassword: (email: string) => Promise<AuthResult>;
   updatePassword: (password: string) => Promise<{ error?: string }>;
@@ -157,9 +173,11 @@ function readStoredSession(): Session | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Optimistic session from storage — lets the router render without a
   // full-screen boot loader. `getSession()` in the effect still confirms it.
-  const initialSession = useMemo(readStoredSession, []);
+  // An admin's sign-in link replaces whoever was signed in here, so don't paint
+  // that account first.
+  const initialSession = useMemo(() => (adminToken ? null : readStoredSession()), []);
   const [session, setSession] = useState<Session | null>(initialSession);
-  const initialProvider = useMemo(() => getCachedProvider<Provider>(initialSession?.user.id), [initialSession]);
+  const initialProvider = useMemo(() => getCachedProvider<Provider>(cacheId(initialSession?.user.id)), [initialSession]);
   const [provider, setProvider] = useState<Provider | null>(initialProvider?.provider ?? null);
   const [role, setRole] = useState<ProviderRole | null>((initialProvider?.role as ProviderRole | undefined) ?? null);
   // Seed the plan from the last-known value for THIS user, so the sidebar plan
@@ -167,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // flashing "free" while the provider lookup is in flight. The live query
   // below always overwrites this.
   const initialSubscription = useMemo<Subscription | null>(() => {
-    const cached = getCachedSubscription(initialSession?.user.id);
+    const cached = getCachedSubscription(cacheId(initialSession?.user.id));
     return cached ? (cached as Subscription) : null;
   }, [initialSession]);
   const [subscription, setSubscription] = useState<Subscription | null>(initialSubscription);
@@ -176,11 +194,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [recovery, setRecovery] = useState(false);
   const [providerResolved, setProviderResolved] = useState(false);
   const [providerError, setProviderError] = useState(false);
+  const [adminView, setAdminView] = useState(false);
 
   /** Returns whether the lookup actually answered. A failed query is NOT an
    *  answer: reporting it as "no business" is what dropped a real vendor onto
    *  the NoBusinessGate after a refresh. */
   async function loadProvider(userId?: string, signal?: AbortSignal): Promise<boolean> {
+    const target = getAdminTarget();
+    if (target) {
+      const q = supabase
+        .from('admin_vendor_access')
+        .select('provider:providers(*, subscription:subscriptions(*))')
+        .eq('provider_id', target);
+      const { data: grants, error: grantErr } = await (signal ? q.abortSignal(signal) : q);
+      if (grantErr) return false;
+      const granted = grants?.[0]?.provider;
+      if (granted) {
+        applyProvider(granted, 'manager', userId);
+        setAdminView(true);
+        return true;
+      }
+      // No grant for this account (a vendor signed in on the admin's browser,
+      // or access was withdrawn) — carry on as a normal sign-in.
+      clearAdminTarget();
+    }
+    setAdminView(false);
     // Resolve the user's active membership → its provider (RLS-scoped), with
     // its subscription embedded in the same request (subscriptions.provider_id
     // is providers' 1:1 child, so PostgREST can join it server-side) — this
@@ -214,23 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return rank > bestRank ? m : best;
     }, null);
     if (member?.provider) {
-      const { subscription: sub, ...prov } = member.provider as unknown as Provider & {
-        subscription: Subscription | null;
-      };
-      setProvider(prov as Provider);
-      setRole(member.role as ProviderRole);
-      const resolved: Subscription = sub ?? {
-        plan: 'free',
-        status: 'active',
-        current_period_end: null,
-        cancel_at_period_end: false,
-      };
-      setSubscription(resolved);
-      // Persist for the next cold load's first paint (see providerCache.ts).
-      if (userId) {
-        setCachedSubscription(userId, resolved);
-        setCachedProvider(userId, prov, member.role as string);
-      }
+      applyProvider(member.provider, member.role as ProviderRole, userId);
     } else {
       setProvider(null);
       setRole(null);
@@ -238,6 +260,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearCachedSubscription();
     }
     return true;
+  }
+
+  function applyProvider(row: unknown, memberRole: ProviderRole, userId?: string) {
+    const { subscription: sub, ...prov } = row as Provider & { subscription: Subscription | null };
+    setProvider(prov as Provider);
+    setRole(memberRole);
+    const resolved: Subscription = sub ?? {
+      plan: 'free',
+      status: 'active',
+      current_period_end: null,
+      cancel_at_period_end: false,
+    };
+    setSubscription(resolved);
+    // Persist for the next cold load's first paint (see providerCache.ts).
+    const id = cacheId(userId);
+    if (id) {
+      setCachedSubscription(id, resolved);
+      setCachedProvider(id, prov, memberRole);
+    }
   }
 
   /** A page load can fire the lookup while the access token is still being
@@ -274,6 +315,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
+        if (adminToken) {
+          // Start clean: nothing cached for whoever was signed in here before.
+          cacheInvalidate();
+          await disconnectChat();
+          const { error } = await supabase.auth.verifyOtp({ token_hash: adminToken, type: 'magiclink' });
+          if (error) console.warn('[auth] admin sign-in link failed', error.message);
+        }
         const { data } = await supabase.auth.getSession();
         if (!alive) return;
         setSession(data.session);
@@ -304,6 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSubscription(null);
           setProviderResolved(false);
           setProviderError(false);
+          setAdminView(false);
           // A different account must never inherit this one's cached plan or
           // read rows.
           clearCachedSubscription();
@@ -351,6 +400,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     providerResolved,
     providerError,
     recovery,
+    adminView,
+    leaveAdminView: () => {
+      clearAdminTarget();
+      cacheInvalidate();
+      window.location.replace(`${window.location.origin}/admin`);
+    },
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (!error) return {};
@@ -383,6 +438,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return error ? { error: authErrorMessage(error) } : {};
     },
     signOut: async () => {
+      clearAdminTarget();
       clearCachedSubscription();
       cacheInvalidate();
       // getChatClient() caches one StreamChat connection per browser tab and

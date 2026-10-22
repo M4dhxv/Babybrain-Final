@@ -1,4 +1,5 @@
 import { getAuthedContext } from '@/lib/api-auth';
+import { adminRoleOf } from '@/lib/admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, ProviderRole } from '@/types/database';
 
@@ -37,7 +38,21 @@ export async function requireProviderRole(
     .eq('status', 'active')
     .maybeSingle();
 
-  if (!member) return { ok: false, status: 403, error: 'Not a member of this business' };
+  if (!member) {
+    // An admin who opened this vendor from the admin portal works here as a
+    // manager (00251). Re-checked against ADMIN_EMAILS on every call, so a
+    // grant left behind by someone who is no longer an admin does nothing here.
+    if (RANK.manager >= RANK[minRole] && user.email_confirmed_at && adminRoleOf(user.email) === 'admin') {
+      const { data: grant } = await supabase
+        .from('admin_vendor_access')
+        .select('provider_id')
+        .eq('provider_id', providerId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (grant) return { ok: true, ctx: { userId: user.id, providerId, role: 'manager', supabase } };
+    }
+    return { ok: false, status: 403, error: 'Not a member of this business' };
+  }
   if (RANK[member.role] < RANK[minRole]) {
     return { ok: false, status: 403, error: `Requires ${minRole} role` };
   }
