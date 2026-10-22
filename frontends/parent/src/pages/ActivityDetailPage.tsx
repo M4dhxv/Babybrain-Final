@@ -537,6 +537,31 @@ export default function ActivityDetailPage() {
     return () => { cancelled = true; };
   }, [sessions]);
 
+  /* Every venue this class runs at (migration 00250), for the "other
+     locations" list under the Location line. One query, only for the open
+     activity; a single-venue class gets one row back and shows nothing extra. */
+  const [activityLocs, setActivityLocs] = useState<{ id: string; name: string; address: string | null; price: number | null }[]>([]);
+  const activityIdForLocs = activity?.id ?? null;
+  useEffect(() => {
+    if (!activityIdForLocs) return;
+    let cancelled = false;
+    supabase
+      .from("activity_locations")
+      .select("location_id, position, price, provider_locations(name, address)")
+      .eq("activity_id", activityIdForLocs)
+      .order("position")
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows = (data ?? []) as unknown as Array<{ location_id: string; price: number | null; provider_locations: { name: string; address: string | null } | null }>;
+        setActivityLocs(
+          rows
+            .filter((r) => r.provider_locations)
+            .map((r) => ({ id: r.location_id, name: r.provider_locations!.name, address: r.provider_locations!.address, price: r.price }))
+        );
+      });
+    return () => { cancelled = true; };
+  }, [activityIdForLocs]);
+
   const packagesNotOffered =
     activity?.wix_service_type === "EVENT" ||
     activity?.wix_service_type === "COURSE" ||
@@ -654,6 +679,9 @@ export default function ActivityDetailPage() {
     nextVenue ??
     (activity.is_custom_location ? activity.custom_location_label?.trim() || "Custom" : activity.address) ??
     null;
+  // The venues other than the one the Location line already shows.
+  const shownLocId = next?.location_id ?? activity.location_id ?? null;
+  const otherLocs = activityLocs.length > 1 ? activityLocs.filter((l) => l.id !== shownLocId) : [];
   // Falls back to the provider's own cover/logo/gallery when this listing
   // has no photos of its own (or is explicitly set to borrow theirs) — see
   // activityMedia.ts. Recomputed on every load, so clearing an activity's
@@ -1092,6 +1120,34 @@ export default function ActivityDetailPage() {
                     </a>
                   )}
                 </p>
+              )}
+              {otherLocs.length > 0 && (
+                <details className="group -mt-1 text-right">
+                  <summary className="cursor-pointer list-none text-xs font-semibold text-baby-cta [&::-webkit-details-marker]:hidden">
+                    Also at {otherLocs.length} other location{otherLocs.length > 1 ? "s" : ""}
+                    <span className="ml-1 inline-block group-open:rotate-180">▾</span>
+                  </summary>
+                  <ul className="mt-2 space-y-2 text-left font-normal">
+                    {otherLocs.map((l) => (
+                      <li key={l.id} className="rounded-lg bg-[#FAF7F7] px-3 py-2">
+                        <span className="block font-semibold">{l.name}</span>
+                        {l.address && (
+                          <a
+                            href={mapsUrl([l.name, l.address].join(", "))}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta"
+                          >
+                            {l.address}
+                          </a>
+                        )}
+                        {l.price != null && Number(l.price) !== Number(activity.price ?? NaN) && (
+                          <span className="block text-xs">{Number(l.price) === 0 ? "Free" : `$${Number(l.price)} per session`}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
               {next && (
                 <p className="flex items-start justify-between gap-3">

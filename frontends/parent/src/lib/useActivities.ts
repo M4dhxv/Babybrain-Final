@@ -10,10 +10,14 @@ import { isMultiDay, sgShortRange } from "./schedule";
 /** One physical venue a listing runs at. Multi-venue businesses (Kindermusik,
  *  Lucy Sparkles, My Gym…) keep several, and every one gets a map pin. */
 export interface ActivityVenue {
+  /** provider_locations.id — absent on the older fallback venues. */
+  id?: string;
   name: string;
   lat: number;
   lng: number;
   region: SgRegion | null;
+  /** The activity's primary venue (00250); venues come primary first. */
+  primary?: boolean;
 }
 
 /** Live activity carrying the content `Activity` shape (so ActivityCard /
@@ -104,7 +108,7 @@ export interface ActivityQuery {
 }
 
 /** A venue as `matching_activities`/`search_activities` return it (jsonb). */
-type VenueRow = { name: string | null; lat: number; lng: number; region: SgRegion | null };
+type VenueRow = { id?: string; name: string | null; lat: number; lng: number; region: SgRegion | null; primary?: boolean };
 
 /** A `matching_activities` / `search_activities` row. */
 export type SearchRow = {
@@ -145,10 +149,24 @@ export type SearchRow = {
   // Added in 00175 — a private session at the customer's own home.
   is_custom_location?: boolean | null;
   custom_location_label?: string | null;
+  // Added in 00250 (search_activities only) — the price range across the
+  // activity's venues and weekday prices, and how many venues it runs at.
+  price_from?: number | null;
+  price_to?: number | null;
+  location_count?: number | null;
 };
 
 /** A `search_activities` row — `matching_activities` plus the page's total. */
 type SearchActivitiesRow = SearchRow & { total_count: number | null };
+
+/** The venue a card names for a multi-venue activity: the first one in the
+ *  areas the parent filtered on, else the primary (venues come primary first).
+ *  Null for a single-venue activity, whose card keeps showing just its area. */
+function cardLocation(venues: ActivityVenue[], count: number, regions?: string[]): { name: string; region: SgRegion | null } | null {
+  if (count < 2 || venues.length === 0) return null;
+  const v = (regions?.length ? venues.find((x) => x.region && regions.includes(x.region)) : undefined) ?? venues[0];
+  return v.name ? { name: v.name, region: v.region } : null;
+}
 
 /** The card's date and time for one specific session start (used when a filter picked
  *  a session other than the next one). */
@@ -174,13 +192,17 @@ export function cardWhen(r: SearchRow): { date: string; time: string } {
   return { date: sgDate(r.next_session_at), time: sgTime(r.next_session_at) };
 }
 
-function toLiveActivity(r: SearchRow): LiveActivity {
+function toLiveActivity(r: SearchRow, regions?: string[]): LiveActivity {
   const venues: ActivityVenue[] = (r.venues ?? []).map((v) => ({
+    id: v.id,
     name: v.name ?? "",
     lat: v.lat,
     lng: v.lng,
     region: v.region,
+    primary: v.primary,
   }));
+  const locationCount = r.location_count ?? 1;
+  const shown = cardLocation(venues, locationCount, regions);
   return {
     id: r.id,
     slug: r.slug,
@@ -206,7 +228,8 @@ function toLiveActivity(r: SearchRow): LiveActivity {
     lng: r.longitude ?? venues[0]?.lng ?? undefined,
     providerId: r.provider_id,
     providerName: r.provider_name ?? undefined,
-    price: r.price ?? null,
+    // The cheapest it can cost ("From $X") once venues or days are priced differently.
+    price: r.price_from ?? r.price ?? null,
     nextSessionAt: r.next_session_at ?? null,
     isCourse: r.is_course ?? false,
     runStartsAt: r.is_course ? r.run_starts_at ?? null : null,
@@ -214,6 +237,9 @@ function toLiveActivity(r: SearchRow): LiveActivity {
     ageMinMonths: r.age_min_months,
     ageMaxMonths: r.age_max_months,
     region: r.region,
+    locationName: shown?.name,
+    locationRegion: shown?.region ?? null,
+    extraLocations: shown ? locationCount - 1 : 0,
     isCustomLocation: r.is_custom_location ?? false,
     customLocationLabel: r.custom_location_label ?? null,
     durationMins: r.duration_mins,
@@ -346,7 +372,7 @@ export async function warmExploreList(): Promise<void> {
     ).finally(() => clearTimeout(timer));
     if (error || !data) return;
     const rows = data as SearchActivitiesRow[];
-    const mapped = rows.map(toLiveActivity);
+    const mapped = rows.map((r) => toLiveActivity(r));
     const total = Math.max(Number(rows[0]?.total_count ?? 0), mapped.length);
     cacheSet(key, { rows: mapped, total });
   } catch {
@@ -402,7 +428,7 @@ export function useActivities(params: ActivityQuery = {}) {
         return;
       }
       const rows = (data ?? []) as SearchActivitiesRow[];
-      const mapped = rows.map(toLiveActivity);
+      const mapped = rows.map((r) => toLiveActivity(r, params.regions));
       // total_count rides on every row; it can never be below what we hold.
       const t = Math.max(Number(rows[0]?.total_count ?? 0), mapped.length);
       // A background refresh only re-reads the first page. If the parent had
@@ -450,7 +476,7 @@ export function useActivities(params: ActivityQuery = {}) {
     }
     setFailedKey(null);
     const batch = (data ?? []) as SearchActivitiesRow[];
-    const more = batch.map(toLiveActivity);
+    const more = batch.map((r) => toLiveActivity(r, params.regions));
     const have = new Set(current.rows.map((r) => r.id));
     const rows = [...current.rows, ...more.filter((r) => !have.has(r.id))];
     // An empty batch means the catalogue shrank since the count was taken:
@@ -505,7 +531,7 @@ export function useActivityPins(params: ActivityQuery = {}, enabled = true) {
         setFailedKey(key); // never cached
         return;
       }
-      const mapped = ((data ?? []) as SearchRow[]).map(toLiveActivity);
+      const mapped = ((data ?? []) as SearchRow[]).map((r) => toLiveActivity(r, params.regions));
       cacheSet(key, mapped);
       setFetched({ key, rows: mapped });
     };

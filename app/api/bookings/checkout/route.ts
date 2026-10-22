@@ -3,6 +3,7 @@ import { staffLabel } from '@/lib/staff-label';
 import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sessionPrice } from '@/lib/session-price';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { computeSplit, getTerms } from '@/lib/commercials';
@@ -73,11 +74,11 @@ export async function POST(request: Request) {
 
   // Authoritative price + provider from the booked session's activity.
   //
-  // The price is the SESSION's when it has one, falling back to the
-  // activity's (migration 00074) — a vendor running the same class at two
-  // venues can price them differently, so reading activities.price alone
-  // would have charged the wrong amount for one of them. Same resolution the
-  // booking trigger uses to decide free vs paid, so the two can't disagree.
+  // The price comes from session_price() — a venue's weekday price, the
+  // session's own, the venue's, then the activity's (migrations 00074, 00250).
+  // Reading activities.price alone would charge the wrong amount at a venue or
+  // on a day priced differently, and it is the same function the booking
+  // trigger uses to decide free vs paid, so the two can't disagree.
   const { data: sess } = await admin
     .from('activity_sessions')
     // starts_at/ends_at and the venue ride along for the confirmation page's
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
     | { name: string | null; address: string | null }
     | null;
 
-  const price = Number(sess?.price ?? activity?.price ?? 0);
+  const price = Number((await sessionPrice(admin, booking.session_id)) ?? 0);
   if (!price || price <= 0) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }

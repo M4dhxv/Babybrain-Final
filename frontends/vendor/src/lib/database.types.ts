@@ -739,6 +739,30 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['provider_member_profiles']['Insert']>;
         Relationships: [];
       };
+      // 00250 — the venues an activity runs at (the primary is activities.location_id),
+      // each with an optional own price and weekday prices ({"0".."6": price}, 0 = Sunday).
+      activity_locations: {
+        Row: {
+          activity_id: string;
+          location_id: string;
+          position: number;
+          price: number | null;
+          day_prices: Record<string, number>;
+          created_at: string;
+        };
+        Insert: {
+          activity_id: string;
+          location_id: string;
+          position?: number;
+          price?: number | null;
+          day_prices?: Record<string, number>;
+        };
+        Update: Partial<Database['public']['Tables']['activity_locations']['Insert']>;
+        Relationships: [
+          { foreignKeyName: 'activity_locations_activity_id_fkey'; columns: ['activity_id']; isOneToOne: false; referencedRelation: 'activities'; referencedColumns: ['id'] },
+          { foreignKeyName: 'activity_locations_location_id_fkey'; columns: ['location_id']; isOneToOne: false; referencedRelation: 'provider_locations'; referencedColumns: ['id'] },
+        ];
+      };
       provider_locations: {
         Row: {
           id: string;

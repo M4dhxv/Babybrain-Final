@@ -45,6 +45,8 @@ const ALLOWED = new Set([
   // Pure helpers / read-only lookups of already-public data
   'booking_display_name', 'change_when', 'change_venue', 'child_age_months', 'distance_km',
   'plan_commission_rate', 'sg_region', 'time_of_day', 'session_email_details', 'session_price',
+  // 00250: validates activity_locations.day_prices in a CHECK constraint, so writers must be able to run it
+  'valid_day_prices',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });
