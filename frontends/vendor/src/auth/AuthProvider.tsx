@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, AUTH_STORAGE_KEY } from '@/lib/supabase';
 import { identifyUser, resetUser } from '@/lib/posthog';
@@ -192,7 +192,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Only hold routing on the async check when there's nothing to render from.
   const [loading, setLoading] = useState(!initialSession);
   const [recovery, setRecovery] = useState(false);
-  const [providerResolved, setProviderResolved] = useState(false);
+  const [providerResolved, setProviderResolvedState] = useState(false);
+  // The same, for the visibility handler below: it is set up once, so it would
+  // only ever see the first render's `false` and re-run the business lookup
+  // every time the tab came back to the front.
+  const providerResolvedRef = useRef(false);
+  const setProviderResolved = (v: boolean) => {
+    providerResolvedRef.current = v;
+    setProviderResolvedState(v);
+  };
   const [providerError, setProviderError] = useState(false);
   const [adminView, setAdminView] = useState(false);
 
@@ -376,7 +384,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(data.session);
           // Coming back to a tab whose lookup had failed is the natural moment
           // to try again, rather than leaving it stuck on the retry panel.
-          if (data.session && !providerResolved) void resolveProvider(data.session.user.id);
+          if (data.session && !providerResolvedRef.current) void resolveProvider(data.session.user.id);
         })
         .catch(() => {})
         .finally(settle);

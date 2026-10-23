@@ -86,7 +86,8 @@ export async function POST(request: Request) {
       type: 'support_message',
       title: countTitle('BabyBrain Support', unreadFor(supportUnread, parentId)),
       body: text,
-      data: { url: '/support' },
+      // The conversation is on the parent app's Messages tab (the app has no /support page).
+      data: { url: `/profile?tab=messages&channel=${encodeURIComponent(event.channel_id)}`, channel_id: event.channel_id },
     });
     if (error) console.error('[stream webhook] support notification insert failed:', error.message);
   }

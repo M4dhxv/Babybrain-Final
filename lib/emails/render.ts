@@ -12,6 +12,8 @@
  * reply-to hello@babybrain.sg (set by the sender, not here).
  */
 
+import { isSitePath } from '@/lib/notification-links';
+
 const IG_URL = process.env.EMAIL_INSTAGRAM_URL ?? 'https://www.instagram.com/babybrainsg';
 const PINK = '#FA5D93';
 
@@ -54,9 +56,13 @@ const sign = `<p style="margin:24px 0 0">All the best,<br/>Katie<br/>Founder, Ba
 // `path` is normally a root-relative path ("/activity?slug=…#reviews") that the
 // notification producer supplies; prefix it with the app origin. If a caller
 // (or a stale `data` payload) hands us a full URL, use it as-is rather than
-// concatenating a second origin in front of it.
+// concatenating a second origin in front of it. Anything else ("@host",
+// "//host") would make `${appUrl}${path}` another site, so it falls back to the
+// home page. Escaped, so a quote in the data can't break out of the attribute.
+const absUrl = (ctx: EmailCtx, path: string) =>
+  esc(/^https?:\/\//i.test(path) ? path : isSitePath(path) ? `${ctx.appUrl}${path}` : `${ctx.appUrl}/`);
 const link = (ctx: EmailCtx, path: string, label: string) =>
-  `<a href="${/^https?:\/\//i.test(path) ? path : `${ctx.appUrl}${path}`}" style="color:${PINK};font-weight:400;text-decoration:underline">${esc(label)}</a>`;
+  `<a href="${absUrl(ctx, path)}" style="color:${PINK};font-weight:400;text-decoration:underline">${esc(label)}</a>`;
 
 /** Bold activity name + date/time / duration / address block, when present.
  *  `includeType` adds the provider's business name as a trailing line — the
@@ -81,7 +87,7 @@ function activityCard(ctx: EmailCtx, a: EmailData): string {
   const name = str(a, 'activity_name');
   const metaLine = [str(a, 'date_time'), str(a, 'duration')].filter(Boolean).join(' · ');
   const metaRows = [metaLine, str(a, 'address'), str(a, 'type')].filter(Boolean).map((r) => esc(r!));
-  const href = /^https?:\/\//i.test(str(a, 'url') ?? '') ? str(a, 'url')! : `${ctx.appUrl}${str(a, 'url') ?? '/explore'}`;
+  const href = absUrl(ctx, str(a, 'url') ?? '/explore');
   return `<div style="background:#FCEFF4;border-left:4px solid ${PINK};border-radius:4px 10px 10px 4px;padding:16px 20px 18px 18px;margin:0 0 12px">
     ${name ? `<h3 style="margin:0 0 8px;font-size:16.5px;font-weight:600;color:#3a3a3a;font-family:'Fredoka','Helvetica Neue',Arial,sans-serif">${esc(name)}</h3>` : ''}
     ${metaRows.length ? `<div style="font-size:14.5px;color:#767676;line-height:1.75">${metaRows.join('<br/>')}</div>` : ''}
@@ -145,7 +151,7 @@ const PARENT_UPGRADE_BENEFITS = [
 
 /** Big pink call-to-action button, for the auth emails. */
 const cta = (href: string, label: string) =>
-  `<p style="margin:0 0 20px"><a href="${href}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${esc(label)}</a></p>`;
+  `<p style="margin:0 0 20px"><a href="${esc(href)}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">${esc(label)}</a></p>`;
 
 /** "Add to calendar" button for a confirmed booking. Points at the public
  *  .ics endpoint (a plain link that iOS, Android and desktop calendars all open
@@ -527,7 +533,8 @@ const T: Record<string, Template> = {
   message_response: (d, ctx) =>
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`You have a response to a message you sent, ${link(ctx, '/login', 'log in')} to view it.`) +
+      // The conversation itself (data.url): signed-out parents are sent to log in first and come back to it.
+      p(`You have a response to a message you sent, ${link(ctx, str(d, 'url') ?? '/profile?tab=messages', 'log in')} to view it.`) +
       sign),
 
   // Parent side of the class group chat email; see provider_class_group_message.
@@ -647,7 +654,7 @@ const T: Record<string, Template> = {
   provider_message_response: (d, ctx) =>
     wrap(ctx, 'You’ve got a message 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`You have a response to a message you sent, ${link(ctx, '/vendor', 'log in')} to view it.`) +
+      p(`You have a response to a message you sent, ${link(ctx, str(d, 'url') ?? '/vendor', 'log in')} to view it.`) +
       sign),
 
   // Class group chat (class-/session- channels), sent 4h after a message the
@@ -656,7 +663,7 @@ const T: Record<string, Template> = {
   provider_class_group_message: (d, ctx) =>
     wrap(ctx, 'New messages in your class group chat 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'class')} group chat. ${link(ctx, '/vendor', 'Log in')} to read and reply.`) +
+      p(`There are new messages in the ${bold(str(d, 'group_name') ?? 'class')} group chat. ${link(ctx, str(d, 'url') ?? '/vendor', 'Log in')} to read and reply.`) +
       sign),
 
   provider_unsubscribe_response: (d, ctx) =>

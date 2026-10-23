@@ -65,6 +65,19 @@ const nextConfig = {
       // fell through to Next's 404. Send it to the portal landing page.
       { source: '/vendors', destination: '/vendor/', permanent: false },
 
+      // Links into the old Next pages, still in older notifications and emails:
+      // /dashboard/bookings (the first booking notifications), /activities/<slug>
+      // (early follow-ups) and /support (support-chat replies, until the Stream
+      // webhook was pointed at the Messages tab). The SPA has none of these
+      // routes, and middleware's old guard on /dashboard and /support sent a
+      // signed-in parent round /login without end. Each goes to the page that
+      // replaced it.
+      { source: '/dashboard', destination: '/profile', permanent: false },
+      { source: '/dashboard/:tab(bookings|favorites|notifications|reviews)', destination: '/profile?tab=:tab', permanent: false },
+      { source: '/dashboard/:rest*', destination: '/profile', permanent: false },
+      { source: '/support', destination: '/profile?tab=messages', permanent: false },
+      { source: '/activities/:slug', destination: '/activity?slug=:slug', permanent: false },
+
       // The vendor portal is a HashRouter SPA that only answers at `/vendor`
       // and `/vendor/`. A bare deep path — `/vendor/login` from an old invite
       // mail, or anything typed/guessed — has no rewrite and fell through to

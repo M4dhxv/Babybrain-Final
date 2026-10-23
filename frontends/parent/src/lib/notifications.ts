@@ -58,7 +58,11 @@ export function useUnreadNotifications(userId: string | undefined): number {
     ).then((c) => {
       if (!cancelled) setCount(c);
     });
-    const interval = setInterval(fetchCount, RESYNC_MS);
+    // Not while hidden (a background tab polled every 20s for as long as it
+    // stayed open); coming back to the tab refetches at once (onVisible).
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchCount();
+    }, RESYNC_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") fetchCount();
     };

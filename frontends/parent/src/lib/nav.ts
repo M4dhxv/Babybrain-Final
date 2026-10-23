@@ -51,9 +51,12 @@ export function loginUrl(): string {
 const LOGIN_NEXT_KEY = "bb:loginNext";
 const LOGIN_NEXT_MAX_AGE_MS = 30 * 60 * 1000;
 
-/** Same-origin relative paths only ("//host" would be an open redirect). */
+/** Same-origin relative paths only. "//host" would be an open redirect, and so
+ *  would "/\host" (browsers read a backslash as a slash) and "/<tab>/host"
+ *  (tabs and newlines are dropped from a URL), so neither a backslash nor a
+ *  control character is allowed anywhere. */
 export function isSafeNext(next: string | null | undefined): next is string {
-  return !!next && next.startsWith("/") && !next.startsWith("//");
+  return !!next && /^\/(?![/\\])/.test(next) && !/[\\\u0000-\u001f\u007f]/.test(next);
 }
 
 /** Remembers where a logged-out parent was heading, beyond the URL's own `?next=`.
@@ -377,6 +380,24 @@ export function installLinkInterception() {
     e.preventDefault();
     goTo(href);
   });
+}
+
+/**
+ * Tapping a push notification while the app is open. The push worker
+ * (public/push-sw.js) can only steer a window it controls, and the installed
+ * app runs under the app-shell worker (sw.js, scope /app/), so there it brings
+ * the app forward and posts the page to open here instead. Paths on this site
+ * only.
+ */
+export function installPushNavigation() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.addEventListener("message", (e: MessageEvent) => {
+    const msg = e.data as { type?: unknown; url?: unknown } | null;
+    if (msg?.type !== "bb:navigate" || typeof msg.url !== "string" || !isSafeNext(msg.url)) return;
+    goTo(msg.url);
+  });
+  // Messages from the worker are held until the page says it is listening.
+  navigator.serviceWorker.startMessages();
 }
 
 const subscribe = (cb: () => void) => {

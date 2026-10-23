@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "../lib/supabase";
 import { identifyUser, resetUser } from "../lib/posthog";
@@ -140,7 +140,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [kids, setKids] = useState<Child[]>([]);
   // Only hold routing on the async check when there's nothing to render from.
   const [loading, setLoading] = useState(!initialSession);
-  const [dataResolved, setDataResolved] = useState(false);
+  const [dataResolved, setDataResolvedState] = useState(false);
+  // The same, for the visibility handler below: it is set up once, so it would
+  // only ever see the first render's `false` and refetch the profile and
+  // children every time the app came back to the foreground.
+  const dataResolvedRef = useRef(false);
+  const setDataResolved = (v: boolean) => {
+    dataResolvedRef.current = v;
+    setDataResolvedState(v);
+  };
 
   /** Returns whether the fetch actually answered. A failed query is NOT an
    *  answer — reporting it as "no profile, no children" is what showed signed-in
@@ -256,7 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(data.session);
           // Coming back to a tab whose fetch had failed is the natural moment
           // to try again rather than leaving it on a logged-out-looking page.
-          if (data.session && !dataResolved) void resolveData();
+          if (data.session && !dataResolvedRef.current) void resolveData();
         })
         .catch(() => {})
         .finally(settle);

@@ -49,14 +49,35 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  let target = new URL(event.notification.data?.url || "/", self.location.origin);
+  // A page on this site only, whatever the payload says.
+  if (target.origin !== self.location.origin) target = new URL("/", self.location.origin);
+  const url = target.href;
+  // The parent site and the vendor portal share this worker; open a vendor
+  // notification in a portal window and a parent one in a parent window.
+  const isPortal = (u) => new URL(u).pathname.startsWith("/vendor");
+  const wantPortal = isPortal(url);
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((c) => c.url === url);
-      if (existing) return existing.focus();
-      const sameOrigin = clients.find((c) => new URL(c.url).origin === self.location.origin);
-      if (sameOrigin) return sameOrigin.focus().then(() => sameOrigin.navigate(url));
-      return self.clients.openWindow(url);
-    }),
+    (async () => {
+      const windows = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+        .filter((c) => new URL(c.url).origin === self.location.origin);
+      const exact = windows.find((c) => c.url === url);
+      if (exact) return exact.focus();
+      const win = windows.find((c) => isPortal(c.url) === wantPortal);
+      if (!win) return self.clients.openWindow(url);
+      const focused = (await win.focus().catch(() => null)) || win;
+      // navigate() only works on a window this worker controls. The installed
+      // parent app runs under sw.js (scope /app/), where it throws and the tap
+      // used to only bring the app forward; there the page opens it itself
+      // (installPushNavigation in src/lib/nav.ts).
+      try {
+        const done = await focused.navigate(url);
+        if (done) return done;
+      } catch {
+        /* not controlled by this worker */
+      }
+      focused.postMessage({ type: "bb:navigate", url: target.pathname + target.search + target.hash });
+      return focused;
+    })(),
   );
 });

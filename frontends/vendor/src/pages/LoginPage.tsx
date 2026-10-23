@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -13,8 +13,18 @@ import { suggestEmail } from '@/lib/emailTypo';
  *  never applies: Tailwind 3 has no aria-invalid variant. */
 const INVALID = 'border-red-400 focus-visible:border-red-400 focus-visible:ring-red-200';
 
+/** Where to go once signed in: the portal page RequireAuth sent them here
+ *  from (?next=), else the dashboard. A route inside the portal only. */
+function destination(next: string | null): string {
+  return next && /^\/(?![/\\])/.test(next) && !/[\\\u0000-\u001f\u007f]/.test(next) && !next.startsWith('/login')
+    ? next
+    : '/dashboard';
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const dest = destination(searchParams.get('next'));
   const { signIn, session } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,10 +37,10 @@ export default function LoginPage() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  // Already signed in? Go straight to the dashboard.
+  // Already signed in (or just signed in below)? Go on to where they were going.
   useEffect(() => {
-    if (session) navigate('/dashboard');
-  }, [session, navigate]);
+    if (session) navigate(dest, { replace: true });
+  }, [session, navigate, dest]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,7 +50,7 @@ export default function LoginPage() {
     const result = await signIn(email, password);
     setBusy(false);
     if (!result.error) {
-      navigate('/dashboard');
+      navigate(dest, { replace: true });
       return;
     }
     setFailures((n) => n + 1);

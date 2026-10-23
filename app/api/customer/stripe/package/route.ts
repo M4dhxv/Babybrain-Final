@@ -202,7 +202,16 @@ export async function POST(request: Request) {
               ? { policies_accepted: JSON.stringify(policiesAccepted.slice(0, 50)) }
               : {}),
             ...(medicalDisclosure?.trim() ? { medical_disclosure: medicalDisclosure.trim().slice(0, 450) } : {}),
-            ...(infoResponse?.trim() ? { info_response: infoResponse.trim().slice(0, 450) } : {}),
+            // A metadata value holds at most 500 characters, and with a vendor's
+            // second question (00252) both answers travel here under their
+            // questions, so it is split over two keys and rejoined on fulfilment
+            // (lib/stripe-package-purchase.ts) instead of being cut at 450.
+            ...(infoResponse?.trim()
+              ? {
+                  info_response: infoResponse.trim().slice(0, 500),
+                  ...(infoResponse.trim().length > 500 ? { info_response_2: infoResponse.trim().slice(500, 1000) } : {}),
+                }
+              : {}),
           }
         : {}),
     },

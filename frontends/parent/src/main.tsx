@@ -5,7 +5,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { FavoritesProvider } from "./lib/favorites";
 import { PendingPlusGate } from "./components/PendingPlusGate";
 import { initPostHog } from "./lib/posthog";
-import { installLinkInterception } from "./lib/nav";
+import { installLinkInterception, installPushNavigation } from "./lib/nav";
 import { installResumeRepaint } from "./lib/resume";
 import { installLabelLinking } from "./lib/labels";
 import { captureAttribution } from "./lib/attribution";
@@ -58,6 +58,9 @@ if ("requestIdleCallback" in window) {
 // are left to the browser. In dev it also applies the `/app/` base the Vite
 // server needs. See lib/nav.ts.
 installLinkInterception();
+
+// A push tapped while the installed app is open opens its page here (see lib/nav.ts).
+installPushNavigation();
 
 // Repaint when the app is brought back from the background (the "freezes to black" fix).
 captureAttribution();

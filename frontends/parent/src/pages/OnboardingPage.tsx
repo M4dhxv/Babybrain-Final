@@ -94,7 +94,7 @@ function ChildDraftFields({
 }
 
 export default function OnboardingPage() {
-  const { signUp } = useAuth();
+  const { signUp, session } = useAuth();
   const [cats, setCats] = useState<{ slug: string; name: string }[]>([]);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -126,6 +126,15 @@ export default function OnboardingPage() {
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "plus">("plus");
   const [accountReady, setAccountReady] = useState(false);
+
+  // Already signed in: sign-up is for a new account, so go to their matches
+  // (a "Sign up" link in an email footer, or Back into this page, used to
+  // offer a signed-in parent the whole form again). Not once this page's own
+  // sign-up is under way, which signs them in part-way through.
+  const signingUp = busy || confirmSent || accountReady;
+  useEffect(() => {
+    if (session && !signingUp) goTo("/matches", { replace: true });
+  }, [session, signingUp]);
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
