@@ -45,6 +45,10 @@ const bookingsTabs = ['Bookings', 'Waitlist', 'Attendance'];
 // 00107) — Wix owns their capacity — so the Waitlist roster tab is hidden for
 // a session belonging to one of these.
 const NO_WAITLIST_WIX_TYPES = ['EVENT', 'COURSE'];
+// A booking added here is never written to Wix (see addManualBooking). The
+// client's own wording (30 Sep), used wherever a Wix-linked one is made.
+const WIX_MANUAL_BOOKING_NOTE =
+  "This is a Wix-linked activity. The booking is saved on BabyBrain only — it won't appear in Wix, so please manually add it in if you need availability to be reflected on Wix.";
 const PALETTE = ['bg-pink-300 text-pink-800', 'bg-blue-300 text-blue-800', 'bg-yellow-300 text-yellow-800', 'bg-purple-300 text-purple-800', 'bg-green-300 text-green-800'];
 
 const sgDateTime = (iso: string) =>
@@ -574,7 +578,7 @@ export default function BookingsPage() {
           description: [
             r.waitlisted > 0 && booked > 0 ? `${r.waitlisted} went on the waitlist (no credit used for ${r.waitlisted === 1 ? 'it' : 'them'}).` : null,
             `${r.credits_left} ${r.credits_left === 1 ? 'credit' : 'credits'} left on their pack.`,
-            r.wix_linked ? "Saved on BabyBrain only — add it in Wix too if you need it there." : null,
+            r.wix_linked ? WIX_MANUAL_BOOKING_NOTE : null,
           ].filter(Boolean).join(' '),
         },
       );
@@ -1509,7 +1513,7 @@ export default function BookingsPage() {
                 </p>
                 {!!activityWixType[sessionActivity[sessionId]] && (
                   <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    This is a Wix-linked activity. The booking is saved on BabyBrain only — add it in Wix too if you need it there.
+                    {WIX_MANUAL_BOOKING_NOTE}
                   </div>
                 )}
                 {slotIsFull && (
@@ -1591,7 +1595,7 @@ export default function BookingsPage() {
             <p className="text-xs text-gray-500 mb-3">Recorded against the selected session so your roster and attendance stay complete.</p>
             {!!activityWixType[sessionActivity[sessionId]] && (
               <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                This is a Wix-linked activity. The booking is saved on BabyBrain only — it won't appear in your Wix calendar or change Wix's seat count, so add it in Wix too if you need it there.
+                {WIX_MANUAL_BOOKING_NOTE}
               </div>
             )}
             {slotIsFull && (
