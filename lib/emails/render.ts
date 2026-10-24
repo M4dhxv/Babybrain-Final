@@ -27,8 +27,9 @@ export interface EmailCtx {
   audience?: 'parent' | 'provider';
   /** 'events' = the launch-event footer: Instagram, Sign up, Explore activities (no profile /
    *  unsubscribe links - registrants usually don't have an account).
-   *  'auth' = account emails (confirm, reset, log-in link): Instagram only, no profile /
-   *  unsubscribe links (nothing to update yet, and replies already reach BabyBrain). */
+   *  'auth' = account emails (confirm, reset, log-in link): the standard footer. They went
+   *  Instagram-only on 13 Oct; the unsubscribe link is back because mail providers treat a
+   *  message without one as more likely junk. */
   footer?: 'events' | 'auth';
 }
 export interface RenderedEmail {
@@ -119,7 +120,6 @@ function layout(ctx: EmailCtx, inner: string): string {
         <a href="${appUrl}/onboarding" style="color:#767676;text-decoration:none">Sign up</a> &nbsp;·&nbsp;
         <a href="${appUrl}/explore" style="color:#767676;text-decoration:none">Explore activities</a>
       </div>`
-        : ctx.footer === 'auth' ? ''
         : `<div style="margin-top:10px;font-size:13px;color:#9a9a9a">
         <a href="${profileHref}" style="color:#9a9a9a">Update your profile</a> &nbsp;·&nbsp;
         <a href="${unsubscribeHref}" style="color:#9a9a9a">Unsubscribe</a>
@@ -305,6 +305,25 @@ const T: Record<string, Template> = {
       p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
       p('We hope your family enjoys the activity!') +
       sign),
+
+  // The parent moved their own booking to another session: reschedule_booking
+  // (00160) carries session_email_details for the new session, the Wix
+  // reschedule route the name and new time. This type had no template, so the
+  // email went out in the webhook's plain fallback (no logo, no footer).
+  booking_rescheduled: (d, ctx) => {
+    const bookingId = str(d, 'booking_id');
+    const href = bookingId ? `/profile?tab=bookings&highlight=${encodeURIComponent(bookingId)}` : str(d, 'url') ?? '/profile?tab=bookings';
+    const newDetails = details(d, false);
+    return wrap(ctx, 'Your booking has been moved 👶🧠',
+      p(greet(ctx.recipientName)) +
+      (newDetails
+        ? p('Your booking has been moved. Here are the new details:') + newDetails
+        : p('Your booking has been moved to its new date and time.')) +
+      p(`You can see it any time in ${link(ctx, href, 'your bookings')}.`) +
+      p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
+      p('We hope your family enjoys the activity!') +
+      sign);
+  },
 
   // A vendor "Promote" links to the parent's bookings (that's where the Pay now
   // for the offered seat lives, 00100); add ?highlight= so that exact booking
