@@ -1771,10 +1771,13 @@ export default function BookingsPage() {
                 <span className="whitespace-nowrap">
                   {listSource.length}{' '}
                   {statusFilter === 'cancelled' && activeTab !== 'Attendance' ? 'cancelled'
-                    : activeTab === 'Waitlist' ? statusFilter === 'all' ? 'on waitlist or cancelled' : 'on waitlist'
+                    : activeTab === 'Waitlist' ? statusFilter === 'all' ? 'on the waitlist or cancelled' : 'on the waitlist'
                     : 'bookings'}
                 </span>
-                {spacesLeft != null && (
+                {/* The waitlist has no cap, so the session's "Full · of N"
+                    readout doesn't belong beside its count: it read as
+                    "2 on waitlist of 2", as if the waitlist were full. */}
+                {spacesLeft != null && activeTab !== 'Waitlist' && (
                   <>
                     <span className="text-gray-300">·</span>
                     <span className={cn(

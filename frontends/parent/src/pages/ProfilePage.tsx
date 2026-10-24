@@ -117,6 +117,8 @@ type CustomerBookingRow = {
   paid_with: "token" | "credit" | "cash" | "free";
   refund_mode: "refund" | "none";
   can_claim?: boolean;
+  // A free class with a seat open for this waitlisted booking.
+  spot_open?: boolean;
   // Wix Events: the ticket this seat holds (number + the QR target scanned at the door).
   event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
   // Wix Events: the order / RSVP behind this seat, and whether the event is online.
@@ -154,6 +156,9 @@ type BookingItem = {
   // rows to check out.
   canClaim: boolean;
   claimIds: string[];
+  // The same on a free class: nothing to pay, so "Book now" opens the booking
+  // page for this session (the link the "spot available" email carries).
+  spotOpen: boolean;
   // Wix Events tickets for this booking, one per seat (empty for everything else).
   tickets: { orderId: string; ticketNumber: string; checkInUrl: string | null }[];
   // An ONLINE Wix event: how to fetch the join link (an order for tickets, an RSVP otherwise).
@@ -2061,6 +2066,7 @@ export default function ProfilePage() {
               // spot free to pay for.
               canClaim: ordered.some((x) => x.can_claim === true),
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
+              spotOpen: ordered.some((x) => x.spot_open === true),
               tickets: ordered.flatMap((x) => (x.event_ticket ? [x.event_ticket] : [])),
               joinOnline: ordered.find((x) => x.event_access?.online)?.event_access ?? null,
               isEvent: act?.wix_service_type === "EVENT",
@@ -4165,6 +4171,19 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 >
                   {busyId === b.id ? "Starting…" : "Book now"}
                 </button>
+              </div>
+            )}
+            {!b.canClaim && b.spotOpen && b.slug && b.sessionId && !b.removed && (
+              <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-bold text-palette-greenInk">
+                  A spot has opened up on this session — book it now. The first to book gets it.
+                </p>
+                <a
+                  href={`/book?slug=${encodeURIComponent(b.slug)}&session=${encodeURIComponent(b.sessionId)}`}
+                  className="w-full rounded-[9px] bg-baby-cta px-4 py-2.5 text-center text-sm font-bold text-white hover:opacity-90 sm:w-auto sm:py-1.5 sm:text-xs"
+                >
+                  Book now
+                </a>
               </div>
             )}
             {upcoming(b) && (
