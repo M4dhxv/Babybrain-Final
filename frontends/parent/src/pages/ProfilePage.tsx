@@ -3850,6 +3850,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
   const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
+  /* Cancelling asks first in a dialog styled like the Reschedule one (QA: the
+     browser's own confirm box looked nothing like it). `placeId` set = one
+     place of a party, otherwise the whole booking. */
+  const [cancelAsk, setCancelAsk] = useState<{ b: BookingItem; placeId?: string; name?: string } | null>(null);
   // "Add to calendar" for one booking (Plus). Only an upcoming, confirmed
   // booking can be added: a waitlisted or unpaid one isn't a session yet.
   const [calFor, setCalFor] = useState<BookingItem | null>(null);
@@ -3967,15 +3971,6 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   }
 
   async function doCancel(b: BookingItem) {
-    const seats = b.places.length;
-    // What a cancellation actually gives back is the vendor's policy (00099)
-    // and is shown on the booking afterwards — the confirm step just says so
-    // rather than promising a specific outcome up front.
-    const tail = "Eligibility for refund or make up tokens is per vendor policy.";
-    const q = party(b)
-      ? `Cancel all ${seats} places for ${b.title}? ${tail}`
-      : `Cancel your booking for ${b.title}? ${tail}`;
-    if (!window.confirm(q)) return;
     setBusyId(b.id);
     // A Wix-linked booking's cancellation has to reach Wix too (see
     // /api/wix/bookings/cancel), so it also frees the seat there instead of
@@ -4011,10 +4006,13 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   /** Cancel one seat of a party, leaving the rest booked. Same policy gate
    *  as the whole-booking cancel; the per-row compensation trigger returns
    *  that seat's own credit / make-up token. */
-  async function cancelPlace(b: BookingItem, bookingId: string, name: string) {
+  function cancelPlace(b: BookingItem, bookingId: string, name: string) {
     const why = cancelBlockReason(b);
     if (why) { setNotice(why); return; }
-    if (!window.confirm(`Cancel ${name}'s place on ${b.title}? Eligibility for refund or make up tokens is per vendor policy.`)) return;
+    setCancelAsk({ b, placeId: bookingId, name });
+  }
+
+  async function doCancelPlace(b: BookingItem, bookingId: string) {
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     setBusyId(null);
@@ -4252,7 +4250,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 <button
                   type="button"
                   disabled={busyId === b.id}
-                  onClick={() => (cancelWhy ? setNotice(cancelWhy) : doCancel(b))}
+                  onClick={() => (cancelWhy ? setNotice(cancelWhy) : setCancelAsk({ b }))}
                   className={`w-full rounded-[9px] px-3 py-2.5 text-sm font-bold sm:w-auto sm:py-1.5 sm:text-xs ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
@@ -4282,6 +4280,60 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
           </div>
         </div>
       )}
+
+      {/* Cancel confirmation: the same dialog frame, type and buttons as the
+          Reschedule picker below. What a cancellation gives back is the
+          vendor's policy (00099), shown on the booking afterwards, so this
+          says so rather than promising a specific outcome. */}
+      {cancelAsk && (() => {
+        const { b, placeId, name } = cancelAsk;
+        const working = busyId === b.id;
+        const whole = !placeId && party(b);
+        const close = () => !working && setCancelAsk(null);
+        const confirm = async () => {
+          if (placeId) await doCancelPlace(b, placeId);
+          else await doCancel(b);
+          setCancelAsk(null);
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={close}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cancel-title"
+              className="flex w-full max-w-md flex-col rounded-[16px] bg-white shadow-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+                <h3 id="cancel-title" className="text-lg font-black">
+                  {placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
+                </h3>
+                <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                  {b.title}{b.when ? <> · {b.when}</> : null}
+                </p>
+              </div>
+              <div className="px-5 py-4 sm:px-6">
+                <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2.5 text-sm font-semibold text-[#3f4b78]">
+                  {placeId
+                    ? "The rest of the booking stays as it is. "
+                    : whole
+                    ? "Every place on this booking will be cancelled. "
+                    : null}
+                  Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                </p>
+              </div>
+              <div className="space-y-2 border-t border-[#EBE3E5] px-5 py-4 sm:px-6">
+                <Button type="button" className="w-full" disabled={working} onClick={() => void confirm()}>
+                  {working ? "Cancelling…" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
+                </Button>
+                <Button type="button" variant="outline" className="w-full" disabled={working} onClick={close}>
+                  Keep my booking
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Reschedule picker */}
       {reschedFor && (() => {
