@@ -725,7 +725,7 @@ export default function ClaimBusinessPage() {
           </Button>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Lock className="h-4 w-4" />
-            Your information is secure and will never be shared.
+            Your information is secure.
           </div>
           <Button
             onClick={() => {
