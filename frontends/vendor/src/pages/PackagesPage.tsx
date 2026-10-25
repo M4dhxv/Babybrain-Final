@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { NumberInput } from '@/components/ui/number-input';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Package as PackageIcon, Pencil, Trash2, Users } from 'lucide-react';
+import { Package as PackageIcon, Pencil, Search, Trash2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -374,6 +374,19 @@ export default function PackagesPage() {
   const displayStatus = (p: Purchase) =>
     p.status === 'active' && p.expires_at && new Date(p.expires_at) <= new Date() ? 'expired' : p.status;
 
+  // Purchases filters (QA: "should be able to filter" by pack and status).
+  // Client-side: the RPC already returns every purchase for this provider.
+  const [fBuyer, setFBuyer] = useState('');
+  const [fPack, setFPack] = useState('');
+  const [fPurchaseStatus, setFPurchaseStatus] = useState('');
+  const purchaseFiltersOn = !!(fBuyer.trim() || fPack || fPurchaseStatus);
+  const purchasePackNames = [...new Set(purchases.map((p) => p.package_name))].sort((a, b) => a.localeCompare(b));
+  const visiblePurchases = purchases.filter((p) =>
+    (!fPack || p.package_name === fPack)
+    && (!fPurchaseStatus || displayStatus(p) === fPurchaseStatus)
+    && (!fBuyer.trim() || p.buyer_name.toLowerCase().includes(fBuyer.trim().toLowerCase())));
+  const purchaseFilterCls = 'w-full max-w-xs px-3 py-2 text-gray-700 sm:w-auto sm:max-w-none';
+
   // Non-blocking heads-up when the pack being scheduled overlaps another
   // scheduled pack on the same activity — multiple packages per activity
   // stays allowed (see packWindow above), this just flags it.
@@ -612,11 +625,51 @@ export default function PackagesPage() {
         )}
 
         {!loading && activeTab === 'Purchases' && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <div className="bg-white rounded-xl border border-gray-200">
+            {/* Filter bar, same pattern as Activities: stacked full-width on a
+                phone, inline from sm up. Status is the one parents see
+                (displayStatus), so an expired pack filters as Expired. */}
+            {purchases.length > 0 && (
+              <div className="flex flex-col items-center gap-3 border-b border-gray-200 px-5 py-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative w-full max-w-xs sm:w-56">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={fBuyer}
+                    onChange={(e) => setFBuyer(e.target.value)}
+                    placeholder="Search buyer"
+                    aria-label="Search buyer"
+                    className="h-9 w-full rounded-xl border border-gray-200 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+                <SelectField value={fPack} onChange={setFPack} aria-label="Filter by pack" className={purchaseFilterCls}>
+                  <Opt value="">All packs</Opt>
+                  {purchasePackNames.map((n) => <Opt key={n} value={n}>{n}</Opt>)}
+                </SelectField>
+                <SelectField value={fPurchaseStatus} onChange={setFPurchaseStatus} aria-label="Filter by status" className={purchaseFilterCls}>
+                  <Opt value="">All statuses</Opt>
+                  <Opt value="active">Active</Opt>
+                  <Opt value="used">Used</Opt>
+                  <Opt value="expired">Expired</Opt>
+                </SelectField>
+                {purchaseFiltersOn && (
+                  <button
+                    type="button"
+                    onClick={() => { setFBuyer(''); setFPack(''); setFPurchaseStatus(''); }}
+                    className="text-sm font-medium text-[#FA4D8D] hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+                <span className="text-sm text-gray-500 sm:ml-auto">
+                  {purchaseFiltersOn ? `${visiblePurchases.length} of ${purchases.length}` : `${purchases.length}`} {purchases.length === 1 ? 'purchase' : 'purchases'}
+                </span>
+              </div>
+            )}
+            <div className="overflow-x-auto">
             <div className={cn(PURCHASE_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
               <div>Buyer</div><div>Pack</div><div>Credits</div><div>Status</div><div>Purchased / Expires</div>
             </div>
-            {purchases.map((p) => (
+            {visiblePurchases.map((p) => (
               <div key={p.purchase_id}>
                 <div className={cn(PURCHASE_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
                   <div className="min-w-0 text-sm font-medium text-gray-900 break-words">{p.buyer_name}</div>
@@ -681,6 +734,10 @@ export default function PackagesPage() {
               </div>
             ))}
             {purchases.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400">No one has bought a pack yet.</div>}
+            {purchases.length > 0 && visiblePurchases.length === 0 && (
+              <div className="px-5 py-8 text-center text-sm text-gray-400">No purchases match these filters.</div>
+            )}
+            </div>
           </div>
         )}
       </div>
