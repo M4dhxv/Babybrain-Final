@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, input, primaryBtn, sgTime, supabase, tabBtn, toast, peekCache } from '../_lib/core';
 import { Select } from '../_lib/multiselect';
 import PhotoEditor, { type PhotoKind } from './PhotoEditor';
+import { VendorPerformance } from './vendorPerformance';
 
 type VendorResult = { name: string; website: string; outcome: 'price_updated' | 'no_price' | 'no_wp'; price_updated: number };
 type VendorRun = {
@@ -2429,6 +2430,7 @@ export function VendorsView() {
 
   return (
     <div>
+      <VendorPerformance />
       <div style={{ ...card(), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Vendor directory refresh</div>
