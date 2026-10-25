@@ -139,7 +139,7 @@ function ChatPanes({
 }
 
 export default function MessagesPage() {
-  const { session } = useAuth();
+  const { session, adminView } = useAuth();
   const userId = session?.user.id;
   const [client, setClient] = useState<StreamChat | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +175,9 @@ export default function MessagesPage() {
   // slow Stream edge) with no way back short of hitting F5.
   const [retryNonce, setRetryNonce] = useState(0);
   useEffect(() => {
+    // Admin view isn't a member of the vendor's chats (00251), so connecting
+    // would only open an empty inbox under the admin's own chat identity.
+    if (adminView) return;
     let active = true;
     getChatClient()
       .then((c) => active && setClient(c))
@@ -182,7 +185,19 @@ export default function MessagesPage() {
     return () => {
       active = false;
     };
-  }, [retryNonce]);
+  }, [retryNonce, adminView]);
+
+  if (adminView) {
+    return (
+      <div className="p-4 sm:p-8">
+        <div className="max-w-md mx-auto text-center bg-white rounded-xl border border-gray-200 p-10">
+          <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <h3 className="font-semibold text-gray-900">Messages aren't shown in admin view</h3>
+          <p className="text-sm text-gray-500 mt-1">This vendor's parent chats are in the admin portal, under Messages.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/auth/AuthProvider';
 import {
   Shield,
   Users,
@@ -22,7 +23,13 @@ const intent = (path: string) => ({ onPointerEnter: () => prefetchRoute(path), o
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Signed in: the portal's home is the dashboard. Every vendor email and the
+  // "booking received" push link to the bare /vendor, which showed a signed-in
+  // vendor this sales page and left them to find "Log in".
+  if (session) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="bg-white overflow-x-clip">

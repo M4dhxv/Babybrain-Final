@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import NoBusinessGate from './NoBusinessGate';
 import OnboardingGate from '@/components/OnboardingGate';
@@ -7,10 +7,16 @@ import { FullPageLoader } from '@/components/ui/rainbow-loader';
 /** Gate the vendor portal: must be signed in AND a member of a business. */
 export default function RequireAuth() {
   const { session, provider, role, providerResolved, providerError, loading, refreshProvider } = useAuth();
+  const location = useLocation();
   if (loading) return <FullPageLoader label="Loading your portal" />;
   // No session (signed out, or the refresh token expired while the tab sat
-  // open): send them to the public landing page rather than a bare login form.
-  if (!session) return <Navigate to="/" replace />;
+  // open): log in, then straight back to the page they were opening. This used
+  // to go to the public landing page, which dropped the destination, so a
+  // signed-out vendor tapping "someone joined your waitlist" or "unsubscribe"
+  // ended up on the dashboard after logging in.
+  if (!session) {
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
 
   // Signed in, but we don't yet know whether this account has a business. The
   // lookup can lose a race with the token refresh on a cold page load, and

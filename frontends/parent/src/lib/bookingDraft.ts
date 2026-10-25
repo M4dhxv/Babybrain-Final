@@ -17,6 +17,8 @@ export type BookingDraft = {
   guestNames: string[];
   medicalNote: string;
   infoResponse: string;
+  /** The answer to a vendor's second question (00252). Absent in older drafts. */
+  infoResponse2?: string;
   acceptedPolicies: string[];
   payWith: string;
   pickedDays: string[];

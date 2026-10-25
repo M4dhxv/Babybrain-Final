@@ -16,6 +16,8 @@ import {
   Pencil,
   CalendarCheck,
   Trash2,
+  ArchiveRestore,
+  Plus,
   Clock,
   Crop,
   ImageUp,
@@ -49,6 +51,9 @@ import { SelectField, Opt } from '@/components/ui/select-field';
 import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
+import { DurationInput } from '@/components/DurationInput';
+import { formatMinutes } from '@/lib/duration';
+import { AgeRangeField } from '@/components/AgeRangeField';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PoliciesManager } from '@/components/PoliciesManager';
@@ -71,6 +76,7 @@ import { TermsPanel } from '@/components/TermsPanel';
 import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
 import { BookModeChoice, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
+import { ActivityLocationsField, dayPricesFromJson, dayPricesToJson, type DayPrices, type ExtraLocation } from '@/components/ActivityLocationsField';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
@@ -135,6 +141,9 @@ const sessionPriceOverride = (
   return activityPrice != null && n === Number(activityPrice) ? null : n;
 };
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
+/** Day of the week in Singapore, 0 = Sunday — the key activity_locations.day_prices uses. */
+const sgDow = (iso: string) =>
+  ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Date(iso).toLocaleDateString('en-US', { timeZone: 'Asia/Singapore', weekday: 'short' }));
 
 /** Matches ageLabel-adjacent formatting the parent app uses on the booking
  *  and confirmation pages ("6m – 2.5y"), reused verbatim by the preview. */
@@ -215,6 +224,10 @@ const emptyForm = {
   // filter on Explore instead of inheriting the provider's own address.
   is_custom_location: false,
   custom_location_label: '',
+  // 00250 — the primary venue's weekday prices, and every other venue the
+  // activity runs at (each with its own price and weekday prices).
+  primary_day_prices: {} as DayPrices,
+  extra_locations: [] as ExtraLocation[],
   // Images (00130): 'profile' (default) borrows the provider's own
   // logo/cover/gallery; 'custom' uses this activity's own uploads. Either
   // way cover_image_url is an explicit pick from whichever set is active.
@@ -228,6 +241,8 @@ const emptyForm = {
   // parents see once they've booked.
   booking_cutoff_minutes: '15',
   info_request_enabled: false, info_request_prompt: '',
+  // 00252 — an optional second question. '' = none.
+  info_request_prompt_2: '',
   what_to_bring: '', confirmation_message: '',
 };
 
@@ -255,8 +270,15 @@ const inheritSessPolicy: SessPolicy = {
 const MAX_BOOKING_CUTOFF_MINS = 20160;
 function cutoffTooLong(v: string): string | null {
   return v !== '' && Number(v) > MAX_BOOKING_CUTOFF_MINS
-    ? `Booking cut-off can be at most ${MAX_BOOKING_CUTOFF_MINS} minutes (14 days).`
+    ? 'Booking cut-off can be at most 14 days.'
     : null;
+}
+
+/** The line under a booking cut-off field. Blank saves as the 15-minute default. */
+function cutoffSentence(v: string): string {
+  if (v === '0') return 'Parents can book right up to the start time.';
+  const mins = v === '' || !Number.isFinite(Number(v)) ? 15 : Number(v);
+  return `Parents can't book within ${formatMinutes(mins)} of the session starting.`;
 }
 
 function sessPolicyPayload(p: SessPolicy) {
@@ -356,17 +378,14 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
               card, a booking cut-off applies regardless of whether
               cancelling/rescheduling are allowed. */}
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Booking cut-off (mins)</label>
-            <NumberInput
-              min="0" max="20160" className={fieldCls}
+            <label className="text-xs text-gray-500 mb-1 block">Booking cut-off</label>
+            <DurationInput
+              className={fieldCls}
+              aria-label="Booking cut-off"
               value={policy.booking_cutoff_minutes}
-              onChange={(e) => onChange({ ...policy, booking_cutoff_minutes: e.target.value })}
+              onChange={(v) => onChange({ ...policy, booking_cutoff_minutes: v })}
             />
-            <p className="mt-1 text-[11px] text-gray-400">
-              {policy.booking_cutoff_minutes === '0'
-                ? 'Parents can book right up to the start time.'
-                : `Parents can't book within ${policy.booking_cutoff_minutes || '15'} minutes of the session starting.`}
-            </p>
+            <p className="mt-1 text-[11px] text-gray-400">{cutoffSentence(policy.booking_cutoff_minutes)}</p>
           </div>
         </div>
       )}
@@ -490,6 +509,8 @@ export default function ActivitiesPage() {
   // Set while creating a copy (openDuplicate): the original's name, for the drawer header.
   const [copyFrom, setCopyFrom] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  // "Add a second question" clicked, before anything is typed in it (00252).
+  const [showSecondQ, setShowSecondQ] = useState(false);
   // A Wix Event–backed activity's price is the cheapest of its ticket types,
   // pulled live from Wix on every sync (lib/wix/events-sync.ts). Anything a
   // vendor typed here would be overwritten on the next run, so the price
@@ -552,6 +573,9 @@ export default function ActivitiesPage() {
   const [formSection, setFormSection] = useState('about');
   const formScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (showDrawer) setFormSection('about'); }, [showDrawer]);
+  // The open activity's venues and their prices (00250), for the schedule
+  // drawer's venue list and the price each session will actually cost.
+  const [scheduleLocs, setScheduleLocs] = useState<{ location_id: string; price: number | null; day_prices: Record<string, number> }[]>([]);
   const [sessions, setSessions] = useState<Sess[]>([]);
   // True from the moment the schedule drawer opens until its sessions have
   // actually loaded — otherwise the empty initial list reads as "no sessions".
@@ -837,6 +861,23 @@ export default function ActivitiesPage() {
     }
   }, [showMenu, showDrawer, scheduleFor, previewFor]);
 
+  /** The schedule activity's row for a session's venue (no venue = the primary). */
+  const schedLoc = (locId: string | null | undefined) =>
+    scheduleLocs.find((r) => r.location_id === (locId || scheduleFor?.location_id));
+  /** What a session at this venue costs before any day price: the venue's own price, else the activity's. */
+  const venueBasePrice = (locId: string | null | undefined) => schedLoc(locId)?.price ?? scheduleFor?.price ?? null;
+  /** What a session really costs — the same rule as session_price() in 00250:
+   *  the venue's weekday price, then the session's own, the venue's, the activity's. */
+  const sessEffectivePrice = (x: { starts_at: string; price: number | string | null; location_id: string | null }) => {
+    const r = schedLoc(x.location_id);
+    const day = r?.day_prices?.[String(sgDow(x.starts_at))];
+    return day ?? (x.price != null ? Number(x.price) : null) ?? r?.price ?? scheduleFor?.price ?? null;
+  };
+  /** An activity with several venues offers only those; otherwise every venue the vendor has. */
+  const scheduleVenues = scheduleLocs.length > 1
+    ? scheduleLocs.map((r) => locations.find((l) => l.id === r.location_id)).filter((l): l is (typeof locations)[number] => !!l)
+    : locations;
+
   async function openSchedule(a: Activity) {
     setShowMenu(null);
     const seq = ++scheduleOpenSeq.current;
@@ -845,6 +886,15 @@ export default function ActivitiesPage() {
     setSessions([]);
     setSessionsLoading(true);
     setScheduleFor(a);
+    setScheduleLocs([]);
+    supabase
+      .from('activity_locations')
+      .select('location_id, price, day_prices, position')
+      .eq('activity_id', a.id)
+      .order('position')
+      .then(({ data }) => {
+        if (seq === scheduleOpenSeq.current && data) setScheduleLocs(data);
+      });
     setSessError(null);
     setSessNotice(null);
     // Pre-fill from the activity's default capacity so a vendor adding
@@ -977,7 +1027,7 @@ export default function ActivitiesPage() {
         // store null (inherit), not a copy — otherwise changing the activity
         // price later leaves these sessions on the old one (same idea as
         // location_id above).
-        price: sessionPriceOverride(sessForm.price, scheduleFor.price, scheduleIsWixEvent),
+        price: sessionPriceOverride(sessForm.price, venueBasePrice(sessForm.location_id), scheduleIsWixEvent),
         ...sessPolicyPayload(sessForm.policy),
       };
     });
@@ -1122,7 +1172,7 @@ export default function ActivitiesPage() {
           : null,
       // Same price as the activity's -> store null (inherit), so a later
       // activity price change carries this session with it.
-      price: sessionPriceOverride(sessEditForm.price, scheduleFor.price, scheduleIsWixEvent),
+      price: sessionPriceOverride(sessEditForm.price, venueBasePrice(sessEditForm.location_id), scheduleIsWixEvent),
       ...sessPolicyPayload(sessEditForm.policy),
     }).eq('id', id);
     setSavingSessEdit(false);
@@ -1440,9 +1490,20 @@ export default function ActivitiesPage() {
     if (error) load();
   }
 
+  /** Un-archive: back to a Draft, so nothing goes live to parents until the
+   *  vendor publishes it again (Publish still checks payouts). */
+  async function restore(id: string) {
+    setShowMenu(null);
+    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, archived_at: null } : a)));
+    const { error } = await supabase.from('activities').update({ archived_at: null }).eq('id', id);
+    if (error) { toast.error('Could not restore this activity.', { description: error.message }); load(); }
+    else toast.success('Restored as a draft. Publish it when you’re ready.');
+  }
+
   function openCreate() {
     setEditingId(null);
     setCopyFrom(null);
+    setShowSecondQ(false);
     setForm(emptyForm);
     setFormError(null);
     setShowDrawer(true);
@@ -1452,10 +1513,29 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(a.id);
     setCopyFrom(null);
+    setShowSecondQ(false);
     setForm(formFrom(a));
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
     setFormError(null);
     setShowDrawer(true);
+    loadActivityLocations(a);
+  }
+
+  /** The activity's venues and their prices (00250) into the open form. Only the
+   *  location fields are merged, so anything typed meanwhile is kept. */
+  async function loadActivityLocations(a: Activity) {
+    if (a.is_custom_location) return;
+    const { data, error } = await supabase
+      .from('activity_locations')
+      .select('location_id, position, price, day_prices')
+      .eq('activity_id', a.id)
+      .order('position');
+    if (error || !data) return;
+    const primary = data.find((r) => r.location_id === a.location_id);
+    const extras = data
+      .filter((r) => r.location_id !== a.location_id)
+      .map((r) => ({ location_id: r.location_id, price: r.price != null ? String(r.price) : '', day_prices: dayPricesFromJson(r.day_prices) }));
+    setForm((f) => ({ ...f, primary_day_prices: dayPricesFromJson(primary?.day_prices), extra_locations: extras }));
   }
 
   /* "Duplicate" (client, 2026-10-21): a new activity pre-filled from an existing one — category,
@@ -1468,10 +1548,12 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(null);
     setCopyFrom(a.title);
+    setShowSecondQ(false);
     setForm({ ...formFrom(a), title: '' });
     setPriceOverridden(false);
     setFormError(null);
     setShowDrawer(true);
+    loadActivityLocations(a);
   }
 
   /** The drawer's fields from an activity — shared by Edit and Duplicate. */
@@ -1488,6 +1570,9 @@ export default function ActivitiesPage() {
       location_id: a.location_id ?? '',
       is_custom_location: a.is_custom_location ?? false,
       custom_location_label: a.custom_location_label ?? '',
+      // Filled in by loadActivityLocations once the rows arrive.
+      primary_day_prices: {} as DayPrices,
+      extra_locations: [] as ExtraLocation[],
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_source: (a.image_source === 'custom' ? 'custom' : 'profile') as 'profile' | 'custom',
       image_urls: a.image_urls ?? [],
@@ -1500,6 +1585,7 @@ export default function ActivitiesPage() {
       booking_cutoff_minutes: String(a.booking_cutoff_minutes ?? 15),
       info_request_enabled: a.info_request_enabled ?? false,
       info_request_prompt: a.info_request_prompt ?? '',
+      info_request_prompt_2: a.info_request_prompt_2 ?? '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
     };
@@ -1593,6 +1679,13 @@ export default function ActivitiesPage() {
 
   const selectedCategoryIds = [form.category_id, form.secondary_category_id].filter(Boolean);
 
+  // Another of this vendor's activities with the name being typed. Allowed,
+  // but worth a word: parents tell the two apart by venue and times.
+  const nameKey = form.title.trim().toLowerCase();
+  const nameTwin = nameKey
+    ? activities.find((a) => a.id !== editingId && !isFullyRemoved(a) && a.title.trim().toLowerCase() === nameKey) ?? null
+    : null;
+
   async function saveActivity() {
     if (!provider) return;
     // Anything the form already flags as an error, said once and shown where
@@ -1604,13 +1697,9 @@ export default function ActivitiesPage() {
       return;
     }
     if (!form.title.trim() || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
-    // Two activities with one name look like the same class to a parent on Explore. Checked
-    // whenever the name is new or changed (an existing pair from before this check still saves).
-    const nameKey = form.title.trim().toLowerCase();
-    if (nameKey !== (editingActivity?.title ?? '').trim().toLowerCase()) {
-      const clash = activities.find((a) => a.id !== editingId && !isFullyRemoved(a) && a.title.trim().toLowerCase() === nameKey);
-      if (clash) { setFormError(`You already have an activity called “${clash.title}”. Give this one a different name.`); return; }
-    }
+    // Two activities may share a name (client, 22 Oct: the same class runs at
+    // different locations). The drawer says so under the name (nameTwin), it
+    // no longer blocks the save.
     // Capacity comes from Wix for a linked activity (and is null for an
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
@@ -1639,6 +1728,7 @@ export default function ActivitiesPage() {
     const prevLocks = editingActivity?.wix_locked_fields ?? [];
     const sameList = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
     const titleClaimed = prevLocks.includes('title') || form.title.trim() !== (editingActivity?.title ?? '').trim();
+    const secondQuestion = form.info_request_enabled ? form.info_request_prompt_2.trim() : '';
     const photosClaimed = prevLocks.includes('image_urls')
       || !sameList(form.image_urls, editingActivity?.image_urls ?? [])
       || form.image_source !== (editingActivity?.image_source === 'custom' ? 'custom' : 'profile');
@@ -1710,19 +1800,28 @@ export default function ActivitiesPage() {
         : Math.max(0, Math.min(20160, Number(form.booking_cutoff_minutes))),
       info_request_enabled: form.info_request_enabled,
       info_request_prompt: form.info_request_enabled ? (form.info_request_prompt.trim() || null) : null,
+      // Written only when there is (or was) a second question, so saving an
+      // activity still works on a database without 00252.
+      ...(secondQuestion || editingActivity?.info_request_prompt_2
+        ? { info_request_prompt_2: secondQuestion || null }
+        : {}),
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
     };
-    const { error } = editingId
-      ? await supabase.from('activities').update(fields).eq('id', editingId)
+    const { data: saved, error } = editingId
+      ? await supabase.from('activities').update(fields).eq('id', editingId).select('id').single()
       : await supabase.from('activities').insert({
           ...fields,
           slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
           provider_id: provider.id,
           is_published: false, // saved as draft; publish from the row menu
-        });
+        }).select('id').single();
+    if (error) { setSaving(false); setFormError(error.message); return; }
+    if (!isWixLinked && saved) {
+      const locErr = await saveActivityLocations(saved.id);
+      if (locErr) { setSaving(false); setFormError(`Activity saved, but its locations could not be saved: ${locErr}`); load(); return; }
+    }
     setSaving(false);
-    if (error) { setFormError(error.message); return; }
 
     // Capacity is an activity-wide setting, so every save re-aligns this
     // activity's still-upcoming, non-cancelled sessions to it — otherwise the
@@ -1812,6 +1911,35 @@ export default function ActivitiesPage() {
     setEditingId(null);
     setForm(emptyForm);
     load();
+  }
+
+  /* Writes the activity's full set of venues (00250). The primary row already
+     exists — the database adds it whenever activities.location_id is set — so
+     this upserts every venue with its prices, then removes any the vendor took
+     off. Returns an error message, or null. Wix-linked activities never get
+     here: their one venue and price stay Wix's. */
+  async function saveActivityLocations(activityId: string): Promise<string | null> {
+    const primary = form.is_custom_location ? '' : form.location_id;
+    const extras = form.is_custom_location ? [] : form.extra_locations.filter((x) => x.location_id && x.location_id !== primary);
+    const rows = [
+      ...(primary ? [{ activity_id: activityId, location_id: primary, position: 0, price: null, day_prices: dayPricesToJson(form.primary_day_prices) }] : []),
+      ...extras.map((x, i) => ({
+        activity_id: activityId,
+        location_id: x.location_id,
+        position: i + 1,
+        price: x.price.trim() !== '' ? Number(x.price) : null,
+        day_prices: dayPricesToJson(x.day_prices),
+      })),
+    ];
+    if (rows.length) {
+      const { error } = await supabase.from('activity_locations').upsert(rows, { onConflict: 'activity_id,location_id' });
+      if (error) return error.message;
+    }
+    const keep = rows.map((r) => r.location_id);
+    let del = supabase.from('activity_locations').delete().eq('activity_id', activityId);
+    if (keep.length) del = del.not('location_id', 'in', `(${keep.join(',')})`);
+    const { error } = await del;
+    return error ? error.message : null;
   }
 
   // An activity with no area (its venue has no postal code) is published fine but cannot be found by the area
@@ -2288,10 +2416,17 @@ export default function ActivitiesPage() {
                             {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
                             {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Archive
-                          </DropdownMenuItem>
+                          {a.archived_at ? (
+                            <DropdownMenuItem onSelect={() => restore(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                              <ArchiveRestore className="w-3.5 h-3.5" />
+                              Restore
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Archive
+                            </DropdownMenuItem>
+                          )}
                         </>
                       )}
                     </DropdownMenuContent>
@@ -2492,6 +2627,12 @@ export default function ActivitiesPage() {
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-gray-800">Name <span className="text-[#FA4D8D]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              {nameTwin && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  You already have an activity called &ldquo;{nameTwin.title}&rdquo;. That&rsquo;s fine, for example the same class at another
+                  venue: parents tell them apart by the venue and times on each listing.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-gray-800">
@@ -2582,14 +2723,12 @@ export default function ActivitiesPage() {
                 )}
               </div>
             )}
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Age range (months)</label>
-              <div className="flex items-center gap-3">
-                <NumberInput min="0" placeholder="Min" className={inputCls} value={form.age_min_months} onChange={(e) => setForm({ ...form, age_min_months: e.target.value })} />
-                <span className="text-gray-400">—</span>
-                <NumberInput min="0" placeholder="Max" className={inputCls} value={form.age_max_months} onChange={(e) => setForm({ ...form, age_max_months: e.target.value })} />
-              </div>
-            </div>
+            <AgeRangeField
+              min={form.age_min_months}
+              max={form.age_max_months}
+              onChange={(lo, hi) => setForm((f) => ({ ...f, age_min_months: lo, age_max_months: hi }))}
+              inputCls={inputCls}
+            />
             {!isWixLinked && (
               <>
             <div>
@@ -2619,10 +2758,18 @@ export default function ActivitiesPage() {
                 </>
               ) : (
                 <>
-              <SelectField className={inputCls} value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Select a location" aria-label="Location">
-                <Opt value="">Select a location</Opt>
-                {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
-              </SelectField>
+              <ActivityLocationsField
+                locations={locations}
+                inputCls={inputCls}
+                primaryId={form.location_id}
+                onPrimaryId={(v) => setForm((f) => ({ ...f, location_id: v }))}
+                price={form.price}
+                onPrice={(v) => setForm((f) => ({ ...f, price: v }))}
+                primaryDays={form.primary_day_prices}
+                onPrimaryDays={(v) => setForm((f) => ({ ...f, primary_day_prices: v }))}
+                extras={form.extra_locations}
+                onExtras={(v) => setForm((f) => ({ ...f, extra_locations: v }))}
+              />
               {locations.length === 0 ? (
                 <p className="mt-1 text-xs text-gray-500">No locations yet — add one on the <button className="text-[#FA4D8D] font-medium hover:underline" onClick={() => { setPageTab('locations'); setOpenNewLocation(true); setShowDrawer(false); }}>Locations tab</button>.</p>
               ) : (
@@ -2631,34 +2778,40 @@ export default function ActivitiesPage() {
                    are now the DEFAULT for new sessions — Manage schedule can
                    override either per session, so one activity covers every
                    venue and price. */
-                <p className="mt-1 text-xs text-gray-500">Default venue. Any session can be moved to another one under Manage schedule.</p>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  {form.extra_locations.length
+                    ? 'Parents choose a location when they book. Add sessions for each location under Manage schedule.'
+                    : 'Running this class somewhere else too? Add another location, each with its own price.'}
+                </p>
               )}
                 </>
               )}
             </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Price (SGD per session)</label>
-              <NumberInput
+            {form.is_custom_location && (
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-gray-800">Price (SGD per session)</label>
+                <NumberInput
                 
-                min="0"
-                step="any"
-                placeholder="e.g. 45"
-                className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')}
-                value={form.price}
-                disabled={termsToggle}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                {termsToggle
-                  ? (() => {
-                      const hl = editingId ? termHeadline(allTerms, editingId) : null;
-                      const range = editingId ? termPriceRange(allTerms, editingId) : null;
-                      if (!hl) return 'Locked while terms are on. Add a term under Manage schedule → Terms and its price will show here.';
-                      return `Locked while terms are on. Parents see "${headlineLabel(hl)}".${range ? ` Term prices: $${range.min}${range.max !== range.min ? ` to $${range.max}` : ''}.` : ''}`;
-                    })()
-                  : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
-              </p>
-            </div>
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 45"
+                  className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')}
+                  value={form.price}
+                  disabled={termsToggle}
+                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {termsToggle
+                    ? (() => {
+                        const hl = editingId ? termHeadline(allTerms, editingId) : null;
+                        const range = editingId ? termPriceRange(allTerms, editingId) : null;
+                        if (!hl) return 'Locked while terms are on. Add a term under Manage schedule → Terms and its price will show here.';
+                        return `Locked while terms are on. Parents see "${headlineLabel(hl)}".${range ? ` Term prices: $${range.min}${range.max !== range.min ? ` to $${range.max}` : ''}.` : ''}`;
+                      })()
+                    : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
+                </p>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-gray-800">Capacity {!termsToggle && <span className="text-[#FA4D8D]">*</span>}</label>
               <NumberInput min="1" required={!termsToggle} placeholder="e.g. 12" className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')} value={form.default_capacity} disabled={termsToggle} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
@@ -2868,20 +3021,14 @@ export default function ActivitiesPage() {
                   their own. Enforced in the database, so it holds regardless
                   of what the parent app does. */}
               <div>
-                <label className="mb-1 block text-[13px] font-semibold text-gray-700">Booking cut-off (minutes before session)</label>
-                <NumberInput
-                  
-                  min="0"
-                  max="20160"
+                <label className="mb-1 block text-[13px] font-semibold text-gray-700">Booking cut-off (before the session)</label>
+                <DurationInput
                   className={inputCls}
+                  aria-label="Booking cut-off"
                   value={form.booking_cutoff_minutes}
-                  onChange={(e) => setForm({ ...form, booking_cutoff_minutes: e.target.value })}
+                  onChange={(v) => setForm({ ...form, booking_cutoff_minutes: v })}
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  {form.booking_cutoff_minutes === '0'
-                    ? 'Parents can book right up to the start time.'
-                    : `Parents can't book within ${form.booking_cutoff_minutes || '15'} minutes of the session starting.`}
-                </p>
+                <p className="mt-1 text-xs text-gray-500">{cutoffSentence(form.booking_cutoff_minutes)}</p>
               </div>
             </div>
 
@@ -2921,17 +3068,55 @@ export default function ActivitiesPage() {
                 <WixFormHandling providerId={provider.id} activityId={editingActivity.id} />
               )}
               {form.info_request_enabled && (
-                <div>
-                  <label className="mb-1 block text-[13px] font-semibold text-gray-700">What are you asking for?</label>
-                  <textarea
-                    rows={2}
-                    maxLength={300}
-                    placeholder="e.g. Which condo is the session at, and the unit number?"
-                    className={cn(inputCls, 'resize-none')}
-                    value={form.info_request_prompt}
-                    onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Parents can't book this activity without answering. You'll see the answer on the booking.</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[13px] font-semibold text-gray-700">
+                      {showSecondQ || form.info_request_prompt_2 ? 'First question' : 'What are you asking for?'}
+                    </label>
+                    <textarea
+                      rows={2}
+                      maxLength={300}
+                      placeholder="e.g. Which condo is the session at, and the unit number?"
+                      className={cn(inputCls, 'resize-none')}
+                      value={form.info_request_prompt}
+                      onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
+                    />
+                  </div>
+                  {/* 00252: at most two questions. Both answers arrive together
+                      on the booking, each under its question. */}
+                  {showSecondQ || form.info_request_prompt_2 ? (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between">
+                        <label className="text-xs font-medium text-gray-600 block">Second question</label>
+                        <button
+                          type="button"
+                          onClick={() => { setShowSecondQ(false); setForm({ ...form, info_request_prompt_2: '' }); }}
+                          className="text-xs font-medium text-gray-500 hover:text-red-600"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <textarea
+                        rows={2}
+                        maxLength={300}
+                        placeholder="e.g. Any allergies we should know about?"
+                        className={cn(inputCls, 'resize-none')}
+                        value={form.info_request_prompt_2}
+                        onChange={(e) => setForm({ ...form, info_request_prompt_2: e.target.value })}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSecondQ(true)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add a second question
+                    </button>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Parents can't book this activity without answering{form.info_request_prompt_2.trim() ? ' both' : ''}. You'll see the {form.info_request_prompt_2.trim() ? 'answers' : 'answer'} on the booking.
+                  </p>
                 </div>
               )}
             </div>
@@ -3440,6 +3625,12 @@ export default function ActivitiesPage() {
                                   <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
                                     <p className="font-black">{previewFor.info_request_prompt?.trim() || 'The provider needs some extra information'} <span className="text-[#FA4D8D]">*</span></p>
                                     <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                    {previewFor.info_request_prompt_2?.trim() && (
+                                      <>
+                                        <p className="mt-3 font-black">{previewFor.info_request_prompt_2.trim()} <span className="text-[#FA4D8D]">*</span></p>
+                                        <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                      </>
+                                    )}
                                   </div>
                                 )}
                                 {previewFor.requires_medical_disclosure && (
@@ -3768,9 +3959,20 @@ export default function ActivitiesPage() {
                     each, instead of being created three times. */}
                 <div>
                   <label className="mb-1 block text-[13px] font-semibold text-gray-700">Venue</label>
-                  <SelectField className={inputCls} value={sessForm.location_id} onChange={(v) => setSessForm({ ...sessForm, location_id: v })} aria-label="Session venue">
+                  <SelectField
+                    className={inputCls}
+                    value={sessForm.location_id}
+                    // Moving to a venue with its own price moves the pre-filled price with it,
+                    // unless the vendor already typed a different one.
+                    onChange={(v) => setSessForm((f) => ({
+                      ...f,
+                      location_id: v,
+                      price: f.price === String(venueBasePrice(f.location_id) ?? '') ? String(venueBasePrice(v) ?? '') : f.price,
+                    }))}
+                    aria-label="Session venue"
+                  >
                     <Opt value="">Same as the activity</Opt>
-                    {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+                    {scheduleVenues.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
                   </SelectField>
                 </div>
                 <div>
@@ -3782,7 +3984,7 @@ export default function ActivitiesPage() {
                     placeholder={
                       scheduleIsWixEvent
                         ? 'Set by Wix ticket types'
-                        : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
+                        : venueBasePrice(sessForm.location_id) != null ? `Location price: ${venueBasePrice(sessForm.location_id)}` : 'Same as the activity'
                     }
                     className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
                     value={scheduleIsWixEvent ? '' : sessForm.price}
@@ -3996,7 +4198,7 @@ export default function ActivitiesPage() {
                           <span className="mb-1 block text-xs text-gray-500">Venue</span>
                           <SelectField className={inputCls} value={sessEditForm.location_id} onChange={(v) => setSessEditForm({ ...sessEditForm, location_id: v })} aria-label="Session venue">
                             <Opt value="">Same as the activity</Opt>
-                            {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+                            {scheduleVenues.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
                           </SelectField>
                         </label>
                         <label className="block">
@@ -4008,7 +4210,7 @@ export default function ActivitiesPage() {
                             placeholder={
                               scheduleIsWixEvent
                                 ? 'Set by Wix ticket types'
-                                : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
+                                : venueBasePrice(sessEditForm.location_id) != null ? `Location price: ${venueBasePrice(sessEditForm.location_id)}` : 'Same as the activity'
                             }
                             className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
                             value={scheduleIsWixEvent ? '' : sessEditForm.price}
@@ -4057,9 +4259,13 @@ export default function ActivitiesPage() {
                           {s.location_id && s.location_id !== scheduleFor?.location_id && (
                             <>{' · '}<span className="text-blue-700">{locations.find((l) => l.id === s.location_id)?.name ?? 'Other venue'}</span></>
                           )}
-                          {s.price != null && Number(s.price) !== Number(scheduleFor?.price ?? NaN) && (
-                            <>{' · '}<span className="text-blue-700">{Number(s.price) === 0 ? 'Free' : `SGD ${s.price}`}</span></>
-                          )}
+                          {/* What it really costs (venue / weekday prices included), when that isn't the activity's own price. */}
+                          {(() => {
+                            const eff = sessEffectivePrice(s);
+                            return eff != null && Number(eff) !== Number(scheduleFor?.price ?? NaN) ? (
+                              <>{' · '}<span className="text-blue-700">{Number(eff) === 0 ? 'Free' : `SGD ${eff}`}</span></>
+                            ) : null;
+                          })()}
                         </div>
                         {(s.teacher_name || s.studio) && (
                           <div className="text-xs text-purple-700 mt-0.5 truncate">

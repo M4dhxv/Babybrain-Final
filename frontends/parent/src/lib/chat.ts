@@ -1,28 +1,40 @@
 import { useEffect, useState } from "react";
-import { StreamChat } from "stream-chat";
+import type { StreamChat } from "stream-chat";
 import { apiGet } from "./api";
 
 /**
  * Connects the logged-in parent to GetStream once and caches the client.
  * The token + apiKey come from `/api/vendor/chat/token` (a generic
  * mint-token-for-the-current-user route; works for parents and staff alike).
+ *
+ * The Stream SDK itself is loaded here, on first use: this file is imported by
+ * the shared header (the unread badge), so a static import put the whole chat
+ * client in the entry bundle every visitor downloads, signed in or not.
  */
 let clientPromise: Promise<StreamChat> | null = null;
 
 export function getChatClient(): Promise<StreamChat> {
   if (!clientPromise) {
     clientPromise = (async () => {
-      const { apiKey, token, userId } = await apiGet<{
-        apiKey: string;
-        token: string;
-        userId: string;
-      }>("/api/vendor/chat/token");
+      const [{ StreamChat }, { apiKey, token, userId }] = await Promise.all([
+        import("stream-chat"),
+        apiGet<{
+          apiKey: string;
+          token: string;
+          userId: string;
+        }>("/api/vendor/chat/token"),
+      ]);
       const client = StreamChat.getInstance(apiKey);
       if (!client.userID) {
         await client.connectUser({ id: userId }, token);
       }
       return client;
     })();
+    // A failed first try (offline, a chunk lost to a redeploy) must not leave
+    // chat broken for the rest of the visit: the next caller tries again.
+    clientPromise.catch(() => {
+      clientPromise = null;
+    });
   }
   return clientPromise;
 }
@@ -113,7 +125,9 @@ export function useUnreadMessages(enabled: boolean): number {
         // resync immediately when the tab/app comes back to the foreground —
         // the case this was actually reported for (QA: dot never appeared for
         // a message sent while the recipient's installed app was open).
-        const interval = setInterval(resync, RESYNC_MS);
+        const interval = setInterval(() => {
+          if (document.visibilityState === "visible") resync();
+        }, RESYNC_MS);
         const onVisible = () => {
           if (document.visibilityState === "visible") resyncSoon();
         };

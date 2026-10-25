@@ -70,8 +70,11 @@ const IG = 'https://www.instagram.com/babybrainsg';
 
 /* Mirrors layout() in lib/emails/render.ts: white ground, Fredoka-ish stack at
    18px/#767676, centred logo, left-aligned copy, footer with the wordmark,
-   the Instagram line and its glyph (no profile / reply-to links). Kept as literal HTML here because Supabase
-   renders these itself — it never calls our code. */
+   the Instagram line and its glyph, then "Update your profile · Unsubscribe" (back since the
+   13 Oct Instagram-only footer: mail providers treat a message with no unsubscribe link as more
+   likely junk). One template serves parent and vendor sign-ups, so the links go to the parent
+   profile, as they did before. Kept as literal HTML here because Supabase renders these
+   itself — it never calls our code. */
 const layout = (inner) => `<div style="background:#FFFFFF;margin:0;padding:0">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:'Fredoka','Helvetica Neue',Arial,sans-serif;font-weight:300;font-size:18px;line-height:1.6;color:#767676">
     <div style="text-align:center;margin-bottom:28px">
@@ -81,6 +84,10 @@ const layout = (inner) => `<div style="background:#FFFFFF;margin:0;padding:0">
     <div style="text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid #eee">
       <img src="${SITE}/assets/brand/logo-horizontal.png" alt="BabyBrain" width="132" style="max-width:132px;height:auto;margin-bottom:12px" /><br/>
       <a href="${IG}" style="color:#767676;text-decoration:none;font-size:14px">Follow us on Instagram <img src="${SITE}/assets/brand/instagram.png" alt="Instagram" width="15" height="15" style="width:15px;height:15px;vertical-align:-2px;border:0" /></a>
+      <div style="margin-top:10px;font-size:13px;color:#9a9a9a">
+        <a href="${SITE}/profile" style="color:#9a9a9a">Update your profile</a> &nbsp;&middot;&nbsp;
+        <a href="${SITE}/profile?unsubscribe=1" style="color:#9a9a9a">Unsubscribe</a>
+      </div>
     </div>
   </div>
 </div>`;

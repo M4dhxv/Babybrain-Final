@@ -59,7 +59,10 @@ export async function purchasePackageAndBook(
     p_quantity: quantity,
     p_policies: parseJsonArray(session.metadata?.policies_accepted),
     p_medical: session.metadata?.medical_disclosure ?? null,
-    p_info: session.metadata?.info_response ?? null,
+    // Split over two keys when long (app/api/customer/stripe/package).
+    p_info: session.metadata?.info_response
+      ? session.metadata.info_response + (session.metadata.info_response_2 ?? '')
+      : null,
     p_guest_names: parseJsonArray(session.metadata?.guest_names),
   });
   if (error || !data || !data[0]) {

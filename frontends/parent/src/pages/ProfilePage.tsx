@@ -27,6 +27,7 @@ import { AvatarPicker } from "../components/AvatarPicker";
 import { ShareButton } from "../components/ShareButton";
 import { SelectField, Opt } from "../components/SelectField";
 import { UnreadBadge } from "../components/UnreadBadge";
+import { RateBabyBrainButton } from "../components/RateBabyBrain";
 import RedirectToLanding from "../components/RedirectToLanding";
 import {
   ActivityCardGridSkeleton,
@@ -119,6 +120,8 @@ type CustomerBookingRow = {
   paid_with: "token" | "credit" | "cash" | "free";
   refund_mode: "refund" | "none";
   can_claim?: boolean;
+  // A free class with a seat open for this waitlisted booking.
+  spot_open?: boolean;
   // Wix Events: the ticket this seat holds (number + the QR target scanned at the door).
   event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
   // Wix Events: the order / RSVP behind this seat, and whether the event is online.
@@ -156,6 +159,9 @@ type BookingItem = {
   // rows to check out.
   canClaim: boolean;
   claimIds: string[];
+  // The same on a free class: nothing to pay, so "Book now" opens the booking
+  // page for this session (the link the "spot available" email carries).
+  spotOpen: boolean;
   // Wix Events tickets for this booking, one per seat (empty for everything else).
   tickets: { orderId: string; ticketNumber: string; checkInUrl: string | null }[];
   // An ONLINE Wix event: how to fetch the join link (an order for tickets, an RSVP otherwise).
@@ -2065,6 +2071,7 @@ export default function ProfilePage() {
               // spot free to pay for.
               canClaim: ordered.some((x) => x.can_claim === true),
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
+              spotOpen: ordered.some((x) => x.spot_open === true),
               tickets: ordered.flatMap((x) => (x.event_ticket ? [x.event_ticket] : [])),
               joinOnline: ordered.find((x) => x.event_access?.online)?.event_access ?? null,
               isEvent: act?.wix_service_type === "EVENT",
@@ -2776,6 +2783,8 @@ export default function ProfilePage() {
                   text="Discover activities for your little ones on BabyBrain"
                   label="Share BabyBrain"
                 />
+                {/* Rate BabyBrain itself (00253), next to Share: hidden until that migration is applied. */}
+                <RateBabyBrainButton />
               </div>
             </div>
             <div className="rounded-[10px] bg-[#FEEBF2] p-5">
@@ -3853,6 +3862,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // actions grey out and explain themselves in a pop-up.
   const [notice, setNotice] = useState<string | null>(null);
   const [reschedFor, setReschedFor] = useState<BookingItem | null>(null);
+  /* Cancelling asks first in a dialog styled like the Reschedule one (QA: the
+     browser's own confirm box looked nothing like it). `placeId` set = one
+     place of a party, otherwise the whole booking. */
+  const [cancelAsk, setCancelAsk] = useState<{ b: BookingItem; placeId?: string; name?: string } | null>(null);
   // "Add to calendar" for one booking (Plus). Only an upcoming, confirmed
   // booking can be added: a waitlisted or unpaid one isn't a session yet.
   const [calFor, setCalFor] = useState<BookingItem | null>(null);
@@ -3970,15 +3983,6 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   }
 
   async function doCancel(b: BookingItem) {
-    const seats = b.places.length;
-    // What a cancellation actually gives back is the vendor's policy (00099)
-    // and is shown on the booking afterwards — the confirm step just says so
-    // rather than promising a specific outcome up front.
-    const tail = "Eligibility for refund or make up tokens is per vendor policy.";
-    const q = party(b)
-      ? `Cancel all ${seats} places for ${b.title}? ${tail}`
-      : `Cancel your booking for ${b.title}? ${tail}`;
-    if (!window.confirm(q)) return;
     setBusyId(b.id);
     // A Wix-linked booking's cancellation has to reach Wix too (see
     // /api/wix/bookings/cancel), so it also frees the seat there instead of
@@ -4014,10 +4018,13 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   /** Cancel one seat of a party, leaving the rest booked. Same policy gate
    *  as the whole-booking cancel; the per-row compensation trigger returns
    *  that seat's own credit / make-up token. */
-  async function cancelPlace(b: BookingItem, bookingId: string, name: string) {
+  function cancelPlace(b: BookingItem, bookingId: string, name: string) {
     const why = cancelBlockReason(b);
     if (why) { setNotice(why); return; }
-    if (!window.confirm(`Cancel ${name}'s place on ${b.title}? Eligibility for refund or make up tokens is per vendor policy.`)) return;
+    setCancelAsk({ b, placeId: bookingId, name });
+  }
+
+  async function doCancelPlace(b: BookingItem, bookingId: string) {
     setBusyId(b.id);
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     setBusyId(null);
@@ -4176,6 +4183,19 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 </button>
               </div>
             )}
+            {!b.canClaim && b.spotOpen && b.slug && b.sessionId && !b.removed && (
+              <div className="mt-2 flex flex-col gap-1.5 border-t border-[#FAF7F7] pt-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-bold text-palette-greenInk">
+                  A spot has opened up on this session — book it now. The first to book gets it.
+                </p>
+                <a
+                  href={`/book?slug=${encodeURIComponent(b.slug)}&session=${encodeURIComponent(b.sessionId)}`}
+                  className="w-full rounded-[9px] bg-baby-cta px-4 py-2.5 text-center text-sm font-bold text-white hover:opacity-90 sm:w-auto sm:py-1.5 sm:text-xs"
+                >
+                  Book now
+                </a>
+              </div>
+            )}
             {upcoming(b) && (
               <div className="mt-2 flex flex-col gap-2 border-t border-[#FAF7F7] pt-2 sm:flex-row sm:justify-end">
                 {b.status === "confirmed" && b.joinOnline && (b.joinOnline.orderId || b.joinOnline.rsvpId) && (
@@ -4242,7 +4262,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 <button
                   type="button"
                   disabled={busyId === b.id}
-                  onClick={() => (cancelWhy ? setNotice(cancelWhy) : doCancel(b))}
+                  onClick={() => (cancelWhy ? setNotice(cancelWhy) : setCancelAsk({ b }))}
                   className={`w-full rounded-[9px] px-3 py-2.5 text-sm font-bold sm:w-auto sm:py-1.5 sm:text-xs ${
                     cancelWhy
                       ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#6D7486]"
@@ -4272,6 +4292,60 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
           </div>
         </div>
       )}
+
+      {/* Cancel confirmation: the same dialog frame, type and buttons as the
+          Reschedule picker below. What a cancellation gives back is the
+          vendor's policy (00099), shown on the booking afterwards, so this
+          says so rather than promising a specific outcome. */}
+      {cancelAsk && (() => {
+        const { b, placeId, name } = cancelAsk;
+        const working = busyId === b.id;
+        const whole = !placeId && party(b);
+        const close = () => !working && setCancelAsk(null);
+        const confirm = async () => {
+          if (placeId) await doCancelPlace(b, placeId);
+          else await doCancel(b);
+          setCancelAsk(null);
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={close}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cancel-title"
+              className="flex w-full max-w-md flex-col rounded-[16px] bg-white shadow-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+                <h3 id="cancel-title" className="text-lg font-black">
+                  {placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
+                </h3>
+                <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                  {b.title}{b.when ? <> · {b.when}</> : null}
+                </p>
+              </div>
+              <div className="px-5 py-4 sm:px-6">
+                <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2.5 text-sm font-semibold text-[#3f4b78]">
+                  {placeId
+                    ? "The rest of the booking stays as it is. "
+                    : whole
+                    ? "Every place on this booking will be cancelled. "
+                    : null}
+                  Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                </p>
+              </div>
+              <div className="space-y-2 border-t border-[#EBE3E5] px-5 py-4 sm:px-6">
+                <Button type="button" className="w-full" disabled={working} onClick={() => void confirm()}>
+                  {working ? "Cancelling…" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
+                </Button>
+                <Button type="button" variant="outline" className="w-full" disabled={working} onClick={close}>
+                  Keep my booking
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Reschedule picker */}
       {reschedFor && (() => {

@@ -6,6 +6,8 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { computeWixAwareCapacity, isHeldBookingStatus } from '@/lib/wixCapacity';
 import { DashboardSkeleton, RefreshBar } from '@/components/Skeletons';
+import { DateRangeFilter } from '@/components/DateRangeFilter';
+import { RANGE_PRESETS, rangeLabel, sgToday, type DateRange } from '@/lib/dateRange';
 import type { ProviderOverview } from '@/lib/database.types';
 import {
   CalendarPlus,
@@ -23,6 +25,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
   CalendarCheck,
+  Check,
   Baby,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -68,29 +71,27 @@ function sgGreeting() {
 
 type DashboardData = {
   overview: ProviderOverview | null;
-  upcoming: UpcomingSession[];
   recent: RecentBooking[];
   attendanceRate: string | null;
 };
+/** `key` is the range the rows are for: on a range change the hook keeps the
+ *  previous range's rows until the new ones land, and they must not be shown
+ *  under the new range's label. */
+type SessionsData = { key: string; sessions: UpcomingSession[]; truncated: boolean };
 const EMPTY_UPCOMING: UpcomingSession[] = [];
 const EMPTY_RECENT: RecentBooking[] = [];
+/** Most sessions the dashboard card lists for one range; the schedule has the rest. */
+const SESSIONS_LIMIT = 60;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { provider } = useAuth();
-  /* Both header buttons used to navigate('/bookings') regardless of what was
-     clicked. They're real controls now: the date range narrows Upcoming
-     Sessions to a window (sessions are fetched 90 days out so every preset has
-     data to show), and Filters narrows Recent Bookings by status — both
-     client-side, since neither list needs a new backend endpoint to do this
-     honestly. */
-  const RANGE_PRESETS = [
-    { key: '7d', label: 'Next 7 days', days: 7 },
-    { key: '30d', label: 'Next 30 days', days: 30 },
-    { key: '90d', label: 'Next 90 days', days: 90 },
-  ] as const;
-  const [rangeKey, setRangeKey] = useState<(typeof RANGE_PRESETS)[number]['key']>('7d');
-  const [rangeOpen, setRangeOpen] = useState(false);
+  /* The date range narrows the sessions list, Filters narrows Recent bookings
+     by status. Neither changes the stats row, so they sit between the stats
+     and the lists they filter (QA: at the top they looked like they changed
+     the stats). The range is any From / To, not just "Next 7 / 30 / 90 days";
+     its sessions are fetched for exactly that range (useProviderQuery below). */
+  const [range, setRange] = useState<DateRange>(() => RANGE_PRESETS.find((p) => p.key === 'next7')!.range());
   const STATUS_FILTERS = ['All', 'Confirmed', 'Waitlisted', 'Cancelled', 'Completed'] as const;
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('All');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -126,17 +127,15 @@ export default function DashboardPage() {
   // percentage. For a vendor with a long history that was, on its own, the
   // slowest query on the page and it only gets slower over time. A recent
   // sample of 200 is plenty to represent an attendance rate.
+  //
+  // The sessions list is its own read (below), keyed by the chosen range, so
+  // changing the range doesn't refetch everything else here.
   const { data, loading, refreshing, error, refetch } = useProviderQuery<DashboardData>(
     provider ? `dashboard:${provider.id}` : null,
     async () => {
-      const nowIso = new Date().toISOString();
-      // Fetched 90 days out (not just the next 4) so the date-range control has
-      // something to actually narrow — it used to just navigate to /bookings.
-      const in90dIso = new Date(Date.now() + 90 * 864e5).toISOString();
-
       const [ovRes, actsRes, locsRes, recentRes, sampleBksRes] = await Promise.all([
         supabase.rpc('provider_overview', { p_provider: provider!.id }),
-        supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider!.id),
+        supabase.from('activities').select('id, title, location_id').eq('provider_id', provider!.id),
         supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
         // 1.3: recent bookings with the booked child's name (security-definer
         // RPC). Fetched 30 (not 4) so the status filter has more than one
@@ -156,11 +155,8 @@ export default function DashboardPage() {
       const overview = (ovRes.data?.[0] as ProviderOverview) ?? null;
       const acts = actsRes.data;
       const locs = locsRes.data;
-      const titleOf = new Map((acts ?? []).map((a) => [a.id, a.title]));
       const activityLocationOf = new Map((acts ?? []).map((a) => [a.id, a.location_id]));
-      const wixTypeOf = new Map((acts ?? []).map((a) => [a.id, a.wix_service_type]));
       const locationNameOf = new Map((locs ?? []).map((l) => [l.id, l.name]));
-      const ids = [...titleOf.keys()];
 
       const sampleBks = sampleBksRes.data ?? [];
 
@@ -168,18 +164,7 @@ export default function DashboardPage() {
       // session (falling back to the activity's own location) — no migration.
       // Runs in this wave, not after it, so it adds no round trip.
       const recentIds = (recentRes.data ?? []).map((r) => r.booking_id);
-      const [sessRes, attRes, recentLocRes] = await Promise.all([
-        ids.length
-          ? supabase
-              .from('activity_sessions')
-              .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
-              .in('activity_id', ids)
-              .neq('status', 'cancelled')
-              .gte('starts_at', nowIso)
-              .lte('starts_at', in90dIso)
-              .order('starts_at')
-              .limit(60)
-          : Promise.resolve({ data: [] as { id: string; activity_id: string; starts_at: string; capacity: number | null; location_id: string | null; wix_remaining_capacity: number | null; wix_slot_key: string | null }[] }),
+      const [attRes, recentLocRes] = await Promise.all([
         sampleBks.length
           ? supabase.from('attendance').select('status').in('booking_id', sampleBks.map((b) => b.id))
           : Promise.resolve({ data: [] as { status: string }[] }),
@@ -208,7 +193,50 @@ export default function DashboardPage() {
         };
       });
 
+      const marked = (attRes.data ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
+      const attendanceRate = marked.length
+        ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
+        : null;
 
+      return { overview, recent, attendanceRate };
+    },
+  );
+
+  // Sessions in the chosen range (Singapore days, inclusive). A range starting
+  // today starts now, so the card keeps listing what's still to come. Three
+  // waves, the same critical path the list had inside the read above:
+  // activities + venues, then the sessions, then their booking counts.
+  const today = sgToday();
+  const sessKey = provider ? `dashboard-sessions:${provider.id}:${range.from}:${range.to}` : null;
+  const { data: sessAny, loading: sessLoading, error: sessError, refetch: refetchSessions } = useProviderQuery<SessionsData>(
+    sessKey,
+    async () => {
+      const key = sessKey!;
+      const fromIso = range.from === sgToday() ? new Date().toISOString() : new Date(`${range.from}T00:00:00+08:00`).toISOString();
+      const toIso = new Date(`${range.to}T23:59:59.999+08:00`).toISOString();
+      const [actsRes, locsRes] = await Promise.all([
+        supabase.from('activities').select('id, title, location_id, wix_service_type').eq('provider_id', provider!.id),
+        supabase.from('provider_locations').select('id, name').eq('provider_id', provider!.id),
+      ]);
+      if (actsRes.error) throw actsRes.error;
+      const acts = actsRes.data ?? [];
+      const titleOf = new Map(acts.map((a) => [a.id, a.title]));
+      const activityLocationOf = new Map(acts.map((a) => [a.id, a.location_id]));
+      const wixTypeOf = new Map(acts.map((a) => [a.id, a.wix_service_type]));
+      const locationNameOf = new Map((locsRes.data ?? []).map((l) => [l.id, l.name]));
+      const ids = [...titleOf.keys()];
+      if (!ids.length) return { key, sessions: [], truncated: false };
+
+      const sessRes = await supabase
+        .from('activity_sessions')
+        .select('id, activity_id, starts_at, capacity, location_id, wix_remaining_capacity, wix_slot_key')
+        .in('activity_id', ids)
+        .neq('status', 'cancelled')
+        .gte('starts_at', fromIso)
+        .lte('starts_at', toIso)
+        .order('starts_at')
+        .limit(SESSIONS_LIMIT);
+      if (sessRes.error) throw sessRes.error;
       const sess = sessRes.data ?? [];
       const sessIds = sess.map((s) => s.id);
       const counts: Record<string, number> = {};
@@ -221,7 +249,7 @@ export default function DashboardPage() {
           if (isHeldBookingStatus(b.status)) counts[b.session_id] = (counts[b.session_id] ?? 0) + 1;
         });
       }
-      const upcoming: UpcomingSession[] = sess.map((s) => {
+      const sessions: UpcomingSession[] = sess.map((s) => {
         const locId = s.location_id ?? activityLocationOf.get(s.activity_id) ?? null;
         // See lib/wixCapacity.ts (00108): the higher of Wix's own filled
         // figure and our held local rows, so a Wix class booked directly on
@@ -240,17 +268,14 @@ export default function DashboardPage() {
           overflow,
         };
       });
-
-      const marked = (attRes.data ?? []).filter((a) => a.status === 'present' || a.status === 'absent');
-      const attendanceRate = marked.length
-        ? `${Math.round((marked.filter((a) => a.status === 'present').length / marked.length) * 100)}%`
-        : null;
-
-      return { overview, upcoming, recent, attendanceRate };
+      return { key, sessions, truncated: sess.length === SESSIONS_LIMIT };
     },
   );
+  const sessData = sessAny && sessAny.key === sessKey ? sessAny : null;
   const overview = data?.overview ?? null;
-  const upcoming = data?.upcoming ?? EMPTY_UPCOMING;
+  const visibleUpcoming = sessData?.sessions ?? EMPTY_UPCOMING;
+  // "Upcoming" only while the whole range is still to come.
+  const sessionsTitle = range.to < today ? 'Past sessions' : range.from < today ? 'Sessions' : 'Upcoming sessions';
   const recent = data?.recent ?? EMPTY_RECENT;
   const attendanceRate = data?.attendanceRate ?? null;
   const loaded = !loading;
@@ -267,11 +292,9 @@ export default function DashboardPage() {
         `$${Number(overview.revenue).toLocaleString()}`,
       ]
     : [null, null, null, null, null];
-  const firstName = provider?.business_name?.split(' ')[0] ?? 'there';
+  // The whole business name: the first word alone read as "Good afternoon, The".
+  const greetName = provider?.business_name?.trim() || 'there';
 
-  const activeRangeDays = RANGE_PRESETS.find((r) => r.key === rangeKey)!.days;
-  const rangeCutoff = Date.now() + activeRangeDays * 864e5;
-  const visibleUpcoming = upcoming.filter((s) => new Date(s.when).getTime() <= rangeCutoff);
   /* QA 21/08: "should display a maximum of 10 listings on overview". The RPC
      still fetches 30 so the status filter has something to filter — the cap is
      on what the overview shows, applied after filtering so picking a status
@@ -290,18 +313,18 @@ export default function DashboardPage() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">
               {new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'long', day: 'numeric', month: 'long' })}
             </div>
-            <h1 className="mt-1 text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}</h1>
+            <h1 className="mt-1 text-2xl font-bold text-gray-900">{sgGreeting()}, {greetName}</h1>
           </div>
         ) : (
           <div className="w-full text-center sm:w-auto sm:text-left">
-            <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {firstName}. <span className="text-2xl">👋</span></h1>
+            <h1 className="text-2xl font-bold text-gray-900">{sgGreeting()}, {greetName}. <span className="text-2xl">👋</span></h1>
             <p className="text-sm text-gray-500 mt-1">Here's what's happening with your business today.</p>
           </div>
         )}
-        <div className="flex items-center gap-3">
-          {/* Boutique look: messages live up here with an unread dot instead
-              of the floating bubble, which sat over the cards. */}
-          {BOUTIQUE && (
+        {/* Boutique look: messages live up here with an unread dot instead
+            of the floating bubble, which sat over the cards. */}
+        {BOUTIQUE && (
+          <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/messages')}
               aria-label={unreadCount ? `Messages, ${unreadCount} unread` : 'Messages'}
@@ -313,53 +336,8 @@ export default function DashboardPage() {
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-[1.5px] border-white bg-[#FA4D8D]" />
               )}
             </button>
-          )}
-          <div className="relative">
-            <button
-              onClick={() => { setRangeOpen((v) => !v); setFilterOpen(false); }}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50"
-            >
-              <CalendarDays className="w-4 h-4" />
-              {RANGE_PRESETS.find((r) => r.key === rangeKey)!.label}
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            {rangeOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
-                {RANGE_PRESETS.map((r) => (
-                  <button
-                    key={r.key}
-                    onClick={() => { setRangeKey(r.key); setRangeOpen(false); }}
-                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', r.key === rangeKey ? 'text-[#FA4D8D] font-medium' : 'text-gray-700')}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-          <div className="relative">
-            <button
-              onClick={() => { setFilterOpen((v) => !v); setRangeOpen(false); }}
-              className={cn('flex items-center gap-2 px-4 py-2 bg-white border rounded-xl text-sm hover:bg-gray-50', statusFilter !== 'All' ? 'border-[#C90044] text-[#FA4D8D]' : 'border-gray-200 text-gray-700')}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              {statusFilter === 'All' ? 'Filters' : statusFilter}
-            </button>
-            {filterOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
-                {STATUS_FILTERS.map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => { setStatusFilter(f); setFilterOpen(false); }}
-                    className={cn('block w-full text-left px-4 py-2 text-sm hover:bg-gray-50', f === statusFilter ? 'text-[#FA4D8D] font-medium' : 'text-gray-700')}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
@@ -457,15 +435,78 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {/* What the lists below show, labelled with the list each one filters.
+            Neither touches the stats row above. */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-500">Sessions</span>
+            <DateRangeFilter value={range} onChange={setRange} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-500">Recent bookings</span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setFilterOpen((v) => !v)}
+                aria-haspopup="listbox"
+                aria-expanded={filterOpen}
+                className={cn('flex h-9 items-center gap-2 rounded-xl border bg-white px-3 text-sm hover:bg-gray-50', statusFilter !== 'All' ? 'border-[#C90044] text-[#FA4D8D]' : 'border-gray-200 text-gray-700')}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="font-medium">{statusFilter === 'All' ? 'All statuses' : statusFilter}</span>
+                <ChevronDown className={cn('h-4 w-4 text-gray-400 transition-transform', filterOpen && 'rotate-180')} />
+              </button>
+              {filterOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" aria-hidden="true" onClick={() => setFilterOpen(false)} />
+                  <div role="listbox" className="absolute left-0 top-full z-40 mt-2 w-44 rounded-xl border border-gray-200 bg-white py-1 shadow-lg sm:left-auto sm:right-0">
+                    {STATUS_FILTERS.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        role="option"
+                        aria-selected={f === statusFilter}
+                        onClick={() => { setStatusFilter(f); setFilterOpen(false); }}
+                        className={cn('flex w-full items-center justify-between px-4 py-2 text-left text-sm hover:bg-gray-50', f === statusFilter ? 'font-medium text-[#FA4D8D]' : 'text-gray-700')}
+                      >
+                        {f === 'All' ? 'All statuses' : f}
+                        {f === statusFilter && <Check className="h-4 w-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Bottom Grid */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Upcoming Sessions */}
+          {/* Sessions in the chosen range */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Upcoming sessions</h3>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900">{sessionsTitle}</h3>
+                <div className="text-xs text-gray-500">{rangeLabel(range)}</div>
+              </div>
               <button onClick={() => navigate('/schedule')} className="text-xs text-[#FA4D8D] font-medium">View all</button>
             </div>
             <div className="space-y-4">
+              {!sessData && !sessLoading && !!sessError && (
+                <div className="text-sm text-gray-500">
+                  Couldn&rsquo;t load sessions.{' '}
+                  <button type="button" onClick={refetchSessions} className="font-medium text-[#FA4D8D]">Try again</button>
+                </div>
+              )}
+              {!sessData && sessLoading && [0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3" aria-hidden="true">
+                  <div className="h-10 w-10 animate-pulse rounded-lg bg-gray-100" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-1/3 animate-pulse rounded bg-gray-100" />
+                    <div className="h-3.5 w-2/3 animate-pulse rounded bg-gray-100" />
+                  </div>
+                </div>
+              ))}
               {visibleUpcoming.map((session, idx) => {
                 const Icon = sessionIcons[idx % sessionIcons.length];
                 return (
@@ -503,15 +544,18 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
-              {loaded && visibleUpcoming.length === 0 && (BOUTIQUE ? (
+              {!!sessData && visibleUpcoming.length === 0 && (BOUTIQUE ? (
                 <EmptyState
                   icon={CalendarDays}
                   tone="purple"
-                  title={`Nothing on in the ${RANGE_PRESETS.find((r) => r.key === rangeKey)!.label.toLowerCase()}`}
+                  title="No sessions in this range"
                   detail="Sessions you add or sync from Wix show up here."
                   action={{ label: 'Open schedule', onClick: () => navigate('/schedule') }}
                 />
               ) : <div className="text-sm text-gray-400">No sessions in this range.</div>)}
+              {sessData?.truncated && (
+                <p className="text-xs text-gray-500">Showing the first {SESSIONS_LIMIT} sessions in this range. The schedule has the rest.</p>
+              )}
             </div>
             <button onClick={() => navigate('/schedule')} className="flex items-center gap-1 mt-4 text-xs font-medium text-[#FA4D8D]">
               View full schedule

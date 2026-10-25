@@ -36,7 +36,11 @@ export function useUnreadNotifications(providerId: string | null, refreshKey?: u
     };
 
     load();
-    const interval = window.setInterval(load, POLL_MS);
+    // Not while the tab is in the background: a portal left open in a spare
+    // tab polled the database every minute all day. Coming back reloads at once.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, POLL_MS);
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', load);
     document.addEventListener('visibilitychange', onVisible);

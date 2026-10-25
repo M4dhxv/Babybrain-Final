@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageShell, Button } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { VerifyEmailCode } from "../components/VerifyEmailCode";
@@ -9,7 +9,7 @@ import { warmDashboard } from "../lib/prefetch";
 import { PASSWORD_RULES, passwordError } from "../lib/validation";
 
 export function LoginPage() {
-  const { signIn } = useAuth();
+  const { signIn, session } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +17,9 @@ export function LoginPage() {
   // Supabase's wording for "signed up but never confirmed the email". The
   // parent can confirm right here with the code from that email.
   const [confirming, setConfirming] = useState(false);
+  // An email link that was already used (mail scanners often open links before
+  // the parent does) or has expired comes back here (app/auth/callback).
+  const [linkExpired] = useState(() => getParam("link") === "expired" || getParam("error") === "auth");
   // Nearly everyone lands on Profile right after signing in. Fetch its chunks
   // now, while they type, so the post-login hop isn't a download + skeleton.
   useEffect(() => { warmDashboard(); }, []);
@@ -38,8 +41,13 @@ export function LoginPage() {
     }
     finish();
   }
-  /** Signed in (by password, or by confirming with the email code). */
+  /** Signed in (by password, or by confirming with the email code). Runs once: the effect below can see the new session before
+   *  submit() gets back here, and a second run would read the destination's
+   *  URL, find no `next`, and send the parent to /profile instead. */
+  const finished = useRef(false);
   function finish() {
+    if (finished.current) return;
+    finished.current = true;
     // Honour ?next= for gated pages that bounced here — same-origin
     // relative paths only ("//host" would be an open redirect).
     // The URL's own `next` wins; the remembered one covers a relaunched app.
@@ -53,6 +61,13 @@ export function LoginPage() {
     // bundle — several seconds on a phone — for nothing.
     goTo(isSafeNext(next) ? next : "/profile", { replace: true });
   }
+  // Already signed in: nothing to log in to, so carry on to where they were
+  // going. A signed-in parent reaches this page from a "log in to view it"
+  // email link, or from a confirm-email link that signed them in on the way.
+  useEffect(() => {
+    if (session) finish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
   if (confirming) {
     return (
       <PageShell active="/login">
@@ -73,6 +88,11 @@ export function LoginPage() {
         <div className="rounded-[18px] border border-[#FED7E4] bg-white p-8 shadow-card">
           <h1 className="text-2xl font-black">Welcome back <span>👋</span></h1>
           <p className="mt-1 font-semibold text-[#5a6690]">Log in to see activity suggestions for your children.</p>
+          {linkExpired && !error && (
+            <div className="mt-4 rounded-[10px] bg-[#FEF9EB] px-3 py-2 text-sm font-bold text-[#7a5a00]">
+              That link has expired or was already used. If you've confirmed your email, just log in below. If not, log in and we'll help you confirm it.
+            </div>
+          )}
           {error && (
             <div className="mt-4 rounded-[10px] bg-[#FEEBF2] px-3 py-2 text-sm font-bold text-baby-cta">
               {error}

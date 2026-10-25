@@ -252,6 +252,8 @@ export default function BookingPage() {
   const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
+  // The venue picked in "Choose a location" (00250), for a class at several venues.
+  const [locId, setLocId] = useState<string | null>(null);
   const [count, setCount] = useState(() => {
     const n = Number(getParam("count"));
     return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 1;
@@ -291,6 +293,9 @@ export default function BookingPage() {
   /* The vendor's bespoke information request (migration 00074) — e.g. an
      address when the class is hosted at the family's own condo. */
   const [infoResponse, setInfoResponse] = useState(draft?.infoResponse ?? "");
+  /* An optional second question (00252), answered in the same
+     bookings.info_response: see infoAnswer below. */
+  const [infoResponse2, setInfoResponse2] = useState(draft?.infoResponse2 ?? "");
   /* Sessions this parent already holds a live booking on, as
      `${session_id}:${child_id}` -> that booking's status. Booking the same
      child onto the same class twice is allowed — a parent may well want two
@@ -526,9 +531,35 @@ export default function BookingPage() {
   // Group upcoming sessions by date so the user picks a date, then a time.
   // Times past their booking cut-off are left out: the server would refuse
   // them with "Bookings for this class are closed." (founder, 28 Sep).
+  //
+  // A class at several venues (00250) asks for the venue first and then offers
+  // only that venue's times. A session with no venue of its own is at the
+  // activity's primary one. Until the parent picks, the primary venue (or the
+  // first with open times) is selected, so there is always something to show.
+  const sessLoc = (s: ActivitySession) => s.location_id ?? activity?.location_id ?? null;
+  const locationIds =
+    isEvent || isCourse
+      ? []
+      : Array.from(
+          new Set(
+            sessions
+              .filter((s) => bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes))
+              .map(sessLoc)
+              .filter((v): v is string => !!v)
+          )
+        );
+  const pickLocation = locationIds.length > 1;
+  const activeLoc = !pickLocation
+    ? null
+    : locId && locationIds.includes(locId)
+      ? locId
+      : activity?.location_id && locationIds.includes(activity.location_id)
+        ? activity.location_id
+        : locationIds[0];
   const byDate: Record<string, ActivitySession[]> = {};
   sessions.forEach((s) => {
     if (!bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes)) return;
+    if (pickLocation && sessLoc(s) !== activeLoc) return;
     (byDate[sgDay(s.starts_at)] ||= []).push(s);
   });
   const dates = Object.keys(byDate);
@@ -586,12 +617,13 @@ export default function BookingPage() {
     const wantOpen = !!want && (isEvent || isCourse ||
       bookingOpen(want.starts_at, want.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes));
     if (want && wantOpen) {
+      setLocId(want.location_id ?? activity?.location_id ?? null);
       setDateKey(sgDay(want.starts_at));
       setSessionId(want.id);
       if (want.wix_day) setPickedDays(draft?.pickedDays.length ? draft.pickedDays : [want.wix_day]);
     }
     setPreselectPending(false);
-  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes, draft]);
+  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes, activity?.location_id, draft]);
 
   useEffect(() => {
     if (preselectPending) return;
@@ -759,8 +791,11 @@ export default function BookingPage() {
      (migration 00074). Resolved lazily — most activities run at one venue, so
      there is nothing to look up. */
   const [sessionVenues, setSessionVenues] = useState<Record<string, string>>({});
+  // Venue names alone, for the "Choose a location" buttons.
+  const [venueNames, setVenueNames] = useState<Record<string, { name: string; address: string | null }>>({});
+  const primaryLocId = activity?.location_id ?? null;
   useEffect(() => {
-    const ids = Array.from(new Set(sessions.map((x) => x.location_id).filter((v): v is string => !!v)));
+    const ids = Array.from(new Set([...sessions.map((x) => x.location_id), primaryLocId].filter((v): v is string => !!v)));
     if (ids.length === 0) return;
     let cancelled = false;
     supabase
@@ -770,13 +805,16 @@ export default function BookingPage() {
       .then(({ data }) => {
         if (cancelled) return;
         const next: Record<string, string> = {};
+        const names: Record<string, { name: string; address: string | null }> = {};
         for (const l of (data ?? []) as Array<{ id: string; name: string; address: string | null }>) {
           next[l.id] = [l.name, l.address].filter(Boolean).join(", ");
+          names[l.id] = { name: l.name, address: l.address };
         }
         setSessionVenues(next);
+        setVenueNames(names);
       });
     return () => { cancelled = true; };
-  }, [sessions]);
+  }, [sessions, primaryLocId]);
   const sessionVenueAddress = selected?.location_id ? sessionVenues[selected.location_id] ?? null : null;
   /* Where this booking actually happens: the chosen session's own venue once
      it has one (migration 00074), then the activity's own address, then the
@@ -848,7 +886,7 @@ export default function BookingPage() {
   function loginHref() {
     saveBookingDraft({
       slug: getParam("slug") ?? "",
-      guestNames, medicalNote, infoResponse, acceptedPolicies, payWith, pickedDays,
+      guestNames, medicalNote, infoResponse, infoResponse2, acceptedPolicies, payWith, pickedDays,
       eventId, ticketTypeId, formAnswers,
     });
     const q = new URLSearchParams(window.location.search);
@@ -946,7 +984,7 @@ export default function BookingPage() {
         // vendor's info request all need to survive the trip to the roster.
         ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
         ...(acceptedPolicies.length ? { policiesAccepted: acceptedPolicies } : {}),
-        ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+        ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
       };
       if (isRsvpEvent) {
         // RSVP-type event: no tickets or payment — the RSVP is made on Wix and recorded here at once.
@@ -959,7 +997,7 @@ export default function BookingPage() {
             ...(Object.keys(formAnswers).length ? { formAnswers } : {}),
             ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
             ...(acceptedPolicies.length ? { policiesAccepted: acceptedPolicies } : {}),
-            ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+            ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
           });
           status = data.status;
         } catch (e) {
@@ -1014,7 +1052,7 @@ export default function BookingPage() {
             tokenId: redeemToken,
             policiesAccepted: acceptedPolicies,
             ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
-            ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+            ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
           });
           status = data.status;
         } catch (e) {
@@ -1030,7 +1068,7 @@ export default function BookingPage() {
           p_session_id: sessionId,
           p_policies: acceptedPolicies,
           ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
-          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+          ...(infoAnswer ? { p_info: infoAnswer } : {}),
         });
         setBusy(false);
         if (error) {
@@ -1061,7 +1099,7 @@ export default function BookingPage() {
         // enforced server-side on both Wix endpoints — it used to be
         // collected on this page and then never sent, so the vendor's roster
         // showed the answer blank for every Wix-linked class.
-        ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+        ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
       };
       if (activity?.price != null && Number(activity.price) > 0) {
         try {
@@ -1109,7 +1147,7 @@ export default function BookingPage() {
           ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
           // Whatever the vendor asked for on this activity. The insert trigger
           // rejects a blank one when the request is switched on.
-          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+          ...(infoAnswer ? { p_info: infoAnswer } : {}),
         })
         .single();
       if (error || !data) {
@@ -1199,7 +1237,7 @@ export default function BookingPage() {
             ? { guestNames: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
             : {}),
           ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
-          ...(infoResponse.trim() ? { infoResponse: infoResponse.trim() } : {}),
+          ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
         });
         status = data.status;
         wl = data.waitlistedCount ?? 0;
@@ -1224,7 +1262,7 @@ export default function BookingPage() {
             ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
             : {}),
           ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
-          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+          ...(infoAnswer ? { p_info: infoAnswer } : {}),
         })
         .single();
       if (error) { setBusy(false); setErr(cleanRpcErrorMessage(error)); return; }
@@ -1306,7 +1344,7 @@ export default function BookingPage() {
           : {}),
         policies_accepted: acceptedPolicies,
         ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
-        ...(infoResponse.trim() ? { info_response: infoResponse.trim() } : {}),
+        ...(infoAnswer ? { info_response: infoAnswer } : {}),
       });
       if (url) window.location.href = url;
       else setErr("Could not start checkout — please try again.");
@@ -1334,6 +1372,21 @@ export default function BookingPage() {
   const missingPolicies = requiredPolicies.filter((p) => !acceptedPolicies.includes(p.id));
   const needsMedical = Boolean(activity?.requires_medical_disclosure);
 
+  /* The vendor's second question, if they set one (00252). */
+  const secondPrompt = activity?.info_request_enabled ? activity.info_request_prompt_2?.trim() ?? "" : "";
+  /** What is stored in bookings.info_response: the answer as typed, or with a
+   *  second question, both answers, each under its question, so the vendor
+   *  reads them in one place on the booking. */
+  const infoAnswer = secondPrompt
+    ? [
+        [activity?.info_request_prompt?.trim() || "Extra information", infoResponse.trim()],
+        [secondPrompt, infoResponse2.trim()],
+      ]
+        .filter(([, answer]) => answer)
+        .map(([question, answer]) => `${question}\n${answer}`)
+        .join("\n\n")
+    : infoResponse.trim();
+
   /** Everything the provider insists on before this booking can go through. */
   function consentProblem(): string | null {
     if (missingPolicies.length) {
@@ -1346,6 +1399,9 @@ export default function BookingPage() {
       return activity.info_request_prompt?.trim()
         ? `This provider needs an answer to: \u201c${activity.info_request_prompt.trim()}\u201d`
         : "This provider asks for some extra information before the class — add it above.";
+    }
+    if (secondPrompt && !infoResponse2.trim()) {
+      return `This provider needs an answer to: “${secondPrompt}”`;
     }
     return null;
   }
@@ -1799,10 +1855,29 @@ export default function BookingPage() {
                         Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
                       </p>
                     )}
+                    {pickLocation && (
+                      <section>
+                        <h3 className="mb-4 text-xl font-black">1. Choose a location</h3>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {locationIds.map((id) => (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => { setLocId(id); setDateKey(null); setSessionId(null); }}
+                              className={`rounded-[10px] border px-4 py-3 text-left text-sm font-bold ${id === activeLoc ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}
+                              aria-pressed={id === activeLoc}
+                            >
+                              <span className="block">{venueNames[id]?.name ?? "Location"}</span>
+                              {venueNames[id]?.address && <span className="mt-1 block text-xs font-semibold text-[#697390]">{venueNames[id]?.address}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )}
                     {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
                       <>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">Choose a date</h3>
+                          <h3 className="mb-4 text-xl font-black">{pickLocation ? 2 : 1}. Choose a date</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {/* Split "Tue, 25 Aug" into two fixed lines rather than
                                 letting it wrap naturally — a plain text wrap broke
@@ -1821,7 +1896,7 @@ export default function BookingPage() {
                           </div>
                         </section>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">Choose a time</h3>
+                          <h3 className="mb-4 text-xl font-black">{pickLocation ? 3 : 2}. Choose a time</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {times.map((s) => (
                               <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>
@@ -2047,6 +2122,20 @@ export default function BookingPage() {
                                 className="mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
                                 placeholder="Your answer"
                               />
+                              {secondPrompt && (
+                                <>
+                                  <p className="mt-4 font-black">
+                                    {secondPrompt} <span className="text-baby-pink">*</span>
+                                  </p>
+                                  <textarea
+                                    value={infoResponse2}
+                                    onChange={(e) => setInfoResponse2(e.target.value)}
+                                    rows={3}
+                                    className="mt-2 w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
+                                    placeholder="Your answer"
+                                  />
+                                </>
+                              )}
                             </div>
                           )}
                           {needsMedical && (

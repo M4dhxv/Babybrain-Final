@@ -7,6 +7,7 @@ import { renderEmail, esc, type EmailData } from '@/lib/emails/render';
 import { getStreamServerClient } from '@/lib/stream';
 import { sendPushToUser } from '@/lib/push';
 import { pushExtras } from '@/lib/push-images';
+import { isSitePath, pushLink } from '@/lib/notification-links';
 
 /** Chat reply emails wait this long and are dropped if the message was read. */
 const CHAT_TYPES = new Set(['provider_message', 'provider_message_response', 'class_group_message', 'provider_class_group_message']);
@@ -70,8 +71,7 @@ async function pushSkipReason(db: SupabaseClient, userId: string, type: string):
  *  straight to the app's origin, so anything not starting with a single "/"
  *  ("@evil.example", "//evil.example", ".evil.example") would turn the link
  *  into another host. */
-const sitePath = (url: unknown): string =>
-  typeof url === 'string' && /^\/(?!\/)/.test(url) ? esc(url) : '';
+const sitePath = (url: unknown): string => (isSitePath(url) ? esc(url) : '');
 
 async function chatMessageRead(channelId: unknown, userId: string, sentAt: Date): Promise<boolean> {
   if (typeof channelId !== 'string') return false;
@@ -142,10 +142,16 @@ export async function POST(request: Request) {
       await admin.from('notifications').update({ push_status: 'skipped' }).eq('id', notificationId);
     } else {
       const channelId = typeof pushData.channel_id === 'string' ? pushData.channel_id : null;
+      // A vendor's "booking received" opens that session's roster, which needs the session id.
+      let sessionId: string | null = null;
+      if (notification.type === 'provider_booking_received' && typeof pushData.booking_id === 'string') {
+        const { data: bk } = await admin.from('bookings').select('session_id').eq('id', pushData.booking_id).maybeSingle();
+        sessionId = bk?.session_id ?? null;
+      }
       const pushResult = await sendPushToUser(notification.user_id, {
         title: sessionWordingTitle(notification.title),
         body: sessionWordingBody(notification.body),
-        url: typeof pushData.url === 'string' ? pushData.url : undefined,
+        url: pushLink(notification.type, pushData, { sessionId }),
         // One entry per conversation, so a burst of replies doesn't stack up.
         tag: CHAT_TYPES.has(notification.type) && channelId ? `chat-${channelId}` : undefined,
         actions: pushActions(notification.type),

@@ -166,12 +166,17 @@ export async function POST(request: Request) {
   const newWhen = new Date(newSession.starts_at).toLocaleString('en-SG', {
     timeZone: 'Asia/Singapore', weekday: 'short', day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
   });
+  // activity_name / date_time are what the branded booking_rescheduled email
+  // (lib/emails/render.ts) prints as the new details.
+  const newDateTime = new Date(newSession.starts_at).toLocaleString('en-SG', {
+    timeZone: 'Asia/Singapore', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+  });
   await admin.from('notifications').insert({
     user_id: user.id,
     type: 'booking_rescheduled',
     title: 'Booking moved',
     body: `Your booking for ${activity.title || 'a class'} is now on ${newWhen}.`,
-    data: { url: '/profile?tab=bookings', booking_id: booking.id },
+    data: { url: '/profile?tab=bookings', booking_id: booking.id, activity_name: activity.title, date_time: newDateTime },
   });
 
   return NextResponse.json({ ok: true });

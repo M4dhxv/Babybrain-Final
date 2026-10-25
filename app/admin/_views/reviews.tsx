@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, peekCache, sgTime } from '../_lib/core';
 import { MultiSelect, type MultiOption } from '../_lib/multiselect';
+import { PlatformFeedback } from './platformFeedback';
 
 type ReviewRow = {
   id: string; rating: number; comment: string | null; createdAt: string; reviewer: string;
@@ -80,6 +81,10 @@ export default function ReviewsView() {
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
         <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue }}>Reviews</h2>
+      </div>
+      <PlatformFeedback />
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <h3 style={{ fontWeight: 900, fontSize: 16 }}>Activity reviews</h3>
         <span style={{ color: C.muted, fontSize: 13 }}>
           {shown} review{shown === 1 ? '' : 's'} · {groups.length} activit{groups.length === 1 ? 'y' : 'ies'}
           {shown > 0 && <> · average {overall.toFixed(1)} / 5</>}

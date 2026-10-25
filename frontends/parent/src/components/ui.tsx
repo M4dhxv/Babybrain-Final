@@ -974,6 +974,11 @@ function placeLabel(activity: Activity): React.ReactNode {
     return activity.customLocationLabel?.trim() || "Custom";
   }
   const region = regionLabel(activity.region);
+  // Several venues: name the one that matters ("Tampines +2 · East").
+  if (activity.locationName && activity.extraLocations) {
+    const area = regionLabel(activity.locationRegion ?? activity.region);
+    return `${activity.locationName} +${activity.extraLocations}${area ? ` · ${area}` : ""}`;
+  }
   if (region) return region;
   const venue = (activity.venue ?? "").replace(/\b\d{6}\b/g, "").replace(/[,\s]+$/, "").trim();
   return venue || "Singapore";

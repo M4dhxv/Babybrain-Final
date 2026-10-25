@@ -699,11 +699,24 @@ export default function SaveListingPage() {
             {/* Identity — logo, name, category and how complete the profile is */}
             <div className="rounded-xl border border-gray-200 p-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-pink-100">
+                {/* The logo is the one detail with no editor here: uploading,
+                    cropping and trimming it live in Settings → Profile, so its
+                    pencil opens that, the same way the programme rows below
+                    open the editors that own them. */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings')}
+                  aria-label={prov.logo_url ? 'Change logo' : 'Add a logo'}
+                  title={prov.logo_url ? 'Change logo' : 'Add a logo'}
+                  className="group relative flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-pink-100"
+                >
                   {prov.logo_url
-                    ? <img src={prov.logo_url} alt="" className="h-full w-full object-cover" />
+                    ? <img src={prov.logo_url} alt="" className="h-full w-full object-contain" />
                     : <Store className="h-7 w-7 text-[#FA4D8D]" />}
-                </div>
+                  <span className="absolute bottom-1 right-1 grid h-5 w-5 place-items-center rounded-full bg-white shadow-sm ring-1 ring-gray-200 group-hover:ring-[#FA4D8D]">
+                    <Pencil className="h-3 w-3 text-gray-500 group-hover:text-[#FA4D8D]" />
+                  </span>
+                </button>
                 <div className="min-w-0 flex-1">
                   {editKey === 'identity' ? (
                     <div className="space-y-2">

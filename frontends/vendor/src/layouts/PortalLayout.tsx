@@ -57,7 +57,7 @@ const sidebarItems = [
 export default function PortalLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { provider, subscription, signOut } = useAuth();
+  const { provider, subscription, signOut, adminView, leaveAdminView } = useAuth();
   const isPro = subscription?.plan === 'pro' || subscription?.plan === 'premium';
   const [isSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -67,8 +67,9 @@ export default function PortalLayout() {
 
   const plan = planMeta(subscription?.plan);
   /* Unread badge on the Messages tab (QA 04/09). Messaging is available on
-     every tier, so the chat client always connects. */
-  const unreadMessages = useUnreadMessages(true);
+     every tier, so the chat client always connects — except in admin view,
+     which isn't in the vendor's chats. */
+  const unreadMessages = useUnreadMessages(!adminView);
   /* Unread badge on the Notifications tab. Re-checks on every route change
      (not just an interval) so leaving /notifications — where the page marks
      the feed seen on mount — clears the bubble right away instead of waiting
@@ -286,6 +287,19 @@ export default function PortalLayout() {
           the sidebar still in place — and switching to any other tab clears it,
           because the key change remounts a fresh boundary. */}
       <main className={`flex-1 overflow-auto pt-14 md:pt-0 ${fillsScreen ? '' : 'flex flex-col'}`}>
+        {adminView && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            <span>
+              <strong>Admin view</strong> — you're in {provider?.business_name ?? 'this vendor'}'s portal as a manager. Changes are live for the vendor.
+            </span>
+            <button
+              onClick={leaveAdminView}
+              className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Back to admin
+            </button>
+          </div>
+        )}
         {/* Sticky footer: the flex-1 wrapper makes a short page (a few
             notifications, an empty list) fill the screen, so the footer sits at
             the bottom of it instead of riding up under the content. No min-h-0:
@@ -306,7 +320,7 @@ export default function PortalLayout() {
         )}
         <SiteFooter />
       </main>
-      <PushPrompt />
+      {!adminView && <PushPrompt />}
     </div>
   );
 }

@@ -232,6 +232,8 @@ export type Database = {
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
           info_request_prompt: string | null;
+          // 00252: optional second question; absent until that migration is applied.
+          info_request_prompt_2?: string | null;
           what_to_bring: string | null;
           confirmation_message: string | null;
           reschedule_cutoff_hours: number | null;
@@ -294,6 +296,7 @@ export type Database = {
           booking_cutoff_minutes?: number;
           info_request_enabled?: boolean;
           info_request_prompt?: string | null;
+          info_request_prompt_2?: string | null;
           what_to_bring?: string | null;
           confirmation_message?: string | null;
           reschedule_cutoff_hours?: number | null;
@@ -1108,6 +1111,14 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      // An admin's standing manager-level access to one vendor's portal (00251).
+      // Server-written only; the admin can read their own rows.
+      admin_vendor_access: {
+        Row: { user_id: string; provider_id: string; granted_by: string | null; created_at: string; last_opened_at: string };
+        Insert: { user_id: string; provider_id: string; granted_by?: string | null; created_at?: string; last_opened_at?: string };
+        Update: { granted_by?: string | null; last_opened_at?: string };
+        Relationships: [];
       };
       provider_members: {
         Row: {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sessionPrices } from '@/lib/session-price';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -100,25 +101,35 @@ async function eventAccessFor(
   return out;
 }
 
-/** Which of the caller's *waitlisted* bookings can be paid for right now to
- *  claim a seat — a paid class, this booking still unsettled, the session
- *  has a free seat, and it's near enough the front of the queue to be in
- *  line for one. Fully derived, so it vanishes the instant the seat fills. */
+/** Which of the caller's *waitlisted* bookings have a seat free for them right
+ *  now. A freed seat is offered to everyone waiting and the first to book
+ *  takes it (00197/00217), so queue position plays no part here: it used to
+ *  mark only the first N in the queue, so only one parent's card ever showed
+ *  "Book now" although every one of them got the email.
+ *
+ *  - `claimable`: a paid class. "Book now" pays for the existing waitlist row;
+ *    claim_waitlist_seats holds the seat under the session lock first, so two
+ *    parents can never both pay for it.
+ *  - `openFree`: a free class. "Book now" opens the booking page for that
+ *    session, the same link as the "spot available" email.
+ *
+ *  Fully derived, so both vanish the instant the seat fills. */
 async function claimableSeats(admin: Admin, rows: Array<{ status: string; session_id: string | null }>) {
   const claimable = new Set<string>();
+  const openFree = new Set<string>();
   const wlSessionIds = [
     ...new Set(rows.filter((r) => r.status === 'waitlisted').map((r) => r.session_id).filter(Boolean)),
   ] as string[];
-  if (!wlSessionIds.length) return claimable;
+  if (!wlSessionIds.length) return { claimable, openFree };
 
   const [{ data: sess }, { data: sessBookings }] = await Promise.all([
     admin
       .from('activity_sessions')
-      .select('id, capacity, price, activities(price)')
+      .select('id, capacity, price, wix_slot_key, wix_remaining_capacity, activities(price)')
       .in('id', wlSessionIds),
     admin
       .from('bookings')
-      .select('id, session_id, status, payment_status, package_purchase_id, waitlist_position, waitlist_pay_invited, created_at')
+      .select('id, session_id, status, payment_status, package_purchase_id, waitlist_pay_invited, booking_group_id')
       .in('session_id', wlSessionIds),
   ]);
   const wlBookingIds = (sessBookings ?? [])
@@ -135,31 +146,50 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
   }
   const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
     b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
+  // session_price() (00250), not session ?? activity: a venue or weekday price applies here too.
+  const prices = await sessionPrices(admin, (sess ?? []).map((x) => x.id));
   for (const s of sess ?? []) {
-    const price = Number(s.price ?? (s.activities as { price?: number | null } | null)?.price ?? 0);
-    if (price <= 0) continue; // free class: promotion is automatic
+    const price = Number(prices.get(s.id) ?? 0);
     const onSession = (sessBookings ?? []).filter((b) => b.session_id === s.id);
     const wl = onSession.filter((b) => b.status === 'waitlisted');
+    const localTaken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
+    // A Wix class can also be booked on Wix's own site, which only Wix's seat
+    // count knows about: take the fuller of the two, as the vendor portal does
+    // (lib/wixCapacity.ts, 00108), so nobody is offered a seat Wix has filled.
+    const wixTaken = s.wix_slot_key && s.wix_remaining_capacity != null && s.capacity != null
+      ? Math.max(0, s.capacity - s.wix_remaining_capacity)
+      : 0;
+    const taken = Math.max(localTaken, wixTaken);
+    const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - taken;
+
+    if (price <= 0) {
+      // Free class: nothing to pay, so the parent books it fresh from the
+      // booking page, which clears their own waitlist entry (00197).
+      if (free > 0) for (const b of wl) if (!isSettled(b)) openFree.add(b.id);
+      continue;
+    }
 
     // A vendor who used "Promote" on an unpaid booking has offered the seat
     // explicitly — show "Pay now" even if the class is at capacity.
     for (const b of wl) {
       if (b.waitlist_pay_invited && !isSettled(b)) claimable.add(b.id);
     }
-
-    const taken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
-    const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - taken;
     if (free <= 0) continue;
-    const queue = wl.sort(
-      (a, b) =>
-        (a.waitlist_position ?? 1e9) - (b.waitlist_position ?? 1e9) ||
-        String(a.created_at).localeCompare(String(b.created_at))
-    );
-    for (let i = 0; i < Math.min(free, queue.length); i++) {
-      if (!isSettled(queue[i])) claimable.add(queue[i].id);
+
+    for (const b of wl) {
+      if (isSettled(b)) continue;
+      // A party whose every place is waitlisted is claimed in one go (the card
+      // sends its group id), so offer it only when all of its places fit — a
+      // "Book now" that can only fail would be worse than none. A party with
+      // some places already in pays for one waitlisted place at a time.
+      const group = b.booking_group_id ? onSession.filter((x) => x.booking_group_id === b.booking_group_id) : [];
+      const live = group.filter((x) => x.status !== 'cancelled');
+      const wholePartyWaiting = live.length > 1 && live.every((x) => x.status === 'waitlisted');
+      const needed = wholePartyWaiting ? live.filter((x) => x.payment_status !== 'paid').length : 1;
+      if (free >= needed) claimable.add(b.id);
     }
   }
-  return claimable;
+  return { claimable, openFree };
 }
 
 const BOOKING_COLUMNS =
@@ -270,10 +300,10 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, claimable, eventTickets, eventAccess] = await Promise.all([
+  const [redeemedByToken, autoCompensated, { claimable, openFree }, eventTickets, eventAccess] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
-    scope === 'active' ? claimableSeats(admin, rows) : Promise.resolve(new Set<string>()),
+    scope === 'active' ? claimableSeats(admin, rows) : Promise.resolve({ claimable: new Set<string>(), openFree: new Set<string>() }),
     eventTicketsFor(admin, user.id, rows),
     eventAccessFor(admin, user.id, rows),
   ]);
@@ -321,8 +351,10 @@ export async function GET(request: Request) {
       event_ticket: eventTickets.get(r.id) ?? null,
       // Wix Events: which order / RSVP this seat is, and whether the event is online.
       event_access: eventAccess.get(r.id) ?? null,
-      // A waitlisted booking with a seat waiting for it — show "Pay now".
+      // A waitlisted booking with a seat waiting for it — show "Book now".
       can_claim: claimable.has(r.id),
+      // The same on a free class, where "Book now" opens the booking page.
+      spot_open: openFree.has(r.id),
       // How a cancelled booking was made good (00080/00081) — the permanent
       // line on the card. 'none' when the provider withheld a refund, so the
       // card doesn't imply a credit came back off a lingering

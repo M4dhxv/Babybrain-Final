@@ -1,13 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Only legacy Next pages may be gated here. The parent SPA (served for all
-// user-facing routes via the beforeFiles rewrite) authenticates client-side
-// with supabase-js — it never sets SSR cookies, so gating its routes here
-// locks out even signed-in users. /onboarding is the SPA signup page and
-// /matches its dashboard; both must stay reachable.
-const PROTECTED_PREFIXES = ['/dashboard', '/support'];
-
+// Refreshes the cookie session for the pages Next renders itself (/admin,
+// /auth/*; see the matcher in middleware.ts). Nothing is gated here any more:
+// the parent SPA authenticates client-side with supabase-js and never sets SSR
+// cookies, so gating its routes locked out even signed-in users. The legacy
+// /dashboard and /support pages this used to guard were shadowed by the SPA
+// long ago and now redirect to the app's own pages (next.config.mjs); gating
+// them sent every parent with a stale link round /login forever.
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -34,21 +34,7 @@ export async function updateSession(request: NextRequest) {
 
   // Do not run code between createServerClient and auth.getUser() —
   // it can cause random logouts (see Supabase SSR docs).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-  const isProtected = PROTECTED_PREFIXES.some(
-    (p) => path === p || path.startsWith(`${p}/`)
-  );
-
-  if (!user && isProtected) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('next', path);
-    return NextResponse.redirect(url);
-  }
+  await supabase.auth.getUser();
 
   return supabaseResponse;
 }

@@ -1,29 +1,30 @@
 import { NextResponse } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { fragmentBounce, redirectSignedIn, safeNext, verifyEmailToken } from '@/lib/auth-links';
 
 /**
- * OAuth / email-link landing point. Exchanges the code for a session,
- * then routes: explicit ?next= wins; otherwise onboarding status decides.
+ * OAuth / email-link landing point. Three shapes arrive here:
  *
- * Also verifies a `token_hash` email link. The branded signup-confirmation
- * email links to `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup`,
- * and the app's RedirectTo is already `/auth/callback?next=/profile`, so the
- * link arrives as `/auth/callback?next=/profile?token_hash=…&type=signup`:
- * `token_hash` is swallowed into the `next` value and `type` is left as a
- * sibling. This route used to look only for `code`, so every such link fell
- * through to /login?error=auth and the account stayed unconfirmed ("Email not
- * confirmed" on every login). Both the clean and the nested shapes work now.
+ * - Supabase's own /verify link (the confirm-signup email's
+ *   {{ .ConfirmationURL }}, with RedirectTo `/auth/callback?next=/profile`).
+ *   Supabase has already confirmed the account and sends the new session —
+ *   or why it failed — in the URL fragment, which never reaches the server.
+ *   This used to answer it with /login?error=auth: the browser carried the
+ *   fragment along, so the parent was in fact signed in, but was shown the
+ *   log-in form. Now the fragment goes on to `next` (see fragmentBounce).
+ *
+ * - A `token_hash` link: the older branded confirmation email linked to
+ *   `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup`, and the app's
+ *   RedirectTo is already `/auth/callback?next=/profile`, so the link arrives
+ *   as `/auth/callback?next=/profile?token_hash=…&type=signup`: `token_hash`
+ *   is swallowed into the `next` value and `type` is left as a sibling. Both
+ *   the clean and the nested shapes work. The session goes to the app in the
+ *   fragment, as Supabase's own link does.
+ *
+ * - A PKCE `code` (OAuth). Exchanged for a cookie session; explicit ?next=
+ *   wins, otherwise onboarding status decides.
  */
-
-/** Only ever redirect to a path on our own origin ("/profile", never
- *  "//evil.com" or "@evil.com", which `${origin}${next}` would turn into a
- *  different host). */
-function safeNext(next: string | null): string | null {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return null;
-  return next;
-}
-
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
@@ -42,10 +43,10 @@ export async function GET(request: Request) {
   const next = safeNext(rawNext);
 
   if (tokenHash && type) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash });
-    if (!error) return NextResponse.redirect(`${origin}${next ?? '/profile'}`);
-    return NextResponse.redirect(`${origin}/login?error=auth`);
+    const { session, error } = await verifyEmailToken(tokenHash, type as EmailOtpType);
+    if (!error) return redirectSignedIn(origin, next ?? '/profile', session, type);
+    // Already used (a mail scanner often opens it first) or expired.
+    return NextResponse.redirect(`${origin}/login?link=expired`);
   }
 
   if (code) {
@@ -72,7 +73,8 @@ export async function GET(request: Request) {
         );
       }
     }
+    return NextResponse.redirect(`${origin}/login?error=auth`);
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return fragmentBounce(next ?? '/profile');
 }

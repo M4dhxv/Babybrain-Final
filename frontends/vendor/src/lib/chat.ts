@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StreamChat } from 'stream-chat';
+import type { StreamChat } from 'stream-chat';
 import { apiGet } from './api';
 
 /**
@@ -8,23 +8,35 @@ import { apiGet } from './api';
  * mints them from the Stream secret). The vendor is a member of every
  * parent↔provider channel, so ChannelList filtered by membership shows
  * all their conversations.
+ *
+ * The Stream SDK itself is loaded here, on first use: AuthProvider imports
+ * this file (disconnectChat), so a static import put the whole chat client in
+ * the entry bundle, public landing page included.
  */
 let clientPromise: Promise<StreamChat> | null = null;
 
 export function getChatClient(): Promise<StreamChat> {
   if (!clientPromise) {
     clientPromise = (async () => {
-      const { apiKey, token, userId } = await apiGet<{
-        apiKey: string;
-        token: string;
-        userId: string;
-      }>('/api/vendor/chat/token');
+      const [{ StreamChat }, { apiKey, token, userId }] = await Promise.all([
+        import('stream-chat'),
+        apiGet<{
+          apiKey: string;
+          token: string;
+          userId: string;
+        }>('/api/vendor/chat/token'),
+      ]);
       const client = StreamChat.getInstance(apiKey);
       if (!client.userID) {
         await client.connectUser({ id: userId }, token);
       }
       return client;
     })();
+    // A failed first try (offline, a chunk lost to a redeploy) must not leave
+    // chat broken for the rest of the visit: the next caller tries again.
+    clientPromise.catch(() => {
+      clientPromise = null;
+    });
   }
   return clientPromise;
 }

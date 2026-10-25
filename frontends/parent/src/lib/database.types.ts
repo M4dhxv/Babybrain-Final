@@ -216,6 +216,8 @@ export type Database = {
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
           info_request_prompt: string | null;
+          // 00252: optional second question; absent until that migration is applied.
+          info_request_prompt_2?: string | null;
           what_to_bring: string | null;
           confirmation_message: string | null;
           reschedule_cutoff_hours: number;
@@ -433,6 +435,26 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      // 00253: a parent's own rating of BabyBrain itself (RLS: own row only).
+      platform_feedback: {
+        Row: {
+          id: string;
+          user_id: string;
+          rating: number;
+          comment: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          rating: number;
+          comment?: string | null;
+          updated_at?: string;
+        };
+        Update: { rating?: number; comment?: string | null; updated_at?: string };
+        Relationships: [];
       };
       user_recommendations: {
         Row: {
@@ -805,6 +827,30 @@ export type Database = {
         };
         Update: { role?: ProviderRole; status?: 'invited' | 'active' | 'disabled' };
         Relationships: [];
+      };
+      // 00250 — the venues an activity runs at (the primary is activities.location_id),
+      // each with an optional own price and weekday prices ({"0".."6": price}, 0 = Sunday).
+      activity_locations: {
+        Row: {
+          activity_id: string;
+          location_id: string;
+          position: number;
+          price: number | null;
+          day_prices: Record<string, number>;
+          created_at: string;
+        };
+        Insert: {
+          activity_id: string;
+          location_id: string;
+          position?: number;
+          price?: number | null;
+          day_prices?: Record<string, number>;
+        };
+        Update: Partial<Database["public"]["Tables"]["activity_locations"]["Insert"]>;
+        Relationships: [
+          { foreignKeyName: "activity_locations_activity_id_fkey"; columns: ["activity_id"]; isOneToOne: false; referencedRelation: "activities"; referencedColumns: ["id"] },
+          { foreignKeyName: "activity_locations_location_id_fkey"; columns: ["location_id"]; isOneToOne: false; referencedRelation: "provider_locations"; referencedColumns: ["id"] },
+        ];
       };
       provider_locations: {
         Row: {

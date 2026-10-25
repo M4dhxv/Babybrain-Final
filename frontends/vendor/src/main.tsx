@@ -41,6 +41,24 @@ document.addEventListener(
   { passive: true },
 )
 
+// A push tapped while the portal is open, in a window the push worker
+// (/app/push-sw.js, shared with the parent site) can't steer itself: it brings
+// the window forward and posts the page to open. Paths on this site only. A
+// portal link (/vendor/#/bookings?…) only changes the hash route, so it is
+// opened in place; Next serves the portal at /vendor, so the slash is ignored.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e: MessageEvent) => {
+    const msg = e.data as { type?: unknown; url?: unknown } | null
+    if (msg?.type !== 'bb:navigate' || typeof msg.url !== 'string') return
+    if (!/^\/(?![/\\])/.test(msg.url) || /[\\\u0000-\u001f\u007f]/.test(msg.url)) return
+    const target = new URL(msg.url, window.location.origin)
+    const samePage = target.pathname.replace(/\/$/, '') === window.location.pathname.replace(/\/$/, '')
+    if (samePage && target.hash) window.location.hash = target.hash
+    else window.location.assign(msg.url)
+  })
+  navigator.serviceWorker.startMessages()
+}
+
 // Signals the boot-splash watchdog in index.html. `__BB_BOOT_JS__` means the
 // entry bundle executed (so a stale/failed asset is ruled out and it stops
 // reloading); `__BB_BOOTED__` below means React actually rendered.
