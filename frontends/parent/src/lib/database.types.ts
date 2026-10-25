@@ -436,6 +436,26 @@ export type Database = {
           },
         ];
       };
+      // 00253: a parent's own rating of BabyBrain itself (RLS: own row only).
+      platform_feedback: {
+        Row: {
+          id: string;
+          user_id: string;
+          rating: number;
+          comment: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          rating: number;
+          comment?: string | null;
+          updated_at?: string;
+        };
+        Update: { rating?: number; comment?: string | null; updated_at?: string };
+        Relationships: [];
+      };
       user_recommendations: {
         Row: {
           id: string;

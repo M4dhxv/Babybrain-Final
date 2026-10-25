@@ -27,6 +27,7 @@ import { AvatarPicker } from "../components/AvatarPicker";
 import { ShareButton } from "../components/ShareButton";
 import { SelectField, Opt } from "../components/SelectField";
 import { UnreadBadge } from "../components/UnreadBadge";
+import { RateBabyBrainButton } from "../components/RateBabyBrain";
 import RedirectToLanding from "../components/RedirectToLanding";
 import {
   ActivityCardGridSkeleton,
@@ -2777,6 +2778,8 @@ export default function ProfilePage() {
                   text="Discover activities for your little ones on BabyBrain"
                   label="Share BabyBrain"
                 />
+                {/* Rate BabyBrain itself (00253), next to Share: hidden until that migration is applied. */}
+                <RateBabyBrainButton />
               </div>
             </div>
             <div className="rounded-[10px] bg-[#FEEBF2] p-5">
