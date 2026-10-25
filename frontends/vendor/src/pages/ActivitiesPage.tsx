@@ -16,6 +16,8 @@ import {
   Pencil,
   CalendarCheck,
   Trash2,
+  ArchiveRestore,
+  Plus,
   Clock,
   Crop,
   ImageUp,
@@ -46,6 +48,9 @@ import { SelectField, Opt } from '@/components/ui/select-field';
 import { MultiSelectField } from '@/components/ui/multi-select-field';
 import { TimePicker } from '@/components/ui/time-picker';
 import { DatePicker } from '@/components/ui/date-picker';
+import { DurationInput } from '@/components/DurationInput';
+import { formatMinutes } from '@/lib/duration';
+import { AgeRangeField } from '@/components/AgeRangeField';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PoliciesManager } from '@/components/PoliciesManager';
@@ -219,6 +224,8 @@ const emptyForm = {
   // parents see once they've booked.
   booking_cutoff_minutes: '15',
   info_request_enabled: false, info_request_prompt: '',
+  // 00252 — an optional second question. '' = none.
+  info_request_prompt_2: '',
   what_to_bring: '', confirmation_message: '',
 };
 
@@ -246,8 +253,15 @@ const inheritSessPolicy: SessPolicy = {
 const MAX_BOOKING_CUTOFF_MINS = 20160;
 function cutoffTooLong(v: string): string | null {
   return v !== '' && Number(v) > MAX_BOOKING_CUTOFF_MINS
-    ? `Booking cut-off can be at most ${MAX_BOOKING_CUTOFF_MINS} minutes (14 days).`
+    ? 'Booking cut-off can be at most 14 days.'
     : null;
+}
+
+/** The line under a booking cut-off field. Blank saves as the 15-minute default. */
+function cutoffSentence(v: string): string {
+  if (v === '0') return 'Parents can book right up to the start time.';
+  const mins = v === '' || !Number.isFinite(Number(v)) ? 15 : Number(v);
+  return `Parents can't book within ${formatMinutes(mins)} of the session starting.`;
 }
 
 function sessPolicyPayload(p: SessPolicy) {
@@ -347,17 +361,14 @@ function SessionPolicyEditor({ policy, onChange }: { policy: SessPolicy; onChang
               card, a booking cut-off applies regardless of whether
               cancelling/rescheduling are allowed. */}
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Booking cut-off (mins)</label>
-            <NumberInput
-              min="0" max="20160" className={fieldCls}
+            <label className="text-xs text-gray-500 mb-1 block">Booking cut-off</label>
+            <DurationInput
+              className={fieldCls}
+              aria-label="Booking cut-off"
               value={policy.booking_cutoff_minutes}
-              onChange={(e) => onChange({ ...policy, booking_cutoff_minutes: e.target.value })}
+              onChange={(v) => onChange({ ...policy, booking_cutoff_minutes: v })}
             />
-            <p className="mt-1 text-[11px] text-gray-400">
-              {policy.booking_cutoff_minutes === '0'
-                ? 'Parents can book right up to the start time.'
-                : `Parents can't book within ${policy.booking_cutoff_minutes || '15'} minutes of the session starting.`}
-            </p>
+            <p className="mt-1 text-[11px] text-gray-400">{cutoffSentence(policy.booking_cutoff_minutes)}</p>
           </div>
         </div>
       )}
@@ -481,6 +492,8 @@ export default function ActivitiesPage() {
   // Set while creating a copy (openDuplicate): the original's name, for the drawer header.
   const [copyFrom, setCopyFrom] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  // "Add a second question" clicked, before anything is typed in it (00252).
+  const [showSecondQ, setShowSecondQ] = useState(false);
   // A Wix Event–backed activity's price is the cheapest of its ticket types,
   // pulled live from Wix on every sync (lib/wix/events-sync.ts). Anything a
   // vendor typed here would be overwritten on the next run, so the price
@@ -1380,9 +1393,20 @@ export default function ActivitiesPage() {
     if (error) load();
   }
 
+  /** Un-archive: back to a Draft, so nothing goes live to parents until the
+   *  vendor publishes it again (Publish still checks payouts). */
+  async function restore(id: string) {
+    setShowMenu(null);
+    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, archived_at: null } : a)));
+    const { error } = await supabase.from('activities').update({ archived_at: null }).eq('id', id);
+    if (error) { toast.error('Could not restore this activity.', { description: error.message }); load(); }
+    else toast.success('Restored as a draft. Publish it when you’re ready.');
+  }
+
   function openCreate() {
     setEditingId(null);
     setCopyFrom(null);
+    setShowSecondQ(false);
     setForm(emptyForm);
     setFormError(null);
     setShowDrawer(true);
@@ -1392,6 +1416,7 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(a.id);
     setCopyFrom(null);
+    setShowSecondQ(false);
     setForm(formFrom(a));
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
     setFormError(null);
@@ -1426,6 +1451,7 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(null);
     setCopyFrom(a.title);
+    setShowSecondQ(false);
     setForm({ ...formFrom(a), title: '' });
     setPriceOverridden(false);
     setFormError(null);
@@ -1462,6 +1488,7 @@ export default function ActivitiesPage() {
       booking_cutoff_minutes: String(a.booking_cutoff_minutes ?? 15),
       info_request_enabled: a.info_request_enabled ?? false,
       info_request_prompt: a.info_request_prompt ?? '',
+      info_request_prompt_2: a.info_request_prompt_2 ?? '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
     };
@@ -1555,16 +1582,19 @@ export default function ActivitiesPage() {
 
   const selectedCategoryIds = [form.category_id, form.secondary_category_id].filter(Boolean);
 
+  // Another of this vendor's activities with the name being typed. Allowed,
+  // but worth a word: parents tell the two apart by venue and times.
+  const nameKey = form.title.trim().toLowerCase();
+  const nameTwin = nameKey
+    ? activities.find((a) => a.id !== editingId && !isFullyRemoved(a) && a.title.trim().toLowerCase() === nameKey) ?? null
+    : null;
+
   async function saveActivity() {
     if (!provider) return;
     if (!form.title || !form.category_id) { setFormError('Name and at least one category are required.'); return; }
-    // Two activities with one name look like the same class to a parent on Explore. Checked
-    // whenever the name is new or changed (an existing pair from before this check still saves).
-    const nameKey = form.title.trim().toLowerCase();
-    if (nameKey !== (editingActivity?.title ?? '').trim().toLowerCase()) {
-      const clash = activities.find((a) => a.id !== editingId && !isFullyRemoved(a) && a.title.trim().toLowerCase() === nameKey);
-      if (clash) { setFormError(`You already have an activity called “${clash.title}”. Give this one a different name.`); return; }
-    }
+    // Two activities may share a name (client, 22 Oct: the same class runs at
+    // different locations). The drawer says so under the name (nameTwin), it
+    // no longer blocks the save.
     // Capacity comes from Wix for a linked activity (and is null for an
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
@@ -1593,6 +1623,7 @@ export default function ActivitiesPage() {
     const prevLocks = editingActivity?.wix_locked_fields ?? [];
     const sameList = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
     const titleClaimed = prevLocks.includes('title') || form.title.trim() !== (editingActivity?.title ?? '').trim();
+    const secondQuestion = form.info_request_enabled ? form.info_request_prompt_2.trim() : '';
     const photosClaimed = prevLocks.includes('image_urls')
       || !sameList(form.image_urls, editingActivity?.image_urls ?? [])
       || form.image_source !== (editingActivity?.image_source === 'custom' ? 'custom' : 'profile');
@@ -1662,6 +1693,11 @@ export default function ActivitiesPage() {
         : Math.max(0, Math.min(20160, Number(form.booking_cutoff_minutes))),
       info_request_enabled: form.info_request_enabled,
       info_request_prompt: form.info_request_enabled ? (form.info_request_prompt.trim() || null) : null,
+      // Written only when there is (or was) a second question, so saving an
+      // activity still works on a database without 00252.
+      ...(secondQuestion || editingActivity?.info_request_prompt_2
+        ? { info_request_prompt_2: secondQuestion || null }
+        : {}),
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
     };
@@ -2205,10 +2241,17 @@ export default function ActivitiesPage() {
                             {a.bookings_paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
                             {a.bookings_paused ? 'Resume bookings' : 'Pause bookings'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Archive
-                          </DropdownMenuItem>
+                          {a.archived_at ? (
+                            <DropdownMenuItem onSelect={() => restore(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                              <ArchiveRestore className="w-3.5 h-3.5" />
+                              Restore
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => archive(a.id)} className="gap-2 px-3 py-2 text-sm text-gray-700">
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Archive
+                            </DropdownMenuItem>
+                          )}
                         </>
                       )}
                     </DropdownMenuContent>
@@ -2342,6 +2385,12 @@ export default function ActivitiesPage() {
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Name <span className="text-[#FA4D8D]">*</span></label>
               <input type="text" placeholder="e.g. Music Explorers" className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              {nameTwin && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  You already have an activity called &ldquo;{nameTwin.title}&rdquo;. That&rsquo;s fine, for example the same class at another
+                  venue: parents tell them apart by the venue and times on each listing.
+                </p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">
@@ -2413,14 +2462,12 @@ export default function ActivitiesPage() {
                 )}
               </div>
             )}
-            <div>
-              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Age range (months)</label>
-              <div className="flex items-center gap-3">
-                <NumberInput min="0" placeholder="Min" className={inputCls} value={form.age_min_months} onChange={(e) => setForm({ ...form, age_min_months: e.target.value })} />
-                <span className="text-gray-400">—</span>
-                <NumberInput min="0" placeholder="Max" className={inputCls} value={form.age_max_months} onChange={(e) => setForm({ ...form, age_max_months: e.target.value })} />
-              </div>
-            </div>
+            <AgeRangeField
+              min={form.age_min_months}
+              max={form.age_max_months}
+              onChange={(lo, hi) => setForm((f) => ({ ...f, age_min_months: lo, age_max_months: hi }))}
+              inputCls={inputCls}
+            />
             {!isWixLinked && (
               <>
             <div>
@@ -2698,20 +2745,14 @@ export default function ActivitiesPage() {
                   their own. Enforced in the database, so it holds regardless
                   of what the parent app does. */}
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Booking cut-off (minutes before session)</label>
-                <NumberInput
-                  
-                  min="0"
-                  max="20160"
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Booking cut-off (before the session)</label>
+                <DurationInput
                   className={inputCls}
+                  aria-label="Booking cut-off"
                   value={form.booking_cutoff_minutes}
-                  onChange={(e) => setForm({ ...form, booking_cutoff_minutes: e.target.value })}
+                  onChange={(v) => setForm({ ...form, booking_cutoff_minutes: v })}
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  {form.booking_cutoff_minutes === '0'
-                    ? 'Parents can book right up to the start time.'
-                    : `Parents can't book within ${form.booking_cutoff_minutes || '15'} minutes of the session starting.`}
-                </p>
+                <p className="mt-1 text-xs text-gray-500">{cutoffSentence(form.booking_cutoff_minutes)}</p>
               </div>
             </div>
 
@@ -2749,17 +2790,55 @@ export default function ActivitiesPage() {
                 <WixFormHandling providerId={provider.id} activityId={editingActivity.id} />
               )}
               {form.info_request_enabled && (
-                <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">What are you asking for?</label>
-                  <textarea
-                    rows={2}
-                    maxLength={300}
-                    placeholder="e.g. Which condo is the session at, and the unit number?"
-                    className={cn(inputCls, 'resize-none')}
-                    value={form.info_request_prompt}
-                    onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Parents can't book this activity without answering. You'll see the answer on the booking.</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">
+                      {showSecondQ || form.info_request_prompt_2 ? 'First question' : 'What are you asking for?'}
+                    </label>
+                    <textarea
+                      rows={2}
+                      maxLength={300}
+                      placeholder="e.g. Which condo is the session at, and the unit number?"
+                      className={cn(inputCls, 'resize-none')}
+                      value={form.info_request_prompt}
+                      onChange={(e) => setForm({ ...form, info_request_prompt: e.target.value })}
+                    />
+                  </div>
+                  {/* 00252: at most two questions. Both answers arrive together
+                      on the booking, each under its question. */}
+                  {showSecondQ || form.info_request_prompt_2 ? (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between">
+                        <label className="text-xs font-medium text-gray-600 block">Second question</label>
+                        <button
+                          type="button"
+                          onClick={() => { setShowSecondQ(false); setForm({ ...form, info_request_prompt_2: '' }); }}
+                          className="text-xs font-medium text-gray-500 hover:text-red-600"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <textarea
+                        rows={2}
+                        maxLength={300}
+                        placeholder="e.g. Any allergies we should know about?"
+                        className={cn(inputCls, 'resize-none')}
+                        value={form.info_request_prompt_2}
+                        onChange={(e) => setForm({ ...form, info_request_prompt_2: e.target.value })}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSecondQ(true)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[#FA4D8D] hover:underline"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add a second question
+                    </button>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Parents can't book this activity without answering{form.info_request_prompt_2.trim() ? ' both' : ''}. You'll see the {form.info_request_prompt_2.trim() ? 'answers' : 'answer'} on the booking.
+                  </p>
                 </div>
               )}
             </div>
@@ -3135,6 +3214,12 @@ export default function ActivitiesPage() {
                                   <div className="rounded-[12px] border-2 border-[#DCD2D5] bg-white p-4">
                                     <p className="font-black">{previewFor.info_request_prompt?.trim() || 'The provider needs some extra information'} <span className="text-[#FA4D8D]">*</span></p>
                                     <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                    {previewFor.info_request_prompt_2?.trim() && (
+                                      <>
+                                        <p className="mt-3 font-black">{previewFor.info_request_prompt_2.trim()} <span className="text-[#FA4D8D]">*</span></p>
+                                        <div className="mt-2 h-16 w-full rounded-[10px] border border-[#FED7E4]" />
+                                      </>
+                                    )}
                                   </div>
                                 )}
                                 {previewFor.requires_medical_disclosure && (

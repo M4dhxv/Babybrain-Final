@@ -232,6 +232,8 @@ export type Database = {
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
           info_request_prompt: string | null;
+          // 00252: optional second question; absent until that migration is applied.
+          info_request_prompt_2?: string | null;
           what_to_bring: string | null;
           confirmation_message: string | null;
           reschedule_cutoff_hours: number | null;
@@ -294,6 +296,7 @@ export type Database = {
           booking_cutoff_minutes?: number;
           info_request_enabled?: boolean;
           info_request_prompt?: string | null;
+          info_request_prompt_2?: string | null;
           what_to_bring?: string | null;
           confirmation_message?: string | null;
           reschedule_cutoff_hours?: number | null;
