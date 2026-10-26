@@ -146,7 +146,7 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
   }
   const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
     b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
-  // session_price() (00250), not session ?? activity: a venue or weekday price applies here too.
+  // session_price() (00258), not session ?? activity: a weekday price applies here too.
   const prices = await sessionPrices(admin, (sess ?? []).map((x) => x.id));
   for (const s of sess ?? []) {
     const price = Number(prices.get(s.id) ?? 0);

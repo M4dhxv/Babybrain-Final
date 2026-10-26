@@ -1,17 +1,12 @@
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
 import { NumberInput } from '@/components/ui/number-input';
-import { SelectField, Opt } from '@/components/ui/select-field';
 
-/* An activity's venues and their prices (migration 00250), as one block on the
-   activity form rather than separate location and price sections: each venue
-   carries its own price and, folded away until asked for, its weekday prices.
-   The first venue is the primary one (activities.location_id) and its price is
-   the activity's own price; another venue left blank costs the same. */
+/* Weekday prices for an activity (activities.day_prices, migration 00258): a different price on
+   certain days, for example a weekend price is just Saturday + Sunday. Beats a price set on a single
+   session, which beats the activity's own price. */
 
 /** Weekday prices as typed: '0'..'6' (Sunday..Saturday, Singapore time) to the input's text. */
 export type DayPrices = Record<string, string>;
-export type ExtraLocation = { location_id: string; price: string; day_prices: DayPrices };
 
 const DAYS: { key: string; label: string }[] = [
   { key: '1', label: 'Mon' }, { key: '2', label: 'Tue' }, { key: '3', label: 'Wed' },
@@ -20,7 +15,7 @@ const DAYS: { key: string; label: string }[] = [
 const WEEKDAYS = ['1', '2', '3', '4', '5'];
 const WEEKEND = ['6', '0'];
 
-/** Typed day prices -> the jsonb stored on activity_locations (empty boxes dropped). */
+/** Typed day prices -> the jsonb stored on activities.day_prices (empty boxes dropped). */
 export function dayPricesToJson(d: DayPrices): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(d)) {
@@ -51,7 +46,7 @@ function daySummary(d: DayPrices): string {
     .join(' · ');
 }
 
-function DayPricesEditor({ value, onChange, basePrice }: { value: DayPrices; onChange: (v: DayPrices) => void; basePrice: string }) {
+export function DayPricesEditor({ value, onChange, basePrice }: { value: DayPrices; onChange: (v: DayPrices) => void; basePrice: string }) {
   const summary = daySummary(value);
   const [open, setOpen] = useState(false);
   const [eachDay, setEachDay] = useState(false);
@@ -97,7 +92,7 @@ function DayPricesEditor({ value, onChange, basePrice }: { value: DayPrices; onC
         </div>
       )}
       <p className="mt-2 text-xs text-gray-500">
-        Applies to every session on that day here, including ones already scheduled, and beats a price set on a single session. Leave blank to use {basePrice ? money(basePrice) : 'the usual price'}.{' '}
+        Applies to every session on that day, including ones already scheduled, and beats a price set on a single session. Leave blank to use {basePrice ? money(basePrice) : 'the usual price'}.{' '}
         <button type="button" onClick={() => setEachDay((v) => !v)} className="font-medium text-[#FA4D8D] hover:underline">
           {eachDay ? 'Weekdays and weekends' : 'Set each day'}
         </button>
@@ -110,87 +105,6 @@ function DayPricesEditor({ value, onChange, basePrice }: { value: DayPrices; onC
           Done
         </button>
       </p>
-    </div>
-  );
-}
-
-export function ActivityLocationsField({
-  locations,
-  inputCls,
-  primaryId,
-  onPrimaryId,
-  price,
-  onPrice,
-  primaryDays,
-  onPrimaryDays,
-  extras,
-  onExtras,
-}: {
-  locations: { id: string; name: string }[];
-  inputCls: string;
-  primaryId: string;
-  onPrimaryId: (v: string) => void;
-  /** The primary venue's price = the activity's own price. */
-  price: string;
-  onPrice: (v: string) => void;
-  primaryDays: DayPrices;
-  onPrimaryDays: (v: DayPrices) => void;
-  extras: ExtraLocation[];
-  onExtras: (v: ExtraLocation[]) => void;
-}) {
-  const chosen = new Set([primaryId, ...extras.map((x) => x.location_id)].filter(Boolean));
-  const free = (own: string) => locations.filter((l) => l.id === own || !chosen.has(l.id));
-  const canAdd = !!primaryId && locations.some((l) => !chosen.has(l.id)) && extras.every((x) => x.location_id);
-  const setExtra = (i: number, patch: Partial<ExtraLocation>) => onExtras(extras.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  const boxCls = 'rounded-xl border border-gray-200 p-3';
-
-  return (
-    <div className="space-y-2">
-      <div className={boxCls}>
-        <p className="mb-1.5 text-xs font-medium text-gray-500">{extras.length ? 'Primary location' : 'Location'}</p>
-        <SelectField className={inputCls} value={primaryId} onChange={onPrimaryId} placeholder="Select a location" aria-label="Primary location">
-          <Opt value="">Select a location</Opt>
-          {free(primaryId).map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
-        </SelectField>
-        <label className="mt-2 mb-1 block text-xs font-medium text-gray-500">Price (SGD per session)</label>
-        <NumberInput min="0" step="any" placeholder="e.g. 45" className={inputCls} value={price} onChange={(e) => onPrice(e.target.value)} />
-        <DayPricesEditor value={primaryDays} onChange={onPrimaryDays} basePrice={price} />
-      </div>
-
-      {extras.map((x, i) => (
-        <div key={i} className={boxCls}>
-          <div className="mb-1.5 flex items-center justify-between">
-            <p className="text-xs font-medium text-gray-500">Location {i + 2}</p>
-            <button type="button" onClick={() => onExtras(extras.filter((_, j) => j !== i))} className="rounded p-0.5 text-gray-400 hover:text-gray-700" aria-label="Remove this location">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <SelectField className={inputCls} value={x.location_id} onChange={(v) => setExtra(i, { location_id: v })} placeholder="Select a location" aria-label={`Location ${i + 2}`}>
-            <Opt value="">Select a location</Opt>
-            {free(x.location_id).map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
-          </SelectField>
-          <label className="mt-2 mb-1 block text-xs font-medium text-gray-500">Price (SGD per session)</label>
-          <NumberInput
-            min="0"
-            step="any"
-            placeholder={price ? `Same as primary (${money(price)})` : 'Same as primary'}
-            className={inputCls}
-            value={x.price}
-            onChange={(e) => setExtra(i, { price: e.target.value })}
-          />
-          <DayPricesEditor value={x.day_prices} onChange={(v) => setExtra(i, { day_prices: v })} basePrice={x.price || price} />
-        </div>
-      ))}
-
-      {canAdd && (
-        <button
-          type="button"
-          onClick={() => onExtras([...extras, { location_id: '', price: '', day_prices: {} }])}
-          className="inline-flex items-center gap-1 text-sm font-medium text-[#FA4D8D] hover:underline"
-        >
-          <Plus className="h-4 w-4" /> Add another location
-        </button>
-      )}
     </div>
   );
 }

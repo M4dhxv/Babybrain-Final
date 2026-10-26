@@ -29,9 +29,6 @@ export type Activity = {
   customLocationLabel?: string | null;
   /** A listing that runs at several venues (00250): the one the card names —
    *  in the filtered area, else the primary — and how many others there are. */
-  locationName?: string;
-  locationRegion?: string | null;
-  extraLocations?: number;
   /** Bookable on BabyBrain rather than the provider's own site. */
   instantBook?: boolean;
 };

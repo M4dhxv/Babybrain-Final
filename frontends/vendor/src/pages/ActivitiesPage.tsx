@@ -69,7 +69,7 @@ import { SKIP_EDITOR_TYPES } from '@/lib/usePhotoEditor';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
-import { ActivityLocationsField, dayPricesFromJson, dayPricesToJson, type DayPrices, type ExtraLocation } from '@/components/ActivityLocationsField';
+import { DayPricesEditor, dayPricesFromJson, dayPricesToJson, type DayPrices } from '@/components/DayPricesEditor';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
 
@@ -124,13 +124,13 @@ const sessionPriceOverride = (
   return activityPrice != null && n === Number(activityPrice) ? null : n;
 };
 const rangesOverlap = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && aEnd > bStart;
-/** Day of the week in Singapore, 0 = Sunday — the key activity_locations.day_prices uses. */
+/** Day of the week in Singapore, 0 = Sunday — the key activities.day_prices uses. */
 const sgDow = (iso: string) =>
   ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Date(iso).toLocaleDateString('en-US', { timeZone: 'Asia/Singapore', weekday: 'short' }));
 
 /** Matches ageLabel-adjacent formatting the parent app uses on the booking
  *  and confirmation pages ("6m – 2.5y"), reused verbatim by the preview. */
-type PreviewSession = { id: string; starts_at: string; ends_at: string; capacity: number | null; price: number | null; location_id: string | null };
+type PreviewSession = { id: string; starts_at: string; ends_at: string; capacity: number | null; price: number | null };
 type ActivitiesSnapshot = {
   activities: Activity[];
   categories: ActivityCategory[];
@@ -207,10 +207,8 @@ const emptyForm = {
   // filter on Explore instead of inheriting the provider's own address.
   is_custom_location: false,
   custom_location_label: '',
-  // 00250 — the primary venue's weekday prices, and every other venue the
-  // activity runs at (each with its own price and weekday prices).
-  primary_day_prices: {} as DayPrices,
-  extra_locations: [] as ExtraLocation[],
+  // 00258 — a different price on certain weekdays (activities.day_prices).
+  day_prices: {} as DayPrices,
   // Images (00130): 'profile' (default) borrows the provider's own
   // logo/cover/gallery; 'custom' uses this activity's own uploads. Either
   // way cover_image_url is an explicit pick from whichever set is active.
@@ -534,7 +532,7 @@ export default function ActivitiesPage() {
   // Schedule manager (sessions = the bookable dates/times of an activity)
   type Sess = {
     id: string; starts_at: string; ends_at: string; capacity: number | null; booked: number; waitlisted: number;
-    location_id: string | null; price: number | null;
+    price: number | null;
     teacher_name: string | null; studio: string | null;
     /* QA 04/09: pause is per-session as well as per-activity (migration 00084),
        so a week the teacher is away can be closed without shutting the class. */
@@ -549,9 +547,6 @@ export default function ActivitiesPage() {
     booking_cutoff_minutes: number | null;
   };
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
-  // The open activity's venues and their prices (00250), for the schedule
-  // drawer's venue list and the price each session will actually cost.
-  const [scheduleLocs, setScheduleLocs] = useState<{ location_id: string; price: number | null; day_prices: Record<string, number> }[]>([]);
   const [sessions, setSessions] = useState<Sess[]>([]);
   // True from the moment the schedule drawer opens until its sessions have
   // actually loaded — otherwise the empty initial list reads as "no sessions".
@@ -580,7 +575,7 @@ export default function ActivitiesPage() {
   const [sessForm, setSessForm] = useState({
     date: '', time: '', duration: '45', capacity: '',
     weekdays: [] as number[], weeks: '1', customDates: [] as string[],
-    teacher: '', studio: '', location_id: '', price: '',
+    teacher: '', studio: '', price: '',
     policy: inheritSessPolicy,
   });
   // The date sitting in the "extra dates" picker before it's added to the list.
@@ -604,7 +599,7 @@ export default function ActivitiesPage() {
      allow you to edit all the details." Date, start time, duration and capacity
      are now editable too; changing any of them rewrites starts_at/ends_at. */
   const [sessEditForm, setSessEditForm] = useState({
-    date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '', location_id: '', price: '',
+    date: '', time: '', duration: '45', capacity: '', teacher: '', studio: '', price: '',
     policy: inheritSessPolicy,
   });
   const [sessEditError, setSessEditError] = useState<string | null>(null);
@@ -674,7 +669,7 @@ export default function ActivitiesPage() {
     let stale = false;
     supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, price, location_id')
+      .select('id, starts_at, ends_at, capacity, price')
       .eq('activity_id', previewFor.id)
       .neq('status', 'cancelled')
       .gte('starts_at', new Date().toISOString())
@@ -765,22 +760,12 @@ export default function ActivitiesPage() {
     }
   }, [showMenu, showDrawer, scheduleFor, previewFor]);
 
-  /** The schedule activity's row for a session's venue (no venue = the primary). */
-  const schedLoc = (locId: string | null | undefined) =>
-    scheduleLocs.find((r) => r.location_id === (locId || scheduleFor?.location_id));
-  /** What a session at this venue costs before any day price: the venue's own price, else the activity's. */
-  const venueBasePrice = (locId: string | null | undefined) => schedLoc(locId)?.price ?? scheduleFor?.price ?? null;
-  /** What a session really costs — the same rule as session_price() in 00250:
-   *  the venue's weekday price, then the session's own, the venue's, the activity's. */
-  const sessEffectivePrice = (x: { starts_at: string; price: number | string | null; location_id: string | null }) => {
-    const r = schedLoc(x.location_id);
-    const day = r?.day_prices?.[String(sgDow(x.starts_at))];
-    return day ?? (x.price != null ? Number(x.price) : null) ?? r?.price ?? scheduleFor?.price ?? null;
+  /** What a session really costs: the same rule as session_price() (00258). The activity's weekday
+   *  price wins, then the session's own price, then the activity's own. */
+  const sessEffectivePrice = (x: { starts_at: string; price: number | string | null }) => {
+    const day = (scheduleFor?.day_prices as Record<string, number> | null | undefined)?.[String(sgDow(x.starts_at))];
+    return day ?? (x.price != null ? Number(x.price) : null) ?? scheduleFor?.price ?? null;
   };
-  /** An activity with several venues offers only those; otherwise every venue the vendor has. */
-  const scheduleVenues = scheduleLocs.length > 1
-    ? scheduleLocs.map((r) => locations.find((l) => l.id === r.location_id)).filter((l): l is (typeof locations)[number] => !!l)
-    : locations;
 
   async function openSchedule(a: Activity) {
     setShowMenu(null);
@@ -789,15 +774,6 @@ export default function ActivitiesPage() {
     setSessions([]);
     setSessionsLoading(true);
     setScheduleFor(a);
-    setScheduleLocs([]);
-    supabase
-      .from('activity_locations')
-      .select('location_id, price, day_prices, position')
-      .eq('activity_id', a.id)
-      .order('position')
-      .then(({ data }) => {
-        if (seq === scheduleOpenSeq.current && data) setScheduleLocs(data);
-      });
     setSessError(null);
     setSessNotice(null);
     // Pre-fill from the activity's default capacity so a vendor adding
@@ -805,9 +781,8 @@ export default function ActivitiesPage() {
     setSessForm((f) => ({
       ...f,
       capacity: a.default_capacity != null ? String(a.default_capacity) : f.capacity,
-      // Start from the activity's own venue/price so the common case (all
+      // Start from the activity's own price so the common case (all
       // sessions the same) is still one click.
-      location_id: a.location_id ?? '',
       price: a.price != null ? String(a.price) : '',
       // Don't carry a half-built recurrence from a previous activity.
       date: '', weekdays: [], weeks: '1', customDates: [],
@@ -846,7 +821,7 @@ export default function ActivitiesPage() {
   async function loadSessions(activityId: string, seq: number = scheduleOpenSeq.current) {
     const { data: sess } = await supabase
       .from('activity_sessions')
-      .select('id, starts_at, ends_at, capacity, teacher_name, studio, location_id, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
+      .select('id, starts_at, ends_at, capacity, teacher_name, studio, price, bookings_paused, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
       .eq('activity_id', activityId)
       // A class the vendor cancelled on Wix is marked cancelled by the sync
       // (cancel_wix_session); it is gone, so it doesn't belong in the schedule.
@@ -916,21 +891,11 @@ export default function ActivitiesPage() {
         // community events) — that's what "N/A" means here.
         teacher_name: sessForm.teacher.trim() || null,
         studio: sessForm.studio.trim() || null,
-        // Blank inherits the activity's venue/price (migration 00074). The
-        // picker is pre-filled with the activity's own venue, so "left as-is"
-        // must store null (inherit), not a copy — otherwise moving the
-        // activity later leaves these sessions, and their booking emails,
-        // pointing at the old place (migration 00112).
-        location_id:
-          sessForm.location_id && sessForm.location_id !== (scheduleFor.location_id ?? '')
-            ? sessForm.location_id
-            : null,
-        // A Wix Event's price is Wix's — never override it per session. The
-        // field is pre-filled with the activity's price, so "left as-is" must
-        // store null (inherit), not a copy — otherwise changing the activity
-        // price later leaves these sessions on the old one (same idea as
-        // location_id above).
-        price: sessionPriceOverride(sessForm.price, venueBasePrice(sessForm.location_id), scheduleIsWixEvent),
+        // A Wix Event's price is Wix's: never override it per session. Blank inherits the activity's
+        // price (migration 00074). The field is pre-filled with the activity's price, so "left as-is"
+        // must store null (inherit), not a copy, otherwise changing the activity price later leaves
+        // these sessions on the old one. A session's venue is the activity's venue, so none is set here.
+        price: sessionPriceOverride(sessForm.price, scheduleFor.price, scheduleIsWixEvent),
         ...sessPolicyPayload(sessForm.policy),
       };
     });
@@ -966,7 +931,7 @@ export default function ActivitiesPage() {
     setSessForm({
       date: '', time: '', duration: sessForm.duration, capacity: sessForm.capacity,
       weekdays: [], weeks: '1', customDates: [],
-      teacher: sessForm.teacher, studio: sessForm.studio, location_id: sessForm.location_id, price: sessForm.price,
+      teacher: sessForm.teacher, studio: sessForm.studio, price: sessForm.price,
       policy: sessForm.policy,
     });
     setCustomDateDraft('');
@@ -995,7 +960,6 @@ export default function ActivitiesPage() {
       capacity: s.capacity != null ? String(s.capacity) : '',
       teacher: s.teacher_name ?? '',
       studio: s.studio ?? '',
-      location_id: s.location_id ?? '',
       price: s.price != null ? String(s.price) : '',
       policy: {
         mode: hasOverride ? 'custom' : 'inherit',
@@ -1067,15 +1031,10 @@ export default function ActivitiesPage() {
       capacity: Number(sessEditForm.capacity),
       teacher_name: sessEditForm.teacher.trim() || null,
       studio: sessEditForm.studio.trim() || null,
-      // Same as the venue that the activity carries -> store null (inherit),
-      // so a later activity move carries these sessions with it (00112).
-      location_id:
-        sessEditForm.location_id && sessEditForm.location_id !== (scheduleFor.location_id ?? '')
-          ? sessEditForm.location_id
-          : null,
       // Same price as the activity's -> store null (inherit), so a later
-      // activity price change carries this session with it.
-      price: sessionPriceOverride(sessEditForm.price, venueBasePrice(sessEditForm.location_id), scheduleIsWixEvent),
+      // activity price change carries this session with it. The session's venue
+      // is left exactly as it is (it is the activity's venue; older sessions keep theirs).
+      price: sessionPriceOverride(sessEditForm.price, scheduleFor.price, scheduleIsWixEvent),
       ...sessPolicyPayload(sessEditForm.policy),
     }).eq('id', id);
     setSavingSessEdit(false);
@@ -1421,24 +1380,6 @@ export default function ActivitiesPage() {
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
     setFormError(null);
     setShowDrawer(true);
-    loadActivityLocations(a);
-  }
-
-  /** The activity's venues and their prices (00250) into the open form. Only the
-   *  location fields are merged, so anything typed meanwhile is kept. */
-  async function loadActivityLocations(a: Activity) {
-    if (a.is_custom_location) return;
-    const { data, error } = await supabase
-      .from('activity_locations')
-      .select('location_id, position, price, day_prices')
-      .eq('activity_id', a.id)
-      .order('position');
-    if (error || !data) return;
-    const primary = data.find((r) => r.location_id === a.location_id);
-    const extras = data
-      .filter((r) => r.location_id !== a.location_id)
-      .map((r) => ({ location_id: r.location_id, price: r.price != null ? String(r.price) : '', day_prices: dayPricesFromJson(r.day_prices) }));
-    setForm((f) => ({ ...f, primary_day_prices: dayPricesFromJson(primary?.day_prices), extra_locations: extras }));
   }
 
   /* "Duplicate" (client, 2026-10-21): a new activity pre-filled from an existing one — category,
@@ -1456,7 +1397,6 @@ export default function ActivitiesPage() {
     setPriceOverridden(false);
     setFormError(null);
     setShowDrawer(true);
-    loadActivityLocations(a);
   }
 
   /** The drawer's fields from an activity — shared by Edit and Duplicate. */
@@ -1473,9 +1413,7 @@ export default function ActivitiesPage() {
       location_id: a.location_id ?? '',
       is_custom_location: a.is_custom_location ?? false,
       custom_location_label: a.custom_location_label ?? '',
-      // Filled in by loadActivityLocations once the rows arrive.
-      primary_day_prices: {} as DayPrices,
-      extra_locations: [] as ExtraLocation[],
+      day_prices: dayPricesFromJson(a.day_prices),
       default_capacity: a.default_capacity != null ? String(a.default_capacity) : '',
       image_source: (a.image_source === 'custom' ? 'custom' : 'profile') as 'profile' | 'custom',
       image_urls: a.image_urls ?? [],
@@ -1658,6 +1596,11 @@ export default function ActivitiesPage() {
           }
         : {
             price: form.price ? Number(form.price) : null,
+            // Weekday prices (00258): written only when there are some, or when clearing ones that were
+            // set, so saving still works on a database that does not have the column yet.
+            ...(Object.keys(dayPricesToJson(form.day_prices)).length > 0 || Object.keys(editingActivity?.day_prices ?? {}).length > 0
+              ? { day_prices: dayPricesToJson(form.day_prices) }
+              : {}),
             location_id: form.is_custom_location ? null : form.location_id || null,
             is_custom_location: form.is_custom_location,
             custom_location_label: form.is_custom_location ? form.custom_location_label.trim() || null : null,
@@ -1701,19 +1644,15 @@ export default function ActivitiesPage() {
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
     };
-    const { data: saved, error } = editingId
-      ? await supabase.from('activities').update(fields).eq('id', editingId).select('id').single()
+    const { error } = editingId
+      ? await supabase.from('activities').update(fields).eq('id', editingId)
       : await supabase.from('activities').insert({
           ...fields,
           slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
           provider_id: provider.id,
           is_published: false, // saved as draft; publish from the row menu
-        }).select('id').single();
+        });
     if (error) { setSaving(false); setFormError(error.message); return; }
-    if (!isWixLinked && saved) {
-      const locErr = await saveActivityLocations(saved.id);
-      if (locErr) { setSaving(false); setFormError(`Activity saved, but its locations could not be saved: ${locErr}`); load(); return; }
-    }
     setSaving(false);
 
     // Capacity is an activity-wide setting, so every save re-aligns this
@@ -1795,35 +1734,6 @@ export default function ActivitiesPage() {
     setEditingId(null);
     setForm(emptyForm);
     load();
-  }
-
-  /* Writes the activity's full set of venues (00250). The primary row already
-     exists — the database adds it whenever activities.location_id is set — so
-     this upserts every venue with its prices, then removes any the vendor took
-     off. Returns an error message, or null. Wix-linked activities never get
-     here: their one venue and price stay Wix's. */
-  async function saveActivityLocations(activityId: string): Promise<string | null> {
-    const primary = form.is_custom_location ? '' : form.location_id;
-    const extras = form.is_custom_location ? [] : form.extra_locations.filter((x) => x.location_id && x.location_id !== primary);
-    const rows = [
-      ...(primary ? [{ activity_id: activityId, location_id: primary, position: 0, price: null, day_prices: dayPricesToJson(form.primary_day_prices) }] : []),
-      ...extras.map((x, i) => ({
-        activity_id: activityId,
-        location_id: x.location_id,
-        position: i + 1,
-        price: x.price.trim() !== '' ? Number(x.price) : null,
-        day_prices: dayPricesToJson(x.day_prices),
-      })),
-    ];
-    if (rows.length) {
-      const { error } = await supabase.from('activity_locations').upsert(rows, { onConflict: 'activity_id,location_id' });
-      if (error) return error.message;
-    }
-    const keep = rows.map((r) => r.location_id);
-    let del = supabase.from('activity_locations').delete().eq('activity_id', activityId);
-    if (keep.length) del = del.not('location_id', 'in', `(${keep.join(',')})`);
-    const { error } = await del;
-    return error ? error.message : null;
   }
 
   // An activity with no area (its venue has no postal code) is published fine but cannot be found by the area
@@ -2498,49 +2408,33 @@ export default function ActivitiesPage() {
                 </>
               ) : (
                 <>
-              <ActivityLocationsField
-                locations={locations}
-                inputCls={inputCls}
-                primaryId={form.location_id}
-                onPrimaryId={(v) => setForm((f) => ({ ...f, location_id: v }))}
-                price={form.price}
-                onPrice={(v) => setForm((f) => ({ ...f, price: v }))}
-                primaryDays={form.primary_day_prices}
-                onPrimaryDays={(v) => setForm((f) => ({ ...f, primary_day_prices: v }))}
-                extras={form.extra_locations}
-                onExtras={(v) => setForm((f) => ({ ...f, extra_locations: v }))}
-              />
+              <SelectField className={inputCls} value={form.location_id} onChange={(v) => setForm({ ...form, location_id: v })} placeholder="Select a location" aria-label="Location">
+                <Opt value="">Select a location</Opt>
+                {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
+              </SelectField>
               {locations.length === 0 ? (
                 <p className="mt-1 text-xs text-gray-500">No locations yet — add one on the <button className="text-[#FA4D8D] font-medium hover:underline" onClick={() => { setPageTab('locations'); setOpenNewLocation(true); setShowDrawer(false); }}>Locations tab</button>.</p>
               ) : (
-                /* QA 21/08: "if they do the same class in 3 different locations
-                   they need to create it 3 times." Both this and the price below
-                   are now the DEFAULT for new sessions — Manage schedule can
-                   override either per session, so one activity covers every
-                   venue and price. */
                 <p className="mt-1.5 text-xs text-gray-500">
-                  {form.extra_locations.length
-                    ? 'Parents choose a location when they book. Add sessions for each location under Manage schedule.'
-                    : 'Running this class somewhere else too? Add another location, each with its own price.'}
+                  Running this class at another venue too? Add it as its own activity: the same name is fine.
                 </p>
               )}
                 </>
               )}
             </div>
-            {form.is_custom_location && (
-              <div>
-                <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
-                <NumberInput
-                  min="0"
-                  step="any"
-                  placeholder="e.g. 45"
-                  className={inputCls}
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                />
-                <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
-              </div>
-            )}
+            <div>
+              <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>
+              <NumberInput
+                min="0"
+                step="any"
+                placeholder="e.g. 45"
+                className={inputCls}
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-gray-500">Default price. Individual sessions can be priced differently under Manage schedule.</p>
+              <DayPricesEditor value={form.day_prices} onChange={(v) => setForm((f) => ({ ...f, day_prices: v }))} basePrice={form.price} />
+            </div>
             <div>
               <label className="text-sm font-medium text-gray-900 mb-1.5 block">Capacity <span className="text-[#FA4D8D]">*</span></label>
               <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
@@ -3449,27 +3343,6 @@ export default function ActivitiesPage() {
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Studio / room (leave blank if N/A)</label>
                   <input placeholder="e.g. Room 2" className={inputCls} value={sessForm.studio} onChange={(e) => setSessForm({ ...sessForm, studio: e.target.value })} />
                 </div>
-                {/* Venue and price per session (QA 21/08) — this is what lets one
-                    activity run at three locations, or cost different amounts at
-                    each, instead of being created three times. */}
-                <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Venue</label>
-                  <SelectField
-                    className={inputCls}
-                    value={sessForm.location_id}
-                    // Moving to a venue with its own price moves the pre-filled price with it,
-                    // unless the vendor already typed a different one.
-                    onChange={(v) => setSessForm((f) => ({
-                      ...f,
-                      location_id: v,
-                      price: f.price === String(venueBasePrice(f.location_id) ?? '') ? String(venueBasePrice(v) ?? '') : f.price,
-                    }))}
-                    aria-label="Session venue"
-                  >
-                    <Opt value="">Same as the activity</Opt>
-                    {scheduleVenues.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
-                  </SelectField>
-                </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Price (SGD)</label>
                   <NumberInput
@@ -3479,7 +3352,7 @@ export default function ActivitiesPage() {
                     placeholder={
                       scheduleIsWixEvent
                         ? 'Set by Wix ticket types'
-                        : venueBasePrice(sessForm.location_id) != null ? `Location price: ${venueBasePrice(sessForm.location_id)}` : 'Same as the activity'
+                        : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
                     }
                     className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
                     value={scheduleIsWixEvent ? '' : sessForm.price}
@@ -3661,13 +3534,6 @@ export default function ActivitiesPage() {
                         </label>
                         <input placeholder="Studio (N/A if blank)" className={inputCls} value={sessEditForm.studio} onChange={(e) => setSessEditForm({ ...sessEditForm, studio: e.target.value })} />
                         <label className="block">
-                          <span className="mb-1 block text-xs text-gray-500">Venue</span>
-                          <SelectField className={inputCls} value={sessEditForm.location_id} onChange={(v) => setSessEditForm({ ...sessEditForm, location_id: v })} aria-label="Session venue">
-                            <Opt value="">Same as the activity</Opt>
-                            {scheduleVenues.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
-                          </SelectField>
-                        </label>
-                        <label className="block">
                           <span className="mb-1 block text-xs text-gray-500">Price (SGD)</span>
                           <NumberInput
                             
@@ -3676,7 +3542,7 @@ export default function ActivitiesPage() {
                             placeholder={
                               scheduleIsWixEvent
                                 ? 'Set by Wix ticket types'
-                                : venueBasePrice(sessEditForm.location_id) != null ? `Location price: ${venueBasePrice(sessEditForm.location_id)}` : 'Same as the activity'
+                                : scheduleFor?.price != null ? `Activity price: ${scheduleFor.price}` : 'Same as the activity'
                             }
                             className={cn(inputCls, scheduleIsWixEvent && 'bg-gray-50 text-gray-500 cursor-not-allowed')}
                             value={scheduleIsWixEvent ? '' : sessEditForm.price}
@@ -3690,7 +3556,7 @@ export default function ActivitiesPage() {
                       {sessEditError && <p className="text-xs font-medium text-red-600">{sessEditError}</p>}
                       {s.booked > 0 && (
                         <p className="text-xs text-gray-500">
-                          {/* A date/time or venue move fires notify_session_rescheduled
+                          {/* A date/time move fires notify_session_rescheduled
                               (migrations 00044/00126) — an in-app notification plus the
                               session_rescheduled email (lib/emails/render.ts) — for every
                               live booking on this session. Capacity/teacher/studio/price
@@ -3720,12 +3586,7 @@ export default function ActivitiesPage() {
                           {Math.round((new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60000)} mins
                           {' · '}{s.capacity != null ? `${s.capacity} spots` : 'Unlimited'}
                           {' · '}{s.booked} booked{s.waitlisted > 0 ? ` · ${s.waitlisted} waitlisted` : ''}
-                          {/* Only called out when it differs from the activity,
-                              so the ordinary case stays quiet. */}
-                          {s.location_id && s.location_id !== scheduleFor?.location_id && (
-                            <>{' · '}<span className="text-blue-700">{locations.find((l) => l.id === s.location_id)?.name ?? 'Other venue'}</span></>
-                          )}
-                          {/* What it really costs (venue / weekday prices included), when that isn't the activity's own price. */}
+                          {/* What it really costs (weekday prices included), when that isn't the activity's own price. */}
                           {(() => {
                             const eff = sessEffectivePrice(s);
                             return eff != null && Number(eff) !== Number(scheduleFor?.price ?? NaN) ? (

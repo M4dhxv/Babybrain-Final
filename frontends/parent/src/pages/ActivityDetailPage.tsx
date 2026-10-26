@@ -516,52 +516,6 @@ export default function ActivityDetailPage() {
     return scrollToWhenReady(id);
   }, []);
 
-  /* The next session can carry its own venue (migration 00074) — resolve it
-     so the sidebar's Location line reflects that session, not just the
-     activity's default. Lazy: most classes run at one place. */
-  const [nextVenue, setNextVenue] = useState<string | null>(null);
-  useEffect(() => {
-    const locId = sessions[0]?.location_id ?? null;
-    if (!locId) { setNextVenue(null); return; }
-    let cancelled = false;
-    supabase
-      .from("provider_locations")
-      .select("name, address")
-      .eq("id", locId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        const row = data as { name: string | null; address: string | null } | null;
-        setNextVenue(row ? [row.name, row.address].filter(Boolean).join(", ") : null);
-      });
-    return () => { cancelled = true; };
-  }, [sessions]);
-
-  /* Every venue this class runs at (migration 00250), for the "other
-     locations" list under the Location line. One query, only for the open
-     activity; a single-venue class gets one row back and shows nothing extra. */
-  const [activityLocs, setActivityLocs] = useState<{ id: string; name: string; address: string | null; price: number | null }[]>([]);
-  const activityIdForLocs = activity?.id ?? null;
-  useEffect(() => {
-    if (!activityIdForLocs) return;
-    let cancelled = false;
-    supabase
-      .from("activity_locations")
-      .select("location_id, position, price, provider_locations(name, address)")
-      .eq("activity_id", activityIdForLocs)
-      .order("position")
-      .then(({ data }) => {
-        if (cancelled) return;
-        const rows = (data ?? []) as unknown as Array<{ location_id: string; price: number | null; provider_locations: { name: string; address: string | null } | null }>;
-        setActivityLocs(
-          rows
-            .filter((r) => r.provider_locations)
-            .map((r) => ({ id: r.location_id, name: r.provider_locations!.name, address: r.provider_locations!.address, price: r.price }))
-        );
-      });
-    return () => { cancelled = true; };
-  }, [activityIdForLocs]);
-
   const packagesNotOffered =
     activity?.wix_service_type === "EVENT" ||
     activity?.wix_service_type === "COURSE" ||
@@ -672,16 +626,10 @@ export default function ActivityDetailPage() {
      booking page and booking trigger use. */
   const nextPrice = next?.price != null ? Number(next.price) : activity.price != null ? Number(activity.price) : null;
   // A private session at the customer's own home has no fixed address to
-  // show here — unless this particular session was itself moved to a real
-  // venue (nextVenue, a session-level override still allowed for one-off
-  // exceptions), in which case that address wins as usual.
+  // show here, so it says so in the vendor's own words instead.
   const nextVenueAddress =
-    nextVenue ??
     (activity.is_custom_location ? activity.custom_location_label?.trim() || "Custom" : activity.address) ??
     null;
-  // The venues other than the one the Location line already shows.
-  const shownLocId = next?.location_id ?? activity.location_id ?? null;
-  const otherLocs = activityLocs.length > 1 ? activityLocs.filter((l) => l.id !== shownLocId) : [];
   // Falls back to the provider's own cover/logo/gallery when this listing
   // has no photos of its own (or is explicitly set to borrow theirs) — see
   // activityMedia.ts. Recomputed on every load, so clearing an activity's
@@ -1107,7 +1055,7 @@ export default function ActivityDetailPage() {
                   {/* A real address opens directions (Apple Maps on iPhone,
                       Google Maps elsewhere); a "your own home" label has nowhere
                       to point, so it stays plain text. */}
-                  {activity.is_custom_location && !nextVenue ? (
+                  {activity.is_custom_location ? (
                     <span className="text-right">{nextVenueAddress}</span>
                   ) : (
                     <a
@@ -1121,29 +1069,6 @@ export default function ActivityDetailPage() {
                   )}
                 </p>
               )}
-              {/* Every other venue reads exactly like the first Location row. */}
-              {otherLocs.map((l, i) => {
-                const text = l.address && l.address.trim().length > 12 ? l.address : [l.name, l.address].filter(Boolean).join(", ");
-                const differs = l.price != null && Number(l.price) !== Number(activity.price ?? NaN);
-                return (
-                  <p key={l.id} className="flex items-start justify-between gap-3">
-                    <strong className="shrink-0">Location {i + 2}</strong>
-                    <span className="text-right">
-                      <a
-                        href={mapsUrl([l.name, l.address].filter(Boolean).join(", "))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta"
-                      >
-                        {text}
-                      </a>
-                      {differs && (
-                        <span className="block text-xs font-normal">{Number(l.price) === 0 ? "Free" : `$${Number(l.price)} per session`}</span>
-                      )}
-                    </span>
-                  </p>
-                );
-              })}
               {next && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next session"}</strong>
