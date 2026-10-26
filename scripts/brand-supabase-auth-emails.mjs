@@ -114,9 +114,14 @@ const T = {
   confirmation: {
     subject: 'Confirm your email 👶🧠',
     html: layout(greet +
-      p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.') +
+      p('Welcome to BabyBrain! Just one step to go. Enter this code in BabyBrain to confirm your email and your profile is ready:') +
+      // The code comes first: the parent app asks for it, so they stay in the
+      // app they signed up in. The link stays as a backup (and is what the
+      // vendor sign-up, which shares this template, still uses).
+      code() +
+      p('Or confirm with the button instead:') +
       cta('Confirm my email') +
-      p('This link is valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
+      p('The code and link are valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
       fallback() + sign),
   },
   recovery: {

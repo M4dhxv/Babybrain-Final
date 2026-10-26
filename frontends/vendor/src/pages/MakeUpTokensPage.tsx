@@ -30,6 +30,8 @@ type Token = {
   status: 'issued' | 'redeemed' | 'expired';
   created_at: string;
   expires_at: string | null;
+  /** 00255: issued automatically when a booking was cancelled, not by the vendor. */
+  auto_issued?: boolean;
 };
 
 const statusFilters = ['All', 'Issued', 'Redeemed', 'Expired'] as const;
@@ -53,7 +55,7 @@ export default function MakeUpTokensPage() {
   const { data, loading, refreshing, refetch } = useProviderQuery<Token[]>(
     provider ? `make-up-tokens:${provider.id}` : null,
     async () => {
-      const { data: rows } = await supabase.rpc('provider_make_up_tokens', { p_provider: provider!.id });
+      const { data: rows } = await supabase.rpc('provider_make_up_tokens', { p_provider: provider!.id, p_include_auto: true });
       return (rows ?? []) as Token[];
     },
   );
@@ -147,7 +149,7 @@ export default function MakeUpTokensPage() {
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Make-up tokens</h1>
-          <p className="text-sm text-gray-500 mt-1">Every make-up token you've issued, and where it stands.</p>
+          <p className="text-sm text-gray-500 mt-1">Every make-up token issued to your families, and where it stands. Tokens marked Automatic were given when a booking was cancelled.</p>
         </div>
       </div>
 
@@ -194,7 +196,8 @@ export default function MakeUpTokensPage() {
               <div>Family</div><div>Original session</div><div>Status</div><div>Issued</div><div>Expires</div>
             </div>
             {visible.map((t) => {
-              const editable = canManage && t.status !== 'redeemed';
+              // An automatic token is the family's replacement for a cancelled booking and is promised not to expire.
+              const editable = canManage && t.status !== 'redeemed' && !t.auto_issued;
               return (
                 <div key={t.token_id} id={`dl-${t.token_id}`} className={cn('transition-all duration-500', highlightId === t.token_id && 'bg-pink-50 ring-2 ring-inset ring-[#FA4D8D]')}>
                   <div className={cn(TOKEN_COLS, 'px-5 py-3 border-t border-gray-100 items-center')}>
@@ -204,6 +207,7 @@ export default function MakeUpTokensPage() {
                         {t.child_name}
                       </div>
                       <div className="text-xs text-gray-500 truncate">{t.parent_name}</div>
+                      {t.auto_issued && <span className="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">Automatic</span>}
                     </div>
                     <div className="min-w-0 text-sm text-gray-700 break-words">
                       {t.origin_activity_title ?? <span className="text-gray-400">—</span>}

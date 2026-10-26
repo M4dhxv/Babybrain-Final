@@ -37,7 +37,7 @@ const ALLOWED = new Set([
   'activity_review_authors', 'search_activities', 'matching_activities', 'search_activity_facets',
   'upcoming_activity_sessions', 'session_required_policies', 'search_claimable_providers',
   // Vendor portal (each checks membership of the provider it is asked about)
-  'provider_overview', 'provider_analytics', 'provider_bookings_table', 'provider_make_up_tokens',
+  'provider_overview', 'provider_booking_outcomes', 'provider_analytics', 'provider_bookings_table', 'provider_make_up_tokens',
   'provider_notification_feed', 'provider_notification_unread_count', 'provider_package_purchases',
   'provider_recent_bookings', 'provider_session_roster', 'provider_set_purchase_expiry',
   'provider_trial_conversion', 'mark_provider_notifications_seen', 'promote_waitlist_entry',
@@ -49,6 +49,14 @@ const ALLOWED = new Set([
   'plan_commission_rate', 'sg_region', 'time_of_day', 'session_email_details', 'session_price',
   // 00250: validates activity_locations.day_prices in a CHECK constraint, so writers must be able to run it
   'valid_day_prices',
+  // Term enrolment (00256): each checks the caller itself. term_quote and
+  // term_headline_prices only read a published term's public numbers, so the
+  // logged-out pages may call them.
+  'term_quote', 'term_headline_prices', 'term_trial_remaining', 'activity_packages_closed', 'publish_term', 'enrol_in_term', 'book_term_class', 'skip_term_class',
+  // 00257: withdraw (parent / vendor), the vendor's roster and numbers, opening
+  // re-enrolment — each checks the caller. activities_with_live_terms only
+  // lists activity ids with a published term, for the Explore filter.
+  'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

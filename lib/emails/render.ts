@@ -222,9 +222,15 @@ const T: Record<string, Template> = {
   auth_confirm_signup: (d, ctx) =>
     wrap({ ...ctx, footer: 'auth' }, 'Confirm your email 👶🧠',
       p(greet(ctx.recipientName)) +
-      p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.') +
+      // Same order as the Supabase-rendered template in
+      // scripts/brand-supabase-auth-emails.mjs: the code first, the link as backup.
+      (str(d, 'token')
+        ? p('Welcome to BabyBrain! Just one step to go. Enter this code in BabyBrain to confirm your email and your profile is ready:') +
+          `<p style="margin:0 0 20px;font-size:30px;font-weight:700;letter-spacing:5px;color:#4a4a4a">${esc(str(d, 'token') as string)}</p>` +
+          p('Or confirm with the button instead:')
+        : p('Welcome to BabyBrain! Just one step to go — confirm your email address and your profile is ready.')) +
       cta(str(d, 'action_url') ?? ctx.appUrl, 'Confirm my email') +
-      p('This link is valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
+      p('The code and link are valid for 24 hours. If you didn’t create a BabyBrain account you can safely ignore this email.') +
       fallbackLink(str(d, 'action_url') ?? ctx.appUrl) +
       sign),
 

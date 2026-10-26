@@ -1,95 +1,59 @@
 import { useEffect, useState } from "react";
 import { PageShell, Button, Icon, DateInput } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
-import { ResendConfirmation } from "../components/ResendConfirmation";
+import { VerifyEmailCode } from "../components/VerifyEmailCode";
 import { supabase } from "../lib/supabase";
 import { apiPost } from "../lib/api";
 import { geocodePostal } from "../lib/geocode";
 import { goTo } from "../lib/nav";
+import { captureEvent } from "../lib/posthog";
 import {
   PASSWORD_RULES,
   dobError,
   emailError,
   passwordError,
   postcodeError,
+  whatsappError,
+  whatsappE164,
+  DEFAULT_WHATSAPP_COUNTRY,
 } from "../lib/validation";
-import { Chip, TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
+import { WhatsAppField } from "../components/WhatsAppField";
+import { TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
 import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
-type ChildDraft = { key: number; name: string; dob: string; gender: string; interests: string[] };
+type ChildDraft = { key: string; name: string; dob: string; gender: string; interests: string[] };
 
 const newChildDraft = (): ChildDraft => ({
-  key: Date.now() + Math.random(),
+  key: String(Date.now() + Math.random()),
   name: "",
   dob: "",
   gender: "unspecified",
   interests: [],
 });
 
-/** One child's fields inside the sign-up form (repeated per child). */
-function ChildDraftFields({
-  draft,
-  index,
-  total,
-  cats,
-  onChange,
-  onRemove,
-}: {
-  draft: ChildDraft;
-  index: number;
-  total: number;
-  cats: { slug: string; name: string }[];
-  onChange: (next: ChildDraft) => void;
-  onRemove: () => void;
-}) {
-  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
-  const toggle = (v: string) =>
-    onChange({
-      ...draft,
-      interests: draft.interests.includes(v)
-        ? draft.interests.filter((x) => x !== v)
-        : [...draft.interests, v],
-    });
+/* Sign-up is five screens, grouped by topic rather than one question each:
+   "you" (name, account, WhatsApp number), "children" (every child's name,
+   birthday, gender and interests, with "Add another child"), "prefs" (home
+   postcode, areas, days and times, budget), "terms" and finally "plan". Each
+   screen is its own browser history entry, so the phone's Back button goes to
+   the previous screen instead of leaving sign-up and losing everything typed.
+   No step counts are shown on purpose: the bar at the top is the only
+   progress cue. */
+const STEPS = ["you", "children", "prefs", "terms", "plan"] as const;
+type Screen = (typeof STEPS)[number];
 
+/** A big tappable choice — the one-question screens' version of a chip. */
+function Option({ on, onClick, children, className = "" }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
-    <div className={index > 0 ? "mt-5 border-t border-[#FEEBF2] pt-5" : ""}>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-black">{total > 1 ? `Child ${index + 1}` : "Your child"}</h3>
-        {total > 1 && (
-          <button type="button" onClick={onRemove} className="text-xs font-bold text-[#FFC1D6] hover:underline">
-            Remove
-          </button>
-        )}
-      </div>
-      <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-sm font-black">Child's name</label>
-          <input className={input} autoComplete="off" autoCapitalize="words" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} placeholder="e.g. Emma" />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-black">Date of birth</label>
-          <DateInput
-            value={draft.dob}
-            onChange={(iso) => onChange({ ...draft, dob: iso })}
-            className={input}
-          />
-          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Day first, e.g. 14/03/2024.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {[["male", "Boy"], ["female", "Girl"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
-            <Chip key={v} on={draft.gender === v} onClick={() => onChange({ ...draft, gender: v })}>{l}</Chip>
-          ))}
-        </div>
-        <div>
-          <p className="mb-1 text-sm font-black">Interests</p>
-          <div className="flex flex-wrap gap-2">
-            {cats.map((c) => (
-              <Chip key={c.slug} on={draft.interests.includes(c.slug)} onClick={() => toggle(c.slug)}>{c.name}</Chip>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={`flex min-h-[52px] items-center justify-between gap-2 rounded-[12px] border px-4 py-3 text-left text-[15px] font-black transition-colors ${on ? "border-baby-pink bg-[#FED7E4] text-baby-cta" : "border-[#DCD2D5] bg-white text-baby-ink hover:border-baby-pink"} ${className}`}
+    >
+      <span>{children}</span>
+      {on && <Icon name="check" className="h-4 w-4 shrink-0" />}
+    </button>
   );
 }
 
@@ -100,7 +64,9 @@ export default function OnboardingPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [phone, setPhone] = useState("");
+  // WhatsApp is required: a country (Singapore unless changed) and the number without it.
+  const [waCountry, setWaCountry] = useState(DEFAULT_WHATSAPP_COUNTRY);
+  const [waNumber, setWaNumber] = useState("");
   const [postcode, setPostcode] = useState("");
   const [regions, setRegions] = useState<string[]>([]);
   const [weekdays, setWeekdays] = useState(false);
@@ -116,16 +82,20 @@ export default function OnboardingPage() {
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Times Next was pressed again while the same notice was already up. Each
+  // one re-mounts the notice with a shake and a pink flash (bb-notice-nudge).
+  const [nudges, setNudges] = useState(0);
   const [confirmSent, setConfirmSent] = useState(false);
   const [emailExists, setEmailExists] = useState(false);
-  /* Sign-up is a two-step wizard: step 1 is the profile form, step 2 is the
-     plan picker. The account is only created once a plan is chosen on step 2,
-     and `accountReady` guards against creating it twice if Plus checkout fails
-     and the parent retries. */
-  const [step, setStep] = useState<1 | 2>(1);
+  /* The account is only created on the last screen, once a plan is chosen, and
+     `accountReady` guards against creating it twice if Plus checkout fails and
+     the parent retries. */
+  const [step, setStep] = useState<string>("you");
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "plus">("plus");
   const [accountReady, setAccountReady] = useState(false);
+  // The plan picked when the account was created, for after the email code.
+  const [confirmPlan, setConfirmPlan] = useState<"free" | "plus">("free");
 
   // Already signed in: sign-up is for a new account, so go to their matches
   // (a "Sign up" link in an email footer, or Back into this page, used to
@@ -140,48 +110,118 @@ export default function OnboardingPage() {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
   }, []);
 
-  const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
-    set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  const input = "h-11 w-full rounded-[10px] border border-[#FED7E4] px-3 text-sm font-semibold";
+  /* Browser Back / Forward move between questions. The first screen takes over
+     the current history entry (also resetting a reload, where the typed
+     answers are gone, back to the start); every later screen is pushed. */
+  useEffect(() => {
+    window.history.replaceState({ ...window.history.state, signupStep: "you" }, "");
+    const onPop = (e: PopStateEvent) => {
+      const s = (e.state as { signupStep?: string } | null)?.signupStep;
+      setError(null);
+      setStep(s ?? "you");
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
-  /** Everything recommendations depend on is required, so a new parent can't
-   *  land on an empty Matches page. Returns the first problem, or null. */
-  function validate(): string | null {
-    if (!fullName.trim()) return "Please add your full name.";
-    const emailProblem = emailError(email);
-    if (emailProblem) return emailProblem;
-    const pwProblem = passwordError(password);
-    if (pwProblem) return pwProblem;
-    if (password !== confirmPassword) return "Passwords don't match — please re-enter them.";
-    const postcodeProblem = postcodeError(postcode);
-    if (postcodeProblem) return postcodeProblem;
-    if (regions.length === 0) return "Pick at least one area you'd like activities in.";
-    for (const [i, k] of kids.entries()) {
-      const who = kids.length > 1 ? `Child ${i + 1}` : "Your child";
-      if (!k.name.trim()) return `${who} needs a name.`;
-      const dobProblem = dobError(k.dob);
-      if (dobProblem) return `${who}: ${dobProblem.charAt(0).toLowerCase()}${dobProblem.slice(1)}`;
-      if (k.interests.length === 0) return `Pick at least one interest for ${k.name.trim() || who.toLowerCase()}.`;
-    }
-    if (!acceptedTerms) return "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
-    return null;
-  }
+  const steps: string[] = [...STEPS];
+  const stepIndex = Math.max(0, steps.indexOf(step));
+  const current = steps[stepIndex];
+  const kind = current as Screen;
 
-  /** Step 1 → step 2. Validate the profile form, then show the plan picker.
-   *  Nothing is created yet — the account is made once a plan is chosen. */
-  function goToPlanStep() {
-    const problem = validate();
-    if (problem) {
-      setError(problem);
-      return;
-    }
+  // Which screens parents reach, so drop-off between them shows up in PostHog.
+  useEffect(() => {
+    void captureEvent("signup_step_viewed", { step: kind });
+  }, [current, kind]);
+
+  function show(id: string) {
     setError(null);
-    setStep(2);
+    setNudges(0);
+    setStep(id);
+    window.history.pushState({ ...window.history.state, signupStep: id }, "");
     window.scrollTo(0, 0);
   }
 
-  /** Step 2. Create the account (once), then either drop the parent into their
-   *  matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
+  const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
+    set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const updateChild = (key: string, patch: Partial<ChildDraft>) =>
+    setKids((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const input = "h-12 w-full rounded-[12px] border border-[#FED7E4] bg-white px-4 text-base font-semibold";
+
+  /** The problem on one screen, or null. Everything recommendations depend on
+   *  is required, so a new parent can't land on an empty Matches page. */
+  function validateStep(id: string): string | null {
+    switch (id) {
+      case "you":
+        return (fullName.trim() ? null : "Please add your full name.")
+          ?? emailError(email)
+          ?? passwordError(password)
+          ?? (password !== confirmPassword ? "Passwords don't match — please re-enter them." : null)
+          ?? whatsappError(waCountry, waNumber);
+      case "children": {
+        for (const [i, c] of kids.entries()) {
+          const who = c.name.trim() || (kids.length > 1 ? `child ${i + 1}` : "your child");
+          if (!c.name.trim()) return kids.length > 1 ? `Please add child ${i + 1}'s name.` : "Please add your child's name.";
+          const dob = dobError(c.dob);
+          if (dob) return kids.length > 1 ? `${c.name.trim()}: ${dob}` : dob;
+          if (c.interests.length === 0) return `Pick at least one interest for ${who}.`;
+        }
+        return null;
+      }
+      case "prefs":
+        return postcodeError(postcode)
+          ?? (regions.length === 0 ? "Pick at least one area you'd like activities in." : null);
+      case "terms":
+        return acceptedTerms ? null : "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
+      default:
+        return null;
+    }
+  }
+
+  /** The first screen with a problem, checked before the account is created. */
+  function firstProblem(): { id: string; message: string } | null {
+    for (const id of steps) {
+      const message = validateStep(id);
+      if (message) return { id, message };
+    }
+    return null;
+  }
+
+  function next() {
+    const problem = validateStep(current);
+    if (problem) {
+      setNudges((n) => (problem === error ? n + 1 : 0));
+      setError(problem);
+      return;
+    }
+    show(steps[stepIndex + 1]);
+  }
+
+  function addChild() {
+    setKids((xs) => [...xs, newChildDraft()]);
+  }
+
+  /** The form's answers in the shape the sign-up and the profile tables want. */
+  function answers() {
+    const { budget_min: budgetMin, budget_max: budgetMax } = budgetRange(budgets);
+    return {
+      days: [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])],
+      budgetMin,
+      budgetMax,
+      // Interests across all children drive the parent-level recommendations.
+      allInterests: [...new Set(kids.flatMap((k) => k.interests))],
+      draftKids: kids.map((k) => ({
+        name: k.name.trim(),
+        dob: k.dob,
+        gender: k.gender,
+        interests: k.interests,
+      })),
+    };
+  }
+
+  /** Last screen. Create the account (once), then either drop the parent into
+   *  their matches on Free, or hand off to Stripe Checkout to start paying for Plus. */
   async function submit(plan: "free" | "plus") {
     setBusy(true);
     setError(null);
@@ -189,31 +229,21 @@ export default function OnboardingPage() {
     // Create the account exactly once. If Plus checkout then fails the parent
     // is already signed up on Free, so a retry must not sign them up again.
     if (!accountReady) {
-      const problem = validate();
+      const problem = firstProblem();
       if (problem) {
         setBusy(false);
-        setStep(1);
-        setError(problem);
+        show(problem.id);
+        setError(problem.message);
         return;
       }
 
-      const days = [...(weekdays ? ["mon", "tue", "wed", "thu", "fri"] : []), ...(weekend ? ["sat", "sun"] : [])];
-      const { budget_min: budgetMin, budget_max: budgetMax } = budgetRange(budgets);
-      // Interests across all children drive the parent-level recommendations.
-      const allInterests = [...new Set(kids.flatMap((k) => k.interests))];
-      const draftKids = kids.map((k) => ({
-        name: k.name.trim(),
-        dob: k.dob,
-        gender: k.gender,
-        interests: k.interests,
-      }));
-
+      const { days, budgetMin, budgetMax, allInterests, draftKids } = answers();
       // Send the whole form with the sign-up. When confirmation is required there
       // is no session to write with, so the trigger persists this server-side —
       // QA: "the children hadn't been saved and I had to add them again".
       const { error: signErr, emailExists: alreadyExists } = await signUp(email, password, fullName, {
         full_name: fullName,
-        phone: phone || null,
+        phone: whatsappE164(waCountry, waNumber),
         postal_code: postcode.trim(),
         terms_accepted: acceptedTerms,
         marketing_consent: marketingConsent,
@@ -237,62 +267,75 @@ export default function OnboardingPage() {
       }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // Email confirmation is on: there's no session to write with, and none
-        // to start Plus checkout from. The Plus choice rides along on the
-        // account (see the sign-up intent above) and PendingPlusGate takes the
-        // parent to payment as soon as they're back, confirmed. Dropping it
-        // here used to leave a parent who picked Plus on Free, never charged.
+        // Email confirmation is on: no session yet. The parent types the code
+        // from the email on the next screen and carries on from there (see
+        // confirmSent below). The Plus choice also rides along on the account
+        // (the sign-up intent above), so a parent who taps the email's link
+        // instead still gets taken to payment by PendingPlusGate.
         setBusy(false);
+        setConfirmPlan(plan);
         return setConfirmSent(true);
       }
-      const uid = session.user.id;
-      // Best-effort: resolves postal_code to coordinates so the recommendation
-      // engine's distance scoring (compute_recommendations_for_child) has
-      // something to work with — it previously read parent_profiles.latitude/
-      // longitude, which nothing ever wrote, so every parent fell back to its
-      // neutral "unknown location" score regardless of where they actually are.
-      const coords = await geocodePostal(postcode);
-      await supabase.from("parent_profiles").update({
-        full_name: fullName,
-        phone: phone || null,
-        postal_code: postcode.trim(),
-        terms_accepted_at: new Date().toISOString(),
-        // Finishing the wizard is what onboarding is; /admin → Parents reads this.
-        onboarding_completed_at: new Date().toISOString(),
-        // Only written when actually ticked — a null here means no consent, and
-        // that is the state every account starts in.
-        ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
-        ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
-      }).eq("id", uid);
-      await supabase.from("user_preferences").update({
-        preferred_days: days as never,
-        preferred_times: times as never,
-        preferred_regions: regions as never,
-        budget_min: budgetMin,
-        budget_max: budgetMax,
-        interests: allInterests,
-      }).eq("user_id", uid);
-      // The trigger already seeded these from the sign-up metadata; only insert
-      // when it didn't, so confirming by email never doubles a parent's children.
-      const { count } = await supabase
-        .from("children")
-        .select("id", { count: "exact", head: true })
-        .eq("parent_id", uid);
-      if (!count) {
-        await supabase.from("children").insert(
-          draftKids.map((k) => ({
-            parent_id: uid,
-            name: k.name,
-            date_of_birth: k.dob,
-            gender: k.gender as never,
-            interests: k.interests,
-            notes: null,
-          }))
-        );
-      }
-      setAccountReady(true);
+      await finishSignup(session.user.id);
     }
 
+    await startPlan(plan);
+  }
+
+  /** Signed in at last: save what the sign-up trigger can't (coordinates, the
+   *  onboarding-complete stamp) and make sure the children landed. */
+  async function finishSignup(uid: string) {
+    const { days, budgetMin, budgetMax, allInterests, draftKids } = answers();
+    // Best-effort: resolves postal_code to coordinates so the recommendation
+    // engine's distance scoring (compute_recommendations_for_child) has
+    // something to work with — it previously read parent_profiles.latitude/
+    // longitude, which nothing ever wrote, so every parent fell back to its
+    // neutral "unknown location" score regardless of where they actually are.
+    const coords = await geocodePostal(postcode);
+    await supabase.from("parent_profiles").update({
+      full_name: fullName,
+      phone: whatsappE164(waCountry, waNumber),
+      postal_code: postcode.trim(),
+      terms_accepted_at: new Date().toISOString(),
+      // Finishing the wizard is what onboarding is; /admin → Parents reads this.
+      onboarding_completed_at: new Date().toISOString(),
+      // Only written when actually ticked — a null here means no consent, and
+      // that is the state every account starts in.
+      ...(marketingConsent ? { marketing_consent_at: new Date().toISOString() } : {}),
+      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
+    }).eq("id", uid);
+    await supabase.from("user_preferences").update({
+      preferred_days: days as never,
+      preferred_times: times as never,
+      preferred_regions: regions as never,
+      budget_min: budgetMin,
+      budget_max: budgetMax,
+      interests: allInterests,
+    }).eq("user_id", uid);
+    // The trigger already seeded these from the sign-up metadata; only insert
+    // when it didn't, so confirming by email never doubles a parent's children.
+    const { count } = await supabase
+      .from("children")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", uid);
+    if (!count) {
+      await supabase.from("children").insert(
+        draftKids.map((k) => ({
+          parent_id: uid,
+          name: k.name,
+          date_of_birth: k.dob,
+          gender: k.gender as never,
+          interests: k.interests,
+          notes: null,
+        }))
+      );
+    }
+    setAccountReady(true);
+  }
+
+  /** The account exists and the parent is signed in: Plus goes to Stripe, Free
+   *  goes to their matches. */
+  async function startPlan(plan: "free" | "plus") {
     if (plan === "plus") {
       // Hand off to Stripe Checkout to start Plus (same call PricingPage
       // uses). On any failure the parent stays signed up on Free — surface it
@@ -325,21 +368,22 @@ export default function OnboardingPage() {
   if (confirmSent) {
     return (
       <PageShell active="/onboarding">
-        <main className="mx-auto max-w-[460px] px-6 py-16 text-center">
-          <h1 className="text-2xl font-black">Check your email</h1>
-          <p className="mt-3 font-semibold text-[#44507b]">We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
-          <p className="mt-3 text-sm font-semibold text-[#6D748D]">Can't find it? Check your spam or promotions folder — it can take a couple of minutes.</p>
-          <ResendConfirmation email={email} startCoolingDown />
-          <p className="mt-3 text-sm font-semibold text-[#5a6690]">
-            Wrong address?{" "}
-            <button type="button" onClick={() => setConfirmSent(false)} className="font-black text-baby-pink underline">
-              Go back and fix it
-            </button>
-          </p>
-          <p className="mt-2 text-sm font-semibold text-[#5a6690]">
-            Still nothing? Email <a href="mailto:hello@babybrain.sg" className="font-black text-baby-pink underline">hello@babybrain.sg</a> and we'll activate your account.
-          </p>
-          <Button href="/login" className="mt-5">Go to log in</Button>
+        <main className="mx-auto max-w-[460px] px-6 py-16">
+          <VerifyEmailCode
+            email={email}
+            startCoolingDown
+            onChangeEmail={() => { setConfirmSent(false); show("you"); }}
+            onVerified={async () => {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) return;
+              await finishSignup(session.user.id);
+              // Back on the plan screen, so a failed Plus checkout shows its
+              // message there with the retry buttons.
+              setConfirmSent(false);
+              setBusy(true);
+              await startPlan(confirmPlan);
+            }}
+          />
         </main>
       </PageShell>
     );
@@ -353,7 +397,7 @@ export default function OnboardingPage() {
           <p className="mt-3 font-semibold text-[#44507b]">An account with <strong>{email}</strong> already exists. Log in instead, or use a different email to sign up.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
           <p className="mt-4 text-sm font-semibold text-[#5a6690]">
-            <button type="button" onClick={() => setEmailExists(false)} className="font-black text-baby-pink underline">
+            <button type="button" onClick={() => { setEmailExists(false); show("you"); }} className="font-black text-baby-pink underline">
               Use a different email
             </button>
           </p>
@@ -362,147 +406,184 @@ export default function OnboardingPage() {
     );
   }
 
-  return (
-    <PageShell active="/onboarding">
-      <main className="mx-auto max-w-[680px] px-6 py-6">
-        <p className="mb-3 text-xs font-black uppercase tracking-wide text-[#9a86c7]">
-          Step {step} of 2 · {step === 1 ? "Your family" : "Your plan"}
-        </p>
-
-        {step === 1 && (
-        <>
-        <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Let's get to know <span className="text-baby-pink">you</span></h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">Allow us to suggest activities that are a great fit for your family.</p>
-          <div className="mt-5 space-y-3">
-            <div><label className="mb-1 block text-sm font-black">Full name</label><input className={input} autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" /></div>
-            <div><label className="mb-1 block text-sm font-black">Email address</label><input type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" /></div>
-            <div>
-              <label className="mb-1 block text-sm font-black">Password</label>
-              <input type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
-              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
-                {PASSWORD_RULES.map((rule) => {
-                  const met = rule.test(password);
-                  return (
-                    <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
-                      {met ? "✓" : "•"} {rule.label}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-            <div><label className="mb-1 block text-sm font-black">Confirm password</label><input type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="mb-1 block text-sm font-black">Phone</label><input className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" /></div>
-              <div>
-                <label className="mb-1 block text-sm font-black">Postcode</label>
-                <input className={input} inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
-                <p className="mt-1 text-xs font-semibold text-[#6D748D]">Used to show what's near you.</p>
+  /* Each screen: one question (title), an optional line under it, the answer
+     controls, and what the main button says. Optional screens say "Skip"
+     until something is picked. */
+  let title: React.ReactNode = null;
+  let sub: React.ReactNode = null;
+  let body: React.ReactNode = null;
+  let cta = "Next";
+  switch (kind) {
+    case "you":
+      title = <>Create your <span className="text-baby-pink">account</span></>;
+      sub = "We'll suggest activities that are a great fit for your family. You'll log in with these details.";
+      body = (
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-name">Full name</label>
+            <input id="su-name" className={input} autoFocus autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-email">Email address</label>
+            <input id="su-email" type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+          </div>
+          <WhatsAppField country={waCountry} number={waNumber} onCountry={setWaCountry} onNumber={setWaNumber} inputClass={input} />
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-password">Password</label>
+            <input id="su-password" type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+            <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
+              {PASSWORD_RULES.map((rule) => {
+                const met = rule.test(password);
+                return (
+                  <li key={rule.label} className={met ? "text-[#A8E59A]" : "text-[#6D748D]"}>
+                    {met ? "✓" : "•"} {rule.label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-confirm">Confirm password</label>
+            <input id="su-confirm" type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" />
+          </div>
+        </div>
+      );
+      break;
+    case "children":
+      title = <>Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></>;
+      sub = "We use this to match activities to each child. Add as many as you like.";
+      body = (
+        <div className="space-y-5">
+          {kids.map((k, i) => (
+            <section key={k.key} aria-label={`Child ${i + 1}`} className="space-y-4 rounded-[16px] border border-[#FEE9D7] bg-white p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-black">{kids.length > 1 ? `Child ${i + 1}` : "Your child"}</h2>
+                {kids.length > 1 && (
+                  <button type="button" onClick={() => setKids((xs) => xs.filter((x) => x.key !== k.key))} className="text-sm font-bold text-[#6D748D] hover:underline">Remove</button>
+                )}
               </div>
-            </div>
-          </div>
-
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="pin" className="h-4 w-4 text-baby-pink" /> Areas you'd like activities in</h2>
-          <p className="mt-1 text-xs font-semibold text-[#6D748D]">Pick any areas that work for you — they don't have to be near home.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {REGION_FILTERS.map(([v, l]) => (
-              <Chip key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Chip>
-            ))}
-          </div>
-
-          <h2 className="mt-5 flex items-center gap-2 font-black"><Icon name="heart" className="h-4 w-4 text-baby-pink" /> Your preferences</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Chip on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Chip>
-            <Chip on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Chip>
-            {TIME_CHIPS.map(([v, l]) => <Chip key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Chip>)}
-            {BUDGET_CHIPS.map(([k, l]) => <Chip key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Chip>)}
-          </div>
-        </section>
-
-        <section className="mt-4 rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <h1 className="text-[26px] font-black">Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></h1>
-          <div className="mt-4">
-            {kids.map((k, i) => (
-              <ChildDraftFields
-                key={k.key}
-                draft={k}
-                index={i}
-                total={kids.length}
-                cats={cats}
-                onChange={(next) => setKids((xs) => xs.map((x) => (x.key === k.key ? next : x)))}
-                onRemove={() => setKids((xs) => xs.filter((x) => x.key !== k.key))}
-              />
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4"
-            onClick={() => setKids((xs) => [...xs, newChildDraft()])}
-          >
+              <div>
+                <label className="mb-1 block text-sm font-black" htmlFor={`kid-name-${k.key}`}>Name</label>
+                <input id={`kid-name-${k.key}`} className={input} autoComplete="off" autoCapitalize="words" value={k.name} onChange={(e) => updateChild(k.key, { name: e.target.value })} placeholder="e.g. Emma" />
+              </div>
+              <div>
+                <p className="mb-1 text-sm font-black">Date of birth <span className="font-semibold text-[#6D748D]">(day first, e.g. 14/03/2024)</span></p>
+                <DateInput value={k.dob} onChange={(iso) => updateChild(k.key, { dob: iso })} className={input} />
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-black">Boy or girl?</p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[["female", "Girl"], ["male", "Boy"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
+                    <Option key={v} on={k.gender === v} onClick={() => updateChild(k.key, { gender: v })}>{l}</Option>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-black">What does {k.name.trim() || "your child"} love? <span className="font-semibold text-[#6D748D]">(pick as many as you like)</span></p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {cats.map((c) => (
+                    <Option
+                      key={c.slug}
+                      on={k.interests.includes(c.slug)}
+                      onClick={() => updateChild(k.key, {
+                        interests: k.interests.includes(c.slug)
+                          ? k.interests.filter((x) => x !== c.slug)
+                          : [...k.interests, c.slug],
+                      })}
+                    >
+                      {c.name}
+                    </Option>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ))}
+          <Button type="button" variant="outline" className="w-full" onClick={addChild}>
             <Icon name="user" className="h-4 w-4" /> Add another child
           </Button>
-        </section>
-
-        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
-          <input
-            type="checkbox"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-baby-pink"
-          />
-          <span>
-            I hereby acknowledge that I have read the{" "}
-            <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
-            {", "}
-            <a href="/terms#tou" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Use</a>
-            {" and "}
-            <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
-            {" and confirm that I am in agreement with and legally bound by such terms, as modified from time to time."}
-          </span>
-        </label>
-
-        <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
-          <input
-            type="checkbox"
-            checked={marketingConsent}
-            onChange={(e) => setMarketingConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-baby-pink"
-          />
-          <span>
-            I agree and consent to receive marketing communications from BabyBrain to update me on
-            offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
-            services via any means of communication such as via email.
-          </span>
-        </label>
-
-        {/* The error sits directly above the CTA — QA found it at the top of the
-            page where you had to scroll back up to see why nothing happened. */}
-        {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
-            {error}
-          </p>
-        )}
-
-        <Button type="button" onClick={goToPlanStep} className="mt-3 w-full justify-center">Continue →</Button>
-        <p className="mt-3 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
-        </>
-        )}
-
-        {step === 2 && (
+        </div>
+      );
+      break;
+    case "prefs":
+      title = <>What suits <span className="text-baby-pink">you</span>?</>;
+      sub = "Your postcode and areas show what's near you. Days, times and budget are optional.";
+      body = (
+        <div className="space-y-6">
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-postcode">Home postcode</label>
+            <input id="su-postcode" className={input} autoFocus inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-black">Which areas work for you? <span className="font-semibold text-[#6D748D]">(they don't have to be near home)</span></p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {REGION_FILTERS.map(([v, l]) => (
+                <Option key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Option>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-black">Days <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2">
+              <Option on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Option>
+              <Option on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Option>
+            </div>
+            <p className="mb-2 mt-4 text-sm font-black">Times <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {TIME_CHIPS.map(([v, l]) => <Option key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Option>)}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-black">Budget <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2">
+              {BUDGET_CHIPS.map(([k, l]) => <Option key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Option>)}
+            </div>
+          </div>
+        </div>
+      );
+      break;
+    case "terms":
+      title = <>One last <span className="text-baby-pink">thing</span></>;
+      body = (
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-baby-pink"
+            />
+            <span>
+              I hereby acknowledge that I have read the{" "}
+              <a href="/terms" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Service</a>
+              {", "}
+              <a href="/terms#tou" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Terms of Use</a>
+              {" and "}
+              <a href="/terms#privacy" target="_blank" rel="noreferrer" className="font-black text-baby-pink underline">Privacy Policy</a>
+              {" and confirm that I am in agreement with and legally bound by such terms, as modified from time to time."}
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#FEE9D7] bg-white p-4 text-sm font-semibold text-[#44507b]">
+            <input
+              type="checkbox"
+              checked={marketingConsent}
+              onChange={(e) => setMarketingConsent(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-baby-pink"
+            />
+            <span>
+              I agree and consent to receive marketing communications from BabyBrain to update me on
+              offers, promotions, discounts, events, news, etc. relating to BabyBrain's products and
+              services via any means of communication such as via email.
+            </span>
+          </label>
+        </div>
+      );
+      break;
+    case "plan":
+      title = <>Choose your <span className="text-baby-pink">plan</span></>;
+      sub = "Start free, or unlock everything with Plus. Change or cancel any time from your profile.";
+      body = (
         <>
-        <section className="rounded-[14px] border border-[#FEE9D7] bg-white p-5">
-          <button
-            type="button"
-            onClick={() => { setStep(1); setError(null); window.scrollTo(0, 0); }}
-            className="text-sm font-black text-baby-pink hover:underline"
-          >
-            ← Back
-          </button>
-          <h1 className="mt-2 text-[26px] font-black">Choose your <span className="text-baby-pink">plan</span></h1>
-          <p className="mt-1 text-sm font-semibold text-[#44507b]">Start free, or unlock everything with Plus. Change or cancel any time from your profile.</p>
-
-          <div className="mx-auto mt-4 grid h-11 max-w-[340px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 text-sm font-black">
+          <div className="mx-auto grid h-11 max-w-[340px] grid-cols-2 rounded-full border border-[#DCD2D5] bg-white p-1 text-sm font-black">
             <button
               type="button"
               onClick={() => setBilling("monthly")}
@@ -584,40 +665,86 @@ export default function OnboardingPage() {
               : "By continuing you agree to our "}
             <a href="/terms" target="_blank" rel="noreferrer" className="text-palette-blue underline">Terms &amp; Conditions</a>.
           </p>
-        </section>
+        </>
+      );
+      break;
+  }
 
+  const progress = stepIndex / (steps.length - 1);
+  const hasNext = kind !== "plan";
+
+  return (
+    <PageShell active="/onboarding">
+      <div className="h-1 bg-[#FEEBF2]" aria-hidden="true">
+        <div className="h-1 bg-[#FA4D8D]" style={{ width: `${Math.max(progress, 0.04) * 100}%` }} />
+      </div>
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (hasNext) next(); }}
+        noValidate
+        className={`mx-auto flex min-h-[calc(100dvh-80px)] flex-col px-6 pb-6 pt-4 sm:min-h-0 sm:pb-16 sm:pt-8 ${kind === "plan" ? "max-w-[680px]" : "max-w-[540px]"}`}
+      >
+        <div className="h-8">
+          {stepIndex > 0 && (
+            <button type="button" onClick={() => window.history.back()} className="text-sm font-black text-baby-pink hover:underline">
+              ← Back
+            </button>
+          )}
+        </div>
+
+        {/* Keyed by screen so each one mounts fresh and its first field takes focus. */}
+        <div key={current} className="mt-2">
+          <h1 className="text-[28px] font-black leading-tight sm:text-[32px]">{title}</h1>
+          {sub && <p className="mt-2 text-sm font-semibold text-[#44507b]">{sub}</p>}
+          <div className="mt-6">{body}</div>
+        </div>
+
+        {/* The error sits directly above the button — QA found it at the top of
+            the page where you had to scroll back up to see why nothing happened. */}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
+          // Keyed on the nudge count, so a repeat press re-mounts it: the animation
+          // replays and screen readers hear the notice again.
+          <p key={nudges} role="alert" className={`mt-5 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta ${nudges > 0 ? "bb-notice-nudge" : ""}`}>
             {error}
           </p>
         )}
 
-        <Button
-          type="button"
-          onClick={() => submit(selectedPlan)}
-          className="mt-3 w-full justify-center"
-          disabled={busy}
-        >
-          {busy
-            ? "Setting up…"
-            : selectedPlan === "plus"
-              ? "Start Plus →"
-              : "Create my account →"}
-        </Button>
-
-        {selectedPlan === "plus" && (
-          <button
-            type="button"
-            onClick={() => submit("free")}
-            disabled={busy}
-            className="mt-3 w-full text-center text-sm font-bold text-[#6E748D] hover:text-[#59658d] disabled:opacity-50"
-          >
-            I'll decide later — start on the Free plan
-          </button>
-        )}
-        </>
-        )}
-      </main>
+        {/* On a phone the button sits at the bottom of the screen, under the thumb. */}
+        <div className="mt-auto pt-6 sm:mt-8">
+          {hasNext && (
+            <Button type="submit" size="lg" className="w-full justify-center">{cta}{cta !== "Skip" && " →"}</Button>
+          )}
+          {kind === "plan" && (
+            <>
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => submit(selectedPlan)}
+                className="w-full justify-center"
+                disabled={busy}
+              >
+                {busy
+                  ? "Setting up…"
+                  : selectedPlan === "plus"
+                    ? "Start Plus →"
+                    : "Create my account →"}
+              </Button>
+              {selectedPlan === "plus" && (
+                <button
+                  type="button"
+                  onClick={() => submit("free")}
+                  disabled={busy}
+                  className="mt-3 w-full text-center text-sm font-bold text-[#6E748D] hover:text-[#59658d] disabled:opacity-50"
+                >
+                  I'll decide later — start on the Free plan
+                </button>
+              )}
+            </>
+          )}
+          {kind === "you" && (
+            <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
+          )}
+        </div>
+      </form>
     </PageShell>
   );
 }

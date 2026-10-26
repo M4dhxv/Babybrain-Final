@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
 import { Link } from 'react-router-dom';
-import { CalendarCheck, UserPlus, UserMinus, CalendarX, Star, Gift, Bell, ChevronRight } from 'lucide-react';
+import { CalendarCheck, UserPlus, UserMinus, CalendarX, Star, Gift, Bell, ChevronRight, Ticket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
@@ -11,7 +11,7 @@ import { useEffect } from 'react';
 
 type Event = {
   /** 'waitlist_left' (00247): a waitlist place was cancelled — never a booking, so not 'cancellation'. */
-  kind: 'booking' | 'waitlist' | 'waitlist_left' | 'cancellation' | 'review' | 'token_issued';
+  kind: 'booking' | 'waitlist' | 'waitlist_left' | 'cancellation' | 'review' | 'token_issued' | 'credit_returned';
   event_at: string;
   actor_name: string;
   activity_title: string | null;
@@ -30,6 +30,7 @@ const KIND_META: Record<Event['kind'], { icon: typeof Bell; color: string; bg: s
   cancellation: { icon: CalendarX, color: 'text-red-600', bg: 'bg-red-100' },
   review: { icon: Star, color: 'text-purple-600', bg: 'bg-purple-100' },
   token_issued: { icon: Gift, color: 'text-blue-600', bg: 'bg-blue-100' },
+  credit_returned: { icon: Ticket, color: 'text-indigo-600', bg: 'bg-indigo-100' },
 };
 // A kind added to the feed later than this build: shown plainly instead of breaking the page.
 const FALLBACK_META = { icon: Bell, color: 'text-gray-600', bg: 'bg-gray-100' };
@@ -48,7 +49,12 @@ function message(e: Event): string {
     case 'review':
       return `${e.actor_name} left a ${e.detail ?? '?'}★ review${e.activity_title ? ` on ${e.activity_title}` : ''}.`;
     case 'token_issued':
-      return `A make-up token was issued to ${e.actor_name}.`;
+      // detail 'auto' (00255): given automatically for a cancelled booking.
+      return e.detail === 'auto'
+        ? `${e.actor_name} was given a make-up token for a cancelled booking${e.activity_title ? ` (${e.activity_title})` : ''}.`
+        : `A make-up token was issued to ${e.actor_name}.`;
+    case 'credit_returned':
+      return `${e.actor_name}'s package credit was returned after cancelling ${e.activity_title ?? 'a session'}.`;
     default:
       return `${e.actor_name}${e.activity_title ? ` · ${e.activity_title}` : ''}`;
   }
@@ -64,6 +70,9 @@ function target(e: Event): string {
     return `/bookings?${q.toString()}`;
   }
   if (e.kind === 'review') return e.review_id ? `/reviews?review=${e.review_id}` : '/reviews';
+  if ((e.kind === 'credit_returned' || (e.kind === 'token_issued' && e.detail === 'auto')) && e.session_id && e.booking_id) {
+    return `/bookings?${new URLSearchParams({ session: e.session_id, booking: e.booking_id }).toString()}`;
+  }
   if (e.kind === 'token_issued') return e.token_id ? `/make-up-tokens?token=${e.token_id}` : '/make-up-tokens';
   return '/bookings';
 }
@@ -79,6 +88,8 @@ export default function NotificationsPage() {
         // 00247: cancelled waitlist places come back as 'waitlist_left' only when asked, so a
         // portal built before that kind existed keeps getting 'cancellation' and never breaks.
         p_waitlist_left: true,
+        // 00255: automatic make-up tokens and returned package credits, only when asked.
+        p_compensation: true,
       });
       // Newest first. The feed RPC unions five kinds; sort here as well so the
       // page is right even before the ordering fix (00240) is applied.

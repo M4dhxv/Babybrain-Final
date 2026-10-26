@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiGet, apiPost } from "../lib/api";
 import { supabase } from "../lib/supabase";
+import { routePath } from "../lib/nav";
 
 /* A parent who picks Plus on the sign-up form has no session until they
  * confirm their email, so payment can't start there. The choice is kept on the
@@ -56,6 +57,9 @@ export function PendingPlusGate() {
     }
     // Just back from Stripe: the plan may not have landed yet, so leave it be.
     if (/[?&](billing=success|session_id=)/.test(window.location.search)) return;
+    // Confirmed with the email code on the sign-up page itself, which starts
+    // checkout on its own once it has saved the rest of the profile.
+    if (routePath() === "/onboarding") return;
 
     let cancelled = false;
     (async () => {

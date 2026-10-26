@@ -15,6 +15,7 @@
     "validate:stripe-connect": "node scripts/validate-stripe-connect.mjs",
     "validate:commercials": "node scripts/validate-commercials.mjs",
     "migrate": "node scripts/apply-migration.mjs",
+    "check:migrations": "node scripts/check-migration-regressions.mjs",
     "stripe:webhooks": "node scripts/setup-stripe-webhooks.mjs",
     "validate:payments": "node scripts/validate-payments.mjs",
     "stripe:portal": "node scripts/setup-stripe-portal.mjs",
