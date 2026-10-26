@@ -55,7 +55,7 @@ const ALLOWED = new Set([
   // Pure helpers / read-only lookups of already-public data
   'booking_display_name', 'change_when', 'change_venue', 'child_age_months', 'distance_km',
   'plan_commission_rate', 'sg_region', 'time_of_day', 'session_email_details', 'session_price',
-  // 00250: validates activity_locations.day_prices in a CHECK constraint, so writers must be able to run it
+  // 00250/00258: validates activities.day_prices in a CHECK constraint, so writers must be able to run it
   'valid_day_prices',
   // Term enrolment (00256): each checks the caller itself. term_quote and
   // term_headline_prices only read a published term's public numbers, so the

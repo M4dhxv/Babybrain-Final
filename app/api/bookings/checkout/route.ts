@@ -74,10 +74,10 @@ export async function POST(request: Request) {
 
   // Authoritative price + provider from the booked session's activity.
   //
-  // The price comes from session_price() — a venue's weekday price, the
-  // session's own, the venue's, then the activity's (migrations 00074, 00250).
-  // Reading activities.price alone would charge the wrong amount at a venue or
-  // on a day priced differently, and it is the same function the booking
+  // The price comes from session_price() — the activity's weekday price, the
+  // session's own, then the activity's (migrations 00074, 00258).
+  // Reading activities.price alone would charge the wrong amount on a
+  // day priced differently, and it is the same function the booking
   // trigger uses to decide free vs paid, so the two can't disagree.
   const { data: sess } = await admin
     .from('activity_sessions')

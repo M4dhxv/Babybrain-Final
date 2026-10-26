@@ -57,7 +57,7 @@ export async function GET(request: Request, { params }: Params) {
     } catch { return []; }
   });
 
-  const [profile, kids, prefs, sub, bookings, packages, seats, heldCount, devices, planPayments] = await Promise.all([
+  const [profile, kids, prefs, sub, bookings, packages, seats, heldCount, devices, planPayments, tokens] = await Promise.all([
     db.from('parent_profiles').select('*').eq('id', id).maybeSingle(),
     db.from('children').select('id, name, date_of_birth, gender, interests, notes, created_at').eq('parent_id', id).order('date_of_birth', { ascending: false }),
     db.from('user_preferences').select('preferred_days, preferred_times, preferred_regions, budget_min, budget_max, interests').eq('user_id', id).maybeSingle(),
@@ -74,6 +74,10 @@ export async function GET(request: Request, { params }: Params) {
     // Until migration 00215 is applied this read fails and the parent just shows no device.
     Promise.resolve(db.from('parent_devices').select('os, surface, last_seen_at').eq('user_id', id)).then((r) => r.data ?? [], () => []),
     planPaymentsQuery,
+    // Make-up tokens this parent holds or has used. A failed read leaves the section empty rather than the panel broken.
+    db.from('make_up_tokens')
+      .select('id, status, created_at, expires_at, auto_issued, child_id, origin_booking_id, redeemed_booking_id, provider:providers(business_name)')
+      .eq('user_id', id).order('created_at', { ascending: false }).limit(200),
   ]);
   if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
   if (!profile.data) return NextResponse.json({ error: 'No such parent.' }, { status: 404 });
@@ -88,6 +92,38 @@ export async function GET(request: Request, { params }: Params) {
     hasParentActivity: (kids.data?.length ?? 0) > 0 || (heldCount.count ?? 0) > 0,
   });
   const dev = summariseDevices(devices as { os: string; surface: string; last_seen_at: string }[]);
+
+  // Make-up tokens: where each came from (the cancelled booking), where it was used, and who it is for.
+  type TokenRow = {
+    id: string; status: string; created_at: string; expires_at: string | null; auto_issued: boolean | null;
+    child_id: string | null; origin_booking_id: string | null; redeemed_booking_id: string | null;
+    provider: { business_name: string | null } | null;
+  };
+  const tokenRows = (tokens.error ? [] : (tokens.data ?? [])) as unknown as TokenRow[];
+  const tokenBookingIds = [...new Set(tokenRows.flatMap((t) => [t.origin_booking_id, t.redeemed_booking_id]).filter((v): v is string => !!v))];
+  type TokenBooking = { id: string; session: { starts_at: string; activity: { title: string } | null } | null };
+  const tokenBookings = tokenBookingIds.length
+    ? ((await db.from('bookings').select('id, session:activity_sessions(starts_at, activity:activities(title))').in('id', tokenBookingIds)).data ?? []) as unknown as TokenBooking[]
+    : [];
+  const bookingById = new Map(tokenBookings.map((b) => [b.id, b]));
+  const kidNameById = new Map(((kids.data ?? []) as { id: string; name: string }[]).map((k) => [k.id, k.name]));
+  const bookingInfo = (bid: string | null) => {
+    const b = bid ? bookingById.get(bid) : null;
+    return b ? { activity: b.session?.activity?.title ?? null, startsAt: b.session?.starts_at ?? null } : null;
+  };
+  const nowMs = Date.now();
+  const makeUpTokens = tokenRows.map((t) => ({
+    id: t.id,
+    // A token past its expiry that is still marked issued is no longer usable, whatever the nightly job has stamped.
+    status: t.status === 'issued' && t.expires_at && Date.parse(t.expires_at) < nowMs ? 'expired' : t.status,
+    createdAt: t.created_at,
+    expiresAt: t.expires_at,
+    auto: !!t.auto_issued,
+    vendor: t.provider?.business_name ?? null,
+    forChild: t.child_id ? kidNameById.get(t.child_id) ?? null : null,
+    from: bookingInfo(t.origin_booking_id),
+    usedOn: bookingInfo(t.redeemed_booking_id),
+  }));
   return NextResponse.json({
     profile: p,
     children: kids.data ?? [],
@@ -96,6 +132,7 @@ export async function GET(request: Request, { params }: Params) {
     planPayments,
     bookings: bookings.data ?? [],
     packages: packages.data ?? [],
+    makeUpTokens,
     isTest: cls.kind === 'test',
     testSource: cls.testSource,
     testReason: cls.testReason,

@@ -152,23 +152,14 @@ export type SearchRow = {
   is_custom_location?: boolean | null;
   custom_location_label?: string | null;
   // Added in 00250 (search_activities only) — the price range across the
-  // activity's venues and weekday prices, and how many venues it runs at.
+  // activity's price and weekday prices. (location_count, also returned, is
+  // always 1 now and is ignored.)
   price_from?: number | null;
   price_to?: number | null;
-  location_count?: number | null;
 };
 
 /** A `search_activities` row — `matching_activities` plus the page's total. */
 type SearchActivitiesRow = SearchRow & { total_count: number | null };
-
-/** The venue a card names for a multi-venue activity: the first one in the
- *  areas the parent filtered on, else the primary (venues come primary first).
- *  Null for a single-venue activity, whose card keeps showing just its area. */
-function cardLocation(venues: ActivityVenue[], count: number, regions?: string[]): { name: string; region: SgRegion | null } | null {
-  if (count < 2 || venues.length === 0) return null;
-  const v = (regions?.length ? venues.find((x) => x.region && regions.includes(x.region)) : undefined) ?? venues[0];
-  return v.name ? { name: v.name, region: v.region } : null;
-}
 
 /** The card's date and time for one specific session start (used when a filter picked
  *  a session other than the next one). */
@@ -203,8 +194,6 @@ function toLiveActivity(r: SearchRow, regions?: string[]): LiveActivity {
     region: v.region,
     primary: v.primary,
   }));
-  const locationCount = r.location_count ?? 1;
-  const shown = cardLocation(venues, locationCount, regions);
   return {
     id: r.id,
     slug: r.slug,
@@ -239,9 +228,6 @@ function toLiveActivity(r: SearchRow, regions?: string[]): LiveActivity {
     ageMinMonths: r.age_min_months,
     ageMaxMonths: r.age_max_months,
     region: r.region,
-    locationName: shown?.name,
-    locationRegion: shown?.region ?? null,
-    extraLocations: shown ? locationCount - 1 : 0,
     isCustomLocation: r.is_custom_location ?? false,
     customLocationLabel: r.custom_location_label ?? null,
     durationMins: r.duration_mins,

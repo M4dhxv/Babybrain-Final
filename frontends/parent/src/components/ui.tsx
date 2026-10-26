@@ -974,13 +974,6 @@ function placeLabel(activity: Activity): React.ReactNode {
     return activity.customLocationLabel?.trim() || "Custom";
   }
   const region = regionLabel(activity.region);
-  // Several venues: the area of the one that matters, plus how many more
-  // ("Central +2"). A venue name is too long for the card; it falls back to
-  // the name only when the venue has no area.
-  if (activity.locationName && activity.extraLocations) {
-    const area = regionLabel(activity.locationRegion ?? activity.region) || activity.locationName;
-    return `${area} +${activity.extraLocations}`;
-  }
   if (region) return region;
   const venue = (activity.venue ?? "").replace(/\b\d{6}\b/g, "").replace(/[,\s]+$/, "").trim();
   return venue || "Singapore";

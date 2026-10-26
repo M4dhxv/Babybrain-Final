@@ -714,7 +714,7 @@ export function useRecommendations(children: Child[]) {
         // this join `toCard` had nothing to print and the card rendered an
         // empty category pill where Explore shows a real one.
         .select(
-          "id, child_id, score, reasons, activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address, logo_url, cover_image_url, gallery_urls), activity_sessions(starts_at, ends_at, wix_slot_key), activity_locations(location_id, price, day_prices, provider_locations(name, region)))"
+          "id, child_id, score, reasons, activities(*, activity_categories!activities_category_id_fkey(name), category_2:activity_categories!activities_secondary_category_id_fkey(name), providers(business_name, address, logo_url, cover_image_url, gallery_urls), activity_sessions(starts_at, ends_at, wix_slot_key))"
         )
         // Only the upcoming sessions ride along. Without this a Wix-linked
         // course carries every past slot it has ever run — hundreds of rows
@@ -849,24 +849,13 @@ export function toCard(
       logo_url?: string | null; cover_image_url?: string | null; gallery_urls?: string[] | null;
     } | null;
     activity_sessions?: { starts_at: string; ends_at: string | null; wix_slot_key?: string | null }[] | null;
-    /** 00250 — when the caller embeds them, the card shows the cheapest price and "+N" venues. */
-    activity_locations?: {
-      location_id: string;
-      price: number | null;
-      day_prices: Record<string, number> | null;
-      provider_locations?: { name: string; region: string | null } | null;
-    }[] | null;
   }
 ) {
-  // Cheapest price across venues and weekday prices — search_activities' price_from.
-  const locs = a.activity_locations ?? [];
-  const prices = [
-    a.price,
-    ...locs.map((l) => l.price ?? a.price),
-    ...locs.flatMap((l) => Object.values(l.day_prices ?? {})),
-  ].filter((v): v is number => v != null).map(Number);
+  // Cheapest price across the activity's price and its weekday prices — search_activities' price_from.
+  const prices = [a.price, ...Object.values((a as { day_prices?: Record<string, number> | null }).day_prices ?? {})]
+    .filter((v): v is number => v != null)
+    .map(Number);
   const priceFrom = prices.length ? Math.min(...prices) : null;
-  const primaryLoc = locs.length > 1 ? locs.find((l) => l.location_id === a.location_id) ?? locs[0] : null;
   // `search_activities` derives this server-side; here it comes off whichever
   // session has both ends, matching the RPC's definition — minus the whole-run
   // bookkeeping row ('wixcourse:…'), whose span is the entire course.
@@ -940,9 +929,6 @@ export function toCard(
     rating: a.rating_count > 0 ? `${Number(a.rating_avg).toFixed(1)} (${a.rating_count})` : "",
     providerName: a.providers?.business_name ?? a.provider_name ?? undefined,
     region: a.region ?? null,
-    locationName: primaryLoc?.provider_locations?.name,
-    locationRegion: primaryLoc?.provider_locations?.region ?? null,
-    extraLocations: primaryLoc?.provider_locations?.name ? locs.length - 1 : 0,
     price: priceFrom,
     durationMins,
   };

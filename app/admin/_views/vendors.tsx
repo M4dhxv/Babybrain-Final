@@ -1630,7 +1630,6 @@ function EditVendorModal({
                   {/* schedule — same options as the vendor portal's Manage schedule */}
                   <SessionsEditor
                     activity={a}
-                    venues={d.locations}
                     disabled={gone}
                     onChange={(sessions) => upd({ sessions })}
                     onRemoveSaved={(sessId) => setDropSess((p) => [...p, { actId: a.id, sessId }])}
@@ -1744,18 +1743,17 @@ const fmtYmd = (ymd: string) => new Date(`${ymd}T00:00:00+08:00`)
 
 type AddForm = {
   date: string; time: string; duration: string; capacity: string; weeks: string; weekdays: number[];
-  customDates: string[]; customDraft: string; teacher: string; studio: string; location_id: string; price: string;
+  customDates: string[]; customDraft: string; teacher: string; studio: string; price: string;
 };
 
-function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved }: {
-  activity: EditActivity; venues: EditLocation[]; disabled: boolean;
+function SessionsEditor({ activity: a, disabled, onChange, onRemoveSaved }: {
+  activity: EditActivity; disabled: boolean;
   onChange: (sessions: EditSession[]) => void; onRemoveSaved: (sessId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [add, setAdd] = useState<AddForm | null>(null);
   const [addErr, setAddErr] = useState<string | null>(null);
   const isWixClass = a.wix_kind != null;
-  const classVenue = venues.find((v) => v.id === a.location_id)?.name ?? 'no fixed venue';
   const sessions = a.sessions;
   const shown = showAll ? sessions : sessions.slice(0, SESSIONS_SHOWN);
   const small: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: C.muted, display: 'block', marginBottom: 3 };
@@ -1784,7 +1782,7 @@ function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved
       id: '', starts_at: `${ymd}T${add.time}`, ends_at: '', duration_mins: Number(add.duration),
       capacity: Number(add.capacity), teacher_name: add.teacher.trim() || null, studio: add.studio.trim() || null,
       price: priceValue(add.price),
-      location_id: add.location_id && add.location_id !== (a.location_id ?? '') ? add.location_id : null,
+      location_id: null, // a session is at the class's own venue
       ...NO_RULES,
     }));
     onChange([...sessions, ...drafts].sort((x, y) => (x.starts_at || '9').localeCompare(y.starts_at || '9')));
@@ -1806,7 +1804,7 @@ function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved
             + One session
           </button>
           <button type="button" disabled={disabled || !!add} style={btn}
-            onClick={() => { setAddErr(null); setAdd({ date: '', time: '', duration: '45', capacity: '', weeks: '4', weekdays: [], customDates: [], customDraft: '', teacher: '', studio: '', location_id: '', price: '' }); }}>
+            onClick={() => { setAddErr(null); setAdd({ date: '', time: '', duration: '45', capacity: '', weeks: '4', weekdays: [], customDates: [], customDraft: '', teacher: '', studio: '', price: '' }); }}>
             + Repeat weekly…
           </button>
         </span>
@@ -1864,16 +1862,11 @@ function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved
                 </div></div>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr 110px', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px', gap: 8, marginTop: 8 }}>
             <div><span style={small}>Teacher</span>
               <input value={add.teacher} style={input()} onChange={(e) => setAdd({ ...add, teacher: e.target.value })} /></div>
             <div><span style={small}>Room</span>
               <input value={add.studio} style={input()} onChange={(e) => setAdd({ ...add, studio: e.target.value })} /></div>
-            <div><span style={small}>Venue</span>
-              <Select value={add.location_id} style={input()} onChange={(e) => setAdd({ ...add, location_id: e.target.value })}>
-                <option value="">Class venue ({classVenue})</option>
-                {venues.filter((v) => v.id !== a.location_id).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </Select></div>
             <div><span style={small}>Price (SGD)</span>
               <input value={add.price} inputMode="decimal" style={input()} placeholder={a.price != null ? `class: ${a.price}` : 'class price'}
                 onChange={(e) => setAdd({ ...add, price: e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') })} /></div>
@@ -1897,7 +1890,7 @@ function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved
         const own = hasOwnRules(s);
         return (
           <div key={s.id || `new-${si}`} style={{ borderBottom: `1px solid ${C.border}`, padding: '8px 0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 70px 70px 90px 1.3fr 34px', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 70px 70px 90px 34px', gap: 6 }}>
               <input type="datetime-local" value={s.starts_at} style={input()} disabled={disabled || wix} aria-label="Starts"
                 onChange={(e) => edit(si, { starts_at: e.target.value })} />
               <input value={String(s.duration_mins)} inputMode="numeric" style={input()} disabled={disabled || wix} title="Minutes" aria-label="Minutes"
@@ -1907,11 +1900,6 @@ function SessionsEditor({ activity: a, venues, disabled, onChange, onRemoveSaved
               <input value={s.price == null ? '' : String(s.price)} inputMode="decimal" style={input()} disabled={disabled || wix} aria-label="Price"
                 placeholder={a.price != null ? `S$${a.price}` : 'price'} title="Blank = the class price"
                 onChange={(e) => { const v = e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1'); edit(si, { price: priceValue(v) }); }} />
-              <Select value={s.location_id ?? ''} style={input()} disabled={disabled || wix} aria-label="Venue"
-                onChange={(e) => edit(si, { location_id: e.target.value && e.target.value !== (a.location_id ?? '') ? e.target.value : null })}>
-                <option value="">Class venue</option>
-                {venues.filter((v) => v.id !== a.location_id).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </Select>
               <button type="button" style={{ ...tabBtn(false), color: C.pink, padding: 0 }} disabled={disabled} aria-label="Remove session"
                 onClick={() => { if (s.id) onRemoveSaved(s.id); onChange(sessions.filter((_, k) => k !== si)); }}>✕</button>
             </div>

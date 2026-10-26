@@ -17,8 +17,11 @@ import { createPortal } from 'react-dom';
  * portalled to <body> and fixed-positioned so a drawer's overflow never clips
  * it. Keyboard in the grid: ←→↑↓ move a day/week, PageUp/PageDown move a
  * month (Shift = a year), Home/End jump to the week's ends, Enter picks, Esc
- * closes. This file is intentionally identical between the vendor and parent
- * apps.
+ * closes. Clicking the month or the year in the header opens a month grid or a
+ * 12-year grid, so a date years away (a child's birthday) is two taps, not
+ * dozens of month arrows.
+ * The vendor portal has its own copy (components/ui/date-picker.tsx), which this
+ * change does not touch.
  */
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -100,6 +103,9 @@ export function DatePicker({
     return { y: p.y, m: p.m };
   });
   const [active, setActive] = useState<string>(value || todayISO());
+  // What the popover shows: the days of a month, a grid of months, or a grid of 12 years.
+  const [mode, setMode] = useState<'days' | 'months' | 'years'>('days');
+  const [yearStart, setYearStart] = useState(0);
   const [pos, setPos] = useState<{ left: number; top: number; drop: 'down' | 'up' }>({
     left: 0,
     top: 0,
@@ -150,8 +156,32 @@ export function DatePicker({
     const p = parseISO(start)!;
     setView({ y: p.y, m: p.m });
     setActive(start);
+    setMode('days');
     setOpen(true);
   };
+
+  /** Move the calendar to a month/year, keeping the active day where it can. */
+  const jumpTo = (y: number, m: number) => {
+    const day = parseISO(active)?.d ?? 1;
+    const last = new Date(y, m + 1, 0).getDate();
+    setView({ y, m });
+    setActive(toISO(y, m, Math.min(day, last)));
+  };
+  const openYears = () => {
+    setYearStart(view.y - (view.y % 12));
+    setMode('years');
+  };
+  const goPrev = () => {
+    if (mode === 'years') setYearStart((s) => s - 12);
+    else if (mode === 'months') setView((v) => ({ y: v.y - 1, m: v.m }));
+    else setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
+  };
+  const goNext = () => {
+    if (mode === 'years') setYearStart((s) => s + 12);
+    else if (mode === 'months') setView((v) => ({ y: v.y + 1, m: v.m }));
+    else setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
+  };
+  const yearOff = (y: number) => (!!min && y < +min.slice(0, 4)) || (!!max && y > +max.slice(0, 4));
 
   // Popover width from its own `w-[264px]` below — kept in sync with it so
   // the clamp actually matches what gets rendered.
@@ -202,8 +232,8 @@ export function DatePicker({
   }, [open]);
 
   useEffect(() => {
-    if (open) gridRef.current?.focus();
-  }, [open]);
+    if (open && mode === 'days') gridRef.current?.focus();
+  }, [open, mode]);
 
   // Keep the active day's month in view.
   useEffect(() => {
@@ -305,6 +335,14 @@ export function DatePicker({
         createPortal(
           <div
             ref={popRef}
+            onKeyDown={(e) => {
+              // Esc backs out of the month / year grid before it closes the whole calendar.
+              if (e.key === 'Escape' && mode !== 'days') {
+                e.preventDefault();
+                e.stopPropagation();
+                setMode('days');
+              }
+            }}
             style={{
               position: 'fixed',
               left: pos.left,
@@ -316,79 +354,144 @@ export function DatePicker({
             <div className="mb-2 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }))}
-                aria-label="Previous month"
+                onClick={goPrev}
+                aria-label={mode === 'years' ? 'Previous years' : mode === 'months' ? 'Previous year' : 'Previous month'}
                 className="grid h-7 w-7 place-items-center rounded-[7px] border border-[#EBE3E5] text-[#6E646B] hover:bg-[#FAF7F7]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
               </button>
-              <span className="text-[13px] font-semibold text-[#211D20]">
-                {MONTHS[view.m]} {view.y}
-              </span>
+              {mode === 'years' ? (
+                <span className="text-[13px] font-semibold text-[#211D20]">
+                  {yearStart} – {yearStart + 11}
+                </span>
+              ) : (
+                <span className="flex items-center gap-0.5 text-[13px] font-semibold text-[#211D20]">
+                  {mode === 'days' && (
+                    <button
+                      type="button"
+                      onClick={() => setMode('months')}
+                      aria-label="Choose month"
+                      className="inline-flex items-center gap-1 rounded-[7px] px-1.5 py-1 hover:bg-[#FEF5F8]"
+                    >
+                      {MONTHS[view.m]} <svg viewBox="0 0 24 24" className="h-3 w-3 text-[#FA4D8D]" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={openYears}
+                    aria-label="Choose year"
+                    className="inline-flex items-center gap-1 rounded-[7px] px-1.5 py-1 hover:bg-[#FEF5F8]"
+                  >
+                    {view.y} <svg viewBox="0 0 24 24" className="h-3 w-3 text-[#FA4D8D]" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                  </button>
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }))}
-                aria-label="Next month"
+                onClick={goNext}
+                aria-label={mode === 'years' ? 'Next years' : mode === 'months' ? 'Next year' : 'Next month'}
                 className="grid h-7 w-7 place-items-center rounded-[7px] border border-[#EBE3E5] text-[#6E646B] hover:bg-[#FAF7F7]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
               </button>
             </div>
 
-            <div className="grid grid-cols-7">
-              {WEEKDAYS.map((w) => (
-                <span key={w} className="py-1 text-center text-[11px] font-medium text-[#6E646B]">{w}</span>
-              ))}
-            </div>
+            {mode === 'days' && (
+              <>
+              <div className="grid grid-cols-7">
+                {WEEKDAYS.map((w) => (
+                  <span key={w} className="py-1 text-center text-[11px] font-medium text-[#6E646B]">{w}</span>
+                ))}
+              </div>
 
-            <div
-              ref={gridRef}
-              role="grid"
-              tabIndex={0}
-              onKeyDown={onGridKey}
-              className="grid grid-cols-7 gap-0.5 outline-none"
-            >
-              {cells.map((c) => {
-                const isSel = c.iso === value;
-                const isToday = c.iso === todayISO();
-                const isActive = c.iso === active;
-                const off = disabledISO(c.iso);
-                return (
+              <div
+                ref={gridRef}
+                role="grid"
+                tabIndex={0}
+                onKeyDown={onGridKey}
+                className="grid grid-cols-7 gap-0.5 outline-none"
+              >
+                {cells.map((c) => {
+                  const isSel = c.iso === value;
+                  const isToday = c.iso === todayISO();
+                  const isActive = c.iso === active;
+                  const off = disabledISO(c.iso);
+                  return (
+                    <button
+                      key={c.iso}
+                      type="button"
+                      role="gridcell"
+                      aria-selected={isSel}
+                      aria-current={isToday ? 'date' : undefined}
+                      disabled={off}
+                      tabIndex={-1}
+                      // Hovering an outside-month cell must not move `active` —
+                      // the effect above shifts `view` to follow it, which
+                      // redraws the grid under a stationary cursor, lands a
+                      // *different* adjacent-month cell under it, and repeats:
+                      // a runaway month-jump loop on hover alone. Clicking one
+                      // still navigates via `pick` below.
+                      onMouseEnter={() => !off && !c.outside && setActive(c.iso)}
+                      onClick={() => pick(c.iso)}
+                      className={[
+                        'relative flex h-8 items-center justify-center rounded-full text-[12.5px]',
+                        off
+                          ? 'cursor-not-allowed text-[#C9C2C4] opacity-50'
+                          : isSel
+                            ? 'bg-[#FA4D8D] font-medium text-white'
+                            : c.outside
+                              ? 'text-[#C9C2C4] hover:bg-[#FEF5F8]'
+                              : isToday
+                                ? 'font-medium text-[#FA4D8D] shadow-[inset_0_0_0_1.5px_#FA4D8D] hover:bg-[#FEF5F8]'
+                                : 'text-[#211D20] hover:bg-[#FEF5F8]',
+                        isActive && !isSel && !off ? 'ring-1 ring-inset ring-[#FFC1D6]' : '',
+                      ].join(' ')}
+                    >
+                      {c.day}
+                    </button>
+                  );
+                })}
+              </div>
+
+              </>
+            )}
+
+            {mode === 'months' && (
+              <div className="grid h-[226px] grid-cols-3 content-start gap-1.5" role="grid" aria-label="Choose month">
+                {MONTHS.map((name, i) => (
                   <button
-                    key={c.iso}
+                    key={name}
                     type="button"
-                    role="gridcell"
-                    aria-selected={isSel}
-                    aria-current={isToday ? 'date' : undefined}
-                    disabled={off}
-                    tabIndex={-1}
-                    // Hovering an outside-month cell must not move `active` —
-                    // the effect above shifts `view` to follow it, which
-                    // redraws the grid under a stationary cursor, lands a
-                    // *different* adjacent-month cell under it, and repeats:
-                    // a runaway month-jump loop on hover alone. Clicking one
-                    // still navigates via `pick` below.
-                    onMouseEnter={() => !off && !c.outside && setActive(c.iso)}
-                    onClick={() => pick(c.iso)}
-                    className={[
-                      'relative flex h-8 items-center justify-center rounded-full text-[12.5px]',
-                      off
-                        ? 'cursor-not-allowed text-[#C9C2C4] opacity-50'
-                        : isSel
-                          ? 'bg-[#FA4D8D] font-medium text-white'
-                          : c.outside
-                            ? 'text-[#C9C2C4] hover:bg-[#FEF5F8]'
-                            : isToday
-                              ? 'font-medium text-[#FA4D8D] shadow-[inset_0_0_0_1.5px_#FA4D8D] hover:bg-[#FEF5F8]'
-                              : 'text-[#211D20] hover:bg-[#FEF5F8]',
-                      isActive && !isSel && !off ? 'ring-1 ring-inset ring-[#FFC1D6]' : '',
-                    ].join(' ')}
+                    onClick={() => {
+                      jumpTo(view.y, i);
+                      setMode('days');
+                    }}
+                    className={['flex h-12 items-center justify-center rounded-[10px] text-[13px]', false ? 'cursor-not-allowed text-[#C9C2C4] opacity-50' : i === view.m ? 'bg-[#FA4D8D] font-medium text-white' : i === new Date().getMonth() && view.y === new Date().getFullYear() ? 'font-medium text-[#FA4D8D] shadow-[inset_0_0_0_1.5px_#FA4D8D] hover:bg-[#FEF5F8]' : 'text-[#211D20] hover:bg-[#FEF5F8]'].join(' ')}
                   >
-                    {c.day}
+                    {name.slice(0, 3)}
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {mode === 'years' && (
+              <div className="grid h-[226px] grid-cols-3 content-start gap-1.5" role="grid" aria-label="Choose year">
+                {Array.from({ length: 12 }, (_, i) => yearStart + i).map((y) => (
+                  <button
+                    key={y}
+                    type="button"
+                    disabled={yearOff(y)}
+                    onClick={() => {
+                      jumpTo(y, view.m);
+                      setMode('days');
+                    }}
+                    className={['flex h-12 items-center justify-center rounded-[10px] text-[13px]', yearOff(y) ? 'cursor-not-allowed text-[#C9C2C4] opacity-50' : y === view.y ? 'bg-[#FA4D8D] font-medium text-white' : y === new Date().getFullYear() ? 'font-medium text-[#FA4D8D] shadow-[inset_0_0_0_1.5px_#FA4D8D] hover:bg-[#FEF5F8]' : 'text-[#211D20] hover:bg-[#FEF5F8]'].join(' ')}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="mt-2 flex items-center justify-between text-xs font-medium">
               <button type="button" onClick={clear} className="text-[#6E646B] hover:text-[#211D20]">

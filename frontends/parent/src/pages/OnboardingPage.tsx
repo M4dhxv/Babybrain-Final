@@ -416,7 +416,7 @@ export default function OnboardingPage() {
   switch (kind) {
     case "you":
       title = <>Create your <span className="text-baby-pink">account</span></>;
-      sub = "We'll suggest activities that are a great fit for your family. You'll log in with these details.";
+      sub = "You’ll log in with these details.";
       body = (
         <div className="space-y-4">
           <div>
@@ -451,7 +451,7 @@ export default function OnboardingPage() {
       break;
     case "children":
       title = <>Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></>;
-      sub = "We use this to match activities to each child. Add as many as you like.";
+      sub = "We use this to match activities to each child.";
       body = (
         <div className="space-y-5">
           {kids.map((k, i) => (
@@ -506,7 +506,7 @@ export default function OnboardingPage() {
       break;
     case "prefs":
       title = <>What suits <span className="text-baby-pink">you</span>?</>;
-      sub = "Your postcode and areas show what's near you. Days, times and budget are optional.";
+      sub = "We’ll suggest activities that are a great fit for your family.";
       body = (
         <div className="space-y-6">
           <div>

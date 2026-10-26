@@ -252,8 +252,6 @@ export default function BookingPage() {
   const [preselectPending, setPreselectPending] = useState(Boolean(wantSessionId));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dateKey, setDateKey] = useState<string | null>(null);
-  // The venue picked in "Choose a location" (00250), for a class at several venues.
-  const [locId, setLocId] = useState<string | null>(null);
   const [count, setCount] = useState(() => {
     const n = Number(getParam("count"));
     return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 1;
@@ -531,35 +529,9 @@ export default function BookingPage() {
   // Group upcoming sessions by date so the user picks a date, then a time.
   // Times past their booking cut-off are left out: the server would refuse
   // them with "Bookings for this class are closed." (founder, 28 Sep).
-  //
-  // A class at several venues (00250) asks for the venue first and then offers
-  // only that venue's times. A session with no venue of its own is at the
-  // activity's primary one. Until the parent picks, the primary venue (or the
-  // first with open times) is selected, so there is always something to show.
-  const sessLoc = (s: ActivitySession) => s.location_id ?? activity?.location_id ?? null;
-  const locationIds =
-    isEvent || isCourse
-      ? []
-      : Array.from(
-          new Set(
-            sessions
-              .filter((s) => bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes))
-              .map(sessLoc)
-              .filter((v): v is string => !!v)
-          )
-        );
-  const pickLocation = locationIds.length > 1;
-  const activeLoc = !pickLocation
-    ? null
-    : locId && locationIds.includes(locId)
-      ? locId
-      : activity?.location_id && locationIds.includes(activity.location_id)
-        ? activity.location_id
-        : locationIds[0];
   const byDate: Record<string, ActivitySession[]> = {};
   sessions.forEach((s) => {
     if (!bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes)) return;
-    if (pickLocation && sessLoc(s) !== activeLoc) return;
     (byDate[sgDay(s.starts_at)] ||= []).push(s);
   });
   const dates = Object.keys(byDate);
@@ -617,13 +589,12 @@ export default function BookingPage() {
     const wantOpen = !!want && (isEvent || isCourse ||
       bookingOpen(want.starts_at, want.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes));
     if (want && wantOpen) {
-      setLocId(want.location_id ?? activity?.location_id ?? null);
       setDateKey(sgDay(want.starts_at));
       setSessionId(want.id);
       if (want.wix_day) setPickedDays(draft?.pickedDays.length ? draft.pickedDays : [want.wix_day]);
     }
     setPreselectPending(false);
-  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes, activity?.location_id, draft]);
+  }, [preselectPending, loading, sessions, wantSessionId, isEvent, isCourse, activity?.booking_cutoff_minutes, draft]);
 
   useEffect(() => {
     if (preselectPending) return;
@@ -787,43 +758,13 @@ export default function BookingPage() {
      use, so all three agree on what this booking costs. */
   const sessionPrice = selected?.price != null ? Number(selected.price) : null;
 
-  /* The chosen session's own venue, when it differs from the activity's
-     (migration 00074). Resolved lazily — most activities run at one venue, so
-     there is nothing to look up. */
-  const [sessionVenues, setSessionVenues] = useState<Record<string, string>>({});
-  // Venue names alone, for the "Choose a location" buttons.
-  const [venueNames, setVenueNames] = useState<Record<string, { name: string; address: string | null }>>({});
-  const primaryLocId = activity?.location_id ?? null;
-  useEffect(() => {
-    const ids = Array.from(new Set([...sessions.map((x) => x.location_id), primaryLocId].filter((v): v is string => !!v)));
-    if (ids.length === 0) return;
-    let cancelled = false;
-    supabase
-      .from("provider_locations")
-      .select("id, name, address")
-      .in("id", ids)
-      .then(({ data }) => {
-        if (cancelled) return;
-        const next: Record<string, string> = {};
-        const names: Record<string, { name: string; address: string | null }> = {};
-        for (const l of (data ?? []) as Array<{ id: string; name: string; address: string | null }>) {
-          next[l.id] = [l.name, l.address].filter(Boolean).join(", ");
-          names[l.id] = { name: l.name, address: l.address };
-        }
-        setSessionVenues(next);
-        setVenueNames(names);
-      });
-    return () => { cancelled = true; };
-  }, [sessions, primaryLocId]);
-  const sessionVenueAddress = selected?.location_id ? sessionVenues[selected.location_id] ?? null : null;
-  /* Where this booking actually happens: the chosen session's own venue once
-     it has one (migration 00074), then the activity's own address, then the
-     provider's — the last mirrors search_activities' coalesce(a.address,
+  /* Where this booking actually happens: the activity's own address, then the
+     provider's. The last mirrors search_activities' coalesce(a.address,
      p.address), so an activity that deliberately carries no address of its
      own still shows its provider's here instead of a blank. Drives the
      on-page displays as well as the /booked redirect below. */
   const displayVenue =
-    sessionVenueAddress ?? activity?.address ?? activity?.provider_contact?.address ?? null;
+    activity?.address ?? activity?.provider_contact?.address ?? null;
   /* QA 24/08: "I added a teacher and studio to an activity but it doesn't show
      anywhere on the parent side — it should show on the class option, booking
      confirmation screen and they should be able to see under bookings."
@@ -854,16 +795,14 @@ export default function BookingPage() {
      doesn't also see the "cheapest" one highlighted for a reason they never
      asked for. A provider who's never touched the new checkbox keeps
      today's auto behaviour unchanged. */
-  /* Sessions can carry their own venue and price (migration 00074), so the
-     venue/price on this page can shift as the parent picks a different date
-     or time. Flag it up front, but only for classes that actually have that
-     variation — no point warning about a class that always runs at one
-     venue for one price. */
+  /* Sessions can carry their own price (migration 00074), so the price on
+     this page can shift as the parent picks a different date or time. Flag it
+     up front, but only for classes that actually have that variation — no
+     point warning about a class that always costs the same. */
   const slotDetailsVary =
     !isEvent &&
     sessions.length > 1 &&
-    (new Set(sessions.map((s) => s.location_id ?? "_")).size > 1 ||
-      new Set(sessions.map((s) => (s.price == null ? "_" : String(s.price)))).size > 1);
+    new Set(sessions.map((s) => (s.price == null ? "_" : String(s.price)))).size > 1;
   useEffect(() => {
     if (!isMultiDay || !coversDays || coversDays < 2) return;
     // A 5-day package for a 5-day event: nothing to choose.
@@ -1855,29 +1794,10 @@ export default function BookingPage() {
                         Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
                       </p>
                     )}
-                    {pickLocation && (
-                      <section>
-                        <h3 className="mb-4 text-xl font-black">1. Choose a location</h3>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {locationIds.map((id) => (
-                            <button
-                              key={id}
-                              type="button"
-                              onClick={() => { setLocId(id); setDateKey(null); setSessionId(null); }}
-                              className={`rounded-[10px] border px-4 py-3 text-left text-sm font-bold ${id === activeLoc ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}
-                              aria-pressed={id === activeLoc}
-                            >
-                              <span className="block">{venueNames[id]?.name ?? "Location"}</span>
-                              {venueNames[id]?.address && <span className="mt-1 block text-xs font-semibold text-[#697390]">{venueNames[id]?.address}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    )}
                     {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
                       <>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">{pickLocation ? 2 : 1}. Choose a date</h3>
+                          <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {/* Split "Tue, 25 Aug" into two fixed lines rather than
                                 letting it wrap naturally — a plain text wrap broke
@@ -1896,7 +1816,7 @@ export default function BookingPage() {
                           </div>
                         </section>
                         <section>
-                          <h3 className="mb-4 text-xl font-black">{pickLocation ? 3 : 2}. Choose a time</h3>
+                          <h3 className="mb-4 text-xl font-black">2. Choose a time</h3>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
                             {times.map((s) => (
                               <button key={s.id} onClick={() => setSessionId(s.id)} className={`rounded-[10px] border px-3 py-4 font-bold ${s.id === sessionId ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}>

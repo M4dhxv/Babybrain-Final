@@ -5,9 +5,9 @@ type Admin = ReturnType<typeof createAdminClient>;
 /**
  * What one session costs, from the database's own session_price() — the same
  * rule the booking and waitlist triggers use to decide free vs paid, so a
- * checkout can't charge something they disagree with. Since 00250 that rule is
- * a venue's weekday price, then the session's own price, then the venue's
- * price, then the activity's. Returns null when the session is unknown.
+ * checkout can't charge something they disagree with. Since 00258 that rule is
+ * the activity's weekday price, then the session's own price, then the
+ * activity's price. Returns null when the session is unknown.
  */
 export async function sessionPrice(admin: Admin, sessionId: string): Promise<number | null> {
   const rpc = admin.rpc as unknown as (
