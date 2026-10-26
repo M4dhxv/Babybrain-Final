@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { PageShell, Button, Icon, DateInput } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { VerifyEmailCode } from "../components/VerifyEmailCode";
@@ -37,10 +37,44 @@ const newChildDraft = (): ChildDraft => ({
    postcode, areas, days and times, budget), "terms" and finally "plan". Each
    screen is its own browser history entry, so the phone's Back button goes to
    the previous screen instead of leaving sign-up and losing everything typed.
-   No step counts are shown on purpose: the bar at the top is the only
-   progress cue. */
+   The bar at the top and a "Step 2 of 5" label show progress. */
 const STEPS = ["you", "children", "prefs", "terms", "plan"] as const;
 type Screen = (typeof STEPS)[number];
+const STEP_LABELS: Record<Screen, string> = { you: "Account", children: "Children", prefs: "Preferences", terms: "Terms", plan: "Plan" };
+
+/** Focus a screen's first field only where there's a physical keyboard: on a
+ *  phone it opens the keyboard and scrolls the page away from the title. */
+const canAutoFocus = typeof window !== "undefined" && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+/** Password input with a show/hide toggle. */
+function PasswordField({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type={shown ? "text" : "password"}
+        className="h-12 w-full rounded-[12px] border border-[#FED7E4] bg-white pl-4 pr-16 text-base font-semibold"
+        autoComplete="new-password"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={() => setShown((s) => !s)}
+        aria-pressed={shown}
+        aria-label={shown ? "Hide password" : "Show password"}
+        className="absolute inset-y-0 right-0 px-4 text-sm font-black text-baby-pink"
+      >
+        {shown ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
 
 /** A big tappable choice — the one-question screens' version of a chip. */
 function Option({ on, onClick, children, className = "" }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
@@ -119,7 +153,6 @@ export default function OnboardingPage() {
       const s = (e.state as { signupStep?: string } | null)?.signupStep;
       setError(null);
       setStep(s ?? "you");
-      window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -129,6 +162,12 @@ export default function OnboardingPage() {
   const stepIndex = Math.max(0, steps.indexOf(step));
   const current = steps[stepIndex];
   const kind = current as Screen;
+
+  // Each screen starts at its title. Done once the new screen is in the DOM
+  // (scrolling before React swaps it in left phones part-way down the page).
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [current]);
 
   // Which screens parents reach, so drop-off between them shows up in PostHog.
   useEffect(() => {
@@ -140,7 +179,6 @@ export default function OnboardingPage() {
     setNudges(0);
     setStep(id);
     window.history.pushState({ ...window.history.state, signupStep: id }, "");
-    window.scrollTo(0, 0);
   }
 
   const toggle = (list: string[], v: string, set: (x: string[]) => void) =>
@@ -188,11 +226,39 @@ export default function OnboardingPage() {
     return null;
   }
 
+  /** The element to bring into view for the first problem on a screen. */
+  function problemTarget(id: string): string | null {
+    switch (id) {
+      case "you":
+        if (!fullName.trim()) return "su-name";
+        if (emailError(email)) return "su-email";
+        if (passwordError(password)) return "su-password";
+        if (password !== confirmPassword) return "su-confirm";
+        return "su-whatsapp";
+      case "children": {
+        for (const c of kids) {
+          if (!c.name.trim()) return `kid-name-${c.key}`;
+          if (dobError(c.dob) || c.interests.length === 0) return `kid-${c.key}`;
+        }
+        return null;
+      }
+      case "prefs":
+        return postcodeError(postcode) ? "su-postcode" : "su-regions";
+      default:
+        return null;
+    }
+  }
+
   function next() {
     const problem = validateStep(current);
     if (problem) {
       setNudges((n) => (problem === error ? n + 1 : 0));
       setError(problem);
+      // Phones: the field with the problem is often off-screen, above the button.
+      const target = problemTarget(current);
+      requestAnimationFrame(() => {
+        document.getElementById(target ?? "")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
       return;
     }
     show(steps[stepIndex + 1]);
@@ -421,7 +487,7 @@ export default function OnboardingPage() {
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-name">Full name</label>
-            <input id="su-name" className={input} autoFocus autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
+            <input id="su-name" className={input} autoFocus={canAutoFocus} autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
           </div>
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-email">Email address</label>
@@ -430,7 +496,7 @@ export default function OnboardingPage() {
           <WhatsAppField country={waCountry} number={waNumber} onCountry={setWaCountry} onNumber={setWaNumber} inputClass={input} />
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-password">Password</label>
-            <input id="su-password" type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+            <PasswordField id="su-password" value={password} onChange={setPassword} placeholder="Create a password" />
             <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
               {PASSWORD_RULES.map((rule) => {
                 const met = rule.test(password);
@@ -444,7 +510,7 @@ export default function OnboardingPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-confirm">Confirm password</label>
-            <input id="su-confirm" type="password" className={input} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" />
+            <PasswordField id="su-confirm" value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter your password" />
           </div>
         </div>
       );
@@ -455,7 +521,7 @@ export default function OnboardingPage() {
       body = (
         <div className="space-y-5">
           {kids.map((k, i) => (
-            <section key={k.key} aria-label={`Child ${i + 1}`} className="space-y-4 rounded-[16px] border border-[#FEE9D7] bg-white p-4 sm:p-5">
+            <section key={k.key} id={`kid-${k.key}`} aria-label={`Child ${i + 1}`} className="space-y-4 rounded-[16px] border border-[#FEE9D7] bg-white p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-black">{kids.length > 1 ? `Child ${i + 1}` : "Your child"}</h2>
                 {kids.length > 1 && (
@@ -511,10 +577,10 @@ export default function OnboardingPage() {
         <div className="space-y-6">
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-postcode">Home postcode</label>
-            <input id="su-postcode" className={input} autoFocus inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
+            <input id="su-postcode" className={input} autoFocus={canAutoFocus} inputMode="numeric" pattern="[0-9]*" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
           </div>
           <div>
-            <p className="mb-2 text-sm font-black">Which areas work for you? <span className="font-semibold text-[#6D748D]">(they don't have to be near home)</span></p>
+            <p id="su-regions" className="mb-2 text-sm font-black">Which areas work for you? <span className="font-semibold text-[#6D748D]">(they don't have to be near home)</span></p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {REGION_FILTERS.map(([v, l]) => (
                 <Option key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Option>
@@ -683,12 +749,15 @@ export default function OnboardingPage() {
         noValidate
         className={`mx-auto flex min-h-[calc(100dvh-80px)] flex-col px-6 pb-6 pt-4 sm:min-h-0 sm:pb-16 sm:pt-8 ${kind === "plan" ? "max-w-[680px]" : "max-w-[540px]"}`}
       >
-        <div className="h-8">
-          {stepIndex > 0 && (
+        <div className="flex h-8 items-center justify-between">
+          {stepIndex > 0 ? (
             <button type="button" onClick={() => window.history.back()} className="text-sm font-black text-baby-pink hover:underline">
               ← Back
             </button>
-          )}
+          ) : <span />}
+          <p className="text-xs font-black uppercase tracking-wide text-[#6D748D]">
+            Step {stepIndex + 1} of {steps.length} · {STEP_LABELS[kind]}
+          </p>
         </div>
 
         {/* Keyed by screen so each one mounts fresh and its first field takes focus. */}
