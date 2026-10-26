@@ -163,6 +163,10 @@ export default function AdminPage() {
   const [phase, setPhase] = useState<'loading' | 'login' | 'denied' | 'ok'>('loading');
   const [tab, setTabState] = useState<Tab>('metrics');
   const [menuOpen, setMenuOpen] = useState(false);
+  // Bumped by every "jump to this parent / vendor / list" (the search box, the Metrics cards). The Parents,
+  // Vendor and Bookings views read the link only when they mount, so a jump made while that tab is already open
+  // changed the link and nothing else: the screen stayed put. A new key remounts the view so it reads the new link.
+  const [navKey, setNavKey] = useState(0);
 
   // The tab lives in ?tab= so a refresh keeps your place and a view can be linked to.
   useEffect(() => {
@@ -187,6 +191,7 @@ export default function AdminPage() {
     for (const [k, v] of Object.entries(filters)) if (v) url.searchParams.set(k, v);
     window.history.pushState(null, '', url);
     setTabState('parents');
+    setNavKey((k) => k + 1);
     setMenuOpen(false);
     window.scrollTo(0, 0);
   }, []);
@@ -198,6 +203,7 @@ export default function AdminPage() {
     for (const [k, v] of Object.entries(filters)) if (v) url.searchParams.set(k, v);
     window.history.pushState(null, '', url);
     setTabState('bookings');
+    setNavKey((k) => k + 1);
     setMenuOpen(false);
     window.scrollTo(0, 0);
   }, []);
@@ -209,6 +215,7 @@ export default function AdminPage() {
     url.searchParams.set('edit', id);
     window.history.pushState(null, '', url);
     setTabState('addVendor');
+    setNavKey((k) => k + 1);
     setMenuOpen(false);
     window.scrollTo(0, 0);
   }, []);
@@ -346,10 +353,10 @@ export default function AdminPage() {
           <h2 style={{ fontWeight: 900, fontSize: 20, color: C.blue, marginBottom: 12 }}>{TAB_LABEL[tab]}</h2>
         )}
         {viewOk('metrics') && <MetricsView key={refreshKey} onOpenParents={openParents} onOpenBookings={openBookings} onGoTab={(t) => setTab(t as Tab)} />}
-        {viewOk('parents') && <ParentsView key={refreshKey} />}
+        {viewOk('parents') && <ParentsView key={`${refreshKey}-${navKey}`} />}
         {viewOk('messages') && <MessagesView key={refreshKey} />}
         {viewOk('contact') && <ContactView key={refreshKey} />}
-        {viewOk('addVendor') && <AddVendorView key={refreshKey} />}
+        {viewOk('addVendor') && <AddVendorView key={`${refreshKey}-${navKey}`} />}
         {viewOk('vendors') && <VendorsView key={refreshKey} />}
         {viewOk('commercials') && <CommercialsView key={refreshKey} />}
         {viewOk('payments') && <PaymentsView key={refreshKey} />}
@@ -357,7 +364,7 @@ export default function AdminPage() {
         {viewOk('marketing') && <MarketingView key={refreshKey} />}
         {viewOk('leads') && <LeadsView key={refreshKey} />}
         {viewOk('reviews') && <ReviewsView key={refreshKey} />}
-        {viewOk('bookings') && <BookingsView key={refreshKey} onOpenParents={openParents} />}
+        {viewOk('bookings') && <BookingsView key={`${refreshKey}-${navKey}`} onOpenParents={openParents} />}
         {viewOk('events') && <EventsView key={refreshKey} />}
         {viewOk('audit') && <AuditView key={refreshKey} />}
       </main>

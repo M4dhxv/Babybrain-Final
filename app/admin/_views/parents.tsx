@@ -104,6 +104,13 @@ type ParentDetailT = {
     created_at: string; expires_at: string | null; stripe_payment_intent: string | null;
     package: { name: string; price_cents: number } | null; provider: { business_name: string } | null;
   }[];
+  /** Make-up tokens (absent from an older cached response, so treated as none). */
+  makeUpTokens?: {
+    id: string; status: 'issued' | 'redeemed' | 'expired'; createdAt: string; expiresAt: string | null; auto: boolean;
+    vendor: string | null; forChild: string | null;
+    from: { activity: string | null; startsAt: string | null } | null;
+    usedOn: { activity: string | null; startsAt: string | null } | null;
+  }[];
   bookings: {
     id: string; status: string; payment_status: string; amount: number | null; created_at: string; guest_name: string | null;
     /** Set when the seat was booked with a package credit (one booking row = one credit). */
@@ -317,6 +324,42 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
                 </tbody>
               </table>
             </div>)}
+
+          {(() => {
+            const tokens = d.makeUpTokens ?? [];
+            const available = tokens.filter((x) => x.status === 'issued').length;
+            const where = (w: { activity: string | null; startsAt: string | null } | null) =>
+              w ? `${w.activity ?? 'A class'}${w.startsAt ? ` · ${sgDay(w.startsAt)}` : ''}` : null;
+            return collapsible('tokens', `Make-up tokens (${tokens.length}${available ? `, ${available} available` : ''})`, tokens.length === 0
+              ? <div style={{ color: C.muted, fontSize: 13 }}>No make-up tokens.</div>
+              : <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead><tr style={{ color: C.muted, textAlign: 'left' }}>
+                    <th style={th()}>Vendor</th><th style={th()}>From</th><th style={th()}>Status</th><th style={th()}>Issued</th><th style={th()}>Expires</th>
+                  </tr></thead>
+                  <tbody>
+                    {tokens.map((tk) => (
+                      <tr key={tk.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                        <td style={td()}>
+                          {tk.vendor ?? dash}
+                          {tk.forChild && <div style={{ color: C.muted, fontSize: 11 }}>for {tk.forChild}</div>}
+                        </td>
+                        <td style={td()}>
+                          {where(tk.from) ?? <span style={{ color: C.muted }}>No booking linked</span>}
+                          <div style={{ color: C.muted, fontSize: 11 }}>{tk.auto ? 'Automatic, after a cancellation' : 'Issued by the vendor'}</div>
+                        </td>
+                        <td style={td()}>
+                          <Badge tone={tk.status === 'issued' ? 'blue' : tk.status === 'redeemed' ? 'green' : 'grey'}>{tk.status === 'issued' ? 'available' : tk.status}</Badge>
+                          {tk.status === 'redeemed' && where(tk.usedOn) && <div style={{ color: C.muted, fontSize: 11 }}>Used on {where(tk.usedOn)}</div>}
+                        </td>
+                        <td style={{ ...td(), whiteSpace: 'nowrap' }}>{sgDay(tk.createdAt)}</td>
+                        <td style={{ ...td(), whiteSpace: 'nowrap' }}>{tk.expiresAt ? sgDay(tk.expiresAt) : <span style={{ color: C.muted }}>Never</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>);
+          })()}
 
           {collapsible('bookings', `Bookings (${d.bookings.length}${d.bookings.length === 100 ? '+ , latest 100' : ''})`, d.bookings.length === 0
             ? <div style={{ color: C.muted, fontSize: 13 }}>No bookings yet.</div>
@@ -664,4 +707,3 @@ export default function ParentsView() {
     </div>
   );
 }
-
