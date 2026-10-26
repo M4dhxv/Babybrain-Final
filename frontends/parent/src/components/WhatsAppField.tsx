@@ -43,9 +43,6 @@ export function WhatsAppField({
           placeholder={country === "SG" ? "9123 4567" : "Number without +" + dial}
         />
       </div>
-      <p className="mt-1.5 text-xs font-semibold text-[#6D748D]">
-        We use WhatsApp to send you booking confirmations and reminders.
-      </p>
     </div>
   );
 }
