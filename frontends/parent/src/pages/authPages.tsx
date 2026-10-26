@@ -14,12 +14,12 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Supabase's wording for "signed up but never confirmed the email". The
-  // parent can confirm right here with the code from that email.
-  const [confirming, setConfirming] = useState(false);
   // An email link that was already used (mail scanners often open links before
   // the parent does) or has expired comes back here (app/auth/callback).
   const [linkExpired] = useState(() => getParam("link") === "expired" || getParam("error") === "auth");
+  // Supabase's wording for "signed up but never confirmed the email". The
+  // parent can confirm right here with the code from that email.
+  const [confirming, setConfirming] = useState(false);
   // Nearly everyone lands on Profile right after signing in. Fetch its chunks
   // now, while they type, so the post-login hop isn't a download + skeleton.
   useEffect(() => { warmDashboard(); }, []);
@@ -41,9 +41,10 @@ export function LoginPage() {
     }
     finish();
   }
-  /** Signed in (by password, or by confirming with the email code). Runs once: the effect below can see the new session before
-   *  submit() gets back here, and a second run would read the destination's
-   *  URL, find no `next`, and send the parent to /profile instead. */
+  /** Signed in (by password, or by confirming with the email code). Runs once:
+   *  the effect below can see the new session before submit() gets back here,
+   *  and a second run would read the destination's URL, find no `next`, and
+   *  send the parent to /profile instead. */
   const finished = useRef(false);
   function finish() {
     if (finished.current) return;

@@ -1173,34 +1173,29 @@ export default function ActivityDetailPage() {
                   )}
                 </p>
               )}
-              {otherLocs.length > 0 && (
-                <details className="group -mt-1 text-right">
-                  <summary className="cursor-pointer list-none text-xs font-semibold text-baby-cta [&::-webkit-details-marker]:hidden">
-                    Also at {otherLocs.length} other location{otherLocs.length > 1 ? "s" : ""}
-                    <span className="ml-1 inline-block group-open:rotate-180">▾</span>
-                  </summary>
-                  <ul className="mt-2 space-y-2 text-left font-normal">
-                    {otherLocs.map((l) => (
-                      <li key={l.id} className="rounded-lg bg-[#FAF7F7] px-3 py-2">
-                        <span className="block font-semibold">{l.name}</span>
-                        {l.address && (
-                          <a
-                            href={mapsUrl([l.name, l.address].join(", "))}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta"
-                          >
-                            {l.address}
-                          </a>
-                        )}
-                        {l.price != null && Number(l.price) !== Number(activity.price ?? NaN) && (
-                          <span className="block text-xs">{Number(l.price) === 0 ? "Free" : `$${Number(l.price)} per session`}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
+              {/* Every other venue reads exactly like the first Location row. */}
+              {otherLocs.map((l, i) => {
+                const text = l.address && l.address.trim().length > 12 ? l.address : [l.name, l.address].filter(Boolean).join(", ");
+                const differs = l.price != null && Number(l.price) !== Number(activity.price ?? NaN);
+                return (
+                  <p key={l.id} className="flex items-start justify-between gap-3">
+                    <strong className="shrink-0">Location {i + 2}</strong>
+                    <span className="text-right">
+                      <a
+                        href={mapsUrl([l.name, l.address].filter(Boolean).join(", "))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline decoration-[#C7B1E6] decoration-dotted underline-offset-4 hover:text-baby-cta"
+                      >
+                        {text}
+                      </a>
+                      {differs && (
+                        <span className="block text-xs font-normal">{Number(l.price) === 0 ? "Free" : `$${Number(l.price)} per session`}</span>
+                      )}
+                    </span>
+                  </p>
+                );
+              })}
               {next && (
                 <p className="flex items-start justify-between gap-3">
                   <strong className="shrink-0">{activity.wix_service_type === "COURSE" ? "Runs" : "Next session"}</strong>

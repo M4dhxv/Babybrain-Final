@@ -54,3 +54,60 @@ export function dobError(iso: string): string | null {
 
 export const emailError = (email: string) =>
   /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) ? null : "Enter a valid email address.";
+
+
+/** WhatsApp numbers: the parent picks a country code (Singapore by default)
+ *  and types the number without it. Stored as E.164 ("+6591234567"). */
+export const WHATSAPP_COUNTRIES: { code: string; name: string; dial: string }[] = [
+  { code: "SG", name: "Singapore", dial: "65" },
+  { code: "MY", name: "Malaysia", dial: "60" },
+  { code: "ID", name: "Indonesia", dial: "62" },
+  { code: "TH", name: "Thailand", dial: "66" },
+  { code: "PH", name: "Philippines", dial: "63" },
+  { code: "VN", name: "Vietnam", dial: "84" },
+  { code: "HK", name: "Hong Kong", dial: "852" },
+  { code: "CN", name: "China", dial: "86" },
+  { code: "TW", name: "Taiwan", dial: "886" },
+  { code: "JP", name: "Japan", dial: "81" },
+  { code: "KR", name: "South Korea", dial: "82" },
+  { code: "IN", name: "India", dial: "91" },
+  { code: "AE", name: "United Arab Emirates", dial: "971" },
+  { code: "AU", name: "Australia", dial: "61" },
+  { code: "NZ", name: "New Zealand", dial: "64" },
+  { code: "GB", name: "United Kingdom", dial: "44" },
+  { code: "IE", name: "Ireland", dial: "353" },
+  { code: "FR", name: "France", dial: "33" },
+  { code: "DE", name: "Germany", dial: "49" },
+  { code: "US", name: "United States / Canada", dial: "1" },
+];
+
+export const DEFAULT_WHATSAPP_COUNTRY = "SG";
+
+/** The digits the parent typed, minus spaces, dashes and a leading 0 or the
+ *  country code they typed again. */
+function nationalDigits(country: string, raw: string): string {
+  const dial = WHATSAPP_COUNTRIES.find((c) => c.code === country)?.dial ?? "";
+  let d = raw.replace(/\D/g, "");
+  if (raw.trim().startsWith("+") && dial && d.startsWith(dial)) d = d.slice(dial.length);
+  else if (d.startsWith("00" + dial)) d = d.slice(2 + dial.length);
+  return d.replace(/^0+/, "");
+}
+
+export function whatsappError(country: string, raw: string): string | null {
+  if (!raw.trim()) return "Please add your WhatsApp number.";
+  const d = nationalDigits(country, raw);
+  if (country === "SG") {
+    // Singapore mobiles are 8 digits starting 8 or 9 (WhatsApp needs a mobile).
+    return /^[89]\d{7}$/.test(d) ? null : "Enter an 8-digit Singapore mobile number starting with 8 or 9.";
+  }
+  const dial = WHATSAPP_COUNTRIES.find((c) => c.code === country)?.dial ?? "";
+  if (d.length < 6 || dial.length + d.length > 15) return "That WhatsApp number doesn't look right. Check the country and the digits.";
+  return null;
+}
+
+/** E.164, or "" when the number isn't valid yet. */
+export function whatsappE164(country: string, raw: string): string {
+  if (whatsappError(country, raw)) return "";
+  const dial = WHATSAPP_COUNTRIES.find((c) => c.code === country)!.dial;
+  return `+${dial}${nationalDigits(country, raw)}`;
+}

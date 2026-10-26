@@ -13,7 +13,11 @@ import {
   emailError,
   passwordError,
   postcodeError,
+  whatsappError,
+  whatsappE164,
+  DEFAULT_WHATSAPP_COUNTRY,
 } from "../lib/validation";
+import { WhatsAppField } from "../components/WhatsAppField";
 import { TIME_CHIPS, BUDGET_CHIPS, REGION_FILTERS, budgetRange } from "./prefChips";
 import { FREE_PLAN_ITEMS, PLUS_PLAN_ITEMS } from "../lib/planFeatures";
 
@@ -27,43 +31,16 @@ const newChildDraft = (): ChildDraft => ({
   interests: [],
 });
 
-/* Sign-up is one question per screen. A screen is identified by a string id
-   rather than its position, because the list grows and shrinks as children are
-   added or removed: "name", "account", then four screens per child
-   ("child-name:<key>" and so on), "kids", "home", "areas", "when", "budget",
-   "terms" and finally "plan". Each screen is its own browser history entry, so
-   the phone's Back button goes to the previous question instead of leaving
-   sign-up and losing everything typed. No step counts are shown on purpose:
-   the bar at the top is the only progress cue. */
-const CHILD_SCREENS = ["child-name", "child-dob", "child-gender", "child-interests"] as const;
-type ChildScreen = (typeof CHILD_SCREENS)[number];
-
-function buildSteps(kids: ChildDraft[]): string[] {
-  return [
-    "name",
-    "account",
-    ...kids.flatMap((k) => CHILD_SCREENS.map((s) => `${s}:${k.key}`)),
-    "kids",
-    "home",
-    "areas",
-    "when",
-    "budget",
-    "terms",
-    "plan",
-  ];
-}
-
-/** "child-dob:123" → ["child-dob", "123"]; "home" → ["home", undefined]. */
-function parseStep(id: string): [string, string | undefined] {
-  const i = id.indexOf(":");
-  return i === -1 ? [id, undefined] : [id.slice(0, i), id.slice(i + 1)];
-}
-
-/** ISO yyyy-mm-dd → dd/mm/yyyy, the way parents typed it. */
-function dayFirst(iso: string) {
-  const [y, m, d] = iso.split("-");
-  return y && m && d ? `${d}/${m}/${y}` : iso;
-}
+/* Sign-up is five screens, grouped by topic rather than one question each:
+   "you" (name, account, WhatsApp number), "children" (every child's name,
+   birthday, gender and interests, with "Add another child"), "prefs" (home
+   postcode, areas, days and times, budget), "terms" and finally "plan". Each
+   screen is its own browser history entry, so the phone's Back button goes to
+   the previous screen instead of leaving sign-up and losing everything typed.
+   No step counts are shown on purpose: the bar at the top is the only
+   progress cue. */
+const STEPS = ["you", "children", "prefs", "terms", "plan"] as const;
+type Screen = (typeof STEPS)[number];
 
 /** A big tappable choice — the one-question screens' version of a chip. */
 function Option({ on, onClick, children, className = "" }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
@@ -87,7 +64,9 @@ export default function OnboardingPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [phone, setPhone] = useState("");
+  // WhatsApp is required: a country (Singapore unless changed) and the number without it.
+  const [waCountry, setWaCountry] = useState(DEFAULT_WHATSAPP_COUNTRY);
+  const [waNumber, setWaNumber] = useState("");
   const [postcode, setPostcode] = useState("");
   const [regions, setRegions] = useState<string[]>([]);
   const [weekdays, setWeekdays] = useState(false);
@@ -111,7 +90,7 @@ export default function OnboardingPage() {
   /* The account is only created on the last screen, once a plan is chosen, and
      `accountReady` guards against creating it twice if Plus checkout fails and
      the parent retries. */
-  const [step, setStep] = useState("name");
+  const [step, setStep] = useState<string>("you");
   const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "plus">("plus");
   const [accountReady, setAccountReady] = useState(false);
@@ -135,25 +114,21 @@ export default function OnboardingPage() {
      the current history entry (also resetting a reload, where the typed
      answers are gone, back to the start); every later screen is pushed. */
   useEffect(() => {
-    window.history.replaceState({ ...window.history.state, signupStep: "name" }, "");
+    window.history.replaceState({ ...window.history.state, signupStep: "you" }, "");
     const onPop = (e: PopStateEvent) => {
       const s = (e.state as { signupStep?: string } | null)?.signupStep;
       setError(null);
-      setStep(s ?? "name");
+      setStep(s ?? "you");
       window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const steps = buildSteps(kids);
-  // A history entry can point at a child that has since been removed; land on
-  // the children summary instead of a blank screen.
-  const stepIndex = steps.indexOf(step) === -1 ? steps.indexOf("kids") : steps.indexOf(step);
+  const steps: string[] = [...STEPS];
+  const stepIndex = Math.max(0, steps.indexOf(step));
   const current = steps[stepIndex];
-  const [kind, childKey] = parseStep(current);
-  const child = kids.find((k) => k.key === childKey);
-  const childLabel = child?.name.trim() || "your child";
+  const kind = current as Screen;
 
   // Which screens parents reach, so drop-off between them shows up in PostHog.
   useEffect(() => {
@@ -177,28 +152,26 @@ export default function OnboardingPage() {
   /** The problem on one screen, or null. Everything recommendations depend on
    *  is required, so a new parent can't land on an empty Matches page. */
   function validateStep(id: string): string | null {
-    const [k, key] = parseStep(id);
-    const c = kids.find((x) => x.key === key);
-    const who = c?.name.trim() || "your child";
-    switch (k) {
-      case "name":
-        return fullName.trim() ? null : "Please add your full name.";
-      case "account":
-        return emailError(email)
+    switch (id) {
+      case "you":
+        return (fullName.trim() ? null : "Please add your full name.")
+          ?? emailError(email)
           ?? passwordError(password)
-          ?? (password !== confirmPassword ? "Passwords don't match — please re-enter them." : null);
-      case "child-name":
-        return c?.name.trim() ? null : "Please add your child's name.";
-      case "child-dob": {
-        const problem = c ? dobError(c.dob) : null;
-        return problem;
+          ?? (password !== confirmPassword ? "Passwords don't match — please re-enter them." : null)
+          ?? whatsappError(waCountry, waNumber);
+      case "children": {
+        for (const [i, c] of kids.entries()) {
+          const who = c.name.trim() || (kids.length > 1 ? `child ${i + 1}` : "your child");
+          if (!c.name.trim()) return kids.length > 1 ? `Please add child ${i + 1}'s name.` : "Please add your child's name.";
+          const dob = dobError(c.dob);
+          if (dob) return kids.length > 1 ? `${c.name.trim()}: ${dob}` : dob;
+          if (c.interests.length === 0) return `Pick at least one interest for ${who}.`;
+        }
+        return null;
       }
-      case "child-interests":
-        return c && c.interests.length === 0 ? `Pick at least one interest for ${who}.` : null;
-      case "home":
-        return postcodeError(postcode);
-      case "areas":
-        return regions.length === 0 ? "Pick at least one area you'd like activities in." : null;
+      case "prefs":
+        return postcodeError(postcode)
+          ?? (regions.length === 0 ? "Pick at least one area you'd like activities in." : null);
       case "terms":
         return acceptedTerms ? null : "Please accept our Terms of Service, Terms of Use and Privacy Policy to continue.";
       default:
@@ -215,27 +188,7 @@ export default function OnboardingPage() {
     return null;
   }
 
-  // Backing out of a just-added child leaves an empty draft behind; drop it on
-  // the children summary rather than list an "Unnamed child".
-  useEffect(() => {
-    if (kind !== "kids") return;
-    setKids((xs) => {
-      const kept = xs.filter((k) => k.name.trim() || k.dob || k.interests.length);
-      return kept.length && kept.length !== xs.length ? kept : xs;
-    });
-  }, [kind]);
-
   function next() {
-    // Leaving the children summary: every child must be complete, so send the
-    // parent to the first unanswered question for any of them.
-    if (kind === "kids") {
-      const gap = steps.slice(0, stepIndex).map((id) => ({ id, message: validateStep(id) })).find((p) => p.message);
-      if (gap) {
-        show(gap.id);
-        setError(gap.message);
-        return;
-      }
-    }
     const problem = validateStep(current);
     if (problem) {
       setNudges((n) => (problem === error ? n + 1 : 0));
@@ -246,9 +199,7 @@ export default function OnboardingPage() {
   }
 
   function addChild() {
-    const k = newChildDraft();
-    setKids((xs) => [...xs, k]);
-    show(`child-name:${k.key}`);
+    setKids((xs) => [...xs, newChildDraft()]);
   }
 
   /** The form's answers in the shape the sign-up and the profile tables want. */
@@ -292,7 +243,7 @@ export default function OnboardingPage() {
       // QA: "the children hadn't been saved and I had to add them again".
       const { error: signErr, emailExists: alreadyExists } = await signUp(email, password, fullName, {
         full_name: fullName,
-        phone: phone || null,
+        phone: whatsappE164(waCountry, waNumber),
         postal_code: postcode.trim(),
         terms_accepted: acceptedTerms,
         marketing_consent: marketingConsent,
@@ -343,7 +294,7 @@ export default function OnboardingPage() {
     const coords = await geocodePostal(postcode);
     await supabase.from("parent_profiles").update({
       full_name: fullName,
-      phone: phone || null,
+      phone: whatsappE164(waCountry, waNumber),
       postal_code: postcode.trim(),
       terms_accepted_at: new Date().toISOString(),
       // Finishing the wizard is what onboarding is; /admin → Parents reads this.
@@ -421,7 +372,7 @@ export default function OnboardingPage() {
           <VerifyEmailCode
             email={email}
             startCoolingDown
-            onChangeEmail={() => { setConfirmSent(false); show("account"); }}
+            onChangeEmail={() => { setConfirmSent(false); show("you"); }}
             onVerified={async () => {
               const { data: { session } } = await supabase.auth.getSession();
               if (!session) return;
@@ -446,7 +397,7 @@ export default function OnboardingPage() {
           <p className="mt-3 font-semibold text-[#44507b]">An account with <strong>{email}</strong> already exists. Log in instead, or use a different email to sign up.</p>
           <Button href="/login" className="mt-5">Go to log in</Button>
           <p className="mt-4 text-sm font-semibold text-[#5a6690]">
-            <button type="button" onClick={() => { setEmailExists(false); show("account"); }} className="font-black text-baby-pink underline">
+            <button type="button" onClick={() => { setEmailExists(false); show("you"); }} className="font-black text-baby-pink underline">
               Use a different email
             </button>
           </p>
@@ -462,23 +413,21 @@ export default function OnboardingPage() {
   let sub: React.ReactNode = null;
   let body: React.ReactNode = null;
   let cta = "Next";
-  switch (kind as "name" | "account" | ChildScreen | "kids" | "home" | "areas" | "when" | "budget" | "terms" | "plan") {
-    case "name":
-      title = <>First, what's <span className="text-baby-pink">your</span> name?</>;
-      sub = "We'll suggest activities that are a great fit for your family.";
-      body = (
-        <input className={input} autoFocus autoComplete="name" autoCapitalize="words" aria-label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
-      );
-      break;
-    case "account":
+  switch (kind) {
+    case "you":
       title = <>Create your <span className="text-baby-pink">account</span></>;
-      sub = `Nice to meet you${fullName.trim() ? `, ${fullName.trim().split(/\s+/)[0]}` : ""}. You'll log in with these.`;
+      sub = "We'll suggest activities that are a great fit for your family. You'll log in with these details.";
       body = (
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-black" htmlFor="su-email">Email address</label>
-            <input id="su-email" type="email" className={input} autoFocus autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@gmail.com" />
+            <label className="mb-1 block text-sm font-black" htmlFor="su-name">Full name</label>
+            <input id="su-name" className={input} autoFocus autoComplete="name" autoCapitalize="words" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sarah Tan" />
           </div>
+          <div>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-email">Email address</label>
+            <input id="su-email" type="email" className={input} autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+          </div>
+          <WhatsAppField country={waCountry} number={waNumber} onCountry={setWaCountry} onNumber={setWaNumber} inputClass={input} />
           <div>
             <label className="mb-1 block text-sm font-black" htmlFor="su-password">Password</label>
             <input id="su-password" type="password" className={input} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
@@ -500,73 +449,54 @@ export default function OnboardingPage() {
         </div>
       );
       break;
-    case "child-name":
-      title = kids[0]?.key === childKey
-        ? <>What's your <span className="text-baby-pink">child's</span> name?</>
-        : <>What's your <span className="text-baby-pink">next child's</span> name?</>;
-      sub = kids[0]?.key === childKey ? "You can add more children in a moment." : null;
-      body = child && (
-        <input className={input} autoFocus autoComplete="off" autoCapitalize="words" aria-label="Child's name" value={child.name} onChange={(e) => updateChild(child.key, { name: e.target.value })} placeholder="e.g. Emma" />
-      );
-      break;
-    case "child-dob":
-      title = <>When was <span className="text-baby-pink">{childLabel}</span> born?</>;
-      sub = "Day first, e.g. 14/03/2024.";
-      body = child && (
-        <DateInput value={child.dob} onChange={(iso) => updateChild(child.key, { dob: iso })} className={input} />
-      );
-      break;
-    case "child-gender":
-      title = <>Is <span className="text-baby-pink">{childLabel}</span> a boy or a girl?</>;
-      body = child && (
-        <div className="grid gap-3">
-          {[["female", "Girl"], ["male", "Boy"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
-            // A single choice: tapping it answers the question and moves on.
-            <Option key={v} on={child.gender === v} onClick={() => { updateChild(child.key, { gender: v }); show(steps[stepIndex + 1]); }}>{l}</Option>
-          ))}
-        </div>
-      );
-      break;
-    case "child-interests":
-      title = <>What does <span className="text-baby-pink">{childLabel}</span> love?</>;
-      sub = "Pick as many as you like. We use this to match activities.";
-      body = child && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {cats.map((c) => (
-            <Option
-              key={c.slug}
-              on={child.interests.includes(c.slug)}
-              onClick={() => updateChild(child.key, {
-                interests: child.interests.includes(c.slug)
-                  ? child.interests.filter((x) => x !== c.slug)
-                  : [...child.interests, c.slug],
-              })}
-            >
-              {c.name}
-            </Option>
-          ))}
-        </div>
-      );
-      break;
-    case "kids":
-      title = <>Any other <span className="text-baby-pink">children</span>?</>;
-      sub = "Add them now and we'll find activities for each of them.";
-      cta = "That's everyone";
+    case "children":
+      title = <>Tell us about your <span className="text-baby-pink">{kids.length > 1 ? "children" : "child"}</span></>;
+      sub = "We use this to match activities to each child. Add as many as you like.";
       body = (
-        <div className="space-y-3">
-          {kids.map((k) => (
-            <div key={k.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#FEE9D7] bg-white px-4 py-3">
-              <div className="min-w-0">
-                <p className="truncate font-black">{k.name.trim() || "Unnamed child"}</p>
-                {k.dob && <p className="text-xs font-semibold text-[#6D748D]">Born {dayFirst(k.dob)}</p>}
-              </div>
-              <div className="flex shrink-0 gap-4 text-sm font-bold">
-                <button type="button" onClick={() => show(`child-name:${k.key}`)} className="text-baby-pink hover:underline">Edit</button>
+        <div className="space-y-5">
+          {kids.map((k, i) => (
+            <section key={k.key} aria-label={`Child ${i + 1}`} className="space-y-4 rounded-[16px] border border-[#FEE9D7] bg-white p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-black">{kids.length > 1 ? `Child ${i + 1}` : "Your child"}</h2>
                 {kids.length > 1 && (
-                  <button type="button" onClick={() => setKids((xs) => xs.filter((x) => x.key !== k.key))} className="text-[#6D748D] hover:underline">Remove</button>
+                  <button type="button" onClick={() => setKids((xs) => xs.filter((x) => x.key !== k.key))} className="text-sm font-bold text-[#6D748D] hover:underline">Remove</button>
                 )}
               </div>
-            </div>
+              <div>
+                <label className="mb-1 block text-sm font-black" htmlFor={`kid-name-${k.key}`}>Name</label>
+                <input id={`kid-name-${k.key}`} className={input} autoComplete="off" autoCapitalize="words" value={k.name} onChange={(e) => updateChild(k.key, { name: e.target.value })} placeholder="e.g. Emma" />
+              </div>
+              <div>
+                <p className="mb-1 text-sm font-black">Date of birth <span className="font-semibold text-[#6D748D]">(day first, e.g. 14/03/2024)</span></p>
+                <DateInput value={k.dob} onChange={(iso) => updateChild(k.key, { dob: iso })} className={input} />
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-black">Boy or girl?</p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[["female", "Girl"], ["male", "Boy"], ["unspecified", "Prefer not to say"]].map(([v, l]) => (
+                    <Option key={v} on={k.gender === v} onClick={() => updateChild(k.key, { gender: v })}>{l}</Option>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-black">What does {k.name.trim() || "your child"} love? <span className="font-semibold text-[#6D748D]">(pick as many as you like)</span></p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {cats.map((c) => (
+                    <Option
+                      key={c.slug}
+                      on={k.interests.includes(c.slug)}
+                      onClick={() => updateChild(k.key, {
+                        interests: k.interests.includes(c.slug)
+                          ? k.interests.filter((x) => x !== c.slug)
+                          : [...k.interests, c.slug],
+                      })}
+                    >
+                      {c.name}
+                    </Option>
+                  ))}
+                </div>
+              </div>
+            </section>
           ))}
           <Button type="button" variant="outline" className="w-full" onClick={addChild}>
             <Icon name="user" className="h-4 w-4" /> Add another child
@@ -574,62 +504,40 @@ export default function OnboardingPage() {
         </div>
       );
       break;
-    case "home":
-      title = <>Where's <span className="text-baby-pink">home</span>?</>;
-      sub = "Your postcode lets us show what's near you.";
+    case "prefs":
+      title = <>What suits <span className="text-baby-pink">you</span>?</>;
+      sub = "Your postcode and areas show what's near you. Days, times and budget are optional.";
       body = (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
-            <label className="mb-1 block text-sm font-black" htmlFor="su-postcode">Postcode</label>
+            <label className="mb-1 block text-sm font-black" htmlFor="su-postcode">Home postcode</label>
             <input id="su-postcode" className={input} autoFocus inputMode="numeric" autoComplete="postal-code" maxLength={6} value={postcode} onChange={(e) => setPostcode(e.target.value.replace(/\D/g, ""))} placeholder="307591" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-black" htmlFor="su-phone">Phone <span className="font-semibold text-[#6D748D]">(optional)</span></label>
-            <input id="su-phone" className={input} inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="8123 4567" />
+            <p className="mb-2 text-sm font-black">Which areas work for you? <span className="font-semibold text-[#6D748D]">(they don't have to be near home)</span></p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {REGION_FILTERS.map(([v, l]) => (
+                <Option key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Option>
+              ))}
+            </div>
           </div>
-        </div>
-      );
-      break;
-    case "areas":
-      title = <>Which <span className="text-baby-pink">areas</span> work for you?</>;
-      sub = "Pick any that suit you. They don't have to be near home.";
-      body = (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {REGION_FILTERS.map(([v, l]) => (
-            <Option key={v} on={regions.includes(v)} onClick={() => toggle(regions, v, setRegions)}>{l}</Option>
-          ))}
-        </div>
-      );
-      break;
-    case "when":
-      title = <>When suits you <span className="text-baby-pink">best</span>?</>;
-      sub = "Optional. Skip it if you're flexible.";
-      if (!weekdays && !weekend && times.length === 0) cta = "Skip";
-      body = (
-        <div className="space-y-5">
           <div>
-            <p className="mb-2 text-sm font-black">Days</p>
-            <div className="grid grid-cols-2 gap-3">
+            <p className="mb-2 text-sm font-black">Days <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2">
               <Option on={weekdays} onClick={() => setWeekdays(!weekdays)}>Weekdays</Option>
               <Option on={weekend} onClick={() => setWeekend(!weekend)}>Weekend</Option>
             </div>
-          </div>
-          <div>
-            <p className="mb-2 text-sm font-black">Times</p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <p className="mb-2 mt-4 text-sm font-black">Times <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {TIME_CHIPS.map(([v, l]) => <Option key={v} on={times.includes(v)} onClick={() => toggle(times, v, setTimes)}>{l}</Option>)}
             </div>
           </div>
-        </div>
-      );
-      break;
-    case "budget":
-      title = <>What's your <span className="text-baby-pink">budget</span>?</>;
-      sub = "Optional. Pick any that work for you.";
-      if (budgets.length === 0) cta = "Skip";
-      body = (
-        <div className="grid grid-cols-2 gap-3">
-          {BUDGET_CHIPS.map(([k, l]) => <Option key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Option>)}
+          <div>
+            <p className="mb-2 text-sm font-black">Budget <span className="font-semibold text-[#6D748D]">(optional)</span></p>
+            <div className="grid grid-cols-2 gap-2">
+              {BUDGET_CHIPS.map(([k, l]) => <Option key={k} on={budgets.includes(k)} onClick={() => toggle(budgets, k, setBudgets)}>{l}</Option>)}
+            </div>
+          </div>
         </div>
       );
       break;
@@ -763,8 +671,7 @@ export default function OnboardingPage() {
   }
 
   const progress = stepIndex / (steps.length - 1);
-  // The gender screen answers on tap, so it has no Next button of its own.
-  const hasNext = kind !== "plan" && kind !== "child-gender";
+  const hasNext = kind !== "plan";
 
   return (
     <PageShell active="/onboarding">
@@ -833,7 +740,7 @@ export default function OnboardingPage() {
               )}
             </>
           )}
-          {kind === "name" && (
+          {kind === "you" && (
             <p className="mt-4 text-center text-sm font-semibold text-[#5a6690]">Already have an account? <a href="/login" className="font-black text-baby-pink">Log in</a></p>
           )}
         </div>

@@ -163,6 +163,14 @@ type RosterRow = {
   wix_booking_id: string | null;
 };
 
+// What a cancelled booking gave back to the family (provider_booking_outcomes, 00255).
+const OUTCOME_TEXT: Record<string, string> = {
+  credit: 'The package credit for this booking was returned to the family.',
+  token: 'A make-up token was issued to the family for this cancellation.',
+  token_returned: 'The make-up token this booking was paid with was returned to the family.',
+  refunded: 'The payment for this booking was refunded.',
+};
+
 // Roster badge + detail-card wording for each settlement type. Falls back to
 // payment_status when paid_via isn't present yet (RPC not deployed).
 const PAY_BADGE: Record<string, { label: string; cls: string }> = {
@@ -480,6 +488,8 @@ export default function BookingsPage() {
   const [search, setSearch] = useState('');
   const [attDraft, setAttDraft] = useState<Record<string, 'present' | 'absent'>>({});
   const [tokenStatus, setTokenStatus] = useState<Record<string, string>>({});
+  // 00255: what each cancelled booking gave back (credit / token / refund / nothing).
+  const [outcomes, setOutcomes] = useState<Record<string, string>>({});
   // Which waivers/consents a booking actually accepted — fetched per booking
   // (cached by booking_id) rather than bundled into the roster RPC, since
   // this only needs to be looked at for the one booking currently open.
@@ -848,6 +858,17 @@ export default function BookingsPage() {
     setRosterSessionId(id);
     setSelected(0);
     setAttDraft({});
+    // What the cancelled bookings gave back to the family. Best-effort: a database
+    // without 00255 just shows nothing.
+    const cancelledIds = rows.filter((r) => r.status === 'cancelled' && r.user_id).map((r) => r.booking_id);
+    if (cancelledIds.length && provider) {
+      supabase.rpc('provider_booking_outcomes', { p_provider: provider.id, p_booking_ids: cancelledIds }).then(({ data: oc, error: ocErr }) => {
+        if (ocErr || latestRosterRequestRef.current !== id) return;
+        setOutcomes(Object.fromEntries((oc ?? []).map((o) => [o.booking_id, o.outcome])));
+      });
+    } else {
+      setOutcomes({});
+    }
     // Make-up tokens already issued against these bookings (issued/redeemed).
     if (rows.length) {
       const { data: toks } = await supabase
@@ -1998,6 +2019,16 @@ export default function BookingsPage() {
                   )}
                   {messageError && (
                     <p className="mt-2 text-xs font-medium text-red-600">{messageError}</p>
+                  )}
+                  {sel.status === 'cancelled' && outcomes[sel.booking_id] && outcomes[sel.booking_id] !== 'none' && (
+                    <p className="mt-4 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-800">
+                      {OUTCOME_TEXT[outcomes[sel.booking_id]]}
+                    </p>
+                  )}
+                  {sel.status === 'cancelled' && outcomes[sel.booking_id] === 'none' && ['credit', 'token', 'cash'].includes(sel.paid_via ?? '') && (
+                    <p className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
+                      Nothing was given back for this cancellation.
+                    </p>
                   )}
                   {canManage && (
                     <div className="mt-3">

@@ -1078,9 +1078,9 @@ export type Database = {
         }[];
       };
       provider_notification_feed: {
-        Args: { p_provider: string; p_limit?: number; p_waitlist_left?: boolean };
+        Args: { p_provider: string; p_limit?: number; p_waitlist_left?: boolean; p_compensation?: boolean };
         Returns: {
-          kind: 'booking' | 'waitlist' | 'waitlist_left' | 'cancellation' | 'review' | 'token_issued';
+          kind: 'booking' | 'waitlist' | 'waitlist_left' | 'cancellation' | 'review' | 'token_issued' | 'credit_returned';
           event_at: string;
           actor_name: string;
           activity_title: string | null;
@@ -1111,10 +1111,15 @@ export type Database = {
           status: 'active' | 'used' | 'expired';
           created_at: string;
           expires_at: string | null;
+          auto_issued: boolean;
         }[];
       };
+      provider_booking_outcomes: {
+        Args: { p_provider: string; p_booking_ids: string[] };
+        Returns: { booking_id: string; outcome: 'token' | 'token_returned' | 'credit' | 'refunded' | 'none' }[];
+      };
       provider_make_up_tokens: {
-        Args: { p_provider: string };
+        Args: { p_provider: string; p_include_auto?: boolean };
         Returns: {
           token_id: string;
           child_name: string;
