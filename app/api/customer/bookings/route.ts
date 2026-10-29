@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sessionPrices } from '@/lib/session-price';
@@ -113,14 +114,21 @@ async function eventAccessFor(
  *  - `openFree`: a free class. "Book now" opens the booking page for that
  *    session, the same link as the "spot available" email.
  *
+ *  A term session (00256) is priced by its term: a trial or single place is
+ *  claimable at the term's trial / single price (paid through
+ *  /api/terms/checkout), and only once one of the slot's single places is
+ *  free (00259). A package or make-up place is booked with a credit, so it
+ *  gets the booking-page link instead. `termKinds` tells the card which.
+ *
  *  Fully derived, so both vanish the instant the seat fills. */
 async function claimableSeats(admin: Admin, rows: Array<{ status: string; session_id: string | null }>) {
   const claimable = new Set<string>();
   const openFree = new Set<string>();
+  const termKinds = new Map<string, string>();
   const wlSessionIds = [
     ...new Set(rows.filter((r) => r.status === 'waitlisted').map((r) => r.session_id).filter(Boolean)),
   ] as string[];
-  if (!wlSessionIds.length) return { claimable, openFree };
+  if (!wlSessionIds.length) return { claimable, openFree, termKinds };
 
   const [{ data: sess }, { data: sessBookings }] = await Promise.all([
     admin
@@ -146,12 +154,68 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
   }
   const isSettled = (b: { id: string; payment_status: string | null; package_purchase_id: string | null }) =>
     b.payment_status === 'paid' || b.package_purchase_id != null || redeemedWl.has(b.id);
+
+  // Term sessions among them, with their term's prices and single places. The
+  // term columns are newer than the generated Database types, so these reads
+  // go through an untyped client.
+  const db = admin as unknown as SupabaseClient;
+  type TermSession = {
+    id: string;
+    term_slot_id: string | null;
+    term_slots: { single_cap: number | null; terms: { single_price_cents: number; trial_price_cents: number } | null } | null;
+  };
+  const { data: termSess } = await db
+    .from('activity_sessions')
+    .select('id, term_slot_id, term_slots(single_cap, terms(single_price_cents, trial_price_cents))')
+    .in('id', wlSessionIds)
+    .not('term_slot_id', 'is', null);
+  const termBySession = new Map(((termSess ?? []) as unknown as TermSession[]).map((t) => [t.id, t]));
+  const kindById = new Map<string, string | null>();
+  if (termBySession.size) {
+    const { data: kinds } = await db
+      .from('bookings')
+      .select('id, term_booking_kind')
+      .in('session_id', [...termBySession.keys()]);
+    for (const k of (kinds ?? []) as { id: string; term_booking_kind: string | null }[]) {
+      kindById.set(k.id, k.term_booking_kind);
+    }
+  }
+
   // session_price() (00258), not session ?? activity: a weekday price applies here too.
   const prices = await sessionPrices(admin, (sess ?? []).map((x) => x.id));
   for (const s of sess ?? []) {
-    const price = Number(prices.get(s.id) ?? 0);
     const onSession = (sessBookings ?? []).filter((b) => b.session_id === s.id);
     const wl = onSession.filter((b) => b.status === 'waitlisted');
+    const term = termBySession.get(s.id);
+    if (term) {
+      // A term session: a seat and, for a trial or single place, one of the
+      // slot's single places. Same whole-party rule as below.
+      const takenRows = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending');
+      const free = s.capacity == null ? Number.POSITIVE_INFINITY : s.capacity - takenRows.length;
+      const cap = term.term_slots?.single_cap ?? null;
+      const singlesTaken = takenRows.filter((b) => ['single', 'trial'].includes(kindById.get(b.id) ?? '')).length;
+      const singleFree = cap == null ? Number.POSITIVE_INFINITY : cap - singlesTaken;
+      for (const b of wl) {
+        const kind = kindById.get(b.id) ?? null;
+        if (kind) termKinds.set(b.id, kind);
+        if (isSettled(b)) continue;
+        if (kind !== 'single' && kind !== 'trial') {
+          if (free > 0) openFree.add(b.id);
+          continue;
+        }
+        if (b.waitlist_pay_invited) {
+          claimable.add(b.id);
+          continue;
+        }
+        const group = b.booking_group_id ? onSession.filter((x) => x.booking_group_id === b.booking_group_id) : [];
+        const live = group.filter((x) => x.status !== 'cancelled');
+        const wholePartyWaiting = live.length > 1 && live.every((x) => x.status === 'waitlisted');
+        const needed = wholePartyWaiting ? live.filter((x) => x.payment_status !== 'paid').length : 1;
+        if (free >= needed && singleFree >= needed) claimable.add(b.id);
+      }
+      continue;
+    }
+    const price = Number(prices.get(s.id) ?? 0);
     const localTaken = onSession.filter((b) => b.status === 'confirmed' || b.status === 'pending').length;
     // A Wix class can also be booked on Wix's own site, which only Wix's seat
     // count knows about: take the fuller of the two, as the vendor portal does
@@ -189,7 +253,7 @@ async function claimableSeats(admin: Admin, rows: Array<{ status: string; sessio
       if (free >= needed) claimable.add(b.id);
     }
   }
-  return { claimable, openFree };
+  return { claimable, openFree, termKinds };
 }
 
 const BOOKING_COLUMNS =
@@ -300,10 +364,12 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, { claimable, openFree }, eventTickets, eventAccess] = await Promise.all([
+  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
-    scope === 'active' ? claimableSeats(admin, rows) : Promise.resolve({ claimable: new Set<string>(), openFree: new Set<string>() }),
+    scope === 'active'
+      ? claimableSeats(admin, rows)
+      : Promise.resolve({ claimable: new Set<string>(), openFree: new Set<string>(), termKinds: new Map<string, string>() }),
     eventTicketsFor(admin, user.id, rows),
     eventAccessFor(admin, user.id, rows),
   ]);
@@ -355,6 +421,9 @@ export async function GET(request: Request) {
       can_claim: claimable.has(r.id),
       // The same on a free class, where "Book now" opens the booking page.
       spot_open: openFree.has(r.id),
+      // A waitlist place on a term session (00259): how it was booked, so the
+      // card pays through the term and opens the booking page in that mode.
+      term_kind: termKinds.get(r.id) ?? null,
       // How a cancelled booking was made good (00080/00081) — the permanent
       // line on the card. 'none' when the provider withheld a refund, so the
       // card doesn't imply a credit came back off a lingering

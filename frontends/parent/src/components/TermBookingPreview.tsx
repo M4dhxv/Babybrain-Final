@@ -268,7 +268,9 @@ export function TermEnrolPreview({
  * its dates. Identical in the parent app (components/TermBookingPreview.tsx) and
  * the vendor portal's Parent view (components/ParentTermBooking.tsx). */
 
-export type PickerGroup = { key: string; label: string; venue?: string | null; dates: string[] };
+/** `spots`, when known: places still free on each of `dates` (null = no limit).
+ *  A full date can still be picked; booking it joins that session's waitlist. */
+export type PickerGroup = { key: string; label: string; venue?: string | null; dates: string[]; spots?: (number | null)[] };
 
 export function TermSessionPicker({
   groups, groupIdx, onGroupChange, from = 0, selected, onSelect,
@@ -284,6 +286,7 @@ export function TermSessionPicker({
   const group = groups[Math.min(groupIdx, groups.length - 1)];
   if (!group) return null;
   const open = group.dates.slice(from);
+  const openSpots = group.spots?.slice(from);
   return (
     <section className="space-y-6">
       <div>
@@ -316,8 +319,10 @@ export function TermSessionPicker({
           <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No sessions left in this group.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {open.map((d) => {
+            {open.map((d, i) => {
               const [weekday, dayMonth] = sgDay(d).split(", ");
+              const spots = openSpots?.[i];
+              const full = spots != null && spots <= 0;
               return (
                 <button
                   key={d}
@@ -329,6 +334,9 @@ export function TermSessionPicker({
                   <span className="block whitespace-nowrap">{weekday},</span>
                   <span className="block whitespace-nowrap">{dayMonth}</span>
                   <span className="mt-2 block text-xs font-semibold text-[#697390]">{sgTime(d)}</span>
+                  {full && (
+                    <span className="mt-1.5 inline-block rounded-full bg-palette-yellowSoft px-2 py-0.5 text-[11px] font-black text-palette-yellowInk">Full · waitlist</span>
+                  )}
                 </button>
               );
             })}

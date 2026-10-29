@@ -329,8 +329,12 @@ export default function BookingPage() {
   const packagesNotOffered = isEvent || isCourse || isAppointment;
   // Term enrolment (00243): only for plain (non-Wix) classes with a published
   // term, and only when the preview flag is on. A term activity opens on the
-  // whole term; trial / single / package are offered as the term allows.
-  const [bookMode, setBookMode] = useState<BookMode>("term");
+  // whole term; trial / single / package are offered as the term allows. A
+  // waitlist "book now" link says which one it was (&mode=, 00259).
+  const [bookMode, setBookMode] = useState<BookMode>(() => {
+    const m = getParam("mode");
+    return m === "single" || m === "trial" || m === "package" ? m : "term";
+  });
   const [termId, setTermId] = useState<string | null>(null);
   // Brothers and sisters enrolled in the same checkout as the chosen child.
   const [siblingIds, setSiblingIds] = useState<string[]>([]);
@@ -1375,12 +1379,19 @@ export default function BookingPage() {
   // its dates. Only sessions the page has loaded (with their spots) and that
   // are still to come can be picked.
   const loadedIds = new Set(sessions.map((s) => s.id));
-  const oneOffGroups = termSlots.map((s) => ({
-    key: s.key,
-    label: s.label,
-    venue: s.venue,
-    dates: s.dates.filter((d, i) => loadedIds.has(s.sessionIds[i]) && Date.parse(d) > Date.now()),
-  }));
+  const oneOffGroups = termSlots.map((s) => {
+    const open = s.dates
+      .map((d, i) => ({ d, id: s.sessionIds[i] }))
+      .filter((x) => loadedIds.has(x.id) && Date.parse(x.d) > Date.now());
+    return {
+      key: s.key,
+      label: s.label,
+      venue: s.venue,
+      dates: open.map((x) => x.d),
+      // Places still free, so a full date shows it joins the waitlist (00259).
+      spots: open.map((x) => spotsBySession.get(x.id) ?? null),
+    };
+  });
   const oneOffSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)];
   const oneOffOpen = oneOffGroups[Math.min(termSlotIdx, oneOffGroups.length - 1)]?.dates ?? [];
   const oneOffPicked = sessions.find((s) => s.id === sessionId)?.starts_at ?? null;
@@ -1398,23 +1409,50 @@ export default function BookingPage() {
     if (termEligible && !termMode && !pickedOpen && firstOpen) pickOneOff(firstOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termEligible, termMode, pickedOpen, firstOpen]);
+  // A "spot is available" link for a term session (/book?…&session=…&mode=…,
+  // 00259): open the term and group that session belongs to, then the session.
+  // Declared after the effect above so, on the render both run, this one wins.
+  const wantTermResolved = useRef(false);
+  useEffect(() => {
+    if (wantTermResolved.current || !wantSessionId || !termEligible) return;
+    const want = sessions.find((x) => x.id === wantSessionId);
+    if (!want) return;
+    for (const t of liveTerms) {
+      const i = t.slots.findIndex((sl) => sl.sessionIds.includes(wantSessionId));
+      if (i < 0) continue;
+      wantTermResolved.current = true;
+      setTermId(t.id);
+      setTermSlotIdx(i);
+      if (bookingOpen(want.starts_at, want.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes)) {
+        setDateKey(sgDay(want.starts_at));
+        setSessionId(want.id);
+      }
+      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantSessionId, termEligible, liveTerms, sessions]);
 
   // Packs closed at this activity while the parent sat on "Use a package".
   useEffect(() => {
     if (!packagesOpen && bookMode === "package") { setBookMode("term"); setPayWith("single"); }
   }, [packagesOpen, bookMode]);
 
-  // A mode the term doesn't offer (or this child's trials are used up): back to the whole term.
+  // A mode the term doesn't offer (or this child's trials are used up): back to
+  // the whole term. A trial that's gone becomes a single session where singles
+  // are on, e.g. a trial waiter who used their trial elsewhere while waiting.
   useEffect(() => {
     if (!termEligible) return;
     const o = termOffer;
+    // A waitlist link can open on single or trial before this child's trial
+    // count has loaded; judge it once it has.
+    if (o.trial && auth && !trialState && (bookMode === "single" || bookMode === "trial")) return;
     const gone =
       (bookMode === "single" && (!o.single || (o.trial && o.trialUsed < o.trialLimit))) ||
       (bookMode === "trial" && (!o.trial || o.trialUsed >= o.trialLimit)) ||
       (bookMode === "package" && !o.packages);
-    if (gone) chooseMode("term");
+    if (gone) chooseMode(bookMode === "trial" && o.single ? "single" : "term");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [termEligible, bookMode, termOffer.trial, termOffer.single, termOffer.packages, termOffer.trialUsed, termOffer.trialLimit]);
+  }, [termEligible, bookMode, termOffer.trial, termOffer.single, termOffer.packages, termOffer.trialUsed, termOffer.trialLimit, trialState, auth]);
 
   /** Same paperwork and age checks as a single booking; null when fine. */
   function termCheckProblem(): string | null {
@@ -1508,8 +1546,21 @@ export default function BookingPage() {
     }
     const d = data as { group_id: string; status: string };
     if (d.status === "waitlisted") {
+      // The session, or its single places, are full: the child is on that
+      // session's waitlist, free (00259). Nothing to pay; same page as any waitlist.
       setBusy(false);
-      setErr("That session is full. Pick another date.");
+      goTo(`/booked?${new URLSearchParams({
+        title: activity?.title ?? "your class",
+        slug: activity?.slug ?? "",
+        provider: activity?.provider_id ?? "",
+        pname: activity?.provider_name ?? "",
+        when: selected ? sgDateTime(selected.starts_at) : "",
+        status: "waitlisted",
+        start: selected?.starts_at ?? "",
+        end: selected?.ends_at ?? "",
+        venue: displayVenue ?? "",
+        staff: displayStaff ?? "",
+      }).toString()}`);
       return;
     }
     await payTermGroup(d.group_id);
@@ -1575,10 +1626,15 @@ export default function BookingPage() {
   const packageUnchosen = termEligible && bookMode === "package" && payWith === "single";
   const termOneOffUnit = trialUnit ?? termSingleUnit;
   const shownTotal = termOneOffUnit != null ? termOneOffUnit * ticketCount : total;
+  // A trial or single date with no place left: booking it joins the waitlist.
+  const termOneOffSpots = termOneOffUnit != null && sessionId ? spotsBySession.get(sessionId) : undefined;
+  const termOneOffFull = termOneOffSpots != null && termOneOffSpots <= 0;
   const payLabel = !auth
     ? "Log in to book"
     : packageUnchosen
       ? "Choose a package"
+    : termOneOffFull
+      ? "Join the waitlist (free)"
     : termMode
       ? `Enrol ${termSiblings.length > 0 ? `${termSiblings.length + 1} children` : "for the term"}${termTotal != null ? ` — $${termTotal.toFixed(2).replace(/\.00$/, "")}` : ""}`
     : isRsvpEvent

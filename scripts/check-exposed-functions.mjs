@@ -65,6 +65,8 @@ const ALLOWED = new Set([
   // re-enrolment — each checks the caller. activities_with_live_terms only
   // lists activity ids with a published term, for the Explore filter.
   'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
+  // 00259: a parent leaving their own unpaid waitlist place on a term session.
+  'leave_term_waitlist',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

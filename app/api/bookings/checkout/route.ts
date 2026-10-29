@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { staffLabel } from '@/lib/staff-label';
 import { getStripe, ONE_OFF_PAYMENT_METHODS } from '@/lib/stripe';
 import { getAuthedContext } from '@/lib/api-auth';
@@ -71,6 +72,23 @@ export async function POST(request: Request) {
   const chargeIds = new Set(chargeSeats.map((s) => s.id));
 
   const admin = createAdminClient();
+
+  // A term session's seat is priced by its term and paid through
+  // /api/terms/checkout (00259). session_price() here would charge the
+  // activity's price instead. The term column is newer than the generated
+  // types, hence the untyped read.
+  const { data: termSeats } = await (admin as unknown as SupabaseClient)
+    .from('bookings')
+    .select('id')
+    .in('id', [...chargeIds])
+    .not('term_booking_kind', 'is', null)
+    .limit(1);
+  if (termSeats && termSeats.length > 0) {
+    return NextResponse.json(
+      { error: 'This session is part of a term. Refresh the page and try again.' },
+      { status: 409 }
+    );
+  }
 
   // Authoritative price + provider from the booked session's activity.
   //

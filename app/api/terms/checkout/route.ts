@@ -24,23 +24,30 @@ import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
  *   trial  the term's trial price per seat
  *   single the term's single-class price per seat
  *
- * Body: { group_id: string }
+ * A trial or single seat on the waitlist is paid for here too ("Pay now" once
+ * its seat has come free, 00259): it is held first, at the term's price.
+ *
+ * Body: { group_id: string } or { booking_id: string } (one waitlist place)
  */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { group_id?: string };
+  const body = (await request.json().catch(() => ({}))) as { group_id?: string; booking_id?: string };
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-  if (!body.group_id) return NextResponse.json({ error: 'group_id is required' }, { status: 400 });
+  if (!body.group_id && !body.booking_id) {
+    return NextResponse.json({ error: 'group_id or booking_id is required' }, { status: 400 });
+  }
 
   // The term columns are newer than the generated Database types, so these
   // reads go through an untyped client.
   const admin = createAdminClient();
   const db = admin as unknown as SupabaseClient;
 
-  const { data: seats } = await db
+  const seatQuery = db
     .from('bookings')
-    .select('id, user_id, session_id, status, payment_status, term_booking_kind, term_enrolment_id')
-    .eq('booking_group_id', body.group_id);
+    .select('id, user_id, session_id, status, payment_status, term_booking_kind, term_enrolment_id, booking_group_id');
+  const { data: seats } = body.group_id
+    ? await seatQuery.eq('booking_group_id', body.group_id)
+    : await seatQuery.eq('id', body.booking_id as string);
 
   if (!seats || seats.length === 0 || seats.some((s) => s.user_id !== user.id)) {
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
@@ -52,22 +59,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This booking has been cancelled' }, { status: 409 });
   }
 
-  const kind = seats[0].term_booking_kind as 'term' | 'single' | 'trial' | 'package' | null;
+  const kind = seats[0].term_booking_kind as 'term' | 'single' | 'trial' | 'package' | 'makeup' | null;
   if (!kind || seats.some((s) => s.term_booking_kind !== kind)) {
     return NextResponse.json({ error: 'This is not a term booking' }, { status: 400 });
   }
-  if (kind === 'package') {
+  if (kind === 'package' || kind === 'makeup') {
     return NextResponse.json({ error: 'A package booking is paid with credits' }, { status: 400 });
   }
+  const groupId = (body.group_id ?? seats[0].booking_group_id ?? null) as string | null;
 
-  // Only the seats that are held and unpaid are charged. A waitlisted seat is
-  // claimed later through the normal waitlist flow.
-  const chargeSeats = seats.filter((s) => s.status === 'pending' && s.payment_status !== 'paid');
+  // The held, unpaid seats are charged. With none held, this is "Pay now" on
+  // a trial or single waitlist place whose seat has come free:
+  // claim_term_waitlist_seats (00259) re-checks the trial limit and the
+  // single places, then holds the seat under the session lock before Stripe,
+  // so two parents can never both pay for it. An unpaid hold goes back to the
+  // waitlist after 45 minutes (release_stale_pending_bookings).
+  const unpaid = seats.filter((s) => s.payment_status !== 'paid' && s.status !== 'cancelled');
+  const held = unpaid.filter((s) => s.status === 'pending');
+  const waiting = unpaid.filter((s) => s.status === 'waitlisted');
+  const chargeSeats = held.length > 0 ? held : waiting;
   if (chargeSeats.length === 0) {
     return NextResponse.json({ error: 'Nothing left to pay for on this booking' }, { status: 409 });
   }
+  if (held.length === 0) {
+    if (kind === 'term') {
+      return NextResponse.json({ error: 'Nothing left to pay for on this booking' }, { status: 409 });
+    }
+    const { error: claimError } = await db.rpc('claim_term_waitlist_seats', {
+      p_seat_ids: chargeSeats.map((s) => s.id as string),
+    });
+    if (claimError) {
+      const known = /taken|trial/.test(claimError.message);
+      return NextResponse.json(
+        { error: known ? claimError.message : "That spot has been taken — you're still on the waitlist." },
+        { status: 409 }
+      );
+    }
+  }
   const seatCount = chargeSeats.length;
   const seatIds = chargeSeats.map((s) => s.id as string);
+  // Places in this booking that stay on the waitlist after this payment, for
+  // the confirmation page ("1 place didn't fit").
+  const stillWaitlisted = held.length > 0 ? waiting.length : 0;
 
   // The first class names the booking; the term it belongs to sets the price.
   const { data: sessions } = await db
@@ -154,6 +187,7 @@ export async function POST(request: Request) {
       start: first.starts_at,
       end: first.ends_at,
       venue,
+      ...(stillWaitlisted > 0 ? { wl: String(stillWaitlisted) } : {}),
     }).toString();
 
   // Free (a term reduced to nothing, or a free trial): nothing to charge, so
@@ -161,7 +195,7 @@ export async function POST(request: Request) {
   if (totalCents <= 0) {
     const { failed } = await confirmPaidBookingSeats(admin as never, {
       seatIds,
-      groupId: body.group_id,
+      groupId,
       paymentIntent: null,
       scopeUserId: user.id,
     });
@@ -198,10 +232,13 @@ export async function POST(request: Request) {
     metadata: {
       kind: 'booking',
       booking_id: seatIds[0],
-      booking_group_id: body.group_id,
+      ...(groupId ? { booking_group_id: groupId } : {}),
       // A term has too many seats to list: Stripe caps a metadata value at 500
       // characters. Settlement falls back to the booking group, which holds
-      // exactly this enrolment's seats.
+      // exactly this enrolment's seats. A trial or single booking lists its
+      // seats, so the webhook confirms only those and never a place in the
+      // same group that is still on the waitlist.
+      ...(kind === 'term' ? {} : { seat_ids: seatIds.join(',') }),
       term_booking: kind,
     },
     success_url: `${successUrl}&session_id={CHECKOUT_SESSION_ID}`,
