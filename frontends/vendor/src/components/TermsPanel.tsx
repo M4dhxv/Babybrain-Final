@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, CalendarRange, Info, ArrowLeft, Ticket, Package, Check, Users, Copy, Repeat } from 'lucide-react';
+import { Plus, Trash2, Pencil, CalendarRange, Info, ArrowLeft, Ticket, Package, Check, Users, Copy, Repeat, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
@@ -15,7 +15,8 @@ import {
   blankTerm, dayTimeFor, deleteTerm, fmtRange, fmtShort, lastJoinableAfter, newId, normalizeTerm, priceAfter,
   saveTerm, slotDates, slotPatternDates, slotPrice, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
   fetchTermRoster, fetchTermSlotStats, nextTermFrom, openReenrolment, publicHolidaysIn, vendorWithdraw, SG_PUBLIC_HOLIDAYS,
-  type RosterRow, type SlotStats, type Term, type TermSlot, type TermStatusKey,
+  fetchTermWaitlist, fetchTermWaitlistCounts, offerSessionPlace, offerTermPlace, removeFromTermWaitlist, tellTermWaitlist,
+  type RosterRow, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow,
 } from '@/lib/termsPreview';
 
 /* Type scale for this panel: bold section titles, semibold labels, and 15px
@@ -815,6 +816,188 @@ const ROSTER_STATUS: Record<RosterRow['status'], string> = {
   unpaid: 'bg-amber-100 text-amber-900',
   withdrawn: 'bg-gray-100 text-gray-500',
 };
+const WAIT_STATUS: Record<TermWaitRow['status'], { label: string; cls: string }> = {
+  waiting: { label: 'Waiting', cls: 'bg-amber-100 text-amber-900' },
+  holding: { label: 'Holding a place', cls: 'bg-blue-100 text-blue-800' },
+  offered: { label: 'Offered by you', cls: 'bg-pink-100 text-pink-800' },
+};
+const WAIT_KIND: Record<TermWaitRow['kind'], string> = {
+  term: 'Term place',
+  trial: 'Trial',
+  single: 'Single session',
+  package: 'Pack credit',
+  makeup: 'Make-up',
+};
+const whenShort = (iso: string) =>
+  new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/**
+ * Who is waiting on a published term (00259-00261): families waiting for a
+ * place in a full group, and for one trial or single session of it. The vendor
+ * can offer one family a place (it may go over capacity), tell everyone about a
+ * place that opened without a family leaving (that isn't announced on its own),
+ * or take a family off the list. Shows nothing while nobody is waiting.
+ */
+function TermWaitlistTools({ term }: { term: Term }) {
+  const [counts, setCounts] = useState<TermWaitCount[] | null>(null);
+  const [rows, setRows] = useState<TermWaitRow[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [removing, setRemoving] = useState<TermWaitRow | null>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let stale = false;
+    fetchTermWaitlistCounts(term.id).then((c) => { if (!stale) setCounts(c); }).catch(() => { if (!stale) setCounts([]); });
+    if (open) fetchTermWaitlist(term.id).then((r) => { if (!stale) setRows(r); }).catch(() => { if (!stale) setRows([]); });
+    return () => { stale = true; };
+  }, [term.id, open, version]);
+
+  const total = (counts ?? []).reduce((n, c) => n + c.waiting + c.session_waiting, 0);
+  if (!counts || total === 0) return null;
+
+  const groupName = (slotId: string) => {
+    const i = term.slots.findIndex((s) => s.id === slotId);
+    if (i < 0 || term.slots.length < 2) return 'This term';
+    const days = WEEKDAYS.filter((d) => term.slots[i].days.includes(d.i)).map((d) => d.name.slice(0, 3)).join(', ');
+    return `Group ${i + 1} (${days})`;
+  };
+
+  async function act(fn: () => Promise<string>, failed: string) {
+    setBusy(true);
+    try {
+      toast(await fn());
+      setVersion((v) => v + 1);
+    } catch (e) {
+      toast.error(failed, { description: (e as { message?: string })?.message });
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      {counts.filter((c) => c.waiting > 0).map((c) => (
+        <div key={c.slot_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+          <span className="min-w-0 flex-1">
+            {c.free_places > 0
+              ? `${groupName(c.slot_id)} has ${c.free_places === 1 ? 'a term place' : `${c.free_places} term places`} free and ${c.waiting} waiting. They haven't been told, because the place opened without a family leaving.`
+              : `${groupName(c.slot_id)} is full, with ${c.waiting} waiting for a place. To take them, raise its places under Edit; everyone waiting is told straight away.`}
+          </span>
+          {c.free_places > 0 && (
+            <Button
+              disabled={busy}
+              onClick={() => act(async () => {
+                const n = await tellTermWaitlist(c.slot_id);
+                return `${n} ${n === 1 ? 'family' : 'families'} told. The first to enrol gets the place.`;
+              }, 'Could not tell them')}
+              className="h-8 rounded-lg bg-[#FA4D8D] px-3 text-[13px] font-bold text-white hover:bg-[#e8437f]"
+            >
+              Tell everyone waiting
+            </Button>
+          )}
+        </div>
+      ))}
+
+      <Button variant="outline" onClick={() => setOpen((v) => !v)} className="h-9 rounded-lg px-3 text-sm font-semibold">
+        <Hourglass className="mr-1.5 h-4 w-4" /> {open ? 'Hide waitlist' : `Waitlist (${total})`}
+      </Button>
+
+      {open && (
+        <div className="rounded-xl border border-gray-200">
+          {rows === null ? (
+            <p className={cn('p-3', hintCls)}>Loading…</p>
+          ) : (
+            term.slots.map((s, i) => {
+              const list = rows.filter((r) => r.slot_id === s.id);
+              if (list.length === 0) return null;
+              return (
+                <div key={s.id} className={cn(i > 0 && 'border-t border-gray-100')}>
+                  {term.slots.length > 1 && (
+                    <div className="bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-600">{groupName(s.id)}</div>
+                  )}
+                  {list.map((r) => (
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 first:border-t-0">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-gray-900">{r.child_name}</span>
+                          {ageOf(r.child_dob) && <span className="text-xs text-gray-500">{ageOf(r.child_dob)}</span>}
+                          <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', WAIT_STATUS[r.status].cls)}>{WAIT_STATUS[r.status].label}</span>
+                          <span className="text-[11px] font-semibold text-gray-500">
+                            {WAIT_KIND[r.kind]}{r.session_starts_at ? ` · ${whenShort(r.session_starts_at)}` : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {[r.parent_name, r.parent_email].filter(Boolean).join(' · ')} · joined {new Date(r.joined_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        {r.status === 'waiting' && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => act(async () => {
+                              if (r.kind === 'term') await offerTermPlace(r.id);
+                              else await offerSessionPlace(r.id);
+                              return `Place offered to ${r.child_name}'s family. They have been sent a link to pay.`;
+                            }, 'Could not offer the place')}
+                            className="rounded-lg px-2 py-1 text-sm font-semibold text-pink-700 hover:bg-pink-50"
+                          >
+                            Offer a place
+                          </button>
+                        )}
+                        {r.kind === 'term' && (
+                          <button
+                            type="button"
+                            onClick={() => { setRemoving(r); setReason(''); }}
+                            className="rounded-lg px-2 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })
+          )}
+          {rows !== null && (
+            <p className={cn('border-t border-gray-100 px-3 py-2', hintCls)}>
+              Offering a place sends that family a link to pay, even when the group is full: their sessions grow by one place.
+            </p>
+          )}
+        </div>
+      )}
+
+      {removing && (
+        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-bold text-red-900">
+            Take {removing.child_name} off the waitlist for {term.name}? The family is told.
+          </p>
+          <input className={inputCls} placeholder="Reason, shown to the family (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <div className="flex gap-2">
+            <Button
+              disabled={busy}
+              onClick={() => act(async () => {
+                await removeFromTermWaitlist(removing.id, reason);
+                const name = removing.child_name;
+                setRemoving(null);
+                return `${name} is off the waitlist.`;
+              }, 'Could not remove them')}
+              className="h-9 rounded-lg bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700"
+            >
+              Remove
+            </Button>
+            <Button variant="outline" onClick={() => setRemoving(null)} className="h-9 rounded-lg px-4 text-sm font-semibold">
+              Keep
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Under a published term: its numbers, who is enrolled (with Withdraw), copying
@@ -962,6 +1145,8 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
           )}
         </div>
       )}
+
+      <TermWaitlistTools term={term} />
 
       {withdrawing && (
         <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">

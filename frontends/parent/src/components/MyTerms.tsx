@@ -46,6 +46,8 @@ export type MyTermWait = {
   free_places: number;
   /** The child has since got into another group of the same term. */
   enrolled_elsewhere: boolean;
+  /** The provider offered this family a place, which may go over capacity (00261). */
+  vendor_offered?: boolean;
 };
 
 type Row = {
@@ -147,8 +149,9 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
       {err && <p className="rounded-[10px] bg-[#FAF7F7] px-4 py-2.5 text-sm font-bold text-[#59658d]">{err}</p>}
       {waiting.map((w) => {
         const child = w.child_name ?? "Your child";
-        const enrolHref = `/book?slug=${encodeURIComponent(w.slug)}&term_slot=${encodeURIComponent(w.slot_id)}&mode=term${w.child_id ? `&child=${encodeURIComponent(w.child_id)}` : ""}`;
-        const placeFree = w.status === "waiting" && w.joinable && w.free_places > 0;
+        const offered = w.status === "waiting" && w.joinable && !!w.vendor_offered;
+        const enrolHref = `/book?slug=${encodeURIComponent(w.slug)}&term_slot=${encodeURIComponent(w.slot_id)}&mode=term${w.child_id ? `&child=${encodeURIComponent(w.child_id)}` : ""}${offered ? "&offered=1" : ""}`;
+        const placeFree = w.status === "waiting" && w.joinable && (w.free_places > 0 || offered);
         const askStay = w.enrolled_elsewhere && !stayed.has(w.id);
         return (
           <div key={w.id} className="rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card">
@@ -186,7 +189,9 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
             )}
             {placeFree && (
               <div className="mt-3 flex flex-col gap-1.5 rounded-[12px] bg-[#F1FBEF] p-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-bold text-palette-greenInk">A place is free. The first family to enrol gets it.</p>
+                <p className="text-sm font-bold text-palette-greenInk">
+                  {offered ? "The provider has offered you a place. Enrol and pay to confirm it." : "A place is free. The first family to enrol gets it."}
+                </p>
                 <a href={enrolHref} className="rounded-full bg-[#FA4D8D] px-4 py-2 text-center text-sm font-black text-white">Enrol now</a>
               </div>
             )}

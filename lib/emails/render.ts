@@ -391,6 +391,79 @@ const T: Record<string, Template> = {
       sign);
   },
 
+  // The provider offered this family a place, which may go over capacity
+  // (vendor_offer_term_place, 00261). Personal: nobody else was told.
+  term_waitlist_offer: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const who = str(d, 'provider_name') ?? 'The provider';
+    const child = str(d, 'child_name');
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const left = str(d, 'sessions_left');
+    const cents = Number(d.price_cents ?? NaN);
+    const price = Number.isFinite(cents) ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : null;
+    const first = str(d, 'first_session');
+    return wrap(ctx, `You've been offered a place in ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(who)} has offered ${child ? bold(child) : 'your child'} a place in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (left || price
+        ? p([left ? `${esc(left)} sessions${first ? ` from ${esc(first)}` : ''}` : null, price ? bold(price) : null].filter(Boolean).join(', ') + '.')
+        : '') +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      p('The place is yours once you enrol and pay.') +
+      sign);
+  },
+
+  // The provider took this family off a term waitlist (00261).
+  term_waitlist_removed: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const reason = str(d, 'reason');
+    return wrap(ctx, `You're no longer on the waitlist for ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'provider_name') ?? 'The provider')} has taken ${str(d, 'child_name') ? bold(str(d, 'child_name')!) : 'your child'} off the waitlist for ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (reason ? p(`They said: ${esc(reason)}`) : '') +
+      p('You haven’t been charged anything.') +
+      p(`If you are looking for something similar, you can ${link(ctx, '/explore', 'explore other activities here')}.`) +
+      sign);
+  },
+
+  // The term stopped taking new families before a place opened (00262).
+  term_waitlist_closed: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const singles = d.singles === true;
+    const url = str(d, 'url') ?? '/explore';
+    return wrap(ctx, `${term} has closed to new families 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`No place opened in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''} before it closed to new families, so you are no longer on its waitlist. You haven’t been charged anything.`) +
+      (singles
+        ? cta(`${ctx.appUrl}${url}`, 'Book a single session')
+        : p(`You can ${link(ctx, url, 'see the activity')} for other times, or ${link(ctx, '/explore', 'explore other activities')}.`)) +
+      p('If the provider runs another term, we will let you know when it opens.') +
+      sign);
+  },
+
+  // A trial or single session's booking window closed with the family still
+  // waiting for it (00262).
+  term_session_waitlist_closed: (d, ctx) =>
+    wrap(ctx, 'The waitlist for your session has closed 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('No place came free on this session before booking closed, so you are no longer on its waitlist:') +
+      details(d, false) +
+      p('You haven’t been charged anything.') +
+      p(`You can ${link(ctx, '/explore', 'explore other activities here')}.`) +
+      sign),
+
+  // The next term opened to everyone; this family was waiting on the one
+  // before (00262, decision 6).
+  term_next_open: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'The next term';
+    const url = str(d, 'url') ?? '/explore';
+    return wrap(ctx, `${term} is open 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`You were on the waitlist for the last term of ${bold(str(d, 'activity_name') ?? 'this class')}. Enrolment for ${bold(term)} is now open to everyone.`) +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      sign);
+  },
+
   booking_reminder: (d, ctx) =>
     wrap(ctx, 'You have an upcoming booking 👶🧠',
       p(greet(ctx.recipientName)) +
@@ -850,6 +923,22 @@ const T: Record<string, Template> = {
         : '') +
       p(`If you can take more, would you like to ${link(ctx, str(d, 'url') ?? '/vendor', 'increase the capacity for this session')}? Everyone on the waitlist is told straight away that a place is available, and whoever books first gets it.`) +
       p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
+      sign);
+  },
+
+  // A family joined a full term group's waitlist (00261), one email per
+  // family per group.
+  provider_term_waitlist_joined: (d, ctx) => {
+    const waiting = Number(str(d, 'waiting_count') ?? 0);
+    const who = str(d, 'child_name') ?? 'A family';
+    const term = str(d, 'term_name') ?? 'your term';
+    return wrap(ctx, 'Someone joined your term waitlist 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`${bold(who)} is waiting for a place in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (waiting > 0
+        ? p(`There ${waiting === 1 ? 'is' : 'are'} now ${bold(String(waiting))} ${waiting === 1 ? 'child' : 'children'} waiting for this group.`)
+        : '') +
+      p(`If you can take more, raise the group's places on ${link(ctx, str(d, 'url') ?? '/vendor', 'your term')}: everyone waiting is told straight away, and the first family to enrol gets the place. You can also offer one family a place from the term's waitlist, even when the group is full.`) +
       sign);
   },
 

@@ -69,6 +69,8 @@ const ALLOWED = new Set([
   'leave_term_waitlist',
   // 00260: the parent's own term place waitlist; each checks the caller.
   'join_term_waitlist', 'leave_term_waitlist_entry', 'my_term_waitlist',
+  // 00261: the vendor's term waitlist; each checks the caller is on the provider's team.
+  'term_waitlist_roster', 'term_waitlist_counts', 'vendor_offer_term_place', 'vendor_tell_term_waitlist', 'vendor_remove_from_term_waitlist',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

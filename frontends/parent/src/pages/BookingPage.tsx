@@ -347,8 +347,12 @@ export default function BookingPage() {
   const termSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)] ?? null;
   // Groups found full when enrolling, since the page loaded (00260).
   const [filledSlots, setFilledSlots] = useState<Set<string>>(new Set());
-  // No term place left in the chosen group: the button joins its waitlist.
-  const termSlotFull = termMode && !!termSlot && (termSlot.spotsLeft === 0 || filledSlots.has(termSlot.id));
+  // No term place left in the chosen group: the button joins its waitlist. Not
+  // for a family the provider offered this group to (&offered=1, 00261): their
+  // enrolment may go over capacity, and the server checks the offer.
+  const offeredSlot = getParam("offered") === "1" ? getParam("term_slot") : null;
+  const termSlotFull = termMode && !!termSlot && termSlot.id !== offeredSlot
+    && (termSlot.spotsLeft === 0 || filledSlots.has(termSlot.id));
   // The term as it would be quoted to this parent today (the slot they picked,
   // minus the classes that have already run). The server charges term_quote().
   const quote = termEligible && liveTerm && termSlot ? liveQuote(liveTerm, termSlot, activity?.booking_cutoff_minutes ?? null) : null;

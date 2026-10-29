@@ -764,6 +764,63 @@ export async function openReenrolment(termId: string, days = 7): Promise<number>
   return Number(data ?? 0);
 }
 
+/* ── the term waitlist (00259-00261) ── */
+
+/** Someone waiting on a term: for a place in a group ('term'), or for one
+ *  trial, single or pack session of it (`session_id` set). */
+export type TermWaitRow = {
+  kind: 'term' | 'single' | 'trial' | 'package' | 'makeup';
+  id: string;
+  slot_id: string;
+  session_id: string | null;
+  session_starts_at: string | null;
+  child_name: string;
+  child_dob: string | null;
+  parent_name: string | null;
+  parent_email: string | null;
+  status: 'waiting' | 'holding' | 'offered';
+  queue_position: number | null;
+  joined_at: string;
+};
+
+export type TermWaitCount = { slot_id: string; waiting: number; session_waiting: number; free_places: number };
+
+export async function fetchTermWaitlist(termId: string): Promise<TermWaitRow[]> {
+  const { data, error } = await db.rpc('term_waitlist_roster', { p_term_id: termId });
+  if (error) throw error;
+  return (data ?? []) as TermWaitRow[];
+}
+
+export async function fetchTermWaitlistCounts(termId: string): Promise<TermWaitCount[]> {
+  const { data, error } = await db.rpc('term_waitlist_counts', { p_term_id: termId });
+  if (error) throw error;
+  return (data ?? []) as TermWaitCount[];
+}
+
+/** A personal offer of a term place to one waiting family; it may go over capacity. */
+export async function offerTermPlace(entryId: string): Promise<void> {
+  const { error } = await db.rpc('vendor_offer_term_place', { p_entry_id: entryId });
+  if (error) throw error;
+}
+
+/** Offer a freed trial or single session seat to one family, as "Promote" does. */
+export async function offerSessionPlace(bookingId: string): Promise<void> {
+  const { error } = await db.rpc('promote_waitlist_entry', { p_booking_id: bookingId });
+  if (error) throw error;
+}
+
+/** Tell everyone waiting on a group about a free place nobody announced. */
+export async function tellTermWaitlist(slotId: string): Promise<number> {
+  const { data, error } = await db.rpc('vendor_tell_term_waitlist', { p_slot_id: slotId });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+export async function removeFromTermWaitlist(entryId: string, reason: string): Promise<void> {
+  const { error } = await db.rpc('vendor_remove_from_term_waitlist', { p_entry_id: entryId, p_reason: reason.trim() || null });
+  if (error) throw error;
+}
+
 /** A draft of the next term: same groups, prices and rules, each group starting
  *  on its first day after this term's last session. */
 export function nextTermFrom(t: Term): Term {
