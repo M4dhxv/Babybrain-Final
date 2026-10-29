@@ -302,8 +302,11 @@ export function MyTermsList({ terms, waiting = [], onChanged }: { terms: MyTerm[
             {confirm?.id === t.id && (
               <div className="mt-3 rounded-[12px] border border-[#F3C2D3] bg-[#FFF5F8] p-3">
                 <p className="text-sm font-bold text-[#34406f]">
-                  Withdraw {t.childName} from {t.termName}? Their upcoming sessions are cancelled under the provider's
-                  cancellation policy. Sessions inside the cancellation window stay booked.
+                  Withdraw {t.childName} from {t.termName}?{" "}
+                  {t.attended > 0
+                    ? "The term has started, so there's no refund for the sessions you leave."
+                    : "Their upcoming sessions are cancelled under the provider's cancellation policy."}{" "}
+                  Sessions inside the cancellation window stay booked.
                 </p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" disabled={busy} onClick={() => withdraw(t)} className="rounded-full bg-[#C90044] px-4 py-1.5 text-sm font-black text-white disabled:opacity-60">

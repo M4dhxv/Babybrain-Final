@@ -6,6 +6,21 @@ import { sessionPrices } from '@/lib/session-price';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
+/** Which of these bookings are on a term session (00256), and how they were
+ *  booked. Term bookings pay through the term and can't be moved online
+ *  (00263). The column is newer than the generated types. */
+async function termKindsFor(admin: Admin, ids: string[]) {
+  const kinds = new Map<string, string>();
+  if (!ids.length) return kinds;
+  const { data } = await (admin as unknown as SupabaseClient)
+    .from('bookings')
+    .select('id, term_booking_kind')
+    .in('id', ids)
+    .not('term_booking_kind', 'is', null);
+  for (const r of (data ?? []) as { id: string; term_booking_kind: string }[]) kinds.set(r.id, r.term_booking_kind);
+  return kinds;
+}
+
 /** Was this booking made by redeeming a make-up token? (redeemed_booking_id
  *  is cleared when such a booking is cancelled — 00081 — so this only ever
  *  matches a live one.) Every row needs this — an active booking can be
@@ -364,7 +379,7 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess] = await Promise.all([
+  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess, bookingTermKinds] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
     scope === 'active'
@@ -372,6 +387,7 @@ export async function GET(request: Request) {
       : Promise.resolve({ claimable: new Set<string>(), openFree: new Set<string>(), termKinds: new Map<string, string>() }),
     eventTicketsFor(admin, user.id, rows),
     eventAccessFor(admin, user.id, rows),
+    termKindsFor(admin, allIds),
   ]);
 
   const bookings = rows.map((r) => {
@@ -423,7 +439,7 @@ export async function GET(request: Request) {
       spot_open: openFree.has(r.id),
       // A waitlist place on a term session (00259): how it was booked, so the
       // card pays through the term and opens the booking page in that mode.
-      term_kind: termKinds.get(r.id) ?? null,
+      term_kind: bookingTermKinds.get(r.id) ?? termKinds.get(r.id) ?? null,
       // How a cancelled booking was made good (00080/00081) — the permanent
       // line on the card. 'none' when the provider withheld a refund, so the
       // card doesn't imply a credit came back off a lingering

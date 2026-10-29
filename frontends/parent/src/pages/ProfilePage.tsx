@@ -3846,11 +3846,11 @@ function PartyPlaces({
                         type="button"
                         onClick={() => onCancelPlace(p.bookingId, p.name)}
                         className={`rounded-[8px] px-2 py-1 text-xs font-bold ${
-                          cancelWhy && !(b.termKind && p.status === "waitlisted")
+                          cancelWhy && !(!b.isWixLinked && p.status === "waitlisted")
                             ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#8A93AC]"
                             : "border border-[#FED7E4] text-[#F2739E] hover:bg-[#FFF5F8]"
                         }`}
-                        title={(b.termKind && p.status === "waitlisted" ? null : cancelWhy) ?? `Cancel ${p.name}'s place`}
+                        title={(!b.isWixLinked && p.status === "waitlisted" ? null : cancelWhy) ?? `Cancel ${p.name}'s place`}
                       >
                         Cancel place
                       </button>
@@ -3926,15 +3926,16 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   const cutoffPassed = (b: BookingItem, hours: number) =>
     b.startsAt != null && new Date(b.startsAt).getTime() - hours * 36e5 < Date.now();
 
-  // Every place on this card is waiting for one session of a term: leaving
-  // costs nothing, so the vendor's cancellation rules don't apply (00259).
-  const termWaitOnly = (b: BookingItem) =>
-    b.termKind != null && b.places.every((p) => p.status === "waitlisted");
+  // Every place on this card is on a waitlist: leaving costs nothing, so the
+  // vendor's cancellation rules don't apply (leave_waitlist, 00263). Wix-linked
+  // bookings keep their own cancel route.
+  const waitOnly = (b: BookingItem) =>
+    !b.isWixLinked && b.places.every((p) => p.status === "waitlisted");
   // The same for one place of a party whose other places got in.
-  const termWaitPlace = (b: BookingItem, bookingId: string) =>
-    b.termKind != null && b.places.some((p) => p.bookingId === bookingId && p.status === "waitlisted");
+  const waitPlace = (b: BookingItem, bookingId: string) =>
+    !b.isWixLinked && b.places.some((p) => p.bookingId === bookingId && p.status === "waitlisted");
   const cancelBlockReason = (b: BookingItem) =>
-    termWaitOnly(b)
+    waitOnly(b)
       ? null
       : b.isEvent
       ? "This is a ticketed event — it can't be cancelled once booked. Contact the provider if you need help."
@@ -3946,7 +3947,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
         ? `The cancellation window for this session has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
         : null;
   const reschedBlockReason = (b: BookingItem) =>
-    b.isEvent
+    b.termKind
+      ? "Term sessions can't be moved online. Ask the provider if you need a different date."
+      : b.isEvent
       ? "This is a ticketed event — it can't be rescheduled once booked. Contact the provider if you need help."
       : b.isCourse
       ? "This is a course — your enrolment covers every session in the run, so there's no single session to move. Contact the provider if you need help."
@@ -4018,8 +4021,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       }
       return;
     }
-    const { error } = termWaitOnly(b)
-      ? await termsDb.rpc("leave_term_waitlist", party(b) && b.groupId ? { p_group_id: b.groupId } : { p_booking_id: b.id })
+    const { error } = waitOnly(b)
+      ? await termsDb.rpc("leave_waitlist", party(b) && b.groupId ? { p_group_id: b.groupId } : { p_booking_id: b.id })
       : party(b) && b.groupId
         ? await supabase.rpc("cancel_booking_group", { p_group_id: b.groupId })
         : await supabase.rpc("cancel_booking", { p_booking_id: b.id });
@@ -4041,15 +4044,15 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
    *  as the whole-booking cancel; the per-row compensation trigger returns
    *  that seat's own credit / make-up token. */
   function cancelPlace(b: BookingItem, bookingId: string, name: string) {
-    const why = termWaitPlace(b, bookingId) ? null : cancelBlockReason(b);
+    const why = waitPlace(b, bookingId) ? null : cancelBlockReason(b);
     if (why) { setNotice(why); return; }
     setCancelAsk({ b, placeId: bookingId, name });
   }
 
   async function doCancelPlace(b: BookingItem, bookingId: string) {
     setBusyId(b.id);
-    const { error } = termWaitPlace(b, bookingId)
-      ? await termsDb.rpc("leave_term_waitlist", { p_booking_id: bookingId })
+    const { error } = waitPlace(b, bookingId)
+      ? await termsDb.rpc("leave_waitlist", { p_booking_id: bookingId })
       : await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     setBusyId(null);
     if (error) setNotice(cleanRpcErrorMessage(error));
@@ -4189,7 +4192,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
             {b.status === "pending" && !b.canClaim && (
               <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
                 <Icon name="bell" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-palette-yellow" />
-                <span>Your previous attempt to book this slot was abandoned before payment went through — book it again to complete the payment and confirm the space.</span>
+                <span>Payment for this place hasn't gone through yet. It's held for 45 minutes from when you started paying; after that it's released and you can book it again.</span>
               </div>
             )}
             {b.canClaim && (
@@ -4327,6 +4330,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
         const { b, placeId, name } = cancelAsk;
         const working = busyId === b.id;
         const whole = !placeId && party(b);
+        // Leaving a waitlist place: nothing was paid, so no refund talk.
+        const leaving = placeId ? waitPlace(b, placeId) : waitOnly(b);
         const close = () => !working && setCancelAsk(null);
         const confirm = async () => {
           if (placeId) await doCancelPlace(b, placeId);
@@ -4344,7 +4349,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
             >
               <div className="px-5 pt-5 sm:px-6 sm:pt-6">
                 <h3 id="cancel-title" className="text-lg font-black">
-                  {placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
+                  {leaving
+                    ? placeId ? `Take ${name} off the waitlist?` : "Leave the waitlist?"
+                    : placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
                 </h3>
                 <p className="mt-1 text-sm font-semibold text-[#59658d]">
                   {b.title}{b.when ? <> · {b.when}</> : null}
@@ -4352,20 +4359,26 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
               </div>
               <div className="px-5 py-4 sm:px-6">
                 <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2.5 text-sm font-semibold text-[#3f4b78]">
-                  {placeId
-                    ? "The rest of the booking stays as it is. "
-                    : whole
-                    ? "Every place on this booking will be cancelled. "
-                    : null}
-                  Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                  {leaving ? (
+                    "Nothing was paid for a waitlist place, so there's nothing to refund."
+                  ) : (
+                    <>
+                      {placeId
+                        ? "The rest of the booking stays as it is. "
+                        : whole
+                        ? "Every place on this booking will be cancelled. "
+                        : null}
+                      Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                    </>
+                  )}
                 </p>
               </div>
               <div className="space-y-2 border-t border-[#EBE3E5] px-5 py-4 sm:px-6">
                 <Button type="button" className="w-full" disabled={working} onClick={() => void confirm()}>
-                  {working ? "Cancelling…" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
+                  {working ? "Cancelling…" : leaving ? "Leave the waitlist" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
                 </Button>
                 <Button type="button" variant="outline" className="w-full" disabled={working} onClick={close}>
-                  Keep my booking
+                  {leaving ? "Stay on it" : "Keep my booking"}
                 </Button>
               </div>
             </div>
