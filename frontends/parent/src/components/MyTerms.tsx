@@ -29,6 +29,25 @@ export type MyTerm = {
   status: "enrolled" | "unpaid" | "withdrawn" | "finished";
 };
 
+/** A place on a full term group's waitlist (00260), from my_term_waitlist(). */
+export type MyTermWait = {
+  id: string;
+  status: "waiting" | "holding";
+  slot_id: string;
+  term_name: string;
+  activity_title: string;
+  slug: string;
+  child_id: string | null;
+  child_name: string | null;
+  next_session: string | null;
+  sessions_left: number;
+  price_cents: number;
+  joinable: boolean;
+  free_places: number;
+  /** The child has since got into another group of the same term. */
+  enrolled_elsewhere: boolean;
+};
+
 type Row = {
   id: string;
   booking_group_id: string;
@@ -41,15 +60,20 @@ type Row = {
 
 export function useMyTerms(userId: string | null | undefined, enabled: boolean) {
   const [terms, setTerms] = useState<MyTerm[]>([]);
+  const [waiting, setWaiting] = useState<MyTermWait[]>([]);
   const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
-    if (!userId || !enabled) { setTerms([]); setGroupIds(new Set()); return; }
-    const { data, error } = await termsDb
-      .from("term_enrolments")
-      .select("id, booking_group_id, child_id, price_cents, children(name), terms(name, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+    if (!userId || !enabled) { setTerms([]); setWaiting([]); setGroupIds(new Set()); return; }
+    const [{ data, error }, { data: wait }] = await Promise.all([
+      termsDb
+        .from("term_enrolments")
+        .select("id, booking_group_id, child_id, price_cents, children(name), terms(name, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
+      termsDb.rpc("my_term_waitlist"),
+    ]);
+    setWaiting((wait ?? []) as MyTermWait[]);
     if (error || !data) return;
     const now = Date.now();
     const rows = data as unknown as Row[];
@@ -88,7 +112,96 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
   }, [userId, enabled]);
 
   useEffect(() => { void load(); }, [load]);
-  return { terms, groupIds, reload: load };
+  return { terms, waiting, groupIds, reload: load };
+}
+
+// "Stay on this waitlist" (decision 3) is remembered on this device so the
+// question isn't asked on every visit. Nothing depends on it surviving.
+const STAY_KEY = "bb_term_wait_stay_v1";
+function stayedIds(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(STAY_KEY) ?? "[]") as string[]); } catch { return new Set(); }
+}
+function rememberStay(id: string) {
+  try { localStorage.setItem(STAY_KEY, JSON.stringify([...stayedIds(), id])); } catch { /* private mode */ }
+}
+
+const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+
+/** The parent's places on full term groups' waitlists (00260). */
+function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [stayed, setStayed] = useState<Set<string>>(() => stayedIds());
+
+  async function leave(w: MyTermWait) {
+    setBusy(true);
+    setErr(null);
+    const { error } = await termsDb.rpc("leave_term_waitlist_entry", { p_entry_id: w.id });
+    setBusy(false);
+    if (error) { setErr(cleanRpcErrorMessage(error)); return; }
+    onChanged();
+  }
+
+  return (
+    <div className="space-y-3">
+      {err && <p className="rounded-[10px] bg-[#FAF7F7] px-4 py-2.5 text-sm font-bold text-[#59658d]">{err}</p>}
+      {waiting.map((w) => {
+        const child = w.child_name ?? "Your child";
+        const enrolHref = `/book?slug=${encodeURIComponent(w.slug)}&term_slot=${encodeURIComponent(w.slot_id)}&mode=term${w.child_id ? `&child=${encodeURIComponent(w.child_id)}` : ""}`;
+        const placeFree = w.status === "waiting" && w.joinable && w.free_places > 0;
+        const askStay = w.enrolled_elsewhere && !stayed.has(w.id);
+        return (
+          <div key={w.id} className="rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <a href={w.slug ? `/activity?slug=${encodeURIComponent(w.slug)}` : undefined} className="font-black text-[#34406f] hover:underline">
+                  {w.term_name}
+                </a>
+                <p className="text-sm font-semibold text-[#59658d]">{w.activity_title} · {child}</p>
+              </div>
+              <span className="rounded-full bg-[#FEF2D7] px-2.5 py-0.5 text-[11px] font-black text-yellow-800">
+                {w.status === "holding" ? "Holding a place" : "Waiting for a place"}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-[#59658d]">
+              {w.next_session ? `Group from ${sgDateTime(w.next_session)}. ` : ""}
+              {!w.joinable
+                ? "This term has closed to new families."
+                : w.status === "holding"
+                  ? "You're enrolling now. Finish paying under Terms to keep the place."
+                  : `If you got a place today: ${w.sessions_left} sessions, ${money(w.price_cents)}.`}
+            </p>
+            {askStay && (
+              <div className="mt-3 rounded-[12px] border border-[#F3C2D3] bg-[#FFF5F8] p-3">
+                <p className="text-sm font-bold text-[#34406f]">{child} is now enrolled in another group of {w.term_name}. Stay on this waitlist too?</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" disabled={busy} onClick={() => leave(w)} className="rounded-full bg-[#FA4D8D] px-4 py-1.5 text-sm font-black text-white disabled:opacity-60">
+                    Leave this waitlist
+                  </button>
+                  <button type="button" onClick={() => { rememberStay(w.id); setStayed(new Set(stayed).add(w.id)); }} className="rounded-full border border-[#DCD2D5] px-4 py-1.5 text-sm font-black text-[#34406f]">
+                    Stay on it
+                  </button>
+                </div>
+              </div>
+            )}
+            {placeFree && (
+              <div className="mt-3 flex flex-col gap-1.5 rounded-[12px] bg-[#F1FBEF] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-bold text-palette-greenInk">A place is free. The first family to enrol gets it.</p>
+                <a href={enrolHref} className="rounded-full bg-[#FA4D8D] px-4 py-2 text-center text-sm font-black text-white">Enrol now</a>
+              </div>
+            )}
+            {!askStay && w.status === "waiting" && (
+              <div className="mt-3">
+                <button type="button" disabled={busy} onClick={() => leave(w)} className="rounded-full border border-[#DCD2D5] px-4 py-2 text-sm font-black text-[#34406f] disabled:opacity-60">
+                  Leave waitlist
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const STATUS: Record<MyTerm["status"], { label: string; cls: string }> = {
@@ -98,12 +211,12 @@ const STATUS: Record<MyTerm["status"], { label: string; cls: string }> = {
   finished: { label: "Finished", cls: "bg-[#F4EFF0] text-[#697390]" },
 };
 
-export function MyTermsList({ terms, onChanged }: { terms: MyTerm[]; onChanged: () => void }) {
+export function MyTermsList({ terms, waiting = [], onChanged }: { terms: MyTerm[]; waiting?: MyTermWait[]; onChanged: () => void }) {
   const [confirm, setConfirm] = useState<MyTerm | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  if (terms.length === 0) return null;
+  if (terms.length === 0 && waiting.length === 0) return null;
 
   async function withdraw(t: MyTerm) {
     setBusy(true);
@@ -132,6 +245,11 @@ export function MyTermsList({ terms, onChanged }: { terms: MyTerm[]; onChanged: 
     <section className="mb-6">
       <h2 className="mb-3 text-[19px] font-black">Terms</h2>
       {err && <p className="mb-3 rounded-[10px] bg-[#FAF7F7] px-4 py-2.5 text-sm font-bold text-[#59658d]">{err}</p>}
+      {waiting.length > 0 && (
+        <div className={terms.length > 0 ? "mb-3" : ""}>
+          <TermWaitCards waiting={waiting} onChanged={onChanged} />
+        </div>
+      )}
       <div className="space-y-3">
         {terms.map((t) => (
           <div key={t.id} className="rounded-[16px] border border-[#EBE3E5] bg-white p-4 shadow-card">

@@ -1616,7 +1616,7 @@ export default function ProfilePage() {
   // rather than flashing the "you haven't booked anything" empty state.
   const [bookingsLoaded, setBookingsLoaded] = useState(false);
   // Term enrolments get their own cards; their seats are left out of the session list.
-  const { terms: myTerms, groupIds: termGroupIds, reload: reloadTerms } = useMyTerms(session?.user.id, termsPreviewEnabled());
+  const { terms: myTerms, waiting: myTermWaits, groupIds: termGroupIds, reload: reloadTerms } = useMyTerms(session?.user.id, termsPreviewEnabled());
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
@@ -2939,6 +2939,7 @@ export default function ProfilePage() {
               )}
               <MyTermsList
                 terms={myTerms.filter((t) => !childFilter || t.childId === childFilter)}
+                waiting={myTermWaits.filter((w) => !childFilter || w.child_id === childFilter)}
                 onChanged={() => { void reloadTerms(); loadBookings(); }}
               />
               {!bookingsLoaded ? (

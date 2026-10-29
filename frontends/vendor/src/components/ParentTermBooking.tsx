@@ -286,7 +286,9 @@ export function TermEnrolPanel({
                   {s.dates.length} sessions from {sgDay(s.dates[0])}{s.venue ? ` · ${s.venue}` : ''}
                 </span>
               </span>
-              {s.spotsLeft != null && (
+              {s.spotsLeft === 0 ? (
+                <span className="shrink-0 rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[11px] font-black text-[#936700]">Full · waitlist</span>
+              ) : s.spotsLeft != null && (
                 <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? 'place' : 'places'} left</span>
               )}
             </button>

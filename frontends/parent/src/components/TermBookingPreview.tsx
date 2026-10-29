@@ -213,7 +213,11 @@ export function TermEnrolPreview({
                 <span className="block font-black text-[#34406f]">{s.label}</span>
                 <span className="block text-xs font-semibold text-[#697390]">{s.dates.length} sessions from {sgDay(s.dates[0])}{s.venue ? ` · ${s.venue}` : ""}</span>
               </span>
-              {s.spotsLeft != null && <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? "place" : "places"} left</span>}
+              {s.spotsLeft === 0 ? (
+                <span className="shrink-0 rounded-full bg-palette-yellowSoft px-2 py-0.5 text-[11px] font-black text-palette-yellowInk">Full · waitlist</span>
+              ) : s.spotsLeft != null && (
+                <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? "place" : "places"} left</span>
+              )}
             </button>
           ))}
         </div>
@@ -256,6 +260,16 @@ export function TermEnrolPreview({
         <p className="mt-1 text-xs font-semibold text-[#697390]">
           {allowMidTerm ? `Joining closes when ${minLeft} sessions are left.` : "Joining closes once the term starts."}
         </p>
+        {slot.spotsLeft === 0 && (
+          <p className="mt-2 rounded-[10px] bg-palette-yellowSoft px-3 py-2 text-sm font-bold text-palette-yellowInk">
+            This group is full. Join the waitlist for free and we'll email you when a place comes free.{" "}
+            {allowMidTerm
+              ? perClass != null && perClass > 0
+                ? `If it opens after the term starts, it's $${perClass} less for each session already run.`
+                : "The term costs the same whenever you join."
+              : ""}
+          </p>
+        )}
       </div>
     </section>
   );

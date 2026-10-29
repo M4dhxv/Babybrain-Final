@@ -353,6 +353,44 @@ const T: Record<string, Template> = {
       sign);
   },
 
+  // Joined a full term group's waitlist (join_term_waitlist, 00260). The
+  // mid-term line states the vendor's own rule: a waitlisted family pays what
+  // any family joining that day pays, so this never promises a lower price.
+  term_waitlist_joined: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const child = str(d, 'child_name');
+    const first = str(d, 'first_session');
+    const reduceBy = Number(d.reduce_by_cents ?? 0);
+    return wrap(ctx, `You're on the waitlist for ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${child ? bold(child) + ' is' : 'You are'} on the waitlist for ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}${first ? `, the group starting ${esc(first)}` : ''}.`) +
+      p('We will email you when a place comes free. Everyone waiting is told at the same time, and the first family to enrol gets the place. Joining the waitlist is free.') +
+      p(reduceBy > 0
+        ? `If a place opens after the term has started, the price is ${bold(`$${(reduceBy / 100).toFixed(reduceBy % 100 ? 2 : 0)}`)} less for each session already run.`
+        : 'The term costs the same whenever you join.') +
+      p(`You can leave the waitlist at any time under ${link(ctx, '/profile?tab=bookings', 'Bookings')}.`) +
+      sign);
+  },
+
+  // A whole place has come free in a term group (offer_term_place, 00260).
+  term_waitlist_place_open: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const left = str(d, 'sessions_left');
+    const cents = Number(d.price_cents ?? NaN);
+    const price = Number.isFinite(cents) ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : null;
+    const first = str(d, 'first_session');
+    return wrap(ctx, `A place is free in ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`A place has come free in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}, which you are on the waitlist for.`) +
+      (left || price
+        ? p([left ? `${esc(left)} sessions${first ? ` from ${esc(first)}` : ''}` : null, price ? `${bold(price)} today` : null].filter(Boolean).join(', ') + '.')
+        : '') +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      p('Everyone on the waitlist has been told, and the first family to enrol gets the place. Being on the waitlist is free — you haven’t been charged anything.') +
+      sign);
+  },
+
   booking_reminder: (d, ctx) =>
     wrap(ctx, 'You have an upcoming booking 👶🧠',
       p(greet(ctx.recipientName)) +

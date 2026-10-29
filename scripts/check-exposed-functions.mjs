@@ -67,6 +67,8 @@ const ALLOWED = new Set([
   'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
   // 00259: a parent leaving their own unpaid waitlist place on a term session.
   'leave_term_waitlist',
+  // 00260: the parent's own term place waitlist; each checks the caller.
+  'join_term_waitlist', 'leave_term_waitlist_entry', 'my_term_waitlist',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

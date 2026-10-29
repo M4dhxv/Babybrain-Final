@@ -345,6 +345,10 @@ export default function BookingPage() {
   const termMode = termEligible && bookMode === "term";
   const termSlots = liveTerm?.slots ?? [];
   const termSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)] ?? null;
+  // Groups found full when enrolling, since the page loaded (00260).
+  const [filledSlots, setFilledSlots] = useState<Set<string>>(new Set());
+  // No term place left in the chosen group: the button joins its waitlist.
+  const termSlotFull = termMode && !!termSlot && (termSlot.spotsLeft === 0 || filledSlots.has(termSlot.id));
   // The term as it would be quoted to this parent today (the slot they picked,
   // minus the classes that have already run). The server charges term_quote().
   const quote = termEligible && liveTerm && termSlot ? liveQuote(liveTerm, termSlot, activity?.booking_cutoff_minutes ?? null) : null;
@@ -1431,6 +1435,28 @@ export default function BookingPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantSessionId, termEligible, liveTerms, sessions]);
+  // "A place is free" for a whole term (00260) links to its group and child:
+  // /book?…&term_slot=…&mode=term&child=….
+  const wantTermSlot = getParam("term_slot");
+  const wantSlotResolved = useRef(false);
+  useEffect(() => {
+    if (wantSlotResolved.current || !wantTermSlot || !termEligible) return;
+    for (const t of liveTerms) {
+      const i = t.slots.findIndex((sl) => sl.id === wantTermSlot);
+      if (i < 0) continue;
+      wantSlotResolved.current = true;
+      setTermId(t.id);
+      setTermSlotIdx(i);
+      return;
+    }
+  }, [wantTermSlot, termEligible, liveTerms]);
+  const wantChildResolved = useRef(false);
+  useEffect(() => {
+    const want = getParam("child");
+    if (wantChildResolved.current || !want || !kids.some((k) => k.id === want)) return;
+    wantChildResolved.current = true;
+    setChildId(want);
+  }, [kids]);
 
   // Packs closed at this activity while the parent sat on "Use a package".
   useEffect(() => {
@@ -1487,6 +1513,7 @@ export default function BookingPage() {
     if (!quote.joinable) { setErr(quote.reason ?? "This term is not open for enrolment."); return; }
     const problem = termCheckProblem();
     if (problem) { setErr(problem); return; }
+    if (termSlotFull) return joinTermWaitlist();
     setBusy(true);
     const { data, error } = await termsDb
       .rpc("enrol_in_term", {
@@ -1499,7 +1526,14 @@ export default function BookingPage() {
       .single();
     if (error || !data) {
       setBusy(false);
-      setErr(error ? cleanRpcErrorMessage(error) : "Could not enrol");
+      const msg = error ? cleanRpcErrorMessage(error) : "Could not enrol";
+      // Filled up since the page loaded: offer the waitlist instead (00260).
+      if (msg.includes("This slot is full")) {
+        setFilledSlots((s) => new Set(s).add(termSlot.id));
+        setErr("This group has just filled up. You can join its waitlist for free.");
+        return;
+      }
+      setErr(msg);
       return;
     }
     const groupId = (data as { group_id: string }).group_id;
@@ -1522,6 +1556,41 @@ export default function BookingPage() {
       }
     }
     await payTermGroup(groupId);
+  }
+
+  /** The chosen group is full: the child (and any brothers and sisters picked)
+   *  go on its waitlist, free (join_term_waitlist, 00260). */
+  async function joinTermWaitlist() {
+    if (!termSlot || !quote) return;
+    setBusy(true);
+    for (const id of [bookChildId, ...termSiblings.map((k) => k.id)]) {
+      const { error } = await termsDb.rpc("join_term_waitlist", {
+        p_slot_id: termSlot.id,
+        p_child_id: id,
+        p_policies: acceptedPolicies,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+      });
+      if (error) {
+        setBusy(false);
+        const msg = cleanRpcErrorMessage(error);
+        setErr(msg.includes("A place is free")
+          ? "A place has just come free in this group. Refresh the page to enrol."
+          : msg);
+        return;
+      }
+    }
+    setBusy(false);
+    goTo(`/booked?${new URLSearchParams({
+      title: `${activity?.title ?? "your class"} · ${liveTerm?.name ?? "Term"}`,
+      slug: activity?.slug ?? "",
+      provider: activity?.provider_id ?? "",
+      pname: activity?.provider_name ?? "",
+      when: `${termSlot.label}${quote.joining[0] ? ` · from ${sgDay(quote.joining[0])}` : ""}`,
+      status: "waitlisted",
+      term: "1",
+      venue: displayVenue ?? "",
+    }).toString()}`);
   }
 
   /** A trial or single session of a term (book_term_class), then payment. */
@@ -1635,6 +1704,8 @@ export default function BookingPage() {
       ? "Choose a package"
     : termOneOffFull
       ? "Join the waitlist (free)"
+    : termSlotFull
+      ? `Join the waitlist${termSiblings.length > 0 ? ` for ${termSiblings.length + 1} children` : ""} (free)`
     : termMode
       ? `Enrol ${termSiblings.length > 0 ? `${termSiblings.length + 1} children` : "for the term"}${termTotal != null ? ` — $${termTotal.toFixed(2).replace(/\.00$/, "")}` : ""}`
     : isRsvpEvent
@@ -1661,7 +1732,10 @@ export default function BookingPage() {
   // a pack's price; now that it goes through this same CTA, showing the
   // single-class total while the button says "Buy pack — $500" read as a
   // straight contradiction (QA).
-  const displayTotal = termMode
+  // Joining a waitlist costs nothing now (00259/00260).
+  const displayTotal = termSlotFull || termOneOffFull
+    ? 0
+    : termMode
     ? termTotal
     : packageUnchosen
       ? null

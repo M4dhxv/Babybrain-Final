@@ -165,7 +165,13 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
         .sort((a, b) => a.position - b.position)
         .map((s): LiveSlot => {
           const list = bySlot.get(s.id) ?? [];
-          const next = list.find((x) => Date.parse(x.starts_at) > now);
+          // A term place is a seat on every session still to come, so the
+          // fullest of them decides (term_slot_free_places, 00260). 0 = full:
+          // the booking page offers the slot's waitlist instead.
+          const upcomingSpots = list
+            .filter((x) => Date.parse(x.starts_at) > now)
+            .map((x) => spotsBySession.get(x.id))
+            .filter((v): v is number => v != null);
           return {
             key: s.id,
             id: s.id,
@@ -174,7 +180,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
             dates: list.map((x) => x.starts_at),
             sessionIds: list.map((x) => x.id),
             capacity: s.capacity,
-            spotsLeft: next ? spotsBySession.get(next.id) ?? null : null,
+            spotsLeft: upcomingSpots.length ? Math.max(0, Math.min(...upcomingSpots)) : null,
             price: dollars(s.price_cents ?? t.price_cents),
             singleCap: s.single_cap,
           };

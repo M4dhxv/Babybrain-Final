@@ -50,6 +50,7 @@ function pushActions(type: string): { action: string; title: string }[] | undefi
   if (MESSAGE_TYPES.has(type)) return [{ action: 'open', title: 'Open chat' }];
   if (type === 'suggested_activities') return [{ action: 'open', title: 'See suggestions' }];
   if (type === 'waitlist_available') return [{ action: 'open', title: 'Claim your spot' }];
+  if (type === 'term_waitlist_place_open') return [{ action: 'open', title: 'Enrol now' }];
   if (type === 'provider_waitlist_joined') return [{ action: 'open', title: 'View waitlist' }];
   if (type.startsWith('booking_') || type === 'session_rescheduled' || type === 'class_cancelled' || type === 'provider_booking_received') {
     return [{ action: 'open', title: 'View booking' }];
