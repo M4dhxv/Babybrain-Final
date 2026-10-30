@@ -32,7 +32,7 @@ export function VerifyEmailCode({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (code.length < 6) {
-      setError("Enter the 6-digit code from the email.");
+      setError("Enter the full code from the email.");
       return;
     }
     setBusy(true);
@@ -54,7 +54,7 @@ export function VerifyEmailCode({
     <div className="text-center">
       <h1 className="text-2xl font-black">{title}</h1>
       <p className="mt-3 font-semibold text-[#44507b]">
-        We sent a 6-digit code to <strong className="break-words">{email}</strong>. Enter it below, or tap the link in the email.
+        We sent a confirmation code to<strong className="break-words">{email}</strong>. Enter it below, or tap the link in the email.
       </p>
 
       <form onSubmit={submit} noValidate className="mx-auto mt-6 max-w-[320px]">
@@ -65,13 +65,13 @@ export function VerifyEmailCode({
           inputMode="numeric"
           autoComplete="one-time-code"
           enterKeyHint="go"
-          // Supabase's code length is a project setting (6 by default); accept a
-          // little more so a longer one can still be typed in full.
-          maxLength={10}
+          // Supabase's code length is a project setting (6 to 8 digits), so
+          // don't hint at a length; accept up to 8.
+          maxLength={8}
           value={code}
           onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setError(null); }}
-          placeholder="123456"
-          className="h-14 w-full rounded-[12px] border border-[#FED7E4] bg-white px-4 text-center text-2xl font-black tracking-[0.4em] placeholder:text-[#E3DCDF]"
+          placeholder="Enter code"
+          className="h-14 w-full rounded-[12px] border border-[#FED7E4] bg-white px-4 text-center text-2xl font-black tracking-[0.4em] placeholder:text-base placeholder:font-semibold placeholder:tracking-normal placeholder:text-[#B8AEB3]"
         />
         {error && (
           <p role="alert" className="mt-3 rounded-[10px] border border-[#FED7E4] bg-[#FEEBF2] px-4 py-3 text-sm font-bold text-baby-cta">
