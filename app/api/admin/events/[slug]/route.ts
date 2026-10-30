@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin';
 import { logAdminAction } from '@/lib/admin-audit';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { fetchAll } from '@/lib/admin-test-data';
 import { parseRegistration, type RegisterResult } from '@/lib/launch-event';
 import { launchEmailsEnabled } from '@/lib/launch-event-notify';
 
@@ -47,7 +48,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       waitlisted: mine.filter((r) => r.status === 'waitlisted').length,
     };
   });
-  return NextResponse.json({ event: event.data, slots: slotSummary, registrations: regs.data ?? [], issues: issues.data ?? [], emailsEnabled: launchEmailsEnabled() });
+
+  // Is each registrant already a BabyBrain parent (an account with the same email), and have they
+  // booked a session? Cancelled and waitlisted seats don't count, same as Admin → Parents.
+  const regRows = (regs.data ?? []) as { id: string; email: string | null }[];
+  const emails = [...new Set(regRows.map((r) => r.email?.trim().toLowerCase()).filter((e): e is string => !!e))];
+  const userByEmail = new Map<string, string>();
+  for (let i = 0; i < emails.length; i += 100) {
+    const { data, error } = await db.from('parent_profiles').select('id, email').in('email', emails.slice(i, i + 100));
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    for (const p of (data ?? []) as { id: string; email: string }[]) userByEmail.set(p.email.toLowerCase(), p.id);
+  }
+  const bookedUsers = new Set<string>();
+  const userIds = [...userByEmail.values()];
+  for (let i = 0; i < userIds.length; i += 100) {
+    const ids = userIds.slice(i, i + 100);
+    const rowsB = await fetchAll<{ user_id: string }>((f, t) =>
+      db.from('bookings').select('user_id').in('user_id', ids).not('status', 'in', '("cancelled","waitlisted")').range(f, t) as unknown as PromiseLike<{ data: { user_id: string }[] | null; error: { message: string } | null }>);
+    for (const b of rowsB) bookedUsers.add(b.user_id);
+  }
+  const registrations = regRows.map((r) => {
+    const uid = r.email ? userByEmail.get(r.email.trim().toLowerCase()) : undefined;
+    return { ...r, signed_up: !!uid, booked: !!uid && bookedUsers.has(uid) };
+  });
+
+  return NextResponse.json({ event: event.data, slots: slotSummary, registrations, issues: issues.data ?? [], emailsEnabled: launchEmailsEnabled() });
 }
 
 /**

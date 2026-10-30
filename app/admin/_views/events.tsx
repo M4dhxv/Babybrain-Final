@@ -16,6 +16,8 @@ type Registration = {
   held: boolean; promoted_at: string | null; promoted_auto: boolean; notified_at: string | null; notify_error: string | null;
   adult_names: string[]; child_details: { name: string; age: string }[];
   notes: string | null; created_at: string; status_changed_at: string | null; changed_by: string | null;
+  /** Has an account (same email) / has booked at least one session. */
+  signed_up: boolean; booked: boolean;
 };
 type Issue = {
   id: string; registration_id: string | null; kind: 'report' | 'email_corrected';
@@ -255,6 +257,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                 <th style={{ ...th(), width: 36 }} aria-label="Details" />
                 <th style={th()}>Name</th><th style={th()}>Email</th><th style={th()}>Phone</th><th style={th()}>Slot</th>
                 <th style={{ ...th(), textAlign: 'right' }}>Children</th><th style={{ ...th(), textAlign: 'right' }}>Adults</th>
+                <th style={th()}>Signed-up</th><th style={th()}>Booked</th>
                 <th style={th()}>Status</th><th style={th()}>Actions</th>
               </tr>
             </thead>
@@ -272,6 +275,8 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                     <td style={{ ...td(), whiteSpace: 'nowrap' }}>{slotLabel(r.slot_key)}</td>
                     <td style={{ ...td(), textAlign: 'right' }}>{r.children}</td>
                     <td style={{ ...td(), textAlign: 'right' }}>{r.adults}</td>
+                    <td style={td()}><Badge tone={r.signed_up ? 'green' : 'grey'}>{r.signed_up ? 'Yes' : 'No'}</Badge></td>
+                    <td style={td()}><Badge tone={r.booked ? 'green' : 'grey'}>{r.booked ? 'Yes' : 'No'}</Badge></td>
                     <td style={td()}>
                       <Badge tone={tone(r.status)}>{r.status}</Badge>
                       {r.over_capacity && <div style={{ color: C.pink, fontSize: 11, fontWeight: 800, marginTop: 4 }}>over capacity</div>}
@@ -301,7 +306,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
                   {expanded.has(r.id) && (
                     <tr style={{ borderBottom: `1px solid ${C.border}`, background: C.panel2 }}>
                       <td />
-                      <td colSpan={8} style={{ ...td(), paddingBottom: 14 }}>
+                      <td colSpan={10}style={{ ...td(), paddingBottom: 14 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
                           <div>
                             <div style={{ color: C.muted, fontSize: 12, fontWeight: 800, marginBottom: 4 }}>Adults ({r.adults})</div>
