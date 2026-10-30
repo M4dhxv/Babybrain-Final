@@ -45,8 +45,17 @@ export function termsPreviewEnabled(): boolean {
   }
 }
 
+/** A list of slots a parent picks one from (Flexible terms). A Simple term has exactly one. */
+export type TermGroup = { id: string; name: string };
+
+/** How parents choose (00264): 'simple' = one list of slots, pick one;
+ *  'flexible' = several groups, pick one slot from each and keep that pair every week. */
+export type SlotMode = 'simple' | 'flexible';
+
 export type TermSlot = {
   id: string;
+  /** The group this slot belongs to. */
+  groupId: string;
   /** 0 = Sunday … 6 = Saturday. The session repeats on each of these days. */
   days: number[];
   time: string; // HH:MM
@@ -100,14 +109,19 @@ export type Term = {
   previousTermId: string | null;
   /** While in the future, only families from the previous term can enrol. */
   priorityUntil: string | null;
+  slotMode: SlotMode;
+  groups: TermGroup[];
   slots: TermSlot[];
   status: 'draft' | 'published';
 };
 
 /** Fill fields that terms saved by earlier versions of the preview lack. */
 export function normalizeTerm(t: Term): Term {
+  const groups = t.groups?.length ? t.groups : [{ id: t.slots[0]?.groupId || newId(), name: DEFAULT_GROUP_NAME }];
   return {
     ...t,
+    slotMode: t.slotMode ?? 'simple',
+    groups,
     allowTrial: t.allowTrial ?? false,
     trialPrice: t.trialPrice ?? 0,
     trialLimit: t.trialLimit ?? 1,
@@ -117,6 +131,7 @@ export function normalizeTerm(t: Term): Term {
     priorityUntil: t.priorityUntil ?? null,
     slots: t.slots.map((s) => ({
       ...s,
+      groupId: s.groupId && groups.some((g) => g.id === s.groupId) ? s.groupId : groups[0].id,
       count: s.count ?? null,
       skip: s.skip ?? [],
       price: s.price ?? null,
@@ -140,6 +155,7 @@ export function dayTimeFor(
 
 type SlotRow = {
   id: string;
+  group_id: string | null;
   position: number;
   location_id: string | null;
   capacity: number;
@@ -167,6 +183,8 @@ type TermRow = {
   previous_term_id: string | null;
   priority_until: string | null;
   status: 'draft' | 'published' | 'archived';
+  slot_mode: SlotMode | null;
+  term_slot_groups: { id: string; name: string; position: number }[] | null;
   term_slots: SlotRow[];
 };
 
@@ -193,10 +211,13 @@ function fromRow(r: TermRow): Term {
     previousTermId: r.previous_term_id,
     priorityUntil: r.priority_until,
     status: r.status === 'published' ? 'published' : 'draft',
+    slotMode: r.slot_mode ?? 'simple',
+    groups: [...(r.term_slot_groups ?? [])].sort((a, b) => a.position - b.position).map((g) => ({ id: g.id, name: g.name })),
     slots: [...(r.term_slots ?? [])]
       .sort((a, b) => a.position - b.position)
       .map((s) => ({
         id: s.id,
+        groupId: s.group_id ?? '',
         days: s.pattern.days ?? [],
         time: s.pattern.time ?? '09:00',
         duration: s.pattern.duration ?? 45,
@@ -232,9 +253,12 @@ const termFields = (t: Term) => ({
   previous_term_id: t.previousTermId,
 });
 
+const groupRow = (termId: string, g: TermGroup, position: number) => ({ id: g.id, term_id: termId, name: g.name.trim() || 'Group', position });
+
 const slotRow = (termId: string, s: TermSlot, position: number) => ({
   id: s.id,
   term_id: termId,
+  group_id: s.groupId,
   position,
   location_id: s.locationId || null,
   capacity: Math.max(1, s.capacity),
@@ -258,7 +282,7 @@ export async function refreshTerms(providerId: string = loadedFor ?? ''): Promis
   if (!providerId) return;
   const { data, error } = await db
     .from('terms')
-    .select('*, term_slots(*)')
+    .select('*, term_slots(*), term_slot_groups(*)')
     .eq('provider_id', providerId)
     .neq('status', 'archived')
     .order('created_at');
@@ -297,23 +321,33 @@ export function useTerms(): Term[] {
 export async function saveTerm(t: Term): Promise<void> {
   if (!loadedFor) throw new Error('Your business is still loading. Try again in a moment.');
   const before = cache.find((x) => x.id === t.id);
+  const published = before?.status === 'published';
+  // The mode is chosen on a draft. Going to Flexible has to come first (a
+  // second group is refused on a Simple term); going back to Simple has to come
+  // last (it is refused while there are still two groups).
+  const toFlexible = !published && t.slotMode === 'flexible';
+  const modeNow = toFlexible ? { slot_mode: 'flexible' } : {};
   if (!before) {
-    const { error } = await db.from('terms').insert({ id: t.id, provider_id: loadedFor, status: 'draft', ...termFields(t) });
+    const { error } = await db.from('terms').insert({ id: t.id, provider_id: loadedFor, status: 'draft', ...termFields(t), ...modeNow });
     if (error) throw error;
   } else {
-    const { error } = await db.from('terms').update(termFields(t)).eq('id', t.id);
+    const { error } = await db.from('terms').update({ ...termFields(t), ...modeNow }).eq('id', t.id);
     if (error) throw error;
   }
 
-  if (before?.status === 'published') {
+  if (published) {
     const known = new Set(before.slots.map((s) => s.id));
     if (t.slots.some((s) => !known.has(s.id))) {
-      throw new Error('Groups can’t be added to a published term. Start a new term for a new group.');
+      throw new Error('Slots can\u2019t be added to a published term. Start a new term for a new slot.');
     }
     const fixed = (s: TermSlot) => JSON.stringify([slotRow(t.id, s, 0).pattern, s.locationId || null]);
     const was = new Map(before.slots.map((s) => [s.id, fixed(s)]));
     if (t.slots.some((s) => was.get(s.id) !== fixed(s))) {
-      throw new Error('A published term’s days, times and venue are fixed. Cancel a session from the schedule instead, or start a new term.');
+      throw new Error('A published term\u2019s days, times and venue are fixed. Cancel a session from the schedule instead, or start a new term.');
+    }
+    for (const g of t.groups) {
+      const { error } = await db.from('term_slot_groups').update({ name: g.name.trim() || 'Group' }).eq('id', g.id);
+      if (error) throw error;
     }
     for (const s of t.slots) {
       const { error } = await db
@@ -323,13 +357,25 @@ export async function saveTerm(t: Term): Promise<void> {
       if (error) throw error;
     }
   } else {
-    const keep = t.slots.map((s) => s.id);
+    const groups = t.slotMode === 'simple' ? t.groups.slice(0, 1) : t.groups;
+    const slots = t.slots.map((s) => (groups.some((g) => g.id === s.groupId) ? s : { ...s, groupId: groups[0].id }));
+    // Groups first (slots point at them), then slots, then drop the groups that went.
+    const { error: gErr } = await db.from('term_slot_groups').upsert(groups.map((g, i) => groupRow(t.id, g, i)));
+    if (gErr) throw gErr;
+    const keep = slots.map((s) => s.id);
     let del = db.from('term_slots').delete().eq('term_id', t.id);
     if (keep.length) del = del.not('id', 'in', `(${keep.join(',')})`);
     const { error: delErr } = await del;
     if (delErr) throw delErr;
-    if (t.slots.length) {
-      const { error } = await db.from('term_slots').upsert(t.slots.map((s, i) => slotRow(t.id, s, i)));
+    if (slots.length) {
+      const { error } = await db.from('term_slots').upsert(slots.map((s, i) => slotRow(t.id, s, i)));
+      if (error) throw error;
+    }
+    const keepG = groups.map((g) => g.id);
+    const { error: delG } = await db.from('term_slot_groups').delete().eq('term_id', t.id).not('id', 'in', `(${keepG.join(',')})`);
+    if (delG) throw delG;
+    if (t.slotMode === 'simple') {
+      const { error } = await db.from('terms').update({ slot_mode: 'simple' }).eq('id', t.id);
       if (error) throw error;
     }
     if (t.status === 'published') {
@@ -406,8 +452,52 @@ export function slotDates(slot: DateRule): string[] {
   return slotPatternDates(slot).filter((d) => !skip.includes(d));
 }
 
-/** The price a parent pays for this slot before any mid-term reduction. */
-export const slotPrice = (term: Pick<Term, 'price'>, slot: Pick<TermSlot, 'price'>) => slot.price ?? term.price;
+export const DEFAULT_GROUP_NAME = 'Choose your slot';
+
+/** True when parents pick one slot from each of several groups. */
+export const isFlexible = (term: Pick<Term, 'slotMode' | 'groups'>) => term.slotMode === 'flexible' && term.groups.length > 1;
+
+/** The price a parent pays before any mid-term reduction. In a Flexible term it
+ *  is the term's one price for the whole combination (a slot's own price is
+ *  ignored); otherwise a slot may carry its own. */
+export const slotPrice = (term: Pick<Term, 'price' | 'slotMode' | 'groups'>, slot: Pick<TermSlot, 'price'>) =>
+  isFlexible(term) ? term.price : slot.price ?? term.price;
+
+const clock12 = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'pm' : 'am'}`;
+};
+
+/** "Tue 1:30 pm", or "Mon 4:00 pm + Wed 5:30 pm" when one slot repeats on several days. */
+export function slotLabel(s: Pick<TermSlot, 'days' | 'time' | 'duration' | 'perDay' | 'dayTimes'>): string {
+  const days = [...s.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  if (days.length === 0) return 'No day yet';
+  if (s.perDay || days.length === 1) return days.map((d) => `${DAY_NAMES[d]} ${clock12(dayTimeFor(s, d).time)}`).join(' + ');
+  return `${days.map((d) => DAY_NAMES[d]).join(' + ')} ${clock12(s.time)}`;
+}
+
+const minutesOf = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+
+/** Do two slots ever run at the same time? */
+export function slotsClash(a: TermSlot, b: TermSlot): boolean {
+  return a.days.some((d) => {
+    if (!b.days.includes(d)) return false;
+    const x = dayTimeFor(a, d);
+    const y = dayTimeFor(b, d);
+    return minutesOf(x.time) < minutesOf(y.time) + y.duration && minutesOf(y.time) < minutesOf(x.time) + x.duration;
+  });
+}
+
+/** Sessions one family gets in a Flexible term: one slot from each group. */
+export function comboSessions(term: Term): number {
+  return term.groups.reduce((n, g) => {
+    const first = term.slots.find((sl) => sl.groupId === g.id);
+    return n + (first ? slotDates(first).length : 0);
+  }, 0);
+}
 
 export type TermStatusKey = 'draft' | 'upcoming' | 'running' | 'closed' | 'ended';
 
@@ -464,10 +554,13 @@ export const fmtRange = (dates: string[]) =>
 export function blankTerm(activityId: string, defaults: { price?: number | null; capacity?: number | null; locationId?: string | null }): Term {
   const next = new Date();
   next.setDate(next.getDate() + ((6 - next.getDay() + 7) % 7 || 7)); // coming Saturday
+  const groupId = newId();
   return {
     id: newId(),
     activityId,
     name: '',
+    slotMode: 'simple',
+    groups: [{ id: groupId, name: DEFAULT_GROUP_NAME }],
     price: defaults.price != null ? Math.round(defaults.price * 10) : 0,
     allowMidTerm: true,
     minLeft: 3,
@@ -485,6 +578,7 @@ export function blankTerm(activityId: string, defaults: { price?: number | null;
     slots: [
       {
         id: newId(),
+        groupId,
         days: [next.getDay()],
         time: '09:00',
         duration: 45,
@@ -712,6 +806,8 @@ export function packagesClosedActivityIds(terms: Term[], enabled: Record<string,
 
 export type RosterRow = {
   enrolment_id: string;
+  /** Ties together the enrolments of one Flexible combination (00264). */
+  combo_id: string | null;
   slot_id: string;
   child_name: string;
   child_dob: string | null;
@@ -738,7 +834,17 @@ export type SlotStats = {
 export async function fetchTermRoster(termId: string): Promise<RosterRow[]> {
   const { data, error } = await db.rpc('term_roster', { p_term_id: termId });
   if (error) throw error;
-  return (data ?? []) as RosterRow[];
+  const { data: links } = await db.from('term_enrolments').select('id, combo_id').eq('term_id', termId);
+  const combo = new Map(((links ?? []) as { id: string; combo_id: string | null }[]).map((l) => [l.id, l.combo_id]));
+  return ((data ?? []) as RosterRow[]).map((r) => ({ ...r, combo_id: combo.get(r.enrolment_id) ?? null }));
+}
+
+/** Move a family to another slot of the same group; their remaining sessions
+ *  move with them. Returns how many sessions moved. */
+export async function swapTermSlot(enrolmentId: string, newSlotId: string): Promise<number> {
+  const { data, error } = await db.rpc('vendor_swap_term_slot', { p_enrolment_id: enrolmentId, p_new_slot_id: newSlotId });
+  if (error) throw error;
+  return Number(data ?? 0);
 }
 
 export async function fetchTermSlotStats(termId: string): Promise<SlotStats[]> {
@@ -781,6 +887,9 @@ export type TermWaitRow = {
   status: 'waiting' | 'holding' | 'offered';
   queue_position: number | null;
   joined_at: string;
+  /** A family waiting for a whole Flexible combination: the slots in it (00264). */
+  combo_id?: string | null;
+  combo_slot_ids?: string[] | null;
 };
 
 export type TermWaitCount = { slot_id: string; waiting: number; session_waiting: number; free_places: number };
@@ -788,7 +897,9 @@ export type TermWaitCount = { slot_id: string; waiting: number; session_waiting:
 export async function fetchTermWaitlist(termId: string): Promise<TermWaitRow[]> {
   const { data, error } = await db.rpc('term_waitlist_roster', { p_term_id: termId });
   if (error) throw error;
-  return (data ?? []) as TermWaitRow[];
+  const { data: links } = await db.from('term_waitlist').select('id, combo_id, combo_slot_ids').eq('term_id', termId).not('combo_id', 'is', null);
+  const combo = new Map(((links ?? []) as { id: string; combo_id: string; combo_slot_ids: string[] }[]).map((l) => [l.id, l]));
+  return ((data ?? []) as TermWaitRow[]).map((r) => ({ ...r, combo_id: combo.get(r.id)?.combo_id ?? null, combo_slot_ids: combo.get(r.id)?.combo_slot_ids ?? null }));
 }
 
 export async function fetchTermWaitlistCounts(termId: string): Promise<TermWaitCount[]> {
@@ -826,6 +937,7 @@ export async function removeFromTermWaitlist(entryId: string, reason: string): P
 export function nextTermFrom(t: Term): Term {
   const last = t.slots.flatMap((s) => slotDates(s)).sort().pop();
   const after = last ? parseYmd(last) : new Date();
+  const groupIds = new Map(t.groups.map((g) => [g.id, newId()]));
   return {
     ...structuredClone(t),
     id: newId(),
@@ -833,13 +945,14 @@ export function nextTermFrom(t: Term): Term {
     status: 'draft',
     previousTermId: t.id,
     priorityUntil: null,
+    groups: t.groups.map((g) => ({ ...g, id: groupIds.get(g.id)! })),
     slots: t.slots.map((s) => {
       const d = new Date(after);
       for (let i = 1; i <= 7; i++) {
         d.setDate(after.getDate() + i);
         if (s.days.includes(d.getDay())) break;
       }
-      return { ...structuredClone(s), id: newId(), start: toYmd(d), skip: [] };
+      return { ...structuredClone(s), id: newId(), groupId: groupIds.get(s.groupId) ?? s.groupId, start: toYmd(d), skip: [] };
     }),
   };
 }

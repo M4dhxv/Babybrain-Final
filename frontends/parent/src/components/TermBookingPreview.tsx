@@ -199,7 +199,7 @@ export function TermEnrolPreview({
       </div>
 
       <div>
-        <h4 className="mb-2 font-black">Choose your group</h4>
+        <h4 className="mb-2 font-black">Choose your time</h4>
         <div className="space-y-2">
           {slots.map((s, i) => (
             <button
@@ -262,13 +262,143 @@ export function TermEnrolPreview({
         </p>
         {slot.spotsLeft === 0 && (
           <p className="mt-2 rounded-[10px] bg-palette-yellowSoft px-3 py-2 text-sm font-bold text-palette-yellowInk">
-            This group is full. Join the waitlist for free and we'll email you when a place comes free.{" "}
+            This slot is full. Join the waitlist for free and we'll email you when a place comes free.{" "}
             {allowMidTerm
               ? perClass != null && perClass > 0
                 ? `If it opens after the term starts, it's $${perClass} less for each session already run.`
                 : "The term costs the same whenever you join."
               : ""}
           </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ── Flexible terms (00264): one slot from each group ──
+ *
+ * The vendor made several groups (for example "Mon & Tue" and "Thu & Fri") and a
+ * family picks one slot from each; that pair then runs every week of the term.
+ * The consent steps and the Enrol button are the booking page's own. Identical
+ * in the parent app (components/TermBookingPreview.tsx) and the vendor portal's
+ * Parent view (components/ParentTermBooking.tsx). Keep the two in step. */
+
+export type ComboPickSlot = { id: string; label: string; venue?: string | null; sessions: number; spotsLeft: number | null };
+export type ComboPickGroup = { id: string; name: string; slots: ComboPickSlot[] };
+
+export function TermComboPicker({
+  termName, childName, activityTitle, groups, picks, onPick, quote, minLeft, allowMidTerm, reason, offered,
+}: {
+  termName?: string;
+  childName: string;
+  activityTitle: string;
+  groups: ComboPickGroup[];
+  /** group id -> picked slot id */
+  picks: Record<string, string | undefined>;
+  onPick: (groupId: string, slotId: string) => void;
+  quote: { n: number; left: number; run: number; fullPrice: number | null; payNow: number | null; perClass: number | null; joining: string[] };
+  minLeft: number;
+  allowMidTerm: boolean;
+  reason?: string | null;
+  /** The provider offered this family these places (&offered=1): full slots are fine. */
+  offered?: boolean;
+}) {
+  const chosen = groups.map((g) => g.slots.find((s) => s.id === picks[g.id]) ?? null);
+  const ready = chosen.every(Boolean);
+  const full = offered ? [] : chosen.filter((s): s is ComboPickSlot => !!s && s.spotsLeft === 0);
+  const nextGroup = groups.find((g) => !picks[g.id]);
+  const { run, left, n, payNow, fullPrice, perClass } = quote;
+
+  return (
+    <section className="space-y-5">
+      {reason && (
+        <div className="rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-700">{reason}</div>
+      )}
+
+      <div>
+        <h3 className="mb-1 text-xl font-black">{termName ?? `${activityTitle} · Term`}</h3>
+        <p className="text-sm font-semibold text-[#59658d]">
+          Pick one session from each group. {childName} will have these {groups.length} sessions every week of the term.
+        </p>
+      </div>
+
+      {groups.map((g, gi) => (
+        <div key={g.id}>
+          <h4 className="mb-2 flex items-baseline justify-between gap-2 font-black">
+            <span>{gi + 1} of {groups.length} · {g.name}</span>
+            <span className="text-xs font-extrabold text-[#697390]">{picks[g.id] ? "Picked" : "Pick one"}</span>
+          </h4>
+          <div className="space-y-2">
+            {g.slots.map((s) => {
+              const on = picks[g.id] === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onPick(g.id, s.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-[10px] border px-4 py-3 text-left ${on ? "border-baby-pink bg-[#FEEBF2]" : "border-[#DCD2D5] bg-white"}`}
+                >
+                  <span>
+                    <span className="block font-black text-[#34406f]">{s.label}</span>
+                    <span className="block text-xs font-semibold text-[#697390]">{s.sessions} sessions{s.venue ? ` · ${s.venue}` : ""}</span>
+                  </span>
+                  {s.spotsLeft === 0 && !offered ? (
+                    <span className="shrink-0 rounded-full bg-palette-yellowSoft px-2 py-0.5 text-[11px] font-black text-palette-yellowInk">Full · waitlist</span>
+                  ) : s.spotsLeft != null && (
+                    <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? "place" : "places"} left</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4" aria-live="polite">
+        <div className="font-black text-[#34406f]">Your week</div>
+        {!ready ? (
+          <p className="mt-1 text-sm font-semibold text-[#59658d]">
+            {chosen.some(Boolean) && nextGroup ? `Now pick one from ${nextGroup.name}.` : "Pick one session from each group to see your price."}
+          </p>
+        ) : (
+          <>
+            <ul className="mt-2 space-y-1.5">
+              {groups.map((g, i) => (
+                <li key={g.id} className="flex items-baseline justify-between gap-2 font-extrabold text-[#34406f]">
+                  <span>{chosen[i]!.label}</span>
+                  <span className="text-xs font-bold text-[#697390]">{g.name}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
+              <span className="font-black text-[#34406f]">
+                {run === 0 ? `Full term · ${n} sessions` : `Join from ${sgDay(quote.joining[0])} · ${left} of ${n} sessions`}
+              </span>
+              {payNow != null && (
+                <span className="text-2xl font-black text-baby-cta">
+                  ${payNow}
+                  {run > 0 && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
+                </span>
+              )}
+            </div>
+            {run > 0 && (
+              <p className="mt-1 text-sm font-semibold text-[#59658d]">
+                {run} {run === 1 ? "session has" : "sessions have"} already run across your slots.{" "}
+                {perClass != null && perClass > 0 ? `You pay $${fullPrice} less $${perClass} for each, so $${payNow}.` : "This term is the same price whenever you join."}
+              </p>
+            )}
+            <p className="mt-1 text-xs font-semibold text-[#697390]">
+              Same {groups.length} sessions every week.{" "}
+              {allowMidTerm ? `Joining closes when ${minLeft} sessions are left in a slot.` : "Joining closes once the term starts."}
+            </p>
+            {full.length > 0 && (
+              <p className="mt-2 rounded-[10px] bg-palette-yellowSoft px-3 py-2 text-sm font-bold text-palette-yellowInk">
+                {full.map((s) => s.label).join(" and ")} {full.length === 1 ? "is" : "are"} full. Join the waitlist for this exact pair for free.
+                We'll tell you when {full.length === 1 ? "it has a place and your other sessions do too" : "all of them have places"}. The first family to enrol gets them.
+              </p>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -304,7 +434,7 @@ export function TermSessionPicker({
   return (
     <section className="space-y-6">
       <div>
-        <h3 className="mb-4 text-xl font-black">Choose your group</h3>
+        <h3 className="mb-4 text-xl font-black">Choose your time</h3>
         <div className="space-y-2">
           {groups.map((g, i) => {
             const left = Math.max(0, g.dates.length - from);
@@ -330,7 +460,7 @@ export function TermSessionPicker({
       <div>
         <h3 className="mb-4 text-xl font-black">Choose a date</h3>
         {open.length === 0 ? (
-          <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No sessions left in this group.</p>
+          <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">No sessions left in this slot.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {open.map((d, i) => {

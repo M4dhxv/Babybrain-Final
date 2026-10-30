@@ -22,9 +22,9 @@ import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bo
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
-import { BookModeChoice, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
+import { BookModeChoice, TermComboPicker, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { liveQuote, termsDb, useActivityTerms, useTrialRemaining } from "../lib/terms";
+import { flexibleOffering, liveComboQuote, liveQuote, termsDb, useActivityTerms, useTrialRemaining, type LiveSlot } from "../lib/terms";
 import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -339,23 +339,44 @@ export default function BookingPage() {
   // Brothers and sisters enrolled in the same checkout as the chosen child.
   const [siblingIds, setSiblingIds] = useState<string[]>([]);
   const [termSlotIdx, setTermSlotIdx] = useState(0);
+  // A Flexible term (00264): the slot picked in each group, by group id.
+  const [termPicks, setTermPicks] = useState<Record<string, string>>({});
   // Packs are not offered where no running term accepts package credits.
   const packagesOpen = usePackagesOpen(activity?.id);
   const liveTerm = liveTerms.find((t) => t.id === termId) ?? liveTerms[0] ?? null;
   const termMode = termEligible && bookMode === "term";
   const termSlots = liveTerm?.slots ?? [];
-  const termSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)] ?? null;
-  // Groups found full when enrolling, since the page loaded (00260).
+  const simpleSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)] ?? null;
+  // Flexible: one slot from each group, the same pair every week (00264). Until
+  // every group has a pick the quote shows each group's first slot.
+  const flexTerm = !!liveTerm && liveTerm.slotMode === "flexible";
+  const flexSlots = flexTerm ? liveTerm!.groups.map((g) => liveTerm!.slots.find((s) => s.id === termPicks[g.id]) ?? null) : [];
+  const flexReady = flexTerm && flexSlots.length > 0 && flexSlots.every(Boolean);
+  const flexShown = flexTerm
+    ? liveTerm!.groups.map((g, i) => flexSlots[i] ?? liveTerm!.slots.find((s) => s.groupId === g.id)).filter((s): s is LiveSlot => !!s)
+    : [];
+  // Slots found full when enrolling, since the page loaded (00260).
   const [filledSlots, setFilledSlots] = useState<Set<string>>(new Set());
-  // No term place left in the chosen group: the button joins its waitlist. Not
-  // for a family the provider offered this group to (&offered=1, 00261): their
-  // enrolment may go over capacity, and the server checks the offer.
-  const offeredSlot = getParam("offered") === "1" ? getParam("term_slot") : null;
-  const termSlotFull = termMode && !!termSlot && termSlot.id !== offeredSlot
-    && (termSlot.spotsLeft === 0 || filledSlots.has(termSlot.id));
-  // The term as it would be quoted to this parent today (the slot they picked,
-  // minus the classes that have already run). The server charges term_quote().
-  const quote = termEligible && liveTerm && termSlot ? liveQuote(liveTerm, termSlot, activity?.booking_cutoff_minutes ?? null) : null;
+  // No term place left in the chosen slot (or any slot of the pair): the button
+  // joins the waitlist. Not for a family the provider offered these places to
+  // (&offered=1, 00261): their enrolment may go over capacity, and the server
+  // checks the offer.
+  const offeredFlag = getParam("offered") === "1";
+  const offeredSlot = offeredFlag ? getParam("term_slot") : null;
+  const termSlotFull = termMode && (flexTerm
+    ? flexReady && !offeredFlag && flexSlots.some((s) => s!.spotsLeft === 0 || filledSlots.has(s!.id))
+    : !!simpleSlot && simpleSlot.id !== offeredSlot && (simpleSlot.spotsLeft === 0 || filledSlots.has(simpleSlot.id)));
+  // The term as it would be quoted to this parent today (the slot or pair they
+  // picked, minus the classes that have already run). The server charges
+  // term_quote() / term_combo_quote().
+  const cutoffMins = activity?.booking_cutoff_minutes ?? null;
+  const quote = termEligible && liveTerm
+    ? flexTerm
+      ? (flexShown.length ? liveComboQuote(liveTerm, flexShown, cutoffMins) : null)
+      : simpleSlot ? liveQuote(liveTerm, simpleSlot, cutoffMins) : null
+    : null;
+  // For a pair, the quote's slot stands in for both.
+  const termSlot = flexTerm ? (quote?.slot ?? null) : simpleSlot;
   const termUnitPrice = liveTerm?.allowSingles ? liveTerm.singlePrice : null;
   // What the vendor switched on for this term, and how many trials this child
   // has already used with the vendor (term_trial_remaining).
@@ -1361,7 +1382,7 @@ export default function BookingPage() {
   // it stays tappable in that state (see the button below) so a tap
   // explains exactly what, rather than silently doing nothing.
   const bookingIncomplete = termMode
-    ? consentProblem() != null
+    ? consentProblem() != null || (flexTerm && !flexReady)
     : !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
 
   /** Status of this child's existing booking on the chosen session, if any. */
@@ -1454,6 +1475,25 @@ export default function BookingPage() {
       return;
     }
   }, [wantTermSlot, termEligible, liveTerms]);
+  // "Places are free" for a pair (00264): /book?…&term_slots=a,b&mode=term.
+  const wantTermSlots = getParam("term_slots");
+  const wantSlotsResolved = useRef(false);
+  useEffect(() => {
+    if (wantSlotsResolved.current || !wantTermSlots || !termEligible) return;
+    const ids = wantTermSlots.split(",").filter(Boolean);
+    for (const t of liveTerms) {
+      const picks: Record<string, string> = {};
+      for (const id of ids) {
+        const sl = t.slots.find((x) => x.id === id);
+        if (sl) picks[sl.groupId] = id;
+      }
+      if (Object.keys(picks).length !== ids.length) continue;
+      wantSlotsResolved.current = true;
+      setTermId(t.id);
+      setTermPicks(picks);
+      return;
+    }
+  }, [wantTermSlots, termEligible, liveTerms]);
   const wantChildResolved = useRef(false);
   useEffect(() => {
     const want = getParam("child");
@@ -1513,15 +1553,20 @@ export default function BookingPage() {
   async function enrolTerm() {
     setErr(null);
     if (!auth) { goTo(loginHref()); return; }
+    if (flexTerm && !flexReady) { setErr("Pick one session from each group first."); return; }
     if (!termSlot || !quote) return;
     if (!quote.joinable) { setErr(quote.reason ?? "This term is not open for enrolment."); return; }
     const problem = termCheckProblem();
     if (problem) { setErr(problem); return; }
     if (termSlotFull) return joinTermWaitlist();
     setBusy(true);
+    // A pair of slots (Flexible) or one slot (Simple); the same checkout either way.
+    const slotIds = flexTerm ? flexSlots.map((s) => s!.id) : [termSlot.id];
+    const enrolRpc = flexTerm ? "enrol_in_term_combo" : "enrol_in_term";
+    const slotArg = flexTerm ? { p_slot_ids: slotIds } : { p_slot_id: termSlot.id };
     const { data, error } = await termsDb
-      .rpc("enrol_in_term", {
-        p_slot_id: termSlot.id,
+      .rpc(enrolRpc, {
+        ...slotArg,
         p_child_id: bookChildId,
         p_policies: acceptedPolicies,
         ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
@@ -1532,9 +1577,13 @@ export default function BookingPage() {
       setBusy(false);
       const msg = error ? cleanRpcErrorMessage(error) : "Could not enrol";
       // Filled up since the page loaded: offer the waitlist instead (00260).
-      if (msg.includes("This slot is full")) {
-        setFilledSlots((s) => new Set(s).add(termSlot.id));
-        setErr("This group has just filled up. You can join its waitlist for free.");
+      if (msg.includes("slot is full")) {
+        if (flexTerm) {
+          setErr("One of the sessions you picked has just filled up. Refresh the page to see which, then pick another or join the waitlist.");
+        } else {
+          setFilledSlots((s) => new Set(s).add(termSlot.id));
+          setErr("This slot has just filled up. You can join its waitlist for free.");
+        }
         return;
       }
       setErr(msg);
@@ -1544,8 +1593,8 @@ export default function BookingPage() {
     // Brothers and sisters join the same checkout (and get the sibling discount).
     for (const sib of termSiblings) {
       const { error: sibErr } = await termsDb
-        .rpc("enrol_in_term", {
-          p_slot_id: termSlot.id,
+        .rpc(enrolRpc, {
+          ...slotArg,
           p_child_id: sib.id,
           p_policies: acceptedPolicies,
           ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
@@ -1568,8 +1617,8 @@ export default function BookingPage() {
     if (!termSlot || !quote) return;
     setBusy(true);
     for (const id of [bookChildId, ...termSiblings.map((k) => k.id)]) {
-      const { error } = await termsDb.rpc("join_term_waitlist", {
-        p_slot_id: termSlot.id,
+      const { error } = await termsDb.rpc(flexTerm ? "join_term_combo_waitlist" : "join_term_waitlist", {
+        ...(flexTerm ? { p_slot_ids: flexSlots.map((s) => s!.id) } : { p_slot_id: termSlot.id }),
         p_child_id: id,
         p_policies: acceptedPolicies,
         ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
@@ -1578,8 +1627,8 @@ export default function BookingPage() {
       if (error) {
         setBusy(false);
         const msg = cleanRpcErrorMessage(error);
-        setErr(msg.includes("A place is free")
-          ? "A place has just come free in this group. Refresh the page to enrol."
+        setErr(msg.includes("A place is free") || msg.includes("Enrol now")
+          ? "A place has just come free. Refresh the page to enrol."
           : msg);
         return;
       }
@@ -1809,6 +1858,9 @@ export default function BookingPage() {
                       const dates = t.slots.flatMap((s) => s.dates).sort();
                       const counts = t.slots.map((s) => s.dates.length);
                       const prices = t.slots.map((s) => s.price);
+                      if (t.slotMode === "flexible") {
+                        return { key: t.id, name: t.name, range: `${sgDay(dates[0])} to ${sgDay(dates[dates.length - 1])}`, ...flexibleOffering(t, (n) => `$${n}`) };
+                      }
                       return {
                         key: t.id,
                         name: t.name,
@@ -1819,7 +1871,7 @@ export default function BookingPage() {
                       };
                     })}
                     selected={liveTerm.id}
-                    onSelect={(id) => { setTermId(id); setTermSlotIdx(0); }}
+                    onSelect={(id) => { setTermId(id); setTermSlotIdx(0); setTermPicks({}); }}
                   />
                   <BookModeChoice
                     termName={liveTerm.name}
@@ -1830,7 +1882,28 @@ export default function BookingPage() {
                     onModeChange={chooseMode}
                     offer={packagesOpen ? termOffer : { ...termOffer, packages: false }}
                   />
-                  {termMode && (
+                  {termMode && flexTerm && (
+                    <TermComboPicker
+                      termName={liveTerm.name}
+                      childName={bookChild?.name ?? "your child"}
+                      activityTitle={activity.title}
+                      groups={liveTerm.groups.map((g) => ({
+                        id: g.id,
+                        name: g.name,
+                        slots: liveTerm.slots
+                          .filter((s) => s.groupId === g.id)
+                          .map((s) => ({ id: s.id, label: s.label, venue: s.venue, sessions: s.dates.length, spotsLeft: filledSlots.has(s.id) ? 0 : s.spotsLeft })),
+                      }))}
+                      picks={termPicks}
+                      onPick={(gid, sid) => setTermPicks((p) => ({ ...p, [gid]: sid }))}
+                      quote={quote}
+                      minLeft={liveTerm.minLeft}
+                      allowMidTerm={liveTerm.allowMidTerm}
+                      reason={quote.reason}
+                      offered={offeredFlag}
+                    />
+                  )}
+                  {termMode && !flexTerm && (
                     <TermEnrolPreview
                       termName={liveTerm.name}
                       slots={termSlots}

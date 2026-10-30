@@ -18,6 +18,8 @@ const db = supabase as unknown as SupabaseClient;
 
 export type LiveSlot = PreviewSlot & {
   id: string;
+  /** The group this slot belongs to (00264). */
+  groupId: string;
   /** Parallel to `dates`: the session row for each date. */
   sessionIds: string[];
   /** This slot's full-term price in dollars (its own, else the term's). */
@@ -41,11 +43,15 @@ export type LiveTerm = {
   allowPackages: boolean;
   /** Off the 2nd and later child a parent enrols (00244). */
   siblingDiscountPct: number;
+  /** 'simple': pick one slot. 'flexible': pick one slot from each group (00264). */
+  slotMode: "simple" | "flexible";
+  groups: { id: string; name: string }[];
   slots: LiveSlot[];
 };
 
 type SlotRow = {
   id: string;
+  group_id: string | null;
   position: number;
   capacity: number;
   single_cap: number | null;
@@ -69,6 +75,8 @@ type TermRow = {
   trial_limit: number;
   allow_packages: boolean;
   sibling_discount_pct?: number | null;
+  slot_mode?: "simple" | "flexible" | null;
+  term_slot_groups?: { id: string; name: string; position: number }[] | null;
   created_at: string;
   term_slots: SlotRow[];
 };
@@ -85,7 +93,7 @@ function clock(hhmm: string | undefined) {
 }
 
 /** "Saturdays, 9:00 am", or "Mondays 4:00 pm & Wednesdays 5:00 pm". */
-function slotLabel(p: SlotRow["pattern"]): string {
+export function slotLabel(p: SlotRow["pattern"]): string {
   const days = [...(p.days ?? [])].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
   if (p.perDay) {
     return days.map((d) => `${DAY[d]}s ${clock(p.dayTimes?.[String(d)]?.time ?? p.time)}`).join(" & ");
@@ -113,7 +121,7 @@ export function useActivityTerms(
     (async () => {
       const { data: terms, error } = await db
         .from("terms")
-        .select("*, term_slots(*, provider_locations(name))")
+        .select("*, term_slots(*, provider_locations(name)), term_slot_groups(*)")
         .eq("activity_id", activityId)
         .eq("status", "published");
       if (stale) return;
@@ -160,6 +168,8 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
       trialLimit: t.trial_limit,
       allowPackages: t.allow_packages,
       siblingDiscountPct: t.sibling_discount_pct ?? 0,
+      slotMode: (t.slot_mode === "flexible" && (t.term_slot_groups?.length ?? 0) > 1 ? "flexible" : "simple") as "simple" | "flexible",
+      groups: [...(t.term_slot_groups ?? [])].sort((a, b) => a.position - b.position).map((g) => ({ id: g.id, name: g.name })),
       created_at: t.created_at,
       slots: [...t.term_slots]
         .sort((a, b) => a.position - b.position)
@@ -175,6 +185,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
           return {
             key: s.id,
             id: s.id,
+            groupId: s.group_id ?? "",
             label: slotLabel(s.pattern),
             venue: s.provider_locations?.name ?? null,
             dates: list.map((x) => x.starts_at),
@@ -241,6 +252,67 @@ export function liveQuote(term: LiveTerm, slot: LiveSlot, cutoffMinutes: number 
     joining: slot.dates.slice(run),
     joinable: reason == null,
     reason,
+  };
+}
+
+/** What a family would pay for a whole combination (Flexible terms: one slot
+ *  from each group) right now. Mirrors term_combo_quote() in 00264 (which
+ *  /api/terms/checkout charges from): the term's one price, less the reduction for
+ *  every session already run in any chosen slot, and joinable only while every
+ *  slot is. `slot` stands in for the whole combination so the booking page can
+ *  treat it like a single slot: its label joins the picks, its dates are all
+ *  their sessions. */
+export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes: number | null): LiveQuote {
+  const per = slots.map((s) => liveQuote(term, s, cutoffMinutes));
+  const run = per.reduce((n, q) => n + q.run, 0);
+  const n = per.reduce((x, q) => x + q.n, 0);
+  const left = per.reduce((x, q) => x + q.left, 0);
+  const fullPrice = term.price;
+  const payNow = term.reduce ? Math.max(0, fullPrice - term.reduceBy * run) : fullPrice;
+  const blocked = per.find((q) => !q.joinable);
+  const dates = slots.flatMap((s) => s.dates).sort();
+  const spots = slots.map((s) => s.spotsLeft).filter((v): v is number => v != null);
+  const combined: LiveSlot = {
+    key: slots.map((s) => s.id).join("+"),
+    id: slots[0]?.id ?? "",
+    groupId: "",
+    label: slots.map((s) => s.label).join(" + "),
+    venue: slots[0]?.venue ?? null,
+    dates,
+    sessionIds: slots.flatMap((s) => s.sessionIds),
+    capacity: null,
+    spotsLeft: spots.length ? Math.min(...spots) : null,
+    price: fullPrice,
+    singleCap: null,
+  };
+  return {
+    slot: combined,
+    n,
+    fullPrice,
+    perClass: term.reduce ? term.reduceBy : null,
+    singlesTotal: null,
+    savings: null,
+    lastJoin: Math.min(...per.map((q) => q.lastJoin)),
+    run,
+    left,
+    payNow,
+    joining: per.flatMap((q) => q.joining).sort(),
+    joinable: !blocked,
+    reason: blocked?.reason ?? null,
+  };
+}
+
+/** How a Flexible term reads on the activity page and the term chooser: one
+ *  pick from each group, the sessions a family gets, and the one price. */
+export function flexibleOffering(t: LiveTerm, money: (n: number) => string) {
+  const perFamily = t.groups.reduce((n, g) => n + (t.slots.find((s) => s.groupId === g.id)?.dates.length ?? 0), 0);
+  return {
+    sessions: `${perFamily} sessions`,
+    slots: t.groups.map((g) => ({
+      label: `Choose 1 of ${t.slots.filter((s) => s.groupId === g.id).length} · ${g.name}`,
+      venue: null as string | null,
+    })),
+    price: `${money(t.price)} for ${t.groups.length} sessions a week`,
   };
 }
 

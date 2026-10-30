@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { sgDateTime, sgDay } from "../lib/schedule";
-import { termsDb } from "../lib/terms";
+import { slotLabel, termsDb } from "../lib/terms";
 
 /**
  * The parent's term enrolments (00243 / 00244), one card each, on the Bookings
@@ -27,6 +27,8 @@ export type MyTerm = {
   next: string | null;
   last: string | null;
   status: "enrolled" | "unpaid" | "withdrawn" | "finished";
+  /** A Flexible term (00264): the weekly slots of this child's pair. Empty for a Simple term. */
+  slotLabels: string[];
 };
 
 /** A place on a full term group's waitlist (00260), from my_term_waitlist(). */
@@ -48,10 +50,16 @@ export type MyTermWait = {
   enrolled_elsewhere: boolean;
   /** The provider offered this family a place, which may go over capacity (00261). */
   vendor_offered?: boolean;
+  /** Waiting for a whole pair of slots (00264): the slots, and their names. */
+  combo_id?: string | null;
+  combo_slot_ids?: string[] | null;
+  slot_labels?: string[];
 };
 
 type Row = {
   id: string;
+  combo_id: string | null;
+  term_slots: { pattern: Parameters<typeof slotLabel>[0] } | null;
   booking_group_id: string;
   child_id: string | null;
   price_cents: number;
@@ -70,18 +78,43 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
     const [{ data, error }, { data: wait }] = await Promise.all([
       termsDb
         .from("term_enrolments")
-        .select("id, booking_group_id, child_id, price_cents, children(name), terms(name, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
+        .select("id, combo_id, booking_group_id, child_id, price_cents, children(name), term_slots(pattern), terms(name, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
       termsDb.rpc("my_term_waitlist"),
     ]);
-    setWaiting((wait ?? []) as MyTermWait[]);
+    // A pair of slots shows as one card: name its slots (readable while the term is on sale).
+    const waits = (wait ?? []) as MyTermWait[];
+    const comboIds = [...new Set(waits.flatMap((w) => w.combo_slot_ids ?? []))];
+    if (comboIds.length > 0) {
+      const { data: pats } = await termsDb.from("term_slots").select("id, pattern").in("id", comboIds);
+      const byId = new Map(((pats ?? []) as { id: string; pattern: Parameters<typeof slotLabel>[0] }[]).map((x) => [x.id, slotLabel(x.pattern)]));
+      for (const w of waits) if (w.combo_slot_ids) w.slot_labels = w.combo_slot_ids.map((id) => byId.get(id) ?? "A slot");
+    }
+    setWaiting(waits);
     if (error || !data) return;
     const now = Date.now();
     const rows = data as unknown as Row[];
     setGroupIds(new Set(rows.map((r) => r.booking_group_id)));
+    // The enrolments of one pair of slots become one card.
+    const merged: Row[] = [];
+    const seenCombo = new Map<string, Row>();
+    for (const r of rows) {
+      if (!r.combo_id) { merged.push(r); continue; }
+      const first = seenCombo.get(r.combo_id);
+      if (!first) {
+        const copy: Row = { ...r, bookings: [...r.bookings] };
+        seenCombo.set(r.combo_id, copy);
+        merged.push(copy);
+      } else {
+        first.price_cents += r.price_cents;
+        first.bookings.push(...r.bookings);
+      }
+    }
+    const labelsOf = (comboId: string | null) =>
+      comboId ? rows.filter((r) => r.combo_id === comboId && r.term_slots).map((r) => slotLabel(r.term_slots!.pattern)) : [];
     setTerms(
-      rows
+      merged
         .map((r): MyTerm => {
           const live = r.bookings.filter((b) => b.status !== "cancelled" && b.activity_sessions);
           const starts = live.map((b) => b.activity_sessions!.starts_at).sort();
@@ -106,6 +139,7 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
             next: future[0] ?? null,
             last: starts[starts.length - 1] ?? null,
             status,
+            slotLabels: labelsOf(r.combo_id),
           };
         })
         // Withdrawn before it started, or an abandoned checkout that expired: nothing to show.
@@ -150,7 +184,7 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
       {waiting.map((w) => {
         const child = w.child_name ?? "Your child";
         const offered = w.status === "waiting" && w.joinable && !!w.vendor_offered;
-        const enrolHref = `/book?slug=${encodeURIComponent(w.slug)}&term_slot=${encodeURIComponent(w.slot_id)}&mode=term${w.child_id ? `&child=${encodeURIComponent(w.child_id)}` : ""}${offered ? "&offered=1" : ""}`;
+        const enrolHref = `/book?slug=${encodeURIComponent(w.slug)}&${w.combo_slot_ids?.length ? `term_slots=${encodeURIComponent(w.combo_slot_ids.join(","))}` : `term_slot=${encodeURIComponent(w.slot_id)}`}&mode=term${w.child_id ? `&child=${encodeURIComponent(w.child_id)}` : ""}${offered ? "&offered=1" : ""}`;
         const placeFree = w.status === "waiting" && w.joinable && (w.free_places > 0 || offered);
         const askStay = w.enrolled_elsewhere && !stayed.has(w.id);
         return (
@@ -166,17 +200,26 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
                 {w.status === "holding" ? "Holding a place" : "Waiting for a place"}
               </span>
             </div>
+            {w.slot_labels && w.slot_labels.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {w.slot_labels.map((l) => (
+                  <li key={l} className="rounded-[10px] border border-[#EBE3E5] bg-white px-3 py-1.5 text-sm font-extrabold text-[#34406f]">{l}</li>
+                ))}
+              </ul>
+            )}
             <p className="mt-2 text-sm font-semibold text-[#59658d]">
-              {w.next_session ? `Group from ${sgDateTime(w.next_session)}. ` : ""}
+              {w.next_session ? `${w.combo_id ? "Starts" : "Slot from"} ${sgDateTime(w.next_session)}. ` : ""}
               {!w.joinable
                 ? "This term has closed to new families."
                 : w.status === "holding"
                   ? "You're enrolling now. Finish paying under Terms to keep the place."
-                  : `If you got a place today: ${w.sessions_left} sessions, ${money(w.price_cents)}.`}
+                  : w.combo_id
+                    ? `We'll tell you as soon as every slot has a place. If you got them today: ${w.sessions_left} sessions, ${money(w.price_cents)}.`
+                    : `If you got a place today: ${w.sessions_left} sessions, ${money(w.price_cents)}.`}
             </p>
             {askStay && (
               <div className="mt-3 rounded-[12px] border border-[#F3C2D3] bg-[#FFF5F8] p-3">
-                <p className="text-sm font-bold text-[#34406f]">{child} is now enrolled in another group of {w.term_name}. Stay on this waitlist too?</p>
+                <p className="text-sm font-bold text-[#34406f]">{child} is now enrolled in another slot of {w.term_name}. Stay on this waitlist too?</p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" disabled={busy} onClick={() => leave(w)} className="rounded-full bg-[#FA4D8D] px-4 py-1.5 text-sm font-black text-white disabled:opacity-60">
                     Leave this waitlist
@@ -190,7 +233,7 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
             {placeFree && (
               <div className="mt-3 flex flex-col gap-1.5 rounded-[12px] bg-[#F1FBEF] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-bold text-palette-greenInk">
-                  {offered ? "The provider has offered you a place. Enrol and pay to confirm it." : "A place is free. The first family to enrol gets it."}
+                  {offered ? "The provider has offered you a place. Enrol and pay to confirm it." : w.combo_id ? "Every slot has a place. The first family to enrol gets them." : "A place is free. The first family to enrol gets it."}
                 </p>
                 <a href={enrolHref} className="rounded-full bg-[#FA4D8D] px-4 py-2 text-center text-sm font-black text-white">Enrol now</a>
               </div>
@@ -267,6 +310,13 @@ export function MyTermsList({ terms, waiting = [], onChanged }: { terms: MyTerm[
               </div>
               <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${STATUS[t.status].cls}`}>{STATUS[t.status].label}</span>
             </div>
+            {t.slotLabels.length > 0 && (
+              <ul className="mt-3 space-y-1">
+                {t.slotLabels.map((l) => (
+                  <li key={l} className="rounded-[10px] border border-[#EBE3E5] bg-[#FAF7F7] px-3 py-1.5 text-sm font-extrabold text-[#34406f]">{l}</li>
+                ))}
+              </ul>
+            )}
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
               {[
                 { k: "Done", v: t.attended },
@@ -306,6 +356,7 @@ export function MyTermsList({ terms, waiting = [], onChanged }: { terms: MyTerm[
                   {t.attended > 0
                     ? "The term has started, so there's no refund for the sessions you leave."
                     : "Their upcoming sessions are cancelled under the provider's cancellation policy."}{" "}
+                  {t.slotLabels.length > 1 ? "This withdraws all of their weekly slots. " : ""}
                   Sessions inside the cancellation window stay booked.
                 </p>
                 <div className="mt-2 flex gap-2">

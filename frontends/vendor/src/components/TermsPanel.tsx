@@ -12,11 +12,11 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useProviderQuery } from '@/lib/useProviderQuery';
 import { ToggleRow } from '@/components/FormKit';
 import {
-  blankTerm, dayTimeFor, deleteTerm, fmtRange, fmtShort, lastJoinableAfter, newId, normalizeTerm, priceAfter,
-  saveTerm, slotDates, slotPatternDates, slotPrice, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
+  blankTerm, comboSessions, dayTimeFor, deleteTerm, DEFAULT_GROUP_NAME, fmtRange, fmtShort, isFlexible, lastJoinableAfter, newId, normalizeTerm, priceAfter,
+  saveTerm, slotDates, slotLabel, slotPatternDates, slotPrice, slotsClash, swapTermSlot, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
   fetchTermRoster, fetchTermSlotStats, nextTermFrom, openReenrolment, publicHolidaysIn, vendorWithdraw, SG_PUBLIC_HOLIDAYS,
   fetchTermWaitlist, fetchTermWaitlistCounts, offerSessionPlace, offerTermPlace, removeFromTermWaitlist, tellTermWaitlist,
-  type RosterRow, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow,
+  type RosterRow, type SlotMode, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow,
 } from '@/lib/termsPreview';
 
 /* Type scale for this panel: bold section titles, semibold labels, and 15px
@@ -61,6 +61,135 @@ function Section({
       </div>
       <div className="space-y-5">{children}</div>
     </section>
+  );
+}
+
+/** Monday first, as the week reads. */
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const dayRank = (d: number) => DAY_ORDER.indexOf(d);
+
+/** Slots in reading order: by group, then first day of the week, then time. */
+function sortSlots(slots: TermSlot[], groupIds: string[]): TermSlot[] {
+  return [...slots].sort(
+    (a, b) =>
+      groupIds.indexOf(a.groupId) - groupIds.indexOf(b.groupId) ||
+      dayRank(Math.min(...a.days.map(dayRank), 9)) - dayRank(Math.min(...b.days.map(dayRank), 9)) ||
+      a.time.localeCompare(b.time),
+  );
+}
+
+/** Simple or Flexible: how parents choose. Chosen while the term is a draft. */
+function ModeSwitch({ mode, locked, onChange }: { mode: SlotMode; locked: boolean; onChange: (m: SlotMode) => void }) {
+  const options: { id: SlotMode; title: string; body: string }[] = [
+    { id: 'simple', title: 'Simple', body: 'Parents pick one slot. One list, the way terms have always worked. A slot can run on more than one day.' },
+    { id: 'flexible', title: 'Flexible', body: 'Parents pick one slot from each group you make, for example one on Mon or Tue and one on Thu or Fri, and keep that pair every week.' },
+  ];
+  return (
+    <div>
+      <label className={labelCls}>How do parents choose?</label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="How parents choose">
+        {options.map((o) => {
+          const on = mode === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={locked && !on}
+              onClick={() => !locked && onChange(o.id)}
+              className={cn(
+                'rounded-xl border-2 p-4 text-left transition-colors',
+                on ? 'border-[#FA4D8D] bg-pink-50' : 'border-gray-200 bg-white hover:border-gray-300',
+                locked && !on && 'opacity-40',
+                locked && 'cursor-default',
+              )}
+            >
+              <span className="flex items-center gap-2 text-base font-bold text-gray-900">
+                <span className={cn('grid h-5 w-5 place-items-center rounded-full border-2', on ? 'border-[#FA4D8D] bg-[#FA4D8D]' : 'border-gray-300')}>
+                  {on && <Check className="h-3 w-3 text-white" />}
+                </span>
+                {o.title}
+              </span>
+              <span className="mt-1 block text-[13px] leading-snug text-gray-600">{o.body}</span>
+            </button>
+          );
+        })}
+      </div>
+      {locked && <p className={cn('mt-1.5', hintCls)}>The mode is fixed once a term is published.</p>}
+    </div>
+  );
+}
+
+/** "Add several slots at once": every chosen day at every chosen time. This is
+ *  how a vendor offers more than one slot on a day without making each by hand. */
+function QuickAdd({ onCreate }: { onCreate: (days: number[], times: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState<number[]>([]);
+  const [times, setTimes] = useState<string[]>([]);
+  const [pick, setPick] = useState('09:30');
+  const n = days.length * times.length;
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-bold text-gray-800 hover:border-[#FA4D8D] hover:text-[#FA4D8D]">
+        <Plus className="h-4 w-4" /> Add several slots at once
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-4 rounded-xl border border-dashed border-gray-300 bg-white p-4">
+      <div>
+        <label className={labelCls}>Days</label>
+        <div className="flex flex-wrap gap-1.5">
+          {WEEKDAYS.map((d) => {
+            const on = days.includes(d.i);
+            return (
+              <button
+                key={d.i}
+                type="button"
+                title={d.name}
+                aria-label={d.name}
+                aria-pressed={on}
+                onClick={() => setDays((x) => (on ? x.filter((v) => v !== d.i) : [...x, d.i]))}
+                className={cn('h-10 w-10 rounded-xl text-sm font-bold transition-colors', on ? 'bg-[#FA4D8D] text-white' : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-100')}
+              >
+                {d.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <label className={labelCls}>Times (one slot for each day and time)</label>
+        <div className="flex flex-wrap items-center gap-2">
+          {[...times].sort().map((tm) => (
+            <button key={tm} type="button" onClick={() => setTimes((x) => x.filter((v) => v !== tm))} title="Remove this time" className="rounded-lg bg-[#FA4D8D] px-3 py-1.5 text-sm font-bold text-white">
+              {formatTime(tm)} ×
+            </button>
+          ))}
+          <TimePicker className={cn(inputCls, 'h-10 w-36')} value={pick} onChange={setPick} aria-label="Time to add" />
+          <button
+            type="button"
+            onClick={() => setTimes((x) => (x.includes(pick) ? x : [...x, pick]))}
+            className="h-10 rounded-xl border border-gray-300 px-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            Add this time
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          disabled={n === 0}
+          onClick={() => { onCreate(days, times); setDays([]); setTimes([]); setOpen(false); }}
+          className="h-10 rounded-xl px-4 text-sm font-bold gradient-primary text-white hover:opacity-90"
+        >
+          {n === 0 ? 'Pick days and times' : `Create ${n} slot${n === 1 ? '' : 's'}`}
+        </Button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-gray-600 hover:text-gray-900">Cancel</button>
+        {n > 0 && <span className={hintCls}>{days.length} day{days.length === 1 ? '' : 's'} × {times.length} time{times.length === 1 ? '' : 's'}. Length, seats and venue are copied from the last slot.</span>}
+      </div>
+    </div>
   );
 }
 
@@ -117,7 +246,7 @@ export function TermsPanel({
             <CalendarRange className="mx-auto h-9 w-9 text-gray-300" />
             <p className="mt-3 text-base font-bold text-gray-800">Start your first term</p>
             <p className={cn('mx-auto mt-1 max-w-xs', hintCls)}>
-              Bundle a block of weekly sessions, set the groups and price, and choose whether parents can join mid-way.
+              Bundle a block of weekly sessions, set the slots and price, and choose whether parents can join mid-way.
             </p>
           </div>
         ) : (
@@ -134,7 +263,9 @@ export function TermsPanel({
                         <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-bold', STATUS_STYLE[status.key])}>{status.label}</span>
                       </div>
                       <p className="mt-1 text-sm text-gray-600">
-                        {n} sessions · SGD {t.price} · {t.slots.length} group{t.slots.length === 1 ? '' : 's'}
+                        {isFlexible(t)
+                          ? `Flexible · ${comboSessions(t)} sessions for one slot from each of ${t.groups.length} groups · SGD ${t.price} · ${t.slots.length} slots`
+                          : `${n} sessions · SGD ${t.price} · ${t.slots.length} slot${t.slots.length === 1 ? '' : 's'}`}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded-md bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-900">Whole term</span>
@@ -168,21 +299,20 @@ export function TermsPanel({
                     </div>
                   </div>
                   <div className="mt-3 space-y-1 border-t border-gray-100 pt-3">
-                    {t.slots.map((s) => {
-                      const days = WEEKDAYS.filter((d) => s.days.includes(d.i));
-                      return (
-                        <p key={s.id} className="text-sm text-gray-700">
-                          <span className="font-semibold">
-                            {days.map((d) => (s.perDay ? `${d.name.slice(0, 3)} ${formatTime(dayTimeFor(s, d.i).time)}` : d.name.slice(0, 3))).join(', ')}
-                            {!s.perDay && ` ${formatTime(s.time)}`}
-                          </span>
-                          {s.locationId ? ` · ${locations.find((l) => l.id === s.locationId)?.name ?? 'Other venue'}` : ''}
-                          {' · '}{fmtRange(slotDates(s))}
-                          {s.price != null ? ` · SGD ${s.price}` : ''}
-                          {(s.skip ?? []).length > 0 ? ` · ${(s.skip ?? []).length} skipped` : ''}
-                        </p>
-                      );
-                    })}
+                    {(isFlexible(t) ? t.groups : [null]).map((g) => (
+                      <div key={g?.id ?? 'all'} className="space-y-1">
+                        {g && <p className="pt-1 text-xs font-bold uppercase tracking-wide text-gray-500">Choose 1 · {g.name || 'Unnamed group'}</p>}
+                        {t.slots.filter((sl) => !g || sl.groupId === g.id).map((s) => (
+                          <p key={s.id} className="text-sm text-gray-700">
+                            <span className="font-semibold">{slotLabel(s)}</span>
+                            {s.locationId ? ` · ${locations.find((l) => l.id === s.locationId)?.name ?? 'Other venue'}` : ''}
+                            {' · '}{fmtRange(slotDates(s))}
+                            {!isFlexible(t) && s.price != null ? ` · SGD ${s.price}` : ''}
+                            {(s.skip ?? []).length > 0 ? ` · ${(s.skip ?? []).length} skipped` : ''}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
                   </div>
                   {t.status === 'published' && (
                     <PublishedTermTools term={t} hasNext={terms.some((x) => x.previousTermId === t.id)} onCopy={() => setDraft(nextTermFrom(t))} />
@@ -238,6 +368,10 @@ function TermForm({
   // What is being typed in "Number of sessions", so the box can be cleared and
   // retyped without snapping back to 1.
   const [sessionsDraft, setSessionsDraft] = useState<string | null>(null);
+  const [openSlots, setOpenSlots] = useState<Set<string>>(() => new Set());
+  const [mergeAsk, setMergeAsk] = useState(false);
+  const flexible = t.slotMode === 'flexible';
+  const toggleOpen = (id: string) => setOpenSlots((x) => { const n2 = new Set(x); if (n2.has(id)) n2.delete(id); else n2.add(id); return n2; });
   const set = (patch: Partial<Term>) => setT((x) => ({ ...x, ...patch }));
   const setSlot = (id: string, patch: Partial<TermSlot>) =>
     setT((x) => ({ ...x, slots: x.slots.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
@@ -262,16 +396,110 @@ function TermForm({
   const n = slotDates(ladderSlot).length;
   const ladderPrice = slotPrice(t, ladderSlot);
   const lastJoin = lastJoinableAfter(t, n);
-  const perClass = n > 0 ? Math.round(ladderPrice / n) : 0;
+  // A Flexible family has one slot from each group, so a session passing in
+  // each slot takes `lanes` sessions off at once and the price covers all of them.
+  const lanes = flexible ? Math.max(1, t.groups.length) : 1;
+  const perClass = flexible ? (comboSessions(t) > 0 ? Math.round(ladderPrice / comboSessions(t)) : 0) : n > 0 ? Math.round(ladderPrice / n) : 0;
   const firstCount = slotDates(t.slots[0]).length;
   const countsDiffer = new Set(t.slots.map((x) => slotDates(x).length)).size > 1;
   /** Run every slot for exactly this many sessions. */
   const setAllSessions = (n: number) =>
     setT((x) => ({ ...x, slots: x.slots.map((sl) => ({ ...sl, count: n })) }));
 
+  /** Simple <-> Flexible. Going back to Simple with several groups needs them combined first. */
+  function chooseMode(m: SlotMode) {
+    if (m === t.slotMode) return;
+    if (m === 'flexible') {
+      setT((x) => ({
+        ...x,
+        slotMode: 'flexible',
+        groups: x.groups.map((g, i) => (i === 0 && g.name === DEFAULT_GROUP_NAME ? { ...g, name: '' } : g)),
+      }));
+      return;
+    }
+    if (t.groups.length > 1) { setMergeAsk(true); return; }
+    setT((x) => ({ ...x, slotMode: 'simple' }));
+  }
+  function mergeToSimple() {
+    setT((x) => {
+      const g = x.groups[0];
+      return { ...x, slotMode: 'simple', groups: [g], slots: sortSlots(x.slots.map((sl) => ({ ...sl, groupId: g.id })), [g.id]) };
+    });
+    setMergeAsk(false);
+  }
+  function addGroup() {
+    setT((x) => {
+      const tpl = x.slots[x.slots.length - 1];
+      const gid = newId();
+      const slot: TermSlot = { ...structuredClone(tpl), id: newId(), groupId: gid };
+      setOpenSlots((o) => new Set(o).add(slot.id));
+      return { ...x, groups: [...x.groups, { id: gid, name: '' }], slots: [...x.slots, slot] };
+    });
+  }
+  function removeGroup(id: string) {
+    setT((x) => ({ ...x, groups: x.groups.filter((g) => g.id !== id), slots: x.slots.filter((sl) => sl.groupId !== id) }));
+  }
+  function addSlotIn(groupId: string) {
+    setT((x) => {
+      const inGroup = x.slots.filter((sl) => sl.groupId === groupId);
+      const tpl = inGroup[inGroup.length - 1] ?? x.slots[x.slots.length - 1];
+      const slot: TermSlot = { ...structuredClone(tpl), id: newId(), groupId, capacity: tpl.capacity || defaultCapacity || 10 };
+      setOpenSlots((o) => new Set(o).add(slot.id));
+      return { ...x, slots: sortSlots([...x.slots, slot], x.groups.map((g) => g.id)) };
+    });
+  }
+  /** One slot for every chosen day at every chosen time, skipping any already there. */
+  function createSlots(groupId: string, days: number[], times: string[]) {
+    setT((x) => {
+      const inGroup = x.slots.filter((sl) => sl.groupId === groupId);
+      const tpl = inGroup[inGroup.length - 1] ?? x.slots[x.slots.length - 1];
+      if (!tpl) return x;
+      const have = new Set(inGroup.filter((sl) => sl.days.length === 1).map((sl) => `${sl.days[0]}@${sl.time}`));
+      const made: TermSlot[] = [];
+      for (const d of DAY_ORDER.filter((v) => days.includes(v))) {
+        for (const tm of [...times].sort()) {
+          if (have.has(`${d}@${tm}`)) continue;
+          made.push({ ...structuredClone(tpl), id: newId(), groupId, days: [d], time: tm, perDay: false, dayTimes: {}, skip: [] });
+        }
+      }
+      return { ...x, slots: sortSlots([...x.slots, ...made], x.groups.map((g) => g.id)) };
+    });
+  }
+  function removeSlot(id: string) {
+    setT((x) => ({ ...x, slots: x.slots.filter((sl) => sl.id !== id) }));
+  }
+  /** What is wrong with this slot, in words (Flexible terms). */
+  function problemsOf(sl: TermSlot): string[] {
+    const out: string[] = [];
+    if (sl.days.length === 0) out.push('Pick at least one day.');
+    for (const o of t.slots) {
+      if (o.id === sl.id) continue;
+      if (o.groupId === sl.groupId && o.id < sl.id && o.days.join() === sl.days.join() && o.time === sl.time) out.push('Same days and time as another slot in this group.');
+      if (o.groupId !== sl.groupId && slotsClash(sl, o)) {
+        out.push(`Runs at the same time as ${slotLabel(o)} in ${t.groups.find((g) => g.id === o.groupId)?.name || 'another group'}, so a parent could not pick both.`);
+      }
+    }
+    return out;
+  }
+
   function submit(status: Term['status']) {
     if (!t.name.trim()) return setError('Give the term a name parents will recognise, for example "Term 4 · Saturday swim".');
-    if (t.slots.some((s) => slotDates(s).length === 0)) return setError('Every group needs at least one day and a first session date.');
+    if (t.slots.length === 0) return setError('Add at least one slot.');
+    if (t.slots.some((s) => slotDates(s).length === 0)) return setError('Every slot needs at least one day and a first session date.');
+    if (flexible) {
+      const empty = t.groups.find((g) => !t.slots.some((sl) => sl.groupId === g.id));
+      if (empty) return setError(`${empty.name.trim() ? `"${empty.name.trim()}"` : 'A group'} has no slots yet. Add at least one, or remove the group.`);
+      if (t.groups.some((g) => !g.name.trim())) return setError('Name every group, for example "Mon & Tue", so parents know what they are choosing.');
+      const names = t.groups.map((g) => g.name.trim().toLowerCase());
+      if (new Set(names).size !== names.length) return setError('Two groups have the same name. Give each its own.');
+      for (let i = 0; i < t.slots.length; i++) {
+        for (let j = i + 1; j < t.slots.length; j++) {
+          const a = t.slots[i];
+          const b = t.slots[j];
+          if (a.groupId !== b.groupId && slotsClash(a, b)) return setError(`${slotLabel(a)} and ${slotLabel(b)} are in different groups but run at the same time, so a parent could not take both. Change one of them.`);
+        }
+      }
+    }
     if (t.price <= 0) return setError('Set the full term price.');
     if (t.allowTrial && t.trialLimit < 1) return setError('Set how many trial sessions one child can take.');
     setError(null);
@@ -308,70 +536,13 @@ function TermForm({
     ...(t.allowPackages ? [{ label: 'Package credits', detail: 'any session, when it suits', cls: 'bg-purple-100 text-purple-900' }] : []),
   ];
 
-  return (
-    <div className="space-y-5">
-      {banner}
-      <button onClick={onCancel} className="inline-flex items-center gap-1.5 text-sm font-bold text-gray-600 hover:text-gray-900">
-        <ArrowLeft className="h-4 w-4" /> Back to terms
-      </button>
-
-      <h3 className="text-xl font-bold text-gray-900">{isNew ? 'New term' : 'Edit term'}</h3>
-
-      <Section n={1} title="Term details" subtitle="What parents see when they choose your term.">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className={labelCls}>Term name</label>
-            <input className={inputCls} value={t.name} placeholder="Term 4 · Saturday swim" onChange={(e) => set({ name: e.target.value })} aria-label="Term name" />
-          </div>
-          <div>
-            <label className={labelCls}>Full term price (SGD per child)</label>
-            <NumberInput min="0" step="any" className={inputCls} value={String(t.price)} onChange={(e) => set({ price: Number(e.target.value) || 0 })} />
-          </div>
-          <div>
-            <label className={labelCls}>Number of sessions</label>
-            <NumberInput
-              min="1"
-              max={String(MAX_TERM_SESSIONS)}
-              className={inputCls}
-              value={sessionsDraft ?? (countsDiffer ? '' : String(firstCount))}
-              placeholder={countsDiffer ? 'Differs by group' : undefined}
-              onChange={(e) => {
-                const raw = e.target.value;
-                setSessionsDraft(raw);
-                const n = Math.floor(Number(raw));
-                if (Number.isFinite(n) && n >= 1) setAllSessions(Math.min(MAX_TERM_SESSIONS, n));
-              }}
-              onBlur={() => setSessionsDraft(null)}
-              aria-label="Number of sessions"
-            />
-            <p className={cn('mt-1.5', hintCls)}>
-              {firstCount > 0 && t.price > 0 && !countsDiffer ? `About SGD ${Math.round(t.price / firstCount)} each. ` : ''}
-              Applies to every group. Each group can still be set by weeks below.
-            </p>
-          </div>
-        </div>
-      </Section>
-
-      <Section n={2} title="Groups" subtitle="Parents pick one group when they enrol and come on all of its days. Add another group for a different set of days or times.">
-        <div className="space-y-4">
-          {t.slots.map((s, idx) => {
-            const dates = slotDates(s);
-            const pattern = slotPatternDates(s);
-            const pickedDays = WEEKDAYS.filter((d) => s.days.includes(d.i));
-            return (
-              <div key={s.id} className="rounded-xl border border-gray-300 bg-gray-50/60 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-base font-bold text-gray-900">Group {idx + 1}</span>
-                  {t.slots.length > 1 && (
-                    <button
-                      onClick={() => set({ slots: t.slots.filter((x) => x.id !== s.id) })}
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4" /> Remove
-                    </button>
-                  )}
-                </div>
-
+  /** Everything about one slot: days, times, venue, seats, length, dates. */
+  const slotBody = (s: TermSlot) => {
+    const dates = slotDates(s);
+    const pattern = slotPatternDates(s);
+    const pickedDays = WEEKDAYS.filter((d) => s.days.includes(d.i));
+    return (
+      <>
                 <label className={labelCls}>Repeats every</label>
                 <div className="flex flex-wrap gap-1.5">
                   {WEEKDAYS.map((d) => {
@@ -443,7 +614,7 @@ function TermForm({
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>Venue</label>
-                    <SelectField className={inputCls} value={s.locationId} onChange={(v) => setSlot(s.id, { locationId: v })} aria-label="Group venue">
+                    <SelectField className={inputCls} value={s.locationId} onChange={(v) => setSlot(s.id, { locationId: v })} aria-label="Slot venue">
                       <Opt value="">Same as the activity</Opt>
                       {locations.map((l) => <Opt key={l.id} value={l.id}>{l.name}</Opt>)}
                     </SelectField>
@@ -496,8 +667,9 @@ function TermForm({
                         : 'Runs for this many weeks. Pick "Sessions" to set an exact number instead.'}
                     </p>
                   </div>
+                  {!flexible && (
                   <div>
-                    <label className={labelCls}>Price for this group (SGD)</label>
+                    <label className={labelCls}>Price for this slot (SGD)</label>
                     <NumberInput
                       min="0"
                       step="any"
@@ -505,9 +677,10 @@ function TermForm({
                       className={inputCls}
                       value={s.price == null ? '' : String(s.price)}
                       onChange={(e) => setSlot(s.id, { price: e.target.value === '' ? null : Number(e.target.value) || 0 })}
-                      aria-label="Group price"
+                      aria-label="Slot price"
                     />
                   </div>
+                  )}
                   <div>
                     <label className={labelCls}>Most seats singles can take</label>
                     <NumberInput
@@ -536,7 +709,7 @@ function TermForm({
                     return (
                       <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
                         <span>
-                          {holidays.length} public holiday{holidays.length === 1 ? '' : 's'} in this group:{' '}
+                          {holidays.length} public holiday{holidays.length === 1 ? '' : 's'} in this slot:{' '}
                           {holidays.map((d) => `${fmtShort(d)} (${SG_PUBLIC_HOLIDAYS[d]})`).join(', ')}
                         </span>
                         {open.length > 0 && (
@@ -581,25 +754,202 @@ function TermForm({
                       : 'No sessions left. Un-skip a date or change the days.'}
                   </p>
                 </div>
-              </div>
-            );
-          })}
+      </>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      {banner}
+      <button onClick={onCancel} className="inline-flex items-center gap-1.5 text-sm font-bold text-gray-600 hover:text-gray-900">
+        <ArrowLeft className="h-4 w-4" /> Back to terms
+      </button>
+
+      <h3 className="text-xl font-bold text-gray-900">{isNew ? 'New term' : 'Edit term'}</h3>
+
+      <Section n={1} title="Term details" subtitle="What parents see when they choose your term.">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Term name</label>
+            <input className={inputCls} value={t.name} placeholder="Term 4 · Saturday swim" onChange={(e) => set({ name: e.target.value })} aria-label="Term name" />
+          </div>
+          <div>
+            <label className={labelCls}>{flexible ? 'Price for the whole term (SGD per child, one slot from each group)' : 'Full term price (SGD per child)'}</label>
+            <NumberInput min="0" step="any" className={inputCls} value={String(t.price)} onChange={(e) => set({ price: Number(e.target.value) || 0 })} />
+          </div>
+          <div>
+            <label className={labelCls}>Number of sessions</label>
+            <NumberInput
+              min="1"
+              max={String(MAX_TERM_SESSIONS)}
+              className={inputCls}
+              value={sessionsDraft ?? (countsDiffer ? '' : String(firstCount))}
+              placeholder={countsDiffer ? 'Differs by slot' : undefined}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setSessionsDraft(raw);
+                const n = Math.floor(Number(raw));
+                if (Number.isFinite(n) && n >= 1) setAllSessions(Math.min(MAX_TERM_SESSIONS, n));
+              }}
+              onBlur={() => setSessionsDraft(null)}
+              aria-label="Number of sessions"
+            />
+            <p className={cn('mt-1.5', hintCls)}>
+              {firstCount > 0 && t.price > 0 && !countsDiffer ? `About SGD ${Math.round(t.price / firstCount)} each. ` : ''}
+              {flexible && comboSessions(t) > 0 && t.price > 0 ? `Per slot. A family's ${t.groups.length} slots give ${comboSessions(t)} sessions in all. ` : ''}
+              Applies to every slot. Each slot can still be set by weeks below.
+            </p>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            const last = t.slots[t.slots.length - 1];
-            set({
-              slots: [...t.slots, {
-                ...last, id: newId(), days: [...last.days], skip: [...last.skip], dayTimes: { ...last.dayTimes },
-                capacity: last.capacity || defaultCapacity || 10,
-              }],
-            });
-          }}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 text-[15px] font-bold text-gray-700 hover:border-[#FA4D8D] hover:text-[#FA4D8D]"
-        >
-          <Plus className="h-5 w-5" /> Add another group
-        </button>
+      </Section>
+
+      <Section
+        n={2}
+        title={flexible ? 'Groups and slots' : 'Slots'}
+        subtitle={flexible
+          ? 'Parents pick one slot from each group and keep that pair every week. Name each group so parents know what they are choosing.'
+          : 'Parents pick one slot when they enrol and come on all of its days. Add a slot for each day and time you offer.'}
+      >
+        <ModeSwitch mode={t.slotMode} locked={term.status === 'published'} onChange={chooseMode} />
+        {mergeAsk && (
+          <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-bold text-amber-950">
+              Simple has one list of slots. Your {t.groups.length} groups will be combined into one list of {t.slots.length} slots, and parents will pick just one.
+            </p>
+            <div className="flex gap-2">
+              <Button type="button" onClick={mergeToSimple} className="h-9 rounded-lg px-4 text-sm font-bold gradient-primary text-white hover:opacity-90">Combine into one list</Button>
+              <Button type="button" variant="outline" onClick={() => setMergeAsk(false)} className="h-9 rounded-lg px-4 text-sm font-semibold">Stay Flexible</Button>
+            </div>
+          </div>
+        )}
+
+        {!flexible ? (
+          <>
+            <div className="space-y-4">
+              {t.slots.map((s, idx) => (
+                <div key={s.id} className="rounded-xl border border-gray-300 bg-gray-50/60 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-base font-bold text-gray-900">Slot {idx + 1}</span>
+                    {t.slots.length > 1 && (
+                      <button
+                        onClick={() => removeSlot(s.id)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" /> Remove
+                      </button>
+                    )}
+                  </div>
+                  {slotBody(s)}
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <QuickAdd onCreate={(d, tm) => createSlots(t.groups[0].id, d, tm)} />
+            </div>
+            <button
+              type="button"
+              onClick={() => addSlotIn(t.groups[0].id)}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 text-[15px] font-bold text-gray-700 hover:border-[#FA4D8D] hover:text-[#FA4D8D]"
+            >
+              <Plus className="h-5 w-5" /> Add another slot
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="space-y-4">
+              {t.groups.map((g, gi) => {
+                const inGroup = t.slots.filter((sl) => sl.groupId === g.id);
+                return (
+                  <div key={g.id} className="space-y-3 rounded-2xl border border-gray-300 bg-gray-50/60 p-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="text-sm font-semibold text-gray-700" htmlFor={`group-name-${g.id}`}>Group {gi + 1}</label>
+                      <input
+                        id={`group-name-${g.id}`}
+                        className={cn(inputCls, 'max-w-xs font-bold')}
+                        value={g.name}
+                        placeholder="Name it, e.g. Mon & Tue"
+                        onChange={(e) => setT((x) => ({ ...x, groups: x.groups.map((y) => (y.id === g.id ? { ...y, name: e.target.value } : y)) }))}
+                      />
+                      <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-bold text-teal-900">{inGroup.length} slot{inGroup.length === 1 ? '' : 's'}</span>
+                      <span className="flex-1" />
+                      {t.groups.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeGroup(g.id)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4" /> Remove group
+                        </button>
+                      )}
+                    </div>
+
+                    {inGroup.length === 0 && (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">This group has no slots yet. Add at least one, or remove the group.</p>
+                    )}
+                    <div className="space-y-2">
+                      {inGroup.map((s) => {
+                        const open = openSlots.has(s.id);
+                        const problems = problemsOf(s);
+                        return (
+                          <div key={s.id} className={cn('rounded-xl border bg-white', problems.length ? 'border-amber-300' : 'border-gray-200')}>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5">
+                              <span className="font-bold text-gray-900">{slotLabel(s)}</span>
+                              <span className="text-sm text-gray-500">{s.duration} min · {s.capacity} seats</span>
+                              <span className="flex-1" />
+                              <button type="button" aria-expanded={open} onClick={() => toggleOpen(s.id)} className="rounded-lg px-2 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-100">
+                                {open ? 'Done' : 'Edit'}
+                              </button>
+                              <button type="button" onClick={() => removeSlot(s.id)} aria-label={`Remove ${slotLabel(s)}`} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                            {problems.map((m) => (
+                              <p key={m} className="mx-3.5 mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-[13px] font-semibold text-amber-900">{m}</p>
+                            ))}
+                            {open && <div className="border-t border-gray-100 p-4">{slotBody(s)}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <QuickAdd onCreate={(d, tm) => createSlots(g.id, d, tm)} />
+                      <button type="button" onClick={() => addSlotIn(g.id)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                        <Plus className="h-4 w-4" /> Add one slot
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={addGroup}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 text-[15px] font-bold text-gray-700 hover:border-[#FA4D8D] hover:text-[#FA4D8D]"
+            >
+              <Plus className="h-5 w-5" /> Add another group
+            </button>
+            {(() => {
+              const combos = t.groups.reduce((m, g) => m * t.slots.filter((sl) => sl.groupId === g.id).length, 1);
+              return (
+                <div className="rounded-xl bg-pink-50 p-4 text-sm text-gray-900">
+                  <p className="font-bold">What parents will see</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {t.groups.map((g) => (
+                      <span key={g.id} className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[13px] font-bold">
+                        Choose 1 · {g.name.trim() || 'Unnamed group'} ({t.slots.filter((sl) => sl.groupId === g.id).length})
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2">
+                    {combos === 0
+                      ? 'A group has no slots yet.'
+                      : `That is ${combos} possible combination${combos === 1 ? '' : 's'}: ${t.groups.length} sessions a week, ${comboSessions(t)} sessions in all, for SGD ${t.price}.`}
+                  </p>
+                </div>
+              );
+            })()}
+          </>
+        )}
       </Section>
 
       <Section n={3} title="Joining mid-term" subtitle="Let parents enrol after the term has started, and decide what they pay.">
@@ -639,11 +989,11 @@ function TermForm({
             <div className="rounded-xl bg-gray-50 p-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-bold text-gray-800">
-                  What a parent pays, by when they join <span className="font-normal text-gray-500">({n} sessions, SGD {ladderPrice})</span>
+                  What a parent pays, by when they join <span className="font-normal text-gray-500">({flexible ? `${comboSessions(t)} sessions across their ${t.groups.length} slots` : `${n} sessions`}, SGD {ladderPrice})</span>
                 </span>
-                {t.slots.length > 1 && (
-                  <SelectField className="h-9 w-auto min-w-[9rem] rounded-lg border border-gray-300 px-3 text-sm font-semibold" value={String(ladderIdx)} onChange={(v) => setLadderIdx(Number(v))} aria-label="Show the price ladder for group">
-                    {t.slots.map((s, i) => <Opt key={s.id} value={String(i)}>Group {i + 1} · {formatTime(s.time)}</Opt>)}
+                {t.slots.length > 1 && !flexible && (
+                  <SelectField className="h-9 w-auto min-w-[9rem] rounded-lg border border-gray-300 px-3 text-sm font-semibold" value={String(ladderIdx)} onChange={(v) => setLadderIdx(Number(v))} aria-label="Show the price ladder for slot">
+                    {t.slots.map((s, i) => <Opt key={s.id} value={String(i)}>Slot {i + 1} · {slotLabel(s)}</Opt>)}
                   </SelectField>
                 )}
               </div>
@@ -652,8 +1002,8 @@ function TermForm({
                 {Array.from({ length: lastJoin + 1 }, (_, k) => (
                   <div key={k} className="grid grid-cols-[1fr_auto_4.5rem] items-baseline gap-3 rounded-lg bg-teal-100 px-3 py-1.5 text-sm tabular-nums text-teal-950">
                     <span>{k === 0 ? 'Before session 1' : `After session ${k}`}</span>
-                    <strong className="text-right font-bold">SGD {priceAfter({ ...t, price: ladderPrice }, k)}</strong>
-                    <span className="text-right text-teal-800/70">{n - k} left</span>
+                    <strong className="text-right font-bold">SGD {priceAfter({ ...t, price: ladderPrice }, k * lanes)}</strong>
+                    <span className="text-right text-teal-800/70">{n - k} left{flexible ? ' in each' : ''}</span>
                   </div>
                 ))}
               </div>
@@ -858,11 +1208,11 @@ function TermWaitlistTools({ term }: { term: Term }) {
   if (!counts || total === 0) return null;
 
   const groupName = (slotId: string) => {
-    const i = term.slots.findIndex((s) => s.id === slotId);
-    if (i < 0 || term.slots.length < 2) return 'This term';
-    const days = WEEKDAYS.filter((d) => term.slots[i].days.includes(d.i)).map((d) => d.name.slice(0, 3)).join(', ');
-    return `Group ${i + 1} (${days})`;
+    const sl = term.slots.find((s) => s.id === slotId);
+    if (!sl || term.slots.length < 2) return 'This term';
+    return slotLabel(sl);
   };
+  const freeFor = (slotId: string) => counts.find((c) => c.slot_id === slotId)?.free_places ?? 0;
 
   async function act(fn: () => Promise<string>, failed: string) {
     setBusy(true);
@@ -908,8 +1258,66 @@ function TermWaitlistTools({ term }: { term: Term }) {
           {rows === null ? (
             <p className={cn('p-3', hintCls)}>Loading…</p>
           ) : (
-            term.slots.map((s, i) => {
-              const list = rows.filter((r) => r.slot_id === s.id);
+            <>
+            {(() => {
+              const seen = new Set<string>();
+              const combos = rows.filter((r) => r.kind === 'term' && r.combo_id && !seen.has(r.combo_id) && seen.add(r.combo_id));
+              if (combos.length === 0) return null;
+              return (
+                <div>
+                  <div className="bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-600">Waiting for a combination</div>
+                  {combos.map((r) => (
+                    <div key={r.combo_id} className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 first:border-t-0">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-gray-900">{r.child_name}</span>
+                          {ageOf(r.child_dob) && <span className="text-xs text-gray-500">{ageOf(r.child_dob)}</span>}
+                          <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', WAIT_STATUS[r.status].cls)}>{WAIT_STATUS[r.status].label}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {(r.combo_slot_ids ?? []).map((id) => {
+                            const sl = term.slots.find((x) => x.id === id);
+                            const full = freeFor(id) <= 0;
+                            return (
+                              <span key={id} className={cn('rounded-full px-2.5 py-0.5 text-xs font-bold', full ? 'bg-amber-100 text-amber-900' : 'bg-teal-100 text-teal-900')}>
+                                {sl ? slotLabel(sl) : 'Slot'} · {full ? 'full' : `${freeFor(id)} free`}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          {[r.parent_name, r.parent_email].filter(Boolean).join(' · ')} · joined {new Date(r.joined_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}. Told when every slot has a place.
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        {r.status === 'waiting' && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => act(async () => {
+                              await offerTermPlace(r.id);
+                              return `Places offered to ${r.child_name}'s family. They have been sent a link to pay.`;
+                            }, 'Could not offer the places')}
+                            className="rounded-lg px-2 py-1 text-sm font-semibold text-pink-700 hover:bg-pink-50"
+                          >
+                            Offer a place
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setRemoving(r); setReason(''); }}
+                          className="rounded-lg px-2 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {term.slots.map((s, i) => {
+              const list = rows.filter((r) => r.slot_id === s.id && !(r.kind === 'term' && r.combo_id));
               if (list.length === 0) return null;
               return (
                 <div key={s.id} className={cn(i > 0 && 'border-t border-gray-100')}>
@@ -960,11 +1368,12 @@ function TermWaitlistTools({ term }: { term: Term }) {
                   ))}
                 </div>
               );
-            })
+            })}
+            </>
           )}
           {rows !== null && (
             <p className={cn('border-t border-gray-100 px-3 py-2', hintCls)}>
-              Offering a place sends that family a link to pay, even when the group is full: their sessions grow by one place.
+              Offering a place sends that family a link to pay, even when the slot is full: their sessions grow by one place.
             </p>
           )}
         </div>
@@ -1008,6 +1417,7 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const [withdrawing, setWithdrawing] = useState<RosterRow | null>(null);
+  const [moving, setMoving] = useState<{ row: RosterRow; to: string } | null>(null);
   const [refund, setRefund] = useState<'refund' | 'none'>('refund');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1041,6 +1451,20 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
     setBusy(false);
   }
 
+  async function confirmMove() {
+    if (!moving) return;
+    setBusy(true);
+    try {
+      const n = await swapTermSlot(moving.row.enrolment_id, moving.to);
+      toast(`${moving.row.child_name} moved. ${n} upcoming session${n === 1 ? '' : 's'} moved with them, and the family has been told.`);
+      setMoving(null);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      toast.error('Could not move them', { description: (e as { message?: string })?.message });
+    }
+    setBusy(false);
+  }
+
   async function reenrol() {
     setBusy(true);
     try {
@@ -1067,6 +1491,33 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
           </div>
         ))}
       </div>
+      {isFlexible(term) && stats && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {term.groups.map((g) => (
+            <div key={g.id} className="space-y-1.5 rounded-xl bg-gray-50 p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-gray-500">{g.name || 'Group'}</div>
+              {term.slots.filter((sl) => sl.groupId === g.id).map((sl) => {
+                const st = stats.find((x) => x.slot_id === sl.id);
+                const taken = st?.enrolled ?? 0;
+                const pct = sl.capacity > 0 ? Math.min(100, Math.round((100 * taken) / sl.capacity)) : 0;
+                const full = st?.places_left != null && st.places_left <= 0;
+                return (
+                  <div key={sl.id} className="rounded-lg bg-white p-2">
+                    <div className="flex items-center justify-between gap-2 text-sm font-bold text-gray-900">
+                      <span>{slotLabel(sl)}</span>
+                      {full ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">Full</span> : <span className="text-xs font-semibold text-gray-500">{st?.places_left ?? '—'} left</span>}
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                      <div className={cn('h-full', full ? 'bg-[#FA4D8D]' : 'bg-teal-600')} style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">{taken} of {sl.capacity} seats</div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
       {oneOffs > 0 && (
         <p className={hintCls}>Plus {oneOffs} trial, single, package or make-up booking{oneOffs === 1 ? '' : 's'}.</p>
       )}
@@ -1100,6 +1551,62 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
             <p className={cn('p-3', hintCls)}>Loading…</p>
           ) : roster.length === 0 ? (
             <p className={cn('p-3', hintCls)}>No one has enrolled yet.</p>
+          ) : isFlexible(term) ? (
+            (() => {
+              const families = new Map<string, RosterRow[]>();
+              for (const r of roster) families.set(r.combo_id ?? r.enrolment_id, [...(families.get(r.combo_id ?? r.enrolment_id) ?? []), r]);
+              return [...families.values()].map((rows) => {
+                const first = rows[0];
+                const live = rows.filter((r) => r.status !== 'withdrawn');
+                const status = rows.some((r) => r.status === 'unpaid') ? 'unpaid' : live.length === 0 ? 'withdrawn' : 'enrolled';
+                const left = rows.reduce((n2, r) => n2 + r.sessions_left, 0);
+                return (
+                  <div key={first.combo_id ?? first.enrolment_id} className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 first:border-t-0">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-gray-900">{first.child_name}</span>
+                        {ageOf(first.child_dob) && <span className="text-xs text-gray-500">{ageOf(first.child_dob)}</span>}
+                        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', ROSTER_STATUS[status])}>
+                          {status === 'enrolled' ? 'Enrolled' : status === 'unpaid' ? 'Awaiting payment' : 'Withdrawn'}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {rows.map((r) => {
+                          const sl = term.slots.find((x) => x.id === r.slot_id);
+                          return (
+                            <button
+                              key={r.enrolment_id}
+                              type="button"
+                              disabled={r.status === 'withdrawn' || r.sessions_left === 0}
+                              onClick={() => {
+                                const options = term.slots.filter((o) => sl && o.groupId === sl.groupId && o.id !== sl.id);
+                                setMoving({ row: r, to: options[0]?.id ?? '' });
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-900 hover:border-[#FA4D8D] disabled:opacity-50"
+                              title="Move to another slot in this group"
+                            >
+                              {sl ? slotLabel(sl) : 'Slot'} <span className="font-semibold text-gray-500">Move ▾</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {[first.parent_name, first.parent_email].filter(Boolean).join(' · ')} · {money(rows.reduce((n2, r) => n2 + r.price_cents, 0))} · {left} of {rows.reduce((n2, r) => n2 + r.sessions, 0)} sessions left
+                      </div>
+                    </div>
+                    {status !== 'withdrawn' && left > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setWithdrawing({ ...first, sessions_left: left }); setRefund('refund'); setReason(''); }}
+                        className="rounded-lg px-2 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Withdraw
+                      </button>
+                    )}
+                  </div>
+                );
+              });
+            })()
           ) : (
             term.slots.map((s, i) => {
               const rows = roster.filter((r) => r.slot_id === s.id);
@@ -1108,7 +1615,7 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
                 <div key={s.id} className={cn(i > 0 && 'border-t border-gray-100')}>
                   {term.slots.length > 1 && (
                     <div className="bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-600">
-                      Group {i + 1} · {WEEKDAYS.filter((d) => s.days.includes(d.i)).map((d) => d.name.slice(0, 3)).join(', ')}
+                      Slot {i + 1} · {slotLabel(s)}
                     </div>
                   )}
                   {rows.map((r) => (
@@ -1147,6 +1654,45 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
       )}
 
       <TermWaitlistTools term={term} />
+
+      {moving && (() => {
+        const cur = term.slots.find((x) => x.id === moving.row.slot_id);
+        const options = term.slots.filter((o) => cur && o.groupId === cur.groupId && o.id !== cur.id);
+        const group = term.groups.find((g) => g.id === cur?.groupId);
+        const other = roster?.filter((r) => r.combo_id && r.combo_id === moving.row.combo_id && r.enrolment_id !== moving.row.enrolment_id)
+          .map((r) => term.slots.find((x) => x.id === r.slot_id)).filter(Boolean).map((x) => slotLabel(x!)).join(', ');
+        return (
+          <div className="space-y-3 rounded-xl border-2 border-[#FA4D8D] bg-white p-4" role="dialog" aria-label={`Move ${moving.row.child_name}`}>
+            <p className="text-base font-bold text-gray-900">Move {moving.row.child_name} from {cur ? slotLabel(cur) : 'this slot'}</p>
+            <p className={hintCls}>
+              Pick another slot in {group?.name || 'this group'}. Their remaining sessions move with them{other ? `, and ${other} stays as it is` : ''}. Nothing more to pay, and the family is told.
+            </p>
+            {options.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">There is no other slot in this group.</p>
+            ) : (
+              <div className="space-y-2">
+                {options.map((o) => {
+                  const st = stats?.find((x) => x.slot_id === o.id);
+                  const full = st?.places_left != null && st.places_left <= 0;
+                  return (
+                    <label key={o.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 font-semibold', full ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-300 text-gray-900')}>
+                      <input type="radio" name="move-to" disabled={full} checked={moving.to === o.id} onChange={() => setMoving({ ...moving, to: o.id })} className="h-4 w-4 accent-[#FA4D8D]" />
+                      <span className="flex-1">{slotLabel(o)}</span>
+                      <span className="text-xs font-semibold text-gray-500">{full ? 'Full' : st?.places_left != null ? `${st.places_left} seats free` : 'Open'}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button disabled={busy || !moving.to} onClick={confirmMove} className="h-9 rounded-lg px-4 text-sm font-bold gradient-primary text-white hover:opacity-90">
+                Move {moving.row.child_name}
+              </Button>
+              <Button variant="outline" onClick={() => setMoving(null)} className="h-9 rounded-lg px-4 text-sm font-semibold">Cancel</Button>
+            </div>
+          </div>
+        );
+      })()}
 
       {withdrawing && (
         <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">

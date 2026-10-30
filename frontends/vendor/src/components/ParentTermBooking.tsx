@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
-  dayTimeFor, lastJoinableAfter, priceAfter, slotDates, slotPrice,
+  dayTimeFor, isFlexible, lastJoinableAfter, priceAfter, slotDates, slotPrice,
   type Term, type TermSlot,
 } from '@/lib/termsPreview';
 
@@ -22,6 +23,8 @@ export type BookMode = 'term' | 'single' | 'trial' | 'package';
 
 export type TermViewSlot = {
   key: string;
+  /** The group this slot belongs to (00264). */
+  groupId: string;
   /** "Saturdays, 9:00 am" or "Mon 4:00 pm · Wed 5:30 pm". */
   label: string;
   venue: string | null;
@@ -34,6 +37,9 @@ export type TermViewSlot = {
 
 export type TermView = {
   name: string;
+  /** A Flexible term: a family picks one slot from each group (00264). */
+  flexible: boolean;
+  groups: { id: string; name: string }[];
   slots: TermViewSlot[];
   allowMidTerm: boolean;
   minLeft: number;
@@ -102,6 +108,8 @@ export function buildTermView(
 ): TermView {
   return {
     name: term.name.trim() || 'Your term',
+    flexible: isFlexible(term),
+    groups: term.groups.map((g) => ({ id: g.id, name: g.name })),
     allowMidTerm: term.allowMidTerm,
     minLeft: term.minLeft,
     reduce: term.reduce,
@@ -122,6 +130,7 @@ export function buildTermView(
       });
       return {
         key: s.id,
+        groupId: s.groupId,
         label: slotLabel(s),
         venue: s.locationId ? locationName(s.locationId) ?? null : null,
         dates,
@@ -133,6 +142,23 @@ export function buildTermView(
 }
 
 export function quoteFor(view: TermView, slotIdx: number, passed: number): TermQuote | null {
+  if (view.flexible) {
+    // A pair: the first slot of each group stands in for the family's choice.
+    const picks = view.groups.map((g) => view.slots.find((s) => s.groupId === g.id)).filter((s): s is TermViewSlot => !!s);
+    if (picks.length === 0 || picks.some((s) => s.dates.length === 0)) return null;
+    const price = picks[0].price;
+    const per = picks[0].dates.length;
+    const n = picks.reduce((x, s) => x + s.dates.length, 0);
+    const lastJoin = lastJoinableAfter({ allowMidTerm: view.allowMidTerm, minLeft: view.minLeft }, per);
+    const run = Math.min(passed, lastJoin);
+    const payNow = priceAfter({ price, reduce: view.reduce, reduceBy: view.reduceBy }, run * picks.length);
+    const spots = picks.map((s) => s.spotsLeft).filter((v): v is number => v != null);
+    const slot: TermViewSlot = {
+      key: 'pair', groupId: '', label: picks.map((s) => s.label).join(' + '), venue: null,
+      dates: picks.flatMap((s) => s.dates).sort(), spotsLeft: spots.length ? Math.min(...spots) : null, price,
+    };
+    return { slot, n, fullPrice: price, savings: null, lastJoin: lastJoin * picks.length, run: run * picks.length, left: n - run * picks.length, payNow, reducedBy: price - payNow, joining: slot.dates.slice(run * picks.length) };
+  }
   const slot = view.slots[Math.min(slotIdx, view.slots.length - 1)];
   if (!slot || slot.dates.length === 0) return null;
   const n = slot.dates.length;
@@ -267,7 +293,7 @@ export function TermEnrolPanel({
       </div>
 
       <div>
-        <h4 className="mb-2 font-black">Choose your group</h4>
+        <h4 className="mb-2 font-black">Choose your time</h4>
         <div className="space-y-2">
           {view.slots.map((s, i) => (
             <button
@@ -337,6 +363,102 @@ export function TermEnrolPanel({
   );
 }
 
+/* ── Flexible terms (00264): one slot from each group ──
+ *
+ * Mirrors TermComboPicker in the parent app (components/TermBookingPreview.tsx):
+ * a family picks one slot from each group and keeps that pair every week. The
+ * vendor can click through it; nothing is saved. Keep the two in step. */
+export function TermComboPanel({ view }: { view: TermView }) {
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const chosen = view.groups.map((g) => view.slots.find((s) => s.key === picks[g.id]) ?? null);
+  const ready = chosen.every(Boolean);
+  const full = chosen.filter((s): s is TermViewSlot => !!s && s.spotsLeft === 0);
+  const nextGroup = view.groups.find((g) => !picks[g.id]);
+  const n = chosen.reduce((x, s) => x + (s?.dates.length ?? 0), 0);
+  const price = view.slots[0]?.price ?? 0;
+
+  return (
+    <section className="space-y-5">
+      <div>
+        <h3 className="mb-1 text-xl font-black">{view.name}</h3>
+        <p className="text-sm font-semibold text-[#59658d]">
+          Pick one session from each group. Your child will have these {view.groups.length} sessions every week of the term.
+        </p>
+      </div>
+
+      {view.groups.map((g, gi) => (
+        <div key={g.id}>
+          <h4 className="mb-2 flex items-baseline justify-between gap-2 font-black">
+            <span>{gi + 1} of {view.groups.length} · {g.name || 'Unnamed group'}</span>
+            <span className="text-xs font-extrabold text-[#697390]">{picks[g.id] ? 'Picked' : 'Pick one'}</span>
+          </h4>
+          <div className="space-y-2">
+            {view.slots.filter((s) => s.groupId === g.id).map((s) => {
+              const on = picks[g.id] === s.key;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setPicks((p) => ({ ...p, [g.id]: s.key }))}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-3 rounded-[10px] border px-4 py-3 text-left',
+                    on ? 'border-[#FFC1D6] bg-[#FEEBF2]' : 'border-[#DCD2D5] bg-white',
+                  )}
+                >
+                  <span>
+                    <span className="block font-black text-[#34406f]">{s.label}</span>
+                    <span className="block text-xs font-semibold text-[#697390]">{s.dates.length} sessions{s.venue ? ` · ${s.venue}` : ''}</span>
+                  </span>
+                  {s.spotsLeft === 0 ? (
+                    <span className="shrink-0 rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[11px] font-black text-[#936700]">Full · waitlist</span>
+                  ) : s.spotsLeft != null && (
+                    <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? 'place' : 'places'} left</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4" aria-live="polite">
+        <div className="font-black text-[#34406f]">Your week</div>
+        {!ready ? (
+          <p className="mt-1 text-sm font-semibold text-[#59658d]">
+            {chosen.some(Boolean) && nextGroup ? `Now pick one from ${nextGroup.name || 'the next group'}.` : 'Pick one session from each group to see your price.'}
+          </p>
+        ) : (
+          <>
+            <ul className="mt-2 space-y-1.5">
+              {view.groups.map((g, i) => (
+                <li key={g.id} className="flex items-baseline justify-between gap-2 font-extrabold text-[#34406f]">
+                  <span>{chosen[i]!.label}</span>
+                  <span className="text-xs font-bold text-[#697390]">{g.name}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
+              <span className="font-black text-[#34406f]">Full term · {n} sessions</span>
+              <span className="text-2xl font-black text-[#FA4D8D]">${price}</span>
+            </div>
+            <p className="mt-1 text-xs font-semibold text-[#697390]">
+              Same {view.groups.length} sessions every week.{' '}
+              {view.allowMidTerm ? `Joining closes when ${view.minLeft} sessions are left in a slot.` : 'Joining closes once the term starts.'}
+            </p>
+            {full.length > 0 && (
+              <p className="mt-2 rounded-[10px] bg-[#FEF2D7] px-3 py-2 text-sm font-bold text-[#936700]">
+                {full.map((s) => s.label).join(' and ')} {full.length === 1 ? 'is' : 'are'} full. Join the waitlist for this exact pair for free.
+                We'll tell you when {full.length === 1 ? 'it has a place and your other sessions do too' : 'all of them have places'}. The first family to enrol gets them.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* ── One session of a term: trial, single or package ──
  *
  * Shown under "How would you like to book?" when a family books one session
@@ -366,7 +488,7 @@ export function TermSessionPicker({
   return (
     <section className="space-y-6">
       <div>
-        <h3 className="mb-4 text-xl font-black">Choose your group</h3>
+        <h3 className="mb-4 text-xl font-black">Choose your time</h3>
         <div className="space-y-2">
           {groups.map((g, i) => {
             const left = Math.max(0, g.dates.length - from);
@@ -554,6 +676,19 @@ export function UpcomingOfferings({
 
 /** The vendor's term as a line on the activity page's "Upcoming" block. */
 export function offeringFor(view: TermView, key: string): OfferingTerm {
+  if (view.flexible) {
+    const money2 = (x: number) => `$${x % 1 === 0 ? x.toFixed(0) : x.toFixed(2)}`;
+    const everyDate = view.slots.flatMap((s) => s.dates).sort();
+    const perFamily = view.groups.reduce((x, g) => x + (view.slots.find((s) => s.groupId === g.id)?.dates.length ?? 0), 0);
+    return {
+      key,
+      name: view.name,
+      sessions: `${perFamily} sessions`,
+      range: everyDate.length > 0 ? `${sgDay(everyDate[0])} to ${sgDay(everyDate[everyDate.length - 1])}` : '',
+      slots: view.groups.map((g) => ({ label: `Choose 1 of ${view.slots.filter((s) => s.groupId === g.id).length} · ${g.name || 'Unnamed group'}`, venue: null })),
+      price: `${money2(view.slots[0]?.price ?? 0)} for ${view.groups.length} sessions a week`,
+    };
+  }
   const counts = view.slots.map((s) => s.dates.length);
   const lo = Math.min(...counts);
   const hi = Math.max(...counts);

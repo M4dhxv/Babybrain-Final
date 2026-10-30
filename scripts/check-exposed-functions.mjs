@@ -73,6 +73,9 @@ const ALLOWED = new Set([
   'term_waitlist_roster', 'term_waitlist_counts', 'vendor_offer_term_place', 'vendor_tell_term_waitlist', 'vendor_remove_from_term_waitlist',
   // 00263: a parent leaving their own unpaid waitlist place on any class.
   'leave_waitlist',
+  // 00264: slot groups. The combination quote only reads a published term's public numbers;
+  // the rest check the caller themselves.
+  'term_combo_quote', 'enrol_in_term_combo', 'join_term_combo_waitlist', 'vendor_swap_term_slot',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

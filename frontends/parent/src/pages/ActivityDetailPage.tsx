@@ -18,7 +18,7 @@ import { goTo, loginUrl, getParam, scrollToWhenReady, rememberExploreUrl, explor
 import { sgDateTime, sgDay, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { UpcomingOfferings, type OfferingOneOff, type OfferingTerm } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { useActivityTerms } from "../lib/terms";
+import { useActivityTerms, flexibleOffering } from "../lib/terms";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { formatAgeRange, formatDuration } from "../lib/database.types";
@@ -646,6 +646,10 @@ export default function ActivityDetailPage() {
   const showOfferings = termsFlag && liveTerms.length > 0;
   const money = (n: number) => `$${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
   const offeringTerms: OfferingTerm[] = liveTerms.map((t) => {
+    if (t.slotMode === "flexible") {
+      const all = t.slots.flatMap((s) => s.dates).sort();
+      return { key: t.id, name: t.name, range: `${sgDay(all[0])} to ${sgDay(all[all.length - 1])}`, ...flexibleOffering(t, money) };
+    }
     const counts = t.slots.map((s) => s.dates.length);
     const lo = Math.min(...counts);
     const hi = Math.max(...counts);

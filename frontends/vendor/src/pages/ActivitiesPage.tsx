@@ -75,7 +75,7 @@ import LocationsManager from '@/components/LocationsManager';
 import { TermsPanel } from '@/components/TermsPanel';
 import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
-import { BookModeChoice, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
+import { BookModeChoice, TermComboPanel, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
 import { DayPricesEditor, dayPricesFromJson, dayPricesToJson, type DayPrices } from '@/components/DayPricesEditor';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
@@ -3424,9 +3424,9 @@ export default function ActivitiesPage() {
                               onSelect={(id) => { setPreviewTermId(id); setPreviewSlotIdx(0); setPreviewPassed(0); setPreviewOneOffDate(null); }}
                             />
                             <BookModeChoice view={termView!} quote={termQuote!} mode={bookMode} onModeChange={setPreviewMode} trialUsed={previewTrialUsed} />
-                            {termMode && (
-                              <TermEnrolPanel view={termView!} slotIdx={previewSlotIdx} onSlotChange={setPreviewSlotIdx} quote={termQuote!} />
-                            )}
+                            {termMode && (termView!.flexible
+                              ? <TermComboPanel view={termView!} />
+                              : <TermEnrolPanel view={termView!} slotIdx={previewSlotIdx} onSlotChange={setPreviewSlotIdx} quote={termQuote!} />)}
                             {!termMode && (
                               <TermSessionPicker
                                 groups={oneOffGroups}
