@@ -24,7 +24,7 @@ import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "..
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
 import { BookModeChoice, TermComboPicker, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { flexibleOffering, liveComboQuote, liveQuote, termsDb, useActivityTerms, useTrialRemaining, type LiveSlot } from "../lib/terms";
+import { flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTrialRemaining, type LiveSlot } from "../lib/terms";
 import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -1892,10 +1892,22 @@ export default function BookingPage() {
                         name: g.name,
                         slots: liveTerm.slots
                           .filter((s) => s.groupId === g.id)
-                          .map((s) => ({ id: s.id, label: s.label, venue: s.venue, sessions: s.dates.length, spotsLeft: filledSlots.has(s.id) ? 0 : s.spotsLeft })),
+                          .map((s) => ({
+                            id: s.id, label: s.label, venue: s.venue, sessions: s.dates.length, spotsLeft: filledSlots.has(s.id) ? 0 : s.spotsLeft,
+                            clashWith: liveTerm.slots.filter((o) => o.groupId !== g.id && liveSlotsClash(s, o)).map((o) => o.id),
+                          })),
                       }))}
                       picks={termPicks}
-                      onPick={(gid, sid) => setTermPicks((p) => ({ ...p, [gid]: sid }))}
+                      onPick={(gid, sid) => setTermPicks((p) => {
+                        // A pick in one group drops any pick in another group that runs at the same time.
+                        const picked = liveTerm.slots.find((x) => x.id === sid);
+                        const next = { ...p, [gid]: sid };
+                        for (const [g2, id2] of Object.entries(p)) {
+                          const other = liveTerm.slots.find((x) => x.id === id2);
+                          if (g2 !== gid && picked && other && liveSlotsClash(picked, other)) delete next[g2];
+                        }
+                        return next;
+                      })}
                       quote={quote}
                       minLeft={liveTerm.minLeft}
                       allowMidTerm={liveTerm.allowMidTerm}

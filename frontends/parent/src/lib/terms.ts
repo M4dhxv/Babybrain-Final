@@ -22,6 +22,8 @@ export type LiveSlot = PreviewSlot & {
   groupId: string;
   /** Parallel to `dates`: the session row for each date. */
   sessionIds: string[];
+  /** Parallel to `dates`: when each session ends (to tell overlapping slots apart). */
+  ends: string[];
   /** This slot's full-term price in dollars (its own, else the term's). */
   price: number;
   singleCap: number | null;
@@ -81,7 +83,7 @@ type TermRow = {
   term_slots: SlotRow[];
 };
 
-type SessionRow = { id: string; starts_at: string; term_slot_id: string };
+type SessionRow = { id: string; starts_at: string; ends_at: string | null; term_slot_id: string };
 
 const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -130,7 +132,7 @@ export function useActivityTerms(
       const { data: sessions } = slotIds.length
         ? await db
             .from("activity_sessions")
-            .select("id, starts_at, term_slot_id")
+            .select("id, starts_at, ends_at, term_slot_id")
             .in("term_slot_id", slotIds)
             .neq("status", "cancelled")
             .order("starts_at")
@@ -190,6 +192,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
             venue: s.provider_locations?.name ?? null,
             dates: list.map((x) => x.starts_at),
             sessionIds: list.map((x) => x.id),
+            ends: list.map((x) => x.ends_at ?? x.starts_at),
             capacity: s.capacity,
             spotsLeft: upcomingSpots.length ? Math.max(0, Math.min(...upcomingSpots)) : null,
             price: dollars(s.price_cents ?? t.price_cents),
@@ -280,6 +283,7 @@ export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes:
     venue: slots[0]?.venue ?? null,
     dates,
     sessionIds: slots.flatMap((s) => s.sessionIds),
+    ends: slots.flatMap((s) => s.ends),
     capacity: null,
     spotsLeft: spots.length ? Math.min(...spots) : null,
     price: fullPrice,
@@ -300,6 +304,14 @@ export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes:
     joinable: !blocked,
     reason: blocked?.reason ?? null,
   };
+}
+
+/** Do two slots ever run at the same time? Such slots can't both be in one pair. */
+export function liveSlotsClash(a: LiveSlot, b: LiveSlot): boolean {
+  return a.dates.some((d, i) => {
+    const s1 = Date.parse(d), e1 = Date.parse(a.ends[i]);
+    return b.dates.some((d2, j) => s1 < Date.parse(b.ends[j]) && Date.parse(d2) < e1);
+  });
 }
 
 /** How a Flexible term reads on the activity page and the term chooser: one

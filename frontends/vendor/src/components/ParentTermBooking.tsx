@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
-  dayTimeFor, isFlexible, lastJoinableAfter, priceAfter, slotDates, slotPrice,
+  dayTimeFor, isFlexible, lastJoinableAfter, priceAfter, slotDates, slotPrice, slotsClash,
   type Term, type TermSlot,
 } from '@/lib/termsPreview';
 
@@ -25,6 +25,8 @@ export type TermViewSlot = {
   key: string;
   /** The group this slot belongs to (00264). */
   groupId: string;
+  /** Slots in other groups that run at the same time as this one. */
+  clashWith: string[];
   /** "Saturdays, 9:00 am" or "Mon 4:00 pm · Wed 5:30 pm". */
   label: string;
   venue: string | null;
@@ -131,6 +133,7 @@ export function buildTermView(
       return {
         key: s.id,
         groupId: s.groupId,
+        clashWith: term.slots.filter((o) => o.groupId !== s.groupId && slotsClash(s, o)).map((o) => o.id),
         label: slotLabel(s),
         venue: s.locationId ? locationName(s.locationId) ?? null : null,
         dates,
@@ -154,7 +157,7 @@ export function quoteFor(view: TermView, slotIdx: number, passed: number): TermQ
     const payNow = priceAfter({ price, reduce: view.reduce, reduceBy: view.reduceBy }, run * picks.length);
     const spots = picks.map((s) => s.spotsLeft).filter((v): v is number => v != null);
     const slot: TermViewSlot = {
-      key: 'pair', groupId: '', label: picks.map((s) => s.label).join(' + '), venue: null,
+      key: 'pair', groupId: '', clashWith: [], label: picks.map((s) => s.label).join(' + '), venue: null,
       dates: picks.flatMap((s) => s.dates).sort(), spotsLeft: spots.length ? Math.min(...spots) : null, price,
     };
     return { slot, n, fullPrice: price, savings: null, lastJoin: lastJoin * picks.length, run: run * picks.length, left: n - run * picks.length, payNow, reducedBy: price - payNow, joining: slot.dates.slice(run * picks.length) };
@@ -395,22 +398,32 @@ export function TermComboPanel({ view }: { view: TermView }) {
           <div className="space-y-2">
             {view.slots.filter((s) => s.groupId === g.id).map((s) => {
               const on = picks[g.id] === s.key;
+              const clash = !on && s.clashWith.some((k) => Object.values(picks).includes(k));
               return (
                 <button
                   key={s.key}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => setPicks((p) => ({ ...p, [g.id]: s.key }))}
+                  disabled={clash}
+                  onClick={() => setPicks((p) => {
+                    // A pick drops any pick in another group that runs at the same time.
+                    const next = { ...p, [g.id]: s.key };
+                    for (const [g2, k2] of Object.entries(p)) if (g2 !== g.id && s.clashWith.includes(k2)) delete next[g2];
+                    return next;
+                  })}
                   className={cn(
                     'flex w-full items-center justify-between gap-3 rounded-[10px] border px-4 py-3 text-left',
                     on ? 'border-[#FFC1D6] bg-[#FEEBF2]' : 'border-[#DCD2D5] bg-white',
+                    clash && 'cursor-not-allowed opacity-50',
                   )}
                 >
                   <span>
                     <span className="block font-black text-[#34406f]">{s.label}</span>
                     <span className="block text-xs font-semibold text-[#697390]">{s.dates.length} sessions{s.venue ? ` · ${s.venue}` : ''}</span>
                   </span>
-                  {s.spotsLeft === 0 ? (
+                  {clash ? (
+                    <span className="shrink-0 text-xs font-bold text-[#697390]">Clashes with your other pick</span>
+                  ) : s.spotsLeft === 0 ? (
                     <span className="shrink-0 rounded-full bg-[#FEF2D7] px-2 py-0.5 text-[11px] font-black text-[#936700]">Full · waitlist</span>
                   ) : s.spotsLeft != null && (
                     <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? 'place' : 'places'} left</span>

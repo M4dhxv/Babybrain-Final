@@ -67,13 +67,14 @@ function Section({
 /** Monday first, as the week reads. */
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const dayRank = (d: number) => DAY_ORDER.indexOf(d);
+const firstDayRank = (s: TermSlot) => Math.min(...s.days.map(dayRank), 9);
 
 /** Slots in reading order: by group, then first day of the week, then time. */
 function sortSlots(slots: TermSlot[], groupIds: string[]): TermSlot[] {
   return [...slots].sort(
     (a, b) =>
       groupIds.indexOf(a.groupId) - groupIds.indexOf(b.groupId) ||
-      dayRank(Math.min(...a.days.map(dayRank), 9)) - dayRank(Math.min(...b.days.map(dayRank), 9)) ||
+      firstDayRank(a) - firstDayRank(b) ||
       a.time.localeCompare(b.time),
   );
 }
@@ -943,7 +944,7 @@ function TermForm({
                   <p className="mt-2">
                     {combos === 0
                       ? 'A group has no slots yet.'
-                      : `That is ${combos} possible combination${combos === 1 ? '' : 's'}: ${t.groups.length} sessions a week, ${comboSessions(t)} sessions in all, for SGD ${t.price}.`}
+                      : `That is ${combos} possible combination${combos === 1 ? '' : 's'}: ${t.groups.length} session${t.groups.length === 1 ? '' : 's'} a week, ${comboSessions(t)} in all, for SGD ${t.price}.`}
                   </p>
                 </div>
               );
@@ -1432,6 +1433,14 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
 
   const total = (k: 'enrolled' | 'unpaid' | 'revenue_cents' | 'one_off_bookings') => (stats ?? []).reduce((n, s) => n + (s[k] ?? 0), 0);
   const placesLeft = (stats ?? []).reduce<number | null>((n, s) => (s.places_left == null ? n : (n ?? 0) + s.places_left), null);
+  // Flexible: a family holds one slot in each group, so the enrolments are counted
+  // per family, and the room left is however many more pairs the fullest group can take.
+  const lanes = isFlexible(term) ? Math.max(1, term.groups.length) : 1;
+  const pairsLeft = isFlexible(term)
+    ? Math.min(...term.groups.map((g) => (stats ?? [])
+        .filter((st) => term.slots.find((x) => x.id === st.slot_id)?.groupId === g.id)
+        .reduce((n, st) => n + (st.places_left ?? 0), 0)))
+    : null;
   const priorityOpen = term.priorityUntil != null && new Date(term.priorityUntil) > new Date();
   const oneOffs = total('one_off_bookings');
 
@@ -1480,9 +1489,9 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
     <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          { label: 'Enrolled', value: stats ? String(total('enrolled')) : '…' },
-          { label: 'Awaiting payment', value: stats ? String(total('unpaid')) : '…' },
-          { label: 'Places left', value: stats ? (placesLeft == null ? '—' : String(placesLeft)) : '…' },
+          { label: isFlexible(term) ? 'Enrolled families' : 'Enrolled', value: stats ? String(Math.round(total('enrolled') / lanes)) : '…' },
+          { label: 'Awaiting payment', value: stats ? String(Math.round(total('unpaid') / lanes)) : '…' },
+          { label: isFlexible(term) ? 'Pairs left' : 'Places left', value: stats ? ((isFlexible(term) ? pairsLeft : placesLeft) == null ? '—' : String(isFlexible(term) ? pairsLeft : placesLeft)) : '…' },
           { label: 'Paid so far', value: stats ? money(total('revenue_cents')) : '…' },
         ].map((c) => (
           <div key={c.label} className="rounded-xl bg-gray-50 px-3 py-2">
@@ -1510,7 +1519,7 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200">
                       <div className={cn('h-full', full ? 'bg-[#FA4D8D]' : 'bg-teal-600')} style={{ width: `${pct}%` }} />
                     </div>
-                    <div className="mt-0.5 text-[11px] text-gray-500">{taken} of {sl.capacity} seats</div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">{taken} of {sl.capacity} {sl.capacity === 1 ? 'seat' : 'seats'}</div>
                   </div>
                 );
               })}
@@ -1579,7 +1588,8 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
                               type="button"
                               disabled={r.status === 'withdrawn' || r.sessions_left === 0}
                               onClick={() => {
-                                const options = term.slots.filter((o) => sl && o.groupId === sl.groupId && o.id !== sl.id);
+                                const keeps = rows.filter((x) => x.enrolment_id !== r.enrolment_id).map((x) => term.slots.find((y) => y.id === x.slot_id)).filter((x): x is TermSlot => !!x);
+                                const options = term.slots.filter((o) => sl && o.groupId === sl.groupId && o.id !== sl.id && !keeps.some((k) => slotsClash(o, k)));
                                 setMoving({ row: r, to: options[0]?.id ?? '' });
                               }}
                               className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-900 hover:border-[#FA4D8D] disabled:opacity-50"
@@ -1659,8 +1669,9 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
         const cur = term.slots.find((x) => x.id === moving.row.slot_id);
         const options = term.slots.filter((o) => cur && o.groupId === cur.groupId && o.id !== cur.id);
         const group = term.groups.find((g) => g.id === cur?.groupId);
-        const other = roster?.filter((r) => r.combo_id && r.combo_id === moving.row.combo_id && r.enrolment_id !== moving.row.enrolment_id)
-          .map((r) => term.slots.find((x) => x.id === r.slot_id)).filter(Boolean).map((x) => slotLabel(x!)).join(', ');
+        const otherSlots = (roster ?? []).filter((r) => r.combo_id && r.combo_id === moving.row.combo_id && r.enrolment_id !== moving.row.enrolment_id)
+          .map((r) => term.slots.find((x) => x.id === r.slot_id)).filter((x): x is TermSlot => !!x);
+        const other = otherSlots.map((x) => slotLabel(x)).join(', ');
         return (
           <div className="space-y-3 rounded-xl border-2 border-[#FA4D8D] bg-white p-4" role="dialog" aria-label={`Move ${moving.row.child_name}`}>
             <p className="text-base font-bold text-gray-900">Move {moving.row.child_name} from {cur ? slotLabel(cur) : 'this slot'}</p>
@@ -1673,12 +1684,13 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
               <div className="space-y-2">
                 {options.map((o) => {
                   const st = stats?.find((x) => x.slot_id === o.id);
-                  const full = st?.places_left != null && st.places_left <= 0;
+                  const clash = otherSlots.some((k) => slotsClash(o, k));
+                  const full = (st?.places_left != null && st.places_left <= 0) || clash;
                   return (
                     <label key={o.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 font-semibold', full ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-300 text-gray-900')}>
                       <input type="radio" name="move-to" disabled={full} checked={moving.to === o.id} onChange={() => setMoving({ ...moving, to: o.id })} className="h-4 w-4 accent-[#FA4D8D]" />
                       <span className="flex-1">{slotLabel(o)}</span>
-                      <span className="text-xs font-semibold text-gray-500">{full ? 'Full' : st?.places_left != null ? `${st.places_left} seats free` : 'Open'}</span>
+                      <span className="text-xs font-semibold text-gray-500">{clash ? 'Clashes with their other slot' : full ? 'Full' : st?.places_left != null ? `${st.places_left} seats free` : 'Open'}</span>
                     </label>
                   );
                 })}

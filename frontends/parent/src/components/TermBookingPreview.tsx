@@ -283,7 +283,11 @@ export function TermEnrolPreview({
  * in the parent app (components/TermBookingPreview.tsx) and the vendor portal's
  * Parent view (components/ParentTermBooking.tsx). Keep the two in step. */
 
-export type ComboPickSlot = { id: string; label: string; venue?: string | null; sessions: number; spotsLeft: number | null };
+export type ComboPickSlot = {
+  id: string; label: string; venue?: string | null; sessions: number; spotsLeft: number | null;
+  /** Slots in other groups that run at the same time as this one. */
+  clashWith?: string[];
+};
 export type ComboPickGroup = { id: string; name: string; slots: ComboPickSlot[] };
 
 export function TermComboPicker({
@@ -308,6 +312,8 @@ export function TermComboPicker({
   const full = offered ? [] : chosen.filter((s): s is ComboPickSlot => !!s && s.spotsLeft === 0);
   const nextGroup = groups.find((g) => !picks[g.id]);
   const { run, left, n, payNow, fullPrice, perClass } = quote;
+  const who = childName.charAt(0).toUpperCase() + childName.slice(1);
+  const pickedIds = Object.values(picks).filter((v): v is string => !!v);
 
   return (
     <section className="space-y-5">
@@ -318,7 +324,7 @@ export function TermComboPicker({
       <div>
         <h3 className="mb-1 text-xl font-black">{termName ?? `${activityTitle} · Term`}</h3>
         <p className="text-sm font-semibold text-[#59658d]">
-          Pick one session from each group. {childName} will have these {groups.length} sessions every week of the term.
+          Pick one session from each group. {who} will have these {groups.length} sessions every week of the term.
         </p>
       </div>
 
@@ -331,19 +337,24 @@ export function TermComboPicker({
           <div className="space-y-2">
             {g.slots.map((s) => {
               const on = picks[g.id] === s.id;
+              // Runs at the same time as a session already picked in another group.
+              const clash = !on && (s.clashWith ?? []).some((id) => pickedIds.includes(id));
               return (
                 <button
                   key={s.id}
                   type="button"
                   aria-pressed={on}
+                  disabled={clash}
                   onClick={() => onPick(g.id, s.id)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-[10px] border px-4 py-3 text-left ${on ? "border-baby-pink bg-[#FEEBF2]" : "border-[#DCD2D5] bg-white"}`}
+                  className={`flex w-full items-center justify-between gap-3 rounded-[10px] border px-4 py-3 text-left ${on ? "border-baby-pink bg-[#FEEBF2]" : "border-[#DCD2D5] bg-white"} ${clash ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   <span>
                     <span className="block font-black text-[#34406f]">{s.label}</span>
                     <span className="block text-xs font-semibold text-[#697390]">{s.sessions} sessions{s.venue ? ` · ${s.venue}` : ""}</span>
                   </span>
-                  {s.spotsLeft === 0 && !offered ? (
+                  {clash ? (
+                    <span className="shrink-0 text-xs font-bold text-[#697390]">Clashes with your other pick</span>
+                  ) : s.spotsLeft === 0 && !offered ? (
                     <span className="shrink-0 rounded-full bg-palette-yellowSoft px-2 py-0.5 text-[11px] font-black text-palette-yellowInk">Full · waitlist</span>
                   ) : s.spotsLeft != null && (
                     <span className="shrink-0 text-xs font-bold text-[#697390]">{s.spotsLeft} {s.spotsLeft === 1 ? "place" : "places"} left</span>

@@ -111,8 +111,16 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
         first.bookings.push(...r.bookings);
       }
     }
+    // In week order (Monday first), then by time.
+    const weekKey = (p: Row["term_slots"] & object) =>
+      `${Math.min(...(p.pattern.days ?? [0]).map((d) => (d + 6) % 7))}${p.pattern.time ?? ""}`;
     const labelsOf = (comboId: string | null) =>
-      comboId ? rows.filter((r) => r.combo_id === comboId && r.term_slots).map((r) => slotLabel(r.term_slots!.pattern)) : [];
+      comboId
+        ? rows
+            .filter((r) => r.combo_id === comboId && r.term_slots)
+            .sort((a, b) => weekKey(a.term_slots!).localeCompare(weekKey(b.term_slots!)))
+            .map((r) => slotLabel(r.term_slots!.pattern))
+        : [];
     setTerms(
       merged
         .map((r): MyTerm => {
