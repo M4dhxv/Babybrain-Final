@@ -108,6 +108,11 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'confirmed' | 'waitlisted' | 'cancelled'>('all');
+  // Extra filters, applied on top of the status tabs. They also decide what Export and Print include.
+  const [slotF, setSlotF] = useState('');
+  const [signedF, setSignedF] = useState<'' | 'yes' | 'no'>('');
+  const [bookedF, setBookedF] = useState<'' | 'yes' | 'no'>('');
+  const [search, setSearch] = useState('');
 
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,7 +136,88 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
   if (!data) return <Skeleton rows={6} />;
 
   const slotLabel = (k: string) => data.slots.find((s) => s.slot_key === k)?.label ?? k;
-  const rows = data.registrations.filter((r) => filter === 'all' ? r.status !== 'cancelled' : r.status === filter);
+  const needle = search.trim().toLowerCase();
+  const rows = data.registrations.filter((r) =>
+    (filter === 'all' ? r.status !== 'cancelled' : r.status === filter)
+    && (!slotF || r.slot_key === slotF)
+    && (!signedF || r.signed_up === (signedF === 'yes'))
+    && (!bookedF || r.booked === (bookedF === 'yes'))
+    && (!needle || [r.name, r.email ?? '', r.phone, ...r.adult_names, ...r.child_details.map((c) => c.name)].some((v) => v.toLowerCase().includes(needle))));
+  const filtered = !!(slotF || signedF || bookedF || needle);
+
+  /** The rows as they would be carried on paper: by time slot, then by name. */
+  const sheetRows = () => {
+    const order = new Map(data!.slots.map((s, i) => [s.slot_key, i]));
+    return [...rows].sort((a, b) => (order.get(a.slot_key) ?? 99) - (order.get(b.slot_key) ?? 99) || a.name.localeCompare(b.name));
+  };
+  const yn = (v: boolean) => (v ? 'Yes' : 'No');
+  const party = (r: Registration) => [
+    ...r.adult_names.map((n) => n),
+    ...r.child_details.map((c) => `${c.name} (${c.age})`),
+  ].join(', ');
+  /** What this export is: the event, the status tab and any extra filters, in words. */
+  const describe = () => [
+    filter === 'all' ? 'Active registrations' : `${filter[0].toUpperCase()}${filter.slice(1)} registrations`,
+    slotF ? `slot: ${slotLabel(slotF)}` : '',
+    signedF ? `signed-up: ${signedF}` : '',
+    bookedF ? `booked: ${bookedF}` : '',
+    needle ? `search: “${search.trim()}”` : '',
+  ].filter(Boolean).join(' · ');
+  const fileStem = () => `${slug}-${filter === 'all' ? 'active' : filter}${filtered ? '-filtered' : ''}`;
+
+  function exportCsv() {
+    // A cell that starts with = @ - (or a +, unless it is just a phone number) would run as a formula in Excel.
+    const cell = (v: unknown) => {
+      let s = v == null ? '' : String(v);
+      if (/^[=@\-\t\r]/.test(s) || (/^\+/.test(s) && !/^\+[\d ]+$/.test(s))) s = `'${s}`;
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const head = ['Name', 'Email', 'Phone', 'Slot', 'Adults', 'Children', 'Signed-up', 'Booked', 'Status', 'Adult names', 'Children (age)', 'Notes', 'Registered'];
+    const lines = sheetRows().map((r) => [r.name, r.email ?? '', r.phone, slotLabel(r.slot_key), r.adults, r.children, yn(r.signed_up), yn(r.booked), r.status,
+      r.adult_names.join('; '), r.child_details.map((c) => `${c.name} (${c.age})`).join('; '), r.notes ?? '', sgTime(r.created_at)].map(cell).join(','));
+    // BOM so Excel opens the names with their accents intact
+    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${fileStem()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`${lines.length} registration${lines.length === 1 ? '' : 's'} exported`);
+  }
+
+  function printSheet() {
+    const list = sheetRows();
+    if (list.length === 0) { toast('Nothing to print with these filters', 'error'); return; }
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    const slots = [...new Set(list.map((r) => r.slot_key))];
+    const tables = slots.map((k) => {
+      const mine = list.filter((r) => r.slot_key === k);
+      const seats = mine.filter((r) => r.status === 'confirmed').reduce((n, r) => n + r.party_size, 0);
+      return `<h2>${esc(slotLabel(k))} <small>${mine.length} registration${mine.length === 1 ? '' : 's'}${seats ? ` · ${seats} confirmed seat${seats === 1 ? '' : 's'}` : ''}</small></h2>
+<table><thead><tr><th class="tick">Here</th><th>Name</th><th>Phone</th><th>Email</th><th>Party</th><th>Ad</th><th>Ch</th><th>Signed-up</th><th>Booked</th><th>Status</th></tr></thead><tbody>
+${mine.map((r) => `<tr><td class="tick"><span class="box"></span></td><td><b>${esc(r.name)}</b></td><td class="nw">${esc(r.phone)}</td><td>${esc(r.email ?? '—')}</td><td>${esc(party(r))}</td><td class="n">${r.adults}</td><td class="n">${r.children}</td><td>${yn(r.signed_up)}</td><td>${yn(r.booked)}</td><td>${esc(r.status)}</td></tr>`).join('\n')}
+</tbody></table>`;
+    }).join('\n');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(data!.event.title)} — ${esc(describe())}</title><style>
+@page { size: A4 landscape; margin: 12mm; }
+body { font: 12px/1.35 system-ui, Arial, sans-serif; color: #111; margin: 0; }
+h1 { font-size: 18px; margin: 0 0 2px; } .sub { color: #555; margin-bottom: 14px; }
+h2 { font-size: 14px; margin: 16px 0 6px; break-after: avoid; } h2 small { font-weight: 400; color: #555; margin-left: 8px; }
+table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
+th { background: #eee; } tr { break-inside: avoid; } .n { text-align: right; } .nw { white-space: nowrap; }
+.tick { width: 34px; text-align: center; } .box { display: inline-block; width: 14px; height: 14px; border: 1.5px solid #111; }
+</style></head><body>
+<h1>${esc(data!.event.title)}</h1>
+<div class="sub">${esc(dayText(data!.event.starts_on))}${data!.event.venue ? ` · ${esc(data!.event.venue)}` : ''}<br>${esc(describe())} · ${list.length} total · printed ${esc(sgTime(new Date().toISOString()))}</div>
+${tables}
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast('Your browser blocked the print window — allow pop-ups for this page and try again', 'error'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    w.focus();
+    // let the new window lay out before the print dialog opens
+    setTimeout(() => w.print(), 250);
+  }
 
   async function setStatus(r: Registration, status: Registration['status'], override = false) {
     setBusy(r.id);
@@ -211,6 +297,33 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
         <button type="button" style={primaryBtn()} onClick={() => setAdding((a) => !a)}>{adding ? 'Close' : '+ Add registration'}</button>
       </div>
 
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+        <label style={{ display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700, flex: '1 1 200px', maxWidth: 280 }}>Search
+          <input style={{ ...input(), padding: '9px 12px' }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, email, phone, child…" />
+        </label>
+        <label style={{ display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700, minWidth: 150 }}>Slot
+          <Select style={input()} aria-label="Filter by slot" value={slotF} onChange={(e) => setSlotF(e.target.value)}>
+            <option value="">All slots</option>
+            {data.slots.map((s) => <option key={s.slot_key} value={s.slot_key}>{s.label}</option>)}
+          </Select>
+        </label>
+        <label style={{ display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700, minWidth: 120 }}>Signed-up
+          <Select style={input()} aria-label="Filter by signed-up" value={signedF} onChange={(e) => setSignedF(e.target.value as '' | 'yes' | 'no')}>
+            <option value="">Any</option><option value="yes">Yes</option><option value="no">No</option>
+          </Select>
+        </label>
+        <label style={{ display: 'grid', gap: 4, fontSize: 12, color: C.muted, fontWeight: 700, minWidth: 120 }}>Booked
+          <Select style={input()} aria-label="Filter by booked" value={bookedF} onChange={(e) => setBookedF(e.target.value as '' | 'yes' | 'no')}>
+            <option value="">Any</option><option value="yes">Yes</option><option value="no">No</option>
+          </Select>
+        </label>
+        {filtered && <button type="button" style={tabBtn(false)} onClick={() => { setSlotF(''); setSignedF(''); setBookedF(''); setSearch(''); }}>Clear filters</button>}
+        <span style={{ flex: 1 }} />
+        <span style={{ color: C.muted, fontSize: 12, alignSelf: 'center' }}>{rows.length} shown</span>
+        <button type="button" style={tabBtn(false)} disabled={rows.length === 0} onClick={exportCsv}>⬇ Export CSV</button>
+        <button type="button" style={tabBtn(false)} disabled={rows.length === 0} onClick={printSheet}>🖨 Print sheet</button>
+      </div>
+
       {(openIssues.length > 0 || doneIssues.length > 0) && (
         <div style={{ ...card(), borderColor: openIssues.length ? C.pink : C.border, marginBottom: 14 }}>
           <div style={{ fontWeight: 900, marginBottom: 8, color: openIssues.length ? C.pink : C.muted }}>
@@ -249,7 +362,7 @@ function EventPage({ slug, onBack }: { slug: string; onBack: () => void }) {
 
       {adding && <AddForm slug={slug} slots={data.slots} onDone={() => { setAdding(false); load(); }} />}
 
-      {rows.length === 0 ? <p style={{ color: C.muted }}>No registrations here yet.</p> : (
+      {rows.length === 0 ? <p style={{ color: C.muted }}>{filtered ? 'No registrations match these filters.' : 'No registrations here yet.'}</p> : (
         <div style={{ ...card(), padding: 0, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
