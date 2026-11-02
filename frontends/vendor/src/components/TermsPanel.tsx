@@ -69,6 +69,15 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const dayRank = (d: number) => DAY_ORDER.indexOf(d);
 const firstDayRank = (s: TermSlot) => Math.min(...s.days.map(dayRank), 9);
 
+/** How many weeks a slot's sessions span, first to last (a 10-week term with a session each week is 10). */
+const termWeeks = (s: Pick<TermSlot, 'days' | 'start' | 'weeks'> & { skip?: string[]; count?: number | null } | undefined): number => {
+  if (!s) return 0;
+  const dates = slotDates(s);
+  if (dates.length === 0) return 0;
+  const day = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
+  return Math.floor((day(dates[dates.length - 1]) - day(dates[0])) / 7) + 1;
+};
+
 /** Slots in reading order: by group, then first day of the week, then time. */
 function sortSlots(slots: TermSlot[], groupIds: string[]): TermSlot[] {
   return [...slots].sort(
@@ -265,8 +274,8 @@ export function TermsPanel({
                       </div>
                       <p className="mt-1 text-sm text-gray-600">
                         {isFlexible(t)
-                          ? `Flexible · ${comboSessions(t)} sessions for one slot from each of ${t.groups.length} groups · SGD ${t.price} · ${t.slots.length} slots`
-                          : `${n} sessions · SGD ${t.price} · ${t.slots.length} slot${t.slots.length === 1 ? '' : 's'}`}
+                          ? `Flexible · ${comboSessions(t)} sessions over ${termWeeks(t.slots[0])} weeks for one slot from each of ${t.groups.length} groups · SGD ${t.price} · ${t.slots.length} slots`
+                          : `${n} sessions over ${termWeeks(t.slots[0])} weeks · SGD ${t.price} · ${t.slots.length} slot${t.slots.length === 1 ? '' : 's'}`}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded-md bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-900">Whole term</span>
@@ -406,6 +415,9 @@ function TermForm({
   /** Run every slot for exactly this many sessions. */
   const setAllSessions = (n: number) =>
     setT((x) => ({ ...x, slots: x.slots.map((sl) => ({ ...sl, count: n })) }));
+  /** What the "Number of sessions" box shows: in Flexible it is one family's total across its slots
+   *  (issues sheet 2 Nov: "40 sessions" when 20 over 10 weeks was meant), otherwise each slot's count. */
+  const sessionsShown = flexible ? comboSessions(t) : firstCount;
 
   /** Simple <-> Flexible. Going back to Simple with several groups needs them combined first. */
   function chooseMode(m: SlotMode) {
@@ -779,25 +791,26 @@ function TermForm({
             <NumberInput min="0" step="any" className={inputCls} value={String(t.price)} onChange={(e) => set({ price: Number(e.target.value) || 0 })} />
           </div>
           <div>
-            <label className={labelCls}>Number of sessions</label>
+            <label className={labelCls}>{flexible ? 'Sessions per family' : 'Number of sessions'}</label>
             <NumberInput
               min="1"
               max={String(MAX_TERM_SESSIONS)}
               className={inputCls}
-              value={sessionsDraft ?? (countsDiffer ? '' : String(firstCount))}
+              value={sessionsDraft ?? (countsDiffer ? '' : String(sessionsShown))}
               placeholder={countsDiffer ? 'Differs by slot' : undefined}
               onChange={(e) => {
                 const raw = e.target.value;
                 setSessionsDraft(raw);
                 const n = Math.floor(Number(raw));
-                if (Number.isFinite(n) && n >= 1) setAllSessions(Math.min(MAX_TERM_SESSIONS, n));
+                // Flexible: the box is the family's total, shared across its slots (one per group).
+                if (Number.isFinite(n) && n >= 1) setAllSessions(Math.min(MAX_TERM_SESSIONS, Math.max(1, Math.round(n / lanes))));
               }}
               onBlur={() => setSessionsDraft(null)}
               aria-label="Number of sessions"
             />
             <p className={cn('mt-1.5', hintCls)}>
-              {firstCount > 0 && t.price > 0 && !countsDiffer ? `About SGD ${Math.round(t.price / firstCount)} each. ` : ''}
-              {flexible && comboSessions(t) > 0 && t.price > 0 ? `Per slot. A family's ${t.groups.length} slots give ${comboSessions(t)} sessions in all. ` : ''}
+              {sessionsShown > 0 && t.price > 0 && !countsDiffer ? `About SGD ${Math.round(t.price / sessionsShown)} each. ` : ''}
+              {flexible && firstCount > 0 ? `That is ${firstCount} in each of a family's ${t.groups.length} slots. ` : ''}
               Applies to every slot. Each slot can still be set by weeks below.
             </p>
           </div>
