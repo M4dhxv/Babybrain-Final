@@ -757,12 +757,18 @@ export default function BookingPage() {
   const ticketQuantityCap = selectedTicketType?.limit_per_checkout && selectedTicketType.limit_per_checkout > 0
     ? Math.min(selectedTicketType.limit_per_checkout, 20)
     : 6;
-  const maxChildren = isRsvpEvent
+  // The vendor's own limits on tickets per booking (00266), for ordinary classes only: a Wix event or
+  // course has its own ticket and place rules.
+  const vendorMinTickets = !isEvent && !isCourse ? activity?.min_tickets_per_booking ?? 1 : 1;
+  const vendorMaxTickets = !isEvent && !isCourse ? activity?.max_tickets_per_booking ?? null : null;
+  const maxChildrenBase = isRsvpEvent
     ? eventInfo?.rsvp_allows_guests ? 6 : 1
     : isEvent ? (isMultiDay && selectedTicketType?.is_free ? 1 : ticketQuantityCap) : isCourse && courseSpots != null ? Math.max(1, Math.min(6, courseSpots)) : 6;
+  const maxChildren = vendorMaxTickets != null ? Math.min(maxChildrenBase, vendorMaxTickets) : maxChildrenBase;
+  const minChildren = Math.max(1, vendorMinTickets);
   // Spots can drop while the page is open (the slots list refreshes) — never
-  // leave the party larger than what's left.
-  useEffect(() => { setCount((c) => Math.min(c, maxChildren)); }, [maxChildren]);
+  // leave the party larger than what's left, nor smaller than the vendor's minimum.
+  useEffect(() => { setCount((c) => Math.max(minChildren, Math.min(c, maxChildren))); }, [maxChildren, minChildren]);
 
   /** Login URL that returns to this exact booking: same activity, the chosen
    *  slot and party size (the picker state lives only in memory otherwise).
@@ -1608,10 +1614,19 @@ export default function BookingPage() {
                     <section>
                       <h3 className="mb-2 text-xl font-black">{isMultiDay ? "Number of children" : isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
-                        <button type="button" onClick={() => setCount((c) => Math.max(1, c - 1))} className="h-12 w-12">-</button>
+                        <button type="button" onClick={() => setCount((c) => Math.max(minChildren, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
                         <button type="button" onClick={() => setCount((c) => Math.min(maxChildren, c + 1))} className="h-12 w-12">+</button>
                       </div>
+                      {(vendorMinTickets > 1 || vendorMaxTickets != null) && (
+                        <p className="mt-2 text-sm font-semibold text-[#59658d]">
+                          {vendorMinTickets > 1 && vendorMaxTickets != null
+                            ? `This activity is booked in groups of ${vendorMinTickets} to ${vendorMaxTickets} tickets.`
+                            : vendorMinTickets > 1
+                            ? `This activity needs at least ${vendorMinTickets} tickets per booking.`
+                            : `This activity allows up to ${vendorMaxTickets} ${vendorMaxTickets === 1 ? "ticket" : "tickets"} per booking.`}
+                        </p>
+                      )}
                     </section>
                     {(!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
                       <section>

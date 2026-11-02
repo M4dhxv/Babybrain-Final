@@ -224,6 +224,8 @@ const emptyForm = {
   info_request_enabled: false, info_request_prompt: '',
   // 00252 — an optional second question. '' = none.
   info_request_prompt_2: '',
+  // 00266 — fewest / most tickets one booking may take. '' = no limit.
+  min_tickets_per_booking: '', max_tickets_per_booking: '',
   what_to_bring: '', confirmation_message: '',
 };
 
@@ -1472,6 +1474,8 @@ export default function ActivitiesPage() {
       info_request_enabled: a.info_request_enabled ?? false,
       info_request_prompt: a.info_request_prompt ?? '',
       info_request_prompt_2: a.info_request_prompt_2 ?? '',
+      min_tickets_per_booking: a.min_tickets_per_booking != null ? String(a.min_tickets_per_booking) : '',
+      max_tickets_per_booking: a.max_tickets_per_booking != null ? String(a.max_tickets_per_booking) : '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
     };
@@ -1607,6 +1611,13 @@ export default function ActivitiesPage() {
     const sameList = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
     const titleClaimed = prevLocks.includes('title') || form.title.trim() !== (editingActivity?.title ?? '').trim();
     const secondQuestion = form.info_request_enabled ? form.info_request_prompt_2.trim() : '';
+    const minTickets = form.min_tickets_per_booking === '' ? null : Math.max(1, Math.min(20, Math.round(Number(form.min_tickets_per_booking))));
+    const maxTickets = form.max_tickets_per_booking === '' ? null : Math.max(1, Math.min(20, Math.round(Number(form.max_tickets_per_booking))));
+    if (minTickets != null && maxTickets != null && minTickets > maxTickets) {
+      setSaving(false);
+      setFormError('The fewest tickets per booking can’t be more than the most.');
+      return;
+    }
     const photosClaimed = prevLocks.includes('image_urls')
       || !sameList(form.image_urls, editingActivity?.image_urls ?? [])
       || form.image_source !== (editingActivity?.image_source === 'custom' ? 'custom' : 'profile');
@@ -1685,6 +1696,10 @@ export default function ActivitiesPage() {
       // activity still works on a database without 00252.
       ...(secondQuestion || editingActivity?.info_request_prompt_2
         ? { info_request_prompt_2: secondQuestion || null }
+        : {}),
+      // Same for the ticket limits (00266): written only when set now or before.
+      ...(minTickets != null || maxTickets != null || editingActivity?.min_tickets_per_booking != null || editingActivity?.max_tickets_per_booking != null
+        ? { min_tickets_per_booking: minTickets, max_tickets_per_booking: maxTickets }
         : {}),
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
@@ -2742,6 +2757,23 @@ export default function ActivitiesPage() {
                 />
                 <p className="mt-1 text-xs text-gray-500">{cutoffSentence(form.booking_cutoff_minutes)}</p>
               </div>
+
+              {/* Tickets per booking (issues sheet 28 Oct): a price for two kids can insist on two tickets. */}
+              {!isWixLinked && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Tickets per booking (optional)</label>
+                  <div className="flex items-center gap-2">
+                    <NumberInput min="1" max="20" placeholder="Fewest" aria-label="Fewest tickets per booking" className={inputCls} value={form.min_tickets_per_booking} onChange={(e) => setForm({ ...form, min_tickets_per_booking: e.target.value })} />
+                    <span className="text-xs text-gray-400">to</span>
+                    <NumberInput min="1" max="20" placeholder="Most" aria-label="Most tickets per booking" className={inputCls} value={form.max_tickets_per_booking} onChange={(e) => setForm({ ...form, max_tickets_per_booking: e.target.value })} />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {form.min_tickets_per_booking || form.max_tickets_per_booking
+                      ? `A booking must take ${form.min_tickets_per_booking && form.max_tickets_per_booking ? `${form.min_tickets_per_booking} to ${form.max_tickets_per_booking}` : form.min_tickets_per_booking ? `at least ${form.min_tickets_per_booking}` : `at most ${form.max_tickets_per_booking}`} tickets.`
+                      : 'Leave blank for no limit. For a price that covers two children, set the fewest to 2.'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Bespoke information request (QA 21/08) */}

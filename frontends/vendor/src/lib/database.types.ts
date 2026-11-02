@@ -224,6 +224,9 @@ export type Database = {
           info_request_prompt: string | null;
           // 00252: optional second question; absent until that migration is applied.
           info_request_prompt_2?: string | null;
+          // 00266: optional limits on tickets per booking; absent until that migration is applied.
+          min_tickets_per_booking?: number | null;
+          max_tickets_per_booking?: number | null;
           // 00258: weekday prices; absent until that migration is applied.
           day_prices?: Record<string, number> | null;
           what_to_bring: string | null;
@@ -284,6 +287,8 @@ export type Database = {
           info_request_enabled?: boolean;
           info_request_prompt?: string | null;
           info_request_prompt_2?: string | null;
+          min_tickets_per_booking?: number | null;
+          max_tickets_per_booking?: number | null;
           // 00258: weekday prices; absent until that migration is applied.
           day_prices?: Record<string, number> | null;
           what_to_bring?: string | null;
