@@ -266,6 +266,8 @@ export default function BookingPage() {
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean; validity_days: number | null; expiry_date: string | null }[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>(draft?.payWith ?? "single");
+  // Weekly repeats when paying with pack credits: "also book the next N weeks at this time" (issues sheet 3 Oct).
+  const [repeatWeeks, setRepeatWeeks] = useState(0);
   // The provider's own consents / waivers / disclosures for this class, and
   // which of them the parent has ticked. QA: the vendor's "require medical
   // disclosure" switch changed nothing on the parent's side, and each vendor
@@ -482,6 +484,30 @@ export default function BookingPage() {
   function selectedForCredit() {
     return sessions.find((s) => s.id === sessionId) ?? null;
   }
+
+  /** Later sessions of this class on the same weekday and time as the chosen one, that can still be
+   *  booked for the whole party. They are what "book the next few weeks" adds when paying with pack
+   *  credits, so a pack holder books a recurring class in one go instead of one date at a time. */
+  const repeatCandidates: ActivitySession[] = (() => {
+    const first = sessions.find((s) => s.id === sessionId);
+    if (!first || !packageCredit || isEvent || isCourse || isAppointment || sessionId?.startsWith("wix:")) return [];
+    const cutoff = activity?.booking_cutoff_minutes;
+    const sameSlot = (s: ActivitySession) =>
+      sgDay(s.starts_at).split(",")[0] === sgDay(first.starts_at).split(",")[0] && sgTime(s.starts_at) === sgTime(first.starts_at);
+    return sessions
+      .filter((s) =>
+        s.id !== first.id &&
+        Date.parse(s.starts_at) > Date.parse(first.starts_at) &&
+        sameSlot(s) &&
+        !String(s.id).startsWith("wix:") &&
+        bookingOpen(s.starts_at, s.booking_cutoff_minutes ?? cutoff) &&
+        (s.capacity == null || s.capacity >= count) &&
+        (!packageCredit.expires_at || Date.parse(s.starts_at) <= Date.parse(packageCredit.expires_at)) &&
+        creditMatches(packageCredit, s))
+      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
+  })();
+  const maxRepeat = packageCredit ? Math.max(0, Math.min(repeatCandidates.length, Math.floor(packageCredit.remaining / count) - 1)) : 0;
+  const repeatCount = payWith === "credit" ? Math.min(repeatWeeks, maxRepeat) : 0;
 
   // Group upcoming sessions by date so the user picks a date, then a time.
   // Times past their booking cut-off are left out: the server would refuse
@@ -1110,6 +1136,7 @@ export default function BookingPage() {
     // party got in on this same credit purchase (00136) — every credit is
     // still spent up front regardless, see redeem_package_credit.
     let wl = 0;
+    let repeatBooked = 0;
     if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
       // redeem_package_credit expects a real session id, so this goes
@@ -1159,6 +1186,32 @@ export default function BookingPage() {
       const redeemed = data as { status: string; waitlisted_count: number } | null;
       status = redeemed?.status ?? "confirmed";
       wl = redeemed?.waitlisted_count ?? 0;
+      // "Also book the next N weeks": the same booking on each later session, one credit per seat each,
+      // stopping at the first refusal and saying how far it got.
+      for (const extra of repeatCandidates.slice(0, repeatCount)) {
+        const { data: more, error: moreErr } = await supabase
+          .rpc("redeem_package_credit", {
+            p_purchase_id: packageCredit.id,
+            p_session_id: extra.id,
+            p_child_id: bookChildId,
+            p_policies: acceptedPolicies,
+            p_quantity: count,
+            ...(count > 1
+              ? { p_guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
+              : {}),
+            ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+            ...(infoAnswer ? { p_info: infoAnswer } : {}),
+          })
+          .single();
+        if (moreErr) {
+          setBusy(false);
+          if (auth?.user?.id) cacheInvalidate(`profile:packages:${auth.user.id}`);
+          setErr(`${repeatBooked + 1} of ${repeatCount + 1} sessions booked. ${cleanRpcErrorMessage(moreErr)} Check My Bookings for what went through.`);
+          return;
+        }
+        repeatBooked += 1;
+        wl += (more as { waitlisted_count: number } | null)?.waitlisted_count ?? 0;
+      }
     }
     setBusy(false);
     const q = new URLSearchParams({
@@ -1167,7 +1220,8 @@ export default function BookingPage() {
       // So the confirmation page can open the provider chat without the activity page.
       provider: activity?.provider_id ?? "",
       pname: activity?.provider_name ?? "",
-      when: isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "",
+      when: (isCourse && courseRange ? courseRange : selected ? sgDateTime(selected.starts_at) : "") +
+        (repeatBooked > 0 ? ` and ${repeatBooked} more ${repeatBooked === 1 ? "week" : "weeks"} at the same time` : ""),
       status,
       start: (isCourse ? courseStart : selected?.starts_at) ?? "",
       end: (isCourse ? courseEnd : selected?.ends_at) ?? "",
@@ -1835,6 +1889,29 @@ export default function BookingPage() {
                             />
                           ))}
                         </div>
+                        {payWith === "credit" && maxRepeat > 0 && (
+                          <div className="mt-3 rounded-[10px] border border-[#EBE3E5] bg-[#FBF8FA] p-3">
+                            <label className="block text-sm font-black" htmlFor="repeat-weeks">Book more weeks in one go</label>
+                            <select
+                              id="repeat-weeks"
+                              value={repeatCount}
+                              onChange={(e) => setRepeatWeeks(Number(e.target.value))}
+                              className="mt-2 h-11 w-full rounded-[10px] border border-[#DCD2D5] bg-white px-3 font-semibold"
+                            >
+                              <option value={0}>Just this session</option>
+                              {Array.from({ length: maxRepeat }, (_, i) => i + 1).map((n) => (
+                                <option key={n} value={n}>
+                                  This session and the next {n} at {sgTime(selected?.starts_at ?? repeatCandidates[0].starts_at)} (uses {(n + 1) * count} credits)
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-1.5 text-xs font-semibold text-[#59658d]">
+                              {repeatCount > 0
+                                ? `Books ${sgDay(selected?.starts_at ?? "")} and ${repeatCandidates.slice(0, repeatCount).map((x) => sgDay(x.starts_at)).join(", ")}.`
+                                : "Your credits can cover the same class on later weeks too."}
+                            </p>
+                          </div>
+                        )}
                         {restrictedCredit && !packageCredit && (
                           <p className="mt-3 rounded-[10px] bg-[#F4F0FA] p-3 text-xs font-bold text-[#C7B1E6]">
                             You have package credits with this provider, but they can't be used for this{" "}
