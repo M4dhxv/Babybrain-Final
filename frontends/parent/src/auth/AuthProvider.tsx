@@ -7,6 +7,7 @@ import { reportDevice } from "../lib/device";
 import { releasePushOnSignOut } from "../lib/push";
 import { goTo, appUrl } from "../lib/nav";
 import { getAttribution } from "../lib/attribution";
+import { apiPost } from "../lib/api";
 import type { ParentProfile, Child } from "../lib/database.types";
 
 interface AuthState {
@@ -290,7 +291,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dataResolved,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error ? { error: authErrorMessage(error) } : {};
+      if (!error) return {};
+      // Supabase says "Invalid login credentials" for both a wrong password and
+      // an email with no account. Ask which one it was, the same lookup the vendor
+      // portal uses (app/api/vendor/login-help), so the parent knows what to fix.
+      // If the lookup fails or is throttled, keep Supabase's own wording.
+      if (error.code === "invalid_credentials") {
+        try {
+          const help = await apiPost<{ status: "login" | "contact_only" | "unknown" }>("/api/vendor/login-help", { email });
+          if (help.status === "login") return { error: "Incorrect password." };
+          return { error: "The e-mail provided is not registered." };
+        } catch {
+          /* fall through to Supabase's message */
+        }
+      }
+      return { error: authErrorMessage(error) };
     },
     signUp: async (email, password, fullName, onboarding, intent) => {
       const { data, error } = await supabase.auth.signUp({

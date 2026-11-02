@@ -241,6 +241,8 @@ const emptyForm = {
   info_request_enabled: false, info_request_prompt: '',
   // 00252 — an optional second question. '' = none.
   info_request_prompt_2: '',
+  // 00266 — fewest / most tickets one booking may take. '' = no limit.
+  min_tickets_per_booking: '', max_tickets_per_booking: '',
   what_to_bring: '', confirmation_message: '',
 };
 
@@ -506,6 +508,11 @@ export default function ActivitiesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   // Set while creating a copy (openDuplicate): the original's name, for the drawer header.
   const [copyFrom, setCopyFrom] = useState<string | null>(null);
+  /* Duplicate can also copy the original's upcoming schedule (issues sheet 28 Oct). `upcoming` is how
+     many sessions that is (null while counting); `defaultCap` lets a copied session follow a capacity
+     changed on the form when the original session was still at its activity's default. */
+  const [copySource, setCopySource] = useState<{ id: string; upcoming: number | null; defaultCap: number | null } | null>(null);
+  const [copySchedule, setCopySchedule] = useState(true);
   const [form, setForm] = useState(emptyForm);
   // "Add a second question" clicked, before anything is typed in it (00252).
   const [showSecondQ, setShowSecondQ] = useState(false);
@@ -944,6 +951,33 @@ export default function ActivitiesPage() {
     if (seq !== scheduleOpenSeq.current) return;
     setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0, waitlisted: waiting[s.id] ?? 0 })));
   }
+
+  /* Deep link from the "Someone joined your waitlist" email:
+     /activities?session=<id> opens that activity's Manage schedule with the
+     session already in edit mode, so the vendor lands on the capacity box
+     rather than on the booking. Acted on once, then stripped. */
+  const pendingSessionRef = useRef<string | null>(null);
+  const sessionParam = searchParams.get('session');
+  useEffect(() => {
+    if (!sessionParam || !canManage || activities.length === 0) return;
+    pendingSessionRef.current = sessionParam;
+    setSearchParams({}, { replace: true });
+    (async () => {
+      const { data } = await supabase.from('activity_sessions').select('activity_id').eq('id', sessionParam).maybeSingle();
+      const target = activities.find((x) => x.id === data?.activity_id);
+      if (target) await openSchedule(target);
+      else pendingSessionRef.current = null;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionParam, canManage, activities.length]);
+  useEffect(() => {
+    const wanted = pendingSessionRef.current;
+    if (!wanted || !scheduleFor || sessionsLoading) return;
+    pendingSessionRef.current = null;
+    const s = sessions.find((x) => x.id === wanted);
+    if (s) startEditSess(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, sessionsLoading, scheduleFor]);
 
   async function addSessions() {
     if (!scheduleFor || !sessForm.date || !sessForm.time) {
@@ -1462,6 +1496,7 @@ export default function ActivitiesPage() {
   function openCreate() {
     setEditingId(null);
     setCopyFrom(null);
+    setCopySource(null);
     setShowSecondQ(false);
     setForm(emptyForm);
     setFormError(null);
@@ -1472,6 +1507,7 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(a.id);
     setCopyFrom(null);
+    setCopySource(null);
     setShowSecondQ(false);
     setForm(formFrom(a));
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
@@ -1484,11 +1520,22 @@ export default function ActivitiesPage() {
      note, the question for parents. Left out: the name (the vendor gives it a new one), and
      everything that belongs to the original only — its page address (a fresh one is made on
      save), sessions, bookings, reviews, any Wix link, and its published state (the copy is a
-     draft). It goes through the normal create path, so nothing here can touch the original. */
+     draft). It goes through the normal create path, so nothing here can touch the original.
+     Its upcoming sessions can be copied too (tick-box, on by default; Wix-synced sessions never are). */
   function openDuplicate(a: Activity) {
     setShowMenu(null);
     setEditingId(null);
     setCopyFrom(a.title);
+    setCopySchedule(true);
+    setCopySource({ id: a.id, upcoming: null, defaultCap: a.default_capacity != null ? Number(a.default_capacity) : null });
+    void supabase
+      .from('activity_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('activity_id', a.id)
+      .is('wix_slot_key', null)
+      .neq('status', 'cancelled')
+      .gte('starts_at', new Date().toISOString())
+      .then(({ count }) => setCopySource((c) => (c && c.id === a.id ? { ...c, upcoming: count ?? 0 } : c)));
     setShowSecondQ(false);
     setForm({ ...formFrom(a), title: '' });
     setPriceOverridden(false);
@@ -1524,6 +1571,8 @@ export default function ActivitiesPage() {
       info_request_enabled: a.info_request_enabled ?? false,
       info_request_prompt: a.info_request_prompt ?? '',
       info_request_prompt_2: a.info_request_prompt_2 ?? '',
+      min_tickets_per_booking: a.min_tickets_per_booking != null ? String(a.min_tickets_per_booking) : '',
+      max_tickets_per_booking: a.max_tickets_per_booking != null ? String(a.max_tickets_per_booking) : '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
     };
@@ -1667,6 +1716,13 @@ export default function ActivitiesPage() {
     const sameList = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
     const titleClaimed = prevLocks.includes('title') || form.title.trim() !== (editingActivity?.title ?? '').trim();
     const secondQuestion = form.info_request_enabled ? form.info_request_prompt_2.trim() : '';
+    const minTickets = form.min_tickets_per_booking === '' ? null : Math.max(1, Math.min(20, Math.round(Number(form.min_tickets_per_booking))));
+    const maxTickets = form.max_tickets_per_booking === '' ? null : Math.max(1, Math.min(20, Math.round(Number(form.max_tickets_per_booking))));
+    if (minTickets != null && maxTickets != null && minTickets > maxTickets) {
+      setSaving(false);
+      setFormError('The fewest tickets per booking can’t be more than the most.');
+      return;
+    }
     const photosClaimed = prevLocks.includes('image_urls')
       || !sameList(form.image_urls, editingActivity?.image_urls ?? [])
       || form.image_source !== (editingActivity?.image_source === 'custom' ? 'custom' : 'profile');
@@ -1748,18 +1804,57 @@ export default function ActivitiesPage() {
       ...(secondQuestion || editingActivity?.info_request_prompt_2
         ? { info_request_prompt_2: secondQuestion || null }
         : {}),
+      // Same for the ticket limits (00266): written only when set now or before.
+      ...(minTickets != null || maxTickets != null || editingActivity?.min_tickets_per_booking != null || editingActivity?.max_tickets_per_booking != null
+        ? { min_tickets_per_booking: minTickets, max_tickets_per_booking: maxTickets }
+        : {}),
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
     };
-    const { error } = editingId
-      ? await supabase.from('activities').update(fields).eq('id', editingId)
-      : await supabase.from('activities').insert({
-          ...fields,
-          slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
-          provider_id: provider.id,
-          is_published: false, // saved as draft; publish from the row menu
-        });
+    let createdId: string | null = null;
+    let error: { message: string } | null;
+    if (editingId) {
+      ({ error } = await supabase.from('activities').update(fields).eq('id', editingId));
+    } else {
+      const res = await supabase.from('activities').insert({
+        ...fields,
+        slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
+        provider_id: provider.id,
+        is_published: false, // saved as draft; publish from the row menu
+      }).select('id').single();
+      error = res.error;
+      createdId = res.data?.id ?? null;
+    }
     if (error) { setSaving(false); setFormError(error.message); return; }
+
+    // Duplicate with "copy the schedule" ticked: give the new draft the original's upcoming
+    // sessions, same dates and times. Bookings, waitlists and pauses stay behind. Best-effort: the
+    // activity is already saved, so a failure here is reported, not rolled back.
+    if (createdId && copySource && copySchedule) {
+      const { data: src, error: srcErr } = await supabase
+        .from('activity_sessions')
+        .select('starts_at, ends_at, capacity, teacher_name, studio, price, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
+        .eq('activity_id', copySource.id)
+        .is('wix_slot_key', null)
+        .neq('status', 'cancelled')
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at');
+      const newCap = Number(form.default_capacity);
+      const copies = (src ?? []).map((s) => ({
+        ...s,
+        activity_id: createdId,
+        capacity: copySource.defaultCap != null && s.capacity === copySource.defaultCap && Number.isFinite(newCap) && newCap >= 1
+          ? newCap
+          : s.capacity,
+      }));
+      const { error: insErr } = copies.length ? await supabase.from('activity_sessions').insert(copies) : { error: null };
+      if (srcErr || insErr) {
+        toast.error('Activity copied, but its schedule could not be.', { description: (srcErr ?? insErr)?.message });
+      } else if (copies.length) {
+        toast.success(`Copied ${copies.length} upcoming ${copies.length === 1 ? 'session' : 'sessions'} to the new activity.`);
+      }
+    }
+    setCopySource(null);
     setSaving(false);
 
     // Capacity is an activity-wide setting, so every save re-aligns this
@@ -2460,9 +2555,23 @@ export default function ActivitiesPage() {
                   Copied from <span className="font-medium text-gray-900">{copyFrom}</span>. Give it a new name, check the
                   details, then save. It starts as a draft, hidden from parents until you publish it.
                 </p>
+                {copySource && (copySource.upcoming ?? 0) > 0 && (
+                  <label className="mt-2 flex cursor-pointer items-start gap-2 text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={copySchedule}
+                      onChange={(e) => setCopySchedule(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      Also copy the schedule ({copySource.upcoming} upcoming {copySource.upcoming === 1 ? 'session' : 'sessions'}, same dates and times).
+                      <span className="block text-xs text-gray-500">Bookings and waitlists are never copied.</span>
+                    </span>
+                  </label>
+                )}
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Sessions aren't copied, so add a schedule after saving. Packs and waivers set to specific activities won't
-                  include the copy until you add it to them.
+                  {copySource && (copySource.upcoming ?? 0) > 0 ? 'If you leave that off, add a schedule after saving. ' : "Sessions aren't copied, so add a schedule after saving. "}
+                  Packs and waivers set to specific activities won't include the copy until you add it to them.
                 </p>
               </div>
             )}
@@ -2924,6 +3033,23 @@ export default function ActivitiesPage() {
                 />
                 <p className="mt-1 text-xs text-gray-500">{cutoffSentence(form.booking_cutoff_minutes)}</p>
               </div>
+
+              {/* Tickets per booking (issues sheet 28 Oct): a price for two kids can insist on two tickets. */}
+              {!isWixLinked && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Tickets per booking (optional)</label>
+                  <div className="flex items-center gap-2">
+                    <NumberInput min="1" max="20" placeholder="Fewest" aria-label="Fewest tickets per booking" className={inputCls} value={form.min_tickets_per_booking} onChange={(e) => setForm({ ...form, min_tickets_per_booking: e.target.value })} />
+                    <span className="text-xs text-gray-400">to</span>
+                    <NumberInput min="1" max="20" placeholder="Most" aria-label="Most tickets per booking" className={inputCls} value={form.max_tickets_per_booking} onChange={(e) => setForm({ ...form, max_tickets_per_booking: e.target.value })} />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {form.min_tickets_per_booking || form.max_tickets_per_booking
+                      ? `A booking must take ${form.min_tickets_per_booking && form.max_tickets_per_booking ? `${form.min_tickets_per_booking} to ${form.max_tickets_per_booking}` : form.min_tickets_per_booking ? `at least ${form.min_tickets_per_booking}` : `at most ${form.max_tickets_per_booking}`} tickets.`
+                      : 'Leave blank for no limit. For a price that covers two children, set the fewest to 2.'}
+                  </p>
+                </div>
+              )}
             </div>
 
             </SectionCard>
