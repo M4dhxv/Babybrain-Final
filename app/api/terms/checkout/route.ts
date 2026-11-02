@@ -128,6 +128,9 @@ export async function POST(request: Request) {
   }
 
   let totalCents: number;
+  // Children covered by a term payment (siblings paid in one checkout). Not the number of enrolments:
+  // a child holding a slot-group combination has one enrolment per group (00264), which is still one child.
+  let termChildren = 1;
   if (kind === 'term') {
     // One group can hold several children's enrolments (siblings paid in one
     // checkout, 00244); each is charged its own quoted price.
@@ -138,11 +141,12 @@ export async function POST(request: Request) {
     }
     const { data: enrols } = await db
       .from('term_enrolments')
-      .select('id, price_cents, sessions, user_id')
+      .select('id, price_cents, sessions, user_id, child_id')
       .in('id', [...heldBy.keys()]);
     if (!enrols || enrols.length !== heldBy.size || enrols.some((e) => e.user_id !== user.id)) {
       return NextResponse.json({ error: 'Enrolment not found' }, { status: 404 });
     }
+    termChildren = new Set(enrols.map((e) => (e.child_id as string | null) ?? 'self')).size;
     // If the vendor skipped a class after enrolment, those seats were
     // cancelled; charge only for the classes still held.
     totalCents = enrols.reduce(
@@ -176,6 +180,16 @@ export async function POST(request: Request) {
     [first.provider_locations?.name, first.provider_locations?.address].filter(Boolean).join(', ') ||
     activity?.address ||
     '';
+  const last = rows[rows.length - 1] ?? first;
+  const sgDay = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short' });
+  const termSessions = Math.max(1, Math.round(seatCount / Math.max(1, termChildren)));
+  const whenLabel =
+    kind === 'term'
+      ? `${termSessions} ${termSessions === 1 ? 'session' : 'sessions'} · ${sgDay(first.starts_at)}${
+          sgDay(last.starts_at) === sgDay(first.starts_at) ? '' : ` to ${sgDay(last.starts_at)}`
+        }`
+      : sgDateTime(first.starts_at);
   const successUrl =
     `${origin}/booked?` +
     new URLSearchParams({
@@ -183,7 +197,9 @@ export async function POST(request: Request) {
       slug: activity?.slug ?? '',
       status: 'confirmed',
       paid: totalCents > 0 ? '1' : '0',
-      when: sgDateTime(first.starts_at),
+      // A whole-term payment confirms the term, not just its first class: "20 sessions · Mon, 5 Jan to Fri, 6 Mar".
+      // start/end stay the first class, which is what the add-to-calendar file is built from.
+      when: whenLabel,
       start: first.starts_at,
       end: first.ends_at,
       venue,
@@ -205,12 +221,9 @@ export async function POST(request: Request) {
 
   const unitLabel =
     kind === 'term'
-      ? (() => {
-          const kids = new Set(chargeSeats.map((s) => s.term_enrolment_id)).size;
-          return kids > 1
-            ? `${title} · whole term for ${kids} children`
-            : `${title} · whole term (${seatCount} ${seatCount === 1 ? 'session' : 'sessions'})`;
-        })()
+      ? termChildren > 1
+        ? `${title} · whole term for ${termChildren} children`
+        : `${title} · whole term (${seatCount} ${seatCount === 1 ? 'session' : 'sessions'})`
       : kind === 'trial'
         ? `${title} · trial session`
         : `${title} · single session`;
