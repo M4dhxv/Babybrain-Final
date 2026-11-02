@@ -60,7 +60,8 @@ export async function POST(request: Request) {
     if (target.capacity != null) {
       const party = booking.booking_group_id
         ? (await admin.from('bookings').select('id', { count: 'exact', head: true })
-            .eq('booking_group_id', booking.booking_group_id).in('status', ['pending', 'confirmed'])).count ?? 1
+            .eq('booking_group_id', booking.booking_group_id).eq('session_id', booking.session_id)
+            .in('status', ['pending', 'confirmed'])).count ?? 1
         : 1;
       const { count } = await admin.from('bookings').select('id', { count: 'exact', head: true })
         .eq('session_id', newSessionId).in('status', ['pending', 'confirmed']);

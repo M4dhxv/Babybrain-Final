@@ -1797,7 +1797,12 @@ export default function BookingsPage() {
                   {listSource.length}{' '}
                   {statusFilter === 'cancelled' && activeTab !== 'Attendance' ? 'cancelled'
                     : activeTab === 'Waitlist' ? statusFilter === 'all' ? 'on the waitlist or cancelled' : 'on the waitlist'
-                    : 'bookings'}
+                    : listSource.length === 1 ? 'booking' : 'bookings'}
+                  {/* "2 bookings of 6", then the Full / spaces-left chip on its
+                      own: the chip used to sit in the middle of the sentence
+                      ("1 bookings · Full · of 1"). */}
+                  {spacesLeft != null && activeTab !== 'Waitlist' && !(statusFilter === 'cancelled' && activeTab !== 'Attendance')
+                    ? ` of ${wixCap}` : ''}
                 </span>
                 {/* The waitlist has no cap, so the session's "Full · of N"
                     readout doesn't belong beside its count: it read as
@@ -1813,7 +1818,6 @@ export default function BookingsPage() {
                     )}>
                       {spacesLeft === 0 ? 'Full' : `${spacesLeft} ${spacesLeft === 1 ? 'space' : 'spaces'} left`}
                     </span>
-                    <span className="whitespace-nowrap text-gray-400">of {wixCap}</span>
                   </>
                 )}
                 {wixClassOverflow > 0 && (
