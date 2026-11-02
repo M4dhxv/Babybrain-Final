@@ -489,6 +489,11 @@ export default function ActivitiesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   // Set while creating a copy (openDuplicate): the original's name, for the drawer header.
   const [copyFrom, setCopyFrom] = useState<string | null>(null);
+  /* Duplicate can also copy the original's upcoming schedule (issues sheet 28 Oct). `upcoming` is how
+     many sessions that is (null while counting); `defaultCap` lets a copied session follow a capacity
+     changed on the form when the original session was still at its activity's default. */
+  const [copySource, setCopySource] = useState<{ id: string; upcoming: number | null; defaultCap: number | null } | null>(null);
+  const [copySchedule, setCopySchedule] = useState(true);
   const [form, setForm] = useState(emptyForm);
   // "Add a second question" clicked, before anything is typed in it (00252).
   const [showSecondQ, setShowSecondQ] = useState(false);
@@ -1392,6 +1397,7 @@ export default function ActivitiesPage() {
   function openCreate() {
     setEditingId(null);
     setCopyFrom(null);
+    setCopySource(null);
     setShowSecondQ(false);
     setForm(emptyForm);
     setFormError(null);
@@ -1402,6 +1408,7 @@ export default function ActivitiesPage() {
     setShowMenu(null);
     setEditingId(a.id);
     setCopyFrom(null);
+    setCopySource(null);
     setShowSecondQ(false);
     setForm(formFrom(a));
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
@@ -1414,11 +1421,22 @@ export default function ActivitiesPage() {
      note, the question for parents. Left out: the name (the vendor gives it a new one), and
      everything that belongs to the original only — its page address (a fresh one is made on
      save), sessions, bookings, reviews, any Wix link, and its published state (the copy is a
-     draft). It goes through the normal create path, so nothing here can touch the original. */
+     draft). It goes through the normal create path, so nothing here can touch the original.
+     Its upcoming sessions can be copied too (tick-box, on by default; Wix-synced sessions never are). */
   function openDuplicate(a: Activity) {
     setShowMenu(null);
     setEditingId(null);
     setCopyFrom(a.title);
+    setCopySchedule(true);
+    setCopySource({ id: a.id, upcoming: null, defaultCap: a.default_capacity != null ? Number(a.default_capacity) : null });
+    void supabase
+      .from('activity_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('activity_id', a.id)
+      .is('wix_slot_key', null)
+      .neq('status', 'cancelled')
+      .gte('starts_at', new Date().toISOString())
+      .then(({ count }) => setCopySource((c) => (c && c.id === a.id ? { ...c, upcoming: count ?? 0 } : c)));
     setShowSecondQ(false);
     setForm({ ...formFrom(a), title: '' });
     setPriceOverridden(false);
@@ -1671,15 +1689,50 @@ export default function ActivitiesPage() {
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
     };
-    const { error } = editingId
-      ? await supabase.from('activities').update(fields).eq('id', editingId)
-      : await supabase.from('activities').insert({
-          ...fields,
-          slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
-          provider_id: provider.id,
-          is_published: false, // saved as draft; publish from the row menu
-        });
+    let createdId: string | null = null;
+    let error: { message: string } | null;
+    if (editingId) {
+      ({ error } = await supabase.from('activities').update(fields).eq('id', editingId));
+    } else {
+      const res = await supabase.from('activities').insert({
+        ...fields,
+        slug: `${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
+        provider_id: provider.id,
+        is_published: false, // saved as draft; publish from the row menu
+      }).select('id').single();
+      error = res.error;
+      createdId = res.data?.id ?? null;
+    }
     if (error) { setSaving(false); setFormError(error.message); return; }
+
+    // Duplicate with "copy the schedule" ticked: give the new draft the original's upcoming
+    // sessions, same dates and times. Bookings, waitlists and pauses stay behind. Best-effort: the
+    // activity is already saved, so a failure here is reported, not rolled back.
+    if (createdId && copySource && copySchedule) {
+      const { data: src, error: srcErr } = await supabase
+        .from('activity_sessions')
+        .select('starts_at, ends_at, capacity, teacher_name, studio, price, allow_cancellation, cancellation_cutoff_hours, cancellation_refund_mode, allow_rescheduling, reschedule_cutoff_hours, booking_cutoff_minutes')
+        .eq('activity_id', copySource.id)
+        .is('wix_slot_key', null)
+        .neq('status', 'cancelled')
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at');
+      const newCap = Number(form.default_capacity);
+      const copies = (src ?? []).map((s) => ({
+        ...s,
+        activity_id: createdId,
+        capacity: copySource.defaultCap != null && s.capacity === copySource.defaultCap && Number.isFinite(newCap) && newCap >= 1
+          ? newCap
+          : s.capacity,
+      }));
+      const { error: insErr } = copies.length ? await supabase.from('activity_sessions').insert(copies) : { error: null };
+      if (srcErr || insErr) {
+        toast.error('Activity copied, but its schedule could not be.', { description: (srcErr ?? insErr)?.message });
+      } else if (copies.length) {
+        toast.success(`Copied ${copies.length} upcoming ${copies.length === 1 ? 'session' : 'sessions'} to the new activity.`);
+      }
+    }
+    setCopySource(null);
     setSaving(false);
 
     // Capacity is an activity-wide setting, so every save re-aligns this
@@ -2243,9 +2296,23 @@ export default function ActivitiesPage() {
                   Copied from <span className="font-medium text-gray-900">{copyFrom}</span>. Give it a new name, check the
                   details, then save. It starts as a draft, hidden from parents until you publish it.
                 </p>
+                {copySource && (copySource.upcoming ?? 0) > 0 && (
+                  <label className="mt-2 flex cursor-pointer items-start gap-2 text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={copySchedule}
+                      onChange={(e) => setCopySchedule(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      Also copy the schedule ({copySource.upcoming} upcoming {copySource.upcoming === 1 ? 'session' : 'sessions'}, same dates and times).
+                      <span className="block text-xs text-gray-500">Bookings and waitlists are never copied.</span>
+                    </span>
+                  </label>
+                )}
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Sessions aren't copied, so add a schedule after saving. Packs and waivers set to specific activities won't
-                  include the copy until you add it to them.
+                  {copySource && (copySource.upcoming ?? 0) > 0 ? 'If you leave that off, add a schedule after saving. ' : "Sessions aren't copied, so add a schedule after saving. "}
+                  Packs and waivers set to specific activities won't include the copy until you add it to them.
                 </p>
               </div>
             )}
