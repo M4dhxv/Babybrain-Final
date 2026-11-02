@@ -848,6 +848,33 @@ export default function ActivitiesPage() {
     setSessions(rows.map((s) => ({ ...s, booked: counts[s.id] ?? 0, waitlisted: waiting[s.id] ?? 0 })));
   }
 
+  /* Deep link from the "Someone joined your waitlist" email:
+     /activities?session=<id> opens that activity's Manage schedule with the
+     session already in edit mode, so the vendor lands on the capacity box
+     rather than on the booking. Acted on once, then stripped. */
+  const pendingSessionRef = useRef<string | null>(null);
+  const sessionParam = searchParams.get('session');
+  useEffect(() => {
+    if (!sessionParam || !canManage || activities.length === 0) return;
+    pendingSessionRef.current = sessionParam;
+    setSearchParams({}, { replace: true });
+    (async () => {
+      const { data } = await supabase.from('activity_sessions').select('activity_id').eq('id', sessionParam).maybeSingle();
+      const target = activities.find((x) => x.id === data?.activity_id);
+      if (target) await openSchedule(target);
+      else pendingSessionRef.current = null;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionParam, canManage, activities.length]);
+  useEffect(() => {
+    const wanted = pendingSessionRef.current;
+    if (!wanted || !scheduleFor || sessionsLoading) return;
+    pendingSessionRef.current = null;
+    const s = sessions.find((x) => x.id === wanted);
+    if (s) startEditSess(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, sessionsLoading, scheduleFor]);
+
   async function addSessions() {
     if (!scheduleFor || !sessForm.date || !sessForm.time) {
       setSessError('Pick a date and start time.');

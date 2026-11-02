@@ -753,6 +753,13 @@ const T: Record<string, Template> = {
   provider_waitlist_joined: (d, ctx) => {
     const waiting = Number(str(d, 'waiting_count') ?? 0);
     const who = str(d, 'child_name') ?? 'A family';
+    // The capacity lives in the session's Manage schedule, not on the booking, so the link opens
+    // that session in edit mode (vendor Activities ?session=). Derived from session_id here so it
+    // also fixes notifications already stored with the older Bookings link.
+    const sessionId = str(d, 'session_id');
+    const capacityUrl = sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)
+      ? `/vendor/#/activities?session=${sessionId}`
+      : (str(d, 'url') ?? '/vendor');
     return wrap(ctx, 'Someone joined your waitlist 👶🧠',
       p(greet(ctx.recipientName)) +
       p(`${bold(who)} has joined the waitlist for the following activity:`) +
@@ -760,7 +767,7 @@ const T: Record<string, Template> = {
       (waiting > 0
         ? p(`There ${waiting === 1 ? 'is' : 'are'} now ${bold(String(waiting))} ${waiting === 1 ? 'family' : 'families'} on the waitlist for this session.`)
         : '') +
-      p(`If you can take more, would you like to ${link(ctx, str(d, 'url') ?? '/vendor', 'increase the capacity for this session')}? Everyone on the waitlist is told straight away that a place is available, and whoever books first gets it.`) +
+      p(`If you can take more, would you like to ${link(ctx, capacityUrl, 'increase the capacity for this session')}? Everyone on the waitlist is told straight away that a place is available, and whoever books first gets it.`) +
       p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
       sign);
   },
