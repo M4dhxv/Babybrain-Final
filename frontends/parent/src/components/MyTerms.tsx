@@ -227,7 +227,11 @@ function TermWaitCards({ waiting, onChanged }: { waiting: MyTermWait[]; onChange
             </p>
             {askStay && (
               <div className="mt-3 rounded-[12px] border border-[#F3C2D3] bg-[#FFF5F8] p-3">
-                <p className="text-sm font-bold text-[#34406f]">{child} is now enrolled in another slot of {w.term_name}. Stay on this waitlist too?</p>
+                <p className="text-sm font-bold text-[#34406f]">
+                  {w.combo_id
+                    ? `${child} is now enrolled in another pair of sessions in ${w.term_name}. Stay on the waitlist for this pair too?`
+                    : `${child} is now enrolled in another slot of ${w.term_name}. Stay on this waitlist too?`}
+                </p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" disabled={busy} onClick={() => leave(w)} className="rounded-full bg-[#FA4D8D] px-4 py-1.5 text-sm font-black text-white disabled:opacity-60">
                     Leave this waitlist
