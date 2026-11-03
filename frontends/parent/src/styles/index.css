@@ -346,3 +346,43 @@ html[data-nav="back"] .bb-reveal {
   transform: translate(-50%, -50%);
 }
 
+
+/* The full-height inbox (parent Messages tab, vendor Messages page) — roomier
+   and easier to read than Stream's compact defaults. Scoped to `bb-chat-inbox`
+   so the enquiry / class / support pop-ups keep their own density.
+   - 64px+ conversation rows with 15px names and 14px previews (tap targets).
+   - Unread rows are bold, so they stand out without relying on colour alone.
+   - 15px message text, and a visible keyboard focus ring on everything. */
+.bb-chat-inbox .str-chat__channel-preview-messenger {
+  min-height: 68px;
+  padding: 12px 16px;
+}
+.bb-chat-inbox .str-chat__channel-preview-messenger--name {
+  font-size: 15px;
+}
+.bb-chat-inbox .str-chat__channel-preview-messenger--last-message {
+  font-size: 14px;
+}
+.bb-chat-inbox .str-chat__channel-preview-messenger--unread .str-chat__channel-preview-messenger--name,
+.bb-chat-inbox .str-chat__channel-preview-messenger--unread .str-chat__channel-preview-messenger--last-message {
+  font-weight: 700;
+  color: #1f2a44;
+}
+.bb-chat-inbox .str-chat__channel-preview-messenger--active {
+  background: #feebf2;
+}
+.bb-chat-inbox .str-chat__message-text {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.bb-chat-inbox .str-chat__channel-search input,
+.bb-chat-inbox .str-chat__message-input textarea {
+  font-size: 16px; /* 16px stops iOS zooming the page when the field is focused */
+}
+.bb-chat-inbox button:focus-visible,
+.bb-chat-inbox a:focus-visible,
+.bb-chat-inbox textarea:focus-visible,
+.bb-chat-inbox input:focus-visible {
+  outline: 2px solid #fa4d8d;
+  outline-offset: -2px;
+}

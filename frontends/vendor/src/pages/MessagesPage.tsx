@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Channel as StreamChannel, StreamChat } from 'stream-chat';
 import {
+  Avatar,
   Chat,
   Channel,
   ChannelList,
   Window,
-  ChannelHeader,
   MessageList,
   MessageInput,
   Thread,
   ChannelPreviewMessenger,
+  useChannelPreviewInfo,
+  useChannelStateContext,
   useChatContext,
   type ChannelPreviewUIComponentProps,
 } from 'stream-chat-react';
@@ -47,10 +49,79 @@ function EnquiryPreview(props: ChannelPreviewUIComponentProps) {
   return <ChannelPreviewMessenger {...props} displayTitle={title ?? props.displayTitle} />;
 }
 
-function EnquiryHeader() {
-  const { channel, client } = useChatContext();
-  const title = channel ? enquiryTitle(channel, client.userID) : null;
-  return <ChannelHeader title={title ?? undefined} />;
+/** One-to-one parent enquiries carry `bb_parent_id`; session group chats carry `bb_kind: 'session'`. */
+type Kind = 'enquiry' | 'class' | 'other';
+
+function kindOf(channel: StreamChannel): Kind {
+  const data = channel.data as { bb_kind?: string; bb_parent_id?: string } | undefined;
+  if (data?.bb_kind === 'session' || (channel.id ?? '').startsWith('class-')) return 'class';
+  if (data?.bb_parent_id) return 'enquiry';
+  return 'other';
+}
+
+type FilterKey = 'all' | 'unread' | 'enquiry' | 'class';
+
+const FILTERS: { key: FilterKey; label: string; empty: string }[] = [
+  { key: 'all', label: 'All', empty: '' },
+  { key: 'unread', label: 'Unread', empty: "You're all caught up. No unread conversations." },
+  { key: 'enquiry', label: 'Enquiries', empty: 'No parent enquiries yet.' },
+  { key: 'class', label: 'Class chats', empty: 'No class group chats yet. Start one from a session to message everyone booked on it.' },
+];
+
+function matches(filter: FilterKey, channel: StreamChannel): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'unread') return channel.countUnread() > 0;
+  return kindOf(channel) === filter;
+}
+
+/** Title bar of the open conversation: back button (mobile), who it's with, and what kind of chat it is. */
+function ThreadHeader() {
+  const { channel } = useChannelStateContext();
+  const { client, setActiveChannel } = useChatContext();
+  const { displayImage, displayTitle } = useChannelPreviewInfo({
+    channel,
+    overrideTitle: enquiryTitle(channel, client.userID) ?? undefined,
+  });
+  const kind = kindOf(channel);
+  const count = Object.keys(channel.state?.members ?? {}).length;
+  const subtitle =
+    kind === 'class'
+      ? `Class group chat · ${count} ${count === 1 ? 'member' : 'members'}`
+      : kind === 'enquiry'
+        ? 'Parent enquiry'
+        : '';
+
+  return (
+    <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-2 py-2.5 md:px-4">
+      <button
+        type="button"
+        onClick={() => setActiveChannel?.(undefined)}
+        aria-label="Back to all conversations"
+        className="grid h-11 w-11 flex-none place-items-center rounded-full text-gray-700 hover:bg-gray-100 md:hidden"
+      >
+        <ArrowLeft className="h-5 w-5" />
+      </button>
+      <Avatar image={displayImage} name={displayTitle} />
+      <div className="min-w-0">
+        <h2 className="truncate text-base font-semibold text-gray-900">{displayTitle}</h2>
+        {subtitle && <p className="truncate text-sm text-gray-500">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function NoConversationOpen() {
+  return (
+    <div className="grid h-full place-items-center p-8 text-center">
+      <div>
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#FED7E4] text-[#FA4D8D]">
+          <MessageSquare className="h-6 w-6" />
+        </span>
+        <p className="mt-3 text-base font-semibold text-gray-900">Choose a conversation</p>
+        <p className="mt-1 text-sm text-gray-500">Pick one from the list to read and reply.</p>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -70,57 +141,96 @@ function ChatPanes({
   deepLinkChannel?: string;
   isMobile: boolean;
 }) {
-  const { channel, setActiveChannel } = useChatContext();
+  const { channel } = useChatContext();
   const chatOpen = !!channel;
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const active = FILTERS.find((f) => f.key === filter)!;
 
   return (
     <div className="flex h-full">
-      <div
+      <section
+        aria-label="Conversations"
         className={cn(
-          'w-full overflow-y-auto border-r border-gray-200 md:block md:w-80',
-          chatOpen ? 'hidden md:block' : 'block'
+          'flex min-h-0 w-full flex-col border-r border-gray-200 md:w-80 md:flex-none lg:w-96',
+          chatOpen ? 'hidden md:flex' : 'flex'
         )}
       >
-        <ChannelList
-          filters={{ type: 'messaging', members: { $in: [userId] } }}
-          sort={{ last_message_at: -1 }}
-          options={{ state: true, watch: true, presence: true }}
-          /* QA: "the search messages function ... doesn't work". There was
-             no search at all — this turns on Stream's own, which queries
-             the server rather than filtering only what's loaded. */
-          showChannelSearch
-          additionalChannelSearchProps={{
-            searchForChannels: true,
-            placeholder: 'Search conversations',
-          }}
-          Preview={EnquiryPreview}
-          customActiveChannel={deepLinkChannel}
-          /* Mobile lands on the list (WhatsApp-style); desktop still
-             opens the most recent conversation on mount. */
-          setActiveChannelOnMount={!isMobile || !!deepLinkChannel}
-          EmptyStateIndicator={() => (
-            <div className="p-8 text-center text-sm text-gray-400">
-              No conversations yet. Parents' enquiries will appear here.
-            </div>
-          )}
-        />
-      </div>
-      <div
-        className={cn(
-          'min-w-0 flex-1 md:block',
-          chatOpen ? 'block' : 'hidden md:block'
-        )}
-      >
-        <Channel>
-          <Window>
+        <div className="px-4 pb-1 pt-4">
+          <h1 className="text-xl font-bold text-gray-900">Messages</h1>
+          <p className="text-sm text-gray-500">Every parent enquiry, across all your services.</p>
+        </div>
+        <div
+          role="group"
+          aria-label="Filter conversations"
+          className="flex gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {FILTERS.map((f) => (
             <button
+              key={f.key}
               type="button"
-              onClick={() => setActiveChannel?.(undefined)}
-              className="flex w-full items-center gap-2 border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 md:hidden"
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                'min-h-[36px] flex-none rounded-full px-3.5 text-sm font-medium',
+                filter === f.key
+                  ? 'bg-[#FED7E4] text-[#C90044]'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              )}
             >
-              <ArrowLeft className="h-4 w-4" /> All conversations
+              {f.label}
             </button>
-            <EnquiryHeader />
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ChannelList
+            filters={{ type: 'messaging', members: { $in: [userId] } }}
+            sort={{ last_message_at: -1 }}
+            options={{ state: true, watch: true, presence: true }}
+            /* QA: "the search messages function ... doesn't work". There was
+               no search at all — this turns on Stream's own, which queries
+               the server rather than filtering only what's loaded. */
+            showChannelSearch
+            additionalChannelSearchProps={{
+              searchForChannels: true,
+              placeholder: 'Search conversations',
+            }}
+            Preview={EnquiryPreview}
+            customActiveChannel={deepLinkChannel}
+            /* Filtering happens on the loaded page of conversations (30 at a
+               time, more on scroll) rather than as a server query, so
+               "Unread" always reflects what the list is showing right now. */
+            channelRenderFilterFn={(channels) => channels.filter((c) => matches(filter, c))}
+            /* Mobile lands on the list (WhatsApp-style); desktop still
+               opens the most recent conversation on mount. */
+            setActiveChannelOnMount={!isMobile || !!deepLinkChannel}
+            EmptyStateIndicator={() => (
+              <div className="p-8 text-center text-sm text-gray-500">
+                {filter !== 'all' ? (
+                  <>
+                    <p>{active.empty}</p>
+                    <button
+                      type="button"
+                      onClick={() => setFilter('all')}
+                      className="mt-3 min-h-[44px] rounded-full bg-gray-100 px-4 font-medium text-gray-700 hover:bg-gray-200"
+                    >
+                      Show all conversations
+                    </button>
+                  </>
+                ) : (
+                  "No conversations yet. Parents' enquiries will appear here."
+                )}
+              </div>
+            )}
+          />
+        </div>
+      </section>
+      <section
+        aria-label="Conversation"
+        className={cn('min-w-0 flex-1 md:block', chatOpen ? 'block' : 'hidden md:block')}
+      >
+        <Channel EmptyPlaceholder={<NoConversationOpen />}>
+          <Window>
+            <ThreadHeader />
             {/* QA: "not sure what the pen edit button would be intended
                 to do under messages but currently doesn't work". It's
                 Stream's stock "edit my own message" action (hover a
@@ -133,7 +243,7 @@ function ChatPanes({
           </Window>
           <Thread />
         </Channel>
-      </div>
+      </section>
     </div>
   );
 }
@@ -227,22 +337,15 @@ export default function MessagesPage() {
     );
   }
 
+  /* Fills the whole content area beside the sidebar — no page title block, no
+     padding, no card border. The "Messages" heading lives in the list pane.
+     `bb-chat` is what the dark-pink Stream override in index.css hangs off;
+     `bb-chat-inbox` is the roomier full-height styling. */
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-4 py-5 sm:px-8">
-        <div className="w-full text-center sm:w-auto sm:text-left">
-          <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-          <p className="text-sm text-gray-500 mt-1">Every parent enquiry, across all your services, in one inbox.</p>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 px-4 pb-6 sm:px-6">
-      {/* `bb-chat` is what the dark-pink Stream override in index.css hangs off. */}
-      <div className="bb-chat h-full rounded-xl border border-gray-200 overflow-hidden bg-white str-chat__theme-light">
-        <Chat client={client}>
-          <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} />
-        </Chat>
-      </div>
-      </div>
+    <div className="bb-chat bb-chat-inbox h-full bg-white str-chat__theme-light">
+      <Chat client={client}>
+        <ChatPanes userId={userId} deepLinkChannel={deepLinkChannel} isMobile={isMobile} />
+      </Chat>
     </div>
   );
 }

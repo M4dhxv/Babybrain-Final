@@ -27,7 +27,8 @@ export async function POST(request: Request) {
   const name = typeof b?.name === 'string' ? b.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
   const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase().slice(0, 160) : '';
   const phone = normaliseSgPhone(b?.phone);
-  if (!name || !email || !phone) return NextResponse.json({ error: 'Please check your name, email and number.' }, { status: 400 });
+  // name is optional: the "Edit or Cancel" panel asks only for email + number (both must match to count as the owner)
+  if (!email || !phone) return NextResponse.json({ error: 'Please check your email and number.' }, { status: 400 });
 
   const { data, error } = await db.rpc('find_event_registration', { p_event: LAUNCH_EVENT_SLUG, p_name: name, p_email: email, p_phone: phone });
   if (error) {

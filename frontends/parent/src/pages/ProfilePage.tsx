@@ -3159,27 +3159,15 @@ export default function ProfilePage() {
 
           {/* QA 04/09: the copy here promised "you can still read messages on
               your booked classes for free" while the tab showed nothing but an
-              upgrade card. Free parents now get the reading half — the same
-              inbox, with the composer replaced by an upgrade line — above a
-              short note about what Plus adds. */}
-          {tab === "messages" && planKnown && !isPlus && session && (
+              upgrade card. Free parents get the reading half — the same
+              inbox, with the composer replaced by an upgrade line. The inbox
+              carries its own "Messages" heading and the Plus note, so it can
+              fill the column to the bottom of the screen. */}
+          {tab === "messages" && planKnown && session && (
             <div>
-              <h1 className="mb-4 text-[26px] font-black">Messages</h1>
-              <p className="mb-4 rounded-[12px] bg-[#EDF7FD] px-4 py-3 text-sm font-semibold text-[#59658d]">
-                You can read the conversations you're part of. Replying, and starting a new
-                conversation with a provider, needs{" "}
-                <a href="/pricing" className="font-black text-baby-pink hover:underline">Plus</a>.
-              </p>
+              <h1 className="sr-only">Messages</h1>
               <Suspense fallback={<MessagesSkeleton />}>
-                <MessagesTab userId={session.user.id} readOnly />
-              </Suspense>
-            </div>
-          )}
-          {tab === "messages" && isPlus && session && (
-            <div>
-              <h1 className="mb-4 text-[26px] font-black">Messages</h1>
-              <Suspense fallback={<MessagesSkeleton />}>
-                <MessagesTab userId={session.user.id} />
+                <MessagesTab userId={session.user.id} readOnly={!isPlus} />
               </Suspense>
             </div>
           )}

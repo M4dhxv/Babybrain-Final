@@ -201,14 +201,18 @@ export function ListRowsSkeleton({
   );
 }
 
+/** Frame of the Messages tab, shared by the live inbox and its skeleton so the
+ *  swap doesn't shift. Edge to edge on a phone (breaks out of the page gutter);
+ *  from lg up it fills the content column to the bottom of the screen, level
+ *  with the sticky profile sidebar (top 90px, bottom 16px). */
+export const MESSAGES_BOX =
+  "-mx-4 h-[calc(100dvh-7rem)] min-h-[440px] overflow-hidden border-y border-[#EBE3E5] bg-white sm:-mx-6 lg:mx-0 lg:h-[calc(100dvh-106px)] lg:rounded-[12px] lg:border";
+
 /** Placeholder for the Messages tab's two-pane chat while the Stream client
  *  connects — a conversation list on the left, a thread on the right. */
 export function MessagesSkeleton() {
   return (
-    <div
-      aria-hidden="true"
-      className="grid h-[600px] overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card md:grid-cols-[300px_1fr]"
-    >
+    <div aria-hidden="true" className={`grid ${MESSAGES_BOX} md:grid-cols-[320px_1fr]`}>
       <div className="hidden border-r border-[#F4EFF0] p-3 md:block">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="mb-2 flex items-center gap-3 rounded-[10px] p-2">

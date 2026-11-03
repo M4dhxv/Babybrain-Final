@@ -150,11 +150,28 @@
             <div class="mg-actions" id="mgDoneActions"></div>
           </div>
         </div>
+
+        <!-- 7 · find my booking (edit or cancel) -->
+        <div class="slide" data-step="7">
+          <div class="mg">
+            <h3>Edit or cancel your booking</h3>
+            <p class="mg-msg">Enter the mobile number and email you registered with.</p>
+            <label for="fMobile">Mobile number</label>
+            <div class="phone"><span class="cc">+65</span><input id="fMobile" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="9" autocomplete="tel-national" placeholder="9123 4567" aria-label="Mobile number (Singapore, 8 digits)"></div>
+            <label for="fEmail">Email</label>
+            <input id="fEmail" type="email" autocomplete="email" placeholder="you@example.com">
+            <div class="err" id="errFind"></div>
+            <div class="mg-actions">
+              <button type="button" class="mg-btn pri" id="findEdit">Edit booking</button>
+              <button type="button" class="mg-btn" id="findCancel">Cancel booking</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="controls" id="controls">
         <button type="button" class="back" id="back" hidden>← Back</button>
-        <span></span>
+        <button type="button" class="find-link" id="findLink">Edit or Cancel</button>
         <button type="button" class="btn" id="next">Next</button>
       </div>
       <div class="dots" id="dots" aria-hidden="true"><i class="dot on"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
@@ -164,14 +181,13 @@
 </main>
 
 <div class="modal" id="cancelModal" hidden>
-  <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="cancelTitle" aria-describedby="cancelText">
-    <h3 id="cancelTitle">Cancel your registration?</h3>
-    <p id="cancelText">This will cancel your registration and release your places so another family can take them. You’re welcome to register again afterwards.</p>
+  <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="cancelTitle" aria-describedby="cancelWhat">
+    <h3 id="cancelTitle">Would you like to continue with the cancellation?</h3>
     <p class="modal-what" id="cancelWhat"></p>
     <div class="modal-err err" id="cancelErr"></div>
     <div class="mg-actions">
-      <button type="button" class="mg-btn pri" id="cancelKeep">Keep my registration</button>
-      <button type="button" class="mg-btn danger" id="cancelConfirm">Yes, cancel registration</button>
+      <button type="button" class="mg-btn pri" id="cancelKeep">Back</button>
+      <button type="button" class="mg-btn danger" id="cancelConfirm">Confirm</button>
     </div>
   </div>
 </div>
@@ -181,7 +197,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const slides = [...document.querySelectorAll('.slide')];
   const dots = [...document.querySelectorAll('.dot')];
-  const back = $('#back'), next = $('#next'), controls = $('#controls');
+  const back = $('#back'), next = $('#next'), controls = $('#controls'), findLink = $('#findLink');
   const data = { name: '', email: '', wa: '', slot: '', slotKey: '', terms: false, adult: null, kids: [] };
   let step = 1;
   let editing = null;   // { token } while a registrant is editing an existing RSVP
@@ -263,15 +279,16 @@
   function show(n) {
     step = n;
     slides.forEach(s => s.classList.toggle('active', +s.dataset.step === n));
-    const dn = n === 6 ? 1 : n;   // the "already registered" panel sits on the first dot
+    const dn = n === 6 || n === 7 ? 1 : n;   // the "already registered" and "edit or cancel" panels sit on the first dot
     dots.forEach((d, i) => { d.classList.toggle('on', i + 1 === Math.min(dn, 4) && dn < 5); d.classList.toggle('done', i + 1 < dn || dn === 5); });
     back.hidden = n === 1 || n === 5;
     if (n === 6) syncBack();
     controls.style.visibility = n === 5 ? "hidden" : "visible";
-    next.style.visibility = n === 6 ? 'hidden' : '';
+    next.style.visibility = n === 6 || n === 7 ? 'hidden' : '';
+    findLink.hidden = !(n === 1 && !editing);   // "Edit or Cancel" sits opposite Next on the first slide only
     next.textContent = n === 4 ? (editing ? 'Save changes' : 'Confirm') : 'Next';
     if (n === 4) fillConfirm();
-    if (n === 5) { try { sessionStorage.removeItem(KEY); } catch (e) {} } else if (n !== 6 && !editing) save();
+    if (n === 5) { try { sessionStorage.removeItem(KEY); } catch (e) {} } else if (n !== 6 && n !== 7 && !editing) save();
     const f = slides[n - 1].querySelector('input:not([type=radio])'); if (f && n !== 3 && n !== 6) f.focus();
   }
 
@@ -351,6 +368,7 @@
   }
 
   next.onclick = async () => {
+    if (step === 6 || step === 7) return;   // those panels have their own buttons (Enter must not step past them)
     if (!validate(step)) return;
     if (step === 1 && !editing) {
       // Has this email / number registered already? Then offer edit / cancel instead of a second registration.
@@ -423,7 +441,8 @@
       if (!$('#mgMail').hidden) {
         if (!$('#mgFixForm').hidden || !$('#mgReportForm').hidden) mailChoices(); else mgShow('mgMain');
       } else show(1);
-    } else if (step > 1) show(step - 1);
+    } else if (step === 7) show(1);
+    else if (step > 1) show(step - 1);
   };
   $('#rsvp').addEventListener('submit', e => { e.preventDefault(); next.click(); });
   $('#rsvp').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'radio') { e.preventDefault(); next.click(); } });
@@ -492,12 +511,14 @@
 
   // Cancel: a confirmation pop-up first
   const modal = $('#cancelModal');
-  function closeModal() { modal.hidden = true; $('#cancelErr').textContent = ''; $('#mgCancel').focus(); }
-  $('#mgCancel').onclick = () => {
-    if (!mg || !mg.verified) return;
+  let modalOpener = null;   // where focus returns when the pop-up closes
+  function closeModal() { modal.hidden = true; $('#cancelErr').textContent = ''; if (modalOpener) modalOpener.focus(); }
+  function openCancelModal(opener) {
+    modalOpener = opener;
     $('#cancelWhat').textContent = `${mg.registration.name} · ${mg.slotLabel || ''} · ${partyText(mg.registration)}`;
     modal.hidden = false; $('#cancelKeep').focus();
-  };
+  }
+  $('#mgCancel').onclick = () => { if (mg && mg.verified) openCancelModal($('#mgCancel')); };
   $('#cancelKeep').onclick = closeModal;
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
@@ -513,8 +534,33 @@
     } catch (e) {
       $('#cancelErr').textContent = e.code === 'expired' ? 'That took a little too long. Please close this and enter your details again.' : e.message;
     }
-    btn.disabled = false; btn.textContent = 'Yes, cancel registration';
+    btn.disabled = false; btn.textContent = 'Confirm';
   };
+
+  /* ----- "Edit or Cancel" from the first slide: find the booking by mobile + email, then edit it or cancel it ----- */
+  findLink.onclick = () => {
+    $('#fMobile').value = $('#wa').value; $('#fEmail').value = $('#email').value;
+    document.querySelectorAll('#fMobile, #fEmail').forEach(i => i.classList.remove('bad'));
+    $('#errFind').textContent = '';
+    show(7);
+  };
+  // Looks the booking up; only a booking that matches BOTH the mobile and the email may be changed.
+  async function findBooking() {
+    const mobile = $('#fMobile'), email = $('#fEmail');
+    const ok = [mark(mobile, !waOk(mobile.value)), mark(email, !emailOk(email.value.trim()))].every(Boolean);
+    if (!ok) { $('#errFind').textContent = waOk(mobile.value) ? 'Please enter a valid email.' : (mobile.value.trim() ? WA_HELP : 'Please enter your mobile number and email.'); return null; }
+    $('#errFind').textContent = '';
+    const btns = [$('#findEdit'), $('#findCancel')]; btns.forEach(b => { b.disabled = true; });
+    try {
+      const out = await postJson('/api/events/launch/lookup', { email: email.value.trim(), phone: '+65 ' + sgFormat(mobile.value) });
+      if (!out.found || !out.verified) { $('#errFind').textContent = 'We couldn’t find a booking with that mobile number and email. Please check them and try again.'; return null; }
+      mg = out; return out;
+    } catch (e) {
+      $('#errFind').textContent = e.message; return null;
+    } finally { btns.forEach(b => { b.disabled = false; }); }
+  }
+  $('#findEdit').onclick = async () => { if (await findBooking()) startEdit(); };
+  $('#findCancel').onclick = async () => { if (await findBooking()) openCancelModal($('#findCancel')); };
 
   function mgDone(title, text, buttons) {
     $('#mgDoneTitle').textContent = title; $('#mgDoneText').textContent = text;
