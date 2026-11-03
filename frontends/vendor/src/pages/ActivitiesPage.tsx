@@ -75,6 +75,7 @@ import LocationsManager from '@/components/LocationsManager';
 import { TermsPanel } from '@/components/TermsPanel';
 import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
+import { MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, monthlyPreviewEnabled, setMonthlyEnabled, useMonthlyEnabledMap } from '@/lib/monthlyBilling';
 import { BookModeChoice, TermComboPanel, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
 import { DayPricesEditor, dayPricesFromJson, dayPricesToJson, type DayPrices } from '@/components/DayPricesEditor';
 import { WixFormHandling } from '@/components/WixFormHandling';
@@ -624,8 +625,15 @@ export default function ActivitiesPage() {
   // tab is frozen; on = the activity's own price and capacity are frozen.
   const termsEnabledMap = useTermsEnabledMap();
   const [termsToggle, setTermsToggle] = useState(false);
+  // Is this activity billed monthly (00268)? Parents enrol once, book freely, and are invoiced on the 1st.
+  const monthlyOn = monthlyPreviewEnabled();
+  const monthlyEnabledMap = useMonthlyEnabledMap();
+  const [monthlyToggle, setMonthlyToggle] = useState(false);
   useEffect(() => {
-    if (showDrawer) setTermsToggle(termsOn && editingId ? !!termsEnabledMap[editingId] : false);
+    if (showDrawer) {
+      setTermsToggle(termsOn && editingId ? !!termsEnabledMap[editingId] : false);
+      setMonthlyToggle(monthlyOn && editingId ? !!monthlyEnabledMap[editingId] : false);
+    }
     // Only when the form opens or a different activity is loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDrawer, editingId]);
@@ -1935,6 +1943,15 @@ export default function ActivitiesPage() {
       }
     }
 
+    // The "bill monthly" switch is saved with the activity (activities.monthly_billing_enabled).
+    if (monthlyOn && editingId && !isWixLinked) {
+      try {
+        await setMonthlyEnabled(editingId, monthlyToggle);
+      } catch (e) {
+        cascadeError = `Activity saved, but monthly billing could not be changed: ${(e as { message?: string })?.message ?? 'please try again.'}`;
+      }
+    }
+
     if (cascadeError) {
       setFormError(cascadeError);
       load();
@@ -2694,6 +2711,22 @@ export default function ActivitiesPage() {
                     ? 'Save the activity first, then turn terms on.'
                     : 'A published term is still running. Let it finish before turning terms off.'}
                   onChange={setTermsToggle}
+                />
+              </div>
+            )}
+            {monthlyOn && !isWixLinked && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <ToggleRow
+                  title="Bill this activity monthly"
+                  hint={monthlyToggle
+                    ? `On. Parents enrol once and book any number of sessions at the session price. They are invoiced on the 1st for the month just ended and have until the end of the ${MONTHLY_DUE_DAY}th to pay; until then they can't book more. Leaving takes ${MONTHLY_NOTICE_DAYS} days' notice.`
+                    : 'Parents enrol once and are invoiced monthly, after the fact, instead of paying for each booking. Off keeps pay-per-booking.'}
+                  checked={monthlyToggle}
+                  disabled={!editingId || termsToggle}
+                  disabledReason={!editingId
+                    ? 'Save the activity first, then turn monthly billing on.'
+                    : 'Monthly billing and terms can’t both be on. Turn terms off first.'}
+                  onChange={setMonthlyToggle}
                 />
               </div>
             )}

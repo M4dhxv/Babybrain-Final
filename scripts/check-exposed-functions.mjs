@@ -50,6 +50,9 @@ const ALLOWED = new Set([
   // re-enrolment — each checks the caller. activities_with_live_terms only
   // lists activity ids with a published term, for the Explore filter.
   'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
+  // Monthly billing (00268): each checks the caller itself (the parent's own enrolment, or the provider's manager).
+  'monthly_enrol', 'monthly_give_notice', 'monthly_withdraw_notice', 'monthly_unbilled', 'monthly_settle_invoice',
+  'monthly_provider_enrolments', 'monthly_provider_invoices',
   // Used inside RLS policies, so the calling role must be able to run them
   'user_provider_ids', 'user_manage_provider_ids', 'user_owner_provider_ids',
   // Pure helpers / read-only lookups of already-public data

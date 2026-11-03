@@ -6,6 +6,7 @@ import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
 import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
+import { settleMonthlyInvoice } from '@/lib/monthly-invoice-payment';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   // A session only ever unlocks something for the person who started it.
-  if (kind === 'package' || kind === 'customer_subscription') {
+  if (kind === 'package' || kind === 'customer_subscription' || kind === 'monthly_invoice') {
     if (session.metadata?.user_id !== user.id) {
       return NextResponse.json({ error: 'Not your checkout session' }, { status: 403 });
     }
@@ -110,6 +111,15 @@ export async function POST(request: Request) {
       credits: result.package.credits,
     });
     return NextResponse.json({ applied: true, kind, credits: result.package.credits });
+  }
+
+  if (kind === 'monthly_invoice' && session.metadata?.invoice_id) {
+    // Same settling the webhook does; whichever lands first wins and the other is a no-op.
+    const settled = await settleMonthlyInvoice(admin, session, user.id);
+    if (!settled.ok) {
+      return NextResponse.json({ applied: false, reason: 'try_again' }, { status: 503 });
+    }
+    return NextResponse.json({ applied: true, kind });
   }
 
   if (kind === 'wix_booking' && session.metadata?.booking_ids) {

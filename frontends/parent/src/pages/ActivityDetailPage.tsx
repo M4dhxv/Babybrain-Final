@@ -964,7 +964,10 @@ export default function ActivityDetailPage() {
               nextPrice <= 0 ? (
                 <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">Free</strong></p>
               ) : (
-                <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
+                <>
+                  <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
+                  {activity.monthly_billing_enabled && <p className="mt-1 text-sm font-semibold text-[#68718f]">Billed monthly: pay nothing when you book, and we invoice you on the 1st for the month just ended.</p>}
+                </>
               )
             ) : sessionsLoading ? (
               <div className="h-[30px] w-24 animate-pulse rounded-[6px] bg-[#F4EFF0]" />

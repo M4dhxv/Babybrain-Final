@@ -29,6 +29,7 @@ const SchedulePage = lazyRoute(() => import('./pages/SchedulePage'), 'SchedulePa
 const BookingsPage = lazyRoute(() => import('./pages/BookingsPage'), 'BookingsPage');
 const PackagesPage = lazyRoute(() => import('./pages/PackagesPage'), 'PackagesPage');
 const MakeUpTokensPage = lazyRoute(() => import('./pages/MakeUpTokensPage'), 'MakeUpTokensPage');
+const MonthlyBillingPage = lazyRoute(() => import('./pages/MonthlyBillingPage'), 'MonthlyBillingPage');
 const InsightsPage = lazyRoute(() => import('@/pages/InsightsPage'), 'InsightsPage');
 const MessagesPage = lazyRoute(() => import('./pages/MessagesPage'), 'MessagesPage');
 const NotificationsPage = lazyRoute(() => import('./pages/NotificationsPage'), 'NotificationsPage');
@@ -136,6 +137,7 @@ function App() {
                 <Route path="/bookings" element={<BookingsPage />} />
                 <Route path="/packages" element={<PackagesPage />} />
                 <Route path="/make-up-tokens" element={<MakeUpTokensPage />} />
+                <Route path="/monthly-billing" element={<MonthlyBillingPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/insights" element={<InsightsPage />} />

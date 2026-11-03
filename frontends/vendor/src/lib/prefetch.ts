@@ -25,6 +25,7 @@ const thunks: Record<string, () => Promise<unknown>> = {
   '/bookings': () => import('../pages/BookingsPage'),
   '/packages': () => import('../pages/PackagesPage'),
   '/make-up-tokens': () => import('../pages/MakeUpTokensPage'),
+  '/monthly-billing': () => import('../pages/MonthlyBillingPage'),
   '/messages': () => import('../pages/MessagesPage'),
   '/notifications': () => import('../pages/NotificationsPage'),
   '/insights': () => import('../pages/InsightsPage'),

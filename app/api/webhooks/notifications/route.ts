@@ -51,6 +51,8 @@ function pushActions(type: string): { action: string; title: string }[] | undefi
   if (type === 'suggested_activities') return [{ action: 'open', title: 'See suggestions' }];
   if (type === 'waitlist_available') return [{ action: 'open', title: 'Claim your spot' }];
   if (type === 'term_waitlist_place_open' || type === 'term_waitlist_offer' || type === 'term_next_open') return [{ action: 'open', title: 'Enrol now' }];
+  if (type === 'monthly_invoice_issued' || type === 'monthly_invoice_reminder' || type === 'monthly_invoice_overdue') return [{ action: 'open', title: 'Pay now' }];
+  if (type === 'provider_monthly_invoice_overdue') return [{ action: 'open', title: 'View invoices' }];
   if (type === 'provider_term_waitlist_joined') return [{ action: 'open', title: 'View waitlist' }];
   if (type === 'provider_waitlist_joined') return [{ action: 'open', title: 'View waitlist' }];
   if (type.startsWith('booking_') || type === 'session_rescheduled' || type === 'class_cancelled' || type === 'provider_booking_received') {

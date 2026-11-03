@@ -44,7 +44,7 @@ export type ProviderStatus = 'draft' | 'pending' | 'active' | 'suspended';
 export type SubscriptionPlan = 'free' | 'growth' | 'pro' | 'premium';
 /** Who absorbs Stripe's processing fee on a booking. */
 export type FeePayer = 'platform' | 'vendor';
-export type EarningSource = 'booking' | 'package';
+export type EarningSource = 'booking' | 'package' | 'monthly';
 export type EarningStatus =
   | 'pending'         // in the vendor's Stripe balance, not yet paid out
   | 'in_transit'      // Stripe has a payout on the way
@@ -625,6 +625,8 @@ export type Database = {
           created_at: string;
           updated_at: string;
           package_purchase_id: string | null;
+          monthly_enrolment_id: string | null;
+          monthly_invoice_id: string | null;
           policies_accepted: string[];
           // Manual/guest booking (00026) or, for a multi-child booking
           // (00084), an extra seat — always set to a real name or the
@@ -655,6 +657,8 @@ export type Database = {
           medical_disclosure?: string | null;
           info_response?: string | null;
           package_purchase_id?: string | null;
+          monthly_enrolment_id?: string | null;
+          monthly_invoice_id?: string | null;
           policies_accepted?: string[];
           guest_name?: string | null;
           guest_contact?: string | null;
@@ -1294,6 +1298,7 @@ export type Database = {
           source: EarningSource;
           booking_id: string | null;
           package_purchase_id: string | null;
+          monthly_invoice_id: string | null;
           currency: string;
           gross_cents: number;
           commission_cents: number;
@@ -1315,6 +1320,7 @@ export type Database = {
           source: EarningSource;
           booking_id?: string | null;
           package_purchase_id?: string | null;
+          monthly_invoice_id?: string | null;
           currency?: string;
           gross_cents: number;
           commission_cents?: number;
