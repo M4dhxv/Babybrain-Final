@@ -88,6 +88,9 @@ const GROUP_LABEL: Record<GroupKey, string> = {
   activity: 'Activity', slot: 'Date', location: 'Location', status: 'Status', source: 'Source',
 };
 
+// A term enrolment shares one booking group across all of its sessions, so group_key alone repeats
+// between rows; the session makes a row unique (the RPC groups by both).
+const rowKey = (g: TableRow) => `${g.group_key}|${g.session_id}`;
 const parentName = (g: TableRow) => g.parent_name || g.children[0]?.name || 'Guest';
 const sourceOf = (g: TableRow) => (g.wix_service_type ? 'Wix' : g.is_manual ? 'Manual' : 'BabyBrain');
 const locationOf = (g: TableRow) => g.location || 'No location';
@@ -224,21 +227,30 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
     location: [...new Set(rows.map(locationOf))].sort(),
   }), [rows]);
 
+  // Completed and Cancelled seats are mostly in the past, so asking for either lifts the
+  // "Today onward" default. Waitlisted, Pending and Confirmed stay upcoming: a waitlist spot
+  // for a session that has already started is not a live waitlist.
+  const pastByDefault = filters.status.some((s) => s === 'completed' || s === 'cancelled');
+
   const visible = useMemo(() => {
     const f = filters;
     const q = search.trim().toLowerCase();
     const anyDate = f.date.length > 0 || !!from || !!to;
-    const list = rows.filter((g) => {
+    const list = rows.flatMap((g) => {
       const day = sgDateKey(g.starts_at);
-      return (
+      const ok =
         (!q || parentName(g).toLowerCase().includes(q) || g.children.some((c) => c.name.toLowerCase().includes(q))) &&
-        (!f.status.length || g.children.some((c) => f.status.includes(c.status))) &&
         (!f.activity.length || f.activity.includes(g.activity_title)) &&
         (!f.source.length || f.source.includes(sourceOf(g))) &&
         (!f.location.length || f.location.includes(locationOf(g))) &&
-        (anyDate ? (!f.date.length || f.date.includes(bucketOf(g, today))) : (f.status.length > 0 || bucketOf(g, today) !== 'past')) &&
-        (!from || day >= from) && (!to || day <= to)
-      );
+        (anyDate ? (!f.date.length || f.date.includes(bucketOf(g, today))) : (pastByDefault || bucketOf(g, today) !== 'past')) &&
+        (!from || day >= from) && (!to || day <= to);
+      if (!ok) return [];
+      if (!f.status.length) return [g];
+      // Per seat, not per booking: a row that has one seat in the chosen status must not drag its
+      // other seats along (a Confirmed child under "Cancelled"), so only the matching seats stay.
+      const seats = g.children.filter((c) => f.status.includes(c.status));
+      return seats.length ? [seats.length === g.children.length ? g : { ...g, children: seats }] : [];
     });
     return list.sort((a, b) => {
       for (const s of sorts) {
@@ -247,7 +259,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
       }
       return 0;
     });
-  }, [rows, filters, search, from, to, sorts, today]);
+  }, [rows, filters, pastByDefault, search, from, to, sorts, today]);
 
   const flat = useMemo(() => buildFlat(visible, groupBy, collapsed), [visible, groupBy, collapsed]);
   // Page by booking rows, not by group headers, so a collapsed group never eats the budget.
@@ -282,7 +294,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
   };
   const anyActive = moreCount > 0 || filters.date.length > 0 || filters.status.length > 0 || filters.source.length > 0 || !!search;
 
-  const open = rows.find((r) => r.group_key === openKey) ?? null;
+  const open = rows.find((r) => rowKey(r) === openKey) ?? null;
   const colSpan = 6;
 
   return (
@@ -312,7 +324,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
           </MultiSelectField>
         </div>
         <div className="min-w-0">
-          <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel={filters.status.length ? `Last ${PAST_DAYS} days onward` : 'Today onward'} placeholder="Today onward" aria-label="Quick date range" className="w-full">
+          <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel={pastByDefault ? `Last ${PAST_DAYS} days onward` : 'Today onward'} placeholder="Today onward" aria-label="Quick date range" className="w-full">
             {DATE_OPTS.map((o) => <Opt key={o.value} value={o.value}>{o.label}</Opt>)}
           </MultiSelectField>
         </div>
@@ -478,10 +490,10 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
                     </td>
                   </tr>
                 ) : (
-                  <tr key={it.row.group_key} className="border-t border-gray-100 align-top hover:bg-gray-50/60">
+                  <tr key={rowKey(it.row)} className="border-t border-gray-100 align-top hover:bg-gray-50/60">
                     <td className="px-3 py-2.5" style={{ paddingLeft: 12 + it.depth * 20 }}>
                       <button
-                        onClick={() => setOpenKey(it.row.group_key)}
+                        onClick={() => setOpenKey(rowKey(it.row))}
                         className="max-w-full truncate text-left font-medium text-[#C90044] underline decoration-pink-200 underline-offset-4 hover:decoration-[#FA4D8D]"
                       >
                         {parentName(it.row)}
