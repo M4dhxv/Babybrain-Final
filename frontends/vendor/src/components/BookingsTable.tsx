@@ -179,6 +179,8 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
   const [error, setError] = useState<string | null>(null);
 
   // No date chosen = "today onward" (see `visible`), so the default view stays upcoming.
+  // Picking a status lifts that default: Completed and Cancelled bookings are mostly in
+  // the past, so hiding the past made those filters look empty.
   const [filters, setFilters] = useState<Record<FilterKey, string[]>>(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const [from, setFrom] = useState('');
@@ -234,7 +236,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
         (!f.activity.length || f.activity.includes(g.activity_title)) &&
         (!f.source.length || f.source.includes(sourceOf(g))) &&
         (!f.location.length || f.location.includes(locationOf(g))) &&
-        (anyDate ? (!f.date.length || f.date.includes(bucketOf(g, today))) : bucketOf(g, today) !== 'past') &&
+        (anyDate ? (!f.date.length || f.date.includes(bucketOf(g, today))) : (f.status.length > 0 || bucketOf(g, today) !== 'past')) &&
         (!from || day >= from) && (!to || day <= to)
       );
     });
@@ -287,7 +289,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
     <div ref={rootRef}>
       {/* A fixed grid, not a wrapping flex row, so no control changes position when
           the panel below opens or the More filters label gains a count. */}
-      <div className="grid items-center gap-3 sm:grid-cols-2 lg:grid-cols-[15rem_12rem_11rem_13rem_11rem]">
+      <div className="grid items-center gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,15fr)_minmax(0,12fr)_minmax(0,11fr)_minmax(0,13fr)_minmax(0,11fr)]">
         <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
@@ -310,7 +312,7 @@ export default function BookingsTable({ providerId, canManage }: { providerId: s
           </MultiSelectField>
         </div>
         <div className="min-w-0">
-          <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel="Today onward" placeholder="Today onward" aria-label="Quick date range" className="w-full">
+          <MultiSelectField values={filters.date} onChange={(v) => setFilter('date', v)} allLabel={filters.status.length ? `Last ${PAST_DAYS} days onward` : 'Today onward'} placeholder="Today onward" aria-label="Quick date range" className="w-full">
             {DATE_OPTS.map((o) => <Opt key={o.value} value={o.value}>{o.label}</Opt>)}
           </MultiSelectField>
         </div>
