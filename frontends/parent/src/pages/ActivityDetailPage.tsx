@@ -1,5 +1,5 @@
 import { mapsUrl } from "../lib/share";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   Icon,
@@ -192,7 +192,7 @@ function looksLikeGraphic(el: HTMLImageElement): boolean {
  *  covers a *landscape* logo (see providerLogoUrl in activityMedia.ts and looksLikeGraphic above,
  *  which between them catch a landscape logo whether or not it's the provider's own logo_url —
  *  aspect ratio alone can't tell a landscape logo from a landscape photo). */
-function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: string; priority: boolean; forceWhole?: boolean }) {
+function HeroSlide({ url, alt, priority, forceWhole, onReady }: { url: string; alt: string; priority: boolean; forceWhole?: boolean; onReady?: (url: string) => void }) {
   // Whole-vs-cropped (object-contain+blurred-backdrop vs object-cover) used to
   // be decided from two separate async signals (a naturalWidth/Height ratio
   // measured off the full-size <img> itself, and a `looksLikeGraphic` probe)
@@ -238,10 +238,26 @@ function HeroSlide({ url, alt, priority, forceWhole }: { url: string; alt: strin
       if (!cancelled) setMeta({ ratio: 1, isGraphic: false });
     };
     probe.src = wixThumbUrl(url, 64, 64);
+    // The real photo waits for this probe, so a probe that is merely slow (a
+    // phone on a weak connection pulling a full-size original, since only Wix
+    // images get a 64px rendition) must not hold the photo back for as long as
+    // the probe takes. Past 2.5s, stop waiting and show the photo whole
+    // (object-contain), which can never crop a logo, the safe answer when unsure.
+    const giveUp = window.setTimeout(() => {
+      if (!cancelled) setMeta((m) => m ?? { ratio: 1, isGraphic: false });
+    }, 2500);
     return () => {
       cancelled = true;
+      window.clearTimeout(giveUp);
     };
   }, [url, forceWhole]);
+
+  // Tells the carousel this slide is on screen for real (photo loaded, or it
+  // has settled on the brand mark), so its auto-advance timer only starts then.
+  const settled = url === FALLBACK_LOGO_URL || broken || shownSrc !== null;
+  useEffect(() => {
+    if (settled) onReady?.(url);
+  }, [settled, url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (url === FALLBACK_LOGO_URL || broken) {
     return <img src={FALLBACK_LOGO_URL} alt={alt} width={860} height={305} decoding="async" loading="eager" className="h-[305px] w-full shrink-0 bg-[#F3EDF0] object-contain p-12" />;
@@ -297,6 +313,11 @@ const HeroCarousel = memo(function HeroCarousel({
 }) {
   const [at, setAt] = useState(0);
   const [paused, setPaused] = useState(false);
+  // Slides whose photo has actually loaded. The pill's timer used to run from
+  // the moment the page opened, so on a slow connection it kept ticking (and
+  // flipping slides) while the photo was still a blurred placeholder.
+  const [ready, setReady] = useState<ReadonlySet<string>>(() => new Set());
+  const markReady = useCallback((u: string) => setReady((p) => (p.has(u) ? p : new Set(p).add(u))), []);
   const touchStartX = useRef<number | null>(null);
   const count = images.length;
   // `images` is a fresh array every parent render; key effects on content.
@@ -313,7 +334,7 @@ const HeroCarousel = memo(function HeroCarousel({
   // its 3s animation ending is what advances the slide, so the fill and the
   // photo change can't drift apart, and a hover/touch pause (which pauses
   // the animation) holds both. Keyed by slide, so a manual step restarts it.
-  const autoplaying = count > 1 && ticks.current < count;
+  const autoplaying = count > 1 && ticks.current < count && ready.has(images[at % count]);
   const advance = () => {
     ticks.current += 1;
     setAt((i) => (i + 1) % count);
@@ -356,7 +377,7 @@ const HeroCarousel = memo(function HeroCarousel({
         style={{ transform: `translate3d(-${(at % count) * 100}%, 0, 0)` }}
       >
         {images.map((url, i) => (
-          <HeroSlide key={url} url={url} alt={i === 0 ? title : ""} priority={i === 0} forceWhole={url === logoUrl} />
+          <HeroSlide key={url} url={url} alt={i === 0 ? title : ""} priority={i === 0} forceWhole={url === logoUrl} onReady={markReady} />
         ))}
       </div>
       {count > 1 && (
@@ -639,7 +660,9 @@ export default function ActivityDetailPage() {
     { image_urls: activity.image_urls, image_source: activity.image_source, cover_image_url: activity.cover_image_url },
     activity.provider_contact
   );
-  const images = providerImages.length ? providerImages : [FALLBACK_LOGO_URL];
+  // De-duplicated: a vendor's logo is often also in their gallery, and two
+  // slides with the same URL share a React key, which mis-renders the strip.
+  const images = providerImages.length ? [...new Set(providerImages)] : [FALLBACK_LOGO_URL];
   // Whichever of the images above is the vendor's own logo (if any made the
   // cut) — never cropped in the hero, no matter its shape. See
   // providerLogoUrl in activityMedia.ts for why this is a URL comparison

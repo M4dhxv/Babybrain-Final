@@ -420,9 +420,16 @@ export function useActivities(params: ActivityQuery = {}) {
       // A background refresh only re-reads the first page. If the parent had
       // already loaded more ("Load more"), keep those further rows rather than
       // collapsing the list back to one page on return from an activity.
+      // Read what is held NOW, not what was cached when this refresh started: a
+      // "Load more" that finished while this request was in flight has already
+      // appended its rows, and a stale snapshot here would drop them again
+      // (the list snapping back to 50 of 62 with the button gone).
+      const nowHeld = cacheGet<Page>(key)?.data.rows ?? [];
+      const onScreen = latest.current.key === key ? latest.current.view?.rows ?? [] : [];
+      const held = [nowHeld, onScreen, cached?.data.rows ?? []].reduce((a, b) => (b.length > a.length ? b : a));
       const have = new Set(mapped.map((r) => r.id));
-      const kept = cached && cached.data.rows.length > mapped.length
-        ? cached.data.rows.slice(mapped.length).filter((r) => !have.has(r.id))
+      const kept = held.length > mapped.length
+        ? held.slice(mapped.length).filter((r) => !have.has(r.id))
         : [];
       const merged = kept.length ? [...mapped, ...kept] : mapped;
       const page = { rows: merged, total: Math.max(t, merged.length) };
@@ -438,9 +445,11 @@ export function useActivities(params: ActivityQuery = {}) {
   }, [key, attempt]);
 
   const loadingMoreRef = useRef(false);
-  const loadMore = useCallback(async () => {
+  /** Resolves true only when rows were really fetched and added, so the caller
+   *  can tell a finished load from one that failed or was skipped. */
+  const loadMore = useCallback(async (): Promise<boolean> => {
     const { key: forKey, view: current } = latest.current;
-    if (loadingMoreRef.current || !current) return;
+    if (loadingMoreRef.current || !current) return false;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const { data, error: rpcError } = await withRetry((signal) =>
@@ -454,23 +463,29 @@ export function useActivities(params: ActivityQuery = {}) {
     setLoadingMore(false);
     // The parent changed filters while this was in flight: it belongs to a
     // query that's no longer on screen.
-    if (latest.current.key !== forKey) return;
+    if (latest.current.key !== forKey) return false;
     if (rpcError) {
       reportCatalogFailure("load-more", rpcError);
       setFailedKey(forKey);
-      return;
+      return false;
     }
     setFailedKey(null);
     const batch = (data ?? []) as SearchActivitiesRow[];
     const more = batch.map((r) => toLiveActivity(r, params.regions));
-    const have = new Set(current.rows.map((r) => r.id));
-    const rows = [...current.rows, ...more.filter((r) => !have.has(r.id))];
+    // Append to what is held now: a background refresh may have replaced the
+    // page while this request was in flight.
+    const base = latest.current.key === forKey && latest.current.view && latest.current.view.rows.length > current.rows.length
+      ? latest.current.view
+      : current;
+    const have = new Set(base.rows.map((r) => r.id));
+    const rows = [...base.rows, ...more.filter((r) => !have.has(r.id))];
     // An empty batch means the catalogue shrank since the count was taken:
     // trust what came back so "Load more" can't keep offering nothing.
     const rawTotal = Number(batch[0]?.total_count ?? current.total);
     const page = { rows, total: more.length === 0 ? rows.length : Math.max(rawTotal, rows.length) };
     cacheSet(forKey, page);
     setFetched({ key: forKey, page });
+    return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 

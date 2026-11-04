@@ -1225,7 +1225,7 @@ export default function ExplorePage() {
                         </div>
                       ))}
                     </div>
-                    {revealCount < total && (
+                    {(revealCount < activities.length || hasMore) && (
                       <div className="mt-6 flex flex-col items-center gap-2">
                         {/* Count + progress bar, so a parent scrolling through a
                             long list of activities can see how much is left
@@ -1251,7 +1251,10 @@ export default function ExplorePage() {
                               return;
                             }
                             if (hasMore) {
-                              loadMore().then(() => setRevealCount((n) => n + REVEAL_STEP));
+                              // Only reveal once the rows really arrived. A failed
+                              // or skipped load used to bump the count anyway, which
+                              // hid the button while the list stayed short.
+                              loadMore().then((ok) => { if (ok) setRevealCount((n) => n + REVEAL_STEP); });
                             }
                           }}
                           disabled={loadingMore}
