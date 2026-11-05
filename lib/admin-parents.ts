@@ -227,9 +227,17 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
   type Agg = { bookings: number; upcoming: number; spend: number; last: number | null };
   const aggBy = new Map<string, Agg>();
   for (const b of bookings) {
-    // Cancelled and waitlisted seats aren't bookings the parent actually holds.
-    if (b.status === 'cancelled' || b.status === 'waitlisted') continue;
+    // Waitlisted seats were never paid for, so they count for nothing.
+    if (b.status === 'waitlisted') continue;
     const a = aggBy.get(b.user_id) ?? { bookings: 0, upcoming: 0, spend: 0, last: null };
+    // A cancelled seat isn't a booking the parent holds, but what they paid for it is still money
+    // spent: BabyBrain gives a credit or make-up token back, never the card payment. So it counts
+    // towards Spend and nowhere else (not Bookings, Upcoming or Last booking).
+    if (b.status === 'cancelled') {
+      if (b.payment_status === 'paid' && !testPaidIds.has(b.id)) a.spend += Number(b.amount ?? 0);
+      aggBy.set(b.user_id, a);
+      continue;
+    }
     a.bookings += 1;
     if (future.has(b.session_id) && b.status !== 'completed') a.upcoming += 1;
     if (b.payment_status === 'paid' && !testPaidIds.has(b.id)) a.spend += Number(b.amount ?? 0);
