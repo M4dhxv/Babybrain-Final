@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, C, Skeleton, adminFetch, card, input, sgClock, sgDay, sgdDollars, supabase, tabBtn, td, th, toast, type Tone } from '../_lib/core';
 import { MultiSelect, Select } from '../_lib/multiselect';
 import type { ParentFilters } from './parents';
+import CreateBookingModal from './createBooking';
 
 // ---- Bookings: every booking, filterable, with a drop-down of full details ----
 
@@ -84,6 +85,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
   const [exporting, setExporting] = useState(false);
   const [more, setMore] = useState(() => { const u = filtersFromUrl(); return ADVANCED.some((k) => u[k] && u[k] !== NO_FILTERS[k]); });
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const cacheRef = useRef(new Map<string, BookingsPage>());
   const freshRef = useRef(false);
 
@@ -253,6 +255,7 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
           {busy && data && <span style={{ color: C.blue, fontWeight: 800, marginLeft: 8 }}>● Updating…</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={tabBtn(true)} onClick={() => setCreating(true)}>+ Create booking</button>
           <button type="button" style={tabBtn(false)} onClick={refresh} disabled={busy} title="Reload the latest data">{busy ? 'Refreshing…' : 'Refresh'}</button>
           <button type="button" style={tabBtn(false)} onClick={exportCsv} disabled={exporting || !data?.total}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
         </div>
@@ -364,6 +367,8 @@ export default function BookingsView({ onOpenParents }: { onOpenParents: (f: Par
           </table>
         </div>
       )}
+
+      {creating && <CreateBookingModal onClose={() => setCreating(false)} onCreated={refresh} />}
 
       {data && data.pages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 14 }}>
