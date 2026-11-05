@@ -239,10 +239,12 @@ await ok('a cancelled seat is not billed', async () => {
 
 // ---- reminder, overdue, paying
 await ok('two days before the deadline a reminder goes out, once', async () => {
-  await db.query(`update monthly_invoices set due_at = now() + interval '30 hours' where id = $1`, [INV.id]);
+  // Issued on the 4th or 5th (a late catch-up run) the reminder already fired with the invoice, so start clean.
+  await db.query(`update monthly_invoices set due_at = now() + interval '30 hours', reminder_sent_at = null where id = $1`, [INV.id]);
+  const before = await notes(PA, 'monthly_invoice_reminder');
   const r1 = await daily(); const r2 = await daily();
   eq(r1.reminded, 1, 'first run'); eq(r2.reminded, 0, 'second run');
-  eq(await notes(PA, 'monthly_invoice_reminder'), 1, 'notifications');
+  eq(await notes(PA, 'monthly_invoice_reminder'), before + 1, 'one new reminder');
 });
 await ok('before the deadline the parent can still book', async () => { await book(PA, SFUT); });
 await ok('past the deadline the parent and the vendor are told, once', async () => {
