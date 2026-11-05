@@ -220,6 +220,8 @@ export type Database = {
           info_request_prompt_2?: string | null;
           // 00266: optional limits on tickets per booking; absent until that migration is applied.
           min_tickets_per_booking?: number | null;
+          /** Parents enrol once and are invoiced monthly in arrears (00268). */
+          monthly_billing_enabled?: boolean;
           max_tickets_per_booking?: number | null;
           what_to_bring: string | null;
           // 00258: weekday prices; absent until that migration is applied.

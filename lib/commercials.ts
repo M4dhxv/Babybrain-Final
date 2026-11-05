@@ -188,7 +188,7 @@ export function deriveEarning(
   fallbackGrossCents: number,
   facts: ChargeFacts,
   terms: Terms,
-  source: 'booking' | 'package'
+  source: 'booking' | 'package' | 'monthly'
 ) {
   const gross = facts.grossCents ?? fallbackGrossCents;
   const effectiveTerms =
@@ -215,9 +215,10 @@ export function deriveEarning(
 
 export interface SaleInput {
   providerId: string;
-  source: 'booking' | 'package';
+  source: 'booking' | 'package' | 'monthly';
   bookingId?: string | null;
   packagePurchaseId?: string | null;
+  monthlyInvoiceId?: string | null;
   /** Price as the app knows it; Stripe's figure wins when available. */
   grossCents: number;
   paymentIntentId: string | null;
@@ -261,6 +262,7 @@ export async function recordSale(
       source: input.source,
       booking_id: input.bookingId ?? null,
       package_purchase_id: input.packagePurchaseId ?? null,
+      monthly_invoice_id: input.monthlyInvoiceId ?? null,
       currency: facts.currency ?? 'sgd',
       gross_cents: gross,
       commission_cents: commissionCents,
@@ -312,7 +314,7 @@ export async function healEarningsFromStripe(admin: SupabaseClient<Database>, li
       const facts = await chargeFacts(row.stripe_payment_intent as string);
       if (facts.grossCents == null) continue; // Stripe still can't tell us — leave it
       const terms = await getTerms(admin, row.provider_id);
-      const d = deriveEarning(row.gross_cents, facts, terms, row.source as 'booking' | 'package');
+      const d = deriveEarning(row.gross_cents, facts, terms, row.source as 'booking' | 'package' | 'monthly');
       const unchanged =
         d.gross === row.gross_cents &&
         d.commissionCents === row.commission_cents &&

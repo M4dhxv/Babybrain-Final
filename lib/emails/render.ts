@@ -413,6 +413,64 @@ const T: Record<string, Template> = {
       sign);
   },
 
+  // ---- Monthly billing (00268). Each is fired by monthly_billing_daily() or a monthly_* function. ----
+  // Invoice issued on the 1st for last month's sessions.
+  monthly_invoice_issued: (d, ctx) => {
+    const act = str(d, 'activity_name') ?? 'your class';
+    return wrap(ctx, `Your ${str(d, 'month') ?? 'monthly'} invoice for ${act} is ready 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`Your invoice for ${bold(act)}${str(d, 'provider_name') ? ` with ${bold(str(d, 'provider_name')!)}` : ''} is ready: ${bold(str(d, 'amount') ?? '')} for ${esc(str(d, 'sessions') ?? '')} ${Number(d.sessions) === 1 ? 'session' : 'sessions'} in ${esc(str(d, 'month') ?? 'last month')}.`) +
+      p(`Please pay by the end of ${bold(str(d, 'due_date') ?? 'the 5th')}. After that you won’t be able to book more sessions until it is paid.`) +
+      cta(`${ctx.appUrl}${str(d, 'url') ?? '/profile?tab=monthly'}`, 'Pay now') +
+      sign);
+  },
+
+  monthly_invoice_reminder: (d, ctx) => {
+    const act = str(d, 'activity_name') ?? 'your class';
+    return wrap(ctx, `Payment due soon for ${act} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`A quick reminder that your ${esc(str(d, 'month') ?? '')} invoice of ${bold(str(d, 'amount') ?? '')} for ${bold(act)} is due by the end of ${bold(str(d, 'due_date') ?? 'the 5th')}.`) +
+      p('After that, you won’t be able to book more sessions until it is paid.') +
+      cta(`${ctx.appUrl}${str(d, 'url') ?? '/profile?tab=monthly'}`, 'Pay now') +
+      sign);
+  },
+
+  monthly_invoice_overdue: (d, ctx) => {
+    const act = str(d, 'activity_name') ?? 'your class';
+    return wrap(ctx, `Your payment for ${act} is overdue 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`Your ${esc(str(d, 'month') ?? '')} invoice of ${bold(str(d, 'amount') ?? '')} for ${bold(act)} was due on the 5th and hasn’t been paid yet.`) +
+      p('Until it is paid you can’t book more sessions in this class. Sessions you have already booked are not affected.') +
+      cta(`${ctx.appUrl}${str(d, 'url') ?? '/profile?tab=monthly'}`, 'Pay now') +
+      p('If you have already paid, or there is a problem, just reply to this email.') +
+      sign);
+  },
+
+  monthly_invoice_paid: (d, ctx) =>
+    wrap(ctx, 'Payment received — thank you 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Thank you! We have received ${bold(str(d, 'amount') ?? 'your payment')} for ${bold(str(d, 'activity_name') ?? 'your class')} (${esc(str(d, 'month') ?? '')}).`) +
+      p(`You can see all your invoices ${link(ctx, str(d, 'url') ?? '/profile?tab=monthly', 'here')}.`) +
+      sign),
+
+  monthly_notice_given: (d, ctx) =>
+    wrap(ctx, 'We have your notice 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`We have your notice for ${bold(str(d, 'activity_name') ?? 'your class')}. Your last day is ${bold(str(d, 'last_day') ?? '')}.`) +
+      p('Sessions up to then are billed as usual, and your final invoice arrives on the 1st of next month.') +
+      (Number(d.cancelled_sessions) > 0
+        ? p(`${esc(String(d.cancelled_sessions))} ${Number(d.cancelled_sessions) === 1 ? 'session' : 'sessions'} you had booked after that date ${Number(d.cancelled_sessions) === 1 ? 'was' : 'were'} cancelled, at no charge.`)
+        : '') +
+      p(`Changed your mind? You can take your notice back any time before then, from ${link(ctx, str(d, 'url') ?? '/profile?tab=monthly', 'your account')}.`) +
+      sign),
+
+  monthly_enrolment_ended: (d, ctx) =>
+    wrap(ctx, `Your enrolment in ${str(d, 'activity_name') ?? 'your class'} has ended 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`Thank you for being part of ${bold(str(d, 'activity_name') ?? 'the class')}. Your enrolment has now ended.`) +
+      p('Any sessions you attended this month are on your final invoice, issued on the 1st.') +
+      sign),
+
   // The provider took this family off a term waitlist (00261).
   term_waitlist_removed: (d, ctx) => {
     const term = str(d, 'term_name') ?? 'the term';
@@ -948,6 +1006,22 @@ const T: Record<string, Template> = {
       p(`If you can take more, raise the group's places on ${link(ctx, str(d, 'url') ?? '/vendor', 'your term')}: everyone waiting is told straight away, and the first family to enrol gets the place. You can also offer one family a place from the term's waitlist, even when the group is full.`) +
       sign);
   },
+
+  // ---- Monthly billing, vendor side (00268) ----
+  provider_monthly_invoice_overdue: (d, ctx) =>
+    wrap(ctx, 'A monthly invoice is overdue 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'parent_name') ?? 'A parent')} hasn’t paid their ${esc(str(d, 'month') ?? '')} invoice of ${bold(str(d, 'amount') ?? '')} for ${bold(str(d, 'activity_name') ?? 'your class')}. It was due on the 5th.`) +
+      p('They can’t book more sessions in this class until it is paid. Sessions they already booked are not affected.') +
+      p(`You can see who owes what, and mark an invoice as paid if they settled it another way, on ${link(ctx, str(d, 'url') ?? '/vendor', 'your Monthly billing page')}.`) +
+      sign),
+
+  provider_monthly_notice_given: (d, ctx) =>
+    wrap(ctx, 'A parent is leaving a monthly class 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'parent_name') ?? 'A parent')} has given 14 days’ notice for ${bold(str(d, 'activity_name') ?? 'your class')}. Their last day is ${bold(str(d, 'last_day') ?? '')}.`) +
+      p(`Sessions up to then are billed as usual. See ${link(ctx, str(d, 'url') ?? '/vendor', 'Monthly billing')} for the details.`) +
+      sign),
 
   provider_add_activities: (d, ctx) =>
     wrap(ctx, 'Time to add to your schedule 👶🧠',
