@@ -105,9 +105,9 @@ export default function MonthlyBillingPage() {
         <div className="text-center sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Monthly billing</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Families in your monthly activities book as many sessions as they like and are invoiced on the 1st for the month just ended,
+            Families who choose monthly billing on one of your activities book as many sessions as they like and are invoiced on the 1st for the month just ended,
             to pay by the {MONTHLY_DUE_DAY}th. A family that hasn't paid by then can't book more sessions until they do. Leaving takes {MONTHLY_NOTICE_DAYS} days' notice.
-            Turn monthly billing on for an activity in Activities → edit.
+            Everyone else still pays per booking. Offer monthly billing on an activity in Activities → edit.
           </p>
         </div>
       </div>

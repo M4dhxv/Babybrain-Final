@@ -2717,10 +2717,10 @@ export default function ActivitiesPage() {
             {monthlyOn && !isWixLinked && (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <ToggleRow
-                  title="Bill this activity monthly"
+                  title="Offer monthly billing"
                   hint={monthlyToggle
-                    ? `On. Parents enrol once and book any number of sessions at the session price. They are invoiced on the 1st for the month just ended and have until the end of the ${MONTHLY_DUE_DAY}th to pay; until then they can't book more. Leaving takes ${MONTHLY_NOTICE_DAYS} days' notice.`
-                    : 'Parents enrol once and are invoiced monthly, after the fact, instead of paying for each booking. Off keeps pay-per-booking.'}
+                    ? `On. Parents choose when they book: pay per booking as usual, or enrol in monthly billing. Monthly parents book any number of sessions at the session price, are invoiced on the 1st for the month just ended, and have until the end of the ${MONTHLY_DUE_DAY}th to pay; until then they can't book more. Leaving takes ${MONTHLY_NOTICE_DAYS} days' notice.`
+                    : 'Let parents choose monthly billing instead of paying per booking. Everyone else still pays per booking, with packs and make-up tokens as usual.'}
                   checked={monthlyToggle}
                   disabled={!editingId || termsToggle}
                   disabledReason={!editingId

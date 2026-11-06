@@ -966,7 +966,7 @@ export default function ActivityDetailPage() {
               ) : (
                 <>
                   <p className="bb-reveal"><strong className="text-[30px] text-baby-lilac">${nextPrice}</strong> <span className="font-bold">/ session</span></p>
-                  {activity.monthly_billing_enabled && <p className="mt-1 text-sm font-semibold text-[#68718f]">Billed monthly: pay nothing when you book, and we invoice you on the 1st for the month just ended.</p>}
+                  {activity.monthly_billing_enabled && <p className="mt-1 text-sm font-semibold text-[#68718f]">Monthly billing available: pay per booking as usual, or book now and be invoiced on the 1st for the month just ended.</p>}
                 </>
               )
             ) : sessionsLoading ? (
