@@ -59,7 +59,7 @@ const FILTER_ARGS: Record<string, Check> = {
 /** Extra arguments only search_activities takes (ordering and paging). */
 const SEARCH_ARGS: Record<string, Check> = {
   p_sort: (v) => typeof v === 'string' && SORTS.has(v),
-  p_limit: int(1, 100),
+  p_limit: int(1, 500),
   p_offset: int(0, 5000),
   p_region_order: slugs(12),
 };

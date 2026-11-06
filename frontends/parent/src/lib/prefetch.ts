@@ -35,7 +35,9 @@ export function warmDashboard(): void {
 
 /** Warm Explore's first page of data (the chunk is warmed separately). Safe to call repeatedly: it skips when the cache is fresh. */
 export function warmExploreData(): void {
-  void import("./useActivities").then((m) => m.warmExploreList()).catch(() => {});
+  void Promise.all([import("./useActivities"), import("./exploreCatalogue")])
+    .then(([a, c]) => c.warmExploreCatalogue(a.EXPLORE_DEFAULT_SORT))
+    .catch(() => {});
 }
 
 let warmingActivity = false;
