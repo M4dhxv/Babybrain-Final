@@ -44,6 +44,10 @@ function canonical(args: Record<string, unknown>): string {
  */
 const VERSION_FRESH_MS = 3000;
 const VERSION_TIMEOUT_MS = 1500;
+/** How long a catalogue request will wait for the stamp before going ahead with
+ *  the last one it knew (or none). The stamp request keeps running and is used by
+ *  the next request, so a slow stamp can never hold Explore up. */
+const VERSION_WAIT_MS = 500;
 let version: { v: string | null; at: number } | null = null;
 let versionInFlight: Promise<string | null> | null = null;
 
@@ -143,7 +147,10 @@ async function catalogRpcNow(
     // the 8s deadline and then showed "Couldn't load", since a timeout isn't
     // retried. The route de-duplicates identical queries and is edge-cached, so
     // the second copy costs the database nothing.
-    const v = await catalogueVersion();
+    const v = await Promise.race([
+      catalogueVersion(),
+      new Promise<string | null>((r) => setTimeout(() => r(version?.v ?? null), VERSION_WAIT_MS)),
+    ]);
     const res = await timeoutFetch(
       `${API_BASE}/api/explore/${fn}?a=${encodeURIComponent(canonical(args))}${v ? `&v=${v}` : ""}`,
       { signal },

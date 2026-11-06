@@ -115,6 +115,7 @@ export type SearchRow = {
   id: string;
   slug: string;
   title: string;
+  category_slug?: string | null;
   category_name: string;
   // Added in 00153 — optional so the app still works if it deploys first.
   category_2_name?: string | null;
@@ -183,7 +184,7 @@ export function cardWhen(r: SearchRow): { date: string; time: string } {
   return { date: sgDate(r.next_session_at), time: sgTime(r.next_session_at) };
 }
 
-function toLiveActivity(r: SearchRow, regions?: string[]): LiveActivity {
+export function toLiveActivity(r: SearchRow, regions?: string[]): LiveActivity {
   const venues: ActivityVenue[] = (r.venues ?? []).map((v) => ({
     id: v.id,
     name: v.name ?? "",
@@ -265,19 +266,10 @@ const FRESH_MS = 60_000;
  *  not stop Postgres running a query it already started. The first load of
  *  the page is never delayed. */
 const SETTLE_MS = 250;
-/** The class list is what a parent came for; the map pins and per-option
- *  counts wait behind it so the three queries don't all hit the database in
- *  the same instant. */
-const PINS_AFTER_MS = 500;
-const FACETS_AFTER_MS = 300;
-
 const DEFAULT_PAGE_SIZE = 24;
-/** Rows in Explore's first page. Shared with `warmExploreList` so the warmed
- *  entry lands under exactly the key Explore reads. */
-export const EXPLORE_PAGE_SIZE = 50;
 /** How Explore orders results until the parent picks something else. The page,
- *  its "Reset" button, the URL sync and `warmExploreList` all read this, so the
- *  warmed cache entry always lands under the key Explore itself looks up. */
+ *  its "Reset" button, the URL sync and `warmExploreCatalogue` all read this, so
+ *  the warmed cache entry always lands under the key Explore itself looks up. */
 export const EXPLORE_DEFAULT_SORT = "soonest" as const;
 /** Rows pulled per background fetch once the caller has revealed everything
  *  already in memory — a real network round trip, so it's sized like a page
@@ -323,50 +315,6 @@ type Page = { rows: LiveActivity[]; total: number };
  *  - A superseded request is aborted, so quick filter changes don't pile up
  *    work in the database, and a late answer can't overwrite a newer one.
  */
-/** A quiet background refresh of an entry newer than this is skipped. */
-const WARM_SKIP_MS = 5 * 60_000;
-let warmingList = false;
-
-/**
- * Pre-load Explore's default (unfiltered, starting soonest) first page into the
- * query cache, so opening Explore after hours away — when the persisted copy has
- * aged out — shows real cards at once instead of a skeleton plus a database round trip.
- * Chunks were already warmed on idle; this warms the data too.
- *
- * Deliberately gentle, because the database is small: ONE request, through the
- * same limited, edge-cached catalogue path Explore itself uses (so it never adds
- * to the in-flight cap), only when the cache is empty or older than 5 minutes,
- * and never on a data-saver connection or a hidden tab. A failure is silent;
- * Explore simply loads as it always did.
- */
-export async function warmExploreList(): Promise<void> {
-  if (warmingList || typeof document === "undefined" || document.visibilityState !== "visible") return;
-  const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
-  if (conn?.saveData) return;
-  const args = searchArgs({ sort: EXPLORE_DEFAULT_SORT });
-  const key = "activities:" + JSON.stringify({ ...args, limit: EXPLORE_PAGE_SIZE });
-  const cached = cacheGet<Page>(key);
-  if (cached && cached.age < WARM_SKIP_MS) return;
-  warmingList = true;
-  try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 12_000);
-    const { data, error } = await catalogRpc(
-      "search_activities",
-      { ...args, p_limit: EXPLORE_PAGE_SIZE, p_offset: 0 },
-      ctl.signal,
-    ).finally(() => clearTimeout(timer));
-    if (error || !data) return;
-    const rows = data as SearchActivitiesRow[];
-    const mapped = rows.map((r) => toLiveActivity(r));
-    const total = Math.max(Number(rows[0]?.total_count ?? 0), mapped.length);
-    cacheSet(key, { rows: mapped, total });
-  } catch {
-    /* best effort */
-  } finally {
-    warmingList = false;
-  }
-}
 
 export function useActivities(params: ActivityQuery = {}) {
   const args = searchArgs(params);
@@ -492,103 +440,9 @@ export function useActivities(params: ActivityQuery = {}) {
   return { activities, total, loading, loadingMore, hasMore: activities.length < total, loadMore, error, reload };
 }
 
-/**
- * Every activity matching the current filters (unpaginated) — feeds the
- * Explore map, which needs every pin regardless of how many cards have
- * loaded. Calls `matching_activities` directly (the shared core
- * `search_activities` also wraps), so it shares the exact filter semantics
- * without a second copy of them.
- */
-export function useActivityPins(params: ActivityQuery = {}, enabled = true) {
-  // Filters only: sort and page size don't change which pins exist, so they
-  // stay out of the key (changing the sort used to refetch every pin).
-  const args = filterArgs(params);
-  const key = "pins:" + JSON.stringify(args);
-  const cachedNow = cacheGet<LiveActivity[]>(key);
-  const [fetched, setFetched] = useState<{ key: string; rows: LiveActivity[] } | null>(null);
-  const [failedKey, setFailedKey] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-
-  // Pins from another filter are never shown for this one.
-  const rows = fetched?.key === key ? fetched.rows : cachedNow?.data ?? null;
-  const error = failedKey === key;
-
-  useEffect(() => {
-    // The caller already holds every match (see ExplorePage): nothing to fetch.
-    if (!enabled) return;
-    const ctl = new AbortController();
-    const cached = cacheGet<LiveActivity[]>(key);
-    if (cached && cached.age < FRESH_MS && attempt === 0) return;
-    setFailedKey(null);
-    const run = async () => {
-      const { data, error: rpcError } = await withCooldown(
-        (signal) => catalogRpc("matching_activities", args, signal),
-        { signal: ctl.signal },
-      );
-      if (ctl.signal.aborted) return;
-      if (rpcError) {
-        reportCatalogFailure("pins", rpcError);
-        setFailedKey(key); // never cached
-        return;
-      }
-      const mapped = ((data ?? []) as SearchRow[]).map((r) => toLiveActivity(r, params.regions));
-      cacheSet(key, mapped);
-      setFetched({ key, rows: mapped });
-    };
-    const timer = setTimeout(run, PINS_AFTER_MS);
-    return () => {
-      clearTimeout(timer);
-      ctl.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, attempt, enabled]);
-
-  if (!enabled) return { activities: [] as LiveActivity[], loading: false, error: false, reload };
-  return { activities: rows ?? [], loading: !rows && !error, error, reload };
-}
-
 export interface FacetCounts {
   type: Record<string, number>;
   age: Record<string, number>;
   area: Record<string, number>;
 }
 
-/**
- * Per-option counts for the mobile filter sheets — "how many would match if
- * I also picked this" for each type/age/area option, each computed with
- * that one facet's own filter left out (search_activity_facets). Only
- * fetched while `enabled` (a sheet is actually open), same gating as before.
- */
-export function useFacetCounts(params: ActivityQuery, enabled: boolean): FacetCounts | null {
-  const [result, setResult] = useState<{ key: string; counts: FacetCounts } | null>(null);
-  const key = enabled ? "facets:" + JSON.stringify(filterArgs(params)) : null;
-
-  useEffect(() => {
-    if (!key) return;
-    const ctl = new AbortController();
-    const run = async () => {
-      const { data, error: rpcError } = await withRetry(
-        (signal) => catalogRpc("search_activity_facets", filterArgs(params), signal),
-        { signal: ctl.signal },
-      );
-      if (ctl.signal.aborted || rpcError) return;
-      const rows = (data ?? []) as { facet: string; key: string; cnt: number }[];
-      const next: FacetCounts = { type: {}, age: {}, area: {} };
-      for (const row of rows) {
-        const bucket = row.facet === "type" ? next.type : row.facet === "age" ? next.age : next.area;
-        bucket[row.key] = Number(row.cnt);
-      }
-      setResult({ key, counts: next });
-    };
-    const timer = setTimeout(run, FACETS_AFTER_MS);
-    return () => {
-      clearTimeout(timer);
-      ctl.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
-  // Counts computed for other filters would mislabel these options.
-  return key && result?.key === key ? result.counts : null;
-}

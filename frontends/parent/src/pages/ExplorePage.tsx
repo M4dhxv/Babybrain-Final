@@ -13,7 +13,8 @@ import {
 import { SelectField, Opt } from "../components/SelectField";
 import { ActivityRowListSkeleton } from "../components/Skeletons";
 import { AGE_BANDS, categories } from "../data/content";
-import { useActivities, useActivityPins, useFacetCounts, EXPLORE_PAGE_SIZE, EXPLORE_DEFAULT_SORT } from "../lib/useActivities";
+import { EXPLORE_DEFAULT_SORT } from "../lib/useActivities";
+import { useExploreCatalogue } from "../lib/exploreCatalogue";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRestore, markBackNavigation } from "../lib/nav";
@@ -512,10 +513,6 @@ export default function ExplorePage() {
   // the next-closest. So with an area pick we rank by area before distance.
   const [herePickedArea, setHerePickedArea] = useState<string | null>(null);
   const query = getParam("q");
-  // First page size for cards — the map and facet counts aren't paginated
-  // (see useActivityPins/useFacetCounts), only the card list is.
-  const PAGE = EXPLORE_PAGE_SIZE;
-
   const [minH, maxH] = timeRange;
   const priceActive = maxPrice < PRICE_MAX;
   const timeActive = minH > 0 || maxH < 23;
@@ -539,24 +536,17 @@ export default function ExplorePage() {
   const ageMinMonths = selectedAgeBands.length ? Math.min(...selectedAgeBands.map((b) => b.min)) : null;
   const ageMaxMonths = selectedAgeBands.length ? Math.max(...selectedAgeBands.map((b) => b.max)) : null;
 
-  // Filtering, pagination and facet counts all happen server-side now (see
-  // search_activities / matching_activities / search_activity_facets,
-  // migration 00166) — this hook only ever holds the pages actually loaded,
-  // not the whole catalog.
-  const filterParams = {
+  // One snapshot of the catalogue per *server-side* question (search text, date,
+  // time of day, sort and location); Type, Age, Area and Price narrow it on the
+  // phone with no request at all (see lib/exploreCatalogue.ts). The list, the
+  // map pins and the filter-sheet counts all come from that one snapshot.
+  const serverQuery = {
     query: query || null,
-    categories: categories_,
-    ageMinMonths,
-    ageMaxMonths,
-    regions,
-    maxPrice: debouncedPriceActive ? debouncedMaxPrice : null,
     dateFrom: dateFrom || null,
     dateTo: dateTo || null,
     timeMin: debouncedTimeActive ? debouncedMinH : null,
     timeMax: debouncedTimeActive ? debouncedMaxH : null,
-    // Ordering happens in Postgres across the whole result set; ordering only
-    // the rows loaded so far gave the wrong "top" once there are more
-    // activities than one page.
+    // Ordering happens in Postgres across the whole result set.
     sort:
       sort === "distance" ? "distance" as const
       : sort === "soonest" ? "soonest" as const
@@ -566,24 +556,25 @@ export default function ExplorePage() {
     lat: sort === "distance" ? here?.lat ?? null : null,
     lng: sort === "distance" ? here?.lng ?? null : null,
     regionOrder: sort === "distance" && here && herePickedArea ? regionsByProximity(herePickedArea) : null,
-    limit: PAGE,
   };
-  const { activities, total, loading, loadingMore, hasMore, loadMore, error: loadError, reload } = useActivities(filterParams);
-  // The map needs every matching pin, not just the loaded cards.
-  // When the list already holds every match (the usual case: one page is 50),
-  // those same rows are the map pins, so the separate pins query, the heaviest
-  // of the three, never runs. It starts only once the list has answered and
-  // only if there are more matches than the list holds.
-  const listHasEverything = !loading && !loadError && activities.length >= total;
-  const pinsNeeded = !loading && !loadError && activities.length < total;
-  const pinsQuery = useActivityPins(filterParams, pinsNeeded);
-  const pinActivities = listHasEverything ? activities : pinsQuery.activities;
-  const pinsLoading = loading || (pinsNeeded && pinsQuery.loading);
-  // If the list itself failed there is nothing to pin; its own banner (and
-  // Try again) already says so, and retrying it retries the map too.
-  const pinsError = loadError || (pinsNeeded && pinsQuery.error);
-  const reloadPins = loadError ? reload : pinsQuery.reload;
-  const facetCounts = useFacetCounts(filterParams, !!mobileSheet);
+  const localFilters = {
+    categories: categories_,
+    ageMinMonths,
+    ageMaxMonths,
+    regions,
+    maxPrice: debouncedPriceActive ? debouncedMaxPrice : null,
+  };
+  const { activities, total, loading, error: loadError, reload, facets: facetCounts } =
+    useExploreCatalogue(serverQuery, localFilters, !!mobileSheet);
+  // Every match is already in hand, so the map shows the same rows as the list.
+  const pinActivities = activities;
+  const pinsLoading = loading;
+  const pinsError = loadError;
+  const reloadPins = reload;
+  // The list is complete from the start, so there is never a further page to fetch.
+  const loadingMore = false;
+  const hasMore = false;
+  const loadMore = async () => false;
   // "Load more" reveals REVEAL_STEP more of the already-fetched rows per
   // click first, with no network call — only once the whole loaded PAGE is
   // revealed does the next click fall through to loadMore() and fetch a new
@@ -595,7 +586,7 @@ export default function ExplorePage() {
   // had already loaded. A different search (any filter, region, sort, etc.)
   // has its own count, starting from REVEAL_STEP — keyed the same way the hook
   // itself caches on.
-  const filterKey = JSON.stringify(filterParams);
+  const filterKey = JSON.stringify([serverQuery, localFilters]);
   const [reveal, setReveal] = useState({ key: filterKey, n: revealMemory.get(filterKey) ?? REVEAL_STEP });
   const revealCount = reveal.key === filterKey ? reveal.n : (revealMemory.get(filterKey) ?? REVEAL_STEP);
   const setRevealCount = (update: (n: number) => number) =>
